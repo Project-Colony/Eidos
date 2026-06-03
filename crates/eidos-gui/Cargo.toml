@@ -7,6 +7,6 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-iced = "0.13"
+iced = { version = "0.13", features = ["image"] }
 eidos-games = { path = "../eidos-games" }
 eidos-instance = { path = "../eidos-instance" }

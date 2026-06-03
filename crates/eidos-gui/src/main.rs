@@ -12,11 +12,26 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use iced::widget::{button, container, scrollable, text, text_input, Column, Row, Space};
+use iced::widget::{button, container, image, scrollable, text, text_input, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind, ModEntry};
+
+// MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
+const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
+const IC_NEXUS: &[u8] = include_bytes!("../assets/icons/internet-web-browser.png");
+const IC_CHANGE_GAME: &[u8] = include_bytes!("../assets/icons/switch-instance-icon.png");
+const IC_REFRESH: &[u8] = include_bytes!("../assets/icons/view-refresh.png");
+const IC_EXECUTABLES: &[u8] = include_bytes!("../assets/icons/function.png");
+const IC_TOOLS: &[u8] = include_bytes!("../assets/icons/plugins.png");
+const IC_SETTINGS: &[u8] = include_bytes!("../assets/icons/preferences-system.png");
+const IC_ENDORSE: &[u8] = include_bytes!("../assets/icons/icon-favorite.png");
+const IC_UPDATE: &[u8] = include_bytes!("../assets/icons/system-software-update.png");
+const IC_HELP: &[u8] = include_bytes!("../assets/icons/help-browser_32.png");
+const IC_RUN: &[u8] = include_bytes!("../assets/icons/media-playback-start.png");
+const IC_UP: &[u8] = include_bytes!("../assets/icons/go-up.png");
+const IC_DOWN: &[u8] = include_bytes!("../assets/icons/go-down.png");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -303,6 +318,31 @@ fn combo<'a>(label: String, msg: Message) -> Element<'a, Message> {
     button(text(format!("{label}   v")).size(12.0)).padding(6).on_press(msg).style(combo_style).into()
 }
 
+fn icon<'a>(bytes: &'static [u8], size: f32) -> Element<'a, Message> {
+    image(image::Handle::from_bytes(bytes.to_vec()))
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .into()
+}
+
+/// A flat toolbar button: icon + label (MO2's icons-and-text mode).
+fn icon_text_btn<'a>(bytes: &'static [u8], label: &'a str, msg: Message) -> Element<'a, Message> {
+    let content = Row::new()
+        .spacing(5)
+        .push(icon(bytes, 16.0))
+        .push(text(label).size(12.0));
+    button(content).padding(5).on_press(msg).style(button::text).into()
+}
+
+/// A flat icon-only button (toolbar right group, row arrows).
+fn icon_btn<'a>(bytes: &'static [u8], size: f32, msg: Option<Message>) -> Element<'a, Message> {
+    let mut b = button(icon(bytes, size)).padding(3).style(button::text);
+    if let Some(m) = msg {
+        b = b.on_press(m);
+    }
+    b.into()
+}
+
 // ---- wizard ------------------------------------------------------------------
 
 fn frame<'a>(
@@ -498,27 +538,23 @@ fn menu_bar<'a>() -> Element<'a, Message> {
 fn toolbar<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(2)
-        .push(flat_btn("Install Mod", Message::Noop))
-        .push(flat_btn("Nexus", Message::Noop))
-        .push(flat_btn("Refresh", Message::Refresh))
-        .push(flat_btn("Executables", Message::Noop))
-        .push(flat_btn("Settings", Message::Noop))
+        .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::Noop))
+        .push(icon_text_btn(IC_NEXUS, "Nexus", Message::Noop))
+        .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::Noop))
+        .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
+        .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::Noop))
+        .push(icon_text_btn(IC_TOOLS, "Tools", Message::Noop))
+        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::Noop))
         .push(Space::with_width(Length::Fill))
-        .push(flat_btn("Endorse", Message::Noop))
-        .push(flat_btn("Update", Message::Noop))
-        .push(flat_btn("Help", Message::Noop));
+        .push(icon_btn(IC_ENDORSE, 20.0, Some(Message::Noop)))
+        .push(icon_btn(IC_UPDATE, 20.0, Some(Message::Noop)))
+        .push(icon_btn(IC_HELP, 20.0, Some(Message::Noop)));
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
 fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
-    let mut up = button(text("Up").size(10.0)).padding(3).style(button::secondary);
-    if i > 0 {
-        up = up.on_press(Message::MoveUp(i));
-    }
-    let mut dn = button(text("Dn").size(10.0)).padding(3).style(button::secondary);
-    if i + 1 < len {
-        dn = dn.on_press(Message::MoveDown(i));
-    }
+    let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
+    let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let toggle = button(text(if m.enabled { "[x]" } else { "[ ]" }).size(12.0))
         .padding(3)
         .on_press(Message::ToggleMod(i))
@@ -636,7 +672,12 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         .spacing(8)
         .push(combo(game_name.to_string(), Message::Noop))
         .push(Space::with_width(Length::Fill))
-        .push(button(text("Run").size(15.0)).padding(10).on_press(Message::Run).style(button::primary));
+        .push(
+            button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
+                .padding(10)
+                .on_press(Message::Run)
+                .style(button::primary),
+        );
 
     let tabs = Row::new()
         .spacing(4)
