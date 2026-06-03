@@ -11,6 +11,7 @@
 //! Path matching is case-insensitive, reproducing the Windows semantics that
 //! game engines and mods rely on (see `docs/architecture.md`).
 
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,6 +62,32 @@ impl LayerStack {
     pub fn needs_copy_up(&self, vpath: &str) -> bool {
         ci_lookup(&self.overwrite, vpath).is_none()
             && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some())
+    }
+
+    /// The merged contents of a directory: every entry across the overwrite and
+    /// mod layers, deduplicated by case-insensitive name with the highest layer
+    /// winning. Each entry is `(name, real_path_on_disk)`, where the name keeps
+    /// the casing of the layer that won.
+    ///
+    /// Used by the FUSE daemon to answer `readdir`.
+    pub fn list_dir(&self, vpath: &str) -> Vec<(String, PathBuf)> {
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut out: Vec<(String, PathBuf)> = Vec::new();
+        let roots = std::iter::once(&self.overwrite).chain(self.layers.iter());
+        for root in roots {
+            let dir = match ci_lookup(root, vpath) {
+                Some(d) if d.is_dir() => d,
+                _ => continue,
+            };
+            let Ok(entries) = fs::read_dir(&dir) else { continue };
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if seen.insert(name.to_ascii_lowercase()) {
+                    out.push((name, entry.path()));
+                }
+            }
+        }
+        out
     }
 }
 
@@ -208,5 +235,29 @@ mod tests {
         let (game, over) = (t.sub("game"), t.sub("over"));
         let stack = LayerStack::new(vec![game], over);
         assert!(stack.resolve_read("does/not/exist").is_none());
+    }
+
+    #[test]
+    fn list_dir_merges_layers_and_dedupes() {
+        let t = TempTree::new();
+        let (game, modd, over) = (t.sub("game"), t.sub("mod"), t.sub("over"));
+        put(&game, "a.dat", "ga");
+        put(&game, "shared.dat", "game version");
+        put(&modd, "b.dat", "mb");
+        put(&modd, "Shared.dat", "mod version"); // same name, different case + wins
+
+        let stack = LayerStack::new(vec![modd, game], over);
+        let mut names: Vec<String> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        // shared appears once (the mod's casing wins), plus the two uniques.
+        assert_eq!(names, vec!["Shared.dat", "a.dat", "b.dat"]);
+
+        // And the winning shared entry points at the mod's file.
+        let shared = stack
+            .list_dir("")
+            .into_iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("shared.dat"))
+            .unwrap();
+        assert_eq!(read(&shared.1), "mod version");
     }
 }

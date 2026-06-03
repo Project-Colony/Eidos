@@ -85,19 +85,33 @@ scope using only unprivileged OverlayFS in a user namespace (Linux >= 5.11):
 ./scripts/poc-overlay.sh
 ```
 
-## Build and test the core
+## Build and test
 
 ```sh
-cargo test
+cargo test                 # eidos-core resolver unit tests
+cargo build -p eidos-fuse  # the read-only union daemon
+```
+
+## Mount a read-only union (works today, no root)
+
+The first `--layer` wins on conflict; the last is your pristine game data. The
+mount needs only `/dev/fuse` and `fusermount3` (no overlayfs, no Wine):
+
+```sh
+eidos-fuse --layer mod_b --layer mod_a --layer game_data /mnt/point
+# ... read through /mnt/point ...
+fusermount3 -u /mnt/point
 ```
 
 ## Roadmap
 
 - [x] Validate the under-Wine virtualization thesis (PoC)
 - [x] Layer-resolution engine + tests (`eidos-core`)
-- [ ] FUSE union daemon with passthrough (`eidos-fuse`)
+- [x] FUSE union daemon, read-only (`eidos-fuse`) - live-verified: merge priority,
+      fall-through, case-insensitive reads, no root / no overlayfs / no Wine
+- [ ] Copy-up / Overwrite layer (writes)
+- [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Per-launch namespace wrapper + Steam launch-option integration (`eidos-launch`)
-- [ ] Copy-up / Overwrite handling end to end
 - [ ] Casing normalization at mod-import time
 - [ ] Launch arbitrary tools (xEdit / FNIS) into the same view
 - [ ] Mod management UI, or integrate with an existing native manager
