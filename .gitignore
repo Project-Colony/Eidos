@@ -1,0 +1,11 @@
+# Rust
+/target/
+**/target/
+
+# Editor / OS noise
+*.swp
+*.rs.bk
+.DS_Store
+
+# Eidos local runtime + PoC artifacts
+/.eidos-run/

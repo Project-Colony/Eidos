@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/eidos-core"]
+
+[workspace.package]
+license = "GPL-3.0-only"
+repository = "https://github.com/Project-Colony/Eidos"
+edition = "2021"
