@@ -73,6 +73,7 @@ stability.
 crates/eidos-core      the layer-resolution engine (pure, unit-tested)
 crates/eidos-fuse      the read-write FUSE union daemon
 crates/eidos-games     supported-game catalog + Steam install detection
+crates/eidos-launch    per-launch namespace wrapper: run a game through the view
 docs/architecture.md   the design and the tradeoffs behind it
 scripts/poc-overlay.sh runnable proof that the "virtualize under Wine" thesis
                        holds with native primitives, no root required
@@ -127,11 +128,13 @@ fusermount3 -u /mnt/point
 - [x] Supported-game catalog + Steam install detection (`eidos-games`) -
       live-verified: finds installed games across all libraries (incl. other
       drives) with their data dir + Proton prefix
+- [x] Per-launch user+mount namespace wrapper (`eidos-launch`) - live-verified:
+      runs a command through a private union view; the host sees no mount, the
+      game install and mod sources stay pristine, writes land in Overwrite
+- [ ] Steam launch-option integration (`eidos %command%`) with a real Proton game
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
-- [ ] Per-launch namespace wrapper + Steam launch-option integration (`eidos-launch`)
 - [ ] Casing normalization at mod-import time
-- [ ] Launch arbitrary tools (xEdit / FNIS) into the same view
-- [ ] Mod management UI, or integrate with an existing native manager
+- [ ] Mod management UI (iced), or integrate with an existing native manager
 
 ## Prior art and references
 

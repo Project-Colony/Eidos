@@ -1,0 +1,11 @@
+[package]
+name = "eidos-launch"
+version = "0.0.0"
+description = "Per-launch namespace wrapper: run a game through the Eidos union view"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+eidos-fuse = { path = "../eidos-fuse" }
+libc = "0.2"

@@ -44,6 +44,14 @@ name = "eidos-games"
 version = "0.0.0"
 
 [[package]]
+name = "eidos-launch"
+version = "0.0.0"
+dependencies = [
+ "eidos-fuse",
+ "libc",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
