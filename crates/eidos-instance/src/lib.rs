@@ -8,11 +8,13 @@
 //!
 //! Either way the layout is the same:
 //! ```text
-//! <root>/mods/<name>/...   one folder per mod (load order)
+//! <root>/mods/<name>/...   one folder per mod
+//! <root>/modlist.txt       order + enabled state (MO2 style; top = highest)
 //! <root>/overwrite/        the writable layer (saves, regenerated configs)
 //! <root>/.base             bind-stash mountpoint for the pristine game files
 //! ```
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -23,6 +25,15 @@ pub enum InstanceKind {
     Global,
     /// In a self-contained folder chosen by the user.
     Portable,
+}
+
+/// One mod in the list: a folder under `mods/`, with its enabled state. Order in
+/// the returned vec is priority order, highest first (wins file conflicts).
+#[derive(Debug, Clone)]
+pub struct ModEntry {
+    pub name: String,
+    pub enabled: bool,
+    pub path: PathBuf,
 }
 
 /// `$XDG_DATA_HOME`, or `$HOME/.local/share`.
@@ -77,27 +88,70 @@ impl Instance {
         Ok(())
     }
 
-    /// Mod folders, highest priority first. Honours a `load_order.txt` (top line
-    /// wins); otherwise alphabetical.
-    pub fn load_order(&self) -> Vec<PathBuf> {
-        let mut dirs: Vec<PathBuf> = fs::read_dir(self.mods_dir())
+    /// The mod list: every folder in `mods/`, in priority order with enabled
+    /// state, reconciled with `modlist.txt`. Folders not yet in the file are
+    /// appended (enabled); file entries whose folder vanished are dropped.
+    /// Top of the list = highest priority.
+    pub fn modlist(&self) -> Vec<ModEntry> {
+        let mut present: Vec<String> = fs::read_dir(self.mods_dir())
             .into_iter()
             .flatten()
             .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_dir())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
             .collect();
+        present.sort();
 
-        match fs::read_to_string(self.root.join("load_order.txt")) {
-            Ok(content) => {
-                let order: Vec<&str> = content.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
-                dirs.sort_by_key(|p| {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or_default();
-                    order.iter().position(|o| *o == name).unwrap_or(usize::MAX)
+        let mut out: Vec<ModEntry> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+
+        if let Ok(content) = fs::read_to_string(self.root.join("modlist.txt")) {
+            for line in content.lines() {
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                let (enabled, name) = if let Some(n) = line.strip_prefix('+') {
+                    (true, n)
+                } else if let Some(n) = line.strip_prefix('-') {
+                    (false, n)
+                } else {
+                    (true, line)
+                };
+                if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
+                    out.push(ModEntry {
+                        name: name.to_string(),
+                        enabled,
+                        path: self.mods_dir().join(name),
+                    });
+                }
+            }
+        }
+        for name in present {
+            if seen.insert(name.clone()) {
+                out.push(ModEntry {
+                    path: self.mods_dir().join(&name),
+                    name,
+                    enabled: true,
                 });
             }
-            Err(_) => dirs.sort(),
         }
-        dirs
+        out
+    }
+
+    /// Persist the mod list to `modlist.txt` (`+Name` enabled, `-Name` disabled).
+    pub fn save_modlist(&self, mods: &[ModEntry]) -> std::io::Result<()> {
+        let mut s = String::new();
+        for m in mods {
+            s.push(if m.enabled { '+' } else { '-' });
+            s.push_str(&m.name);
+            s.push('\n');
+        }
+        fs::write(self.root.join("modlist.txt"), s)
+    }
+
+    /// Enabled mods, highest priority first: the layers to mount at launch.
+    pub fn load_order(&self) -> Vec<PathBuf> {
+        self.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect()
     }
 }

@@ -1,20 +1,20 @@
-//! Eidos GUI (iced) - first-launch wizard, MO2 style.
-//!
-//! Like Mod Organizer 2, Eidos walks you through a sequence of screens to create
-//! an instance, then drops you into the main interface:
+//! Eidos GUI (iced) - MO2-style wizard + two-pane main window.
 //!
 //!   Welcome -> Instance type (portable/global) -> Game -> Name/location
-//!           -> Summary -> [create] -> Main
+//!           -> Summary -> [create] -> Main (two-pane mod manager)
 //!
-//! Colony parchment / burgundy look. Run with: `cargo run -p eidos-gui`
+//! The main window mirrors MO2: left = the mod list (enable/disable, priority,
+//! reorder), right = tabs (Info, Saves). Colony parchment / burgundy look.
+//! Run with: `cargo run -p eidos-gui`
 
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use iced::widget::{button, container, scrollable, text, text_input, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::{Instance, InstanceKind};
+use eidos_instance::{Instance, InstanceKind, ModEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -24,6 +24,12 @@ enum Screen {
     NameLoc,
     Summary,
     Main,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Info,
+    Saves,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +42,11 @@ enum Message {
     PortableChanged(String),
     Finish,
     Restart,
+    ToggleMod(usize),
+    MoveUp(usize),
+    MoveDown(usize),
+    SelectTab(Tab),
+    Run,
 }
 
 struct App {
@@ -47,6 +58,9 @@ struct App {
     name: String,
     created: Option<Instance>,
     error: Option<String>,
+    mods: Vec<ModEntry>,
+    tab: Tab,
+    status: Option<String>,
 }
 
 fn new() -> (App, Task<Message>) {
@@ -60,6 +74,9 @@ fn new() -> (App, Task<Message>) {
             name: String::new(),
             created: None,
             error: None,
+            mods: Vec::new(),
+            tab: Tab::Info,
+            status: None,
         },
         Task::none(),
     )
@@ -69,7 +86,6 @@ fn selected_game(app: &App) -> Option<&DetectedGame> {
     app.selected.and_then(|i| app.games.get(i))
 }
 
-/// The instance that would be created from the current choices.
 fn planned_instance(app: &App) -> Option<Instance> {
     let game = selected_game(app)?;
     Some(match app.kind {
@@ -83,6 +99,12 @@ fn planned_instance(app: &App) -> Option<Instance> {
             Instance::portable(root)
         }
     })
+}
+
+fn save_mods(app: &App) {
+    if let Some(inst) = &app.created {
+        let _ = inst.save_modlist(&app.mods);
+    }
 }
 
 fn update(app: &mut App, message: Message) -> Task<Message> {
@@ -120,7 +142,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(inst) = planned_instance(app) {
                 match inst.create() {
                     Ok(()) => {
+                        app.mods = inst.modlist();
                         app.created = Some(inst);
+                        app.tab = Tab::Info;
                         app.error = None;
                         app.screen = Screen::Main;
                     }
@@ -134,8 +158,37 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.portable_path.clear();
             app.created = None;
             app.error = None;
+            app.mods.clear();
+            app.status = None;
             app.kind = InstanceKind::Global;
             app.screen = Screen::Welcome;
+        }
+        Message::ToggleMod(i) => {
+            if let Some(m) = app.mods.get_mut(i) {
+                m.enabled = !m.enabled;
+            }
+            save_mods(app);
+        }
+        Message::MoveUp(i) => {
+            if i > 0 && i < app.mods.len() {
+                app.mods.swap(i - 1, i);
+                save_mods(app);
+            }
+        }
+        Message::MoveDown(i) => {
+            if i + 1 < app.mods.len() {
+                app.mods.swap(i, i + 1);
+                save_mods(app);
+            }
+        }
+        Message::SelectTab(t) => app.tab = t,
+        Message::Run => {
+            let id = selected_game(app).map(|g| g.def.id);
+            if let Some(id) = id {
+                app.status = Some(format!(
+                    "Set this Steam launch option, then launch from Steam:\n    eidos play {id} -- %command%"
+                ));
+            }
         }
     }
     Task::none()
@@ -145,9 +198,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
 
 fn palette() -> iced::theme::Palette {
     iced::theme::Palette {
-        background: Color::from_rgb8(0xEC, 0xDF, 0xC2), // parchment
-        text: Color::from_rgb8(0x2B, 0x20, 0x18),       // ink
-        primary: Color::from_rgb8(0x7A, 0x1F, 0x2B),    // burgundy
+        background: Color::from_rgb8(0xEC, 0xDF, 0xC2),
+        text: Color::from_rgb8(0x2B, 0x20, 0x18),
+        primary: Color::from_rgb8(0x7A, 0x1F, 0x2B),
         success: Color::from_rgb8(0x4A, 0x6B, 0x3A),
         danger: Color::from_rgb8(0x8A, 0x2A, 0x2A),
     }
@@ -169,10 +222,10 @@ fn card_style(_theme: &Theme) -> container::Style {
     }
 }
 
-// ---- view --------------------------------------------------------------------
+// ---- shared widgets ----------------------------------------------------------
 
 fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> Element<'a, Message> {
-    let mut b = button(text(label).size(14.0)).padding(10);
+    let mut b = button(text(label).size(13.0)).padding(8);
     if let Some(m) = msg {
         b = b.on_press(m);
     }
@@ -183,7 +236,8 @@ fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> Element<'a, M
     }
 }
 
-/// Header + titled card + Back/Next footer, the shared wizard chrome.
+// ---- wizard ------------------------------------------------------------------
+
 fn frame<'a>(
     step: &'a str,
     title: &'a str,
@@ -197,10 +251,7 @@ fn frame<'a>(
         .push(text("Eidos").size(26.0))
         .push(text(step).size(12.0));
 
-    let card = container(content)
-        .width(Length::Fill)
-        .padding(18)
-        .style(card_style);
+    let card = container(content).width(Length::Fill).padding(18).style(card_style);
 
     let footer = Row::new()
         .push(nav("Back", back, false))
@@ -254,14 +305,7 @@ fn kind_screen<'a>(app: &App) -> Element<'a, Message> {
             app.kind == InstanceKind::Portable,
             Message::PickKind(InstanceKind::Portable),
         ));
-    frame(
-        "Step 2 of 5",
-        "Instance type",
-        content.into(),
-        Some(Message::Back),
-        "Next",
-        Some(Message::Next),
-    )
+    frame("Step 2 of 5", "Instance type", content.into(), Some(Message::Back), "Next", Some(Message::Next))
 }
 
 fn game_screen<'a>(app: &App) -> Element<'a, Message> {
@@ -288,43 +332,23 @@ fn game_screen<'a>(app: &App) -> Element<'a, Message> {
         scrollable(list).height(Length::Fixed(240.0)).into()
     };
     let next = app.selected.map(|_| Message::Next);
-    frame(
-        "Step 3 of 5",
-        "Choose the game to mod",
-        content,
-        Some(Message::Back),
-        "Next",
-        next,
-    )
+    frame("Step 3 of 5", "Choose the game to mod", content, Some(Message::Back), "Next", next)
 }
 
 fn nameloc_screen<'a>(app: &App) -> Element<'a, Message> {
     let mut content = Column::new()
         .spacing(8)
         .push(text("Instance name").size(13.0))
-        .push(
-            text_input("My Skyrim setup", &app.name)
-                .on_input(Message::NameChanged)
+        .push(text_input("My Skyrim setup", &app.name).on_input(Message::NameChanged).padding(8));
+    if app.kind == InstanceKind::Portable {
+        content = content.push(text("Portable folder").size(13.0)).push(
+            text_input("~/Eidos/skyrimse", &app.portable_path)
+                .on_input(Message::PortableChanged)
                 .padding(8),
         );
-    if app.kind == InstanceKind::Portable {
-        content = content
-            .push(text("Portable folder").size(13.0))
-            .push(
-                text_input("~/Eidos/skyrimse", &app.portable_path)
-                    .on_input(Message::PortableChanged)
-                    .padding(8),
-            );
     }
     let next = (!app.name.trim().is_empty()).then_some(Message::Next);
-    frame(
-        "Step 4 of 5",
-        "Name and location",
-        content.into(),
-        Some(Message::Back),
-        "Next",
-        next,
-    )
+    frame("Step 4 of 5", "Name and location", content.into(), Some(Message::Back), "Next", next)
 }
 
 fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
@@ -333,18 +357,13 @@ fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
         InstanceKind::Portable => "Portable",
     };
     let game = selected_game(app);
-    let location = planned_instance(app)
-        .map(|i| i.root.display().to_string())
-        .unwrap_or_default();
+    let location = planned_instance(app).map(|i| i.root.display().to_string()).unwrap_or_default();
 
     let mut content = Column::new()
         .spacing(8)
         .push(text(format!("Name:     {}", app.name)).size(14.0))
         .push(text(format!("Type:     {kind}")).size(14.0))
-        .push(text(format!(
-            "Game:     {}",
-            game.map(|g| g.def.name).unwrap_or("(none)")
-        )).size(14.0))
+        .push(text(format!("Game:     {}", game.map(|g| g.def.name).unwrap_or("(none)"))).size(14.0))
         .push(text(format!("Location: {location}")).size(13.0));
     if let Some(g) = game {
         content = content.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
@@ -352,7 +371,6 @@ fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(err) = &app.error {
         content = content.push(text(format!("Error: {err}")).size(13.0));
     }
-
     frame(
         "Step 5 of 5",
         "Review and create",
@@ -363,47 +381,114 @@ fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
     )
 }
 
-fn main_screen<'a>(app: &App) -> Element<'a, Message> {
-    let inst = app.created.as_ref();
-    let game = selected_game(app);
+// ---- main two-pane window ----------------------------------------------------
 
-    let mut col = Column::new()
-        .spacing(10)
-        .push(text("Eidos").size(26.0))
-        .push(text("Instance ready").size(20.0));
+fn list_dir_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    names.sort();
+    names
+}
 
-    if let Some(inst) = inst {
-        col = col.push(text(format!("Instance: {}", inst.root.display())).size(12.0));
-        let mods = inst.load_order();
-        col = col.push(text(format!("Mods: {}", mods.len())).size(13.0));
-        col = col.push(
-            text(format!("Drop mods into: {}", inst.mods_dir().display())).size(12.0),
-        );
-    }
-    if let Some(g) = game {
-        col = col.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
-        col = col.push(
-            text(format!(
-                "Steam launch option:\n    eidos play {} -- %command%",
-                g.def.id
-            ))
-            .size(13.0),
-        );
-    }
-
-    let card = container(col).width(Length::Fill).padding(18).style(card_style);
-
-    Column::new()
-        .spacing(16)
-        .push(card)
-        .push(text("(The two-pane mod list and Play button come next.)").size(11.0))
-        .push(Space::with_height(Length::Fill))
-        .push(
-            Row::new()
-                .push(nav("Create another instance", Some(Message::Restart), false))
-                .push(Space::with_width(Length::Fill)),
-        )
+fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
+    Row::new()
+        .spacing(8)
+        .push(nav(if m.enabled { "[x]" } else { "[ ]" }, Some(Message::ToggleMod(i)), false))
+        .push(text(format!("{:>2}", i + 1)).size(13.0))
+        .push(text(m.name.clone()).size(14.0).width(Length::Fill))
+        .push(nav("Up", (i > 0).then_some(Message::MoveUp(i)), false))
+        .push(nav("Dn", (i + 1 < len).then_some(Message::MoveDown(i)), false))
         .into()
+}
+
+fn info_panel<'a>(app: &App) -> Element<'a, Message> {
+    let enabled = app.mods.iter().filter(|m| m.enabled).count();
+    let mut c = Column::new().spacing(6).push(text("Instance").size(16.0));
+    if let Some(inst) = &app.created {
+        c = c.push(text(format!("Path: {}", inst.root.display())).size(12.0));
+        c = c.push(text(format!("Mods: {} enabled / {} total", enabled, app.mods.len())).size(13.0));
+        c = c.push(text(format!("Add mods in: {}", inst.mods_dir().display())).size(12.0));
+    }
+    if let Some(g) = selected_game(app) {
+        c = c.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
+        let run = button(text(format!("Run {}", g.def.name)).size(14.0))
+            .padding(10)
+            .on_press(Message::Run)
+            .style(button::primary);
+        c = c.push(run);
+    }
+    if let Some(s) = &app.status {
+        c = c.push(text(s.clone()).size(12.0));
+    }
+    c.into()
+}
+
+fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
+    let mut c = Column::new().spacing(4).push(text("Overwrite (writes land here)").size(14.0));
+    if let Some(inst) = &app.created {
+        let names = list_dir_names(&inst.overwrite_dir());
+        if names.is_empty() {
+            c = c.push(text("(empty - the game's saves and new files appear here)").size(12.0));
+        }
+        for name in names.into_iter().take(200) {
+            c = c.push(text(name).size(12.0));
+        }
+    }
+    scrollable(c).into()
+}
+
+fn main_screen<'a>(app: &App) -> Element<'a, Message> {
+    let title = selected_game(app)
+        .map(|g| g.def.name.to_string())
+        .unwrap_or_else(|| "Instance".to_string());
+    let header = Row::new()
+        .spacing(12)
+        .push(text("Eidos").size(24.0))
+        .push(text(title).size(15.0))
+        .push(Space::with_width(Length::Fill))
+        .push(nav("New instance", Some(Message::Restart), false));
+
+    // Left: mod list.
+    let mut list = Column::new()
+        .spacing(4)
+        .push(text(format!("Mods ({})", app.mods.len())).size(16.0));
+    if app.mods.is_empty() {
+        list = list.push(
+            text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0),
+        );
+    }
+    let len = app.mods.len();
+    for (i, m) in app.mods.iter().enumerate() {
+        list = list.push(mod_row(i, m, len));
+    }
+    let left = container(scrollable(list))
+        .width(Length::FillPortion(3))
+        .height(Length::Fill)
+        .padding(10)
+        .style(card_style);
+
+    // Right: tabs.
+    let tabs = Row::new()
+        .spacing(6)
+        .push(nav("Info", Some(Message::SelectTab(Tab::Info)), app.tab == Tab::Info))
+        .push(nav("Saves", Some(Message::SelectTab(Tab::Saves)), app.tab == Tab::Saves));
+    let tab_content = match app.tab {
+        Tab::Info => info_panel(app),
+        Tab::Saves => saves_panel(app),
+    };
+    let right = container(Column::new().spacing(10).push(tabs).push(tab_content))
+        .width(Length::FillPortion(2))
+        .height(Length::Fill)
+        .padding(10)
+        .style(card_style);
+
+    let body = Row::new().spacing(12).push(left).push(right);
+
+    Column::new().spacing(12).push(header).push(body).into()
 }
 
 fn view(app: &App) -> Element<'_, Message> {
@@ -415,15 +500,9 @@ fn view(app: &App) -> Element<'_, Message> {
         Screen::Summary => summary_screen(app),
         Screen::Main => main_screen(app),
     };
-    container(inner)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(24)
-        .into()
+    container(inner).width(Length::Fill).height(Length::Fill).padding(20).into()
 }
 
 fn main() -> iced::Result {
-    iced::application("Eidos", update, view)
-        .theme(theme)
-        .run_with(new)
+    iced::application("Eidos", update, view).theme(theme).run_with(new)
 }
