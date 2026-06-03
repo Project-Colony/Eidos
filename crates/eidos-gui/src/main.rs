@@ -239,10 +239,40 @@ fn panel_style(_theme: &Theme) -> container::Style {
 
 fn bar_style(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xE0, 0xD2, 0xB0))),
+        background: Some(Background::Color(Color::from_rgb8(0xE3, 0xD6, 0xB6))),
         border: Border { color: Color::from_rgb8(0xC9, 0xB8, 0x90), width: 1.0, radius: 0.0.into() },
         ..Default::default()
     }
+}
+
+/// A flat, combo-box-looking button (bordered light field), for dropdowns.
+fn combo_style(_theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(Background::Color(Color::from_rgb8(0xF7, 0xF0, 0xDE))),
+        text_color: Color::from_rgb8(0x2B, 0x20, 0x18),
+        border: Border { color: Color::from_rgb8(0xB8, 0xA5, 0x80), width: 1.0, radius: 3.0.into() },
+        shadow: Default::default(),
+    }
+}
+
+fn row_bg(even: bool) -> Color {
+    if even {
+        Color::from_rgb8(0xF3, 0xEA, 0xD3)
+    } else {
+        Color::from_rgb8(0xEA, 0xDD, 0xBF)
+    }
+}
+
+/// Wrap a row with an alternating background (MO2-style row striping).
+fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<'a, Message> {
+    container(content)
+        .width(Length::Fill)
+        .padding(2)
+        .style(move |_t: &Theme| container::Style {
+            background: Some(Background::Color(row_bg(even))),
+            ..Default::default()
+        })
+        .into()
 }
 
 // ---- shared widgets ----------------------------------------------------------
@@ -261,6 +291,16 @@ fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> Element<'a, M
 
 fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     button(text(label).size(12.0)).padding(6).on_press(msg).style(button::secondary).into()
+}
+
+/// A flat, menu/toolbar-style button (no chrome until hovered).
+fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+    button(text(label).size(13.0)).padding(6).on_press(msg).style(button::text).into()
+}
+
+/// A combo-box-looking button with a dropdown caret.
+fn combo<'a>(label: String, msg: Message) -> Element<'a, Message> {
+    button(text(format!("{label}   v")).size(12.0)).padding(6).on_press(msg).style(combo_style).into()
 }
 
 // ---- wizard ------------------------------------------------------------------
@@ -446,26 +486,28 @@ fn merged_listing(app: &App) -> Vec<(String, String, bool)> {
 
 fn menu_bar<'a>() -> Element<'a, Message> {
     let row = Row::new()
-        .spacing(4)
-        .push(tool_btn("File", Message::Noop))
-        .push(tool_btn("View", Message::Noop))
-        .push(tool_btn("Tools", Message::Noop))
-        .push(tool_btn("Help", Message::Noop));
-    container(row).width(Length::Fill).padding(3).style(bar_style).into()
+        .spacing(0)
+        .push(flat_btn("File", Message::Noop))
+        .push(flat_btn("View", Message::Noop))
+        .push(flat_btn("Tools", Message::Noop))
+        .push(flat_btn("Run", Message::Noop))
+        .push(flat_btn("Help", Message::Noop));
+    container(row).width(Length::Fill).padding(1).style(bar_style).into()
 }
 
-fn toolbar<'a>(app: &App) -> Element<'a, Message> {
-    let active = app.mods.iter().filter(|m| m.enabled).count();
+fn toolbar<'a>() -> Element<'a, Message> {
     let row = Row::new()
-        .spacing(8)
-        .push(tool_btn("Refresh", Message::Refresh))
-        .push(tool_btn("Settings", Message::Noop))
-        .push(Space::with_width(Length::Fixed(16.0)))
-        .push(text("Profile:").size(12.0))
-        .push(tool_btn("Default", Message::Noop))
+        .spacing(2)
+        .push(flat_btn("Install Mod", Message::Noop))
+        .push(flat_btn("Nexus", Message::Noop))
+        .push(flat_btn("Refresh", Message::Refresh))
+        .push(flat_btn("Executables", Message::Noop))
+        .push(flat_btn("Settings", Message::Noop))
         .push(Space::with_width(Length::Fill))
-        .push(text(format!("Active: {active}")).size(12.0));
-    container(row).width(Length::Fill).padding(4).style(bar_style).into()
+        .push(flat_btn("Endorse", Message::Noop))
+        .push(flat_btn("Update", Message::Noop))
+        .push(flat_btn("Help", Message::Noop));
+    container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
 fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
@@ -493,6 +535,15 @@ fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
 }
 
 fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
+    let active = app.mods.iter().filter(|m| m.enabled).count();
+    let profile = Row::new()
+        .spacing(8)
+        .push(text("Profile:").size(12.0))
+        .push(combo("Default".to_string(), Message::Noop))
+        .push(tool_btn("Save", Message::Noop))
+        .push(Space::with_width(Length::Fill))
+        .push(text(format!("Active: {active}")).size(12.0));
+
     let header = Row::new()
         .spacing(6)
         .push(text("").width(C_CHECK))
@@ -502,12 +553,12 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(text("").width(C_MOVE));
 
     let len = app.mods.len();
-    let mut list = Column::new().spacing(3);
+    let mut list = Column::new().spacing(1);
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     for (i, m) in app.mods.iter().enumerate() {
-        list = list.push(mod_row(i, m, len));
+        list = list.push(striped(mod_row(i, m, len), i % 2 == 0));
     }
 
     let overwrite = Row::new()
@@ -518,7 +569,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 
     let inner = Column::new()
         .spacing(6)
-        .push(text(format!("Mods ({len})")).size(14.0))
+        .push(profile)
         .push(header)
         .push(scrollable(list).height(Length::Fill))
         .push(overwrite);
@@ -533,19 +584,18 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Mod").size(11.0).width(Length::FillPortion(2)))
         .push(text("Type").size(11.0).width(Length::Fixed(70.0)));
 
-    let mut list = Column::new().spacing(2);
+    let mut list = Column::new().spacing(1);
     let entries = merged_listing(app);
     if entries.is_empty() {
         list = list.push(text("(empty)").size(12.0));
     }
-    for (name, source, is_dir) in entries.into_iter().take(500) {
-        list = list.push(
-            Row::new()
-                .spacing(6)
-                .push(text(name).size(12.0).width(Length::FillPortion(3)))
-                .push(text(source).size(12.0).width(Length::FillPortion(2)))
-                .push(text(if is_dir { "Folder" } else { "File" }).size(12.0).width(Length::Fixed(70.0))),
-        );
+    for (idx, (name, source, is_dir)) in entries.into_iter().take(500).enumerate() {
+        let row = Row::new()
+            .spacing(6)
+            .push(text(name).size(12.0).width(Length::FillPortion(3)))
+            .push(text(source).size(12.0).width(Length::FillPortion(2)))
+            .push(text(if is_dir { "Folder" } else { "File" }).size(12.0).width(Length::Fixed(70.0)));
+        list = list.push(striped(row.into(), idx % 2 == 0));
     }
     Column::new().spacing(4).push(header).push(scrollable(list).height(Length::Fill)).into()
 }
@@ -584,7 +634,8 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let game_name = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
     let top = Row::new()
         .spacing(8)
-        .push(text(game_name).size(15.0).width(Length::Fill))
+        .push(combo(game_name.to_string(), Message::Noop))
+        .push(Space::with_width(Length::Fill))
         .push(button(text("Run").size(15.0)).padding(10).on_press(Message::Run).style(button::primary));
 
     let tabs = Row::new()
@@ -630,11 +681,11 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         .push(right_pane(app));
 
     Column::new()
-        .spacing(6)
-        .padding(6)
+        .spacing(4)
+        .padding(4)
         .push(header)
         .push(menu_bar())
-        .push(toolbar(app))
+        .push(toolbar())
         .push(body)
         .push(status_bar(app))
         .into()
