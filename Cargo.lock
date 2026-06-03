@@ -866,6 +866,7 @@ name = "eidos"
 version = "0.0.0"
 dependencies = [
  "eidos-games",
+ "eidos-instance",
  "eidos-launch",
 ]
 
@@ -891,8 +892,13 @@ name = "eidos-gui"
 version = "0.0.0"
 dependencies = [
  "eidos-games",
+ "eidos-instance",
  "iced",
 ]
+
+[[package]]
+name = "eidos-instance"
+version = "0.0.0"
 
 [[package]]
 name = "eidos-launch"

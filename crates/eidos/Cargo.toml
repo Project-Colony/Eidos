@@ -13,3 +13,4 @@ path = "src/main.rs"
 [dependencies]
 eidos-games = { path = "../eidos-games" }
 eidos-launch = { path = "../eidos-launch" }
+eidos-instance = { path = "../eidos-instance" }

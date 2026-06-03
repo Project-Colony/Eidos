@@ -76,6 +76,7 @@ crates/eidos-core      the layer-resolution engine (pure, unit-tested)
 crates/eidos-fuse      the read-write FUSE union daemon
 crates/eidos-games     supported-game catalog + Steam install detection
 crates/eidos-launch    per-launch namespace wrapper: run a game through the view
+crates/eidos-instance  instance model (global / portable, layout, load order)
 docs/architecture.md   the design and the tradeoffs behind it
 scripts/poc-overlay.sh runnable proof that the "virtualize under Wine" thesis
                        holds with native primitives, no root required
@@ -109,9 +110,10 @@ eidos play skyrimse -- %command%
 cargo run -p eidos-gui
 ```
 
-A first window in the Colony parchment / burgundy look: the detected games on
-the left, the selected game's instance details and launch option on the right.
-Mod list, drag-reorder load order, and a Play button come next.
+An MO2-style first-launch wizard in the Colony parchment / burgundy look:
+welcome -> instance type (portable / global) -> game -> name & location ->
+summary -> create -> main screen. The two-pane main window (mod list with
+drag-reorder load order, Plugins / Data / Saves tabs, Play button) comes next.
 
 ## Try the proof of concept
 
@@ -159,9 +161,10 @@ fusermount3 -u /mnt/point
       live-verified end to end: detect a game, create an instance, mount its
       mods over the game's Data dir, run a command through the view
 - [ ] Steam launch-option integration (`eidos %command%`) with a real Proton game
-- [x] GUI first window (`eidos-gui`, iced) - detected-games list + detail panel,
-      Colony parchment / burgundy theme
-- [ ] GUI: mod list, drag-reorder load order, enable/disable, Play button
+- [x] GUI first-launch wizard (`eidos-gui`, iced) - MO2-style screens (welcome ->
+      portable/global -> game -> name -> summary -> main), Colony parchment theme
+- [ ] GUI main window: two-pane mod list with drag-reorder load order,
+      enable/disable, Plugins / Data / Saves tabs, Play button
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Casing normalization at mod-import time
 
