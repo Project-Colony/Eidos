@@ -70,6 +70,7 @@ stability.
 ## Repo layout
 
 ```
+crates/eidos           the unified CLI front end (games / init / play)
 crates/eidos-core      the layer-resolution engine (pure, unit-tested)
 crates/eidos-fuse      the read-write FUSE union daemon
 crates/eidos-games     supported-game catalog + Steam install detection
@@ -79,15 +80,27 @@ scripts/poc-overlay.sh runnable proof that the "virtualize under Wine" thesis
                        holds with native primitives, no root required
 ```
 
-## Find your installed games (like MO2's game list)
+## Use it (CLI)
 
 ```sh
-cargo run --example detect -p eidos-games
+eidos games                       # supported games installed here (like MO2's list)
+eidos init skyrimse               # create a modding instance
+# ...drop each mod as a folder into ~/.local/share/eidos/skyrimse/mods/...
+eidos play skyrimse               # show what would be mounted
+eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
 ```
 
-Parses Steam's `libraryfolders.vdf` + `appmanifest_*.acf` across every library
-(including ones on other drives), and reports which catalogued games are
-installed, with their data dir and Proton prefix.
+`play` mounts the instance's mods over the game's own `Data` directory (via a
+bind-stash, so the daemon still reads the pristine files) inside a private
+namespace, then runs the command through that view. Writes (saves, regenerated
+configs) land in the instance's `overwrite/` layer; the game install and every
+mod source stay byte-for-byte pristine.
+
+To launch the game itself through Eidos, set its Steam launch option to:
+
+```
+eidos play skyrimse -- %command%
+```
 
 ## Try the proof of concept
 
@@ -131,6 +144,9 @@ fusermount3 -u /mnt/point
 - [x] Per-launch user+mount namespace wrapper (`eidos-launch`) - live-verified:
       runs a command through a private union view; the host sees no mount, the
       game install and mod sources stay pristine, writes land in Overwrite
+- [x] Instance management + unified `eidos` CLI (`games` / `init` / `play`) -
+      live-verified end to end: detect a game, create an instance, mount its
+      mods over the game's Data dir, run a command through the view
 - [ ] Steam launch-option integration (`eidos %command%`) with a real Proton game
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Casing normalization at mod-import time

@@ -1,0 +1,15 @@
+[package]
+name = "eidos"
+version = "0.0.0"
+description = "Eidos: a native Linux mod manager (CLI front end)"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "eidos"
+path = "src/main.rs"
+
+[dependencies]
+eidos-games = { path = "../eidos-games" }
+eidos-launch = { path = "../eidos-launch" }
