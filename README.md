@@ -151,6 +151,9 @@ fusermount3 -u /mnt/point
 - [x] Copy-up / Overwrite layer (writes) - live-verified: new files, edits to
       game files, and edits to mod files all land in Overwrite; the game install
       and every mod source stay pristine
+- [x] Deletes (whiteouts), rename, and statfs - live-verified: deleting a game
+      or mod file hides it (via a whiteout in Overwrite) while the source stays
+      pristine; rename works (saves), and df reports real free space
 - [x] Supported-game catalog + Steam install detection (`eidos-games`) -
       live-verified: finds installed games across all libraries (incl. other
       drives) with their data dir + Proton prefix

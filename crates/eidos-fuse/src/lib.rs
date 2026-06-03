@@ -13,9 +13,10 @@
 //!   then run the game).
 
 use std::collections::HashMap;
-use std::ffi::OsStr;
+use std::ffi::{CString, OsStr};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -24,8 +25,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use eidos_core::LayerStack;
 use fuser::{
     BackgroundSession, BsdFileFlags, Config, Errno, FileAttr, FileHandle, FileType, Filesystem,
-    FopenFlags, Generation, INodeNo, LockOwner, MountOption, OpenFlags, ReplyAttr, ReplyCreate,
-    ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow, WriteFlags,
+    FopenFlags, Generation, INodeNo, LockOwner, MountOption, OpenFlags, RenameFlags, ReplyAttr,
+    ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyStatfs, ReplyWrite,
+    Request, TimeOrNow, WriteFlags,
 };
 
 /// Attribute/entry cache lifetime handed to the kernel. Conservative for now.
@@ -65,6 +67,16 @@ impl Inodes {
 
     fn path(&self, ino: u64) -> Option<String> {
         self.by_ino.get(&ino).cloned()
+    }
+
+    /// Rebind the inode for `from` onto `to` after a rename, so the kernel's
+    /// reuse of the source inode for the destination keeps resolving correctly.
+    fn rename(&mut self, from: &str, to: &str) {
+        if let Some(ino) = self.by_path.remove(from) {
+            self.by_path.remove(to); // drop any stale destination mapping
+            self.by_ino.insert(ino, to.to_string());
+            self.by_path.insert(to.to_string(), ino);
+        }
     }
 }
 
@@ -126,6 +138,13 @@ impl Eidos {
     /// Dropping the handle unmounts.
     pub fn spawn(self, mountpoint: &Path) -> std::io::Result<BackgroundSession> {
         fuser::spawn_mount2(self, mountpoint, &mount_config())
+    }
+
+    /// The virtual path of `name` inside the directory inode `parent`.
+    fn child(&self, parent: INodeNo, name: &OsStr) -> Option<String> {
+        let inodes = self.inodes.lock().unwrap();
+        let parent_vpath = inodes.path(parent.0)?;
+        Some(join(&parent_vpath, &name.to_string_lossy()))
     }
 
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
@@ -407,4 +426,75 @@ impl Filesystem for Eidos {
     fn fsync(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
         reply.ok();
     }
+
+    fn unlink(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.child(parent, name) {
+            Some(vpath) => match self.stack.remove(&vpath) {
+                Ok(()) => reply.ok(),
+                Err(_) => reply.error(Errno::EIO),
+            },
+            None => reply.error(Errno::ENOENT),
+        }
+    }
+
+    fn rmdir(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEmpty) {
+        match self.child(parent, name) {
+            Some(vpath) => match self.stack.remove(&vpath) {
+                Ok(()) => reply.ok(),
+                Err(_) => reply.error(Errno::EIO),
+            },
+            None => reply.error(Errno::ENOENT),
+        }
+    }
+
+    fn rename(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        newparent: INodeNo,
+        newname: &OsStr,
+        _flags: RenameFlags,
+        reply: ReplyEmpty,
+    ) {
+        let (Some(from), Some(to)) = (self.child(parent, name), self.child(newparent, newname)) else {
+            reply.error(Errno::ENOENT);
+            return;
+        };
+        match self.stack.rename(&from, &to) {
+            Ok(()) => {
+                self.inodes.lock().unwrap().rename(&from, &to);
+                reply.ok();
+            }
+            Err(_) => reply.error(Errno::EIO),
+        }
+    }
+
+    fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
+        match statvfs_of(self.stack.overwrite_root()) {
+            Ok(s) => reply.statfs(
+                s.f_blocks as u64,
+                s.f_bfree as u64,
+                s.f_bavail as u64,
+                s.f_files as u64,
+                s.f_ffree as u64,
+                s.f_bsize as u32,
+                s.f_namemax as u32,
+                s.f_frsize as u32,
+            ),
+            Err(_) => reply.error(Errno::EIO),
+        }
+    }
+}
+
+/// `statvfs(2)` of a path, for reporting real free space to the game.
+fn statvfs_of(path: &Path) -> std::io::Result<libc::statvfs> {
+    let c = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "path contains NUL"))?;
+    // SAFETY: valid C path and a zeroed statvfs out-param; we check the return.
+    let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(st)
 }
