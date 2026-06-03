@@ -168,7 +168,10 @@ fusermount3 -u /mnt/point
       portable/global -> game -> name -> summary -> main), Colony parchment theme
 - [ ] GUI main window: two-pane mod list with drag-reorder load order,
       enable/disable, Plugins / Data / Saves tabs, Play button
-- [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
+- [x] FUSE passthrough wired (best-effort) + rootless perf tuning (1 MiB
+      readahead / max_write). Note: kernel passthrough needs real root, so the
+      rootless daemon falls back to serving reads/writes itself - correct, just
+      not zero-copy
 - [ ] Casing normalization at mod-import time
 
 ## Prior art and references
