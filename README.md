@@ -71,10 +71,22 @@ stability.
 
 ```
 crates/eidos-core      the layer-resolution engine (pure, unit-tested)
+crates/eidos-fuse      the read-write FUSE union daemon
+crates/eidos-games     supported-game catalog + Steam install detection
 docs/architecture.md   the design and the tradeoffs behind it
 scripts/poc-overlay.sh runnable proof that the "virtualize under Wine" thesis
                        holds with native primitives, no root required
 ```
+
+## Find your installed games (like MO2's game list)
+
+```sh
+cargo run --example detect -p eidos-games
+```
+
+Parses Steam's `libraryfolders.vdf` + `appmanifest_*.acf` across every library
+(including ones on other drives), and reports which catalogued games are
+installed, with their data dir and Proton prefix.
 
 ## Try the proof of concept
 
@@ -112,6 +124,9 @@ fusermount3 -u /mnt/point
 - [x] Copy-up / Overwrite layer (writes) - live-verified: new files, edits to
       game files, and edits to mod files all land in Overwrite; the game install
       and every mod source stay pristine
+- [x] Supported-game catalog + Steam install detection (`eidos-games`) -
+      live-verified: finds installed games across all libraries (incl. other
+      drives) with their data dir + Proton prefix
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Per-launch namespace wrapper + Steam launch-option integration (`eidos-launch`)
 - [ ] Casing normalization at mod-import time
