@@ -16,18 +16,20 @@ use std::collections::HashMap;
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use eidos_core::LayerStack;
 use fuser::{
-    BackgroundSession, BsdFileFlags, Config, Errno, FileAttr, FileHandle, FileType, Filesystem,
-    FopenFlags, Generation, INodeNo, LockOwner, MountOption, OpenFlags, RenameFlags, ReplyAttr,
-    ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyStatfs, ReplyWrite,
-    Request, TimeOrNow, WriteFlags,
+    BackgroundSession, BackingId, BsdFileFlags, Config, Errno, FileAttr, FileHandle, FileType,
+    Filesystem, FopenFlags, Generation, INodeNo, KernelConfig, LockOwner, MountOption, OpenFlags,
+    RenameFlags, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory, ReplyEmpty, ReplyEntry,
+    ReplyOpen, ReplyStatfs, ReplyWrite, Request, TimeOrNow, WriteFlags,
 };
 
 /// Attribute/entry cache lifetime handed to the kernel. Conservative for now.
@@ -80,12 +82,21 @@ impl Inodes {
     }
 }
 
+/// A passthrough-open file: the real backing fd and its kernel registration,
+/// both kept alive until `release`.
+struct OpenFile {
+    _file: File,
+    _backing: BackingId,
+}
+
 /// The Eidos union filesystem over a [`LayerStack`].
 pub struct Eidos {
     stack: LayerStack,
     inodes: Mutex<Inodes>,
     uid: u32,
     gid: u32,
+    open_files: Mutex<HashMap<u64, OpenFile>>,
+    next_fh: AtomicU64,
 }
 
 /// Join a parent virtual path and a child name into a virtual path.
@@ -126,6 +137,8 @@ impl Eidos {
             inodes: Mutex::new(Inodes::new()),
             uid,
             gid,
+            open_files: Mutex::new(HashMap::new()),
+            next_fh: AtomicU64::new(1),
         }
     }
 
@@ -173,6 +186,109 @@ impl Eidos {
 }
 
 impl Filesystem for Eidos {
+    fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
+        // Best-effort FUSE passthrough: with a non-zero stack depth the kernel
+        // can route reads/writes straight to the backing file. NOTE: registering
+        // a backing fd needs CAP_SYS_ADMIN in the initial user namespace (real
+        // root); our rootless, userns-mapped daemon does not have it, so
+        // `open_backing` returns EPERM and we fall back to serving reads/writes
+        // ourselves. It is left enabled so it engages for free if Eidos is ever
+        // run privileged, or on a kernel that allows userns passthrough.
+        let _ = config.set_max_stack_depth(1);
+
+        // Rootless perf levers that always apply: large readahead and write
+        // buffers cut the number of round-trips on big asset files. (Metadata is
+        // already cached kernel-side via our entry/attr TTL.)
+        let _ = config.set_max_readahead(1 << 20);
+        let _ = config.set_max_write(1 << 20);
+        Ok(())
+    }
+
+    fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
+        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+            Some(p) => p,
+            None => {
+                reply.error(Errno::ENOENT);
+                return;
+            }
+        };
+
+        // Writes must copy up first so the backing file is the Overwrite copy,
+        // never the read-only mod or game file.
+        let accmode = flags.0 & libc::O_ACCMODE;
+        let want_write = accmode == libc::O_WRONLY || accmode == libc::O_RDWR;
+        let real = if want_write {
+            match self.stack.open_for_write(&vpath) {
+                Ok(p) => p,
+                Err(_) => {
+                    reply.error(Errno::EIO);
+                    return;
+                }
+            }
+        } else {
+            match self.stack.resolve_read(&vpath) {
+                Some(p) => p,
+                None => {
+                    reply.error(Errno::ENOENT);
+                    return;
+                }
+            }
+        };
+
+        if real.is_dir() {
+            reply.opened(FileHandle(0), FopenFlags::empty());
+            return;
+        }
+
+        let mut opts = OpenOptions::new();
+        if want_write {
+            opts.read(true).write(true);
+        } else {
+            opts.read(true);
+        }
+        let file = match opts.open(&real) {
+            Ok(f) => f,
+            Err(_) => {
+                reply.error(Errno::EIO);
+                return;
+            }
+        };
+        if want_write && flags.0 & libc::O_TRUNC != 0 {
+            let _ = file.set_len(0);
+        }
+
+        // Register the backing fd for kernel passthrough; on failure (typically
+        // EPERM when rootless) fall back to a plain handle so the kernel calls
+        // our own read/write.
+        let backing = match reply.open_backing(file.as_fd()) {
+            Ok(b) => b,
+            Err(_) => {
+                reply.opened(FileHandle(0), FopenFlags::empty());
+                return;
+            }
+        };
+        let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
+        let mut files = self.open_files.lock().unwrap();
+        files.insert(fh, OpenFile { _file: file, _backing: backing });
+        let backing_ref = &files.get(&fh).expect("just inserted")._backing;
+        reply.opened_passthrough(FileHandle(fh), FopenFlags::empty(), backing_ref);
+    }
+
+    fn release(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        fh: FileHandle,
+        _flags: OpenFlags,
+        _lock_owner: Option<LockOwner>,
+        _flush: bool,
+        reply: ReplyEmpty,
+    ) {
+        // Drops the backing registration and the real fd (no-op for fh 0).
+        self.open_files.lock().unwrap().remove(&fh.0);
+        reply.ok();
+    }
+
     fn lookup(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
         let mut inodes = self.inodes.lock().unwrap();
         let Some(parent_vpath) = inodes.path(parent.0) else {
