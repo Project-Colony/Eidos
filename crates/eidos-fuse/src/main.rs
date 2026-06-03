@@ -13,18 +13,19 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fs::{self, File, Metadata};
-use std::io::{Read, Seek, SeekFrom};
+use std::fs::{self, File, Metadata, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Mutex;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use eidos_core::LayerStack;
 use fuser::{
-    Config, Errno, FileAttr, FileHandle, FileType, Filesystem, Generation, INodeNo, LockOwner,
-    MountOption, OpenFlags, ReplyAttr, ReplyData, ReplyDirectory, ReplyEntry, Request,
+    BsdFileFlags, Config, Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation,
+    INodeNo, LockOwner, MountOption, OpenFlags, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory,
+    ReplyEmpty, ReplyEntry, ReplyWrite, Request, TimeOrNow, WriteFlags,
 };
 
 /// Attribute/entry cache lifetime handed to the kernel. Conservative for now.
@@ -231,6 +232,158 @@ impl Filesystem for Eidos {
         }
         reply.ok();
     }
+
+    fn create(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        _mode: u32,
+        _umask: u32,
+        _flags: i32,
+        reply: ReplyCreate,
+    ) {
+        let mut inodes = self.inodes.lock().unwrap();
+        let Some(parent_vpath) = inodes.path(parent.0) else {
+            reply.error(Errno::ENOENT);
+            return;
+        };
+        let vpath = join(&parent_vpath, &name.to_string_lossy());
+        // Make the path writable in the overwrite layer, then materialise the
+        // file. Existing (copied-up) content is preserved; new files start empty.
+        let created = self
+            .stack
+            .open_for_write(&vpath)
+            .and_then(|dest| OpenOptions::new().create(true).write(true).open(&dest))
+            .and_then(|_| {
+                let real = self.stack.resolve_read(&vpath).ok_or(std::io::ErrorKind::Other)?;
+                fs::symlink_metadata(real)
+            });
+        match created {
+            Ok(meta) => {
+                let ino = inodes.intern(&vpath);
+                reply.created(
+                    &TTL,
+                    &self.attr(ino, &meta),
+                    Generation(0),
+                    FileHandle(0),
+                    FopenFlags::empty(),
+                );
+            }
+            Err(_) => reply.error(Errno::EIO),
+        }
+    }
+
+    fn write(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _fh: FileHandle,
+        offset: u64,
+        data: &[u8],
+        _write_flags: WriteFlags,
+        _flags: OpenFlags,
+        _lock_owner: Option<LockOwner>,
+        reply: ReplyWrite,
+    ) {
+        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+            Some(p) => p,
+            None => {
+                reply.error(Errno::ENOENT);
+                return;
+            }
+        };
+        let written = (|| -> std::io::Result<u32> {
+            let dest = self.stack.open_for_write(&vpath)?; // copy-up if needed (idempotent)
+            let mut f = OpenOptions::new().write(true).open(&dest)?;
+            f.seek(SeekFrom::Start(offset))?;
+            f.write_all(data)?;
+            Ok(data.len() as u32)
+        })();
+        match written {
+            Ok(n) => reply.written(n),
+            Err(_) => reply.error(Errno::EIO),
+        }
+    }
+
+    fn mkdir(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        name: &OsStr,
+        _mode: u32,
+        _umask: u32,
+        reply: ReplyEntry,
+    ) {
+        let mut inodes = self.inodes.lock().unwrap();
+        let Some(parent_vpath) = inodes.path(parent.0) else {
+            reply.error(Errno::ENOENT);
+            return;
+        };
+        let vpath = join(&parent_vpath, &name.to_string_lossy());
+        match self
+            .stack
+            .make_dir(&vpath)
+            .and_then(fs::symlink_metadata)
+        {
+            Ok(meta) => {
+                let ino = inodes.intern(&vpath);
+                reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
+            }
+            Err(_) => reply.error(Errno::EIO),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn setattr(
+        &self,
+        _req: &Request,
+        ino: INodeNo,
+        _mode: Option<u32>,
+        _uid: Option<u32>,
+        _gid: Option<u32>,
+        size: Option<u64>,
+        _atime: Option<TimeOrNow>,
+        _mtime: Option<TimeOrNow>,
+        _ctime: Option<SystemTime>,
+        _fh: Option<FileHandle>,
+        _crtime: Option<SystemTime>,
+        _chgtime: Option<SystemTime>,
+        _bkuptime: Option<SystemTime>,
+        _flags: Option<BsdFileFlags>,
+        reply: ReplyAttr,
+    ) {
+        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+            Some(p) => p,
+            None => {
+                reply.error(Errno::ENOENT);
+                return;
+            }
+        };
+        // The only attribute the write path cares about for now is truncation.
+        if let Some(sz) = size {
+            let r = (|| -> std::io::Result<()> {
+                let dest = self.stack.open_for_write(&vpath)?;
+                OpenOptions::new().create(true).write(true).open(&dest)?.set_len(sz)
+            })();
+            if r.is_err() {
+                reply.error(Errno::EIO);
+                return;
+            }
+        }
+        match self.stack.resolve_read(&vpath).and_then(|r| fs::symlink_metadata(r).ok()) {
+            Some(meta) => reply.attr(&TTL, &self.attr(ino.0, &meta)),
+            None => reply.error(Errno::ENOENT),
+        }
+    }
+
+    fn flush(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _lock: LockOwner, reply: ReplyEmpty) {
+        reply.ok();
+    }
+
+    fn fsync(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
+        reply.ok();
+    }
 }
 
 fn usage() -> ! {
@@ -281,8 +434,10 @@ fn main() -> std::io::Result<()> {
     };
 
     // Config is #[non_exhaustive]; build via Default and set the public field.
+    // Read-write now: writes copy up into the Overwrite layer, lower layers stay
+    // pristine.
     let mut config = Config::default();
-    config.mount_options = vec![MountOption::RO, MountOption::FSName("eidos".to_string())];
+    config.mount_options = vec![MountOption::FSName("eidos".to_string())];
 
     eprintln!("eidos-fuse: mounting at {}", mountpoint.display());
     fuser::mount2(fs, &mountpoint, &config)

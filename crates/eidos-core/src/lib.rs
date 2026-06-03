@@ -64,6 +64,34 @@ impl LayerStack {
             && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some())
     }
 
+    /// Ensure `vpath` is writable in the overwrite layer and return the real
+    /// path to write to. If the file exists only in a lower layer, it is copied
+    /// up first (copy-on-write); parent directories are created in the overwrite
+    /// layer as needed. Lower layers are never touched, so the game install and
+    /// every mod source stay pristine.
+    pub fn open_for_write(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        let dest = self.resolve_write(vpath);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if !dest.exists() {
+            if let Some(src) = self.layers.iter().find_map(|l| ci_lookup(l, vpath)) {
+                if src.is_file() {
+                    fs::copy(&src, &dest)?;
+                }
+            }
+        }
+        Ok(dest)
+    }
+
+    /// Create a directory in the overwrite layer (and any missing parents),
+    /// returning its real path. Idempotent.
+    pub fn make_dir(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        let dest = self.resolve_write(vpath);
+        fs::create_dir_all(&dest)?;
+        Ok(dest)
+    }
+
     /// The merged contents of a directory: every entry across the overwrite and
     /// mod layers, deduplicated by case-insensitive name with the highest layer
     /// winning. Each entry is `(name, real_path_on_disk)`, where the name keeps
@@ -259,5 +287,38 @@ mod tests {
             .find(|(n, _)| n.eq_ignore_ascii_case("shared.dat"))
             .unwrap();
         assert_eq!(read(&shared.1), "mod version");
+    }
+
+    #[test]
+    fn copy_up_clones_lower_file_then_diverges() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "config/settings.ini", "vanilla");
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        // First write copies the lower file up, parents and all.
+        let dest = stack.open_for_write("config/settings.ini").unwrap();
+        assert_eq!(dest, over.join("config/settings.ini"));
+        assert_eq!(read(&dest), "vanilla");
+
+        // Diverging the overwrite copy leaves the game file pristine.
+        fs::write(&dest, "tweaked").unwrap();
+        assert_eq!(read(&dest), "tweaked");
+        assert_eq!(read(&game.join("config/settings.ini")), "vanilla");
+
+        // And the resolver now serves the overwrite version.
+        assert_eq!(read(&stack.resolve_read("config/settings.ini").unwrap()), "tweaked");
+    }
+
+    #[test]
+    fn open_for_write_creates_brand_new_file_path() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        let stack = LayerStack::new(vec![game], over.clone());
+
+        let dest = stack.open_for_write("saves/save01.ess").unwrap();
+        assert_eq!(dest, over.join("saves/save01.ess"));
+        assert!(dest.parent().unwrap().is_dir()); // parents materialised
+        assert!(!dest.exists()); // not created yet, just made writable
     }
 }

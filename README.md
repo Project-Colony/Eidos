@@ -107,9 +107,11 @@ fusermount3 -u /mnt/point
 
 - [x] Validate the under-Wine virtualization thesis (PoC)
 - [x] Layer-resolution engine + tests (`eidos-core`)
-- [x] FUSE union daemon, read-only (`eidos-fuse`) - live-verified: merge priority,
+- [x] FUSE union daemon (`eidos-fuse`) - live-verified: merge priority,
       fall-through, case-insensitive reads, no root / no overlayfs / no Wine
-- [ ] Copy-up / Overwrite layer (writes)
+- [x] Copy-up / Overwrite layer (writes) - live-verified: new files, edits to
+      game files, and edits to mod files all land in Overwrite; the game install
+      and every mod source stay pristine
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Per-launch namespace wrapper + Steam launch-option integration (`eidos-launch`)
 - [ ] Casing normalization at mod-import time
