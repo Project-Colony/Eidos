@@ -71,6 +71,7 @@ stability.
 
 ```
 crates/eidos           the unified CLI front end (games / init / play)
+crates/eidos-gui       the iced GUI (Colony parchment look)
 crates/eidos-core      the layer-resolution engine (pure, unit-tested)
 crates/eidos-fuse      the read-write FUSE union daemon
 crates/eidos-games     supported-game catalog + Steam install detection
@@ -101,6 +102,16 @@ To launch the game itself through Eidos, set its Steam launch option to:
 ```
 eidos play skyrimse -- %command%
 ```
+
+## GUI
+
+```sh
+cargo run -p eidos-gui
+```
+
+A first window in the Colony parchment / burgundy look: the detected games on
+the left, the selected game's instance details and launch option on the right.
+Mod list, drag-reorder load order, and a Play button come next.
 
 ## Try the proof of concept
 
@@ -148,9 +159,11 @@ fusermount3 -u /mnt/point
       live-verified end to end: detect a game, create an instance, mount its
       mods over the game's Data dir, run a command through the view
 - [ ] Steam launch-option integration (`eidos %command%`) with a real Proton game
+- [x] GUI first window (`eidos-gui`, iced) - detected-games list + detail panel,
+      Colony parchment / burgundy theme
+- [ ] GUI: mod list, drag-reorder load order, enable/disable, Play button
 - [ ] FUSE passthrough for near-native read perf (Linux 6.9+)
 - [ ] Casing normalization at mod-import time
-- [ ] Mod management UI (iced), or integrate with an existing native manager
 
 ## Prior art and references
 

@@ -1,0 +1,11 @@
+[package]
+name = "eidos-gui"
+version = "0.0.0"
+description = "Eidos GUI (iced)"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+iced = "0.13"
+eidos-games = { path = "../eidos-games" }
