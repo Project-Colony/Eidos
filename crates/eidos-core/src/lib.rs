@@ -41,7 +41,9 @@ impl LayerStack {
         Self { layers, overwrite }
     }
 
-    /// The overwrite-layer path of the whiteout marker for `vpath`.
+    /// The overwrite-layer path where a whiteout marker for `vpath` is written.
+    /// The stored casing is whatever the caller used; lookups fold case via
+    /// [`Self::find_whiteout`], so it does not matter.
     fn whiteout_path(&self, vpath: &str) -> PathBuf {
         let norm = normalize(vpath);
         let name = norm.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -49,9 +51,46 @@ impl LayerStack {
         self.overwrite.join(parent).join(format!("{WHITEOUT_PREFIX}{name}"))
     }
 
-    /// Whether `vpath` has been deleted (a whiteout marker exists for it).
-    fn is_whiteout(&self, vpath: &str) -> bool {
-        self.whiteout_path(vpath).exists()
+    /// Find an existing whiteout marker for `vpath`, matching the final path
+    /// component case-insensitively so the check agrees with [`Self::list_dir`]
+    /// (which also folds case). A case-sensitive check here was a real bug:
+    /// deleting `FOO` then probing `foo` missed the marker and resurfaced the
+    /// lower-layer file.
+    fn find_whiteout(&self, vpath: &str) -> Option<PathBuf> {
+        let norm = normalize(vpath);
+        let name = norm.file_name()?.to_string_lossy().to_ascii_lowercase();
+        let parent = norm.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let parent_dir = ci_lookup(&self.overwrite, &parent)?;
+        let want = format!("{WHITEOUT_PREFIX}{name}");
+        fs::read_dir(&parent_dir)
+            .ok()?
+            .flatten()
+            .find_map(|e| (e.file_name().to_string_lossy().to_ascii_lowercase() == want).then(|| e.path()))
+    }
+
+    /// Drop any whiteout marker for `vpath` (case-insensitively): writing or
+    /// re-creating a path un-deletes it.
+    fn clear_whiteout(&self, vpath: &str) {
+        if let Some(wh) = self.find_whiteout(vpath) {
+            let _ = fs::remove_file(wh);
+        }
+    }
+
+    /// Whether `vpath` is hidden by a whiteout on itself or any ancestor
+    /// directory: deleting a directory hides everything beneath it (an opaque
+    /// directory). `resolve_read` checks the overwrite layer first, so a path
+    /// the game re-created still resolves; only un-recreated lower paths stay
+    /// hidden.
+    fn hidden_by_whiteout(&self, vpath: &str) -> bool {
+        let norm = normalize(vpath);
+        let mut prefix = PathBuf::new();
+        for comp in norm.components() {
+            prefix.push(comp);
+            if self.find_whiteout(&prefix.to_string_lossy()).is_some() {
+                return true;
+            }
+        }
+        false
     }
 
     /// Resolve a virtual path to the real file that should serve reads.
@@ -64,7 +103,7 @@ impl LayerStack {
         if let Some(p) = ci_lookup(&self.overwrite, vpath) {
             return Some(p);
         }
-        if self.is_whiteout(vpath) {
+        if self.hidden_by_whiteout(vpath) {
             return None;
         }
         self.layers.iter().find_map(|layer| ci_lookup(layer, vpath))
@@ -102,7 +141,7 @@ impl LayerStack {
             fs::create_dir_all(parent)?;
         }
         // Writing a path un-deletes it: drop any stale whiteout.
-        let _ = fs::remove_file(self.whiteout_path(vpath));
+        self.clear_whiteout(vpath);
         if !dest.exists() {
             if let Some(src) = self.layers.iter().find_map(|l| ci_lookup(l, vpath)) {
                 if src.is_file() {
@@ -118,7 +157,7 @@ impl LayerStack {
     pub fn make_dir(&self, vpath: &str) -> std::io::Result<PathBuf> {
         let dest = self.resolve_write(vpath);
         fs::create_dir_all(&dest)?;
-        let _ = fs::remove_file(self.whiteout_path(vpath));
+        self.clear_whiteout(vpath);
         Ok(dest)
     }
 
@@ -153,7 +192,7 @@ impl LayerStack {
             fs::create_dir_all(parent)?;
         }
         fs::rename(&src, &dst)?;
-        let _ = fs::remove_file(self.whiteout_path(to));
+        self.clear_whiteout(to);
         if self.layers.iter().any(|l| ci_lookup(l, from).is_some()) {
             let wh = self.whiteout_path(from);
             if let Some(parent) = wh.parent() {
@@ -189,6 +228,12 @@ impl LayerStack {
                     }
                 }
             }
+        }
+
+        // If this directory was itself deleted and then re-created in the
+        // overwrite layer it is opaque: its lower-layer contents stay hidden.
+        if self.find_whiteout(vpath).is_some() {
+            return out;
         }
 
         // Lower layers: skip whited-out names.
@@ -457,5 +502,55 @@ mod tests {
         assert_eq!(read(&stack.resolve_read("save.ess").unwrap()), "savedata");
         assert!(stack.resolve_read("save.tmp").is_none()); // old name hidden
         assert_eq!(read(&game.join("save.tmp")), "savedata"); // game pristine
+    }
+
+    #[test]
+    fn whiteout_is_case_insensitive() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "FOO.dat", "vanilla");
+        let stack = LayerStack::new(vec![game], over);
+
+        stack.remove("FOO.dat").unwrap();
+        // Deleted with one casing, probed with another: must stay hidden, or a
+        // case-insensitive game engine would resurface the "deleted" file.
+        assert!(stack.resolve_read("foo.dat").is_none());
+        assert!(stack.resolve_read("FOO.dat").is_none());
+    }
+
+    #[test]
+    fn deleting_a_directory_hides_its_files_by_path() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "meshes/a.nif", "a");
+        put(&game, "meshes/b.nif", "b");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        stack.remove("meshes").unwrap();
+        // The directory is opaque: children are hidden even when asked by full
+        // path, not just absent from the listing.
+        assert!(stack.resolve_read("meshes/a.nif").is_none());
+        assert!(stack.resolve_read("meshes").is_none());
+        // ...and the game install stays pristine.
+        assert_eq!(read(&game.join("meshes/a.nif")), "a");
+    }
+
+    #[test]
+    fn recreated_directory_is_opaque() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "data/old.esp", "lower");
+        let stack = LayerStack::new(vec![game], over);
+
+        stack.remove("data").unwrap();
+        // Re-create the directory with a brand-new file.
+        let dest = stack.open_for_write("data/new.esp").unwrap();
+        fs::write(&dest, "fresh").unwrap();
+
+        // Only the new file shows; the deleted lower file stays hidden.
+        let names: Vec<String> = stack.list_dir("data").into_iter().map(|(n, _)| n).collect();
+        assert_eq!(names, vec!["new.esp"]);
+        assert_eq!(read(&stack.resolve_read("data/new.esp").unwrap()), "fresh");
+        assert!(stack.resolve_read("data/old.esp").is_none());
     }
 }

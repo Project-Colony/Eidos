@@ -10,3 +10,15 @@ edition.workspace = true
 eidos-core = { path = "../eidos-core" }
 fuser = "0.17"
 libc = "0.2"
+
+[dev-dependencies]
+# Integration tests mount a real union and check kernel-level behaviour.
+fuser = "0.17"
+libc = "0.2"
+
+# The union integration test enters a private user+mount namespace (so its
+# mounts are invisible to host desktop services and match how the product runs),
+# which needs its own process entry point rather than the default test harness.
+[[test]]
+name = "union"
+harness = false
