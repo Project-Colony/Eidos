@@ -125,21 +125,22 @@ VFS.
 
 The read-write daemon is now hardened and covered by a real-mount integration
 suite (merge, case-insensitive reads, copy-up, deletes/whiteouts, rename,
-readdir, rmdir semantics, symlinks, a multi-megabyte chunked read) plus resolver
-and inode-table unit tests. What that does **not** yet close:
+readdir, rmdir semantics, symlinks, a multi-megabyte chunked read, and a
+writable shared-mmap round-trip) plus resolver and inode-table unit tests.
+Writable `MAP_SHARED` mmap works via `writeback_cache`, with `setattr` guarded to
+refuse a path that no longer resolves so the kernel's attribute flush on an
+unlinked inode cannot resurrect a deleted file; read-only mmap (how games read
+BSA/BA2) works through the page cache. Other write corners are covered too:
+rename-over, in-place rewrites via copy-up, and save integrity (`fsync` flushes
+the backing fd). What that does **not** yet close:
 
 - **Performance** must be validated with a real 1000+ plugin load order and big
   texture packs, not assumed. Reads now use a cached backing fd (`pread`), so the
   per-read cost is gone, but path resolution still stats the real filesystem on
   every lookup: the in-memory index the engine is designed around is not built
   yet, so the "no lowerdir wall" property is still aspirational under a deep stack.
-- **Writable memory-mapped files.** Read-only mmap (how games read BSA/BA2) works
-  through the page cache. Writable shared mmap needs kernel passthrough (rootless
-  returns EPERM, confirmed) or active cache invalidation. `writeback_cache` is
-  deliberately off: combined with copy-up, the kernel's attribute flush on an
-  unlinked inode resurrects deleted files. Other write corners are now covered:
-  rename-over, in-place rewrites via copy-up, and save integrity (`fsync` flushes
-  the backing fd).
+  Writable mmap is correct in a focused test but still worth re-checking under a
+  real game's mmap-heavy load.
 - **Directory rename across the lower boundary.** File rename works; renaming a
   directory that lives only in a lower layer (a recursive copy-up of the subtree)
   is not implemented yet. usvfs itself models rename as copy + delete here.

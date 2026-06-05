@@ -41,7 +41,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use eidos_core::LayerStack;
 use fuser::{
     BackgroundSession, BackingId, BsdFileFlags, Config, Errno, FileAttr, FileHandle, FileType,
-    Filesystem, FopenFlags, Generation, INodeNo, KernelConfig, LockOwner,
+    Filesystem, FopenFlags, Generation, INodeNo, InitFlags, KernelConfig, LockOwner,
     MountOption, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory,
     ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, Request, TimeOrNow,
     WriteFlags,
@@ -304,14 +304,14 @@ impl Filesystem for Eidos {
         // privileged.
         let _ = config.set_max_stack_depth(1);
 
-        // NOTE: FUSE_WRITEBACK_CACHE is deliberately NOT enabled. It would make
-        // writable shared mmap correct and coalesce writes, but it hands the
-        // kernel ownership of size/mtime, which then flushes attribute changes
-        // (a setattr) on a just-unlinked inode. For a copy-up union that turns
-        // any write op into a copy-up, that setattr resurrects a deleted file.
-        // Read-only mmap (what games use for BSA/BA2) already works via the page
-        // cache without it; writable-mmap correctness is left for a passthrough
-        // or active-invalidation design (see docs/architecture.md open risks).
+        // Writeback cache: the rootless route to correct writable shared mmap
+        // (MAP_SHARED|PROT_WRITE), which the default FUSE write path cannot flush.
+        // It also coalesces buffered writes into larger FUSE_WRITEs. It hands the
+        // kernel ownership of size/mtime, so the kernel flushes a setattr on a
+        // just-unlinked inode; `setattr` guards against that (it refuses a path
+        // that no longer resolves) so a deleted file is never resurrected by a
+        // copy-up. Best-effort: only engages if the kernel advertised it.
+        let _ = config.add_capabilities(InitFlags::FUSE_WRITEBACK_CACHE);
 
         // Rootless perf levers that always apply: large readahead and write
         // buffers cut the number of round-trips on big asset files. (Metadata is
@@ -737,6 +737,14 @@ impl Filesystem for Eidos {
                 return;
             }
         };
+        // A setattr on a path that no longer resolves (notably the kernel
+        // flushing attributes on a just-unlinked inode under writeback_cache)
+        // must not copy it back up and resurrect a deleted file. POSIX-correct
+        // anyway: you cannot change attributes of something that is not there.
+        if self.stack.resolve_read(&vpath).is_none() {
+            reply.error(Errno::ENOENT);
+            return;
+        }
         // Any change must land in the Overwrite layer, so copy up first if the
         // path still lives only in a lower layer. We apply truncate, mode, and
         // timestamps; ownership is intentionally ignored (the game runs as us).

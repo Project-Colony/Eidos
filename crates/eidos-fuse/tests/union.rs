@@ -245,6 +245,43 @@ fn creating_a_symlink_lands_in_overwrite() {
     assert!(fs::symlink_metadata(over.join("alias.txt")).unwrap().file_type().is_symlink());
 }
 
+fn writable_mmap_persists_and_keeps_source_pristine() {
+    use std::os::fd::AsRawFd;
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "patch.dat", b"AAAAAAAA"); // 8 bytes in the game layer
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    // Open read+write (copies up to Overwrite), mmap MAP_SHARED, and write
+    // through the mapping. msync forces the kernel to flush the dirty pages back
+    // through the daemon, which only succeeds with writeback_cache negotiated.
+    let file = std::fs::OpenOptions::new().read(true).write(true).open(mnt.join("patch.dat")).unwrap();
+    let len = 8usize;
+    // SAFETY: standard mmap/msync/munmap on a valid fd and length; we check each.
+    unsafe {
+        let p = libc::mmap(
+            std::ptr::null_mut(),
+            len,
+            libc::PROT_READ | libc::PROT_WRITE,
+            libc::MAP_SHARED,
+            file.as_raw_fd(),
+            0,
+        );
+        assert!(p != libc::MAP_FAILED, "mmap failed");
+        let bytes = std::slice::from_raw_parts_mut(p as *mut u8, len);
+        bytes[0] = b'Z';
+        bytes[7] = b'Z';
+        assert_eq!(libc::msync(p, len, libc::MS_SYNC), 0, "msync failed");
+        assert_eq!(libc::munmap(p, len), 0, "munmap failed");
+    }
+    drop(file);
+
+    assert_eq!(fs::read(mnt.join("patch.dat")).unwrap(), b"ZAAAAAAZ"); // visible in the view
+    drop(s);
+    assert_eq!(fs::read(game.join("patch.dat")).unwrap(), b"AAAAAAAA"); // game pristine (copy-up)
+    assert_eq!(fs::read(over.join("patch.dat")).unwrap(), b"ZAAAAAAZ"); // change in overwrite
+}
+
 fn main() {
     // Enter the private namespace first, single-threaded, so the mounts are
     // isolated from host services. Best-effort: if it fails (userns disabled),
@@ -271,6 +308,7 @@ fn main() {
         ("large_file_round_trips_through_cached_handle", large_file_round_trips_through_cached_handle, false),
         ("symlink_in_a_layer_is_readable", symlink_in_a_layer_is_readable, false),
         ("creating_a_symlink_lands_in_overwrite", creating_a_symlink_lands_in_overwrite, false),
+        ("writable_mmap_persists_and_keeps_source_pristine", writable_mmap_persists_and_keeps_source_pristine, false),
     ];
 
     println!("\nrunning {} union integration tests", tests.len());

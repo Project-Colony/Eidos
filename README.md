@@ -182,8 +182,9 @@ fusermount3 -u /mnt/point
       ENOTEMPTY, `rename` NOREPLACE/EXCHANGE), `setattr` (mode / timestamps),
       xattr passthrough (Wine `DOSATTRIB`), symlinks, `fsync` durability.
       Covered by a real-mount integration suite that runs in a private
-      namespace. `writeback_cache` is deliberately off: with copy-up it
-      resurrects deleted files.
+      namespace, including a writable `MAP_SHARED` mmap round-trip:
+      `writeback_cache` is on, with `setattr` guarded so the kernel's
+      post-unlink attribute flush cannot resurrect a deleted file.
 - [ ] Casing normalization at mod-import time
 
 ## Prior art and references
