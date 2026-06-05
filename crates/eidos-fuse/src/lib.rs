@@ -35,7 +35,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use eidos_core::LayerStack;
@@ -46,6 +46,20 @@ use fuser::{
     ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, Request, TimeOrNow,
     WriteFlags,
 };
+
+/// Lock a mutex, recovering the guard even if a previous holder panicked while
+/// holding it. A poisoned lock would otherwise make every later handler panic on
+/// `.unwrap()` and take the whole mount down; recovering keeps the daemon alive
+/// (the protected state is plain maps and counters, safe to reuse).
+trait LockExt<T> {
+    fn lock_recover(&self) -> MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for Mutex<T> {
+    fn lock_recover(&self) -> MutexGuard<'_, T> {
+        self.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
 
 /// Attribute/entry cache lifetime handed to the kernel. Conservative for now.
 const TTL: Duration = Duration::from_secs(1);
@@ -216,7 +230,7 @@ impl Eidos {
 
     /// The virtual path of `name` inside the directory inode `parent`.
     fn child(&self, parent: INodeNo, name: &OsStr) -> Option<String> {
-        let inodes = self.inodes.lock().unwrap();
+        let inodes = self.inodes.lock_recover();
         let parent_vpath = inodes.path(parent.0)?;
         Some(join(&parent_vpath, &name.to_string_lossy()))
     }
@@ -253,7 +267,7 @@ impl Eidos {
             ROOT_INO
         } else {
             let parent_vpath = vpath.rsplit_once('/').map_or("", |(p, _)| p).to_string();
-            self.inodes.lock().unwrap().intern(&parent_vpath)
+            self.inodes.lock_recover().intern(&parent_vpath)
         };
 
         // Merge + stat each child before taking the inode lock.
@@ -270,7 +284,7 @@ impl Eidos {
         let mut entries = Vec::with_capacity(children.len() + 2);
         entries.push((ino, FileType::Directory, ".".to_string()));
         entries.push((parent_ino, FileType::Directory, "..".to_string()));
-        let mut inodes = self.inodes.lock().unwrap();
+        let mut inodes = self.inodes.lock_recover();
         for (name, kind) in children {
             let child_ino = inodes.intern(&join(vpath, &name));
             entries.push((child_ino, kind, name));
@@ -309,11 +323,11 @@ impl Filesystem for Eidos {
 
     fn forget(&self, _req: &Request, ino: INodeNo, nlookup: u64) {
         // The default batch_forget fans out to this, so both paths free inodes.
-        self.inodes.lock().unwrap().forget(ino.0, nlookup);
+        self.inodes.lock_recover().forget(ino.0, nlookup);
     }
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
-        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
                 reply.error(Errno::ENOENT);
@@ -369,7 +383,7 @@ impl Filesystem for Eidos {
         // passthrough (no-op fallback when rootless, where it returns EPERM).
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
         let backing = reply.open_backing(file.as_fd()).ok();
-        let mut files = self.open_files.lock().unwrap();
+        let mut files = self.open_files.lock_recover();
         files.insert(
             fh,
             OpenFile { _real: real, file: Arc::new(file), _backing: backing },
@@ -391,12 +405,12 @@ impl Filesystem for Eidos {
         reply: ReplyEmpty,
     ) {
         // Drops the cached fd and any passthrough registration (no-op for fh 0).
-        self.open_files.lock().unwrap().remove(&fh.0);
+        self.open_files.lock_recover().remove(&fh.0);
         reply.ok();
     }
 
     fn lookup(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
-        let Some(parent_vpath) = self.inodes.lock().unwrap().path(parent.0) else {
+        let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -408,7 +422,7 @@ impl Filesystem for Eidos {
         };
         match fs::symlink_metadata(&real) {
             Ok(meta) => {
-                let ino = self.inodes.lock().unwrap().lookup(&vpath);
+                let ino = self.inodes.lock_recover().lookup(&vpath);
                 reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
             }
             Err(_) => reply.error(Errno::ENOENT),
@@ -416,7 +430,7 @@ impl Filesystem for Eidos {
     }
 
     fn getattr(&self, _req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
-        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
                 reply.error(Errno::ENOENT);
@@ -425,6 +439,22 @@ impl Filesystem for Eidos {
         };
         match self.stack.resolve_read(&vpath).and_then(|r| fs::symlink_metadata(r).ok()) {
             Some(meta) => reply.attr(&TTL, &self.attr(ino.0, &meta)),
+            None => reply.error(Errno::ENOENT),
+        }
+    }
+
+    fn readlink(&self, _req: &Request, ino: INodeNo, reply: ReplyData) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
+            Some(p) => p,
+            None => {
+                reply.error(Errno::ENOENT);
+                return;
+            }
+        };
+        // Return the raw link target; the kernel resolves it within the mount,
+        // so a relative symlink shipped by a mod points back into the merged view.
+        match self.stack.resolve_read(&vpath).and_then(|r| fs::read_link(r).ok()) {
+            Some(target) => reply.data(target.as_os_str().as_bytes()),
             None => reply.error(Errno::ENOENT),
         }
     }
@@ -442,7 +472,7 @@ impl Filesystem for Eidos {
     ) {
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
-        let cached = self.open_files.lock().unwrap().get(&fh.0).map(|o| o.file.clone());
+        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
         if let Some(file) = cached {
             match read_full_at(&file, offset, size as usize) {
                 Ok(buf) => reply.data(&buf),
@@ -452,7 +482,7 @@ impl Filesystem for Eidos {
         }
 
         // Fallback (e.g. fh 0): resolve by inode and read once.
-        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
                 reply.error(Errno::ENOENT);
@@ -472,13 +502,13 @@ impl Filesystem for Eidos {
     fn opendir(&self, _req: &Request, ino: INodeNo, _flags: OpenFlags, reply: ReplyOpen) {
         // Snapshot the listing now so offsets stay valid even if the directory
         // changes before releasedir (the conformant readdir pattern).
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
         let entries = self.dir_snapshot(ino.0, &vpath);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        self.open_dirs.lock().unwrap().insert(fh, entries);
+        self.open_dirs.lock_recover().insert(fh, entries);
         reply.opened(FileHandle(fh), FopenFlags::empty());
     }
 
@@ -493,7 +523,7 @@ impl Filesystem for Eidos {
         // Serve from the opendir snapshot; stop the moment the kernel buffer is
         // full (the offset we pass is the resume point: index of the next entry).
         {
-            let dirs = self.open_dirs.lock().unwrap();
+            let dirs = self.open_dirs.lock_recover();
             if let Some(entries) = dirs.get(&fh.0) {
                 for (i, (e_ino, kind, name)) in entries.iter().enumerate().skip(offset as usize) {
                     if reply.add(INodeNo(*e_ino), (i + 1) as u64, *kind, name) {
@@ -507,7 +537,7 @@ impl Filesystem for Eidos {
         }
 
         // Fallback: the kernel issued readdir without an opendir snapshot.
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -528,7 +558,7 @@ impl Filesystem for Eidos {
         _flags: OpenFlags,
         reply: ReplyEmpty,
     ) {
-        self.open_dirs.lock().unwrap().remove(&fh.0);
+        self.open_dirs.lock_recover().remove(&fh.0);
         reply.ok();
     }
 
@@ -542,7 +572,7 @@ impl Filesystem for Eidos {
         _flags: i32,
         reply: ReplyCreate,
     ) {
-        let Some(parent_vpath) = self.inodes.lock().unwrap().path(parent.0) else {
+        let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -564,11 +594,11 @@ impl Filesystem for Eidos {
             }
         };
 
-        let ino = self.inodes.lock().unwrap().lookup(&vpath);
+        let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
         let backing = reply.open_backing(file.as_fd()).ok();
-        let mut files = self.open_files.lock().unwrap();
+        let mut files = self.open_files.lock_recover();
         files.insert(
             fh,
             OpenFile { _real: real, file: Arc::new(file), _backing: backing },
@@ -599,7 +629,7 @@ impl Filesystem for Eidos {
         reply: ReplyWrite,
     ) {
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
-        let cached = self.open_files.lock().unwrap().get(&fh.0).map(|o| o.file.clone());
+        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
         if let Some(file) = cached {
             match write_all_at(&file, data, offset) {
                 Ok(()) => reply.written(data.len() as u32),
@@ -609,7 +639,7 @@ impl Filesystem for Eidos {
         }
 
         // Fallback (e.g. fh 0): copy up and write once.
-        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
                 reply.error(Errno::ENOENT);
@@ -636,7 +666,7 @@ impl Filesystem for Eidos {
         _umask: u32,
         reply: ReplyEntry,
     ) {
-        let Some(parent_vpath) = self.inodes.lock().unwrap().path(parent.0) else {
+        let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -648,8 +678,37 @@ impl Filesystem for Eidos {
                 return;
             }
         };
-        let ino = self.inodes.lock().unwrap().lookup(&vpath);
+        let ino = self.inodes.lock_recover().lookup(&vpath);
         reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
+    }
+
+    fn symlink(
+        &self,
+        _req: &Request,
+        parent: INodeNo,
+        link_name: &OsStr,
+        target: &Path,
+        reply: ReplyEntry,
+    ) {
+        let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
+            reply.error(Errno::ENOENT);
+            return;
+        };
+        let vpath = join(&parent_vpath, &link_name.to_string_lossy());
+        // Create the symlink in the Overwrite layer; it shadows any lower entry.
+        let made = (|| -> std::io::Result<Metadata> {
+            let dest = self.stack.prepare_overwrite(&vpath)?;
+            let _ = fs::remove_file(&dest); // replace any existing overwrite entry
+            std::os::unix::fs::symlink(target, &dest)?;
+            fs::symlink_metadata(&dest)
+        })();
+        match made {
+            Ok(meta) => {
+                let ino = self.inodes.lock_recover().lookup(&vpath);
+                reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
+            }
+            Err(_) => reply.error(Errno::EIO),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -671,7 +730,7 @@ impl Filesystem for Eidos {
         _flags: Option<BsdFileFlags>,
         reply: ReplyAttr,
     ) {
-        let vpath = match self.inodes.lock().unwrap().path(ino.0) {
+        let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
                 reply.error(Errno::ENOENT);
@@ -713,7 +772,7 @@ impl Filesystem for Eidos {
 
     fn fsync(&self, _req: &Request, _ino: INodeNo, fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
         // Make saves durable: flush the backing fd if this handle has one.
-        let cached = self.open_files.lock().unwrap().get(&fh.0).map(|o| o.file.clone());
+        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
         match cached {
             Some(file) => match file.sync_all() {
                 Ok(()) => reply.ok(),
@@ -789,7 +848,7 @@ impl Filesystem for Eidos {
         }
         match self.stack.rename(&from, &to) {
             Ok(()) => {
-                self.inodes.lock().unwrap().rename(&from, &to);
+                self.inodes.lock_recover().rename(&from, &to);
                 reply.ok();
             }
             Err(_) => reply.error(Errno::EIO),
@@ -797,7 +856,7 @@ impl Filesystem for Eidos {
     }
 
     fn getxattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, size: u32, reply: ReplyXattr) {
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -826,7 +885,7 @@ impl Filesystem for Eidos {
     ) {
         // Wine stores Windows attributes (hidden/system/readonly) in
         // user.DOSATTRIB; proxy the write to the copied-up backing file.
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -841,7 +900,7 @@ impl Filesystem for Eidos {
     }
 
     fn listxattr(&self, _req: &Request, ino: INodeNo, size: u32, reply: ReplyXattr) {
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
@@ -858,7 +917,7 @@ impl Filesystem for Eidos {
     }
 
     fn removexattr(&self, _req: &Request, ino: INodeNo, name: &OsStr, reply: ReplyEmpty) {
-        let Some(vpath) = self.inodes.lock().unwrap().path(ino.0) else {
+        let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };

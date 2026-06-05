@@ -6,8 +6,11 @@ mods over a game's files - but built from native Linux primitives instead of
 Windows API hooking, so games run under Proton/Wine without the usual
 Wine-shoehorned mod-manager pain.
 
-> Status: **early**. The thesis is validated, the core engine is implemented and
-> unit-tested, the daemon is next. See [Roadmap](#roadmap).
+> Status: **early but real**. The thesis is validated; the resolver and the
+> read-write FUSE daemon are implemented, hardened, and covered by unit and
+> real-mount integration tests. What remains is Proton launch integration,
+> import-time casing, and performance validation on a heavy load order. See
+> [Roadmap](#roadmap).
 
 ## The problem
 
@@ -172,6 +175,15 @@ fusermount3 -u /mnt/point
       readahead / max_write). Note: kernel passthrough needs real root, so the
       rootless daemon falls back to serving reads/writes itself - correct, just
       not zero-copy
+- [x] Harden the daemon for real use - inode reference-counting + `forget`,
+      offset-stable `readdir` (snapshot per directory handle), per-handle
+      `pread`/`pwrite` (no re-resolve per syscall, lock released before I/O),
+      case-insensitive whiteouts, opaque directories, POSIX errnos (`rmdir`
+      ENOTEMPTY, `rename` NOREPLACE/EXCHANGE), `setattr` (mode / timestamps),
+      xattr passthrough (Wine `DOSATTRIB`), symlinks, `fsync` durability.
+      Covered by a real-mount integration suite that runs in a private
+      namespace. `writeback_cache` is deliberately off: with copy-up it
+      resurrects deleted files.
 - [ ] Casing normalization at mod-import time
 
 ## Prior art and references

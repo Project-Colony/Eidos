@@ -218,6 +218,33 @@ fn large_file_round_trips_through_cached_handle() {
     assert!(got == data, "3 MiB read-back mismatch");
 }
 
+fn symlink_in_a_layer_is_readable() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "real.txt", b"target data");
+    std::os::unix::fs::symlink("real.txt", game.join("link.txt")).unwrap(); // symlink in the layer
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let meta = fs::symlink_metadata(mnt.join("link.txt")).unwrap();
+    assert!(meta.file_type().is_symlink()); // reported as a symlink
+    assert_eq!(fs::read_link(mnt.join("link.txt")).unwrap(), Path::new("real.txt")); // readlink
+    assert_eq!(fs::read(mnt.join("link.txt")).unwrap(), b"target data"); // follows through
+}
+
+fn creating_a_symlink_lands_in_overwrite() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "real.txt", b"hi");
+    let s = mounted!(vec![game], over.clone(), &mnt);
+
+    std::os::unix::fs::symlink("real.txt", mnt.join("alias.txt")).unwrap(); // create via the mount
+    assert_eq!(fs::read_link(mnt.join("alias.txt")).unwrap(), Path::new("real.txt"));
+    assert_eq!(fs::read(mnt.join("alias.txt")).unwrap(), b"hi");
+
+    drop(s);
+    assert!(fs::symlink_metadata(over.join("alias.txt")).unwrap().file_type().is_symlink());
+}
+
 fn main() {
     // Enter the private namespace first, single-threaded, so the mounts are
     // isolated from host services. Best-effort: if it fails (userns disabled),
@@ -242,6 +269,8 @@ fn main() {
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
         ("large_file_round_trips_through_cached_handle", large_file_round_trips_through_cached_handle, false),
+        ("symlink_in_a_layer_is_readable", symlink_in_a_layer_is_readable, false),
+        ("creating_a_symlink_lands_in_overwrite", creating_a_symlink_lands_in_overwrite, false),
     ];
 
     println!("\nrunning {} union integration tests", tests.len());

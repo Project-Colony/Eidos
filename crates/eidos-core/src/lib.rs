@@ -161,6 +161,21 @@ impl LayerStack {
         Ok(dest)
     }
 
+    /// Prepare `vpath` for a fresh write in the overwrite layer: a symlink or
+    /// other special entry the daemon creates directly. Materialises the parent
+    /// directories and drops any whiteout, returning the real overwrite path.
+    /// Unlike [`Self::open_for_write`] it does NOT copy a lower file up, because
+    /// the caller is replacing the entry, not editing it; the new overwrite entry
+    /// shadows any lower-layer copy.
+    pub fn prepare_overwrite(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        let dest = self.resolve_write(vpath);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        self.clear_whiteout(vpath);
+        Ok(dest)
+    }
+
     /// Delete `vpath`: remove its overwrite copy if present, and write a whiteout
     /// so any copy in a lower (mod or game) layer stays hidden. Lower layers are
     /// never modified.
@@ -552,5 +567,19 @@ mod tests {
         assert_eq!(names, vec!["new.esp"]);
         assert_eq!(read(&stack.resolve_read("data/new.esp").unwrap()), "fresh");
         assert!(stack.resolve_read("data/old.esp").is_none());
+    }
+
+    #[test]
+    fn prepare_overwrite_makes_parents_and_clears_whiteout() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "a/b.txt", "lower");
+        let stack = LayerStack::new(vec![game], over.clone());
+
+        stack.remove("a/b.txt").unwrap(); // whiteout it
+        let dest = stack.prepare_overwrite("a/b.txt").unwrap();
+        assert_eq!(dest, over.join("a/b.txt"));
+        assert!(dest.parent().unwrap().is_dir()); // parents materialised
+        assert!(!dest.exists()); // no lower file copied up, just made writable
     }
 }
