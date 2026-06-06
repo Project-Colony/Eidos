@@ -171,10 +171,13 @@ fusermount3 -u /mnt/point
       portable/global -> game -> name -> summary -> main), Colony parchment theme
 - [ ] GUI main window: two-pane mod list with drag-reorder load order,
       enable/disable, Plugins / Data / Saves tabs, Play button
-- [x] FUSE passthrough wired (best-effort) + rootless perf tuning (1 MiB
-      readahead / max_write). Note: kernel passthrough needs real root, so the
-      rootless daemon falls back to serving reads/writes itself - correct, just
-      not zero-copy
+- [x] FUSE passthrough + rootless perf tuning (1 MiB readahead / max_write).
+      Passthrough negotiates `FUSE_PASSTHROUGH` and engages when the daemon runs
+      privileged (`setcap cap_sys_admin+ep`, taken via a bare mount namespace):
+      the kernel then serves reads/mmap straight from the real backing file,
+      which is what lets Windows SKSE-plugin DLLs image-map natively. Rootless it
+      falls back to the daemon's own reads (correct, but DLLs may not load -
+      kernel passthrough needs CAP_SYS_ADMIN in the initial user namespace)
 - [x] Harden the daemon for real use - inode reference-counting + `forget`,
       offset-stable `readdir` (snapshot per directory handle), per-handle
       `pread`/`pwrite` (no re-resolve per syscall, lock released before I/O),
@@ -182,9 +185,16 @@ fusermount3 -u /mnt/point
       ENOTEMPTY, `rename` NOREPLACE/EXCHANGE), `setattr` (mode / timestamps),
       xattr passthrough (Wine `DOSATTRIB`), symlinks, `fsync` durability.
       Covered by a real-mount integration suite that runs in a private
-      namespace, including a writable `MAP_SHARED` mmap round-trip:
-      `writeback_cache` is on, with `setattr` guarded so the kernel's
-      post-unlink attribute flush cannot resurrect a deleted file.
+      namespace, including a writable `MAP_SHARED` mmap round-trip, with
+      `setattr` guarded so the kernel's post-unlink attribute flush cannot
+      resurrect a deleted file. (`writeback_cache` is off - it broke loading
+      Windows DLLs from the mount; passthrough serves DLL image-mapping instead.)
+- [x] **Runs a real heavily-modded Skyrim SE (110 mods) end-to-end under Proton**
+      - all ~50 SKSE plugin DLLs (CommonLibSSE-NG included) load and run via the
+      mount, each writing its config into the Overwrite layer. Needed two
+      MO2/usvfs parity fixes: launch with **CWD = game root** (CommonLibSSE-NG
+      opens its address library by a CWD-relative path) and **NTFS-like sorted
+      `readdir`** (the Creation Engine's loose-file indexer assumes it)
 - [ ] Casing normalization at mod-import time
 
 ## Prior art and references

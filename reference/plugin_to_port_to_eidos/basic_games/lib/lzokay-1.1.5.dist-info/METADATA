@@ -1,0 +1,22 @@
+Metadata-Version: 2.1
+Name: lzokay
+Version: 1.1.5
+Summary: Python bindings for LZ👌, a LZO compression/decompression algorithm.
+Author: Henrique Gemignani
+Project-URL: Homepage, https://github.com/henriquegemignani/py-lzokay
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: test
+Requires-Dist: pytest ; extra == 'test'
+
+# py-lzokay
+Python bindings for LZ👌

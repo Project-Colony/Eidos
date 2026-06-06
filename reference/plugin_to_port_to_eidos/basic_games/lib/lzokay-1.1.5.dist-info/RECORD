@@ -1,0 +1,13 @@
+lzokay-1.1.5.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+lzokay-1.1.5.dist-info/LICENSE,sha256=DQlxF4FmV-Y_TWCo74unp8BYu7LHhYnEiVfc_-I3SeU,1108
+lzokay-1.1.5.dist-info/METADATA,sha256=E_YTKxZihKnh3Xj0WTHYQB907kuoiETThHV0Fz3hVKs,827
+lzokay-1.1.5.dist-info/RECORD,,
+lzokay-1.1.5.dist-info/REQUESTED,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+lzokay-1.1.5.dist-info/WHEEL,sha256=nZ1lnJ-6_CpmCKcxQK2HXp7Rdm1H54cjfJ6t_3-VcTA,102
+lzokay-1.1.5.dist-info/top_level.txt,sha256=qrzAHNYzYwBYQA4nNprnuqYdw9wuQBSbqE66Mc2UUuY,7
+lzokay/__init__.py,sha256=ciU1gclgyPv76xXgKHdbe7h92ncmR-bevvPHZkoBWXI,275
+lzokay/__pycache__/__init__.cpython-312.pyc,,
+lzokay/__pycache__/version.cpython-312.pyc,,
+lzokay/_lzokay.cp312-win_amd64.pyd,sha256=myMco5y_KTdwzvrl8uB3pMj0tDhRXdNpXMTAionzryI,64000
+lzokay/lzokay.lib,sha256=NLRUsVYAgek5ldJ_ZDWTG2LJR5817D-59AoXe82piPw,15502
+lzokay/version.py,sha256=Neg5UbVg1ZnXQreK6ebkNF7i05hA0EbcX5uwTjx2wN8,164

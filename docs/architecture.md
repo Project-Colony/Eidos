@@ -127,12 +127,28 @@ The read-write daemon is now hardened and covered by a real-mount integration
 suite (merge, case-insensitive reads, copy-up, deletes/whiteouts, rename,
 readdir, rmdir semantics, symlinks, a multi-megabyte chunked read, and a
 writable shared-mmap round-trip) plus resolver and inode-table unit tests.
-Writable `MAP_SHARED` mmap works via `writeback_cache`, with `setattr` guarded to
+Writable `MAP_SHARED` mmap round-trips correctly, with `setattr` guarded to
 refuse a path that no longer resolves so the kernel's attribute flush on an
-unlinked inode cannot resurrect a deleted file; read-only mmap (how games read
-BSA/BA2) works through the page cache. Other write corners are covered too:
-rename-over, in-place rewrites via copy-up, and save integrity (`fsync` flushes
-the backing fd). What that does **not** yet close:
+unlinked inode cannot resurrect a deleted file. `writeback_cache` is deliberately
+**off**: it makes writable shared mmap marginally cheaper but breaks loading
+Windows DLLs from the mount (the loader dirties `MAP_PRIVATE` copy-on-write image
+pages and the kernel mishandles those over a FUSE backing) - and loading SKSE
+plugin DLLs is essential. Instead, DLL image-mapping and reads are served by
+**FUSE passthrough** (the kernel serves the real backing file natively) when the
+daemon runs privileged (`setcap cap_sys_admin+ep`, taken via a bare mount
+namespace); rootless it falls back to the daemon's own `pread`. Other write
+corners are covered too: rename-over, in-place rewrites via copy-up, and save
+integrity (`fsync` flushes the backing fd).
+
+**Validated end-to-end on a real heavily-modded Skyrim SE (110 mods) under
+Proton:** all ~50 SKSE plugin DLLs load and run via the mount (CommonLibSSE-NG
+included), each writing its config into the Overwrite layer. Two non-obvious
+parity requirements with MO2/usvfs were needed: the game is launched with its
+**working directory = the game root** (CommonLibSSE-NG opens its address library
+by a CWD-relative path), and `readdir` returns entries in **case-insensitive
+alphabetical (NTFS-like) order** (the Creation Engine's loose-file indexer
+assumes sorted enumeration; raw FUSE order crashed it at the main menu). What
+that does **not** yet close:
 
 - **Performance** must be validated with a real 1000+ plugin load order and big
   texture packs, not assumed. Reads now use a cached backing fd (`pread`), so the
