@@ -79,14 +79,22 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
 
-    // Map ourselves to root inside a fresh user+mount namespace (the
-    // `unshare --map-root-user --mount` idiom), so the FUSE mount is permitted
-    // and stays invisible to the rest of the system.
+    // Prefer a privileged mount namespace: if this binary carries CAP_SYS_ADMIN
+    // (e.g. `setcap cap_sys_admin+ep`), a bare CLONE_NEWNS succeeds and the FUSE
+    // daemon can enable kernel passthrough, so reads/mmap hit the real backing
+    // files and Windows DLLs (SKSE plugins) image-map natively. Without the
+    // capability that unshare fails, so we fall back to the fully rootless
+    // user+mount namespace (the `unshare --map-root-user --mount` idiom), where
+    // passthrough is unavailable and executable DLLs may fail to load. Either way
+    // the mount stays invisible to the rest of the system.
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
-    check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) })?;
-    std::fs::write("/proc/self/setgroups", "deny")?;
-    std::fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
-    std::fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
+    let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
+    if !privileged {
+        check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) })?;
+        std::fs::write("/proc/self/setgroups", "deny")?;
+        std::fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
+        std::fs::write("/proc/self/gid_map", format!("0 {gid} 1"))?;
+    }
     make_root_private()?;
 
     let mut layers = spec.layers;
@@ -99,7 +107,19 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     std::fs::create_dir_all(&spec.mountpoint)?;
     let session = Eidos::new(layers, spec.overwrite).spawn(&spec.mountpoint)?;
 
-    let status = Command::new(&spec.command[0]).args(&spec.command[1..]).status();
+    // Run from the game root (the directory that contains Data), exactly like MO2
+    // (modorganizer processrunner sets the child's CWD to the game's base dir).
+    // This is REQUIRED, not cosmetic: CommonLibSSE-NG opens its address library by
+    // the RELATIVE path "Data/SKSE/Plugins/versionlib-<ver>.bin", resolved against
+    // the CWD. If the CWD isn't the game root, every CommonLibSSE-NG SKSE plugin
+    // fails with "Failed to locate an appropriate address library" and aborts.
+    // `mountpoint` is the game's Data dir, so its parent is the game root.
+    let mut cmd = Command::new(&spec.command[0]);
+    cmd.args(&spec.command[1..]);
+    if let Some(game_root) = spec.mountpoint.parent() {
+        cmd.current_dir(game_root);
+    }
+    let status = cmd.status();
 
     drop(session); // unmount
     status

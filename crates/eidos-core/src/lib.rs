@@ -266,6 +266,16 @@ impl LayerStack {
                 }
             }
         }
+
+        // Bethesda's Creation Engine indexes the Data tree at startup assuming
+        // NTFS-style SORTED directory enumeration. Returning entries in raw order
+        // (layer order + the backing filesystem's readdir order) makes its
+        // loose-file indexer build a record it can't later resolve, then deref a
+        // -1/null result -> a deterministic crash at the main menu under a FUSE
+        // mount (works under MO2/usvfs, which hands Windows-friendly listings).
+        // Emulate NTFS: case-insensitive alphabetical order. This is the same fix
+        // CIOPFS / ntfs-emu apply so non-NTFS filesystems work with Wine games.
+        out.sort_by_cached_key(|(name, _)| name.to_ascii_lowercase());
         out
     }
 }

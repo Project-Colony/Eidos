@@ -295,23 +295,28 @@ impl Eidos {
 
 impl Filesystem for Eidos {
     fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
-        // Best-effort FUSE passthrough: with a non-zero stack depth the kernel
-        // can route reads/writes straight to the backing file. NOTE: registering
-        // a backing fd needs CAP_SYS_ADMIN in the initial user namespace (real
-        // root); our rootless, userns-mapped daemon does not have it, so
-        // `open_backing` returns EPERM and we fall back to serving reads/writes
-        // ourselves. Left enabled so it engages for free if Eidos is ever run
-        // privileged.
+        // FUSE passthrough: negotiate the capability and a non-zero stack depth so
+        // the kernel routes reads/writes/mmap straight to the real backing file.
+        // This is what lets Windows DLLs (SKSE plugins) image-map natively, which a
+        // userspace daemon cannot serve reliably (demand-paged image pages get
+        // corrupted, so relocation-heavy plugins crash on load). Registering a
+        // backing fd needs CAP_SYS_ADMIN in the *initial* user namespace, so it
+        // engages only when Eidos runs privileged (`setcap cap_sys_admin+ep` plus a
+        // plain mount namespace, no userns). Rootless, `open_backing` returns EPERM
+        // and we fall back to serving reads/writes ourselves (DLLs may then fail).
+        let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
         let _ = config.set_max_stack_depth(1);
 
-        // Writeback cache: the rootless route to correct writable shared mmap
-        // (MAP_SHARED|PROT_WRITE), which the default FUSE write path cannot flush.
-        // It also coalesces buffered writes into larger FUSE_WRITEs. It hands the
-        // kernel ownership of size/mtime, so the kernel flushes a setattr on a
-        // just-unlinked inode; `setattr` guards against that (it refuses a path
-        // that no longer resolves) so a deleted file is never resurrected by a
-        // copy-up. Best-effort: only engages if the kernel advertised it.
-        let _ = config.add_capabilities(InitFlags::FUSE_WRITEBACK_CACHE);
+        // FUSE_WRITEBACK_CACHE is deliberately NOT enabled. It makes writable
+        // shared mmap work, but it breaks loading Windows DLLs from the mount
+        // under Wine/Proton: an image loader dirties MAP_PRIVATE copy-on-write
+        // pages while applying relocations and binding the import table, and with
+        // writeback_cache the kernel mishandles those over a FUSE backing, so the
+        // DLL fails to map (observed: the SKSE plugins that dynamically link the
+        // VC++ runtime, i.e. have heavy relocation/import work, all failed while
+        // statically-linked ones loaded). Loading DLLs is essential for a modded
+        // game and outranks writable shared mmap. Read-only and copy-on-write
+        // image mmap (i.e. DLL loading) work fine without it.
 
         // Rootless perf levers that always apply: large readahead and write
         // buffers cut the number of round-trips on big asset files. (Metadata is

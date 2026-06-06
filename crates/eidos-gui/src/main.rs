@@ -81,25 +81,111 @@ struct App {
     mods: Vec<ModEntry>,
     tab: Tab,
     status: Option<String>,
+    /// The Proton command Steam passed via `%command%` (empty if launched
+    /// standalone). The Run button launches the game through this.
+    launch_command: Vec<String>,
 }
 
-fn new() -> (App, Task<Message>) {
-    (
-        App {
-            screen: Screen::Welcome,
-            games: detect(&home()),
-            kind: InstanceKind::Global,
-            portable_path: String::new(),
-            selected: None,
-            name: String::new(),
-            created: None,
-            error: None,
-            mods: Vec::new(),
-            tab: Tab::Data,
-            status: None,
-        },
-        Task::none(),
-    )
+fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
+    let games = detect(&home());
+    // If Steam launched us with the game's command (`eidos-gui %command%`),
+    // identify the game and open straight to its instance, like MO2 does.
+    let auto = identify_game(&games, &launch_command);
+    let mut app = App {
+        screen: Screen::Welcome,
+        games,
+        kind: InstanceKind::Global,
+        portable_path: String::new(),
+        selected: None,
+        name: String::new(),
+        created: None,
+        error: None,
+        mods: Vec::new(),
+        tab: Tab::Data,
+        status: None,
+        launch_command,
+    };
+    if let Some(i) = auto {
+        app.selected = Some(i);
+        let inst = Instance::global(app.games[i].def.id);
+        if inst.exists() {
+            app.mods = inst.modlist();
+            app.created = Some(inst);
+            app.screen = Screen::Main;
+            app.status =
+                Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
+        }
+    }
+    (app, Task::none())
+}
+
+/// Identify which detected game a Steam `%command%` is launching, by matching
+/// each game's install directory against the command's arguments.
+fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
+    for arg in command {
+        for (i, g) in games.iter().enumerate() {
+            if let Some(dir) = g.data_path.parent() {
+                if arg.contains(&*dir.to_string_lossy()) {
+                    return Some(i);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The (launcher exe, script-extender loader) swap for a game: launching through
+/// Eidos runs the script extender (SKSE/F4SE/...) instead of the vanilla
+/// launcher, matching how a modded game is actually played.
+fn script_extender_swap(game_id: &str) -> Option<(&'static str, &'static str)> {
+    match game_id {
+        "skyrimse" => Some(("SkyrimSELauncher.exe", "skse64_loader.exe")),
+        "skyrim" => Some(("SkyrimLauncher.exe", "skse_loader.exe")),
+        "fallout4" => Some(("Fallout4Launcher.exe", "f4se_loader.exe")),
+        "falloutnv" => Some(("FalloutNVLauncher.exe", "nvse_loader.exe")),
+        "fallout3" => Some(("FalloutLauncher.exe", "fose_loader.exe")),
+        "oblivion" => Some(("OblivionLauncher.exe", "obse_loader.exe")),
+        _ => None,
+    }
+}
+
+/// Find the `eidos` CLI that drives the namespaced launch. The GUI is
+/// multi-threaded, so it cannot enter a user namespace itself; the single-process
+/// `eidos` binary can. Prefer a sibling of this binary, then `~/.cargo/bin`, then
+/// `PATH`.
+fn find_eidos_binary() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        let sib = exe.with_file_name("eidos");
+        if sib.is_file() {
+            return sib;
+        }
+    }
+    let cargo = home().join(".cargo").join("bin").join("eidos");
+    if cargo.is_file() {
+        return cargo;
+    }
+    PathBuf::from("eidos")
+}
+
+/// Launch the game through Eidos: spawn `eidos play <id> -- <command>` (with the
+/// script-extender swap applied), which mounts the merged mods over the game's
+/// Data dir in a private namespace and runs the command through it.
+fn launch_through_eidos(game_id: &str, command: &[String]) -> std::io::Result<()> {
+    let mut cmd: Vec<String> = command.to_vec();
+    if let Some((from, to)) = script_extender_swap(game_id) {
+        for a in cmd.iter_mut() {
+            if a.contains(from) {
+                *a = a.replace(from, to);
+            }
+        }
+    }
+    std::process::Command::new(find_eidos_binary())
+        .arg("play")
+        .arg(game_id)
+        .arg("--")
+        .args(&cmd)
+        .spawn()?;
+    Ok(())
 }
 
 fn selected_game(app: &App) -> Option<&DetectedGame> {
@@ -203,10 +289,21 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SelectTab(t) => app.tab = t,
         Message::Run => {
-            let id = selected_game(app).map(|g| g.def.id);
-            if let Some(id) = id {
-                app.status =
-                    Some(format!("Set Steam launch option:  eidos play {id} -- %command%  then launch from Steam."));
+            if app.launch_command.is_empty() {
+                // Standalone: we don't have Steam's Proton command, so we cannot
+                // build the launch environment. Point the user at the option.
+                app.status = Some(
+                    "To launch from here, set the game's Steam launch option to:  eidos-gui %command%  then press Play in Steam (Eidos opens, then click Run)."
+                        .to_string(),
+                );
+            } else if let (Some(game), Some(_)) = (selected_game(app), &app.created) {
+                let id = game.def.id;
+                match launch_through_eidos(id, &app.launch_command) {
+                    Ok(()) => app.status = Some(format!("Launching {} through Eidos...", game.def.name)),
+                    Err(e) => app.status = Some(format!("Launch failed: {e}")),
+                }
+            } else {
+                app.status = Some("Create or open an instance first.".to_string());
             }
         }
         Message::Refresh => {
@@ -748,5 +845,9 @@ fn view(app: &App) -> Element<'_, Message> {
 }
 
 fn main() -> iced::Result {
-    iced::application("Eidos", update, view).theme(theme).run_with(new)
+    // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
+    let launch_command: Vec<String> = std::env::args().skip(1).collect();
+    iced::application("Eidos", update, view)
+        .theme(theme)
+        .run_with(move || new(launch_command.clone()))
 }
