@@ -18,7 +18,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+mod manifest;
 mod meta;
+pub use manifest::Manifest;
 pub use meta::ModMeta;
 
 /// Where an instance is stored.
@@ -74,6 +76,33 @@ impl Instance {
     /// MO2-compatible metadata for a mod (`mods/<name>/meta.ini`); empty if none.
     pub fn mod_meta(&self, name: &str) -> ModMeta {
         ModMeta::read(&self.mods_dir().join(name).join("meta.ini"))
+    }
+
+    /// The instance manifest path (`<root>/eidos-instance.ini`).
+    pub fn manifest_path(&self) -> PathBuf {
+        self.root.join("eidos-instance.ini")
+    }
+
+    /// Read the instance manifest, if present.
+    pub fn read_manifest(&self) -> Option<Manifest> {
+        Manifest::read(&self.manifest_path())
+    }
+
+    /// Write the instance manifest if it is missing (so we don't churn one that
+    /// already exists, e.g. on every launch).
+    pub fn ensure_manifest(&self, game_id: &str, kind: InstanceKind) -> std::io::Result<()> {
+        if self.manifest_path().exists() {
+            return Ok(());
+        }
+        Manifest::new(game_id, kind).write(&self.manifest_path())
+    }
+
+    /// The instance's game id: from the manifest, else the last path component
+    /// (correct for a global instance, whose folder is named after the game).
+    pub fn game_id(&self) -> Option<String> {
+        self.read_manifest()
+            .map(|m| m.game_id)
+            .or_else(|| self.root.file_name().map(|s| s.to_string_lossy().into_owned()))
     }
 
     pub fn overwrite_dir(&self) -> PathBuf {

@@ -12,7 +12,7 @@
 use std::process::exit;
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::Instance;
+use eidos_instance::{Instance, InstanceKind};
 use eidos_launch::{launch, LaunchSpec};
 
 fn find_game(id: &str) -> Option<DetectedGame> {
@@ -40,6 +40,7 @@ fn cmd_init(id: &str) {
     };
     let inst = Instance::global(id);
     inst.create().expect("create instance");
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
     let _ = std::fs::write(
         inst.mods_dir().join("README.txt"),
         "Drop each mod here as its own folder.\n\
@@ -70,6 +71,7 @@ fn cmd_play(args: &[String]) {
 
     let inst = Instance::global(id);
     inst.create().ok();
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
     let layers = inst.load_order();
 
     if command.is_empty() {

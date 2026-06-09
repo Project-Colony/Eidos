@@ -114,6 +114,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         app.selected = Some(i);
         let inst = Instance::global(app.games[i].def.id);
         if inst.exists() {
+            let _ = inst.ensure_manifest(app.games[i].def.id, InstanceKind::Global);
             app.mods = inst.modlist();
             app.created = Some(inst);
             app.screen = Screen::Main;
@@ -126,6 +127,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         for (i, g) in app.games.iter().enumerate() {
             let inst = Instance::global(g.def.id);
             if inst.exists() {
+                let _ = inst.ensure_manifest(g.def.id, InstanceKind::Global);
                 app.selected = Some(i);
                 app.mods = inst.modlist();
                 app.created = Some(inst);
@@ -268,8 +270,13 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::PortableChanged(s) => app.portable_path = s,
         Message::Finish => {
             if let Some(inst) = planned_instance(app) {
+                let game_id = selected_game(app).map(|g| g.def.id.to_string());
+                let kind = app.kind;
                 match inst.create() {
                     Ok(()) => {
+                        if let Some(id) = &game_id {
+                            let _ = inst.ensure_manifest(id, kind);
+                        }
                         app.mods = inst.modlist();
                         app.created = Some(inst);
                         app.tab = Tab::Data;
