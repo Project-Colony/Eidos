@@ -72,11 +72,25 @@ enum Message {
     NewProfile,
     InstallMod,
     ModPicked(Option<PathBuf>),
+    FomodToggle(usize, usize),
+    FomodNext,
+    FomodBack,
+    FomodInstall,
+    FomodCancel,
     Run,
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,
     Noop,
+}
+
+/// An in-progress FOMOD installer: the extracted+parsed archive, the current step,
+/// and the user's selection so far.
+struct FomodWizard {
+    session: eidos_install::FomodSession,
+    step: usize,
+    selection: eidos_fomod::Selection,
+    game_id: String,
 }
 
 struct App {
@@ -100,6 +114,8 @@ struct App {
     /// The Proton command Steam passed via `%command%` (empty if launched
     /// standalone). The Run button launches the game through this.
     launch_command: Vec<String>,
+    /// An open FOMOD installer wizard, if the user is mid-install.
+    fomod: Option<FomodWizard>,
 }
 
 fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
@@ -123,6 +139,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         status: None,
         confirm_clear: false,
         launch_command,
+        fomod: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -312,6 +329,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.mods.clear();
             app.status = None;
             app.kind = InstanceKind::Global;
+            app.fomod = None;
             app.screen = Screen::Welcome;
         }
         Message::ToggleMod(i) => {
@@ -387,30 +405,85 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::ModPicked(picked) => {
-            if let Some(path) = picked {
-                let game_id = selected_game(app).map(|g| g.def.id);
-                if let (Some(inst), Some(gid)) = (&app.created, game_id) {
-                    let name = eidos_install::guess_mod_name(&path.to_string_lossy());
-                    match eidos_install::install_archive(&path, &inst.mods_dir(), &name, gid) {
-                        Ok(r) => {
-                            // Activate the new mod at the top of the load order (MO2 behaviour).
-                            let mut ml = inst.modlist();
-                            ml.retain(|m| m.name != r.name);
-                            ml.insert(0, ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
-                            let _ = inst.save_modlist(&ml);
-                            app.mods = inst.modlist();
-                            app.plugins = None;
-                            app.conflicts = None;
-                            app.status = Some(if r.fomod {
-                                format!("Installed '{}' via FOMOD (default options).", r.name)
-                            } else {
-                                format!("Installed '{}'.", r.name)
-                            });
+            let Some(path) = picked else { return Task::none() };
+            let game_id = selected_game(app).map(|g| g.def.id.to_string());
+            let mods_dir = app.created.as_ref().map(|i| i.mods_dir());
+            let (Some(gid), Some(mods_dir)) = (game_id, mods_dir) else {
+                return Task::none();
+            };
+            let name = eidos_install::guess_mod_name(&path.to_string_lossy());
+            match eidos_install::open_fomod(&path, &mods_dir, &name) {
+                Ok(Some(session)) => {
+                    let selection =
+                        eidos_fomod::default_selection(&session.config, &eidos_fomod::Context::default());
+                    app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid });
+                    app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
+                }
+                Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
+                    Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
+                    Err(e) => app.status = Some(format!("Install failed: {e}")),
+                },
+                Err(e) => app.status = Some(format!("Install failed: {e}")),
+            }
+        }
+        Message::FomodToggle(gi, pi) => {
+            if let Some(w) = &mut app.fomod {
+                let si = w.step;
+                let gtype =
+                    w.session.config.steps.get(si).and_then(|s| s.groups.get(gi)).map(|g| g.group_type);
+                if let (Some(gtype), Some(g)) =
+                    (gtype, w.selection.get_mut(si).and_then(|s| s.get_mut(gi)))
+                {
+                    use eidos_fomod::GroupType::*;
+                    match gtype {
+                        SelectAll => {}
+                        SelectExactlyOne => {
+                            g.iter_mut().for_each(|x| *x = false);
+                            if let Some(s) = g.get_mut(pi) {
+                                *s = true;
+                            }
                         }
+                        SelectAtMostOne => {
+                            let was = g.get(pi).copied().unwrap_or(false);
+                            g.iter_mut().for_each(|x| *x = false);
+                            if let Some(s) = g.get_mut(pi) {
+                                *s = !was;
+                            }
+                        }
+                        _ => {
+                            if let Some(s) = g.get_mut(pi) {
+                                *s = !*s;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Message::FomodNext => {
+            if let Some(w) = &mut app.fomod {
+                if w.step + 1 < w.session.config.steps.len() {
+                    w.step += 1;
+                }
+            }
+        }
+        Message::FomodBack => {
+            if let Some(w) = &mut app.fomod {
+                w.step = w.step.saturating_sub(1);
+            }
+        }
+        Message::FomodInstall => {
+            if let Some(w) = app.fomod.take() {
+                if let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) {
+                    match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id) {
+                        Ok(r) => after_install(app, &r.name, r.dest, true),
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
                 }
             }
+        }
+        Message::FomodCancel => {
+            app.fomod = None;
+            app.status = Some("FOMOD install cancelled.".to_string());
         }
         Message::Run => {
             if app.launch_command.is_empty() {
@@ -1213,7 +1286,94 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
+/// Shared post-install step: activate the new mod at the top of the load order,
+/// reload the list, and invalidate the plugin + conflict caches.
+fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
+    if let Some(inst) = &app.created {
+        let mut ml = inst.modlist();
+        ml.retain(|m| m.name != name);
+        ml.insert(0, ModEntry { name: name.to_string(), enabled: true, path: dest });
+        let _ = inst.save_modlist(&ml);
+        app.mods = inst.modlist();
+    }
+    app.plugins = None;
+    app.conflicts = None;
+    app.status = Some(if fomod {
+        format!("Installed '{name}' via FOMOD.")
+    } else {
+        format!("Installed '{name}'.")
+    });
+}
+
+fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
+    use eidos_fomod::GroupType::*;
+    match t {
+        SelectExactlyOne => "choose one",
+        SelectAtMostOne => "choose at most one",
+        SelectAtLeastOne => "choose at least one",
+        SelectAny => "choose any",
+        SelectAll => "all included",
+    }
+}
+
+/// The FOMOD installer wizard: the current step's groups as selectable options,
+/// with Back / Cancel / Next / Install.
+fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
+    let config = &w.session.config;
+    let total = config.steps.len();
+    let mut col = Column::new().spacing(8).padding(12);
+    col = col.push(text(format!("{}  -  FOMOD installer", config.module_name)).size(20.0));
+    if let Some(step) = config.steps.get(w.step) {
+        col = col.push(text(format!("Step {}/{}: {}", w.step + 1, total, step.name)).size(14.0));
+        for (gi, group) in step.groups.iter().enumerate() {
+            col = col.push(
+                text(format!("{}  ({})", group.name, group_type_label(group.group_type))).size(13.0),
+            );
+            for (pi, plugin) in group.plugins.iter().enumerate() {
+                let on = w
+                    .selection
+                    .get(w.step)
+                    .and_then(|s| s.get(gi))
+                    .and_then(|g| g.get(pi))
+                    .copied()
+                    .unwrap_or(false);
+                let mark = if on { "[x]  " } else { "[  ]  " };
+                col = col.push(
+                    button(text(format!("{mark}{}", plugin.name)).size(13.0))
+                        .padding(4)
+                        .width(Length::Fill)
+                        .on_press(Message::FomodToggle(gi, pi))
+                        .style(if on { button::primary } else { button::secondary }),
+                );
+                if !plugin.description.is_empty() {
+                    col = col.push(text(plugin.description.clone()).size(11.0));
+                }
+            }
+        }
+    }
+    let mut nav = Row::new().spacing(8);
+    if w.step > 0 {
+        nav = nav.push(tool_btn("Back", Message::FomodBack));
+    }
+    nav = nav.push(tool_btn("Cancel", Message::FomodCancel));
+    nav = nav.push(Space::with_width(Length::Fill));
+    if w.step + 1 < total {
+        nav = nav.push(tool_btn("Next", Message::FomodNext));
+    } else {
+        nav = nav.push(tool_btn("Install", Message::FomodInstall));
+    }
+    Column::new()
+        .spacing(8)
+        .padding(8)
+        .push(scrollable(col).height(Length::Fill))
+        .push(nav)
+        .into()
+}
+
 fn view(app: &App) -> Element<'_, Message> {
+    if let Some(w) = &app.fomod {
+        return fomod_wizard_view(w);
+    }
     if app.screen == Screen::Main {
         return main_screen(app);
     }
