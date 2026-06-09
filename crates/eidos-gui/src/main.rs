@@ -70,6 +70,8 @@ enum Message {
     SelectTab(Tab),
     SwitchProfile(String),
     NewProfile,
+    InstallMod,
+    ModPicked(Option<PathBuf>),
     Run,
     Refresh,
     OpenFolder(PathBuf),
@@ -371,6 +373,38 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.plugins = None;
                     app.conflicts = None;
                     app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
+                }
+            }
+        }
+        Message::InstallMod => {
+            // Open a native file picker off-thread; the result comes back as ModPicked.
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Mod archives", &["7z", "zip", "rar"])
+                    .set_title("Select a mod archive to install")
+                    .pick_file(),
+                |handle| Message::ModPicked(handle.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::ModPicked(picked) => {
+            if let Some(path) = picked {
+                let game_id = selected_game(app).map(|g| g.def.id);
+                if let (Some(inst), Some(gid)) = (&app.created, game_id) {
+                    let name = eidos_install::guess_mod_name(&path.to_string_lossy());
+                    match eidos_install::install_archive(&path, &inst.mods_dir(), &name, gid) {
+                        Ok(r) => {
+                            // Activate the new mod at the top of the load order (MO2 behaviour).
+                            let mut ml = inst.modlist();
+                            ml.retain(|m| m.name != r.name);
+                            ml.insert(0, ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
+                            let _ = inst.save_modlist(&ml);
+                            app.mods = inst.modlist();
+                            app.plugins = None;
+                            app.conflicts = None;
+                            app.status = Some(format!("Installed '{}'.", r.name));
+                        }
+                        Err(e) => app.status = Some(format!("Install failed: {e}")),
+                    }
                 }
             }
         }
@@ -766,7 +800,7 @@ fn menu_bar<'a>() -> Element<'a, Message> {
 fn toolbar<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(2)
-        .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::Noop))
+        .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::InstallMod))
         .push(icon_text_btn(IC_NEXUS, "Nexus", Message::Noop))
         .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::Noop))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))

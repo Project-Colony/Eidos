@@ -163,7 +163,7 @@ fn cmd_install(args: &[String]) {
     inst.create().ok();
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
 
-    let name = args.get(2).cloned().unwrap_or_else(|| guess_mod_name(archive));
+    let name = args.get(2).cloned().unwrap_or_else(|| eidos_install::guess_mod_name(archive));
     match eidos_install::install_archive(std::path::Path::new(archive), &inst.mods_dir(), &name, id) {
         Ok(r) => {
             // Activate the new mod at the top of the active profile's load order,
@@ -185,44 +185,6 @@ fn cmd_install(args: &[String]) {
             eprintln!("install failed: {e}");
             exit(1);
         }
-    }
-}
-
-/// Guess a clean mod name from a (possibly Nexus-suffixed) archive filename, e.g.
-/// `Foo - Bar-19181-1-7-1575746557.7z` -> `Foo - Bar`.
-fn guess_mod_name(archive: &str) -> String {
-    let stem = std::path::Path::new(archive).file_stem().and_then(|s| s.to_str()).unwrap_or("Mod");
-    // Drop the trailing Nexus "-<modid>-<version parts>-<timestamp>" (all-digit groups).
-    let mut parts: Vec<&str> = stem.split('-').collect();
-    while parts.len() > 1
-        && parts.last().is_some_and(|p| {
-            let t = p.trim();
-            !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
-        })
-    {
-        parts.pop();
-    }
-    let name = parts.join("-");
-    let name = name.trim().trim_end_matches('-').trim();
-    if name.is_empty() {
-        stem.to_string()
-    } else {
-        name.to_string()
-    }
-}
-
-#[cfg(test)]
-mod install_tests {
-    use super::guess_mod_name;
-
-    #[test]
-    fn strips_nexus_suffix() {
-        assert_eq!(
-            guess_mod_name("/dl/Expressive Facial Animation - Female Edition-19181-1-7-1575746557.7z"),
-            "Expressive Facial Animation - Female Edition"
-        );
-        assert_eq!(guess_mod_name("TrueHUD-62775-1-1-9-1703382929.7z"), "TrueHUD");
-        assert_eq!(guess_mod_name("SkyUI_5_1.7z"), "SkyUI_5_1");
     }
 }
 

@@ -209,6 +209,30 @@ const GAMEBRYO_FOLDERS: &[&str] = &[
 /// `GamebryoModDataChecker::possibleFileExtensions`.
 const GAMEBRYO_SUFFIXES: &[&str] = &["esp", "esm", "esl", "bsa", "ba2", "modgroups", "ini"];
 
+/// Guess a clean mod name from a (possibly Nexus-suffixed) archive filename, e.g.
+/// `Foo - Bar-19181-1-7-1575746557.7z` -> `Foo - Bar`. Mirrors MO2's
+/// `interpretNexusFileName` heuristic.
+pub fn guess_mod_name(archive: &str) -> String {
+    let stem = std::path::Path::new(archive).file_stem().and_then(|s| s.to_str()).unwrap_or("Mod");
+    // Drop the trailing Nexus "-<modid>-<version parts>-<timestamp>" (all-digit groups).
+    let mut parts: Vec<&str> = stem.split('-').collect();
+    while parts.len() > 1
+        && parts.last().is_some_and(|p| {
+            let t = p.trim();
+            !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
+        })
+    {
+        parts.pop();
+    }
+    let name = parts.join("-");
+    let name = name.trim().trim_end_matches('-').trim();
+    if name.is_empty() {
+        stem.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +288,15 @@ mod tests {
     fn case_insensitive_folder_match() {
         assert_eq!(tree(&["MESHES/a.nif"]).data_looks_valid(), CheckReturn::Valid);
         assert_eq!(tree(&["x/SKSE/Plugins/y.dll"]).simple_archive_base().as_deref(), Some("x/"));
+    }
+
+    #[test]
+    fn guess_mod_name_strips_nexus_suffix() {
+        assert_eq!(
+            guess_mod_name("/dl/Expressive Facial Animation - Female Edition-19181-1-7-1575746557.7z"),
+            "Expressive Facial Animation - Female Edition"
+        );
+        assert_eq!(guess_mod_name("TrueHUD-62775-1-1-9-1703382929.7z"), "TrueHUD");
+        assert_eq!(guess_mod_name("SkyUI_5_1.7z"), "SkyUI_5_1");
     }
 }

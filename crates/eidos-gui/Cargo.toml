@@ -12,3 +12,5 @@ eidos-games = { path = "../eidos-games" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-plugins = { path = "../eidos-plugins" }
 eidos-conflicts = { path = "../eidos-conflicts" }
+eidos-install = { path = "../eidos-install" }
+rfd = "0.15"
