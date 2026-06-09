@@ -9,8 +9,10 @@
 //! This module parses that XML into a model ([`ModuleConfig`]); the selection ->
 //! file-plan engine and the front-end wizard build on it.
 
+mod engine;
 mod model;
 mod parse;
 
+pub use engine::{build_default_plan, effective_type, eval, Context};
 pub use model::*;
 pub use parse::decode_xml;
