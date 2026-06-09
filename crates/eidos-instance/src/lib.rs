@@ -14,14 +14,15 @@
 //! <root>/.base             bind-stash mountpoint for the pristine game files
 //! ```
 
-use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
 mod manifest;
 mod meta;
+mod profile;
 pub use manifest::Manifest;
 pub use meta::ModMeta;
+pub use profile::Profile;
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,73 +123,85 @@ impl Instance {
     pub fn create(&self) -> std::io::Result<()> {
         fs::create_dir_all(self.mods_dir())?;
         fs::create_dir_all(self.overwrite_dir())?;
+        self.ensure_profiles()?;
         Ok(())
     }
 
-    /// The mod list: every folder in `mods/`, in priority order with enabled
-    /// state, reconciled with `modlist.txt`. Folders not yet in the file are
-    /// appended (enabled); file entries whose folder vanished are dropped.
-    /// Top of the list = highest priority.
+    /// The active profile's mod list (folders in the shared `mods/`, in priority
+    /// order with enabled state). Top of the list = highest priority.
     pub fn modlist(&self) -> Vec<ModEntry> {
-        let mut present: Vec<String> = fs::read_dir(self.mods_dir())
+        self.active().modlist()
+    }
+
+    /// Persist the active profile's mod list.
+    pub fn save_modlist(&self, mods: &[ModEntry]) -> std::io::Result<()> {
+        self.active().save_modlist(mods)
+    }
+
+    /// Enabled mods of the active profile, highest priority first.
+    pub fn load_order(&self) -> Vec<PathBuf> {
+        self.active().load_order()
+    }
+
+    // ---- profiles ----
+
+    /// `<root>/profiles/`.
+    pub fn profiles_dir(&self) -> PathBuf {
+        self.root.join("profiles")
+    }
+
+    /// All profile names (at least `Default`).
+    pub fn profiles(&self) -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(self.profiles_dir())
             .into_iter()
             .flatten()
             .flatten()
             .filter(|e| e.path().is_dir())
             .filter_map(|e| e.file_name().into_string().ok())
             .collect();
-        present.sort();
-
-        let mut out: Vec<ModEntry> = Vec::new();
-        let mut seen: HashSet<String> = HashSet::new();
-
-        if let Ok(content) = fs::read_to_string(self.root.join("modlist.txt")) {
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let (enabled, name) = if let Some(n) = line.strip_prefix('+') {
-                    (true, n)
-                } else if let Some(n) = line.strip_prefix('-') {
-                    (false, n)
-                } else {
-                    (true, line)
-                };
-                if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
-                    out.push(ModEntry {
-                        name: name.to_string(),
-                        enabled,
-                        path: self.mods_dir().join(name),
-                    });
-                }
-            }
+        v.sort();
+        if v.is_empty() {
+            v.push("Default".to_string());
         }
-        for name in present {
-            if seen.insert(name.clone()) {
-                out.push(ModEntry {
-                    path: self.mods_dir().join(&name),
-                    name,
-                    enabled: true,
-                });
-            }
-        }
-        out
+        v
     }
 
-    /// Persist the mod list to `modlist.txt` (`+Name` enabled, `-Name` disabled).
-    pub fn save_modlist(&self, mods: &[ModEntry]) -> std::io::Result<()> {
-        let mut s = String::new();
-        for m in mods {
-            s.push(if m.enabled { '+' } else { '-' });
-            s.push_str(&m.name);
-            s.push('\n');
-        }
-        fs::write(self.root.join("modlist.txt"), s)
+    /// The profile of the given name (not necessarily existing on disk yet).
+    pub fn profile(&self, name: &str) -> Profile {
+        Profile { instance_root: self.root.clone(), name: name.to_string() }
     }
 
-    /// Enabled mods, highest priority first: the layers to mount at launch.
-    pub fn load_order(&self) -> Vec<PathBuf> {
-        self.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect()
+    /// The active profile name (from the manifest; `Default` if unset).
+    pub fn active_profile(&self) -> String {
+        self.read_manifest()
+            .and_then(|m| m.selected_profile)
+            .unwrap_or_else(|| "Default".to_string())
+    }
+
+    /// Set the active profile, persisted in the manifest (if one exists).
+    pub fn set_active_profile(&self, name: &str) -> std::io::Result<()> {
+        if let Some(mut m) = self.read_manifest() {
+            m.selected_profile = Some(name.to_string());
+            m.write(&self.manifest_path())?;
+        }
+        Ok(())
+    }
+
+    /// The active [`Profile`].
+    pub fn active(&self) -> Profile {
+        self.profile(&self.active_profile())
+    }
+
+    /// Ensure a `Default` profile exists, migrating a legacy flat `modlist.txt`
+    /// (a pre-profiles instance) into it. Idempotent.
+    pub fn ensure_profiles(&self) -> std::io::Result<()> {
+        let default_dir = self.profiles_dir().join("Default");
+        fs::create_dir_all(&default_dir)?;
+        let legacy = self.root.join("modlist.txt");
+        let migrated = default_dir.join("modlist.txt");
+        if legacy.exists() && !migrated.exists() {
+            fs::rename(&legacy, &migrated)?;
+        }
+        Ok(())
     }
 }
