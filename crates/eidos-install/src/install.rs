@@ -337,6 +337,15 @@ impl Drop for FomodSession {
     }
 }
 
+impl FomodSession {
+    /// Resolve a FOMOD-relative path (e.g. a plugin or module image) to its
+    /// extracted on-disk path, matching each component case-insensitively. Returns
+    /// `None` if the archive did not ship it.
+    pub fn resolve(&self, rel: &str) -> Option<PathBuf> {
+        resolve_ci(&self.root, rel)
+    }
+}
+
 /// Extract `archive`; if it is a FOMOD, return a session whose `config` drives a
 /// wizard. Returns `Ok(None)` for a non-FOMOD archive (use [`install_archive`]).
 pub fn open_fomod(

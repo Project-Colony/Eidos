@@ -1319,10 +1319,17 @@ fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
 /// The FOMOD installer wizard: the current step's groups as selectable options,
 /// with Back / Cancel / Next / Install.
 fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
+    use eidos_fomod::PluginType;
     let config = &w.session.config;
     let total = config.steps.len();
+    // Effective option types for this step (re-evaluated against the choices so far).
+    let types = eidos_fomod::step_types(config, &w.selection, &eidos_fomod::Context::default(), w.step);
+
     let mut col = Column::new().spacing(8).padding(12);
     col = col.push(text(format!("{}  -  FOMOD installer", config.module_name)).size(20.0));
+    if let Some(banner) = config.module_image.as_ref().and_then(|p| w.session.resolve(p)) {
+        col = col.push(image(image::Handle::from_path(banner)).width(Length::Fixed(360.0)));
+    }
     if let Some(step) = config.steps.get(w.step) {
         col = col.push(text(format!("Step {}/{}: {}", w.step + 1, total, step.name)).size(14.0));
         for (gi, group) in step.groups.iter().enumerate() {
@@ -1337,16 +1344,34 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     .and_then(|g| g.get(pi))
                     .copied()
                     .unwrap_or(false);
-                let mark = if on { "[x]  " } else { "[  ]  " };
-                col = col.push(
-                    button(text(format!("{mark}{}", plugin.name)).size(13.0))
-                        .padding(4)
-                        .width(Length::Fill)
-                        .on_press(Message::FomodToggle(gi, pi))
-                        .style(if on { button::primary } else { button::secondary }),
-                );
+                let ptype = types.get(gi).and_then(|g| g.get(pi)).copied().unwrap_or(PluginType::Optional);
+                let usable = ptype != PluginType::NotUsable;
+                let mark = if on {
+                    "[x]  "
+                } else if usable {
+                    "[  ]  "
+                } else {
+                    "[-]  "
+                };
+                let tag = match ptype {
+                    PluginType::Required => "   - required",
+                    PluginType::Recommended => "   - recommended",
+                    PluginType::NotUsable => "   - not usable",
+                    _ => "",
+                };
+                let mut b = button(text(format!("{mark}{}{tag}", plugin.name)).size(13.0))
+                    .padding(4)
+                    .width(Length::Fill)
+                    .style(if on { button::primary } else { button::secondary });
+                if usable {
+                    b = b.on_press(Message::FomodToggle(gi, pi));
+                }
+                col = col.push(b);
                 if !plugin.description.is_empty() {
                     col = col.push(text(plugin.description.clone()).size(11.0));
+                }
+                if let Some(img) = plugin.image.as_ref().and_then(|p| w.session.resolve(p)) {
+                    col = col.push(image(image::Handle::from_path(img)).width(Length::Fixed(220.0)));
                 }
             }
         }

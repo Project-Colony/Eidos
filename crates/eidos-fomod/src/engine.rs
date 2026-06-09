@@ -168,6 +168,47 @@ pub fn build_default_plan(config: &ModuleConfig, ctx: &Context) -> Vec<FileItem>
     build_plan(config, &default_selection(config, ctx), ctx)
 }
 
+/// The effective type of every plugin in `step_idx`'s groups, given the condition
+/// flags accumulated by the selections in the prior visible steps. Lets a front end
+/// disable `NotUsable` options and highlight `Required`/`Recommended` ones, with the
+/// types re-evaluated as earlier choices set flags.
+pub fn step_types(
+    config: &ModuleConfig,
+    selection: &Selection,
+    ctx: &Context,
+    step_idx: usize,
+) -> Vec<Vec<PluginType>> {
+    let mut flags = ctx.flags.clone();
+    for (si, step) in config.steps.iter().enumerate() {
+        if si == step_idx {
+            return step
+                .groups
+                .iter()
+                .map(|g| g.plugins.iter().map(|p| effective_type(p, &flags, ctx)).collect())
+                .collect();
+        }
+        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        if visible {
+            for (gi, group) in step.groups.iter().enumerate() {
+                for (pi, plugin) in group.plugins.iter().enumerate() {
+                    let on = selection
+                        .get(si)
+                        .and_then(|s| s.get(gi))
+                        .and_then(|g| g.get(pi))
+                        .copied()
+                        .unwrap_or(false);
+                    if on {
+                        for (n, v) in &plugin.condition_flags {
+                            flags.insert(n.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Vec::new()
+}
+
 /// `actual >= required` on dotted numeric versions (missing parts count as 0).
 fn version_ge(actual: &str, required: &str) -> bool {
     let pa: Vec<u64> = actual.split('.').map(|p| p.parse().unwrap_or(0)).collect();
