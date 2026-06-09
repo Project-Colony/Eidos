@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/eidos-core", "crates/eidos-fuse", "crates/eidos-games", "crates/eidos-launch", "crates/eidos-instance", "crates/eidos", "crates/eidos-gui", "crates/eidos-plugins"]
+members = ["crates/eidos-core", "crates/eidos-fuse", "crates/eidos-games", "crates/eidos-launch", "crates/eidos-instance", "crates/eidos", "crates/eidos-gui", "crates/eidos-plugins", "crates/eidos-conflicts"]
 
 [workspace.package]
 license = "GPL-3.0-only"
