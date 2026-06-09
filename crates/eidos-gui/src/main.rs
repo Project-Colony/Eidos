@@ -68,6 +68,8 @@ enum Message {
     MoveUp(usize),
     MoveDown(usize),
     SelectTab(Tab),
+    SwitchProfile(String),
+    NewProfile,
     Run,
     Refresh,
     OpenFolder(PathBuf),
@@ -125,6 +127,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         let inst = Instance::global(app.games[i].def.id);
         if inst.exists() {
             let _ = inst.ensure_manifest(app.games[i].def.id, InstanceKind::Global);
+            let _ = inst.ensure_profiles();
             app.mods = inst.modlist();
             app.created = Some(inst);
             app.screen = Screen::Main;
@@ -138,6 +141,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             let inst = Instance::global(g.def.id);
             if inst.exists() {
                 let _ = inst.ensure_manifest(g.def.id, InstanceKind::Global);
+                let _ = inst.ensure_profiles();
                 app.selected = Some(i);
                 app.mods = inst.modlist();
                 app.created = Some(inst);
@@ -339,6 +343,35 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
             if t == Tab::Conflicts && app.conflicts.is_none() {
                 app.conflicts = compute_conflicts(app);
+            }
+        }
+        Message::SwitchProfile(name) => {
+            if let Some(inst) = &app.created {
+                let _ = inst.set_active_profile(&name);
+                app.mods = inst.profile(&name).modlist();
+                app.plugins = None;
+                app.conflicts = None;
+                app.status = Some(format!("Switched to profile '{name}'."));
+            }
+        }
+        Message::NewProfile => {
+            if let Some(inst) = &app.created {
+                let existing = inst.profiles();
+                let mut n = existing.len() + 1;
+                let mut name = format!("Profile {n}");
+                while existing.contains(&name) {
+                    n += 1;
+                    name = format!("Profile {n}");
+                }
+                let src = inst.active();
+                let dest = inst.profile(&name);
+                if dest.create_from(&src).is_ok() {
+                    let _ = inst.set_active_profile(&name);
+                    app.mods = dest.modlist();
+                    app.plugins = None;
+                    app.conflicts = None;
+                    app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
+                }
             }
         }
         Message::Run => {
@@ -767,11 +800,21 @@ fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag: String) -> Element<'a, 
 
 fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let active = app.mods.iter().filter(|m| m.enabled).count();
-    let profile = Row::new()
-        .spacing(8)
-        .push(text("Profile:").size(12.0))
-        .push(combo("Default".to_string(), Message::Noop))
-        .push(tool_btn("Save", Message::Noop))
+    let active_name = app.created.as_ref().map(|i| i.active_profile()).unwrap_or_default();
+    let mut profile = Row::new().spacing(6).push(text("Profile:").size(12.0));
+    if let Some(inst) = &app.created {
+        for name in inst.profiles() {
+            let selected = name == active_name;
+            profile = profile.push(
+                button(text(name.clone()).size(12.0))
+                    .padding(4)
+                    .on_press(Message::SwitchProfile(name.clone()))
+                    .style(if selected { button::primary } else { button::secondary }),
+            );
+        }
+    }
+    let profile = profile
+        .push(tool_btn("+ New", Message::NewProfile))
         .push(Space::with_width(Length::Fill))
         .push(text(format!("Active: {active}")).size(12.0));
 
