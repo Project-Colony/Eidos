@@ -8,3 +8,4 @@ edition.workspace = true
 
 [dependencies]
 eidos-instance = { path = "../eidos-instance" }
+eidos-fomod = { path = "../eidos-fomod" }

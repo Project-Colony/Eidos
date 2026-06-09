@@ -990,6 +990,7 @@ dependencies = [
 name = "eidos-install"
 version = "0.0.0"
 dependencies = [
+ "eidos-fomod",
  "eidos-instance",
 ]
 

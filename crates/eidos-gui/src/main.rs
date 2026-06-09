@@ -401,7 +401,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                             app.mods = inst.modlist();
                             app.plugins = None;
                             app.conflicts = None;
-                            app.status = Some(format!("Installed '{}'.", r.name));
+                            app.status = Some(if r.fomod {
+                                format!("Installed '{}' via FOMOD (default options).", r.name)
+                            } else {
+                                format!("Installed '{}'.", r.name)
+                            });
                         }
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }

@@ -174,7 +174,9 @@ fn cmd_install(args: &[String]) {
             let _ = inst.save_modlist(&ml);
 
             print!("Installed '{}' for {}", r.name, game.def.name);
-            if !r.stripped.is_empty() {
+            if r.fomod {
+                print!(" (via FOMOD, default options)");
+            } else if !r.stripped.is_empty() {
                 print!(" (stripped wrapper '{}')", r.stripped.trim_end_matches('/'));
             }
             println!();
