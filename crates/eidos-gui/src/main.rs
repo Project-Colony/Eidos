@@ -46,7 +46,7 @@ enum Screen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Data,
-    Saves,
+    Overwrite,
     Downloads,
 }
 
@@ -66,6 +66,8 @@ enum Message {
     SelectTab(Tab),
     Run,
     Refresh,
+    OpenFolder(PathBuf),
+    ClearOverwrite,
     Noop,
 }
 
@@ -81,6 +83,8 @@ struct App {
     mods: Vec<ModEntry>,
     tab: Tab,
     status: Option<String>,
+    /// Two-click guard for the destructive "Clear Overwrite" action.
+    confirm_clear: bool,
     /// The Proton command Steam passed via `%command%` (empty if launched
     /// standalone). The Run button launches the game through this.
     launch_command: Vec<String>,
@@ -103,6 +107,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         mods: Vec::new(),
         tab: Tab::Data,
         status: None,
+        confirm_clear: false,
         launch_command,
     };
     if let Some(i) = auto {
@@ -114,6 +119,19 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             app.screen = Screen::Main;
             app.status =
                 Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
+        }
+    } else {
+        // Standalone: open the first detected game that already has an instance,
+        // so `eidos-gui` lands on your existing setup instead of the wizard.
+        for (i, g) in app.games.iter().enumerate() {
+            let inst = Instance::global(g.def.id);
+            if inst.exists() {
+                app.selected = Some(i);
+                app.mods = inst.modlist();
+                app.created = Some(inst);
+                app.screen = Screen::Main;
+                break;
+            }
         }
     }
     (app, Task::none())
@@ -214,6 +232,10 @@ fn save_mods(app: &App) {
 }
 
 fn update(app: &mut App, message: Message) -> Task<Message> {
+    // Any action other than a second Clear click cancels the clear confirmation.
+    if !matches!(message, Message::ClearOverwrite) {
+        app.confirm_clear = false;
+    }
     match message {
         Message::Next => {
             app.screen = match app.screen {
@@ -310,6 +332,28 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
                 app.status = Some("Refreshed mod list.".to_string());
+            }
+        }
+        Message::OpenFolder(p) => {
+            let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
+            app.status = Some(format!("Opened {} in your file manager.", p.display()));
+        }
+        Message::ClearOverwrite => {
+            if let Some(inst) = &app.created {
+                let dir = inst.overwrite_dir();
+                if app.confirm_clear {
+                    app.confirm_clear = false;
+                    app.status = Some(match clear_dir_contents(&dir) {
+                        Ok(()) => "Overwrite cleared.".to_string(),
+                        Err(e) => format!("Clear failed: {e}"),
+                    });
+                } else {
+                    app.confirm_clear = true;
+                    app.status = Some(
+                        "Click Clear again to confirm - this permanently deletes everything the game wrote to the Overwrite (configs, new saves, generated files)."
+                            .to_string(),
+                    );
+                }
             }
         }
         Message::Noop => {}
@@ -579,15 +623,36 @@ const C_PRIO: Length = Length::Fixed(26.0);
 const C_FLAGS: Length = Length::Fixed(46.0);
 const C_MOVE: Length = Length::Fixed(70.0);
 
-fn list_dir_names(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect();
-    names.sort();
-    names
+/// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
+fn overwrite_entries(dir: &Path) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(root, &p, out);
+            } else if let Ok(rel) = p.strip_prefix(root) {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, &mut out);
+    out.sort();
+    out
+}
+
+/// Delete everything inside a directory, keeping the directory itself.
+fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
+    for e in fs::read_dir(dir)?.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            fs::remove_dir_all(&p)?;
+        } else {
+            fs::remove_file(&p)?;
+        }
+    }
+    Ok(())
 }
 
 /// Top-level entries of the merged view: each name, the source providing it
@@ -694,11 +759,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(striped(mod_row(i, m, len), i % 2 == 0));
     }
 
-    let overwrite = Row::new()
-        .spacing(6)
-        .push(text("").width(C_CHECK))
-        .push(text("").width(C_PRIO))
-        .push(text("Overwrite").size(13.0).width(Length::Fill));
+    let overwrite = button(
+        Row::new()
+            .spacing(6)
+            .push(text("").width(C_CHECK))
+            .push(text("").width(C_PRIO))
+            .push(text("Overwrite").size(13.0).width(Length::Fill)),
+    )
+    .padding(2)
+    .on_press(Message::SelectTab(Tab::Overwrite))
+    .style(button::text);
 
     let inner = Column::new()
         .spacing(6)
@@ -733,18 +803,42 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     Column::new().spacing(4).push(header).push(scrollable(list).height(Length::Fill)).into()
 }
 
-fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
-    let mut c = Column::new().spacing(3).push(text("Overwrite (writes land here)").size(13.0));
-    if let Some(inst) = &app.created {
-        let names = list_dir_names(&inst.overwrite_dir());
-        if names.is_empty() {
-            c = c.push(text("(empty - the game's saves and new files appear here)").size(12.0));
-        }
-        for name in names.into_iter().take(300) {
-            c = c.push(text(name).size(12.0));
-        }
+fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(inst) = &app.created else {
+        return text("No instance open.").into();
+    };
+    let dir = inst.overwrite_dir();
+    let actions = Row::new()
+        .spacing(6)
+        .push(
+            text("Everything the game writes (configs, new saves, generated files) lands here.")
+                .size(12.0)
+                .width(Length::Fill),
+        )
+        .push(tool_btn("Open folder", Message::OpenFolder(dir.clone())))
+        .push(
+            button(text(if app.confirm_clear { "Confirm clear?" } else { "Clear" }).size(12.0))
+                .padding(5)
+                .on_press(Message::ClearOverwrite)
+                .style(if app.confirm_clear { button::danger } else { button::secondary }),
+        );
+
+    let entries = overwrite_entries(&dir);
+    let mut c = Column::new().spacing(2);
+    if entries.is_empty() {
+        c = c.push(text("(empty)").size(12.0));
+    } else {
+        c = c.push(text(format!("{} file(s):", entries.len())).size(11.0));
     }
-    scrollable(c).height(Length::Fill).into()
+    for e in entries.into_iter().take(500) {
+        c = c.push(text(e).size(11.0));
+    }
+
+    Column::new()
+        .spacing(8)
+        .push(actions)
+        .push(scrollable(c).height(Length::Fill))
+        .into()
 }
 
 fn downloads_panel<'a>() -> Element<'a, Message> {
@@ -779,12 +873,12 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let tabs = Row::new()
         .spacing(4)
         .push(tab_btn("Data", Tab::Data, app.tab == Tab::Data))
-        .push(tab_btn("Saves", Tab::Saves, app.tab == Tab::Saves))
+        .push(tab_btn("Overwrite", Tab::Overwrite, app.tab == Tab::Overwrite))
         .push(tab_btn("Downloads", Tab::Downloads, app.tab == Tab::Downloads));
 
     let content = match app.tab {
         Tab::Data => data_panel(app),
-        Tab::Saves => saves_panel(app),
+        Tab::Overwrite => overwrite_panel(app),
         Tab::Downloads => downloads_panel(),
     };
 
