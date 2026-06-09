@@ -182,16 +182,20 @@ fn readdir_lists_merged_deduped_entries() {
     let (game, modd, over, mnt) = (t.sub("game"), t.sub("mod"), t.sub("over"), t.sub("mnt"));
     put(&game, "a.dat", b"a");
     put(&game, "shared.dat", b"g");
+    put(&game, "_under.dat", b"u");
     put(&modd, "b.dat", b"b");
     put(&modd, "shared.dat", b"m");
     let _s = mounted!(vec![modd, game], over, &mnt);
 
-    let mut names: Vec<String> = fs::read_dir(&mnt)
+    // Do NOT sort: readdir must already emit NTFS-collated order (the daemon sorts
+    // in list_dir), so assert the emission order verbatim. `_under.dat`
+    // discriminates - NTFS upcases, so `_` (0x5F) sorts AFTER letters, whereas a
+    // plain ASCII-lowercase sort would place it first.
+    let names: Vec<String> = fs::read_dir(&mnt)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    names.sort();
-    assert_eq!(names, vec!["a.dat", "b.dat", "shared.dat"]); // shared appears once
+    assert_eq!(names, vec!["a.dat", "b.dat", "shared.dat", "_under.dat"]); // shared once; `_` last
 }
 
 fn rmdir_refuses_non_empty_directory() {

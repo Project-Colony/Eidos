@@ -273,11 +273,23 @@ impl LayerStack {
         // loose-file indexer build a record it can't later resolve, then deref a
         // -1/null result -> a deterministic crash at the main menu under a FUSE
         // mount (works under MO2/usvfs, which hands Windows-friendly listings).
-        // Emulate NTFS: case-insensitive alphabetical order. This is the same fix
-        // CIOPFS / ntfs-emu apply so non-NTFS filesystems work with Wine games.
-        out.sort_by_cached_key(|(name, _)| name.to_ascii_lowercase());
+        // Emulate NTFS collation exactly: uppercase (the $UpCase table, which
+        // usvfs reaches via LCMapStringW) then order by UTF-16 code unit. A plain
+        // ASCII-lowercase sort orders names that mix letters with `_ { } ~` (all
+        // between `Z` and `a` in ASCII) differently, which the indexer can notice.
+        // Same fix CIOPFS / ntfs-emu apply so non-NTFS filesystems work with Wine.
+        out.sort_by_cached_key(|(name, _)| ntfs_order_key(name));
         out
     }
+}
+
+/// NTFS-style collation key for ordering a directory listing: uppercase (the
+/// `$UpCase` table, approximated here by Unicode uppercasing) then compare as
+/// UTF-16 code units - what NTFS and usvfs (`LCMapStringW`) actually use. A plain
+/// ASCII-lowercase ordering disagrees on names mixing letters with `_ { } ~`.
+fn ntfs_order_key(name: &str) -> Vec<u16> {
+    let upper: String = name.chars().flat_map(char::to_uppercase).collect();
+    upper.encode_utf16().collect()
 }
 
 /// Strip a leading slash so a virtual path can be joined onto a real layer root.
@@ -448,6 +460,24 @@ mod tests {
             .find(|(n, _)| n.eq_ignore_ascii_case("shared.dat"))
             .unwrap();
         assert_eq!(read(&shared.1), "mod version");
+    }
+
+    #[test]
+    fn list_dir_emits_ntfs_collated_order() {
+        let t = TempTree::new();
+        let (game, modd, over) = (t.sub("game"), t.sub("mod"), t.sub("over"));
+        // Discriminates NTFS upcase-collation from a plain ASCII-lowercase sort:
+        // `_` (0x5F) sits between `Z` (0x5A) and `a` (0x61), so upcasing orders
+        // `_skse` AFTER the letters, while a lowercase sort would put it first.
+        put(&game, "_skse.dat", "x");
+        put(&game, "apple.dat", "x");
+        put(&modd, "Zebra.dat", "x");
+
+        let stack = LayerStack::new(vec![modd, game], over);
+        let names: Vec<String> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+        // NTFS order: letters before `_`. A lowercase sort would wrongly yield
+        // [_skse, apple, Zebra]; assert the emission order verbatim (no re-sort).
+        assert_eq!(names, vec!["apple.dat", "Zebra.dat", "_skse.dat"]);
     }
 
     #[test]
