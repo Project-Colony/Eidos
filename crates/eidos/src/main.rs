@@ -19,6 +19,46 @@ fn find_game(id: &str) -> Option<DetectedGame> {
     detect(&home()).into_iter().find(|g| g.def.id == id)
 }
 
+/// Before launch: discover this instance's plugins, preserve any existing load
+/// order from the prefix, re-validate the invariants, and write
+/// `plugins.txt`/`loadorder.txt` where the game reads them. Best-effort - a game
+/// with no plugin system or no Proton prefix is simply skipped.
+fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
+    let Some(spec) = eidos_plugins::GameSpec::for_id(id) else { return };
+    let Some(compatdata) = game.compatdata.as_ref() else {
+        eprintln!("eidos play: no Proton prefix found, skipping plugins.txt");
+        return;
+    };
+    let prefix = compatdata.join("pfx");
+
+    // Sources: the game's own Data first (the base masters), then each enabled mod
+    // in ascending plugin priority (the modlist is highest-first, so reverse it).
+    let mut sources: Vec<(String, std::path::PathBuf)> =
+        vec![(String::new(), game.data_path.clone())];
+    let mut enabled: Vec<_> = inst.modlist().into_iter().filter(|m| m.enabled).collect();
+    enabled.reverse();
+    sources.extend(enabled.into_iter().map(|m| (m.name, m.path)));
+
+    let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
+
+    // Preserve the user's existing order (their MO2 or prior-run plugins.txt).
+    let dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    let existing = eidos_plugins::PluginList::read_active(&dir, &spec);
+    if !existing.is_empty() {
+        list.apply_active(&existing);
+    }
+    list.refresh(&spec);
+
+    for (p, m) in list.missing_masters() {
+        eprintln!("eidos play: WARNING - {p} is missing master {m} (likely a crash)");
+    }
+    let active = list.plugins.iter().filter(|p| p.enabled).count();
+    match list.write_load_order(&dir, &spec) {
+        Ok(()) => eprintln!("eidos play: wrote {active} active plugins to plugins.txt"),
+        Err(e) => eprintln!("eidos play: could not write plugins.txt: {e}"),
+    }
+}
+
 fn cmd_games() {
     let games = detect(&home());
     if games.is_empty() {
@@ -90,6 +130,8 @@ fn cmd_play(args: &[String]) {
         println!("    eidos play {id} -- ls \"{}\"", game.data_path.display());
         return;
     }
+
+    prepare_plugins(id, &game, &inst);
 
     let spec = LaunchSpec {
         layers,

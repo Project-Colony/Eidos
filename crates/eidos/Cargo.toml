@@ -14,3 +14,4 @@ path = "src/main.rs"
 eidos-games = { path = "../eidos-games" }
 eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }
+eidos-plugins = { path = "../eidos-plugins" }

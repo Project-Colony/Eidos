@@ -886,6 +886,7 @@ dependencies = [
  "eidos-games",
  "eidos-instance",
  "eidos-launch",
+ "eidos-plugins",
 ]
 
 [[package]]
