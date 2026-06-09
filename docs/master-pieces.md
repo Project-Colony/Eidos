@@ -5,16 +5,16 @@
 > compared against the Eidos code. 2026-06-09. Raw per-subsystem findings:
 > [`mo2-study-findings.json`](mo2-study-findings.json).
 
-## Status (updated 2026-06-09)
+## Status (updated 2026-06-10)
 
-The connective-tissue quick wins and 3 of the 6 master pieces shipped immediately
+The connective-tissue quick wins and 4 of the 6 master pieces shipped immediately
 after this study was written. The rest of this document is the original study; the
 table below is the current truth.
 
 | Master piece | Status |
 |---|---|
 | 1. ESP/ESM/ESL plugin load order | **Done** - `eidos-plugins` |
-| 2. Mod installer (archive + FOMOD) | Remaining |
+| 2. Mod installer (archive + FOMOD) | **Done** - `eidos-install` + `eidos-fomod` |
 | 3. Tools-through-VFS re-entry | Remaining |
 | 4. Per-game features (BSA / INI / saves) | Remaining |
 | 5. Per-file conflict detection | **Done** - `eidos-conflicts` |
@@ -48,10 +48,11 @@ and cannot run a tool (xEdit/FNIS/BodySlide) against the merged view. Every one 
 those is table-stakes for replacing MO2, and **none of them live in the FUSE layer -
 they live in new crates above it.**
 
-*(Update 2026-06-09: three of those gaps have since closed - ESP plugin load order
-(`eidos-plugins`), conflict explanation (`eidos-conflicts`), and profiles
-(`eidos-instance`). The installer, tools-through-VFS, and BSA/INI handling remain.
-See the status table at the top.)*
+*(Update 2026-06-10: four of those gaps have since closed - the mod installer
+(`eidos-install` + `eidos-fomod`, Simple + an interactive FOMOD wizard), ESP plugin
+load order (`eidos-plugins`), conflict explanation (`eidos-conflicts`), and profiles
+(`eidos-instance`). Tools-through-VFS and BSA/INI handling remain. See the status
+table at the top.)*
 
 The 2-3 biggest levers:
 

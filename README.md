@@ -82,6 +82,8 @@ crates/eidos-launch     per-launch namespace wrapper: run a game through the vie
 crates/eidos-instance   instance model: global/portable, profiles, per-mod meta.ini, manifest, load order
 crates/eidos-plugins    ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
 crates/eidos-conflicts  per-file conflict analysis (winners / losers, per-mod state)
+crates/eidos-install    mod installer: 7-Zip extract + Simple wrapper-strip + meta.ini
+crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
 docs/architecture.md    the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required
@@ -194,6 +196,11 @@ fusermount3 -u /mnt/point
       layers builds a winners/losers tree + per-mod state (Overwrites /
       Overwritten / Mixed / Redundant), shown in the Conflicts tab and as per-mod
       flags in the mod list
+- [x] Mod installer (`eidos-install` + `eidos-fomod`) - the MO2 Simple installer
+      (7-Zip extract, wrapper-strip via a Gamebryo ModDataChecker) plus the FOMOD
+      scripted installer (UTF-16 `ModuleConfig.xml` parse + condition/flag engine),
+      driven from a CLI (`eidos install`) and the GUI Install button + an
+      interactive FOMOD wizard; writes a MO2-compatible `meta.ini`
 - [x] FUSE passthrough + rootless perf tuning (1 MiB readahead / max_write).
       Passthrough negotiates `FUSE_PASSTHROUGH` and engages when the daemon runs
       privileged (`setcap cap_sys_admin+ep`, taken via a bare mount namespace):
@@ -220,11 +227,11 @@ fusermount3 -u /mnt/point
       `readdir`** (the Creation Engine's loose-file indexer assumes it)
 - [ ] Casing normalization at mod-import time
 
-The manager layer above the VFS now has plugins, conflicts, profiles, `meta.ini`
-and the instance manifest. What is still ahead - a mod installer (archive + FOMOD),
-tools-through-VFS re-entry (xEdit/FNIS/BodySlide), and per-game BSA/INI features -
-is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 + usvfs study
-that drove this work.
+The manager layer above the VFS now has the mod installer (Simple + FOMOD wizard),
+plugins, conflicts, profiles, `meta.ini` and the instance manifest. What is still
+ahead - tools-through-VFS re-entry (xEdit/FNIS/BodySlide) and per-game BSA/INI
+features - is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 +
+usvfs study that drove this work.
 
 ## Prior art and references
 
