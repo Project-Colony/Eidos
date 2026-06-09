@@ -25,6 +25,9 @@ pub struct LaunchSpec {
     pub mountpoint: PathBuf,
     /// Command + args to run inside the namespace.
     pub command: Vec<String>,
+    /// Extra environment variables for the command (e.g. `WINEDLLOVERRIDES` for
+    /// forced libraries), applied on top of the inherited environment.
+    pub env: Vec<(String, String)>,
     /// Optional `(src, stash)`: bind-mount `src` onto `stash` before mounting,
     /// then append `stash` as the lowest layer. This is how we mount a union
     /// *over the game's own Data dir*: the bind captures the real files at
@@ -116,6 +119,7 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // `mountpoint` is the game's Data dir, so its parent is the game root.
     let mut cmd = Command::new(&spec.command[0]);
     cmd.args(&spec.command[1..]);
+    cmd.envs(spec.env.iter().map(|(k, v)| (k, v)));
     if let Some(game_root) = spec.mountpoint.parent() {
         cmd.current_dir(game_root);
     }
@@ -123,4 +127,39 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
 
     drop(session); // unmount
     status
+}
+
+/// Compose a `WINEDLLOVERRIDES` value forcing `stems` to load native-then-builtin
+/// (`n,b`) - the Linux equivalent of usvfs's forced libraries, what lets a mod's
+/// own ENB / ReShade / `.asi` loader DLL actually load under Wine. Any inherited
+/// value (Proton sets its own) is preserved and ours appended.
+pub fn wine_dll_overrides(stems: &[String], inherited: Option<&str>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(prev) = inherited.filter(|s| !s.is_empty()) {
+        parts.push(prev.to_string());
+    }
+    if !stems.is_empty() {
+        parts.push(format!("{}=n,b", stems.join(",")));
+    }
+    parts.join(";")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dll_overrides_compose_and_merge() {
+        assert_eq!(wine_dll_overrides(&[], None), "");
+        assert_eq!(
+            wine_dll_overrides(&["d3d11".into(), "dxgi".into()], None),
+            "d3d11,dxgi=n,b"
+        );
+        // An inherited Proton value is kept, ours appended.
+        assert_eq!(
+            wine_dll_overrides(&["dinput8".into()], Some("mscoree=d;mshtml=d")),
+            "mscoree=d;mshtml=d;dinput8=n,b"
+        );
+        assert_eq!(wine_dll_overrides(&[], Some("a=b")), "a=b");
+    }
 }

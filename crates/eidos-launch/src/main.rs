@@ -57,6 +57,7 @@ fn main() {
         overwrite,
         mountpoint,
         command,
+        env: Vec::new(),
         base_bind: None,
     };
     match launch(spec) {

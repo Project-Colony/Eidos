@@ -94,6 +94,7 @@ fn cmd_play(args: &[String]) {
         overwrite: inst.overwrite_dir(),
         mountpoint: game.data_path.clone(),
         command,
+        env: Vec::new(),
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
     };
     match launch(spec) {
