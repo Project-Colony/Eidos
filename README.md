@@ -73,16 +73,18 @@ stability.
 ## Repo layout
 
 ```
-crates/eidos           the unified CLI front end (games / init / play)
-crates/eidos-gui       the iced GUI (Colony parchment look)
-crates/eidos-core      the layer-resolution engine (pure, unit-tested)
-crates/eidos-fuse      the read-write FUSE union daemon
-crates/eidos-games     supported-game catalog + Steam install detection
-crates/eidos-launch    per-launch namespace wrapper: run a game through the view
-crates/eidos-instance  instance model (global / portable, layout, load order)
-docs/architecture.md   the design and the tradeoffs behind it
-scripts/poc-overlay.sh runnable proof that the "virtualize under Wine" thesis
-                       holds with native primitives, no root required
+crates/eidos            the unified CLI front end (games / init / play)
+crates/eidos-gui        the iced GUI (Colony parchment look)
+crates/eidos-core       the layer-resolution engine (pure, unit-tested)
+crates/eidos-fuse       the read-write FUSE union daemon
+crates/eidos-games      supported-game catalog + Steam install detection
+crates/eidos-launch     per-launch namespace wrapper: run a game through the view
+crates/eidos-instance   instance model: global/portable, profiles, per-mod meta.ini, manifest, load order
+crates/eidos-plugins    ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
+crates/eidos-conflicts  per-file conflict analysis (winners / losers, per-mod state)
+docs/architecture.md    the design and the tradeoffs behind it
+scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
+                        holds with native primitives, no root required
 ```
 
 ## Use it (CLI)
@@ -115,8 +117,13 @@ cargo run -p eidos-gui
 
 An MO2-style first-launch wizard in the Colony parchment / burgundy look:
 welcome -> instance type (portable / global) -> game -> name & location ->
-summary -> create -> main screen. The two-pane main window (mod list with
-drag-reorder load order, Plugins / Data / Saves tabs, Play button) comes next.
+summary -> create -> main screen.
+
+The two-pane main window is built too: a profile picker (switch, or create a new
+one by copying the current), a mod list you enable/disable and reorder (with a
+per-mod conflict flag), and Data / Plugins / Conflicts / Overwrite / Downloads
+tabs plus a Run button. The Plugins tab is the ESP/ESM/ESL load order; the
+Conflicts tab explains the per-file winners and losers.
 
 ## Try the proof of concept
 
@@ -169,8 +176,24 @@ fusermount3 -u /mnt/point
 - [ ] Steam launch-option integration (`eidos %command%`) with a real Proton game
 - [x] GUI first-launch wizard (`eidos-gui`, iced) - MO2-style screens (welcome ->
       portable/global -> game -> name -> summary -> main), Colony parchment theme
-- [ ] GUI main window: two-pane mod list with drag-reorder load order,
-      enable/disable, Plugins / Data / Saves tabs, Play button
+- [x] GUI main window (`eidos-gui`) - two-pane MO2 layout: a profile picker, a
+      mod list (enable/disable, reorder, per-mod conflict flags), and Data /
+      Plugins / Conflicts / Overwrite / Downloads tabs with a Run button
+- [x] Per-mod `meta.ini`, byte-compatible with MO2 (`eidos-instance`) - existing
+      MO2 instances round-trip unchanged (version / Nexus id / category /
+      endorsed), with an `update_available` check ready for a future Nexus crate
+- [x] Self-describing instance manifest `eidos-instance.ini` (`eidos-instance`) -
+      records game id + schema version, so portable instances need no path-guessing
+- [x] Profiles (`eidos-instance`) - per-profile enabled set + load order over one
+      shared `mods/` pool, with a GUI picker (switch / new-by-copy)
+- [x] ESP/ESM/ESL plugin load order (`eidos-plugins`) - esplugin-parsed headers +
+      MO2-parity ordering (masters first, master-before-dependent) and FormID
+      indexes (`FE` light / `FD` medium), written as `plugins.txt`/`loadorder.txt`
+      into the Proton prefix right before launch; surfaced in the Plugins tab
+- [x] Per-file conflict detection (`eidos-conflicts`) - one pass over the enabled
+      layers builds a winners/losers tree + per-mod state (Overwrites /
+      Overwritten / Mixed / Redundant), shown in the Conflicts tab and as per-mod
+      flags in the mod list
 - [x] FUSE passthrough + rootless perf tuning (1 MiB readahead / max_write).
       Passthrough negotiates `FUSE_PASSTHROUGH` and engages when the daemon runs
       privileged (`setcap cap_sys_admin+ep`, taken via a bare mount namespace):
@@ -196,6 +219,12 @@ fusermount3 -u /mnt/point
       opens its address library by a CWD-relative path) and **NTFS-like sorted
       `readdir`** (the Creation Engine's loose-file indexer assumes it)
 - [ ] Casing normalization at mod-import time
+
+The manager layer above the VFS now has plugins, conflicts, profiles, `meta.ini`
+and the instance manifest. What is still ahead - a mod installer (archive + FOMOD),
+tools-through-VFS re-entry (xEdit/FNIS/BodySlide), and per-game BSA/INI features -
+is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 + usvfs study
+that drove this work.
 
 ## Prior art and references
 

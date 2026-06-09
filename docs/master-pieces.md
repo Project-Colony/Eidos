@@ -5,6 +5,27 @@
 > compared against the Eidos code. 2026-06-09. Raw per-subsystem findings:
 > [`mo2-study-findings.json`](mo2-study-findings.json).
 
+## Status (updated 2026-06-09)
+
+The connective-tissue quick wins and 3 of the 6 master pieces shipped immediately
+after this study was written. The rest of this document is the original study; the
+table below is the current truth.
+
+| Master piece | Status |
+|---|---|
+| 1. ESP/ESM/ESL plugin load order | **Done** - `eidos-plugins` |
+| 2. Mod installer (archive + FOMOD) | Remaining |
+| 3. Tools-through-VFS re-entry | Remaining |
+| 4. Per-game features (BSA / INI / saves) | Remaining |
+| 5. Per-file conflict detection | **Done** - `eidos-conflicts` |
+| 6. Profiles | **Done** - `eidos-instance` |
+
+Quick wins: **#1 meta.ini, #2 instance manifest, #3 `LaunchSpec` env field, #4
+forced libraries, and #5 NTFS comparator are all done.** #7's `update_available`
+helper also landed (its `(game_id, nexus_id)` grouping fn is still pending). #6
+(the module-path-spoofing regression test) is the only quick win untouched - its
+reasoning is already captured in this study, just not yet pinned by a test.
+
 ## Executive summary
 
 Eidos has already won the hard, novel battle that defines the project: **the VFS
@@ -26,6 +47,11 @@ in what order, cannot tell the game which BSAs to read, cannot explain a conflic
 and cannot run a tool (xEdit/FNIS/BodySlide) against the merged view. Every one of
 those is table-stakes for replacing MO2, and **none of them live in the FUSE layer -
 they live in new crates above it.**
+
+*(Update 2026-06-09: three of those gaps have since closed - ESP plugin load order
+(`eidos-plugins`), conflict explanation (`eidos-conflicts`), and profiles
+(`eidos-instance`). The installer, tools-through-VFS, and BSA/INI handling remain.
+See the status table at the top.)*
 
 The 2-3 biggest levers:
 
@@ -71,6 +97,7 @@ The 2-3 biggest levers:
 
 ### 1. ESP/ESM/ESL plugin load order + `plugins.txt`/`loadorder.txt` into the prefix
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-plugins` (new) + `eidos-games` + `eidos-launch` + `eidos-gui` &nbsp;|&nbsp; **Depends on:** nothing
+- **Status (2026-06-09): Done.** `eidos-plugins` parses the TES4 header via `esplugin`, applies MO2's three ordering invariants + `FE`/`FD` index computation, resolves the Proton-prefix path, and writes `plugins.txt`/`loadorder.txt` right before launch; the GUI has a Plugins tab. (libloot sorting still deferred on the GPL question.)
 - **Why:** For every game the MOD-FOLDER order (which loose file wins - solved by the
   union) and the PLUGIN order (which `.esp`/`.esm` record wins, which FormID modindex
   each gets) are two INDEPENDENT axes, and BOTH must be correct or the game crashes
@@ -98,6 +125,7 @@ The 2-3 biggest levers:
 
 ### 2. Mod installer: archive extraction + Simple/wrapper-strip, then FOMOD
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-install` (new) + `eidos-gui` + `eidos` CLI &nbsp;|&nbsp; **Depends on:** per-mod meta.ini (Tier 1 writes it)
+- **Status (2026-06-09): Remaining.** Not started. The install target is ready (`eidos-instance::mods_dir()` + auto-include of new folders) and its meta.ini dependency now ships.
 - **Why:** Turns a downloaded Nexus archive into a usable `mods/<name>/`. Today the GUI
   tells the user to extract by hand, which breaks the two most common cases: a wrapper
   folder (`ModName-1234/Data/...`, one level too deep so nothing resolves) and a FOMOD
@@ -116,6 +144,7 @@ The 2-3 biggest levers:
 
 ### 3. Tools-through-VFS: persistent named namespace + re-entry for xEdit/FNIS/BodySlide
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-launch` + `eidos-instance` + `eidos-gui` &nbsp;|&nbsp; **Depends on:** plugin load order
+- **Status (2026-06-09): Remaining.** Not started; still one anonymous namespace per process. Its dependency (plugin load order) is now in place.
 - **Why:** The entire point of a Bethesda mod manager is the generate-then-play loop:
   FNIS/Nemesis build behaviour files, BodySlide builds meshes, xEdit cleans/patches -
   all MUST see the same merged Data and write into Overwrite so the next launch picks
@@ -135,6 +164,7 @@ The 2-3 biggest levers:
 
 ### 4. Per-game features for Bethesda correctness (BSA invalidation + INIs + saves)
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-games` (schema) + `eidos-gamefeatures` (new) + `eidos-launch` &nbsp;|&nbsp; **Depends on:** plugin load order (prefix resolver), profiles
+- **Status (2026-06-09): Remaining.** Not started; both prerequisites now exist - the prefix resolver (from piece 1) and profiles (piece 6).
 - **Why:** Three MO2 game features are not polish - without them mods are silently
   ignored. **BSAInvalidation + DataArchives**: Bethesda engines prefer files packed in
   vanilla BSAs over loose files unless invalidation is active, and many mods ship BSAs
@@ -156,6 +186,7 @@ The 2-3 biggest levers:
 
 ### 5. Per-file conflict detection + display (winners/losers)
 - **Complexity:** medium &nbsp;|&nbsp; **Target:** `eidos-conflicts` (new) + `eidos-gui` &nbsp;|&nbsp; **Depends on:** nothing
+- **Status (2026-06-09): Done.** `eidos-conflicts` walks the enabled layers into a per-path winners/losers tree and derives each mod's state (None / Overwrites / Overwritten / Mixed / Redundant); the GUI has a Conflicts tab plus a per-mod flag in the mod list.
 - **Why:** Conflict resolution is THE day-to-day reason MO2 exists. Across 50-110 mods
   many files come from several mods and which wins decides whether the game looks right
   or breaks. A replacement that only says "highest wins" cannot explain WHY the merged
@@ -173,6 +204,7 @@ The 2-3 biggest levers:
 
 ### 6. Profiles (per-profile mod state, load order, INIs, saves)
 - **Complexity:** medium &nbsp;|&nbsp; **Target:** `eidos-instance` + `eidos` CLI + `eidos-gui` &nbsp;|&nbsp; **Depends on:** nothing (but prerequisite for piece 4's per-profile INIs/saves)
+- **Status (2026-06-09): Done.** `eidos-instance` profiles: a per-profile `modlist.txt` (enabled set + order) over one shared `mods/` pool, Default auto-created with one-time migration of flat instances, and a GUI picker (switch / new-by-copy). Per-profile `plugins.txt`/INIs/saves are reserved for piece 4.
 - **Why:** One mod collection serving many playthroughs/configs, each with its own enabled
   set, order, INIs and optional saves, sharing the same downloads. A top reason people
   pick MO2 over Vortex.
@@ -185,6 +217,12 @@ The 2-3 biggest levers:
   one-time-migrate existing flat instances. GUI: real picker + new/copy/rename/delete.
 
 ## Quick wins (connective tissue - ship first)
+
+**Status (2026-06-09):** #1-#5 are all **done** - per-mod `meta.ini`, the instance
+manifest, the `LaunchSpec` env field, forced libraries, and the NTFS comparator all
+shipped. #7's `update_available` helper also landed (the `(game_id, nexus_id)`
+grouping fn is still pending). #6 is the only one untouched - its reasoning lives in
+this study, but no regression test pins it yet.
 
 1. **Per-mod `meta.ini`** in `eidos-instance` (new `meta.rs`): a `ModMeta` struct
    read/written as `mods/<name>/meta.ini` keeping MO2's EXACT key names (gameName, modid,
