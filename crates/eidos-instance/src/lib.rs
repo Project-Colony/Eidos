@@ -18,6 +18,9 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
+mod meta;
+pub use meta::ModMeta;
+
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceKind {
@@ -66,6 +69,11 @@ impl Instance {
 
     pub fn mods_dir(&self) -> PathBuf {
         self.root.join("mods")
+    }
+
+    /// MO2-compatible metadata for a mod (`mods/<name>/meta.ini`); empty if none.
+    pub fn mod_meta(&self, name: &str) -> ModMeta {
+        ModMeta::read(&self.mods_dir().join(name).join("meta.ini"))
     }
 
     pub fn overwrite_dir(&self) -> PathBuf {
