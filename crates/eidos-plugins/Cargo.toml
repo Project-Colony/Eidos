@@ -1,0 +1,10 @@
+[package]
+name = "eidos-plugins"
+version = "0.0.0"
+description = "Eidos plugin (ESP/ESM/ESL) load order: model, MO2-parity ordering, plugins.txt"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+esplugin = "6"
