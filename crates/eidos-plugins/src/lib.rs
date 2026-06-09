@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 
 use esplugin::{GameId, ParseOptions, Plugin as EspPlugin};
 
+mod loadorder;
+pub use loadorder::{documents_my_games_dir, plugins_txt_dir};
+
 /// How a game persists its plugin load order on disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadOrderMechanism {
@@ -34,6 +37,9 @@ pub struct GameSpec {
     pub esplugin_id: GameId,
     pub mechanism: LoadOrderMechanism,
     pub primary_plugins: Vec<String>,
+    /// The game's folder name under the prefix's `AppData/Local` and
+    /// `Documents/My Games` (e.g. `Skyrim Special Edition`).
+    pub local_dir: String,
 }
 
 impl GameSpec {
@@ -41,27 +47,30 @@ impl GameSpec {
     /// plugin system. Oblivion/Morrowind (timestamp-ordered) are not covered yet.
     pub fn for_id(eidos_game_id: &str) -> Option<GameSpec> {
         use LoadOrderMechanism::*;
-        let (id, mech, primaries): (GameId, LoadOrderMechanism, &[&str]) = match eidos_game_id {
-            "skyrimse" | "skyrimvr" | "enderalse" => (
-                GameId::SkyrimSE,
-                Asterisk,
-                &["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"],
-            ),
-            "skyrim" => (GameId::Skyrim, PlainList, &["Skyrim.esm", "Update.esm"]),
-            "fallout4" => (GameId::Fallout4, Asterisk, &["Fallout4.esm"]),
-            "falloutnv" => (GameId::FalloutNV, PlainList, &["FalloutNV.esm"]),
-            "fallout3" => (GameId::Fallout3, PlainList, &["Fallout3.esm"]),
-            "starfield" => (
-                GameId::Starfield,
-                Asterisk,
-                &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
-            ),
-            _ => return None,
-        };
+        const SKYRIM_MASTERS: &[&str] =
+            &["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
+        let (id, mech, primaries, local): (GameId, LoadOrderMechanism, &[&str], &str) =
+            match eidos_game_id {
+                "skyrimse" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Skyrim Special Edition"),
+                "skyrimvr" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Skyrim VR"),
+                "enderalse" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Enderal Special Edition"),
+                "skyrim" => (GameId::Skyrim, PlainList, &["Skyrim.esm", "Update.esm"], "Skyrim"),
+                "fallout4" => (GameId::Fallout4, Asterisk, &["Fallout4.esm"], "Fallout4"),
+                "falloutnv" => (GameId::FalloutNV, PlainList, &["FalloutNV.esm"], "FalloutNV"),
+                "fallout3" => (GameId::Fallout3, PlainList, &["Fallout3.esm"], "Fallout3"),
+                "starfield" => (
+                    GameId::Starfield,
+                    Asterisk,
+                    &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
+                    "Starfield",
+                ),
+                _ => return None,
+            };
         Some(GameSpec {
             esplugin_id: id,
             mechanism: mech,
             primary_plugins: primaries.iter().map(|s| s.to_string()).collect(),
+            local_dir: local.to_string(),
         })
     }
 
