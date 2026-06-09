@@ -17,6 +17,7 @@ use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind, ModEntry};
+use eidos_plugins::{plugins_txt_dir, GameSpec, PluginList};
 
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
 const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
@@ -46,6 +47,7 @@ enum Screen {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Data,
+    Plugins,
     Overwrite,
     Downloads,
 }
@@ -81,6 +83,8 @@ struct App {
     created: Option<Instance>,
     error: Option<String>,
     mods: Vec<ModEntry>,
+    /// Cached ESP/ESM load order for the Plugins tab (recomputed on demand).
+    plugins: Option<PluginList>,
     tab: Tab,
     status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.
@@ -105,6 +109,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         created: None,
         error: None,
         mods: Vec::new(),
+        plugins: None,
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
@@ -303,20 +308,28 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 m.enabled = !m.enabled;
             }
             save_mods(app);
+            app.plugins = None;
         }
         Message::MoveUp(i) => {
             if i > 0 && i < app.mods.len() {
                 app.mods.swap(i - 1, i);
                 save_mods(app);
+                app.plugins = None;
             }
         }
         Message::MoveDown(i) => {
             if i + 1 < app.mods.len() {
                 app.mods.swap(i, i + 1);
                 save_mods(app);
+                app.plugins = None;
             }
         }
-        Message::SelectTab(t) => app.tab = t,
+        Message::SelectTab(t) => {
+            app.tab = t;
+            if t == Tab::Plugins && app.plugins.is_none() {
+                app.plugins = compute_plugins(app);
+            }
+        }
         Message::Run => {
             if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
@@ -338,6 +351,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::Refresh => {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
+                app.plugins = None;
                 app.status = Some("Refreshed mod list.".to_string());
             }
         }
@@ -864,6 +878,83 @@ fn tab_btn<'a>(label: &'a str, t: Tab, selected: bool) -> Element<'a, Message> {
         .into()
 }
 
+/// Compute the ESP/ESM load order for the Plugins tab: discover from the selected
+/// game's Data plus the enabled mods, preserve any existing prefix order, and
+/// validate. `None` if there is no game with a plugin system.
+fn compute_plugins(app: &App) -> Option<PluginList> {
+    let game = selected_game(app)?;
+    let spec = GameSpec::for_id(game.def.id)?;
+    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
+    let mut enabled: Vec<ModEntry> = app.mods.iter().filter(|m| m.enabled).cloned().collect();
+    enabled.reverse(); // modlist is highest-first; plugins discover low-to-high
+    sources.extend(enabled.into_iter().map(|m| (m.name, m.path)));
+
+    let mut list = PluginList::discover(&sources, &spec);
+    if let Some(cd) = game.compatdata.as_ref() {
+        let dir = plugins_txt_dir(&cd.join("pfx"), &spec);
+        let existing = PluginList::read_active(&dir, &spec);
+        if !existing.is_empty() {
+            list.apply_active(&existing);
+        }
+    }
+    list.refresh(&spec);
+    Some(list)
+}
+
+fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(list) = &app.plugins else {
+        return Column::new()
+            .spacing(4)
+            .push(text("Plugins (ESP / ESM / ESL load order)").size(13.0))
+            .push(text("Open a game instance to compute the plugin load order.").size(12.0))
+            .into();
+    };
+
+    let active = list.plugins.iter().filter(|p| p.enabled).count();
+    let missing = list.missing_masters();
+    let mut head = Column::new()
+        .spacing(2)
+        .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(12.0));
+    if !missing.is_empty() {
+        head = head.push(
+            text(format!("! {} missing master(s) - the game would crash", missing.len())).size(12.0),
+        );
+    }
+
+    let header = Row::new()
+        .spacing(6)
+        .push(text("Index").size(11.0).width(Length::Fixed(52.0)))
+        .push(text("On").size(11.0).width(Length::Fixed(28.0)))
+        .push(text("Plugin").size(11.0).width(Length::Fill))
+        .push(text("Type").size(11.0).width(Length::Fixed(36.0)));
+
+    let mut rows = Column::new().spacing(1);
+    for (i, p) in list.plugins.iter().enumerate() {
+        let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
+        let kind = if p.is_light {
+            "ESL"
+        } else if p.loads_as_master() {
+            "ESM"
+        } else {
+            "esp"
+        };
+        let row = Row::new()
+            .spacing(6)
+            .push(text(idx).size(11.0).width(Length::Fixed(52.0)))
+            .push(text(if p.enabled { "[x]" } else { "[ ]" }).size(11.0).width(Length::Fixed(28.0)))
+            .push(text(p.name.clone()).size(12.0).width(Length::Fill))
+            .push(text(kind).size(10.0).width(Length::Fixed(36.0)));
+        rows = rows.push(striped(row.into(), i % 2 == 0));
+    }
+
+    Column::new()
+        .spacing(6)
+        .push(head)
+        .push(header)
+        .push(scrollable(rows).height(Length::Fill))
+        .into()
+}
+
 fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let game_name = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
     let top = Row::new()
@@ -880,11 +971,13 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let tabs = Row::new()
         .spacing(4)
         .push(tab_btn("Data", Tab::Data, app.tab == Tab::Data))
+        .push(tab_btn("Plugins", Tab::Plugins, app.tab == Tab::Plugins))
         .push(tab_btn("Overwrite", Tab::Overwrite, app.tab == Tab::Overwrite))
         .push(tab_btn("Downloads", Tab::Downloads, app.tab == Tab::Downloads));
 
     let content = match app.tab {
         Tab::Data => data_panel(app),
+        Tab::Plugins => plugins_panel(app),
         Tab::Overwrite => overwrite_panel(app),
         Tab::Downloads => downloads_panel(),
     };

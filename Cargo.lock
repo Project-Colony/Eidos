@@ -912,6 +912,7 @@ version = "0.0.0"
 dependencies = [
  "eidos-games",
  "eidos-instance",
+ "eidos-plugins",
  "iced",
 ]
 
