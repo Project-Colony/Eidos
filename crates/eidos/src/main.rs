@@ -12,7 +12,7 @@
 use std::process::exit;
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::{Instance, InstanceKind};
+use eidos_instance::{Instance, InstanceKind, ModEntry};
 use eidos_launch::{launch, LaunchSpec};
 
 fn find_game(id: &str) -> Option<DetectedGame> {
@@ -150,6 +150,82 @@ fn cmd_play(args: &[String]) {
     }
 }
 
+fn cmd_install(args: &[String]) {
+    let (Some(id), Some(archive)) = (args.first(), args.get(1)) else {
+        eprintln!("usage: eidos install <game-id> <archive> [name]");
+        exit(2);
+    };
+    let Some(game) = find_game(id) else {
+        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+        exit(1);
+    };
+    let inst = Instance::global(id);
+    inst.create().ok();
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+
+    let name = args.get(2).cloned().unwrap_or_else(|| guess_mod_name(archive));
+    match eidos_install::install_archive(std::path::Path::new(archive), &inst.mods_dir(), &name, id) {
+        Ok(r) => {
+            // Activate the new mod at the top of the active profile's load order,
+            // like MO2 (a freshly installed mod wins conflicts by default).
+            let mut ml = inst.modlist();
+            ml.retain(|m| m.name != r.name);
+            ml.insert(0, ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
+            let _ = inst.save_modlist(&ml);
+
+            print!("Installed '{}' for {}", r.name, game.def.name);
+            if !r.stripped.is_empty() {
+                print!(" (stripped wrapper '{}')", r.stripped.trim_end_matches('/'));
+            }
+            println!();
+            println!("  -> {}", r.dest.display());
+            println!("  enabled at the top of the load order. `eidos play {id}` to use it.");
+        }
+        Err(e) => {
+            eprintln!("install failed: {e}");
+            exit(1);
+        }
+    }
+}
+
+/// Guess a clean mod name from a (possibly Nexus-suffixed) archive filename, e.g.
+/// `Foo - Bar-19181-1-7-1575746557.7z` -> `Foo - Bar`.
+fn guess_mod_name(archive: &str) -> String {
+    let stem = std::path::Path::new(archive).file_stem().and_then(|s| s.to_str()).unwrap_or("Mod");
+    // Drop the trailing Nexus "-<modid>-<version parts>-<timestamp>" (all-digit groups).
+    let mut parts: Vec<&str> = stem.split('-').collect();
+    while parts.len() > 1
+        && parts.last().is_some_and(|p| {
+            let t = p.trim();
+            !t.is_empty() && t.chars().all(|c| c.is_ascii_digit())
+        })
+    {
+        parts.pop();
+    }
+    let name = parts.join("-");
+    let name = name.trim().trim_end_matches('-').trim();
+    if name.is_empty() {
+        stem.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
+#[cfg(test)]
+mod install_tests {
+    use super::guess_mod_name;
+
+    #[test]
+    fn strips_nexus_suffix() {
+        assert_eq!(
+            guess_mod_name("/dl/Expressive Facial Animation - Female Edition-19181-1-7-1575746557.7z"),
+            "Expressive Facial Animation - Female Edition"
+        );
+        assert_eq!(guess_mod_name("TrueHUD-62775-1-1-9-1703382929.7z"), "TrueHUD");
+        assert_eq!(guess_mod_name("SkyUI_5_1.7z"), "SkyUI_5_1");
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "eidos - a native Linux mod manager\n\
@@ -158,7 +234,8 @@ fn usage() -> ! {
          \x20 eidos games                       list supported games installed here\n\
          \x20 eidos init <game-id>              create a modding instance\n\
          \x20 eidos play <game-id>              show what would be mounted\n\
-         \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game"
+         \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game\n\
+         \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)"
     );
     exit(2);
 }
@@ -172,6 +249,7 @@ fn main() {
             None => usage(),
         },
         Some("play") => cmd_play(&args[1..]),
+        Some("install") => cmd_install(&args[1..]),
         _ => usage(),
     }
 }

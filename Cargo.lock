@@ -884,6 +884,7 @@ name = "eidos"
 version = "0.0.0"
 dependencies = [
  "eidos-games",
+ "eidos-install",
  "eidos-instance",
  "eidos-launch",
  "eidos-plugins",
