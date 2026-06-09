@@ -18,6 +18,7 @@ use iced::{Background, Border, Color, Element, Length, Task, Theme};
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind, ModEntry};
 use eidos_plugins::{plugins_txt_dir, GameSpec, PluginList};
+use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
 const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
@@ -48,6 +49,7 @@ enum Screen {
 enum Tab {
     Data,
     Plugins,
+    Conflicts,
     Overwrite,
     Downloads,
 }
@@ -85,6 +87,8 @@ struct App {
     mods: Vec<ModEntry>,
     /// Cached ESP/ESM load order for the Plugins tab (recomputed on demand).
     plugins: Option<PluginList>,
+    /// Cached per-file conflict analysis for the Conflicts tab + mod-row flags.
+    conflicts: Option<ConflictMap>,
     tab: Tab,
     status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.
@@ -110,6 +114,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         error: None,
         mods: Vec::new(),
         plugins: None,
+        conflicts: None,
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
@@ -309,12 +314,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
             save_mods(app);
             app.plugins = None;
+            app.conflicts = None;
         }
         Message::MoveUp(i) => {
             if i > 0 && i < app.mods.len() {
                 app.mods.swap(i - 1, i);
                 save_mods(app);
                 app.plugins = None;
+                app.conflicts = None;
             }
         }
         Message::MoveDown(i) => {
@@ -322,12 +329,16 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.mods.swap(i, i + 1);
                 save_mods(app);
                 app.plugins = None;
+                app.conflicts = None;
             }
         }
         Message::SelectTab(t) => {
             app.tab = t;
             if t == Tab::Plugins && app.plugins.is_none() {
                 app.plugins = compute_plugins(app);
+            }
+            if t == Tab::Conflicts && app.conflicts.is_none() {
+                app.conflicts = compute_conflicts(app);
             }
         }
         Message::Run => {
@@ -352,6 +363,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
                 app.plugins = None;
+                app.conflicts = None;
                 app.status = Some("Refreshed mod list.".to_string());
             }
         }
@@ -735,7 +747,7 @@ fn toolbar<'a>() -> Element<'a, Message> {
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
-fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
+fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag: String) -> Element<'a, Message> {
     let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
     let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let toggle = button(text(if m.enabled { "[x]" } else { "[ ]" }).size(12.0))
@@ -748,7 +760,7 @@ fn mod_row<'a>(i: usize, m: &ModEntry, len: usize) -> Element<'a, Message> {
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
-        .push(text(if m.enabled { "" } else { "off" }).size(11.0).width(C_FLAGS))
+        .push(text(flag).size(11.0).width(C_FLAGS))
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE))
         .into()
 }
@@ -777,7 +789,21 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     for (i, m) in app.mods.iter().enumerate() {
-        list = list.push(striped(mod_row(i, m, len), i % 2 == 0));
+        let flag = if !m.enabled {
+            "off".to_string()
+        } else if let Some(c) = &app.conflicts {
+            match c.state((i + 1) as u32) {
+                ConflictState::Overwrites => "ovr",
+                ConflictState::Overwritten => "ovd",
+                ConflictState::Mixed => "mix",
+                ConflictState::Redundant => "red",
+                ConflictState::None => "",
+            }
+            .to_string()
+        } else {
+            String::new()
+        };
+        list = list.push(striped(mod_row(i, m, len, flag), i % 2 == 0));
     }
 
     let overwrite = button(
@@ -955,6 +981,87 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
+/// Analyse file conflicts across the enabled mods (+ the game data) for the
+/// Conflicts tab and the mod-row flags. Highest-priority mod first; game data
+/// last as origin 0. `None` if there is no game.
+fn compute_conflicts(app: &App) -> Option<ConflictMap> {
+    let game = selected_game(app)?;
+    let mut layers: Vec<Layer> = app
+        .mods
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.enabled)
+        .map(|(i, m)| Layer {
+            origin: (i + 1) as u32,
+            name: m.name.clone(),
+            root: m.path.clone(),
+        })
+        .collect();
+    layers.push(Layer {
+        origin: 0,
+        name: format!("[{}]", game.def.id),
+        root: game.data_path.clone(),
+    });
+    Some(ConflictMap::build(&layers))
+}
+
+fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(map) = &app.conflicts else {
+        return Column::new()
+            .spacing(4)
+            .push(text("Conflicts").size(13.0))
+            .push(text("Open a game instance to analyse file conflicts across your mods.").size(12.0))
+            .into();
+    };
+
+    let mut counts = (0usize, 0usize, 0usize, 0usize); // overwrites, overwritten, mixed, redundant
+    let mut rows = Column::new().spacing(1);
+    for (i, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled) {
+        let origin = (i + 1) as u32;
+        let tag = match map.state(origin) {
+            ConflictState::Overwrites => {
+                counts.0 += 1;
+                "overwrites others"
+            }
+            ConflictState::Overwritten => {
+                counts.1 += 1;
+                "overwritten"
+            }
+            ConflictState::Mixed => {
+                counts.2 += 1;
+                "mixed"
+            }
+            ConflictState::Redundant => {
+                counts.3 += 1;
+                "redundant - wins nothing"
+            }
+            ConflictState::None => continue,
+        };
+        let detail = map
+            .mods
+            .get(&origin)
+            .map(|c| format!("{}/{} won", c.won, c.total))
+            .unwrap_or_default();
+        let row = Row::new()
+            .spacing(6)
+            .push(text(m.name.clone()).size(12.0).width(Length::Fill))
+            .push(text(tag).size(11.0).width(Length::Fixed(160.0)))
+            .push(text(detail).size(10.0).width(Length::Fixed(80.0)));
+        rows = rows.push(striped(row.into(), i % 2 == 0));
+    }
+
+    let summary = format!(
+        "{} overwrite - {} overwritten - {} mixed - {} redundant",
+        counts.0, counts.1, counts.2, counts.3
+    );
+    Column::new()
+        .spacing(6)
+        .push(text(format!("Conflicts: {summary}")).size(12.0))
+        .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(10.0))
+        .push(scrollable(rows).height(Length::Fill))
+        .into()
+}
+
 fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let game_name = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
     let top = Row::new()
@@ -972,12 +1079,14 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         .spacing(4)
         .push(tab_btn("Data", Tab::Data, app.tab == Tab::Data))
         .push(tab_btn("Plugins", Tab::Plugins, app.tab == Tab::Plugins))
+        .push(tab_btn("Conflicts", Tab::Conflicts, app.tab == Tab::Conflicts))
         .push(tab_btn("Overwrite", Tab::Overwrite, app.tab == Tab::Overwrite))
         .push(tab_btn("Downloads", Tab::Downloads, app.tab == Tab::Downloads));
 
     let content = match app.tab {
         Tab::Data => data_panel(app),
         Tab::Plugins => plugins_panel(app),
+        Tab::Conflicts => conflicts_panel(app),
         Tab::Overwrite => overwrite_panel(app),
         Tab::Downloads => downloads_panel(),
     };

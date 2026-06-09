@@ -914,6 +914,7 @@ version = "0.0.0"
 name = "eidos-gui"
 version = "0.0.0"
 dependencies = [
+ "eidos-conflicts",
  "eidos-games",
  "eidos-instance",
  "eidos-plugins",
