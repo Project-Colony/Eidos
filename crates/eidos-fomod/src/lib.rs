@@ -13,6 +13,8 @@ mod engine;
 mod model;
 mod parse;
 
-pub use engine::{build_default_plan, effective_type, eval, Context};
+pub use engine::{
+    build_default_plan, build_plan, default_selection, effective_type, eval, Context, Selection,
+};
 pub use model::*;
 pub use parse::decode_xml;

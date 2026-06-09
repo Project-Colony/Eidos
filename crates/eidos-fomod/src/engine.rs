@@ -94,27 +94,61 @@ fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: 
     }
 }
 
-/// Compute the ordered file plan for a non-interactive install: walk the steps,
-/// taking the default selection per group, accumulating condition flags, then apply
-/// `conditionalFileInstalls`. The result is sorted by priority then XML order, so
-/// applying it in order lets higher-priority sources overwrite lower ones.
-pub fn build_default_plan(config: &ModuleConfig, ctx: &Context) -> Vec<FileItem> {
+/// A selection of options: `selected[step][group][plugin]`.
+pub type Selection = Vec<Vec<Vec<bool>>>;
+
+/// The default selection for every step/group/plugin, via a forward pass so later
+/// steps see the flags set by earlier default choices. Invisible steps select nothing.
+pub fn default_selection(config: &ModuleConfig, ctx: &Context) -> Selection {
+    let mut flags = ctx.flags.clone();
+    let mut sel = Vec::with_capacity(config.steps.len());
+    for step in &config.steps {
+        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        let mut step_sel = Vec::with_capacity(step.groups.len());
+        for group in &step.groups {
+            let mut g = vec![false; group.plugins.len()];
+            if visible {
+                for i in default_group_selection(group, &flags, ctx) {
+                    g[i] = true;
+                    for (n, v) in &group.plugins[i].condition_flags {
+                        flags.insert(n.clone(), v.clone());
+                    }
+                }
+            }
+            step_sel.push(g);
+        }
+        sel.push(step_sel);
+    }
+    sel
+}
+
+/// Compute the ordered file plan for a given selection: walk the visible steps,
+/// take each selected option's flags + files, then apply `conditionalFileInstalls`.
+/// Sorted by priority then XML order, so applying in order lets higher-priority
+/// sources overwrite lower ones.
+pub fn build_plan(config: &ModuleConfig, selection: &Selection, ctx: &Context) -> Vec<FileItem> {
     let mut flags = ctx.flags.clone();
     let mut files = config.required_files.clone();
 
-    for step in &config.steps {
-        if let Some(v) = &step.visible {
-            if !eval(v, &flags, ctx) {
-                continue;
-            }
+    for (si, step) in config.steps.iter().enumerate() {
+        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        if !visible {
+            continue;
         }
-        for group in &step.groups {
-            for &i in &default_group_selection(group, &flags, ctx) {
-                let plugin = &group.plugins[i];
-                for (name, value) in &plugin.condition_flags {
-                    flags.insert(name.clone(), value.clone());
+        for (gi, group) in step.groups.iter().enumerate() {
+            for (pi, plugin) in group.plugins.iter().enumerate() {
+                let on = selection
+                    .get(si)
+                    .and_then(|s| s.get(gi))
+                    .and_then(|g| g.get(pi))
+                    .copied()
+                    .unwrap_or(false);
+                if on {
+                    for (n, v) in &plugin.condition_flags {
+                        flags.insert(n.clone(), v.clone());
+                    }
+                    files.extend(plugin.files.iter().cloned());
                 }
-                files.extend(plugin.files.iter().cloned());
             }
         }
     }
@@ -127,6 +161,11 @@ pub fn build_default_plan(config: &ModuleConfig, ctx: &Context) -> Vec<FileItem>
 
     files.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.sequence.cmp(&b.sequence)));
     files
+}
+
+/// The plan for a non-interactive install, using the default selection.
+pub fn build_default_plan(config: &ModuleConfig, ctx: &Context) -> Vec<FileItem> {
+    build_plan(config, &default_selection(config, ctx), ctx)
 }
 
 /// `actual >= required` on dotted numeric versions (missing parts count as 0).
@@ -184,6 +223,18 @@ mod tests {
         assert!(dests.contains(&"rec.esp")); // Recommended selected in the exactly-one group
         assert!(dests.contains(&"cond.esp")); // conditional fires: Rec set flag v=on
         assert!(!dests.contains(&"opt.esp")); // the Optional sibling was not chosen
+    }
+
+    #[test]
+    fn explicit_selection_overrides_default() {
+        let mc = ModuleConfig::parse(XML).unwrap();
+        // Pick "Opt" instead of the default "Rec".
+        let sel = vec![vec![vec![false, true]]];
+        let plan = build_plan(&mc, &sel, &Context::default());
+        let dests: Vec<&str> = plan.iter().map(|f| f.destination.as_str()).collect();
+        assert!(dests.contains(&"opt.esp"));
+        assert!(!dests.contains(&"rec.esp"));
+        assert!(!dests.contains(&"cond.esp")); // flag v not set -> conditional skipped
     }
 
     #[test]

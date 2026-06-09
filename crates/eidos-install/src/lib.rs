@@ -164,7 +164,9 @@ impl ArchiveTree {
 }
 
 mod install;
-pub use install::{install_archive, InstallError, InstallReport};
+pub use install::{
+    finish_fomod, install_archive, open_fomod, FomodSession, InstallError, InstallReport,
+};
 
 /// Known top-level Data folder names (lowercased), from MO2's
 /// `GamebryoModDataChecker::possibleFolderNames`.

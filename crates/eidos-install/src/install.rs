@@ -282,21 +282,24 @@ fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Parse the FOMOD under `root`, compute the default-option plan, and copy the
-/// resulting files into `dest` (higher-priority sources overwrite lower ones).
-fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<(), InstallError> {
+/// Parse the `fomod/ModuleConfig.xml` under `root`.
+fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, InstallError> {
     let fomod_dir =
         find_ci(root, "fomod").ok_or_else(|| InstallError::Fomod("fomod/ not found".to_string()))?;
     let xml_path = find_ci(&fomod_dir, "moduleconfig.xml")
         .ok_or_else(|| InstallError::Fomod("ModuleConfig.xml not found".to_string()))?;
     let bytes = fs::read(&xml_path)?;
     let xml = eidos_fomod::decode_xml(&bytes);
-    let config = eidos_fomod::ModuleConfig::parse(&xml).map_err(InstallError::Fomod)?;
-    let plan = eidos_fomod::build_default_plan(&config, &eidos_fomod::Context::default());
+    eidos_fomod::ModuleConfig::parse(&xml).map_err(InstallError::Fomod)
+}
 
-    for item in &plan {
+/// Copy a computed FOMOD plan from the extracted `root` into `dest`, resolving each
+/// source case-insensitively; later (higher-priority) items overwrite earlier ones.
+/// Sources the archive did not ship are skipped.
+fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Result<(), InstallError> {
+    for item in plan {
         let Some(src) = resolve_ci(root, &item.source) else {
-            continue; // a source the archive did not ship; skip rather than fail
+            continue;
         };
         let dst = dest.join(item.destination.replace('\\', "/"));
         if item.is_folder {
@@ -309,4 +312,83 @@ fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<(), InstallError> {
         }
     }
     Ok(())
+}
+
+/// Parse the FOMOD under `root` and install it with the default selections.
+fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<(), InstallError> {
+    let config = parse_fomod_at(root)?;
+    let plan = eidos_fomod::build_default_plan(&config, &eidos_fomod::Context::default());
+    apply_plan(root, &plan, dest)
+}
+
+/// A FOMOD extracted and parsed, awaiting the user's choices (the GUI wizard). The
+/// extraction temp is removed when the session is dropped.
+pub struct FomodSession {
+    pub config: eidos_fomod::ModuleConfig,
+    root: PathBuf,
+    tmp: PathBuf,
+    name: String,
+    archive: PathBuf,
+}
+
+impl Drop for FomodSession {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.tmp);
+    }
+}
+
+/// Extract `archive`; if it is a FOMOD, return a session whose `config` drives a
+/// wizard. Returns `Ok(None)` for a non-FOMOD archive (use [`install_archive`]).
+pub fn open_fomod(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+) -> Result<Option<FomodSession>, InstallError> {
+    let bin = find_7z().ok_or(InstallError::No7z)?;
+    let tmp = mods_dir.join(format!(
+        ".eidos-install-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&tmp)?;
+    if let Err(e) = extract_all(bin, archive, &tmp) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+    let Some(root) = find_fomod_root(&tmp) else {
+        let _ = fs::remove_dir_all(&tmp);
+        return Ok(None);
+    };
+    let config = match parse_fomod_at(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    };
+    Ok(Some(FomodSession {
+        config,
+        root,
+        tmp,
+        name: name.to_string(),
+        archive: archive.to_path_buf(),
+    }))
+}
+
+/// Apply the chosen selection and finish the FOMOD install.
+pub fn finish_fomod(
+    session: FomodSession,
+    selection: &eidos_fomod::Selection,
+    mods_dir: &Path,
+    game_name: &str,
+) -> Result<InstallReport, InstallError> {
+    let dest = mods_dir.join(&session.name);
+    if dest.exists() && is_nonempty_dir(&dest) {
+        return Err(InstallError::Exists(dest));
+    }
+    fs::create_dir_all(&dest)?;
+    let plan = eidos_fomod::build_plan(&session.config, selection, &eidos_fomod::Context::default());
+    apply_plan(&session.root, &plan, &dest)?;
+    write_meta(&session.archive, &dest, game_name)?;
+    Ok(InstallReport { name: session.name.clone(), stripped: String::new(), fomod: true, dest })
 }
