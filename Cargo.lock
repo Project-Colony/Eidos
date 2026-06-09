@@ -922,6 +922,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-install"
+version = "0.0.0"
+dependencies = [
+ "eidos-instance",
+]
+
+[[package]]
 name = "eidos-instance"
 version = "0.0.0"
 

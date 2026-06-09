@@ -1,0 +1,10 @@
+[package]
+name = "eidos-install"
+version = "0.0.0"
+description = "Eidos mod installer: archive tree, ModDataChecker, wrapper-strip (MO2 Simple installer parity)"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+eidos-instance = { path = "../eidos-instance" }
