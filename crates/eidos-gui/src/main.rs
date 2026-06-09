@@ -461,14 +461,35 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FomodNext => {
             if let Some(w) = &mut app.fomod {
-                if w.step + 1 < w.session.config.steps.len() {
-                    w.step += 1;
+                let vis = eidos_fomod::visible_steps(
+                    &w.session.config,
+                    &w.selection,
+                    &eidos_fomod::Context::default(),
+                );
+                let mut s = w.step + 1;
+                while s < vis.len() && !vis[s] {
+                    s += 1;
+                }
+                if s < vis.len() {
+                    w.step = s;
                 }
             }
         }
         Message::FomodBack => {
             if let Some(w) = &mut app.fomod {
-                w.step = w.step.saturating_sub(1);
+                let vis = eidos_fomod::visible_steps(
+                    &w.session.config,
+                    &w.selection,
+                    &eidos_fomod::Context::default(),
+                );
+                let mut s = w.step;
+                while s > 0 {
+                    s -= 1;
+                    if vis.get(s).copied().unwrap_or(true) {
+                        w.step = s;
+                        break;
+                    }
+                }
             }
         }
         Message::FomodInstall => {
@@ -1316,6 +1337,30 @@ fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
     }
 }
 
+/// Whether the wizard's current step satisfies its group constraints: a "choose
+/// one" group needs exactly one selected, a "choose at least one" needs >= 1.
+fn step_valid(w: &FomodWizard) -> bool {
+    use eidos_fomod::GroupType::*;
+    let Some(step) = w.session.config.steps.get(w.step) else {
+        return true;
+    };
+    let Some(sel) = w.selection.get(w.step) else {
+        return true;
+    };
+    for (gi, group) in step.groups.iter().enumerate() {
+        let count = sel.get(gi).map(|g| g.iter().filter(|&&x| x).count()).unwrap_or(0);
+        let ok = match group.group_type {
+            SelectExactlyOne => count == 1,
+            SelectAtLeastOne => count >= 1,
+            _ => true,
+        };
+        if !ok {
+            return false;
+        }
+    }
+    true
+}
+
 /// The FOMOD installer wizard: the current step's groups as selectable options,
 /// with Back / Cancel / Next / Install.
 fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
@@ -1376,22 +1421,40 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             }
         }
     }
+    let vis = eidos_fomod::visible_steps(config, &w.selection, &eidos_fomod::Context::default());
+    let has_prev = (0..w.step).any(|i| vis.get(i).copied().unwrap_or(false));
+    let has_next = (w.step + 1..vis.len()).any(|i| vis[i]);
+    let valid = step_valid(w);
+
     let mut nav = Row::new().spacing(8);
-    if w.step > 0 {
+    if has_prev {
         nav = nav.push(tool_btn("Back", Message::FomodBack));
     }
     nav = nav.push(tool_btn("Cancel", Message::FomodCancel));
     nav = nav.push(Space::with_width(Length::Fill));
-    if w.step + 1 < total {
-        nav = nav.push(tool_btn("Next", Message::FomodNext));
+    let (label, msg) = if has_next {
+        ("Next", Message::FomodNext)
     } else {
-        nav = nav.push(tool_btn("Install", Message::FomodInstall));
+        ("Install", Message::FomodInstall)
+    };
+    if valid {
+        nav = nav.push(tool_btn(label, msg));
+    } else {
+        // A constraint is unmet (e.g. a "choose one" group with nothing picked).
+        nav = nav.push(button(text(label).size(13.0)).padding(6).style(button::secondary));
     }
+
+    let mut bottom = Column::new().spacing(4);
+    if !valid {
+        bottom = bottom.push(text("Select the required option(s) to continue.").size(11.0));
+    }
+    bottom = bottom.push(nav);
+
     Column::new()
         .spacing(8)
         .padding(8)
         .push(scrollable(col).height(Length::Fill))
-        .push(nav)
+        .push(bottom)
         .into()
 }
 

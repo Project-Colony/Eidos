@@ -209,6 +209,36 @@ pub fn step_types(
     Vec::new()
 }
 
+/// Per-step visibility, given the flags accumulated by the selections in the prior
+/// visible steps. A step whose `<visible>` condition is false should be skipped in
+/// navigation (and its options contribute nothing to the plan).
+pub fn visible_steps(config: &ModuleConfig, selection: &Selection, ctx: &Context) -> Vec<bool> {
+    let mut flags = ctx.flags.clone();
+    let mut out = Vec::with_capacity(config.steps.len());
+    for (si, step) in config.steps.iter().enumerate() {
+        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        out.push(visible);
+        if visible {
+            for (gi, group) in step.groups.iter().enumerate() {
+                for (pi, plugin) in group.plugins.iter().enumerate() {
+                    let on = selection
+                        .get(si)
+                        .and_then(|s| s.get(gi))
+                        .and_then(|g| g.get(pi))
+                        .copied()
+                        .unwrap_or(false);
+                    if on {
+                        for (n, v) in &plugin.condition_flags {
+                            flags.insert(n.clone(), v.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// `actual >= required` on dotted numeric versions (missing parts count as 0).
 fn version_ge(actual: &str, required: &str) -> bool {
     let pa: Vec<u64> = actual.split('.').map(|p| p.parse().unwrap_or(0)).collect();
@@ -276,6 +306,21 @@ mod tests {
         assert!(dests.contains(&"opt.esp"));
         assert!(!dests.contains(&"rec.esp"));
         assert!(!dests.contains(&"cond.esp")); // flag v not set -> conditional skipped
+    }
+
+    #[test]
+    fn step_types_reflects_effective_types() {
+        let mc = ModuleConfig::parse(XML).unwrap();
+        let sel = default_selection(&mc, &Context::default());
+        let types = step_types(&mc, &sel, &Context::default(), 0);
+        assert_eq!(types, vec![vec![PluginType::Recommended, PluginType::Optional]]);
+    }
+
+    #[test]
+    fn visible_steps_all_visible_without_conditions() {
+        let mc = ModuleConfig::parse(XML).unwrap();
+        let sel = default_selection(&mc, &Context::default());
+        assert_eq!(visible_steps(&mc, &sel, &Context::default()), vec![true]);
     }
 
     #[test]
