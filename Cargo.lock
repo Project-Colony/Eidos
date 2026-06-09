@@ -954,6 +954,13 @@ name = "eidos-core"
 version = "0.0.0"
 
 [[package]]
+name = "eidos-fomod"
+version = "0.0.0"
+dependencies = [
+ "roxmltree",
+]
+
+[[package]]
 name = "eidos-fuse"
 version = "0.0.0"
 dependencies = [
