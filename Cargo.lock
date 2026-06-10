@@ -1023,6 +1023,7 @@ dependencies = [
 name = "eidos-plugins"
 version = "0.0.0"
 dependencies = [
+ "eidos-gamedef",
  "esplugin",
 ]
 

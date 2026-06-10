@@ -8,3 +8,4 @@ edition.workspace = true
 
 [dependencies]
 esplugin = "6"
+eidos-gamedef = { path = "../eidos-gamedef" }

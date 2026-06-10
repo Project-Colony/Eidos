@@ -44,33 +44,31 @@ pub struct GameSpec {
 
 impl GameSpec {
     /// Plugin spec for an Eidos game id, or `None` if the game has no (supported)
-    /// plugin system. Oblivion/Morrowind (timestamp-ordered) are not covered yet.
+    /// plugin system. The mechanism, master plugins and My Games folder come from
+    /// the shared `eidos-gamedef` descriptor; only the esplugin `GameId` (which
+    /// belongs to the esplugin crate) is mapped here. Timestamp-ordered games
+    /// (Oblivion/Morrowind) return `None` - not managed yet.
     pub fn for_id(eidos_game_id: &str) -> Option<GameSpec> {
-        use LoadOrderMechanism::*;
-        const SKYRIM_MASTERS: &[&str] =
-            &["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
-        let (id, mech, primaries, local): (GameId, LoadOrderMechanism, &[&str], &str) =
-            match eidos_game_id {
-                "skyrimse" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Skyrim Special Edition"),
-                "skyrimvr" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Skyrim VR"),
-                "enderalse" => (GameId::SkyrimSE, Asterisk, SKYRIM_MASTERS, "Enderal Special Edition"),
-                "skyrim" => (GameId::Skyrim, PlainList, &["Skyrim.esm", "Update.esm"], "Skyrim"),
-                "fallout4" => (GameId::Fallout4, Asterisk, &["Fallout4.esm"], "Fallout4"),
-                "falloutnv" => (GameId::FalloutNV, PlainList, &["FalloutNV.esm"], "FalloutNV"),
-                "fallout3" => (GameId::Fallout3, PlainList, &["Fallout3.esm"], "Fallout3"),
-                "starfield" => (
-                    GameId::Starfield,
-                    Asterisk,
-                    &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
-                    "Starfield",
-                ),
-                _ => return None,
-            };
+        let def = eidos_gamedef::GameDef::for_id(eidos_game_id)?;
+        let mechanism = match def.load_order {
+            eidos_gamedef::LoadOrder::Asterisk => LoadOrderMechanism::Asterisk,
+            eidos_gamedef::LoadOrder::PlainList => LoadOrderMechanism::PlainList,
+            eidos_gamedef::LoadOrder::FileTime => return None,
+        };
+        let esplugin_id = match eidos_game_id {
+            "skyrimse" | "skyrimvr" | "enderalse" => GameId::SkyrimSE,
+            "skyrim" => GameId::Skyrim,
+            "fallout4" | "fallout4vr" => GameId::Fallout4,
+            "falloutnv" => GameId::FalloutNV,
+            "fallout3" => GameId::Fallout3,
+            "starfield" => GameId::Starfield,
+            _ => return None,
+        };
         Some(GameSpec {
-            esplugin_id: id,
-            mechanism: mech,
-            primary_plugins: primaries.iter().map(|s| s.to_string()).collect(),
-            local_dir: local.to_string(),
+            esplugin_id,
+            mechanism,
+            primary_plugins: def.primary_plugins.iter().map(|s| s.to_string()).collect(),
+            local_dir: def.documents_dir.to_string(),
         })
     }
 
