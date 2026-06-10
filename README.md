@@ -84,6 +84,9 @@ crates/eidos-plugins    ESP/ESM/ESL plugin load order (via esplugin) + plugins.t
 crates/eidos-conflicts  per-file conflict analysis (winners / losers, per-mod state)
 crates/eidos-install    mod installer: 7-Zip extract + Simple wrapper-strip + meta.ini
 crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
+crates/eidos-gamefeatures  BSA/archive invalidation + per-profile INIs/saves at launch
+crates/eidos-gamedef    declarative per-game descriptor (one row per game; MO2 schema)
+crates/eidos-ini        shared low-level INI primitives (newline / section / key / edit)
 docs/architecture.md    the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required
@@ -201,6 +204,16 @@ fusermount3 -u /mnt/point
       scripted installer (UTF-16 `ModuleConfig.xml` parse + condition/flag engine),
       driven from a CLI (`eidos install`) and the GUI Install button + an
       interactive FOMOD wizard; writes a MO2-compatible `meta.ini`
+- [x] Per-game Bethesda features (`eidos-gamefeatures` + `eidos-gamedef`) - all
+      keyed off one declarative `GameDef` row per game (MO2's `IPluginGame`
+      schema): **BSA/archive invalidation** so loose mod files override the
+      vanilla BSAs (without it BSA-packed mods are silently ignored);
+      **per-profile INIs** seeded from the prefix then deployed/captured around
+      launch; and **per-profile saves** via a namespace bind-mount of the
+      profile's saves over the prefix (the Linux-native equivalent of MO2's usvfs
+      save mapping, no prefix changes). The INI writing shares one `eidos-ini`
+      primitive (MO2's single-`QSettings` idea), keeping MO2 `meta.ini`
+      round-trips byte-for-byte
 - [x] FUSE passthrough + rootless perf tuning (1 MiB readahead / max_write).
       Passthrough negotiates `FUSE_PASSTHROUGH` and engages when the daemon runs
       privileged (`setcap cap_sys_admin+ep`, taken via a bare mount namespace):
@@ -228,10 +241,11 @@ fusermount3 -u /mnt/point
 - [ ] Casing normalization at mod-import time
 
 The manager layer above the VFS now has the mod installer (Simple + FOMOD wizard),
-plugins, conflicts, profiles, `meta.ini` and the instance manifest. What is still
-ahead - tools-through-VFS re-entry (xEdit/FNIS/BodySlide) and per-game BSA/INI
-features - is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 +
-usvfs study that drove this work.
+plugins, conflicts, profiles, `meta.ini`, the instance manifest, and per-game
+Bethesda features (BSA invalidation + per-profile INIs/saves off a declarative
+`GameDef`). What is still ahead - tools-through-VFS re-entry (xEdit/FNIS/BodySlide)
+- is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 + usvfs
+study that drove this work.
 
 ## Prior art and references
 

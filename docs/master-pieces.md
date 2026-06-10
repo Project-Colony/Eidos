@@ -7,7 +7,7 @@
 
 ## Status (updated 2026-06-10)
 
-The connective-tissue quick wins and 4 of the 6 master pieces shipped immediately
+The connective-tissue quick wins and 5 of the 6 master pieces shipped immediately
 after this study was written. The rest of this document is the original study; the
 table below is the current truth.
 
@@ -16,7 +16,7 @@ table below is the current truth.
 | 1. ESP/ESM/ESL plugin load order | **Done** - `eidos-plugins` |
 | 2. Mod installer (archive + FOMOD) | **Done** - `eidos-install` + `eidos-fomod` |
 | 3. Tools-through-VFS re-entry | Remaining |
-| 4. Per-game features (BSA / INI / saves) | Remaining |
+| 4. Per-game features (BSA / INI / saves) | **Done** - `eidos-gamefeatures` + `eidos-gamedef` |
 | 5. Per-file conflict detection | **Done** - `eidos-conflicts` |
 | 6. Profiles | **Done** - `eidos-instance` |
 
@@ -48,11 +48,12 @@ and cannot run a tool (xEdit/FNIS/BodySlide) against the merged view. Every one 
 those is table-stakes for replacing MO2, and **none of them live in the FUSE layer -
 they live in new crates above it.**
 
-*(Update 2026-06-10: four of those gaps have since closed - the mod installer
+*(Update 2026-06-10: five of those gaps have since closed - the mod installer
 (`eidos-install` + `eidos-fomod`, Simple + an interactive FOMOD wizard), ESP plugin
-load order (`eidos-plugins`), conflict explanation (`eidos-conflicts`), and profiles
-(`eidos-instance`). Tools-through-VFS and BSA/INI handling remain. See the status
-table at the top.)*
+load order (`eidos-plugins`), conflict explanation (`eidos-conflicts`), profiles
+(`eidos-instance`), and per-game BSA/INI/save handling (`eidos-gamefeatures` +
+`eidos-gamedef`). Only tools-through-VFS re-entry remains. See the status table at
+the top.)*
 
 The 2-3 biggest levers:
 
@@ -165,7 +166,7 @@ The 2-3 biggest levers:
 
 ### 4. Per-game features for Bethesda correctness (BSA invalidation + INIs + saves)
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-games` (schema) + `eidos-gamefeatures` (new) + `eidos-launch` &nbsp;|&nbsp; **Depends on:** plugin load order (prefix resolver), profiles
-- **Status (2026-06-09): Remaining.** Not started; both prerequisites now exist - the prefix resolver (from piece 1) and profiles (piece 6).
+- **Status (2026-06-10): Done.** `eidos-gamefeatures` ships the INI writer + BSA/archive invalidation, per-profile INIs (seed/deploy/capture around launch), and per-profile saves (a namespace bind-mount of the profile's saves over the prefix). All keyed off the declarative `eidos-gamedef` descriptor (one row per game, MO2's `IPluginGame` schema), which the detection catalog, the plugin spec, and the GUI script-extender swap now read from. INI writing shares the `eidos-ini` primitive.
 - **Why:** Three MO2 game features are not polish - without them mods are silently
   ignored. **BSAInvalidation + DataArchives**: Bethesda engines prefer files packed in
   vanilla BSAs over loose files unless invalidation is active, and many mods ship BSAs
