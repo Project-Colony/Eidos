@@ -19,6 +19,25 @@ use esplugin::{GameId, ParseOptions, Plugin as EspPlugin};
 mod loadorder;
 pub use loadorder::{documents_my_games_dir, plugins_txt_dir};
 
+/// Whether `name` is a plugin file by extension (`.esp`/`.esm`/`.esl`),
+/// case-insensitively - MO2's plugin filter (`*.esp *.esm *.esl`).
+pub fn is_plugin(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl")
+}
+
+/// Whether `name` loads as a master by its extension (`.esm`/`.esl`) - MO2's
+/// `hasMasterExtension`; both sort above normal plugins.
+pub fn is_master_ext(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.ends_with(".esm") || n.ends_with(".esl")
+}
+
+/// Whether `name` is a light (`.esl`) plugin by its extension.
+pub fn is_light_ext(name: &str) -> bool {
+    name.to_ascii_lowercase().ends_with(".esl")
+}
+
 /// How a game persists its plugin load order on disk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoadOrderMechanism {
@@ -109,11 +128,7 @@ impl Plugin {
     /// Whether the game loads this as a master (so it sorts above normal plugins):
     /// the header master flag, a light plugin, or an `.esm`/`.esl` extension.
     pub fn loads_as_master(&self) -> bool {
-        if self.is_master || self.is_light {
-            return true;
-        }
-        let lower = self.name.to_ascii_lowercase();
-        lower.ends_with(".esm") || lower.ends_with(".esl")
+        self.is_master || self.is_light || is_master_ext(&self.name)
     }
 }
 
@@ -139,11 +154,7 @@ impl PluginList {
                 .flatten()
                 .filter_map(|e| {
                     let name = e.file_name().to_string_lossy().into_owned();
-                    let lower = name.to_ascii_lowercase();
-                    let is_plugin = lower.ends_with(".esp")
-                        || lower.ends_with(".esm")
-                        || lower.ends_with(".esl");
-                    is_plugin.then(|| (name, e.path()))
+                    is_plugin(&name).then(|| (name, e.path()))
                 })
                 .collect();
             found.sort_by(|a, b| a.0.to_ascii_lowercase().cmp(&b.0.to_ascii_lowercase()));
@@ -153,8 +164,7 @@ impl PluginList {
                 let (is_master, is_light, is_medium, masters) =
                     parse_header(&path, spec.esplugin_id).unwrap_or_else(|| {
                         // Unparseable: fall back to the extension.
-                        let m = key.ends_with(".esm") || key.ends_with(".esl");
-                        (m, key.ends_with(".esl"), false, Vec::new())
+                        (is_master_ext(&key), is_light_ext(&key), false, Vec::new())
                     });
                 if let Some(&i) = idx.get(&key) {
                     let p = &mut plugins[i];
@@ -460,5 +470,17 @@ mod tests {
         assert!(GameSpec::for_id("nonsuch").is_none());
         assert!(se().light_supported());
         assert!(!se().medium_supported());
+    }
+
+    #[test]
+    fn extension_predicates() {
+        // is_plugin: any of the three extensions, case-insensitive.
+        assert!(is_plugin("Mod.esp") && is_plugin("Base.ESM") && is_plugin("Light.esl"));
+        assert!(!is_plugin("readme.txt"));
+        // is_master_ext (MO2 hasMasterExtension): .esm or .esl load above normals.
+        assert!(is_master_ext("Base.esm") && is_master_ext("Light.ESL"));
+        assert!(!is_master_ext("Mod.esp"));
+        // is_light_ext: only .esl.
+        assert!(is_light_ext("Light.esl") && !is_light_ext("Base.esm"));
     }
 }
