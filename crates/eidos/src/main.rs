@@ -57,6 +57,16 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
         Ok(()) => eprintln!("eidos play: wrote {active} active plugins to plugins.txt"),
         Err(e) => eprintln!("eidos play: could not write plugins.txt: {e}"),
     }
+
+    // Enable BSA/archive invalidation so loose mod files override the vanilla BSAs
+    // (without it, mods that ship loose overrides are silently ignored).
+    if let Some(ini_file) = eidos_gamefeatures::ini_file_for(id) {
+        let docs = eidos_plugins::documents_my_games_dir(&prefix, &spec);
+        match eidos_gamefeatures::enable_bsa_invalidation(&docs, ini_file) {
+            Ok(()) => eprintln!("eidos play: BSA invalidation on ([Archive] bInvalidateOlderFiles=1 in {ini_file})"),
+            Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
+        }
+    }
 }
 
 fn cmd_games() {

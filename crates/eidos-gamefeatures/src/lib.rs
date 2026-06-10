@@ -1,0 +1,141 @@
+//! Per-game Bethesda features that Eidos must apply for mods to work, ported from
+//! Mod Organizer 2's game plugins. These are Linux/Proton-native operations run
+//! before the per-launch mount, writing into the game's Proton-prefix `Documents`.
+//!
+//! First feature: **archive (BSA) invalidation**. Bethesda engines prefer files
+//! packed in the vanilla BSAs over loose files unless invalidation is on, so a mod
+//! that ships loose overrides is silently ignored without it. MO2's
+//! `GamebryoBSAInvalidation` writes `[Archive] bInvalidateOlderFiles=1` into the
+//! game INI (plus a dummy BSA + `SInvalidationFile` dance for pre-SSE engines).
+
+use std::fs;
+use std::io;
+use std::path::Path;
+
+/// The game INI that holds the `[Archive]` section, by Eidos game id.
+pub fn ini_file_for(game_id: &str) -> Option<&'static str> {
+    Some(match game_id {
+        "skyrimse" | "skyrim" | "enderal" => "Skyrim.ini",
+        "skyrimvr" => "SkyrimVR.ini",
+        "enderalse" => "Enderal.ini",
+        "fallout4" | "fallout4vr" => "Fallout4.ini",
+        "falloutnv" | "fallout3" => "Fallout.ini",
+        "oblivion" => "Oblivion.ini",
+        "starfield" => "StarfieldCustom.ini",
+        _ => return None,
+    })
+}
+
+/// Enable archive (BSA) invalidation so loose mod files override the vanilla BSAs:
+/// `[Archive] bInvalidateOlderFiles=1` in the game's Documents INI. `ini_dir` is the
+/// prefix's `Documents/My Games/<game>` directory.
+pub fn enable_bsa_invalidation(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
+    set_ini_key(&ini_dir.join(ini_file), "Archive", "bInvalidateOlderFiles", "1")
+}
+
+/// Set `[section] key=value` in an INI file: update the key in place if present,
+/// else add it to the section (creating the section, or the whole file, if needed).
+/// Everything else is preserved, including the file's existing CRLF/LF newline
+/// style (Bethesda INIs are CRLF). Section and key match case-insensitively.
+pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Result<()> {
+    let existing = fs::read_to_string(path).unwrap_or_default();
+    let nl = if existing.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
+
+    let header = format!("[{section}]");
+    let section_at = lines.iter().position(|l| l.trim().eq_ignore_ascii_case(&header));
+    let new_line = format!("{key}={value}");
+
+    match section_at {
+        Some(start) => {
+            // Search the section body (until the next "[...]" header or EOF).
+            let mut key_at = None;
+            for (i, line) in lines.iter().enumerate().skip(start + 1) {
+                let t = line.trim();
+                if t.starts_with('[') {
+                    break;
+                }
+                if let Some((k, _)) = t.split_once('=') {
+                    if k.trim().eq_ignore_ascii_case(key) {
+                        key_at = Some(i);
+                        break;
+                    }
+                }
+            }
+            match key_at {
+                Some(i) => lines[i] = new_line,
+                None => lines.insert(start + 1, new_line),
+            }
+        }
+        None => {
+            lines.push(header);
+            lines.push(new_line);
+        }
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut out = lines.join(nl);
+    out.push_str(nl);
+    fs::write(path, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static N: AtomicU32 = AtomicU32::new(0);
+    fn tmp() -> PathBuf {
+        std::env::temp_dir()
+            .join(format!("eidos-gf-{}-{}.ini", std::process::id(), N.fetch_add(1, Ordering::Relaxed)))
+    }
+
+    #[test]
+    fn creates_section_and_key_in_a_missing_file() {
+        let p = tmp();
+        set_ini_key(&p, "Archive", "bInvalidateOlderFiles", "1").unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("[Archive]"));
+        assert!(s.contains("bInvalidateOlderFiles=1"));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn updates_existing_key_preserving_everything_else() {
+        let p = tmp();
+        fs::write(
+            &p,
+            "[Display]\r\niSize W=1920\r\n\r\n[Archive]\r\nbInvalidateOlderFiles=0\r\nsResourceArchiveList=x.bsa\r\n",
+        )
+        .unwrap();
+        set_ini_key(&p, "Archive", "bInvalidateOlderFiles", "1").unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("bInvalidateOlderFiles=1"));
+        assert!(!s.contains("bInvalidateOlderFiles=0"));
+        assert!(s.contains("iSize W=1920")); // other section preserved
+        assert!(s.contains("sResourceArchiveList=x.bsa")); // sibling key preserved
+        assert!(s.contains("\r\n")); // CRLF preserved
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn adds_key_to_an_existing_section() {
+        let p = tmp();
+        fs::write(&p, "[Archive]\nsResourceArchiveList=x.bsa\n").unwrap();
+        set_ini_key(&p, "Archive", "bInvalidateOlderFiles", "1").unwrap();
+        let s = fs::read_to_string(&p).unwrap();
+        assert!(s.contains("bInvalidateOlderFiles=1"));
+        assert!(s.contains("sResourceArchiveList=x.bsa"));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn ini_file_mapping() {
+        assert_eq!(ini_file_for("skyrimse"), Some("Skyrim.ini"));
+        assert_eq!(ini_file_for("fallout4"), Some("Fallout4.ini"));
+        assert_eq!(ini_file_for("nope"), None);
+    }
+}

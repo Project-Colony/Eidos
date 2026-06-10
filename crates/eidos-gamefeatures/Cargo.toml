@@ -1,0 +1,9 @@
+[package]
+name = "eidos-gamefeatures"
+version = "0.0.0"
+description = "Eidos per-game Bethesda features: BSA/archive invalidation, INI tweaks, save redirection"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
