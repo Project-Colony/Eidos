@@ -17,38 +17,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// One supported game. Matching is by `app_id` alone; the install directory and
-/// display name come from the game's own appmanifest, so a slightly wrong name
-/// here never breaks detection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GameDef {
-    /// Eidos slug, e.g. `"skyrimse"`.
-    pub id: &'static str,
-    /// Human-readable name.
-    pub name: &'static str,
-    /// Steam application id.
-    pub app_id: u32,
-    /// Directory (relative to the install root) where mods deploy, e.g. `"Data"`.
-    pub data_dir: &'static str,
-}
+/// A supported game. The catalog now lives in the shared `eidos-gamedef`
+/// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.
+pub use eidos_gamedef::GameDef;
 
-/// The built-in catalog of supported games. Extend freely; only `app_id` has to
-/// be correct for detection to work.
-static CATALOG: &[GameDef] = &[
-    GameDef { id: "skyrimse",  name: "Skyrim Special Edition", app_id: 489830,  data_dir: "Data" },
-    GameDef { id: "skyrim",    name: "Skyrim",                 app_id: 72850,   data_dir: "Data" },
-    GameDef { id: "fallout4",  name: "Fallout 4",              app_id: 377160,  data_dir: "Data" },
-    GameDef { id: "falloutnv", name: "Fallout: New Vegas",     app_id: 22380,   data_dir: "Data" },
-    GameDef { id: "fallout3",  name: "Fallout 3 (GOTY)",       app_id: 22370,   data_dir: "Data" },
-    GameDef { id: "oblivion",  name: "Oblivion",               app_id: 22330,   data_dir: "Data" },
-    GameDef { id: "morrowind", name: "Morrowind",              app_id: 22320,   data_dir: "Data Files" },
-    GameDef { id: "starfield", name: "Starfield",              app_id: 1716740, data_dir: "Data" },
-    GameDef { id: "enderalse", name: "Enderal: Special Edition", app_id: 976620, data_dir: "Data" },
-];
-
-/// The supported-game catalog.
+/// The supported-game catalog (every game defined in `eidos-gamedef`).
 pub fn catalog() -> &'static [GameDef] {
-    CATALOG
+    eidos_gamedef::all()
 }
 
 /// A game Steam reports as installed (whether or not it is one we support).
@@ -136,7 +111,7 @@ pub fn detect(home: &Path) -> Vec<DetectedGame> {
     scan_installed(home)
         .into_iter()
         .filter_map(|app| {
-            let def = catalog().iter().find(|d| d.app_id == app.app_id)?;
+            let def = catalog().iter().find(|d| d.steam_app_id == app.app_id)?;
             let install_path = app.library.join("steamapps/common").join(&app.install_dir);
             let data_path = install_path.join(def.data_dir);
             let compat = app.library.join("steamapps/compatdata").join(app.app_id.to_string());

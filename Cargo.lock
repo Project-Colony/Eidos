@@ -984,6 +984,9 @@ dependencies = [
 [[package]]
 name = "eidos-games"
 version = "0.0.0"
+dependencies = [
+ "eidos-gamedef",
+]
 
 [[package]]
 name = "eidos-gui"

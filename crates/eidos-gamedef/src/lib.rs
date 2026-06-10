@@ -28,6 +28,17 @@ pub enum LoadOrder {
     FileTime,
 }
 
+/// A game's script-extender launch swap. MO2 surfaces the loader as an executable
+/// (plus a forced-load DLL); Eidos swaps the vanilla launcher for the loader in
+/// the Steam launch command, so a modded game is launched the way it is played.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ScriptExtender {
+    /// The vanilla launcher executable Steam would run (what to swap out).
+    pub launcher: &'static str,
+    /// The script-extender loader to run instead (SKSE/F4SE/...).
+    pub loader: &'static str,
+}
+
 /// One game Eidos can manage: every per-game knob in one place.
 #[derive(Debug, Clone)]
 pub struct GameDef {
@@ -51,9 +62,10 @@ pub struct GameDef {
     pub load_order: LoadOrder,
     /// The game's own master plugins, pinned to the top of the order.
     pub primary_plugins: &'static [&'static str],
-    /// The script-extender loader executable (SKSE/F4SE/...), if any - the binary
-    /// the user launches instead of the game to load native-code mods.
-    pub script_extender: Option<&'static str>,
+    /// The script-extender launch swap, if known - the vanilla launcher and the
+    /// loader (SKSE/F4SE/...) to run instead. `None` where the launcher is not
+    /// known with confidence (add a row to enable it for a game).
+    pub script_extender: Option<ScriptExtender>,
 }
 
 /// Shared across the three Skyrim SE-engine games (SE, VR, Enderal SE).
@@ -71,7 +83,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
-        script_extender: Some("skse64_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "SkyrimSELauncher.exe",
+            loader: "skse64_loader.exe",
+        }),
     },
     GameDef {
         id: "skyrimvr",
@@ -82,7 +97,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
-        script_extender: Some("sksevr_loader.exe"),
+        script_extender: None,
     },
     GameDef {
         id: "skyrim",
@@ -93,7 +108,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Skyrim.esm", "Update.esm"],
-        script_extender: Some("skse_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "SkyrimLauncher.exe",
+            loader: "skse_loader.exe",
+        }),
     },
     GameDef {
         id: "enderalse",
@@ -104,7 +122,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
-        script_extender: Some("skse64_loader.exe"),
+        script_extender: None,
     },
     GameDef {
         id: "fallout4",
@@ -115,7 +133,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
-        script_extender: Some("f4se_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "Fallout4Launcher.exe",
+            loader: "f4se_loader.exe",
+        }),
     },
     GameDef {
         id: "fallout4vr",
@@ -126,7 +147,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
-        script_extender: Some("f4sevr_loader.exe"),
+        script_extender: None,
     },
     GameDef {
         id: "falloutnv",
@@ -137,7 +158,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["FalloutNV.esm"],
-        script_extender: Some("nvse_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "FalloutNVLauncher.exe",
+            loader: "nvse_loader.exe",
+        }),
     },
     GameDef {
         id: "fallout3",
@@ -148,7 +172,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Fallout3.esm"],
-        script_extender: Some("fose_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "FalloutLauncher.exe",
+            loader: "fose_loader.exe",
+        }),
     },
     GameDef {
         id: "oblivion",
@@ -159,7 +186,10 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Oblivion.ini"],
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Oblivion.esm"],
-        script_extender: Some("obse_loader.exe"),
+        script_extender: Some(ScriptExtender {
+            launcher: "OblivionLauncher.exe",
+            loader: "obse_loader.exe",
+        }),
     },
     GameDef {
         id: "morrowind",
@@ -181,7 +211,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
-        script_extender: Some("sfse_loader.exe"),
+        script_extender: None,
     },
 ];
 
@@ -241,5 +271,14 @@ mod tests {
                 assert!(!g.primary_plugins.is_empty(), "{} has no primary plugins", g.id);
             }
         }
+    }
+
+    #[test]
+    fn script_extender_swap_is_populated() {
+        let se = GameDef::for_id("skyrimse").unwrap().script_extender.unwrap();
+        assert_eq!(se.launcher, "SkyrimSELauncher.exe");
+        assert_eq!(se.loader, "skse64_loader.exe");
+        // Games whose launcher we do not know stay None rather than guessing.
+        assert!(GameDef::for_id("starfield").unwrap().script_extender.is_none());
     }
 }

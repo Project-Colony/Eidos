@@ -191,15 +191,9 @@ fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
 /// Eidos runs the script extender (SKSE/F4SE/...) instead of the vanilla
 /// launcher, matching how a modded game is actually played.
 fn script_extender_swap(game_id: &str) -> Option<(&'static str, &'static str)> {
-    match game_id {
-        "skyrimse" => Some(("SkyrimSELauncher.exe", "skse64_loader.exe")),
-        "skyrim" => Some(("SkyrimLauncher.exe", "skse_loader.exe")),
-        "fallout4" => Some(("Fallout4Launcher.exe", "f4se_loader.exe")),
-        "falloutnv" => Some(("FalloutNVLauncher.exe", "nvse_loader.exe")),
-        "fallout3" => Some(("FalloutLauncher.exe", "fose_loader.exe")),
-        "oblivion" => Some(("OblivionLauncher.exe", "obse_loader.exe")),
-        _ => None,
-    }
+    eidos_games::GameDef::for_id(game_id)
+        .and_then(|g| g.script_extender)
+        .map(|se| (se.launcher, se.loader))
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
