@@ -971,8 +971,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-gamedef"
+version = "0.0.0"
+
+[[package]]
 name = "eidos-gamefeatures"
 version = "0.0.0"
+dependencies = [
+ "eidos-gamedef",
+]
 
 [[package]]
 name = "eidos-games"

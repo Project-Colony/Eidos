@@ -1,0 +1,9 @@
+[package]
+name = "eidos-gamedef"
+version = "0.0.0"
+description = "Eidos declarative per-game definitions (modelled on MO2's IPluginGame schema)"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]

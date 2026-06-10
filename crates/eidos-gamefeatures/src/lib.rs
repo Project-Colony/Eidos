@@ -12,33 +12,17 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-/// The game INI that holds the `[Archive]` section, by Eidos game id.
+/// The game INI that holds the `[Archive]` section: the first of the per-profile
+/// INIs (see `ini_files_for`).
 pub fn ini_file_for(game_id: &str) -> Option<&'static str> {
-    Some(match game_id {
-        "skyrimse" | "skyrim" | "enderal" => "Skyrim.ini",
-        "skyrimvr" => "SkyrimVR.ini",
-        "enderalse" => "Enderal.ini",
-        "fallout4" | "fallout4vr" => "Fallout4.ini",
-        "falloutnv" | "fallout3" => "Fallout.ini",
-        "oblivion" => "Oblivion.ini",
-        "starfield" => "StarfieldCustom.ini",
-        _ => return None,
-    })
+    ini_files_for(game_id).first().copied()
 }
 
-/// The per-profile user INIs for a game (the files MO2 keeps per profile). The
-/// first entry is the one carrying the `[Archive]` section (see `ini_file_for`).
+/// The per-profile user INIs for a game (the files MO2 keeps per profile), read
+/// from the single `eidos-gamedef` descriptor. The first entry carries the
+/// `[Archive]` section.
 pub fn ini_files_for(game_id: &str) -> &'static [&'static str] {
-    match game_id {
-        "skyrimse" | "skyrim" | "enderal" => &["Skyrim.ini", "SkyrimPrefs.ini"],
-        "skyrimvr" => &["SkyrimVR.ini", "SkyrimPrefs.ini"],
-        "enderalse" => &["Enderal.ini", "EnderalPrefs.ini"],
-        "fallout4" | "fallout4vr" => &["Fallout4.ini", "Fallout4Prefs.ini"],
-        "falloutnv" | "fallout3" => &["Fallout.ini", "FalloutPrefs.ini"],
-        "oblivion" => &["Oblivion.ini", "OblivionPrefs.ini"],
-        "starfield" => &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
-        _ => &[],
-    }
+    eidos_gamedef::GameDef::for_id(game_id).map_or(&[], |g| g.ini_files)
 }
 
 /// Enable archive (BSA) invalidation so loose mod files override the vanilla BSAs:

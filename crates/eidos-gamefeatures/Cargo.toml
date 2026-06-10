@@ -7,3 +7,4 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-gamedef = { path = "../eidos-gamedef" }
