@@ -33,6 +33,11 @@ pub struct LaunchSpec {
     /// *over the game's own Data dir*: the bind captures the real files at
     /// `stash` so the daemon can still read them once the union covers `src`.
     pub base_bind: Option<(PathBuf, PathBuf)>,
+    /// Extra `(src, dst)` bind mounts set up in the namespace before launch, each
+    /// making `dst` show `src` for the duration of the run only. Used to redirect
+    /// the game's save directory to the active profile's saves (the Linux-native
+    /// equivalent of MO2's usvfs save mapping) without ever modifying the prefix.
+    pub binds: Vec<(PathBuf, PathBuf)>,
 }
 
 fn check(rc: i32) -> std::io::Result<()> {
@@ -105,6 +110,15 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
         std::fs::create_dir_all(stash)?;
         bind_mount(src, stash)?;
         layers.push(stash.clone()); // lowest priority: the pristine game files
+    }
+
+    // Extra redirects (e.g. the active profile's saves over the prefix save dir).
+    // Both ends must exist for the bind; best-effort so a missing dir or a failed
+    // bind never blocks the game from starting.
+    for (src, dst) in &spec.binds {
+        if std::fs::create_dir_all(src).is_ok() && std::fs::create_dir_all(dst).is_ok() {
+            let _ = bind_mount(src, dst);
+        }
     }
 
     std::fs::create_dir_all(&spec.mountpoint)?;

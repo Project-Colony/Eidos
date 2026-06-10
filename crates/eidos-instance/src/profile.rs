@@ -51,6 +51,12 @@ impl Profile {
     /// prefix `Documents/My Games/<game>`) into this profile, but only those the
     /// profile doesn't already own - so an existing setup is adopted, not lost.
     /// Returns how many were seeded.
+    ///
+    /// Divergence from MO2: MO2 seeds a new profile's INIs from the *vanilla game
+    /// folder* (a clean baseline - it owns the INIs from the start). Eidos adopts a
+    /// pre-existing Proton setup, so we seed from the user's *current* prefix INIs
+    /// to keep their working settings (resolution, language, tweaks). Like MO2 we
+    /// never overwrite an INI the profile already has.
     pub fn seed_inis(&self, src_dir: &Path, ini_files: &[&str]) -> io::Result<u32> {
         fs::create_dir_all(self.dir())?;
         let mut n = 0;
@@ -91,6 +97,38 @@ impl Profile {
             let src = src_dir.join(f);
             if src.is_file() {
                 fs::copy(&src, self.ini_path(f))?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// This profile's own save-games directory (`profil/saves`), MO2's
+    /// `savePath()`. At launch it is bind-mounted over the prefix's save dir so
+    /// the game reads and writes this profile's saves.
+    pub fn saves_dir(&self) -> PathBuf {
+        self.dir().join("saves")
+    }
+
+    /// One-time migration: copy the user's existing saves from `src_saves` (the
+    /// prefix `Documents/My Games/<game>/Saves`) into this profile, but only if
+    /// the profile has no saves yet - so an existing playthrough is adopted, not
+    /// hidden when this profile's saves get bound over the prefix at launch.
+    /// Returns how many save files were copied (0 if the profile already has any).
+    pub fn seed_saves(&self, src_saves: &Path) -> io::Result<u32> {
+        let dst = self.saves_dir();
+        let has_saves = fs::read_dir(&dst).map(|mut it| it.next().is_some()).unwrap_or(false);
+        if has_saves {
+            return Ok(0);
+        }
+        let Ok(rd) = fs::read_dir(src_saves) else {
+            return Ok(0);
+        };
+        fs::create_dir_all(&dst)?;
+        let mut n = 0;
+        for e in rd.flatten() {
+            if e.path().is_file() {
+                fs::copy(e.path(), dst.join(e.file_name()))?;
                 n += 1;
             }
         }
@@ -306,6 +344,25 @@ mod tests {
         fs::write(prefix2.join("SkyrimPrefs.ini"), "[Display]\niSize W=2560\n").unwrap();
         assert_eq!(p.capture_inis(&prefix2, &inis).unwrap(), 2);
         assert!(fs::read_to_string(p.ini_path("SkyrimPrefs.ini")).unwrap().contains("2560"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn saves_seed_adopts_existing_then_skips() {
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        let prefix_saves = root.join("prefix-saves");
+        fs::create_dir_all(&prefix_saves).unwrap();
+        fs::write(prefix_saves.join("Save1.ess"), b"x").unwrap();
+        fs::write(prefix_saves.join("Save2.ess"), b"y").unwrap();
+
+        // First run adopts the existing playthrough.
+        assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 2);
+        assert!(p.saves_dir().join("Save1.ess").is_file());
+        // Profile already has saves -> never re-seed (would clobber progress).
+        fs::write(prefix_saves.join("Save3.ess"), b"z").unwrap();
+        assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 0);
 
         let _ = fs::remove_dir_all(&root);
     }

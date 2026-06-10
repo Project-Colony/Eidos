@@ -98,6 +98,28 @@ fn prepare_inis(
     Some((docs, ini_files))
 }
 
+/// Before launch: give the active profile its own saves. Seed the profile from
+/// the prefix's existing saves on first run (adopting the playthrough), then
+/// return the `(profile_saves, prefix_saves)` bind so the launcher redirects the
+/// game's save dir to this profile for the run - the prefix is never modified.
+fn prepare_saves(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let spec = eidos_plugins::GameSpec::for_id(id)?;
+    let compatdata = game.compatdata.as_ref()?;
+    let docs = eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec);
+    let prefix_saves = docs.join("Saves");
+    let prof = inst.active();
+    if let Ok(n) = prof.seed_saves(&prefix_saves) {
+        if n > 0 {
+            eprintln!("eidos play: adopted {n} existing save(s) into profile '{}'", prof.name);
+        }
+    }
+    Some((prof.saves_dir(), prefix_saves))
+}
+
 fn cmd_games() {
     let games = detect(&home());
     if games.is_empty() {
@@ -172,6 +194,7 @@ fn cmd_play(args: &[String]) {
 
     let inis = prepare_inis(id, &game, &inst);
     prepare_plugins(id, &game, &inst);
+    let save_bind = prepare_saves(id, &game, &inst);
 
     let spec = LaunchSpec {
         layers,
@@ -180,6 +203,7 @@ fn cmd_play(args: &[String]) {
         command,
         env: Vec::new(),
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
+        binds: save_bind.into_iter().collect(),
     };
     let result = launch(spec);
 

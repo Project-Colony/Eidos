@@ -59,6 +59,7 @@ fn main() {
         command,
         env: Vec::new(),
         base_bind: None,
+        binds: Vec::new(),
     };
     match launch(spec) {
         Ok(status) => exit(status.code().unwrap_or(0)),
