@@ -979,6 +979,7 @@ name = "eidos-gamefeatures"
 version = "0.0.0"
 dependencies = [
  "eidos-gamedef",
+ "eidos-ini",
 ]
 
 [[package]]
@@ -1003,6 +1004,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-ini"
+version = "0.0.0"
+
+[[package]]
 name = "eidos-install"
 version = "0.0.0"
 dependencies = [
@@ -1013,6 +1018,9 @@ dependencies = [
 [[package]]
 name = "eidos-instance"
 version = "0.0.0"
+dependencies = [
+ "eidos-ini",
+]
 
 [[package]]
 name = "eidos-launch"

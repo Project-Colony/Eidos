@@ -47,8 +47,8 @@ impl Manifest {
             if line.is_empty() || line.starts_with('[') || line.starts_with('#') {
                 continue;
             }
-            let Some((k, v)) = line.split_once('=') else { continue };
-            let (k, v) = (k.trim(), v.trim());
+            let Some((k, v)) = eidos_ini::key_value(line) else { continue };
+            let v = v.trim();
             match k {
                 "schema_version" => schema_version = v.parse().unwrap_or(SCHEMA_VERSION),
                 "game_id" => game_id = Some(v.to_string()),

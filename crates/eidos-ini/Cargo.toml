@@ -1,0 +1,9 @@
+[package]
+name = "eidos-ini"
+version = "0.0.0"
+description = "Shared low-level INI primitives for Eidos (newline/section/key parsing + format-preserving key edit)"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]

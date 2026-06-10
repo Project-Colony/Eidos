@@ -40,7 +40,7 @@ impl ModMeta {
         let Ok(text) = fs::read_to_string(path) else {
             return ModMeta::default();
         };
-        let crlf = text.contains("\r\n");
+        let crlf = eidos_ini::newline_style(&text) == "\r\n";
         let mut general = Vec::new();
         let mut tail = String::new();
         let mut in_general = false;
@@ -48,11 +48,10 @@ impl ModMeta {
 
         for seg in text.split_inclusive('\n') {
             let body = seg.trim_end_matches('\n').trim_end_matches('\r');
-            let t = body.trim();
-            let is_section = t.starts_with('[') && t.ends_with(']');
+            let section = eidos_ini::section_header(body);
 
             if !in_general {
-                if is_section && t.eq_ignore_ascii_case("[General]") {
+                if section.is_some_and(|s| s.eq_ignore_ascii_case("General")) {
                     in_general = true;
                 }
                 pos += seg.len();
@@ -61,10 +60,11 @@ impl ModMeta {
 
             // Inside [General]: consecutive `key=value` lines belong to it. The
             // first line that is not one (blank, comment, or a new section) ends
-            // the section; from there to EOF is preserved verbatim.
-            if !is_section {
-                if let Some((k, v)) = body.split_once('=') {
-                    general.push((k.trim().to_string(), v.to_string()));
+            // the section; from there to EOF is preserved verbatim. Values stay
+            // RAW (everything after `=`) so MO2's quoted/escaped values survive.
+            if section.is_none() {
+                if let Some((k, v)) = eidos_ini::key_value(body) {
+                    general.push((k.to_string(), v.to_string()));
                     pos += seg.len();
                     continue;
                 }

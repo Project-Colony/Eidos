@@ -32,51 +32,16 @@ pub fn enable_bsa_invalidation(ini_dir: &Path, ini_file: &str) -> io::Result<()>
     set_ini_key(&ini_dir.join(ini_file), "Archive", "bInvalidateOlderFiles", "1")
 }
 
-/// Set `[section] key=value` in an INI file: update the key in place if present,
-/// else add it to the section (creating the section, or the whole file, if needed).
-/// Everything else is preserved, including the file's existing CRLF/LF newline
-/// style (Bethesda INIs are CRLF). Section and key match case-insensitively.
+/// Set `[section] key=value` in an INI file on disk, preserving everything else
+/// (and the file's CRLF/LF style). A thin file-I/O wrapper over the shared,
+/// format-preserving [`eidos_ini::set_key`]; section and key match
+/// case-insensitively.
 pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Result<()> {
     let existing = fs::read_to_string(path).unwrap_or_default();
-    let nl = if existing.contains("\r\n") { "\r\n" } else { "\n" };
-    let mut lines: Vec<String> = existing.lines().map(String::from).collect();
-
-    let header = format!("[{section}]");
-    let section_at = lines.iter().position(|l| l.trim().eq_ignore_ascii_case(&header));
-    let new_line = format!("{key}={value}");
-
-    match section_at {
-        Some(start) => {
-            // Search the section body (until the next "[...]" header or EOF).
-            let mut key_at = None;
-            for (i, line) in lines.iter().enumerate().skip(start + 1) {
-                let t = line.trim();
-                if t.starts_with('[') {
-                    break;
-                }
-                if let Some((k, _)) = t.split_once('=') {
-                    if k.trim().eq_ignore_ascii_case(key) {
-                        key_at = Some(i);
-                        break;
-                    }
-                }
-            }
-            match key_at {
-                Some(i) => lines[i] = new_line,
-                None => lines.insert(start + 1, new_line),
-            }
-        }
-        None => {
-            lines.push(header);
-            lines.push(new_line);
-        }
-    }
-
+    let out = eidos_ini::set_key(&existing, section, key, value);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut out = lines.join(nl);
-    out.push_str(nl);
     fs::write(path, out)
 }
 

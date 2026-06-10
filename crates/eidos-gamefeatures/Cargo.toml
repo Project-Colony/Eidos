@@ -8,3 +8,4 @@ edition.workspace = true
 
 [dependencies]
 eidos-gamedef = { path = "../eidos-gamedef" }
+eidos-ini = { path = "../eidos-ini" }
