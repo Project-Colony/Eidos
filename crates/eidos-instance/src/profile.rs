@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::ModEntry;
 
@@ -39,6 +39,62 @@ impl Profile {
     /// eidos-plugins; kept here so each profile remembers its own order).
     pub fn plugins_txt_path(&self) -> PathBuf {
         self.dir().join("plugins.txt")
+    }
+
+    /// This profile's stored copy of a game INI (e.g. `Skyrim.ini`). The profile
+    /// owns its INIs; they are deployed into the Proton prefix at launch.
+    pub fn ini_path(&self, ini_file: &str) -> PathBuf {
+        self.dir().join(ini_file)
+    }
+
+    /// One-time migration: copy the user's existing prefix INIs (`src_dir` = the
+    /// prefix `Documents/My Games/<game>`) into this profile, but only those the
+    /// profile doesn't already own - so an existing setup is adopted, not lost.
+    /// Returns how many were seeded.
+    pub fn seed_inis(&self, src_dir: &Path, ini_files: &[&str]) -> io::Result<u32> {
+        fs::create_dir_all(self.dir())?;
+        let mut n = 0;
+        for f in ini_files {
+            let dst = self.ini_path(f);
+            let src = src_dir.join(f);
+            if !dst.exists() && src.is_file() {
+                fs::copy(&src, &dst)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Deploy this profile's INIs into `dst_dir` (the prefix Documents) before
+    /// launch, so the game reads this profile's settings. Only INIs the profile
+    /// actually has are written. Returns how many were deployed.
+    pub fn deploy_inis(&self, dst_dir: &Path, ini_files: &[&str]) -> io::Result<u32> {
+        fs::create_dir_all(dst_dir)?;
+        let mut n = 0;
+        for f in ini_files {
+            let src = self.ini_path(f);
+            if src.is_file() {
+                fs::copy(&src, dst_dir.join(f))?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Capture the (game-modified) INIs from `src_dir` back into the profile after
+    /// the game exits, so in-game settings changes persist to the profile. Returns
+    /// how many were captured.
+    pub fn capture_inis(&self, src_dir: &Path, ini_files: &[&str]) -> io::Result<u32> {
+        fs::create_dir_all(self.dir())?;
+        let mut n = 0;
+        for f in ini_files {
+            let src = src_dir.join(f);
+            if src.is_file() {
+                fs::copy(&src, self.ini_path(f))?;
+                n += 1;
+            }
+        }
+        Ok(n)
     }
 
     /// Where to read the mod list from: the profile's own file, or - for the
@@ -221,6 +277,36 @@ mod tests {
         // "New" exists on disk but not in the saved list -> appended, enabled.
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
         assert_eq!(read, vec![("A".into(), true), ("New".into(), true)]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inis_seed_deploy_and_capture_round_trip() {
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        // A fake prefix Documents dir holding the user's existing INIs.
+        let prefix = root.join("prefix-docs");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::write(prefix.join("Skyrim.ini"), "[General]\nsLanguage=ENGLISH\n").unwrap();
+        fs::write(prefix.join("SkyrimPrefs.ini"), "[Display]\niSize W=1920\n").unwrap();
+        let inis = ["Skyrim.ini", "SkyrimPrefs.ini"];
+
+        // Seed adopts both into the profile; seeding again copies nothing.
+        assert_eq!(p.seed_inis(&prefix, &inis).unwrap(), 2);
+        assert!(p.ini_path("Skyrim.ini").is_file());
+        assert_eq!(p.seed_inis(&prefix, &inis).unwrap(), 0);
+
+        // The profile is now the source of truth: edit its copy, deploy elsewhere.
+        fs::write(p.ini_path("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
+        let prefix2 = root.join("prefix2");
+        assert_eq!(p.deploy_inis(&prefix2, &inis).unwrap(), 2);
+        assert!(fs::read_to_string(prefix2.join("Skyrim.ini")).unwrap().contains("FRENCH"));
+
+        // The game writes to the prefix; capture pulls the change back.
+        fs::write(prefix2.join("SkyrimPrefs.ini"), "[Display]\niSize W=2560\n").unwrap();
+        assert_eq!(p.capture_inis(&prefix2, &inis).unwrap(), 2);
+        assert!(fs::read_to_string(p.ini_path("SkyrimPrefs.ini")).unwrap().contains("2560"));
+
         let _ = fs::remove_dir_all(&root);
     }
 }

@@ -57,16 +57,45 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
         Ok(()) => eprintln!("eidos play: wrote {active} active plugins to plugins.txt"),
         Err(e) => eprintln!("eidos play: could not write plugins.txt: {e}"),
     }
+}
 
-    // Enable BSA/archive invalidation so loose mod files override the vanilla BSAs
-    // (without it, mods that ship loose overrides are silently ignored).
-    if let Some(ini_file) = eidos_gamefeatures::ini_file_for(id) {
-        let docs = eidos_plugins::documents_my_games_dir(&prefix, &spec);
-        match eidos_gamefeatures::enable_bsa_invalidation(&docs, ini_file) {
-            Ok(()) => eprintln!("eidos play: BSA invalidation on ([Archive] bInvalidateOlderFiles=1 in {ini_file})"),
+/// Before launch: give the active profile its own INIs in the prefix. Seed the
+/// profile from the prefix on first run (adopting an existing setup, losing
+/// nothing), deploy the profile's INIs into the prefix Documents, then enable BSA
+/// invalidation on the deployed copy. Returns the prefix Documents dir + the
+/// game's INI set, so the caller can capture in-game changes back afterwards.
+fn prepare_inis(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+) -> Option<(std::path::PathBuf, &'static [&'static str])> {
+    let spec = eidos_plugins::GameSpec::for_id(id)?;
+    let compatdata = game.compatdata.as_ref()?;
+    let ini_files = eidos_gamefeatures::ini_files_for(id);
+    if ini_files.is_empty() {
+        return None;
+    }
+    let docs = eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec);
+    let prof = inst.active();
+
+    if let Ok(n) = prof.seed_inis(&docs, ini_files) {
+        if n > 0 {
+            eprintln!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name);
+        }
+    }
+    if let Ok(n) = prof.deploy_inis(&docs, ini_files) {
+        if n > 0 {
+            eprintln!("eidos play: deployed {n} profile INI(s) into the prefix");
+        }
+    }
+    // Loose files must win over the vanilla BSAs (writes into the deployed INI).
+    if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
+        match eidos_gamefeatures::enable_bsa_invalidation(&docs, ini) {
+            Ok(()) => eprintln!("eidos play: BSA invalidation on ([Archive] bInvalidateOlderFiles=1 in {ini})"),
             Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
         }
     }
+    Some((docs, ini_files))
 }
 
 fn cmd_games() {
@@ -141,6 +170,7 @@ fn cmd_play(args: &[String]) {
         return;
     }
 
+    let inis = prepare_inis(id, &game, &inst);
     prepare_plugins(id, &game, &inst);
 
     let spec = LaunchSpec {
@@ -151,7 +181,18 @@ fn cmd_play(args: &[String]) {
         env: Vec::new(),
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
     };
-    match launch(spec) {
+    let result = launch(spec);
+
+    // The game has exited: capture any INI changes it made back into the profile.
+    if let Some((docs, ini_files)) = inis {
+        if let Ok(n) = inst.active().capture_inis(&docs, ini_files) {
+            if n > 0 {
+                eprintln!("eidos play: captured {n} INI(s) back into profile '{}'", inst.active_profile());
+            }
+        }
+    }
+
+    match result {
         Ok(status) => exit(status.code().unwrap_or(0)),
         Err(e) => {
             eprintln!("eidos play: {e}");

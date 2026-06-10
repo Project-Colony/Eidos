@@ -26,6 +26,21 @@ pub fn ini_file_for(game_id: &str) -> Option<&'static str> {
     })
 }
 
+/// The per-profile user INIs for a game (the files MO2 keeps per profile). The
+/// first entry is the one carrying the `[Archive]` section (see `ini_file_for`).
+pub fn ini_files_for(game_id: &str) -> &'static [&'static str] {
+    match game_id {
+        "skyrimse" | "skyrim" | "enderal" => &["Skyrim.ini", "SkyrimPrefs.ini"],
+        "skyrimvr" => &["SkyrimVR.ini", "SkyrimPrefs.ini"],
+        "enderalse" => &["Enderal.ini", "EnderalPrefs.ini"],
+        "fallout4" | "fallout4vr" => &["Fallout4.ini", "Fallout4Prefs.ini"],
+        "falloutnv" | "fallout3" => &["Fallout.ini", "FalloutPrefs.ini"],
+        "oblivion" => &["Oblivion.ini", "OblivionPrefs.ini"],
+        "starfield" => &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
+        _ => &[],
+    }
+}
+
 /// Enable archive (BSA) invalidation so loose mod files override the vanilla BSAs:
 /// `[Archive] bInvalidateOlderFiles=1` in the game's Documents INI. `ini_dir` is the
 /// prefix's `Documents/My Games/<game>` directory.
@@ -137,5 +152,13 @@ mod tests {
         assert_eq!(ini_file_for("skyrimse"), Some("Skyrim.ini"));
         assert_eq!(ini_file_for("fallout4"), Some("Fallout4.ini"));
         assert_eq!(ini_file_for("nope"), None);
+    }
+
+    #[test]
+    fn ini_files_set() {
+        assert_eq!(ini_files_for("skyrimse"), ["Skyrim.ini", "SkyrimPrefs.ini"].as_slice());
+        assert!(ini_files_for("nope").is_empty());
+        // The [Archive] INI is the first of the per-profile set.
+        assert_eq!(ini_files_for("fallout4").first().copied(), ini_file_for("fallout4"));
     }
 }
