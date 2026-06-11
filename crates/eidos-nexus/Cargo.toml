@@ -1,0 +1,11 @@
+[package]
+name = "eidos-nexus"
+version = "0.0.0"
+description = "Eidos Nexus Mods integration: v1 API client, nxm:// links, MO2-compatible download .meta"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+ureq = { version = "2", features = ["json"] }
+serde_json = "1"

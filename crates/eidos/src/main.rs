@@ -424,6 +424,253 @@ fn cmd_install(args: &[String]) {
     }
 }
 
+/// `~/.config/eidos/nexus.ini`, holding the personal Nexus API key.
+fn nexus_key_path() -> std::path::PathBuf {
+    let config = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| home().join(".config"));
+    config.join("eidos").join("nexus.ini")
+}
+
+/// The stored Nexus API key, if any.
+fn load_nexus_key() -> Option<String> {
+    let text = std::fs::read_to_string(nexus_key_path()).ok()?;
+    text.lines()
+        .filter_map(|l| l.trim().split_once('='))
+        .find(|(k, _)| k.trim() == "api_key")
+        .map(|(_, v)| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// A connected Nexus client, or exit with a pointer to `eidos nexus key`.
+fn nexus_client() -> eidos_nexus::Nexus {
+    let Some(key) = load_nexus_key() else {
+        eprintln!(
+            "No Nexus API key configured. Get yours at nexusmods.com -> Site settings -> \
+             API keys (Personal API Key), then run:  eidos nexus key <KEY>"
+        );
+        exit(1);
+    };
+    eidos_nexus::Nexus::new(&key)
+}
+
+/// `eidos nexus key|status|update` - account + update checks.
+fn cmd_nexus(args: &[String]) {
+    match args.first().map(String::as_str) {
+        Some("key") => {
+            let Some(key) = args.get(1) else {
+                eprintln!("usage: eidos nexus key <YOUR-PERSONAL-API-KEY>");
+                exit(2);
+            };
+            match eidos_nexus::Nexus::new(key).validate() {
+                Ok(acct) => {
+                    let path = nexus_key_path();
+                    if let Some(p) = path.parent() {
+                        let _ = std::fs::create_dir_all(p);
+                    }
+                    if let Err(e) = std::fs::write(&path, format!("[Nexus]\napi_key={key}\n")) {
+                        eprintln!("could not store the key at {}: {e}", path.display());
+                        exit(1);
+                    }
+                    println!(
+                        "Connected as {} ({}). Key stored in {}.",
+                        acct.name,
+                        if acct.is_premium { "premium" } else { "free" },
+                        path.display()
+                    );
+                    println!("Next: register the browser handler:  eidos nxm --register");
+                }
+                Err(e) => {
+                    eprintln!("key validation failed: {e}");
+                    exit(1);
+                }
+            }
+        }
+        Some("status") => match nexus_client().validate() {
+            Ok(acct) => println!(
+                "Connected as {} ({}).",
+                acct.name,
+                if acct.is_premium { "premium" } else { "free" }
+            ),
+            Err(e) => {
+                eprintln!("not connected: {e}");
+                exit(1);
+            }
+        },
+        Some("update") => {
+            let Some(id) = args.get(1) else {
+                eprintln!("usage: eidos nexus update <game-id>");
+                exit(2);
+            };
+            let Some(game) = find_game(id) else {
+                eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+                exit(1);
+            };
+            let inst = Instance::global(id);
+            let nexus = nexus_client();
+
+            // MO2's approach: one "updated this month" query, then only fetch
+            // the mods in the intersection (stays inside the API rate limits).
+            let updated = match nexus.updated_mod_ids(game.def.nexus_game, "1m") {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("update query failed: {e}");
+                    exit(1);
+                }
+            };
+            let mut checked = 0u32;
+            let mut updates = 0u32;
+            for m in inst.modlist() {
+                let mut meta = inst.mod_meta(&m.name);
+                let Some(mod_id) = meta.mod_id() else { continue };
+                checked += 1;
+                if !updated.contains(&mod_id) {
+                    continue;
+                }
+                match nexus.mod_info(game.def.nexus_game, mod_id) {
+                    Ok(remote) => {
+                        meta.set_newest_version(&remote.version);
+                        let _ = meta.write(&inst.mods_dir().join(&m.name).join("meta.ini"));
+                        if meta.update_available() {
+                            updates += 1;
+                            println!(
+                                "  UPDATE {:<40} {} -> {}",
+                                m.name,
+                                meta.version().unwrap_or_default(),
+                                remote.version
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("  {}: {e}", m.name),
+                }
+            }
+            println!(
+                "{updates} update(s) available ({checked} mod(s) with a Nexus id, \
+                 {} recently updated on Nexus).",
+                updated.len()
+            );
+        }
+        _ => {
+            eprintln!(
+                "usage:\n\
+                 \x20 eidos nexus key <KEY>       connect (personal API key)\n\
+                 \x20 eidos nexus status          check the stored key\n\
+                 \x20 eidos nexus update <game>   check installed mods for updates"
+            );
+            exit(2);
+        }
+    }
+}
+
+/// `eidos nxm <url>` - download a "Mod Manager Download" link into the game's
+/// downloads dir (with its MO2-format .meta). `--register` installs the
+/// x-scheme-handler so the site's button opens Eidos.
+fn cmd_nxm(args: &[String]) {
+    match args.first().map(String::as_str) {
+        Some("--register") => {
+            let exe = std::env::current_exe().unwrap_or_else(|_| "eidos".into());
+            let apps = home().join(".local/share/applications");
+            let _ = std::fs::create_dir_all(&apps);
+            let desktop = apps.join("eidos-nxm.desktop");
+            let body = format!(
+                "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
+                 Exec={} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
+                exe.display()
+            );
+            if let Err(e) = std::fs::write(&desktop, body) {
+                eprintln!("could not write {}: {e}", desktop.display());
+                exit(1);
+            }
+            let _ = std::process::Command::new("xdg-mime")
+                .args(["default", "eidos-nxm.desktop", "x-scheme-handler/nxm"])
+                .status();
+            println!(
+                "Registered {} for nxm:// links.\nThe site's \"Mod Manager Download\" button now downloads through Eidos.",
+                desktop.display()
+            );
+        }
+        Some(url) => {
+            let nxm = match eidos_nexus::NxmUrl::parse(url) {
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("bad nxm link: {e}");
+                    exit(1);
+                }
+            };
+            // Which detected game does this link belong to? (VR editions share
+            // their parent's Nexus; prefer the one with an existing instance.)
+            let games = detect(&home());
+            let mut candidates: Vec<&DetectedGame> = games
+                .iter()
+                .filter(|g| g.def.nexus_game.eq_ignore_ascii_case(&nxm.game))
+                .collect();
+            candidates.sort_by_key(|g| !Instance::global(g.def.id).exists());
+            let Some(game) = candidates.first() else {
+                eprintln!("No detected game matches the Nexus domain '{}'.", nxm.game);
+                exit(1);
+            };
+            let inst = Instance::global(game.def.id);
+            inst.create().ok();
+
+            let nexus = nexus_client();
+            let file = match nexus.file_info(&nxm.game, nxm.mod_id, nxm.file_id) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("file lookup failed: {e}");
+                    exit(1);
+                }
+            };
+            let remote_mod = match nexus.mod_info(&nxm.game, nxm.mod_id) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("mod lookup failed: {e}");
+                    exit(1);
+                }
+            };
+            let link = match nexus.download_link(&nxm) {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("could not resolve the download: {e}");
+                    exit(1);
+                }
+            };
+            let name = eidos_nexus::file_name_from_uri(&link)
+                .or_else(|| (!file.file_name.is_empty()).then(|| file.file_name.clone()))
+                .unwrap_or_else(|| format!("{}-{}.archive", nxm.mod_id, nxm.file_id));
+            let dest = inst.downloads_dir().join(&name);
+
+            println!("Downloading {} ({}) ...", file.name, name);
+            match nexus.download(&link, &dest) {
+                Ok(bytes) => {
+                    let _ = eidos_nexus::write_download_meta(
+                        &dest,
+                        game.def.short_name,
+                        &nxm,
+                        &link,
+                        &file,
+                        &remote_mod,
+                    );
+                    println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
+                    println!("Install it:  eidos install {} \"{}\"", game.def.id, dest.display());
+                }
+                Err(e) => {
+                    eprintln!("download failed: {e}");
+                    exit(1);
+                }
+            }
+        }
+        None => {
+            eprintln!(
+                "usage:\n\
+                 \x20 eidos nxm <nxm://...>   download a Mod Manager Download link\n\
+                 \x20 eidos nxm --register    make the browser send nxm:// links to Eidos"
+            );
+            exit(2);
+        }
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "eidos - a native Linux mod manager\n\
@@ -434,7 +681,9 @@ fn usage() -> ! {
          \x20 eidos play <game-id>              show what would be mounted\n\
          \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game\n\
          \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)\n\
-         \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view"
+         \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view\n\
+         \x20 eidos nexus key|status|update     connect a Nexus account / check for mod updates\n\
+         \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler"
     );
     exit(2);
 }
@@ -450,6 +699,8 @@ fn main() {
         Some("play") => cmd_play(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
         Some("tool") => cmd_tool(&args[1..]),
+        Some("nexus") => cmd_nexus(&args[1..]),
+        Some("nxm") => cmd_nxm(&args[1..]),
         _ => usage(),
     }
 }

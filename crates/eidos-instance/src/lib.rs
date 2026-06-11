@@ -117,6 +117,12 @@ impl Instance {
         self.root.join(".base")
     }
 
+    /// Downloaded mod archives land here (`<root>/downloads/`), each with its
+    /// MO2-format `.meta` sidecar; shared by all profiles like `mods/`.
+    pub fn downloads_dir(&self) -> PathBuf {
+        self.root.join("downloads")
+    }
+
     /// The instance's tool list (`<root>/tools.ini`), user entries only - merge
     /// with per-game defaults via [`merge_tools`].
     pub fn tools(&self) -> Vec<Tool> {

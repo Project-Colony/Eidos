@@ -46,6 +46,11 @@ pub struct GameDef {
     pub id: &'static str,
     /// Display name, e.g. `Skyrim Special Edition`.
     pub name: &'static str,
+    /// MO2's `gameShortName` (used in `meta.ini`/`.meta` gameName), e.g. `SkyrimSE`.
+    pub short_name: &'static str,
+    /// The Nexus Mods game domain (nxm:// host, API path), e.g.
+    /// `skyrimspecialedition`. VR editions share their parent game's Nexus.
+    pub nexus_game: &'static str,
     /// Steam application id, used to locate the install via the Steam library.
     pub steam_app_id: u32,
     /// The data directory under the game install (`Data`, or `Data Files` for
@@ -78,6 +83,8 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrimse",
         name: "Skyrim Special Edition",
         steam_app_id: 489830,
+        short_name: "SkyrimSE",
+        nexus_game: "skyrimspecialedition",
         data_dir: "Data",
         documents_dir: "Skyrim Special Edition",
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
@@ -92,6 +99,8 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrimvr",
         name: "Skyrim VR",
         steam_app_id: 611670,
+        short_name: "SkyrimVR",
+        nexus_game: "skyrimspecialedition",
         data_dir: "Data",
         documents_dir: "Skyrim VR",
         ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
@@ -103,6 +112,8 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrim",
         name: "Skyrim",
         steam_app_id: 72850,
+        short_name: "Skyrim",
+        nexus_game: "skyrim",
         data_dir: "Data",
         documents_dir: "Skyrim",
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
@@ -117,6 +128,8 @@ pub static GAMES: &[GameDef] = &[
         id: "enderalse",
         name: "Enderal: Special Edition",
         steam_app_id: 976620,
+        short_name: "EnderalSE",
+        nexus_game: "enderalspecialedition",
         data_dir: "Data",
         documents_dir: "Enderal Special Edition",
         ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
@@ -128,6 +141,8 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout4",
         name: "Fallout 4",
         steam_app_id: 377160,
+        short_name: "Fallout4",
+        nexus_game: "fallout4",
         data_dir: "Data",
         documents_dir: "Fallout4",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
@@ -142,6 +157,8 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout4vr",
         name: "Fallout 4 VR",
         steam_app_id: 611660,
+        short_name: "Fallout4VR",
+        nexus_game: "fallout4",
         data_dir: "Data",
         documents_dir: "Fallout4VR",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
@@ -153,6 +170,8 @@ pub static GAMES: &[GameDef] = &[
         id: "falloutnv",
         name: "Fallout: New Vegas",
         steam_app_id: 22380,
+        short_name: "FalloutNV",
+        nexus_game: "newvegas",
         data_dir: "Data",
         documents_dir: "FalloutNV",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
@@ -167,6 +186,8 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout3",
         name: "Fallout 3 (GOTY)",
         steam_app_id: 22370,
+        short_name: "Fallout3",
+        nexus_game: "fallout3",
         data_dir: "Data",
         documents_dir: "Fallout3",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
@@ -181,6 +202,8 @@ pub static GAMES: &[GameDef] = &[
         id: "oblivion",
         name: "Oblivion",
         steam_app_id: 22330,
+        short_name: "Oblivion",
+        nexus_game: "oblivion",
         data_dir: "Data",
         documents_dir: "Oblivion",
         ini_files: &["Oblivion.ini"],
@@ -195,6 +218,8 @@ pub static GAMES: &[GameDef] = &[
         id: "morrowind",
         name: "Morrowind",
         steam_app_id: 22320,
+        short_name: "Morrowind",
+        nexus_game: "morrowind",
         data_dir: "Data Files",
         documents_dir: "",
         ini_files: &[],
@@ -206,6 +231,8 @@ pub static GAMES: &[GameDef] = &[
         id: "starfield",
         name: "Starfield",
         steam_app_id: 1716740,
+        short_name: "Starfield",
+        nexus_game: "starfield",
         data_dir: "Data",
         documents_dir: "Starfield",
         ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
@@ -271,6 +298,20 @@ mod tests {
                 assert!(!g.primary_plugins.is_empty(), "{} has no primary plugins", g.id);
             }
         }
+    }
+
+    #[test]
+    fn nexus_mapping_is_populated() {
+        // Every game has the MO2 short name + the Nexus domain; VR editions
+        // share their parent game's Nexus.
+        for g in GAMES {
+            assert!(!g.short_name.is_empty(), "{} missing short_name", g.id);
+            assert!(!g.nexus_game.is_empty(), "{} missing nexus_game", g.id);
+        }
+        let se = GameDef::for_id("skyrimse").unwrap();
+        assert_eq!((se.short_name, se.nexus_game), ("SkyrimSE", "skyrimspecialedition"));
+        assert_eq!(GameDef::for_id("skyrimvr").unwrap().nexus_game, "skyrimspecialedition");
+        assert_eq!(GameDef::for_id("falloutnv").unwrap().nexus_game, "newvegas");
     }
 
     #[test]
