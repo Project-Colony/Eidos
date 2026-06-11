@@ -1118,11 +1118,73 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
-fn downloads_panel<'a>() -> Element<'a, Message> {
+fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(inst) = &app.created else {
+        return text("No instance open.").into();
+    };
+    let dir = inst.downloads_dir();
+
+    // Downloaded archives (skip .meta/.unfinished sidecars), newest first.
+    let mut entries: Vec<(String, std::path::PathBuf, u64, std::time::SystemTime)> =
+        std::fs::read_dir(&dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let p = e.path();
+                let name = p.file_name()?.to_string_lossy().into_owned();
+                let lower = name.to_ascii_lowercase();
+                let is_archive = lower.ends_with(".7z")
+                    || lower.ends_with(".zip")
+                    || lower.ends_with(".rar");
+                if !is_archive {
+                    return None;
+                }
+                let md = e.metadata().ok()?;
+                Some((name, p, md.len(), md.modified().ok()?))
+            })
+            .collect();
+    entries.sort_by(|a, b| b.3.cmp(&a.3));
+
+    let mut rows = Column::new().spacing(2);
+    if entries.is_empty() {
+        rows = rows.push(
+            text("No downloads yet. On Nexus, use \"Mod Manager Download\" once the handler is registered (eidos nxm --register), or drop archives here.")
+                .size(11.0),
+        );
+    }
+    for (i, (name, path, size, _)) in entries.into_iter().enumerate() {
+        // Version from the MO2-format .meta sidecar, when present.
+        let meta = eidos_instance::ModMeta::read(&std::path::PathBuf::from(format!(
+            "{}.meta",
+            path.display()
+        )));
+        let version = meta.version().unwrap_or_default();
+        let row = Row::new()
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .push(text(name).size(12.0).width(Length::Fill))
+            .push(text(version).size(11.0).width(Length::Fixed(90.0)))
+            .push(text(format!("{:.1} MiB", size as f64 / (1024.0 * 1024.0))).size(11.0).width(Length::Fixed(80.0)))
+            .push(
+                button(text("Install").size(11.0))
+                    .padding(4)
+                    .on_press(Message::ModPicked(Some(path))),
+            );
+        rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+    }
+
     Column::new()
-        .spacing(4)
-        .push(text("Downloads").size(13.0))
-        .push(text("Nexus integration comes later. For now, extract mods into mods/.").size(12.0))
+        .spacing(6)
+        .push(
+            Row::new()
+                .spacing(8)
+                .push(text(format!("Downloads ({})", dir.display())).size(12.0))
+                .push(Space::with_width(Length::Fill))
+                .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
+                .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::Refresh)),
+        )
+        .push(scrollable(rows).height(Length::Fill))
         .into()
 }
 
@@ -1326,7 +1388,7 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         Tab::Plugins => plugins_panel(app),
         Tab::Conflicts => conflicts_panel(app),
         Tab::Overwrite => overwrite_panel(app),
-        Tab::Downloads => downloads_panel(),
+        Tab::Downloads => downloads_panel(app),
     };
 
     let inner = Column::new().spacing(8).push(top).push(tabs).push(content);
