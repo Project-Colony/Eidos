@@ -87,6 +87,7 @@ crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
 crates/eidos-gamefeatures  BSA/archive invalidation + per-profile INIs/saves at launch
 crates/eidos-gamedef    declarative per-game descriptor (one row per game; MO2 schema)
 crates/eidos-ini        shared low-level INI primitives (newline / section / key / edit)
+crates/eidos-nexus      Nexus Mods: v1 API client, nxm:// downloads, update checks
 docs/architecture.md    the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required
@@ -204,6 +205,13 @@ fusermount3 -u /mnt/point
       scripted installer (UTF-16 `ModuleConfig.xml` parse + condition/flag engine),
       driven from a CLI (`eidos install`) and the GUI Install button + an
       interactive FOMOD wizard; writes a MO2-compatible `meta.ini`
+- [x] Nexus Mods integration (`eidos-nexus`) - connect with a personal API key
+      (`eidos nexus key`), register the `nxm://` handler (`eidos nxm --register`)
+      so the site's "Mod Manager Download" button downloads straight into the
+      instance's `downloads/` (with MO2-format `.meta` sidecars), check installed
+      mods for updates (`eidos nexus update`, MO2's rate-limit-friendly
+      updated-this-month strategy), and install from the GUI Downloads tab in one
+      click (Simple or FOMOD wizard)
 - [x] Tools through the VFS (`eidos tool`) - run xEdit/FNIS/BodySlide through the
       same merged view, inside the game's Proton prefix, with no Steam `%command%`:
       a protontricks-style Proton resolver (config.vdf `CompatToolMapping` ->
@@ -254,8 +262,9 @@ this work ([docs/master-pieces.md](docs/master-pieces.md), all 6 master pieces
 done): the mod installer (Simple + FOMOD wizard), plugins, conflicts, profiles,
 `meta.ini`, the instance manifest, per-game Bethesda features (BSA invalidation +
 per-profile INIs/saves off a declarative `GameDef`), and tools through the VFS
-(`eidos tool`). What lies beyond the study: Nexus integration (downloads, updates),
-LOOT sorting, and mod-list UX (separators, filtering).
+(`eidos tool`), plus Nexus integration beyond it (`eidos-nexus`: nxm:// downloads,
+update checks, the GUI Downloads tab). Next up: LOOT sorting and mod-list UX
+(separators, filtering).
 
 ## Prior art and references
 
