@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use iced::widget::{button, container, image, scrollable, text, text_input, Column, Row, Space};
+use iced::widget::{button, container, image, pick_list, scrollable, text, text_input, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
@@ -64,6 +64,7 @@ enum Message {
     PortableChanged(String),
     Finish,
     Restart,
+    ToolPicked(String),
     ToggleMod(usize),
     MoveUp(usize),
     MoveDown(usize),
@@ -116,7 +117,15 @@ struct App {
     launch_command: Vec<String>,
     /// An open FOMOD installer wizard, if the user is mid-install.
     fomod: Option<FomodWizard>,
+    /// Tools runnable through the merged view (user tools.ini + per-game
+    /// defaults), shown in the run-target picker next to Run.
+    tools: Vec<eidos_instance::Tool>,
+    /// The picked run target: `None` = the game, `Some(title)` = that tool.
+    tool_choice: Option<String>,
 }
+
+/// The run-target picker entry meaning "the game itself".
+const RUN_GAME: &str = "Game (Steam command)";
 
 fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     let games = detect(&home());
@@ -140,6 +149,8 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_clear: false,
         launch_command,
         fomod: None,
+        tools: Vec::new(),
+        tool_choice: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -169,7 +180,41 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             }
         }
     }
+    load_tools(&mut app);
     (app, Task::none())
+}
+
+/// Reload the tool list for the open instance (user `tools.ini` + per-game
+/// defaults), keeping the current pick when it still exists.
+fn load_tools(app: &mut App) {
+    let merged = match (selected_game(app), &app.created) {
+        (Some(g), Some(inst)) => eidos_instance::merge_tools(
+            inst.tools(),
+            eidos_instance::default_tools(
+                g.def.script_extender.as_ref().map(|se| se.loader),
+                &g.install_path,
+            ),
+        ),
+        _ => Vec::new(),
+    };
+    if let Some(t) = &app.tool_choice {
+        if !merged.iter().any(|x| x.title.eq_ignore_ascii_case(t)) {
+            app.tool_choice = None;
+        }
+    }
+    app.tools = merged;
+}
+
+/// Spawn `eidos tool <id> run <title>`: the CLI resolves the tool + Proton and
+/// runs it through the merged view (same single-process requirement as `play`).
+fn run_tool_through_eidos(game_id: &str, title: &str) -> std::io::Result<()> {
+    std::process::Command::new(find_eidos_binary())
+        .arg("tool")
+        .arg(game_id)
+        .arg("run")
+        .arg(title)
+        .spawn()
+        .map(|_| ())
 }
 
 /// Identify which detected game a Steam `%command%` is launching, by matching
@@ -309,6 +354,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.tab = Tab::Data;
                         app.error = None;
                         app.screen = Screen::Main;
+                        load_tools(app);
                     }
                     Err(e) => app.error = Some(e.to_string()),
                 }
@@ -500,8 +546,22 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.fomod = None;
             app.status = Some("FOMOD install cancelled.".to_string());
         }
+        Message::ToolPicked(choice) => {
+            app.tool_choice = (choice != RUN_GAME).then_some(choice);
+        }
         Message::Run => {
-            if app.launch_command.is_empty() {
+            if let Some(title) = app.tool_choice.clone() {
+                // A tool: the CLI resolves Proton itself, no Steam command needed.
+                if let Some(game) = selected_game(app) {
+                    let id = game.def.id;
+                    match run_tool_through_eidos(id, &title) {
+                        Ok(()) => app.status = Some(format!("Launching {title} through the merged view...")),
+                        Err(e) => app.status = Some(format!("Tool launch failed: {e}")),
+                    }
+                } else {
+                    app.status = Some("Create or open an instance first.".to_string());
+                }
+            } else if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
                 // build the launch environment. Point the user at the option.
                 app.status = Some(
@@ -525,6 +585,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.conflicts = None;
                 app.status = Some("Refreshed mod list.".to_string());
             }
+            load_tools(app);
         }
         Message::OpenFolder(p) => {
             let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
@@ -1233,10 +1294,18 @@ fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 
 fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let game_name = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
+    // Run-target picker (MO2's executables combo): the game, or any tool run
+    // through the same merged view.
+    let run_options: Vec<String> = std::iter::once(RUN_GAME.to_string())
+        .chain(app.tools.iter().map(|t| t.title.clone()))
+        .collect();
+    let run_choice = app.tool_choice.clone().unwrap_or_else(|| RUN_GAME.to_string());
+
     let top = Row::new()
         .spacing(8)
         .push(combo(game_name.to_string(), Message::Noop))
         .push(Space::with_width(Length::Fill))
+        .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(12.0).padding(8))
         .push(
             button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
                 .padding(10)

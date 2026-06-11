@@ -204,6 +204,15 @@ fusermount3 -u /mnt/point
       scripted installer (UTF-16 `ModuleConfig.xml` parse + condition/flag engine),
       driven from a CLI (`eidos install`) and the GUI Install button + an
       interactive FOMOD wizard; writes a MO2-compatible `meta.ini`
+- [x] Tools through the VFS (`eidos tool`) - run xEdit/FNIS/BodySlide through the
+      same merged view, inside the game's Proton prefix, with no Steam `%command%`:
+      a protontricks-style Proton resolver (config.vdf `CompatToolMapping` ->
+      compatibilitytools.d / official Protons -> `STEAM_COMPAT_*` env), a
+      per-instance tool list (MO2 `ExecutablesList` parity, script extender seeded
+      by default), and a run-target picker next to the GUI Run button. Tool output
+      lands in Overwrite, so the next launch picks it up - the generate-then-play
+      loop. (MO2 itself rebuilds its mapping per run, so per-launch mounts are
+      exact parity.)
 - [x] Per-game Bethesda features (`eidos-gamefeatures` + `eidos-gamedef`) - all
       keyed off one declarative `GameDef` row per game (MO2's `IPluginGame`
       schema): **BSA/archive invalidation** so loose mod files override the
@@ -240,12 +249,13 @@ fusermount3 -u /mnt/point
       `readdir`** (the Creation Engine's loose-file indexer assumes it)
 - [ ] Casing normalization at mod-import time
 
-The manager layer above the VFS now has the mod installer (Simple + FOMOD wizard),
-plugins, conflicts, profiles, `meta.ini`, the instance manifest, and per-game
-Bethesda features (BSA invalidation + per-profile INIs/saves off a declarative
-`GameDef`). What is still ahead - tools-through-VFS re-entry (xEdit/FNIS/BodySlide)
-- is ranked in [docs/master-pieces.md](docs/master-pieces.md), the MO2 + usvfs
-study that drove this work.
+The manager layer above the VFS is complete per the MO2 + usvfs study that drove
+this work ([docs/master-pieces.md](docs/master-pieces.md), all 6 master pieces
+done): the mod installer (Simple + FOMOD wizard), plugins, conflicts, profiles,
+`meta.ini`, the instance manifest, per-game Bethesda features (BSA invalidation +
+per-profile INIs/saves off a declarative `GameDef`), and tools through the VFS
+(`eidos tool`). What lies beyond the study: Nexus integration (downloads, updates),
+LOOT sorting, and mod-list UX (separators, filtering).
 
 ## Prior art and references
 

@@ -7,15 +7,15 @@
 
 ## Status (updated 2026-06-10)
 
-The connective-tissue quick wins and 5 of the 6 master pieces shipped immediately
-after this study was written. The rest of this document is the original study; the
+**All 6 master pieces have shipped**, along with the connective-tissue quick wins
+- the manager layer this study called for is built. The rest of this document is the original study; the
 table below is the current truth.
 
 | Master piece | Status |
 |---|---|
 | 1. ESP/ESM/ESL plugin load order | **Done** - `eidos-plugins` |
 | 2. Mod installer (archive + FOMOD) | **Done** - `eidos-install` + `eidos-fomod` |
-| 3. Tools-through-VFS re-entry | Remaining |
+| 3. Tools-through-VFS re-entry | **Done** - `eidos tool` (Proton resolver + Tool model + GUI picker) |
 | 4. Per-game features (BSA / INI / saves) | **Done** - `eidos-gamefeatures` + `eidos-gamedef` |
 | 5. Per-file conflict detection | **Done** - `eidos-conflicts` |
 | 6. Profiles | **Done** - `eidos-instance` |
@@ -48,12 +48,12 @@ and cannot run a tool (xEdit/FNIS/BodySlide) against the merged view. Every one 
 those is table-stakes for replacing MO2, and **none of them live in the FUSE layer -
 they live in new crates above it.**
 
-*(Update 2026-06-10: five of those gaps have since closed - the mod installer
+*(Update 2026-06-10: all six gaps have since closed - the mod installer
 (`eidos-install` + `eidos-fomod`, Simple + an interactive FOMOD wizard), ESP plugin
 load order (`eidos-plugins`), conflict explanation (`eidos-conflicts`), profiles
-(`eidos-instance`), and per-game BSA/INI/save handling (`eidos-gamefeatures` +
-`eidos-gamedef`). Only tools-through-VFS re-entry remains. See the status table at
-the top.)*
+(`eidos-instance`), per-game BSA/INI/save handling (`eidos-gamefeatures` +
+`eidos-gamedef`), and tools-through-VFS (`eidos tool` + the Proton resolver). See
+the status table at the top.)*
 
 The 2-3 biggest levers:
 
@@ -146,7 +146,7 @@ The 2-3 biggest levers:
 
 ### 3. Tools-through-VFS: persistent named namespace + re-entry for xEdit/FNIS/BodySlide
 - **Complexity:** high &nbsp;|&nbsp; **Target:** `eidos-launch` + `eidos-instance` + `eidos-gui` &nbsp;|&nbsp; **Depends on:** plugin load order
-- **Status (2026-06-09): Remaining.** Not started; still one anonymous namespace per process. Its dependency (plugin load order) is now in place.
+- **Status (2026-06-10): Done.** `eidos tool <id> [list|add|rm|run]` runs any Windows tool through the merged view inside the game's Proton prefix: a Proton resolver (`eidos-games::proton_command`, protontricks-style - config.vdf `CompatToolMapping` -> compatibilitytools.d / official Protons -> `STEAM_COMPAT_*` env), a per-instance Tool model (MO2 `ExecutablesList` parity, defaults seeded from `GameDef`), and a GUI run-target picker next to Run. **The study's "persistent named namespace + setns" turned out to be over-specified**: MO2 itself rebuilds the usvfs mapping on every run (`OrganizerCore::beforeRun` -> `updateMapping`, verified in source), so Eidos's per-launch mounts are exact parity - tool output lands in Overwrite and the next launch sees it (the generate-then-play loop). A persistent session remains a future option for concurrent game+tool access.
 - **Why:** The entire point of a Bethesda mod manager is the generate-then-play loop:
   FNIS/Nemesis build behaviour files, BodySlide builds meshes, xEdit cleans/patches -
   all MUST see the same merged Data and write into Overwrite so the next launch picks
