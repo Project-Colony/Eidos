@@ -17,6 +17,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod proton;
+pub use proton::{proton_command, steam_root, ProtonRun};
+
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`
 /// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.
 pub use eidos_gamedef::GameDef;
@@ -136,7 +139,7 @@ fn add_lib(libs: &mut Vec<PathBuf>, path: &Path) {
 }
 
 /// The two quoted strings on a Valve KeyValues line, e.g. `"appid" "489830"`.
-fn quoted_pair(line: &str) -> Option<(&str, &str)> {
+pub(crate) fn quoted_pair(line: &str) -> Option<(&str, &str)> {
     let parts: Vec<&str> = line.split('"').collect();
     // Quoted tokens land at odd indices: ["", key, sep, value, ...].
     (parts.len() >= 4).then(|| (parts[1], parts[3]))
