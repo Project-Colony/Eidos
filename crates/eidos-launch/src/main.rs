@@ -60,6 +60,7 @@ fn main() {
         env: Vec::new(),
         base_bind: None,
         binds: Vec::new(),
+        cwd: None,
     };
     match launch(spec) {
         Ok(status) => exit(status.code().unwrap_or(0)),

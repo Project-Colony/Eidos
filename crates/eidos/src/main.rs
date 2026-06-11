@@ -173,9 +173,9 @@ fn cmd_play(args: &[String]) {
     let inst = Instance::global(id);
     inst.create().ok();
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
-    let layers = inst.load_order();
 
     if command.is_empty() {
+        let layers = inst.load_order();
         println!("Instance      : {}", inst.root.display());
         println!("Mount target  : {}  (the game's Data dir)", game.data_path.display());
         println!("Mod layers ({}):", layers.len());
@@ -192,26 +192,42 @@ fn cmd_play(args: &[String]) {
         return;
     }
 
-    let inis = prepare_inis(id, &game, &inst);
-    prepare_plugins(id, &game, &inst);
-    let save_bind = prepare_saves(id, &game, &inst);
+    run_through_view(id, &game, &inst, command, Vec::new(), None);
+}
+
+/// The shared launch pipeline behind `play` and `tool`: write `plugins.txt`,
+/// deploy the active profile's INIs (+ BSA invalidation), bind its saves, mount
+/// the merged view over the game's Data dir, run `command` through it, then
+/// capture game-modified INIs back into the profile. Never returns.
+fn run_through_view(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+    command: Vec<String>,
+    env: Vec<(String, String)>,
+    cwd: Option<std::path::PathBuf>,
+) -> ! {
+    let inis = prepare_inis(id, game, inst);
+    prepare_plugins(id, game, inst);
+    let save_bind = prepare_saves(id, game, inst);
 
     let spec = LaunchSpec {
-        layers,
+        layers: inst.load_order(),
         overwrite: inst.overwrite_dir(),
         mountpoint: game.data_path.clone(),
         command,
-        env: Vec::new(),
+        env,
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
         binds: save_bind.into_iter().collect(),
+        cwd,
     };
     let result = launch(spec);
 
-    // The game has exited: capture any INI changes it made back into the profile.
+    // The command has exited: capture any INI changes back into the profile.
     if let Some((docs, ini_files)) = inis {
         if let Ok(n) = inst.active().capture_inis(&docs, ini_files) {
             if n > 0 {
-                eprintln!("eidos play: captured {n} INI(s) back into profile '{}'", inst.active_profile());
+                eprintln!("eidos: captured {n} INI(s) back into profile '{}'", inst.active_profile());
             }
         }
     }
@@ -219,8 +235,151 @@ fn cmd_play(args: &[String]) {
     match result {
         Ok(status) => exit(status.code().unwrap_or(0)),
         Err(e) => {
-            eprintln!("eidos play: {e}");
+            eprintln!("eidos: launch failed: {e}");
             exit(1)
+        }
+    }
+}
+
+/// Per-game default tools: the script extender, when present in the game dir.
+fn default_tools(game: &DetectedGame) -> Vec<eidos_instance::Tool> {
+    eidos_instance::default_tools(
+        game.def.script_extender.as_ref().map(|se| se.loader),
+        &game.install_path,
+    )
+}
+
+/// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
+/// run <title> [--print] [-- extra...]]` - manage and run tools (xEdit, FNIS,
+/// BodySlide) through the merged view, inside the game's Proton prefix.
+fn cmd_tool(args: &[String]) {
+    let Some(id) = args.first() else {
+        eprintln!(
+            "usage:\n\
+             \x20 eidos tool <game-id>                       list tools\n\
+             \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
+             \x20 eidos tool <game-id> rm <title>\n\
+             \x20 eidos tool <game-id> run <title> [--print] [-- <extra args>...]"
+        );
+        exit(2);
+    };
+    let Some(game) = find_game(id) else {
+        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+        exit(1);
+    };
+    let inst = Instance::global(id);
+    inst.create().ok();
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+
+    match args.get(1).map(String::as_str) {
+        None | Some("list") => {
+            let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+            if tools.is_empty() {
+                println!("No tools. Add one: eidos tool {id} add <title> <exe> [args...]");
+                return;
+            }
+            println!("Tools for {} (run: eidos tool {id} run <title>):", game.def.name);
+            for t in &tools {
+                let exe = if t.exe.is_absolute() { t.exe.clone() } else { game.install_path.join(&t.exe) };
+                let missing = if exe.is_file() { "" } else { "  [MISSING]" };
+                println!("  {:<18} {}{}", t.title, t.exe.display(), missing);
+            }
+        }
+        Some("add") => {
+            let (Some(title), Some(exe)) = (args.get(2), args.get(3)) else {
+                eprintln!("usage: eidos tool {id} add <title> <exe> [args...]");
+                exit(2);
+            };
+            let mut user = inst.tools();
+            user.retain(|t| !t.title.eq_ignore_ascii_case(title));
+            user.push(eidos_instance::Tool {
+                title: title.clone(),
+                exe: std::path::PathBuf::from(exe),
+                args: args[4..].to_vec(),
+                workdir: None,
+            });
+            match inst.save_tools(&user) {
+                Ok(()) => println!("Added '{title}'. Run it: eidos tool {id} run {title}"),
+                Err(e) => {
+                    eprintln!("could not save tools.ini: {e}");
+                    exit(1);
+                }
+            }
+        }
+        Some("rm") => {
+            let Some(title) = args.get(2) else {
+                eprintln!("usage: eidos tool {id} rm <title>");
+                exit(2);
+            };
+            let mut user = inst.tools();
+            let before = user.len();
+            user.retain(|t| !t.title.eq_ignore_ascii_case(title));
+            if user.len() == before {
+                eprintln!("No user tool named '{title}' (defaults cannot be removed).");
+                exit(1);
+            }
+            let _ = inst.save_tools(&user);
+            println!("Removed '{title}'.");
+        }
+        Some("run") => {
+            let Some(title) = args.get(2) else {
+                eprintln!("usage: eidos tool {id} run <title> [--print] [-- <extra args>...]");
+                exit(2);
+            };
+            let print_only = args.iter().any(|a| a == "--print");
+            let extra: Vec<String> = match args.iter().position(|a| a == "--") {
+                Some(i) => args[i + 1..].to_vec(),
+                None => Vec::new(),
+            };
+
+            let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+            let Some(tool) = tools.iter().find(|t| t.title.eq_ignore_ascii_case(title)) else {
+                eprintln!("No tool named '{title}'. List them: eidos tool {id}");
+                exit(1);
+            };
+            let exe = if tool.exe.is_absolute() {
+                tool.exe.clone()
+            } else {
+                game.install_path.join(&tool.exe)
+            };
+            if !exe.is_file() {
+                eprintln!("Tool executable not found: {}", exe.display());
+                exit(1);
+            }
+            let Some(compat) = game.compatdata.as_ref() else {
+                eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
+                exit(1);
+            };
+            let Some(run) = eidos_games::proton_command(&home(), game.def.steam_app_id, compat)
+            else {
+                eprintln!(
+                    "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
+                     compatibilitytools.d). Is the game set up to run under Proton?"
+                );
+                exit(1);
+            };
+
+            let mut command = run.command(&exe, &tool.args);
+            command.extend(extra);
+            // MO2's default working directory for a tool is its own folder.
+            let cwd = tool.workdir.clone().or_else(|| exe.parent().map(|p| p.to_path_buf()));
+
+            if print_only {
+                println!("would run (through the merged view at {}):", game.data_path.display());
+                println!("  argv : {command:?}");
+                for (k, v) in &run.env {
+                    println!("  env  : {k}={v}");
+                }
+                if let Some(c) = &cwd {
+                    println!("  cwd  : {}", c.display());
+                }
+                return;
+            }
+            run_through_view(id, &game, &inst, command, run.env, cwd);
+        }
+        Some(other) => {
+            eprintln!("unknown tool subcommand '{other}' (list | add | rm | run)");
+            exit(2);
         }
     }
 }
@@ -274,7 +433,8 @@ fn usage() -> ! {
          \x20 eidos init <game-id>              create a modding instance\n\
          \x20 eidos play <game-id>              show what would be mounted\n\
          \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game\n\
-         \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)"
+         \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)\n\
+         \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view"
     );
     exit(2);
 }
@@ -289,6 +449,7 @@ fn main() {
         },
         Some("play") => cmd_play(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
+        Some("tool") => cmd_tool(&args[1..]),
         _ => usage(),
     }
 }

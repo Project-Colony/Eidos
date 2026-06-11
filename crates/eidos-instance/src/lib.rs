@@ -20,9 +20,11 @@ use std::path::PathBuf;
 mod manifest;
 mod meta;
 mod profile;
+mod tools;
 pub use manifest::Manifest;
 pub use meta::ModMeta;
 pub use profile::Profile;
+pub use tools::{default_tools, merge_tools, read_tools, write_tools, Tool};
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -113,6 +115,17 @@ impl Instance {
     /// Bind-stash mountpoint for the pristine game files (used at launch).
     pub fn base_dir(&self) -> PathBuf {
         self.root.join(".base")
+    }
+
+    /// The instance's tool list (`<root>/tools.ini`), user entries only - merge
+    /// with per-game defaults via [`merge_tools`].
+    pub fn tools(&self) -> Vec<Tool> {
+        read_tools(&self.root.join("tools.ini"))
+    }
+
+    /// Persist the user's tool list.
+    pub fn save_tools(&self, tools: &[Tool]) -> std::io::Result<()> {
+        write_tools(&self.root.join("tools.ini"), tools)
     }
 
     pub fn exists(&self) -> bool {

@@ -38,6 +38,11 @@ pub struct LaunchSpec {
     /// the game's save directory to the active profile's saves (the Linux-native
     /// equivalent of MO2's usvfs save mapping) without ever modifying the prefix.
     pub binds: Vec<(PathBuf, PathBuf)>,
+    /// Working directory for the command. `None` = the game root (the
+    /// mountpoint's parent) - required for the game itself (CommonLibSSE-NG
+    /// resolves its address library CWD-relative). Tools override it (MO2's
+    /// default for a tool is the executable's own directory).
+    pub cwd: Option<PathBuf>,
 }
 
 fn check(rc: i32) -> std::io::Result<()> {
@@ -134,8 +139,15 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     let mut cmd = Command::new(&spec.command[0]);
     cmd.args(&spec.command[1..]);
     cmd.envs(spec.env.iter().map(|(k, v)| (k, v)));
-    if let Some(game_root) = spec.mountpoint.parent() {
-        cmd.current_dir(game_root);
+    match &spec.cwd {
+        Some(dir) => {
+            cmd.current_dir(dir);
+        }
+        None => {
+            if let Some(game_root) = spec.mountpoint.parent() {
+                cmd.current_dir(game_root);
+            }
+        }
     }
     let status = cmd.status();
 
