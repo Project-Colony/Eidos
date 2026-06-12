@@ -9,6 +9,8 @@
 //! `play` mounts the instance's mods over the game's own Data directory (via a
 //! bind-stash) inside a private namespace, then runs the command through it.
 
+use std::os::unix::process::ExitStatusExt;
+use std::path::PathBuf;
 use std::process::exit;
 
 use eidos_games::{detect, home, DetectedGame};
@@ -17,6 +19,29 @@ use eidos_launch::{launch, LaunchSpec};
 
 fn find_game(id: &str) -> Option<DetectedGame> {
     detect(&home()).into_iter().find(|g| g.def.id == id)
+}
+
+/// The plugin-discovery sources in ASCENDING priority (later wins same-name
+/// shadowing), as fed to [`eidos_plugins::PluginList::discover`]: the game's own
+/// Data (lowest), then each enabled mod (the modlist is highest-priority first,
+/// so reversed), then the Overwrite layer LAST (highest). Overwrite is the
+/// always-on writable top layer the launcher mounts, mirroring MO2's
+/// always-active top-priority Overwrite pseudo-mod - plugins a tool wrote there
+/// (xEdit / Bashed Patch output) must be discovered, not dropped from plugins.txt.
+fn plugin_sources(
+    game_data: &std::path::Path,
+    enabled_highest_first: &[ModEntry],
+    overwrite: &std::path::Path,
+) -> Vec<(String, PathBuf)> {
+    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game_data.to_path_buf())];
+    sources.extend(
+        enabled_highest_first
+            .iter()
+            .rev()
+            .map(|m| (m.name.clone(), m.path.clone())),
+    );
+    sources.push(("overwrite".to_string(), overwrite.to_path_buf()));
+    sources
 }
 
 /// Before launch: discover this instance's plugins, preserve any existing load
@@ -31,13 +56,11 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
     };
     let prefix = compatdata.join("pfx");
 
-    // Sources: the game's own Data first (the base masters), then each enabled mod
-    // in ascending plugin priority (the modlist is highest-first, so reverse it).
-    let mut sources: Vec<(String, std::path::PathBuf)> =
-        vec![(String::new(), game.data_path.clone())];
-    let mut enabled: Vec<_> = inst.modlist().into_iter().filter(|m| m.enabled).collect();
-    enabled.reverse();
-    sources.extend(enabled.into_iter().map(|m| (m.name, m.path)));
+    // Sources in ascending plugin priority: the game's own Data (lowest), each
+    // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
+    // into Overwrite are discovered and win same-name shadowing.
+    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.enabled).collect();
+    let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
 
@@ -233,7 +256,11 @@ fn run_through_view(
     }
 
     match result {
-        Ok(status) => exit(status.code().unwrap_or(0)),
+        // Propagate the child's real status. On Unix `code()` is `None` when the
+        // child was killed by a signal, so fall back to the shell convention
+        // 128 + signal - otherwise a crashed (signal-killed) game/tool would make
+        // eidos exit 0 and hide the failure from Steam or any wrapping script.
+        Ok(status) => exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1))),
         Err(e) => {
             eprintln!("eidos: launch failed: {e}");
             exit(1)
@@ -326,8 +353,11 @@ fn cmd_tool(args: &[String]) {
                 eprintln!("usage: eidos tool {id} run <title> [--print] [-- <extra args>...]");
                 exit(2);
             };
-            let print_only = args.iter().any(|a| a == "--print");
-            let extra: Vec<String> = match args.iter().position(|a| a == "--") {
+            // Everything after `--` is opaque tool args, so scan for --print only
+            // BEFORE the separator (a tool may itself take a --print flag).
+            let sep = args.iter().position(|a| a == "--");
+            let print_only = args[..sep.unwrap_or(args.len())].iter().any(|a| a == "--print");
+            let extra: Vec<String> = match sep {
                 Some(i) => args[i + 1..].to_vec(),
                 None => Vec::new(),
             };
@@ -350,7 +380,12 @@ fn cmd_tool(args: &[String]) {
                 eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
                 exit(1);
             };
-            let Some(run) = eidos_games::proton_command(&home(), game.def.steam_app_id, compat)
+            let Some(run) = eidos_games::proton_command(
+                &home(),
+                game.def.steam_app_id,
+                compat,
+                &game.install_path,
+            )
             else {
                 eprintln!(
                     "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
@@ -702,5 +737,111 @@ fn main() {
         Some("nexus") => cmd_nexus(&args[1..]),
         Some("nxm") => cmd_nxm(&args[1..]),
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// A throwaway temp dir, cleaned up on drop (the same idiom the other crates
+    /// use - no external dev-dependency).
+    struct Tmp(PathBuf);
+    impl Tmp {
+        fn new(tag: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("eidos-{}-{}", tag, std::process::id()));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).unwrap();
+            Tmp(dir)
+        }
+        fn touch(&self, rel: &str) {
+            let p = self.0.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(&p, b"").unwrap();
+        }
+    }
+    impl Drop for Tmp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    // Guards FIX C1: the Overwrite layer must be the LAST (highest-priority) plugin
+    // source, so an ESP that lives only in Overwrite (xEdit / Bashed Patch output)
+    // is discovered, and an Overwrite copy wins same-name shadowing over a mod's
+    // copy - otherwise such plugins are silently dropped from plugins.txt.
+    #[test]
+    fn overwrite_is_the_highest_priority_plugin_source() {
+        let t = Tmp::new("c1");
+        let game_data = t.0.join("Data");
+        fs::create_dir_all(&game_data).unwrap();
+
+        // One enabled mod ships Patch.esp; Overwrite also has Patch.esp (a later
+        // regeneration) plus a Bashed-Patch.esp that exists ONLY in Overwrite.
+        let mod_dir = t.0.join("mods/AwesomeMod");
+        fs::create_dir_all(&mod_dir).unwrap();
+        fs::write(mod_dir.join("Patch.esp"), b"").unwrap();
+        let overwrite = t.0.join("overwrite");
+        t.touch("overwrite/Patch.esp");
+        t.touch("overwrite/Bashed Patch.esp");
+
+        let enabled = vec![ModEntry {
+            name: "AwesomeMod".to_string(),
+            enabled: true,
+            path: mod_dir.clone(),
+        }];
+
+        let sources = plugin_sources(&game_data, &enabled, &overwrite);
+        // Overwrite must be the final, highest-priority source.
+        assert_eq!(sources.last().unwrap().0, "overwrite");
+        assert_eq!(sources.last().unwrap().1, overwrite);
+
+        let spec = eidos_plugins::GameSpec::for_id("skyrimse").unwrap();
+        let list = eidos_plugins::PluginList::discover(&sources, &spec);
+
+        // The Overwrite-only plugin is discovered (would be dropped without C1).
+        let bashed = list
+            .plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("Bashed Patch.esp"))
+            .expect("Overwrite-only plugin must be discovered");
+        assert_eq!(bashed.origin_mod, "overwrite");
+
+        // For the shadowed name, the Overwrite copy wins (highest priority).
+        let patch = list
+            .plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("Patch.esp"))
+            .expect("Patch.esp must be present");
+        assert_eq!(patch.origin_mod, "overwrite");
+        assert!(
+            patch.path.starts_with(&overwrite),
+            "shadowed plugin should resolve to the Overwrite copy, got {}",
+            patch.path.display()
+        );
+    }
+
+    // Guards FIX C2: on Unix a signal-killed child reports `code() == None`, so the
+    // exit status must fall back to 128 + signal (not 0) - otherwise a crashed game
+    // would make eidos exit 0 and hide the crash. Asserts the mapping the
+    // `run_through_view` exit path uses.
+    #[test]
+    fn signal_death_maps_to_128_plus_signal_not_zero() {
+        use std::process::ExitStatus;
+
+        // A child killed by SIGSEGV (11): code() is None, signal() is 11.
+        let killed = ExitStatus::from_raw(11);
+        assert_eq!(killed.code(), None, "signal death has no exit code on Unix");
+        let mapped = killed.code().unwrap_or_else(|| 128 + killed.signal().unwrap_or(1));
+        assert_eq!(mapped, 139, "SIGSEGV must map to 139, never 0");
+        assert_ne!(mapped, 0);
+
+        // A normal exit(3) is unaffected: code() is Some(3).
+        let normal = ExitStatus::from_raw(3 << 8);
+        assert_eq!(
+            normal.code().unwrap_or_else(|| 128 + normal.signal().unwrap_or(1)),
+            3
+        );
     }
 }

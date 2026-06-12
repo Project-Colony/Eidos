@@ -7,8 +7,10 @@
 //! `version` file). The tool's `proton` binary lives either in
 //! `compatibilitytools.d/<name>/` (GE and other custom builds) or in a Steam
 //! library's `steamapps/common/` (official "Proton X.Y" / "Proton - Experimental").
-//! The invocation is then `proton run <exe>` with `STEAM_COMPAT_DATA_PATH` +
-//! `STEAM_COMPAT_CLIENT_INSTALL_PATH` set.
+//! The invocation is then `proton waitforexitandrun <exe>` (Steam's main-app verb)
+//! with `STEAM_COMPAT_DATA_PATH`, `STEAM_COMPAT_CLIENT_INSTALL_PATH`, the Steam app
+//! id, and `STEAM_COMPAT_INSTALL_PATH` set - the last so Proton's drive setup
+//! repairs the prefix's `s:` gamedrive instead of tearing it down.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,19 +20,28 @@ use crate::{quoted_pair, steam_libraries};
 /// A ready-to-spawn Proton invocation for one app.
 #[derive(Debug, Clone)]
 pub struct ProtonRun {
-    /// The `proton` entry script (run as `proton run <exe> [args...]`).
+    /// The `proton` entry script (run as `proton waitforexitandrun <exe> [args...]`).
     pub proton: PathBuf,
-    /// Environment Proton needs: `STEAM_COMPAT_DATA_PATH` (the app's compatdata)
-    /// and `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root).
+    /// Environment Proton needs: `STEAM_COMPAT_DATA_PATH` (the app's compatdata),
+    /// `STEAM_COMPAT_CLIENT_INSTALL_PATH` (the Steam root), the Steam app id
+    /// (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
+    /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's dir/library).
     pub env: Vec<(String, String)>,
 }
 
 impl ProtonRun {
     /// The full argv to run `exe` (a Windows executable) through this Proton.
+    ///
+    /// Uses Steam's main-app verb `waitforexitandrun` (not the bare `run`): `run`
+    /// executes Proton's `setup_game_dir_drive`, which - without
+    /// `STEAM_COMPAT_INSTALL_PATH` - DELETES the prefix's `s:` gamedrive symlink,
+    /// and it skips the `wineserver -w` wait that protects a launch right after a
+    /// previous session. `waitforexitandrun` is what Steam itself invokes for the
+    /// game, matching Eidos's exclusive single-process tool launch.
     pub fn command(&self, exe: &Path, args: &[String]) -> Vec<String> {
         let mut v = vec![
             self.proton.to_string_lossy().into_owned(),
-            "run".to_string(),
+            "waitforexitandrun".to_string(),
             exe.to_string_lossy().into_owned(),
         ];
         v.extend(args.iter().cloned());
@@ -147,10 +158,27 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
     None
 }
 
+/// The Steam library root (the dir holding `steamapps`) for a path inside a
+/// library, e.g. `<lib>/steamapps/common/<game>` -> `<lib>`. Used for
+/// `STEAM_COMPAT_LIBRARY_PATHS`.
+fn library_root(inside: &Path) -> Option<PathBuf> {
+    inside
+        .ancestors()
+        .find(|a| a.file_name().map(|n| n == "steamapps").unwrap_or(false))
+        .and_then(Path::parent)
+        .map(Path::to_path_buf)
+}
+
 /// The Proton invocation for an app: tool name from `config.vdf` (falling back
 /// to the prefix's `version` file), binary + env resolved. `compatdata` is the
-/// app's `steamapps/compatdata/<appid>` dir (Eidos detection already has it).
-pub fn proton_command(home: &Path, app_id: u32, compatdata: &Path) -> Option<ProtonRun> {
+/// app's `steamapps/compatdata/<appid>` dir and `install_path` its
+/// `steamapps/common/<game>` dir (Eidos detection already has both).
+pub fn proton_command(
+    home: &Path,
+    app_id: u32,
+    compatdata: &Path,
+    install_path: &Path,
+) -> Option<ProtonRun> {
     let root = steam_root(home)?;
     let name = compat_tool_name(&root, app_id).or_else(|| {
         // Fallback: the last tool that touched the prefix.
@@ -160,19 +188,25 @@ pub fn proton_command(home: &Path, app_id: u32, compatdata: &Path) -> Option<Pro
             .filter(|s| !s.is_empty())
     })?;
     let proton = find_proton_binary(&root, home, &name)?;
-    Some(ProtonRun {
-        proton,
-        env: vec![
-            (
-                "STEAM_COMPAT_DATA_PATH".to_string(),
-                compatdata.to_string_lossy().into_owned(),
-            ),
-            (
-                "STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(),
-                root.to_string_lossy().into_owned(),
-            ),
-        ],
-    })
+
+    let app = app_id.to_string();
+    let mut env = vec![
+        ("STEAM_COMPAT_DATA_PATH".to_string(), compatdata.to_string_lossy().into_owned()),
+        ("STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(), root.to_string_lossy().into_owned()),
+        // Steam sets all three for compat launches; tools using steam_api (e.g. a
+        // script extender launching the game) and GE-Proton's protonfixes need the
+        // app id in the environment, which MO2 sets on every spawn.
+        ("SteamAppId".to_string(), app.clone()),
+        ("SteamGameId".to_string(), app.clone()),
+        ("STEAM_COMPAT_APP_ID".to_string(), app),
+        // The game's install dir: Proton's drive setup (re)creates the prefix's
+        // `s:` gamedrive from this instead of deleting it.
+        ("STEAM_COMPAT_INSTALL_PATH".to_string(), install_path.to_string_lossy().into_owned()),
+    ];
+    if let Some(lib) = library_root(install_path).or_else(|| library_root(compatdata)) {
+        env.push(("STEAM_COMPAT_LIBRARY_PATHS".to_string(), lib.to_string_lossy().into_owned()));
+    }
+    Some(ProtonRun { proton, env })
 }
 
 #[cfg(test)]
@@ -279,15 +313,24 @@ mod tests {
         fake_steam(&steam);
         let compat = steam.join("steamapps/compatdata/489830");
         fs::create_dir_all(&compat).unwrap();
+        let install = steam.join("steamapps/common/Skyrim Special Edition");
+        fs::create_dir_all(&install).unwrap();
 
-        let run = proton_command(&home, 489830, &compat).unwrap();
+        let run = proton_command(&home, 489830, &compat, &install).unwrap();
         assert!(run.proton.ends_with("GE-Proton10-34/proton"));
         let env: std::collections::HashMap<_, _> = run.env.iter().cloned().collect();
         assert_eq!(env.get("STEAM_COMPAT_DATA_PATH").map(String::as_str), Some(compat.to_str().unwrap()));
         assert!(env.contains_key("STEAM_COMPAT_CLIENT_INSTALL_PATH"));
+        // MO2 sets the Steam app id on every spawn; Proton keys per-app fixes on it.
+        assert_eq!(env.get("SteamAppId").map(String::as_str), Some("489830"));
+        // The install dir lets Proton's drive setup repair s: instead of deleting it.
+        assert_eq!(env.get("STEAM_COMPAT_INSTALL_PATH").map(String::as_str), Some(install.to_str().unwrap()));
+        // Library root derived from the install dir (its `steamapps` parent).
+        assert_eq!(env.get("STEAM_COMPAT_LIBRARY_PATHS").map(String::as_str), Some(steam.to_str().unwrap()));
 
         let argv = run.command(Path::new("C:/Tools/xEdit/SSEEdit.exe"), &["-quickautoclean".to_string()]);
-        assert_eq!(argv[1], "run");
+        // Steam's main-app verb, not the bare `run` (which deletes the s: drive).
+        assert_eq!(argv[1], "waitforexitandrun");
         assert!(argv[2].ends_with("SSEEdit.exe"));
         assert_eq!(argv[3], "-quickautoclean");
         let _ = fs::remove_dir_all(&home);
