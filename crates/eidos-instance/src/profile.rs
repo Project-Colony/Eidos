@@ -222,6 +222,14 @@ impl Profile {
     }
 
     /// Persist this profile's mod list (`+Name` enabled, `-Name` disabled).
+    ///
+    /// Written atomically (MO2's `SafeWriteFile`/`QSaveFile`): the content goes to
+    /// a `.tmp` sibling in the *same* profile directory and is then `rename()`d over
+    /// `modlist.txt`, an atomic swap within one filesystem. A crash or ENOSPC
+    /// mid-write thus leaves the previous `modlist.txt` intact instead of an
+    /// empty/partial file - which [`Profile::modlist`] would otherwise rebuild as
+    /// "everything enabled, alphabetical", destroying the curated order. The
+    /// previous list is also copied one-deep to `modlist.txt.bak` first.
     pub fn save_modlist(&self, mods: &[ModEntry]) -> io::Result<()> {
         fs::create_dir_all(self.dir())?;
         let mut s = String::new();
@@ -230,7 +238,23 @@ impl Profile {
             s.push_str(&m.name);
             s.push('\n');
         }
-        fs::write(self.modlist_path(), s)
+
+        let target = self.modlist_path();
+        // Keep a one-deep backup of the previous list before swapping it out.
+        if target.exists() {
+            let _ = fs::copy(&target, target.with_extension("txt.bak"));
+        }
+        // Write to a temp file in the same directory, then atomically rename it over
+        // the target so a partial write can never clobber the curated order.
+        let tmp = target.with_extension("txt.tmp");
+        fs::write(&tmp, s)?;
+        match fs::rename(&tmp, &target) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                Err(e)
+            }
+        }
     }
 
     /// Enabled mods, highest priority first: the layers to mount at launch.
@@ -255,8 +279,8 @@ mod tests {
         root
     }
 
-    fn prof(root: &PathBuf, name: &str) -> Profile {
-        Profile { instance_root: root.clone(), name: name.to_string() }
+    fn prof(root: &Path, name: &str) -> Profile {
+        Profile { instance_root: root.to_path_buf(), name: name.to_string() }
     }
 
     #[test]
@@ -271,6 +295,53 @@ mod tests {
         p.save_modlist(&mods).unwrap();
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
         assert_eq!(read, vec![("B".into(), true), ("A".into(), false), ("C".into(), true)]);
+
+        // The atomic write must leave no stray ".tmp" sibling behind.
+        let leftover_tmp = fs::read_dir(p.dir())
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().ends_with(".tmp"));
+        assert!(!leftover_tmp, "save_modlist left a leftover .tmp file in the profile dir");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The curated order must survive a destroyed/partial `modlist.txt`: because
+    /// the write is atomic (temp file then rename), a save never leaves an empty
+    /// file that [`Profile::modlist`] would rebuild as "everything enabled,
+    /// alphabetical". Guards FIX F1 (MO2 `SafeWriteFile`/`QSaveFile` parity).
+    #[test]
+    fn save_modlist_is_atomic_and_keeps_a_backup() {
+        let root = inst_with_mods(&["A", "B", "C"]);
+        let p = prof(&root, "Default");
+        let v1 = vec![
+            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C") },
+            ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B") },
+            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
+        ];
+        p.save_modlist(&v1).unwrap();
+
+        // A second save (a toggle/move) over an existing list: backs the old one
+        // up and swaps atomically.
+        let v2 = vec![
+            ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A") },
+            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C") },
+            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
+        ];
+        p.save_modlist(&v2).unwrap();
+
+        // The live file reflects the latest curated order (not the alphabetical default).
+        let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
+        assert_eq!(read, vec![("A".into(), false), ("C".into(), true), ("B".into(), true)]);
+
+        // The one-deep backup holds the previous list and sits in the same dir.
+        let bak = p.dir().join("modlist.txt.bak");
+        assert!(bak.is_file(), "expected a one-deep modlist.txt.bak backup");
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "+C\n-B\n+A\n");
+
+        // No temp file lingers after a successful save.
+        assert!(!p.dir().join("modlist.txt.tmp").exists());
+
         let _ = fs::remove_dir_all(&root);
     }
 
