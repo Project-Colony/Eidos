@@ -105,7 +105,10 @@ mod tests {
 
     #[test]
     fn ini_files_set() {
-        assert_eq!(ini_files_for("skyrimse"), ["Skyrim.ini", "SkyrimPrefs.ini"].as_slice());
+        assert_eq!(
+            ini_files_for("skyrimse"),
+            ["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"].as_slice()
+        );
         assert!(ini_files_for("nope").is_empty());
         // The [Archive] INI is the first of the per-profile set.
         assert_eq!(ini_files_for("fallout4").first().copied(), ini_file_for("fallout4"));

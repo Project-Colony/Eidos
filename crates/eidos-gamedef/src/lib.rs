@@ -87,7 +87,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "skyrimspecialedition",
         data_dir: "Data",
         documents_dir: "Skyrim Special Edition",
-        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
+        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         script_extender: Some(ScriptExtender {
@@ -145,7 +145,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "fallout4",
         data_dir: "Data",
         documents_dir: "Fallout4",
-        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
+        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
         script_extender: Some(ScriptExtender {
@@ -161,7 +161,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "fallout4",
         data_dir: "Data",
         documents_dir: "Fallout4VR",
-        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini"],
+        ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
         script_extender: None,
@@ -174,7 +174,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "newvegas",
         data_dir: "Data",
         documents_dir: "FalloutNV",
-        ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
+        ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["FalloutNV.esm"],
         script_extender: Some(ScriptExtender {
@@ -190,7 +190,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "fallout3",
         data_dir: "Data",
         documents_dir: "Fallout3",
-        ini_files: &["Fallout.ini", "FalloutPrefs.ini"],
+        ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Fallout3.esm"],
         script_extender: Some(ScriptExtender {
@@ -206,7 +206,7 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "oblivion",
         data_dir: "Data",
         documents_dir: "Oblivion",
-        ini_files: &["Oblivion.ini"],
+        ini_files: &["Oblivion.ini", "OblivionPrefs.ini"],
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Oblivion.esm"],
         script_extender: Some(ScriptExtender {
@@ -279,6 +279,27 @@ mod tests {
         // ini_files[0] is the [Archive]-carrying INI for every game that has INIs.
         assert_eq!(GameDef::for_id("skyrimse").unwrap().ini_files.first(), Some(&"Skyrim.ini"));
         assert_eq!(GameDef::for_id("fallout4").unwrap().ini_files.first(), Some(&"Fallout4.ini"));
+    }
+
+    #[test]
+    fn custom_inis_are_listed_after_the_archive_ini() {
+        // MO2's per-game iniFiles() includes the Custom/Prefs INIs that hold
+        // ENB/mod settings (and FO4 invalidation); they must be in the set so they
+        // are seeded/captured per profile, but never displace element 0.
+        let custom = |id: &str, file: &str| {
+            let inis = GameDef::for_id(id).unwrap().ini_files;
+            assert!(inis.contains(&file), "{id} ini_files missing {file}");
+            assert_ne!(inis[0], file, "{file} must not be the [Archive] INI for {id}");
+        };
+        // skyrimse keeps Skyrim.ini first and gains SkyrimCustom.ini.
+        let se = GameDef::for_id("skyrimse").unwrap().ini_files;
+        assert_eq!(se.first(), Some(&"Skyrim.ini"));
+        assert!(se.contains(&"SkyrimCustom.ini"));
+        custom("fallout4", "Fallout4Custom.ini");
+        custom("fallout4vr", "Fallout4Custom.ini");
+        custom("falloutnv", "FalloutCustom.ini");
+        custom("fallout3", "FalloutCustom.ini");
+        custom("oblivion", "OblivionPrefs.ini");
     }
 
     #[test]
