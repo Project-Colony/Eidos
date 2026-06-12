@@ -301,7 +301,17 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
         let Some(src) = resolve_ci(root, &item.source) else {
             continue;
         };
-        let dst = dest.join(item.destination.replace('\\', "/"));
+        let mut destination = item.destination.replace('\\', "/");
+        // MO2 (fomodinstallerdialog.cpp copyLeaf): for a file, an empty destination
+        // or one ending in a separator means "into this directory" - append the
+        // source's file name. Without this, `dest.join("")` is the mod root dir and
+        // the copy fails with EISDIR, aborting the whole install.
+        if !item.is_folder && (destination.is_empty() || destination.ends_with('/')) {
+            if let Some(name) = item.source.rsplit(['/', '\\']).find(|s| !s.is_empty()) {
+                destination.push_str(name);
+            }
+        }
+        let dst = dest.join(&destination);
         if item.is_folder {
             copy_dir_all(&src, &dst)?;
         } else {
@@ -400,4 +410,88 @@ pub fn finish_fomod(
     apply_plan(&session.root, &plan, &dest)?;
     write_meta(&session.archive, &dest, game_name)?;
     Ok(InstallReport { name: session.name.clone(), stripped: String::new(), fomod: true, dest })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use eidos_fomod::FileItem;
+
+    /// A unique temp directory removed on drop (the crate has no `tempfile` dep).
+    struct TempDir(PathBuf);
+    impl TempDir {
+        fn new(tag: &str) -> TempDir {
+            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let d = std::env::temp_dir()
+                .join(format!("eidos-install-test-{}-{}-{}", tag, std::process::id(), n));
+            fs::create_dir_all(&d).unwrap();
+            TempDir(d)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn file_item(source: &str, destination: &str) -> FileItem {
+        FileItem {
+            source: source.to_string(),
+            destination: destination.to_string(),
+            priority: 0,
+            is_folder: false,
+            always_install: false,
+            install_if_usable: false,
+            sequence: 0,
+        }
+    }
+
+    // MO2 parity (copyLeaf): a file with an empty destination lands at
+    // <dest>/<source-filename>, not on the mod root dir (which fails EISDIR).
+    #[test]
+    fn empty_destination_uses_source_filename() {
+        let root = TempDir::new("root");
+        let dest = TempDir::new("dest");
+        fs::write(root.path().join("real.esp"), b"data").unwrap();
+
+        let plan = vec![file_item("real.esp", "")];
+        apply_plan(root.path(), &plan, dest.path()).expect("apply_plan");
+
+        let landed = dest.path().join("real.esp");
+        assert!(landed.is_file(), "file should land at <dest>/real.esp");
+        assert_eq!(fs::read(&landed).unwrap(), b"data");
+    }
+
+    // A trailing-slash destination means "into this directory": append the file name.
+    #[test]
+    fn trailing_slash_destination_uses_source_filename() {
+        let root = TempDir::new("root");
+        let dest = TempDir::new("dest");
+        fs::create_dir_all(root.path().join("Core")).unwrap();
+        fs::write(root.path().join("Core").join("real.esp"), b"data").unwrap();
+
+        let plan = vec![file_item("Core/real.esp", "subdir/")];
+        apply_plan(root.path(), &plan, dest.path()).expect("apply_plan");
+
+        let landed = dest.path().join("subdir").join("real.esp");
+        assert!(landed.is_file(), "file should land at <dest>/subdir/real.esp");
+        assert_eq!(fs::read(&landed).unwrap(), b"data");
+    }
+
+    // A normal explicit destination is untouched (guards the new branch is gated).
+    #[test]
+    fn explicit_destination_is_preserved() {
+        let root = TempDir::new("root");
+        let dest = TempDir::new("dest");
+        fs::write(root.path().join("real.esp"), b"data").unwrap();
+
+        let plan = vec![file_item("real.esp", "renamed.esp")];
+        apply_plan(root.path(), &plan, dest.path()).expect("apply_plan");
+
+        assert!(dest.path().join("renamed.esp").is_file());
+        assert!(!dest.path().join("real.esp").exists());
+    }
 }

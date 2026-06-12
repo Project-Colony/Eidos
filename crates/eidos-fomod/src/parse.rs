@@ -78,6 +78,11 @@ impl ModuleConfig {
 fn parse_file_list(node: Node, seq: &mut u32) -> Vec<FileItem> {
     node.children()
         .filter(|c| c.is_element() && matches!(c.tag_name().name(), "file" | "folder"))
+        // MO2 (fomodinstallerdialog.cpp readFileList) drops any <file>/<folder>
+        // whose source is empty: real FOMODs ship `<folder source="" destination=""/>`
+        // as a do-nothing option, and an empty source resolves to the extraction
+        // root, which would copy the whole archive (including fomod/).
+        .filter(|c| !c.attribute("source").unwrap_or("").trim().is_empty())
         .map(|c| {
             let source = norm_path(c.attribute("source").unwrap_or(""));
             let destination = c.attribute("destination").map(norm_path).unwrap_or_else(|| source.clone());
@@ -321,5 +326,24 @@ mod tests {
         // "<a/>" in UTF-16LE with a BOM.
         let bytes = [0xFF, 0xFE, b'<', 0, b'a', 0, b'/', 0, b'>', 0];
         assert_eq!(decode_xml(&bytes), "<a/>");
+    }
+
+    // MO2 parity (readFileList): a <folder source=""/> is a do-nothing option and
+    // must NOT enter the install file list - an empty source resolves to the
+    // extraction root, which would copy the whole archive (including fomod/).
+    #[test]
+    fn empty_source_entry_is_dropped() {
+        const XML: &str = r#"<config>
+  <moduleName>Empty Source</moduleName>
+  <requiredInstallFiles>
+    <folder source="" destination="" />
+    <file source="   " destination="ws.esp" />
+    <file source="Core\real.esp" destination="real.esp" />
+  </requiredInstallFiles>
+</config>"#;
+        let mc = ModuleConfig::parse(XML).expect("parse");
+        // Only the entry with a non-blank source survives.
+        assert_eq!(mc.required_files.len(), 1);
+        assert_eq!(mc.required_files[0].source, "Core/real.esp");
     }
 }
