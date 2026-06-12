@@ -9,3 +9,6 @@
 
 # Eidos local runtime + PoC artifacts
 /.eidos-run/
+
+# Claude Code session / workflow worktrees + scripts
+/.claude/
