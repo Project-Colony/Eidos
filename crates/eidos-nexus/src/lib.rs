@@ -212,7 +212,7 @@ impl Nexus {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let tmp = dest.with_extension("unfinished"); // MO2's in-progress marker
+        let tmp = unfinished_path(dest); // MO2's in-progress marker (appended, keeps ext)
         let mut out = fs::File::create(&tmp).map_err(|e| e.to_string())?;
         let mut reader = resp.into_reader();
         let n = copy_stream(&mut reader, &mut out).map_err(|e| e.to_string())?;
@@ -220,6 +220,14 @@ impl Nexus {
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
         Ok(n)
     }
+}
+
+/// MO2 appends `.unfinished` to the FULL archive name (`Mod-1.0.7z.unfinished`),
+/// keeping the real extension so a leftover partial maps back to its target and
+/// two files differing only by extension (`Foo.7z` vs `Foo.zip`) don't collide.
+/// (`Path::with_extension` would instead REPLACE `.7z`, destroying it.)
+fn unfinished_path(dest: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.unfinished", dest.display()))
 }
 
 fn copy_stream(r: &mut dyn Read, w: &mut dyn Write) -> io::Result<u64> {
@@ -313,6 +321,21 @@ mod tests {
         assert_eq!(u.key.as_deref(), Some("AbC-_12"));
         assert_eq!(u.expires, Some(1776793111));
         assert_eq!(u.user_id, Some(86878448));
+    }
+
+    #[test]
+    fn unfinished_marker_appends_keeping_the_extension() {
+        // MO2's marker is "<full name>.unfinished" - the .7z must survive so the
+        // partial maps back, unlike Path::with_extension which would drop it.
+        assert_eq!(
+            unfinished_path(Path::new("/dl/Mod-1.0.7z")),
+            PathBuf::from("/dl/Mod-1.0.7z.unfinished")
+        );
+        // Files differing only by extension get distinct temp names.
+        assert_ne!(
+            unfinished_path(Path::new("/dl/Foo.7z")),
+            unfinished_path(Path::new("/dl/Foo.zip"))
+        );
     }
 
     #[test]
