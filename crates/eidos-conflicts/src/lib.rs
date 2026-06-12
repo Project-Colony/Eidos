@@ -70,9 +70,11 @@ pub enum ConflictState {
 /// One mod's conflicts.
 #[derive(Debug, Clone, Default)]
 pub struct ModConflicts {
-    /// Mods this one overwrites (it wins a file they also provide).
+    /// Mods this one ranks above on a shared file (pairwise among all providers,
+    /// not only the file's outright winner) - it overwrites them where they overlap.
     pub overwrites: BTreeSet<OriginId>,
-    /// Mods that overwrite this one (they win a file it also provides).
+    /// Mods that rank above this one on a shared file (pairwise) - they overwrite
+    /// it where they overlap.
     pub overwritten_by: BTreeSet<OriginId>,
     /// Files this mod wins.
     pub won: usize,
@@ -117,44 +119,64 @@ impl ConflictMap {
             mods.entry(layer.origin).or_default();
         }
 
-        // Derive per-mod conflicts, mod-versus-mod only: pairs involving the
-        // base game are skipped (MO2 parity - beating vanilla files is not a
-        // conflict, so a pure replacer mod stays flag-free).
+        // Derive per-mod conflicts. MO2's `ModInfoWithConflictInfo` compares every
+        // provider of a path against every *other* provider PAIRWISE, not just
+        // against the winner, so a file provided by A>B>C records the full chain
+        // (B overwrites C *and* is overwritten by A). Pairs involving the base
+        // game are skipped (MO2 parity - beating vanilla files is not a conflict,
+        // so a pure replacer mod stays flag-free).
         for node in files.values() {
+            // Providers highest priority first: the winner then its ordered
+            // (descending-priority) alternatives.
+            let providers: Vec<OriginId> = std::iter::once(node.winner)
+                .chain(node.alternatives.iter().copied())
+                .collect();
+
+            // The winner wins this file; every provider provides it (counted once).
             if let Some(w) = mods.get_mut(&node.winner) {
                 w.won += 1;
-                w.total += 1;
-                for &alt in &node.alternatives {
-                    if alt != BASE_ORIGIN {
-                        w.overwrites.insert(alt);
-                    }
+            }
+            for &p in &providers {
+                if let Some(m) = mods.get_mut(&p) {
+                    m.total += 1;
                 }
             }
-            for &alt in &node.alternatives {
-                if alt == BASE_ORIGIN {
-                    continue;
-                }
-                if let Some(a) = mods.get_mut(&alt) {
-                    if node.winner != BASE_ORIGIN {
-                        a.overwritten_by.insert(node.winner);
+
+            // Each higher-priority provider overwrites every lower one, skipping
+            // any pair that involves the base game.
+            for (i, &higher) in providers.iter().enumerate() {
+                for &lower in &providers[i + 1..] {
+                    if higher == BASE_ORIGIN || lower == BASE_ORIGIN {
+                        continue;
                     }
-                    a.total += 1;
+                    if let Some(h) = mods.get_mut(&higher) {
+                        h.overwrites.insert(lower);
+                    }
+                    if let Some(l) = mods.get_mut(&lower) {
+                        l.overwritten_by.insert(higher);
+                    }
                 }
             }
         }
 
-        for mc in mods.values_mut() {
-            mc.state = match (!mc.overwrites.is_empty(), !mc.overwritten_by.is_empty()) {
-                (true, true) => ConflictState::Mixed,
-                (true, false) => ConflictState::Overwrites,
-                (false, true) => {
-                    if mc.won == 0 {
-                        ConflictState::Redundant
-                    } else {
-                        ConflictState::Overwritten
-                    }
+        // State, in MO2's precedence (`doConflictCheck`): a mod that provides
+        // visible files but wins NONE of them is Redundant *first* - even when it
+        // pairwise outranks a lower-priority loser - so beating another loser never
+        // promotes it to Mixed/Overwrites. The base game itself is never flagged.
+        for (&origin, mc) in mods.iter_mut() {
+            if origin == BASE_ORIGIN {
+                mc.state = ConflictState::None;
+                continue;
+            }
+            mc.state = if mc.total > 0 && mc.won == 0 {
+                ConflictState::Redundant
+            } else {
+                match (!mc.overwrites.is_empty(), !mc.overwritten_by.is_empty()) {
+                    (true, true) => ConflictState::Mixed,
+                    (true, false) => ConflictState::Overwrites,
+                    (false, true) => ConflictState::Overwritten,
+                    (false, false) => ConflictState::None,
                 }
-                (false, false) => ConflictState::None,
             };
         }
 
@@ -282,6 +304,60 @@ mod tests {
         assert_eq!(map.state(2), ConflictState::Mixed);
         assert!(map.mods[&2].overwrites.contains(&3)); // B beats C on low.dat
         assert!(map.mods[&2].overwritten_by.contains(&1)); // A beats B on high.dat
+    }
+
+    #[test]
+    fn three_providers_record_pairwise_relations() {
+        let t = Tmp::new();
+        // tri.dat is provided by A>B>C. MO2 records the FULL pairwise chain, not
+        // just winner-vs-loser: B (which also wins bwin.dat, so it isn't fully
+        // shadowed) loses tri.dat to A yet beats C on it; C loses to BOTH A and B.
+        let layers = [
+            t.layer(1, "A", &["tri.dat"]),
+            t.layer(2, "B", &["tri.dat", "bwin.dat"]),
+            t.layer(3, "C", &["tri.dat"]),
+        ];
+        let map = ConflictMap::build(&layers);
+
+        let node = &map.files["tri.dat"];
+        assert_eq!(node.winner, 1);
+        assert_eq!(node.alternatives, vec![2, 3]);
+
+        // B is Mixed: overwrites exactly {C}, overwritten_by exactly {A}.
+        assert_eq!(map.state(2), ConflictState::Mixed);
+        assert_eq!(map.mods[&2].overwrites, BTreeSet::from([3]));
+        assert_eq!(map.mods[&2].overwritten_by, BTreeSet::from([1]));
+
+        // C is overwritten by BOTH higher providers - the B>C relation is exactly
+        // what a winner-centric pass would miss.
+        assert_eq!(map.mods[&3].overwritten_by, BTreeSet::from([1, 2]));
+        assert!(map.mods[&3].overwrites.is_empty());
+
+        // A wins outright over both.
+        assert_eq!(map.mods[&1].overwrites, BTreeSet::from([2, 3]));
+        assert_eq!(map.state(1), ConflictState::Overwrites);
+    }
+
+    #[test]
+    fn won_none_but_outranks_a_loser_stays_redundant() {
+        let t = Tmp::new();
+        // A>B>C all provide only the same file. B wins nothing (A is always above
+        // it) yet pairwise outranks C. Redundant must take precedence over the
+        // non-empty `overwrites` set - B must NOT become Mixed/Overwrites.
+        let layers = [
+            t.layer(1, "A", &["f.dat"]),
+            t.layer(2, "B", &["f.dat"]),
+            t.layer(3, "C", &["f.dat"]),
+        ];
+        let map = ConflictMap::build(&layers);
+
+        assert_eq!(map.mods[&2].won, 0);
+        assert!(map.mods[&2].overwrites.contains(&3)); // pairwise-beats the lower loser
+        assert!(map.mods[&2].overwritten_by.contains(&1));
+        assert_eq!(map.state(2), ConflictState::Redundant); // not Mixed
+
+        // C wins nothing either -> also Redundant.
+        assert_eq!(map.state(3), ConflictState::Redundant);
     }
 
     #[test]
