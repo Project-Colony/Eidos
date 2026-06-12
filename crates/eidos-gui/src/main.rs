@@ -31,6 +31,11 @@ const IC_SETTINGS: &[u8] = include_bytes!("../assets/icons/preferences-system.pn
 const IC_ENDORSE: &[u8] = include_bytes!("../assets/icons/icon-favorite.png");
 const IC_UPDATE: &[u8] = include_bytes!("../assets/icons/system-software-update.png");
 const IC_HELP: &[u8] = include_bytes!("../assets/icons/help-browser_32.png");
+// MO2's real conflict emblems (modconflicticondelegate: emblem_conflict_*).
+const IC_CONFLICT_OVERWRITE: &[u8] = include_bytes!("../assets/icons/conflict-overwrite.png");
+const IC_CONFLICT_OVERWRITTEN: &[u8] = include_bytes!("../assets/icons/conflict-overwritten.png");
+const IC_CONFLICT_MIXED: &[u8] = include_bytes!("../assets/icons/conflict-mixed.png");
+const IC_CONFLICT_REDUNDANT: &[u8] = include_bytes!("../assets/icons/conflict-redundant.png");
 const IC_RUN: &[u8] = include_bytes!("../assets/icons/media-playback-start.png");
 const IC_UP: &[u8] = include_bytes!("../assets/icons/go-up.png");
 const IC_DOWN: &[u8] = include_bytes!("../assets/icons/go-down.png");
@@ -181,6 +186,9 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         }
     }
     load_tools(&mut app);
+    // Conflicts feed the mod-list emblems, so compute them as soon as the
+    // instance opens instead of waiting for the Conflicts tab.
+    app.conflicts = compute_conflicts(&app);
     (app, Task::none())
 }
 
@@ -355,6 +363,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.error = None;
                         app.screen = Screen::Main;
                         load_tools(app);
+                        app.conflicts = compute_conflicts(app);
                     }
                     Err(e) => app.error = Some(e.to_string()),
                 }
@@ -378,14 +387,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
             save_mods(app);
             app.plugins = None;
-            app.conflicts = None;
+            app.conflicts = compute_conflicts(app);
         }
         Message::MoveUp(i) => {
             if i > 0 && i < app.mods.len() {
                 app.mods.swap(i - 1, i);
                 save_mods(app);
                 app.plugins = None;
-                app.conflicts = None;
+                app.conflicts = compute_conflicts(app);
             }
         }
         Message::MoveDown(i) => {
@@ -393,7 +402,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.mods.swap(i, i + 1);
                 save_mods(app);
                 app.plugins = None;
-                app.conflicts = None;
+                app.conflicts = compute_conflicts(app);
             }
         }
         Message::SelectTab(t) => {
@@ -410,7 +419,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let _ = inst.set_active_profile(&name);
                 app.mods = inst.profile(&name).modlist();
                 app.plugins = None;
-                app.conflicts = None;
+                app.conflicts = compute_conflicts(app);
                 app.status = Some(format!("Switched to profile '{name}'."));
             }
         }
@@ -429,7 +438,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     let _ = inst.set_active_profile(&name);
                     app.mods = dest.modlist();
                     app.plugins = None;
-                    app.conflicts = None;
+                    app.conflicts = compute_conflicts(app);
                     app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
                 }
             }
@@ -582,7 +591,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
                 app.plugins = None;
-                app.conflicts = None;
+                app.conflicts = compute_conflicts(app);
                 app.status = Some("Refreshed mod list.".to_string());
             }
             load_tools(app);
@@ -967,7 +976,7 @@ fn toolbar<'a>() -> Element<'a, Message> {
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
-fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag: String) -> Element<'a, Message> {
+fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag_icon: Option<&'static [u8]>) -> Element<'a, Message> {
     let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
     let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let toggle = button(text(if m.enabled { "[x]" } else { "[ ]" }).size(12.0))
@@ -975,12 +984,18 @@ fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag: String) -> Element<'a, 
         .on_press(Message::ToggleMod(i))
         .style(button::secondary);
 
+    // MO2's conflict emblem, or an empty cell.
+    let flag_cell: Element<'a, Message> = match flag_icon {
+        Some(bytes) => container(icon(bytes, 14.0)).width(C_FLAGS).into(),
+        None => text("").width(C_FLAGS).into(),
+    };
+
     Row::new()
         .spacing(6)
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
-        .push(text(flag).size(11.0).width(C_FLAGS))
+        .push(flag_cell)
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE))
         .into()
 }
@@ -1019,21 +1034,21 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     for (i, m) in app.mods.iter().enumerate() {
-        let flag = if !m.enabled {
-            "off".to_string()
+        // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
+        let flag_icon = if !m.enabled {
+            None
         } else if let Some(c) = &app.conflicts {
             match c.state((i + 1) as u32) {
-                ConflictState::Overwrites => "ovr",
-                ConflictState::Overwritten => "ovd",
-                ConflictState::Mixed => "mix",
-                ConflictState::Redundant => "red",
-                ConflictState::None => "",
+                ConflictState::Overwrites => Some(IC_CONFLICT_OVERWRITE),
+                ConflictState::Overwritten => Some(IC_CONFLICT_OVERWRITTEN),
+                ConflictState::Mixed => Some(IC_CONFLICT_MIXED),
+                ConflictState::Redundant => Some(IC_CONFLICT_REDUNDANT),
+                ConflictState::None => None,
             }
-            .to_string()
         } else {
-            String::new()
+            None
         };
-        list = list.push(striped(mod_row(i, m, len, flag), i % 2 == 0));
+        list = list.push(striped(mod_row(i, m, len, flag_icon), i % 2 == 0));
     }
 
     let overwrite = button(
@@ -1179,11 +1194,13 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(
             Row::new()
                 .spacing(8)
-                .push(text(format!("Downloads ({})", dir.display())).size(12.0))
+                .align_y(iced::Alignment::Center)
+                .push(text("Downloads").size(13.0))
                 .push(Space::with_width(Length::Fill))
                 .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
                 .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::Refresh)),
         )
+        .push(text(dir.display().to_string()).size(10.0))
         .push(scrollable(rows).height(Length::Fill))
         .into()
 }
@@ -1443,7 +1460,7 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
         app.mods = inst.modlist();
     }
     app.plugins = None;
-    app.conflicts = None;
+    app.conflicts = compute_conflicts(app);
     app.status = Some(if fomod {
         format!("Installed '{name}' via FOMOD.")
     } else {
