@@ -18,6 +18,11 @@ use std::path::{Path, PathBuf};
 /// highest first - not the numeric value.
 pub type OriginId = u32;
 
+/// The game's own data layer. Like MO2 (`doConflictCheck` treats a file whose
+/// only alternative is the `data` origin as unconflicted), overriding base-game
+/// files is NOT a conflict - conflict flags are mod-versus-mod only.
+pub const BASE_ORIGIN: OriginId = 0;
+
 /// One input layer: a mod folder (or the game data) with a stable id and name.
 #[derive(Debug, Clone)]
 pub struct Layer {
@@ -37,9 +42,12 @@ pub struct FileNode {
 }
 
 impl FileNode {
-    /// This path is contested (at least one mod is overwritten here).
+    /// This path is contested between MODS (the base game does not count: an
+    /// override of a vanilla file is normal modding, not a conflict - MO2
+    /// behaves the same). The game still appears in `alternatives` so the Data
+    /// view can show where a file ultimately comes from.
     pub fn is_conflicted(&self) -> bool {
-        !self.alternatives.is_empty()
+        self.alternatives.iter().any(|&a| a != BASE_ORIGIN)
     }
 }
 
@@ -109,17 +117,27 @@ impl ConflictMap {
             mods.entry(layer.origin).or_default();
         }
 
+        // Derive per-mod conflicts, mod-versus-mod only: pairs involving the
+        // base game are skipped (MO2 parity - beating vanilla files is not a
+        // conflict, so a pure replacer mod stays flag-free).
         for node in files.values() {
             if let Some(w) = mods.get_mut(&node.winner) {
                 w.won += 1;
                 w.total += 1;
                 for &alt in &node.alternatives {
-                    w.overwrites.insert(alt);
+                    if alt != BASE_ORIGIN {
+                        w.overwrites.insert(alt);
+                    }
                 }
             }
             for &alt in &node.alternatives {
+                if alt == BASE_ORIGIN {
+                    continue;
+                }
                 if let Some(a) = mods.get_mut(&alt) {
-                    a.overwritten_by.insert(node.winner);
+                    if node.winner != BASE_ORIGIN {
+                        a.overwritten_by.insert(node.winner);
+                    }
                     a.total += 1;
                 }
             }
@@ -155,21 +173,37 @@ impl ConflictMap {
     }
 }
 
-/// Every file under `root`, as `/`-joined relative paths (recursive).
+/// Every file under `root`, as `/`-joined relative paths (recursive), with
+/// MO2's structure exclusions (`DirectoryRefresher::cleanStructure` +
+/// `s_HiddenExt`): root-level `meta.ini`/`readme.txt` and the root `fomod/`
+/// dir are manager metadata, not mod content; `*.mohidden` files and
+/// directories are hidden from the view and the conflict check alike.
 fn collect_files(root: &Path) -> Vec<String> {
-    fn rec(base: &Path, dir: &Path, out: &mut Vec<String>) {
+    fn rec(base: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             let p = e.path();
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if name.ends_with(".mohidden") {
+                continue;
+            }
             if p.is_dir() {
-                rec(base, &p, out);
-            } else if let Ok(rel) = p.strip_prefix(base) {
-                out.push(rel.to_string_lossy().replace('\\', "/"));
+                if depth == 0 && name == "fomod" {
+                    continue;
+                }
+                rec(base, &p, depth + 1, out);
+            } else {
+                if depth == 0 && (name == "meta.ini" || name == "readme.txt") {
+                    continue;
+                }
+                if let Ok(rel) = p.strip_prefix(base) {
+                    out.push(rel.to_string_lossy().replace('\\', "/"));
+                }
             }
         }
     }
     let mut out = Vec::new();
-    rec(root, root, &mut out);
+    rec(root, root, 0, &mut out);
     out
 }
 
@@ -258,6 +292,45 @@ mod tests {
         assert_eq!(map.state(1), ConflictState::None);
         assert_eq!(map.state(2), ConflictState::None);
         assert!(!map.files["a.dat"].is_conflicted());
+    }
+
+    #[test]
+    fn base_game_overrides_are_not_conflicts() {
+        let t = Tmp::new();
+        // A only overrides a vanilla file: no flag (MO2 parity), but the game
+        // stays visible as the alternative for the Data view.
+        let layers = [
+            t.layer(1, "A", &["textures/face.dds"]),
+            t.layer(BASE_ORIGIN, "[game]", &["textures/face.dds", "skyrim.esm"]),
+        ];
+        let map = ConflictMap::build(&layers);
+        assert_eq!(map.state(1), ConflictState::None);
+        let node = &map.files["textures/face.dds"];
+        assert!(!node.is_conflicted());
+        assert_eq!(node.alternatives, vec![BASE_ORIGIN]);
+    }
+
+    #[test]
+    fn manager_metadata_and_hidden_files_are_excluded() {
+        let t = Tmp::new();
+        // Every MO2 mod folder carries meta.ini; fomod/ and *.mohidden are
+        // manager artifacts too. None of them may produce conflicts.
+        let layers = [
+            t.layer(1, "A", &[
+                "meta.ini",
+                "readme.txt",
+                "fomod/ModuleConfig.xml",
+                "textures/old.dds.mohidden",
+                "meshes.mohidden/body.nif",
+                "textures/real.dds",
+            ]),
+            t.layer(2, "B", &["meta.ini", "textures/real.dds"]),
+        ];
+        let map = ConflictMap::build(&layers);
+        // Only the real content file is in the tree.
+        assert_eq!(map.files.keys().collect::<Vec<_>>(), vec!["textures/real.dds"]);
+        assert_eq!(map.state(1), ConflictState::Overwrites);
+        assert_eq!(map.state(2), ConflictState::Redundant);
     }
 
     #[test]
