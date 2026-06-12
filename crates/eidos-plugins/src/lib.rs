@@ -126,9 +126,14 @@ pub struct Plugin {
 
 impl Plugin {
     /// Whether the game loads this as a master (so it sorts above normal plugins):
-    /// the header master flag, a light plugin, or an `.esm`/`.esl` extension.
+    /// the header master flag or an `.esm`/`.esl` extension. MO2's hoisting
+    /// predicate is `isMasterFlagged || hasMasterExtension || hasLightExtension`
+    /// (`pluginlist.cpp`): the light *flag* (header 0x200) is deliberately NOT
+    /// here, so a light-flagged `.esp` (an ESPFE patch) keeps its normal load
+    /// position and only gets an `FE:` index (see `generate_indexes`).
+    /// `is_master_ext` already covers `.esm`/`.esl`, so real masters still hoist.
     pub fn loads_as_master(&self) -> bool {
-        self.is_master || self.is_light || is_master_ext(&self.name)
+        self.is_master || is_master_ext(&self.name)
     }
 }
 
@@ -425,6 +430,54 @@ mod tests {
         let pos = |n: &str| order.iter().position(|x| x == n).unwrap();
         assert!(pos("BaseMaster.esm") < pos("MidMaster.esm"));
         assert!(pos("MidMaster.esm") < pos("child.esp"));
+    }
+
+    #[test]
+    fn light_flagged_esp_stays_in_normal_tier_but_gets_fe_index() {
+        // A light-FLAGGED .esp (ESPFE patch): .esp name, header 0x200 set
+        // (is_light), NOT master-flagged. MO2's hoisting predicate excludes the
+        // light flag, so it must NOT load as a master - it stays in the normal
+        // section so the patch loads after what it patches.
+        let espfe = {
+            let mut x = p("Patch.esp", &[]);
+            x.is_light = true;
+            x
+        };
+        assert!(!espfe.loads_as_master(), "light-flagged .esp must stay in the normal tier");
+
+        // A plain master and a real .esl still hoist (extension-based).
+        assert!(p("Base.esm", &[]).loads_as_master());
+        {
+            let mut esl = p("Real.esl", &[]);
+            esl.is_light = true;
+            assert!(esl.loads_as_master(), ".esl extension must still hoist");
+        }
+
+        // Through the full pipeline: it sorts AFTER .esm/.esl masters, yet still
+        // receives an FE: light index from generate_indexes.
+        let mut list = PluginList {
+            plugins: vec![
+                espfe,
+                {
+                    let mut esl = p("Light.esl", &[]);
+                    esl.is_light = true;
+                    esl
+                },
+                p("Base.esm", &[]),
+            ],
+        };
+        list.refresh(&se());
+        let order = names(&list);
+        let pos = |n: &str| order.iter().position(|x| x == n).unwrap();
+        assert!(pos("Base.esm") < pos("Patch.esp"), ".esm master loads before the ESPFE patch");
+        assert!(pos("Light.esl") < pos("Patch.esp"), ".esl master loads before the ESPFE patch");
+
+        // Base.esm is the only non-light plugin -> normal index 00; both lights
+        // get FE: indexes, the patch sorting after Light.esl.
+        let by = |n: &str| list.plugins.iter().find(|p| p.name == n).unwrap().index.clone();
+        assert_eq!(by("Base.esm"), Some("00".to_string()));
+        assert_eq!(by("Light.esl"), Some("FE:000".to_string()));
+        assert_eq!(by("Patch.esp"), Some("FE:001".to_string()));
     }
 
     #[test]
