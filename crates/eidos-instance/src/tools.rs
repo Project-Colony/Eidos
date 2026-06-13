@@ -50,7 +50,13 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
         let v = v.trim();
         match k {
             "exe" => tool.exe = PathBuf::from(v),
-            "args" if !v.is_empty() => {
+            // One key per argument, written in order as arg0=, arg1=, ... (file
+            // order == argument order). Lossless for arguments containing spaces.
+            _ if k.len() > 3 && k.starts_with("arg") && k.as_bytes()[3..].iter().all(u8::is_ascii_digit) => {
+                tool.args.push(v.to_string());
+            }
+            // Legacy single-line form (pre-per-key tools.ini): space-split.
+            "args" if !v.is_empty() && tool.args.is_empty() => {
                 tool.args = v.split(' ').map(String::from).collect();
             }
             "workdir" if !v.is_empty() => tool.workdir = Some(PathBuf::from(v)),
@@ -65,9 +71,23 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
 pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
     let mut s = String::new();
     for t in tools {
-        s.push_str(&format!("[Tool/{}]\n", t.title));
+        // A control char or empty title cannot round-trip the `[Tool/<title>]`
+        // header (it would split the section across lines or vanish on re-read,
+        // re-attaching this tool's keys to the previous one), so skip such an
+        // entry rather than corrupt the whole file. The `add` command rejects
+        // these up front; this guards a hand-edited or migrated bad entry.
+        let title = t.title.trim();
+        if title.is_empty() || title.chars().any(char::is_control) {
+            continue;
+        }
+        s.push_str(&format!("[Tool/{title}]\n"));
         s.push_str(&format!("exe={}\n", t.exe.display()));
-        s.push_str(&format!("args={}\n", t.args.join(" ")));
+        // One key per argument: an argument may itself contain spaces (e.g. xEdit's
+        // `-D:D:\My Mods\Data`), which a single space-joined `args=` line would
+        // corrupt on the next read. File order == argument order.
+        for (i, a) in t.args.iter().enumerate() {
+            s.push_str(&format!("arg{i}={a}\n"));
+        }
         if let Some(w) = &t.workdir {
             s.push_str(&format!("workdir={}\n", w.display()));
         }
@@ -128,7 +148,9 @@ mod tests {
             Tool {
                 title: "SSEEdit".into(),
                 exe: PathBuf::from("/mnt/Tools/SSEEdit/SSEEdit.exe"),
-                args: vec!["-IKnowWhatImDoing".into()],
+                // An argument containing spaces must survive the round trip - the
+                // old space-joined `args=` line split it into four.
+                args: vec!["-D:D:\\My Mods\\Data".into(), "-IKnowWhatImDoing".into()],
                 workdir: None,
             },
             Tool {
@@ -146,6 +168,33 @@ mod tests {
     #[test]
     fn missing_file_is_empty() {
         assert!(read_tools(Path::new("/no/such/tools.ini")).is_empty());
+    }
+
+    #[test]
+    fn legacy_space_joined_args_still_read() {
+        // A pre-per-key tools.ini (single `args=` line) must still load.
+        let p = tmp();
+        fs::write(&p, "[Tool/Old]\nexe=/x/old.exe\nargs=-a -b -c\n").unwrap();
+        let t = read_tools(&p);
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].args, vec!["-a", "-b", "-c"]);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn control_char_title_is_skipped_on_write() {
+        // A newline in a title would split the [Tool/..] header and corrupt the
+        // file; write_tools must drop such an entry, not emit it.
+        let p = tmp();
+        let tools = vec![
+            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None },
+            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None },
+        ];
+        write_tools(&p, &tools).unwrap();
+        let back = read_tools(&p);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].title, "Good");
+        let _ = fs::remove_file(&p);
     }
 
     #[test]

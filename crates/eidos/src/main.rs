@@ -317,10 +317,18 @@ fn cmd_tool(args: &[String]) {
                 eprintln!("usage: eidos tool {id} add <title> <exe> [args...]");
                 exit(2);
             };
+            // The title becomes a `[Tool/<title>]` section header, so reject what
+            // cannot round-trip: empty or control characters (a newline would split
+            // the header and corrupt neighbouring tools on the next read).
+            let title = title.trim();
+            if title.is_empty() || title.chars().any(char::is_control) {
+                eprintln!("Invalid tool title: must be non-empty and free of control characters.");
+                exit(2);
+            }
             let mut user = inst.tools();
             user.retain(|t| !t.title.eq_ignore_ascii_case(title));
             user.push(eidos_instance::Tool {
-                title: title.clone(),
+                title: title.to_string(),
                 exe: std::path::PathBuf::from(exe),
                 args: args[4..].to_vec(),
                 workdir: None,
