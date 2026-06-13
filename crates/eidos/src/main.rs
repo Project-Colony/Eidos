@@ -64,12 +64,11 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
 
-    // Preserve the user's existing order (their MO2 or prior-run plugins.txt).
+    // Preserve the user's existing order + enabled state (their MO2 or prior-run
+    // plugins.txt / loadorder.txt). For PlainList games this also keeps disabled
+    // plugins disabled (recorded only in loadorder.txt), not just the actives.
     let dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
-    let existing = eidos_plugins::PluginList::read_active(&dir, &spec);
-    if !existing.is_empty() {
-        list.apply_active(&existing);
-    }
+    list.apply_prefix_state(&dir, &spec);
     list.refresh(&spec);
 
     for (p, m) in list.missing_masters() {

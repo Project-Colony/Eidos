@@ -40,12 +40,20 @@ impl PluginList {
     /// Plain games (Skyrim LE, FO3, FNV): `plugins.txt` lists just the active
     /// plugins. `loadorder.txt` always holds the full order, unprefixed.
     pub fn write_load_order(&self, dir: &Path, spec: &GameSpec) -> io::Result<()> {
+        // MO2 refuses to commit an empty list (gamebryogameplugins.cpp:136): a
+        // momentarily-unreadable Data dir yields no plugins, and overwriting a good
+        // plugins.txt with a header-only file would wipe the user's load order.
+        if self.plugins.is_empty() {
+            return Ok(());
+        }
         fs::create_dir_all(dir)?;
 
         let primaries: std::collections::HashSet<String> =
             spec.primary_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
 
-        let mut plugins = format!("{HEADER}\n");
+        // MO2 writes both files CRLF; plugins.txt in the Windows ANSI codepage
+        // (Encoding::System -> CP1252 on Western locales), loadorder.txt UTF-8.
+        let mut plugins = format!("{HEADER}\r\n");
         match spec.mechanism {
             LoadOrderMechanism::Asterisk => {
                 for p in &self.plugins {
@@ -56,24 +64,25 @@ impl PluginList {
                         plugins.push('*');
                     }
                     plugins.push_str(&p.name);
-                    plugins.push('\n');
+                    plugins.push_str("\r\n");
                 }
             }
             LoadOrderMechanism::PlainList => {
                 for p in self.plugins.iter().filter(|p| p.enabled) {
                     plugins.push_str(&p.name);
-                    plugins.push('\n');
+                    plugins.push_str("\r\n");
                 }
             }
         }
-        fs::write(dir.join("plugins.txt"), plugins)?;
+        let (cp1252, _, _) = encoding_rs::WINDOWS_1252.encode(&plugins);
+        write_atomic(&dir.join("plugins.txt"), &cp1252)?;
 
-        let mut order = format!("{HEADER}\n");
+        let mut order = format!("{HEADER}\r\n");
         for p in &self.plugins {
             order.push_str(&p.name);
-            order.push('\n');
+            order.push_str("\r\n");
         }
-        fs::write(dir.join("loadorder.txt"), order)?;
+        write_atomic(&dir.join("loadorder.txt"), order.as_bytes())?;
         Ok(())
     }
 
@@ -81,7 +90,7 @@ impl PluginList {
     /// asterisk games a leading `*` means active; for plain games every listed
     /// plugin is active. A missing/unreadable file yields an empty vec.
     pub fn read_active(dir: &Path, spec: &GameSpec) -> Vec<(String, bool)> {
-        let Ok(text) = fs::read_to_string(dir.join("plugins.txt")) else {
+        let Some(text) = read_decoded(&dir.join("plugins.txt")) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -101,6 +110,66 @@ impl PluginList {
         out
     }
 
+    /// The full saved order from `loadorder.txt` (unprefixed names, file order).
+    /// Header/blank lines skipped; a missing file yields an empty vec. For
+    /// PlainList games this is the only record of where INACTIVE plugins sit.
+    pub fn read_load_order(dir: &Path) -> Vec<String> {
+        let Some(text) = read_decoded(&dir.join("loadorder.txt")) else {
+            return Vec::new();
+        };
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(String::from)
+            .collect()
+    }
+
+    /// Apply the saved on-disk state from a prefix `dir` onto the discovered list
+    /// (order + enabled). For Asterisk games `plugins.txt` round-trips both active
+    /// (`*`) and inactive lines, so this is just [`apply_active`]. For PlainList
+    /// games `plugins.txt` lists only the actives, so `loadorder.txt` supplies the
+    /// order and a plugin present there but absent from a non-empty `plugins.txt`
+    /// is one the user DISABLED - it must stay disabled (MO2's "unlisted =
+    /// inactive"), not silently re-enable on the next launch. A plugin in neither
+    /// file is genuinely new and keeps its discovered default.
+    pub fn apply_prefix_state(&mut self, dir: &Path, spec: &GameSpec) {
+        use std::collections::{HashMap, HashSet};
+        let active = Self::read_active(dir, spec);
+        match spec.mechanism {
+            LoadOrderMechanism::Asterisk => {
+                if !active.is_empty() {
+                    self.apply_active(&active);
+                }
+            }
+            LoadOrderMechanism::PlainList => {
+                let order = Self::read_load_order(dir);
+                if active.is_empty() && order.is_empty() {
+                    return; // nothing saved yet
+                }
+                let active_set: HashSet<String> =
+                    active.iter().map(|(n, _)| n.to_ascii_lowercase()).collect();
+                let order_set: HashSet<String> =
+                    order.iter().map(|s| s.to_ascii_lowercase()).collect();
+                let primaries: HashSet<String> =
+                    spec.primary_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+                let plugins_txt_present = !active.is_empty();
+                for p in &mut self.plugins {
+                    let lname = p.name.to_ascii_lowercase();
+                    if active_set.contains(&lname) {
+                        p.enabled = true;
+                    } else if plugins_txt_present && order_set.contains(&lname) && !primaries.contains(&lname) {
+                        // listed in loadorder.txt but not active in plugins.txt
+                        p.enabled = false;
+                    }
+                }
+                let pos: HashMap<String, usize> =
+                    order.iter().enumerate().map(|(i, n)| (n.to_ascii_lowercase(), i)).collect();
+                self.plugins
+                    .sort_by_key(|p| pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX));
+            }
+        }
+    }
+
     /// Apply a previously-saved active set: set each matching plugin's enabled
     /// state and reorder to the saved order (plugins absent from the set keep
     /// their relative order, placed last). Call `refresh` afterwards to
@@ -118,6 +187,33 @@ impl PluginList {
         }
         self.plugins
             .sort_by_key(|p| pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX));
+    }
+}
+
+/// Atomically replace `path`: write a sibling `.tmp` then rename over it (atomic
+/// within one filesystem), so a crash mid-write cannot leave a partial plugins.txt
+/// that the game would load with half the mods off.
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, bytes)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// Read a plugin-list file. `plugins.txt` is the Windows ANSI codepage (MO2's
+/// `Encoding::System`): try UTF-8 first (our own ASCII output round-trips), then
+/// fall back to CP1252 so a file MO2 or the game wrote with accented names is
+/// decoded instead of discarded - discarding it would wipe the saved active set.
+fn read_decoded(path: &Path) -> Option<String> {
+    let bytes = fs::read(path).ok()?;
+    match std::str::from_utf8(&bytes) {
+        Ok(s) => Some(s.to_string()),
+        Err(_) => Some(encoding_rs::WINDOWS_1252.decode(&bytes).0.into_owned()),
     }
 }
 
@@ -182,13 +278,13 @@ mod tests {
         let plugins = fs::read_to_string(dir.join("plugins.txt")).unwrap();
         assert_eq!(
             plugins,
-            "# This file was automatically generated by Eidos.\n*ActiveMod.esp\nOffMod.esp\n"
+            "# This file was automatically generated by Eidos.\r\n*ActiveMod.esp\r\nOffMod.esp\r\n"
         );
         // loadorder.txt keeps everything, including the primary, unprefixed.
         let order = fs::read_to_string(dir.join("loadorder.txt")).unwrap();
         assert_eq!(
             order,
-            "# This file was automatically generated by Eidos.\nSkyrim.esm\nActiveMod.esp\nOffMod.esp\n"
+            "# This file was automatically generated by Eidos.\r\nSkyrim.esm\r\nActiveMod.esp\r\nOffMod.esp\r\n"
         );
         let _ = fs::remove_dir_all(&dir);
     }
@@ -233,7 +329,58 @@ mod tests {
         // Plain: active names only, no `*`, primaries included.
         assert_eq!(
             plugins,
-            "# This file was automatically generated by Eidos.\nSkyrim.esm\nOn.esp\n"
+            "# This file was automatically generated by Eidos.\r\nSkyrim.esm\r\nOn.esp\r\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plugins_txt_round_trips_a_cp1252_name() {
+        let dir = tmp_dir();
+        let list = PluginList { plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)] };
+        list.write_load_order(&dir, &se()).unwrap();
+        // The on-disk bytes are CP1252 (é = 0xE9), not UTF-8.
+        let raw = fs::read(dir.join("plugins.txt")).unwrap();
+        assert!(raw.iter().any(|&b| b == 0xE9), "accented name must be CP1252-encoded");
+        assert!(std::str::from_utf8(&raw).is_err(), "plugins.txt is not valid UTF-8");
+        // ...and read_active decodes it back instead of discarding the file.
+        let active = PluginList::read_active(&dir, &se());
+        assert_eq!(
+            active,
+            vec![("Caf\u{e9} Society.esp".to_string(), true), ("Plain.esp".to_string(), false)]
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_list_does_not_overwrite_plugins_txt() {
+        let dir = tmp_dir();
+        fs::write(dir.join("plugins.txt"), b"# precious\n*KeepMe.esp\n").unwrap();
+        PluginList { plugins: vec![] }.write_load_order(&dir, &se()).unwrap();
+        // MO2 refuses to write an empty list; the good file is untouched.
+        assert_eq!(fs::read_to_string(dir.join("plugins.txt")).unwrap(), "# precious\n*KeepMe.esp\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plainlist_disabled_plugin_stays_disabled_via_loadorder() {
+        let dir = tmp_dir();
+        let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
+        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
+        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)] }
+            .write_load_order(&dir, &spec)
+            .unwrap();
+
+        // A fresh discovery defaults everything enabled, in arbitrary order.
+        let mut fresh =
+            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)] };
+        fresh.apply_prefix_state(&dir, &spec);
+        let state: Vec<_> = fresh.plugins.iter().map(|p| (p.name.clone(), p.enabled)).collect();
+        // Order follows loadorder.txt (A,B,C); B stays DISABLED (in loadorder.txt
+        // but not plugins.txt) instead of silently re-enabling.
+        assert_eq!(
+            state,
+            vec![("A.esp".into(), true), ("B.esp".into(), false), ("C.esp".into(), true)]
         );
         let _ = fs::remove_dir_all(&dir);
     }

@@ -180,12 +180,17 @@ impl PluginList {
                     p.is_medium = is_medium;
                     p.masters = masters;
                 } else {
+                    // MO2 force-disables an `.esl` on an engine without light-plugin
+                    // support (Skyrim LE / FO3 / FNV) - it is a packaging error, and
+                    // letting it load would consume a normal index slot and shift
+                    // every later plugin's displayed index.
+                    let force_off = is_light_ext(&key) && !spec.light_supported();
                     idx.insert(key, plugins.len());
                     plugins.push(Plugin {
                         name,
                         origin_mod: origin.clone(),
                         path,
-                        enabled: true,
+                        enabled: !force_off,
                         is_master,
                         is_light,
                         is_medium,
@@ -430,6 +435,30 @@ mod tests {
         let pos = |n: &str| order.iter().position(|x| x == n).unwrap();
         assert!(pos("BaseMaster.esm") < pos("MidMaster.esm"));
         assert!(pos("MidMaster.esm") < pos("child.esp"));
+    }
+
+    #[test]
+    fn esl_is_force_disabled_on_a_game_without_light_support() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("eidos-esl-{}-{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Patch.esl"), b"").unwrap();
+        let sources = vec![(String::new(), dir.clone())];
+
+        // Skyrim LE (PlainList, no light support): the .esl is discovered DISABLED.
+        let le = GameSpec::for_id("skyrim").unwrap();
+        let listed = PluginList::discover(&sources, &le);
+        assert!(
+            !listed.plugins.iter().find(|p| p.name == "Patch.esl").unwrap().enabled,
+            ".esl must be force-disabled on a no-light game"
+        );
+
+        // Skyrim SE supports light plugins, so the same file is enabled.
+        let se_list = PluginList::discover(&sources, &se());
+        assert!(se_list.plugins.iter().find(|p| p.name == "Patch.esl").unwrap().enabled);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
