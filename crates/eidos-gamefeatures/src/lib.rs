@@ -25,11 +25,36 @@ pub fn ini_files_for(game_id: &str) -> &'static [&'static str] {
     eidos_gamedef::GameDef::for_id(game_id).map_or(&[], |g| g.ini_files)
 }
 
-/// Enable archive (BSA) invalidation so loose mod files override the vanilla BSAs:
-/// `[Archive] bInvalidateOlderFiles=1` in the game's Documents INI. `ini_dir` is the
-/// prefix's `Documents/My Games/<game>` directory.
-pub fn enable_bsa_invalidation(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
-    set_ini_key(&ini_dir.join(ini_file), "Archive", "bInvalidateOlderFiles", "1")
+/// Enable archive (BSA) invalidation so loose mod files override the vanilla BSAs.
+/// `ini_dir` is the prefix's `Documents/My Games/<game>` directory.
+///
+/// FO4/FO4VR write into `Fallout4Custom.ini` and Starfield into `StarfieldCustom.ini`
+/// (both override the base INI, which is where MO2 puts it); every other engine uses
+/// its `[Archive]` INI. FO4/FO4VR/Starfield additionally need `sResourceDataDirsFinal=`
+/// cleared - they ship it as `STRINGS\`, so the engine only scans `Data/Strings` for
+/// loose files and ignores loose textures/meshes/scripts until it is emptied.
+pub fn enable_bsa_invalidation(ini_dir: &Path, game_id: &str) -> io::Result<()> {
+    let target = match game_id {
+        "fallout4" | "fallout4vr" => "Fallout4Custom.ini",
+        "starfield" => "StarfieldCustom.ini",
+        other => match ini_file_for(other) {
+            Some(f) => f,
+            None => return Ok(()),
+        },
+    };
+    let path = ini_dir.join(target);
+    set_ini_key(&path, "Archive", "bInvalidateOlderFiles", "1")?;
+    if matches!(game_id, "fallout4" | "fallout4vr" | "starfield") {
+        set_ini_key(&path, "Archive", "sResourceDataDirsFinal", "")?;
+    }
+    Ok(())
+}
+
+/// MO2 writes `[Launcher] bEnableFileSelection=1` before every run so the Bethesda
+/// launcher/engine does not grey out (or reset) the plugin selection - it enforces
+/// this for every Gamebryo/Creation game. Written into the `[Archive]` INI.
+pub fn enable_file_selection(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
+    set_ini_key(&ini_dir.join(ini_file), "Launcher", "bEnableFileSelection", "1")
 }
 
 /// Set `[section] key=value` in an INI file on disk, preserving everything else
@@ -94,6 +119,44 @@ mod tests {
         assert!(s.contains("bInvalidateOlderFiles=1"));
         assert!(s.contains("sResourceArchiveList=x.bsa"));
         let _ = fs::remove_file(&p);
+    }
+
+    fn tmp_dir() -> PathBuf {
+        let d = std::env::temp_dir()
+            .join(format!("eidos-gfd-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn fallout4_invalidation_targets_custom_ini_with_both_keys() {
+        let dir = tmp_dir();
+        enable_bsa_invalidation(&dir, "fallout4").unwrap();
+        let s = fs::read_to_string(dir.join("Fallout4Custom.ini")).unwrap();
+        assert!(s.contains("bInvalidateOlderFiles=1"));
+        assert!(s.contains("sResourceDataDirsFinal=")); // cleared so loose files load
+        assert!(!dir.join("Fallout4.ini").exists()); // not the base INI
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn skyrim_invalidation_only_sets_invalidate_key() {
+        let dir = tmp_dir();
+        enable_bsa_invalidation(&dir, "skyrimse").unwrap();
+        let s = fs::read_to_string(dir.join("Skyrim.ini")).unwrap();
+        assert!(s.contains("bInvalidateOlderFiles=1"));
+        assert!(!s.contains("sResourceDataDirsFinal")); // Creation/Gamebryo don't use it
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn file_selection_unlocks_the_launcher() {
+        let dir = tmp_dir();
+        enable_file_selection(&dir, "Skyrim.ini").unwrap();
+        let s = fs::read_to_string(dir.join("Skyrim.ini")).unwrap();
+        assert!(s.contains("[Launcher]"));
+        assert!(s.contains("bEnableFileSelection=1"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

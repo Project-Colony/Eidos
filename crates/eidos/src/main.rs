@@ -110,12 +110,14 @@ fn prepare_inis(
             eprintln!("eidos play: deployed {n} profile INI(s) into the prefix");
         }
     }
-    // Loose files must win over the vanilla BSAs (writes into the deployed INI).
+    // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
+    // reset the plugin selection (both written into the deployed profile INIs).
+    match eidos_gamefeatures::enable_bsa_invalidation(&docs, id) {
+        Ok(()) => eprintln!("eidos play: BSA invalidation on"),
+        Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
+    }
     if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
-        match eidos_gamefeatures::enable_bsa_invalidation(&docs, ini) {
-            Ok(()) => eprintln!("eidos play: BSA invalidation on ([Archive] bInvalidateOlderFiles=1 in {ini})"),
-            Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
-        }
+        let _ = eidos_gamefeatures::enable_file_selection(&docs, ini);
     }
     Some((docs, ini_files))
 }
