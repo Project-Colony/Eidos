@@ -190,10 +190,23 @@ impl Instance {
         Profile { instance_root: self.root.clone(), name: name.to_string() }
     }
 
-    /// The active profile name (from the manifest; `Default` if unset).
+    /// The active profile name (from the manifest; `Default` if unset). If the
+    /// manifest names a profile whose directory no longer exists (renamed or
+    /// deleted out from under the manifest), fall back to the first existing
+    /// profile rather than launching a ghost profile - which, lacking a
+    /// `modlist.txt`, would silently enable every mod. Mirrors MO2's
+    /// `OrganizerCore` profile-existence fallback.
     pub fn active_profile(&self) -> String {
-        self.read_manifest()
+        let selected = self
+            .read_manifest()
             .and_then(|m| m.selected_profile)
+            .unwrap_or_else(|| "Default".to_string());
+        if self.profiles_dir().join(&selected).is_dir() {
+            return selected;
+        }
+        self.profiles()
+            .into_iter()
+            .next()
             .unwrap_or_else(|| "Default".to_string())
     }
 
@@ -222,5 +235,41 @@ impl Instance {
             fs::rename(&legacy, &migrated)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static N: AtomicUsize = AtomicUsize::new(0);
+
+    fn tmp_instance() -> Instance {
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("eidos-inst-{}-{}", std::process::id(), n));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        Instance::portable(root)
+    }
+
+    #[test]
+    fn active_profile_falls_back_when_selected_dir_is_gone() {
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable).unwrap();
+        // Two real profiles on disk...
+        fs::create_dir_all(inst.profiles_dir().join("Default")).unwrap();
+        fs::create_dir_all(inst.profiles_dir().join("Modded")).unwrap();
+        // ...but the manifest still points at a profile deleted/renamed away.
+        inst.set_active_profile("Ghost").unwrap();
+        // active_profile must NOT return the ghost (which, lacking a modlist,
+        // would launch with every mod on); it falls back to an existing profile.
+        let active = inst.active_profile();
+        assert_ne!(active, "Ghost");
+        assert!(inst.profiles_dir().join(&active).is_dir());
+        // With the selected profile present, it is honoured verbatim.
+        inst.set_active_profile("Modded").unwrap();
+        assert_eq!(inst.active_profile(), "Modded");
+        let _ = fs::remove_dir_all(&inst.root);
     }
 }

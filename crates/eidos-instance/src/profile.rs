@@ -154,14 +154,20 @@ impl Profile {
         fs::create_dir_all(self.dir())
     }
 
-    /// Create this profile by copying another profile's files (its modlist, and
-    /// any plugin/INI files). Subdirectories (saves) are not copied.
+    /// Create this profile by copying another profile's files (its modlist, plugin
+    /// and INI files) and its subdirectories (`saves/`). MO2's profile copy is
+    /// fully recursive; copying `saves/` means the new profile starts from this
+    /// profile's saves rather than later adopting the stale prefix saves.
     pub fn create_from(&self, other: &Profile) -> io::Result<()> {
         fs::create_dir_all(self.dir())?;
         if let Ok(rd) = fs::read_dir(other.dir()) {
             for e in rd.flatten() {
-                if e.path().is_file() {
-                    let _ = fs::copy(e.path(), self.dir().join(e.file_name()));
+                let from = e.path();
+                let to = self.dir().join(e.file_name());
+                if from.is_file() {
+                    let _ = fs::copy(&from, &to);
+                } else if from.is_dir() {
+                    let _ = copy_dir_recursive(&from, &to);
                 }
             }
         }
@@ -202,9 +208,13 @@ impl Profile {
                     continue;
                 }
                 let (enabled, name) = if let Some(n) = line.strip_prefix('+') {
-                    (true, n)
+                    (true, n.trim())
                 } else if let Some(n) = line.strip_prefix('-') {
-                    (false, n)
+                    (false, n.trim())
+                } else if let Some(n) = line.strip_prefix('*') {
+                    // MO2 marks unmanaged/foreign mods with '*'; Eidos does not
+                    // model foreign mods, so treat the line as an enabled entry.
+                    (true, n.trim())
                 } else {
                     (true, line)
                 };
@@ -261,6 +271,25 @@ impl Profile {
     pub fn load_order(&self) -> Vec<PathBuf> {
         self.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect()
     }
+}
+
+/// Recursively copy a directory tree, skipping symlinks (matching MO2's `copyDir`
+/// NoSymLinks). Best-effort per entry.
+fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for e in fs::read_dir(from)?.flatten() {
+        let Ok(meta) = e.metadata() else { continue };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        let dst = to.join(e.file_name());
+        if meta.is_dir() {
+            let _ = copy_dir_recursive(&e.path(), &dst);
+        } else {
+            let _ = fs::copy(e.path(), &dst);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -342,6 +371,39 @@ mod tests {
         // No temp file lingers after a successful save.
         assert!(!p.dir().join("modlist.txt.tmp").exists());
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_from_copies_saves_subdir() {
+        let root = inst_with_mods(&["A"]);
+        let src = prof(&root, "Src");
+        src.create().unwrap();
+        // A save in the source profile's saves/ subdir + a curated modlist.
+        let saves = src.dir().join("saves");
+        fs::create_dir_all(&saves).unwrap();
+        fs::write(saves.join("Save1.ess"), b"x").unwrap();
+        src.save_modlist(&[ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A") }])
+            .unwrap();
+
+        let dst = prof(&root, "Copy");
+        dst.create_from(&src).unwrap();
+        // The saves/ subdir is copied recursively (MO2 parity), not skipped...
+        assert!(dst.dir().join("saves/Save1.ess").is_file());
+        // ...and the modlist file came across too.
+        assert!(!dst.modlist().iter().find(|m| m.name == "A").unwrap().enabled);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn modlist_parses_star_and_trims_names() {
+        let root = inst_with_mods(&["A", "B", "C"]);
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        // MO2 '*' foreign line (enabled), and +/- with padding that must be trimmed.
+        fs::write(p.modlist_path(), "*A\n-  B\n+ C \n").unwrap();
+        let got: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
+        assert_eq!(got, vec![("A".into(), true), ("B".into(), false), ("C".into(), true)]);
         let _ = fs::remove_dir_all(&root);
     }
 
