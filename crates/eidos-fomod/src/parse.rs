@@ -61,6 +61,7 @@ impl ModuleConfig {
             match c.tag_name().name() {
                 "moduleName" => mc.module_name = c.text().unwrap_or("").trim().to_string(),
                 "moduleImage" => mc.module_image = c.attribute("path").map(norm_path),
+                "moduleDependencies" => mc.module_dependencies = Some(parse_composite(c)),
                 "requiredInstallFiles" => mc.required_files = parse_file_list(c, &mut seq),
                 "installSteps" => {
                     for s in elements(c, "installStep") {
@@ -326,6 +327,21 @@ mod tests {
         // "<a/>" in UTF-16LE with a BOM.
         let bytes = [0xFF, 0xFE, b'<', 0, b'a', 0, b'/', 0, b'>', 0];
         assert_eq!(decode_xml(&bytes), "<a/>");
+    }
+
+    #[test]
+    fn parses_module_dependencies() {
+        // <moduleDependencies> must be captured (MO2 aborts the install when unmet);
+        // previously it was silently discarded by the `_ => {}` arm.
+        const XML: &str = r#"<config>
+  <moduleName>T</moduleName>
+  <moduleDependencies operator="And">
+    <fileDependency file="Skyrim.esm" state="Active"/>
+  </moduleDependencies>
+  <requiredInstallFiles><file source="a.esp" destination="a.esp"/></requiredInstallFiles>
+</config>"#;
+        let mc = ModuleConfig::parse(XML).unwrap();
+        assert!(mc.module_dependencies.is_some());
     }
 
     // MO2 parity (readFileList): a <folder source=""/> is a do-nothing option and

@@ -74,8 +74,14 @@ fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: 
         GroupType::SelectAll => {
             (0..types.len()).filter(|&i| types[i] != PluginType::NotUsable).collect()
         }
+        // MO2's forced-selection fallback order: Required, then Recommended, then
+        // the first Optional, then the first CouldBeUsable, and only then any
+        // remaining usable option - so a CouldBeUsable never wins ahead of an
+        // Optional listed after it.
         GroupType::SelectExactlyOne => pos(PluginType::Required)
             .or_else(|| pos(PluginType::Recommended))
+            .or_else(|| pos(PluginType::Optional))
+            .or_else(|| pos(PluginType::CouldBeUsable))
             .or_else(first_usable)
             .into_iter()
             .collect(),
@@ -85,7 +91,11 @@ fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: 
         GroupType::SelectAtLeastOne => {
             let rec = preselected();
             if rec.is_empty() {
-                first_usable().into_iter().collect()
+                pos(PluginType::Optional)
+                    .or_else(|| pos(PluginType::CouldBeUsable))
+                    .or_else(first_usable)
+                    .into_iter()
+                    .collect()
             } else {
                 rec
             }
@@ -284,6 +294,38 @@ mod tests {
     <files><file source="cond.esp" destination="cond.esp"/></files>
   </pattern></patterns></conditionalFileInstalls>
 </config>"#;
+
+    #[test]
+    fn exactly_one_prefers_optional_over_couldbeusable() {
+        // A CouldBeUsable option listed BEFORE an Optional one: MO2's forced
+        // selection picks the Optional, not merely the first usable (CouldBeUsable).
+        const ORD: &str = r#"<config>
+  <moduleName>T</moduleName>
+  <installSteps>
+    <installStep name="S">
+      <optionalFileGroups>
+        <group name="G" type="SelectExactlyOne">
+          <plugins>
+            <plugin name="Maybe">
+              <files><file source="maybe.esp" destination="maybe.esp"/></files>
+              <typeDescriptor><type name="CouldBeUsable"/></typeDescriptor>
+            </plugin>
+            <plugin name="Opt">
+              <files><file source="opt.esp" destination="opt.esp"/></files>
+              <typeDescriptor><type name="Optional"/></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>"#;
+        let mc = ModuleConfig::parse(ORD).unwrap();
+        let plan = build_default_plan(&mc, &Context::default());
+        let dests: Vec<&str> = plan.iter().map(|f| f.destination.as_str()).collect();
+        assert!(dests.contains(&"opt.esp"), "the Optional must be the default pick");
+        assert!(!dests.contains(&"maybe.esp"), "the CouldBeUsable must not win ahead of it");
+    }
 
     #[test]
     fn default_plan_picks_recommended_then_applies_conditionals() {

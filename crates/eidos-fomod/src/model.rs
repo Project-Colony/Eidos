@@ -105,6 +105,9 @@ pub struct ConditionalInstall {
 pub struct ModuleConfig {
     pub module_name: String,
     pub module_image: Option<String>,
+    /// `<moduleDependencies>` - the whole install is refused when this is unmet
+    /// (MO2 aborts). Evaluated against the install Context by the caller.
+    pub module_dependencies: Option<Condition>,
     pub required_files: Vec<FileItem>,
     pub steps: Vec<InstallStep>,
     pub conditional_installs: Vec<ConditionalInstall>,
