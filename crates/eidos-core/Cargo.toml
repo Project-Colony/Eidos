@@ -7,3 +7,4 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+libc = "0.2"

@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 /// Prefix marking a "whiteout" in the overwrite layer: an empty file
@@ -192,6 +193,11 @@ impl LayerStack {
             if let Some(src) = self.layers.iter().find_map(|l| ci_lookup(l, vpath)) {
                 if src.is_file() {
                     fs::copy(&src, &dest)?;
+                    // Re-apply the lower file's mtime/atime + user.* xattrs so the
+                    // copied-up file looks unchanged to tools comparing mtimes
+                    // (FileTime load order, xEdit, Wrye Bash) or reading DOS
+                    // attributes - usvfs preserves these by writing through in place.
+                    clone_metadata(&src, &dest);
                 }
             }
         }
@@ -392,6 +398,66 @@ fn eq_ignore_case(a: &OsStr, b: &OsStr) -> bool {
     }
 }
 
+/// Re-apply `src`'s modification/access times and `user.*` xattrs onto `dst` after
+/// a copy-up. Best-effort: failures are ignored (the copy already succeeded).
+fn clone_metadata(src: &Path, dst: &Path) {
+    if let Ok(meta) = fs::metadata(src) {
+        if let (Ok(atime), Ok(mtime)) = (meta.accessed(), meta.modified()) {
+            let times = [to_timespec(atime), to_timespec(mtime)];
+            if let Ok(c) = cpath(dst) {
+                unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+            }
+        }
+    }
+    copy_user_xattrs(src, dst);
+}
+
+fn to_timespec(t: std::time::SystemTime) -> libc::timespec {
+    let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    libc::timespec { tv_sec: d.as_secs() as libc::time_t, tv_nsec: d.subsec_nanos() as libc::c_long }
+}
+
+fn cpath(p: &Path) -> std::io::Result<std::ffi::CString> {
+    std::ffi::CString::new(p.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))
+}
+
+/// Copy every `user.*` extended attribute from `src` to `dst` (Linux `l*xattr`, so
+/// a symlink itself is operated on, not its target). Best-effort.
+fn copy_user_xattrs(src: &Path, dst: &Path) {
+    let (Ok(csrc), Ok(cdst)) = (cpath(src), cpath(dst)) else {
+        return;
+    };
+    let len = unsafe { libc::llistxattr(csrc.as_ptr(), std::ptr::null_mut(), 0) };
+    if len <= 0 {
+        return;
+    }
+    let mut names = vec![0u8; len as usize];
+    let got =
+        unsafe { libc::llistxattr(csrc.as_ptr(), names.as_mut_ptr() as *mut libc::c_char, names.len()) };
+    if got <= 0 {
+        return;
+    }
+    names.truncate(got as usize);
+    for name in names.split(|&b| b == 0).filter(|s| s.starts_with(b"user.")) {
+        let Ok(cname) = std::ffi::CString::new(name) else { continue };
+        let vlen = unsafe { libc::lgetxattr(csrc.as_ptr(), cname.as_ptr(), std::ptr::null_mut(), 0) };
+        if vlen < 0 {
+            continue;
+        }
+        let mut val = vec![0u8; vlen as usize];
+        let vgot = unsafe {
+            libc::lgetxattr(csrc.as_ptr(), cname.as_ptr(), val.as_mut_ptr() as *mut libc::c_void, val.len())
+        };
+        if vgot < 0 {
+            continue;
+        }
+        unsafe {
+            libc::lsetxattr(cdst.as_ptr(), cname.as_ptr(), val.as_ptr() as *const libc::c_void, vgot as usize, 0)
+        };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -432,6 +498,34 @@ mod tests {
 
     fn read(p: &Path) -> String {
         fs::read_to_string(p).unwrap()
+    }
+
+    fn set_mtime(p: &Path, t: std::time::SystemTime) {
+        let ts = to_timespec(t);
+        let times = [ts, ts];
+        let c = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+        unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+    }
+
+    #[test]
+    fn copy_up_preserves_mtime() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "mesh.nif", "data");
+        // Backdate the lower file to a fixed old time (2014), then copy it up.
+        let old = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_400_000_000);
+        set_mtime(&game.join("mesh.nif"), old);
+        let stack = LayerStack::new(vec![game], over);
+
+        let dest = stack.open_for_write("mesh.nif").unwrap();
+        let secs = fs::metadata(&dest)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert_eq!(secs, 1_400_000_000, "copy-up must keep the lower file's mtime, not stamp 'now'");
     }
 
     #[test]
