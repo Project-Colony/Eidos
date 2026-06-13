@@ -156,6 +156,17 @@ impl ModMeta {
         self.set("newestVersion", v);
     }
 
+    /// When this mod was last checked against Nexus (unix seconds; `0`/absent ->
+    /// `None`). MO2 tracks this so it can trust the `updated?period=1m` bulk list
+    /// only for mods checked within the window, and query the rest individually.
+    pub fn last_nexus_update(&self) -> Option<u64> {
+        self.raw("lastNexusUpdate").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+    }
+
+    pub fn set_last_nexus_update(&mut self, ts: u64) {
+        self.set("lastNexusUpdate", &ts.to_string());
+    }
+
     /// Write back to `meta.ini`, but only if something changed. Reproduces the
     /// original line endings and preserves every later section verbatim, so MO2's
     /// `[installedFiles]` etc. - and an unchanged file - survive byte-for-byte.
@@ -265,6 +276,19 @@ mod tests {
 
         let expected = SAMPLE.replace("newestVersion=0.139.2.0", "newestVersion=d2026.4.3.0");
         assert_eq!(fs::read_to_string(&p).unwrap(), expected);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn last_nexus_update_round_trips() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.last_nexus_update(), None);
+        m.set_last_nexus_update(1_700_000_000);
+        assert_eq!(m.last_nexus_update(), Some(1_700_000_000));
+        assert!(m.is_dirty());
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).last_nexus_update(), Some(1_700_000_000));
         let _ = fs::remove_file(&p);
     }
 

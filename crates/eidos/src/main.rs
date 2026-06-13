@@ -450,6 +450,10 @@ fn cmd_install(args: &[String]) {
             ml.insert(0, ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
             let _ = inst.save_modlist(&ml);
 
+            // If this archive came from a Nexus download, flag its .meta installed
+            // (MO2's markInstalled); a no-op when there is no sidecar.
+            let _ = eidos_nexus::mark_installed(std::path::Path::new(archive));
+
             print!("Installed '{}' for {}", r.name, game.def.name);
             if r.fomod {
                 print!(" (via FOMOD, default options)");
@@ -562,18 +566,39 @@ fn cmd_nexus(args: &[String]) {
                     exit(1);
                 }
             };
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            const MONTH: u64 = 30 * 24 * 3600;
+
             let mut checked = 0u32;
             let mut updates = 0u32;
+            let mut individual = 0u32;
+            let mut rate_limited = false;
             for m in inst.modlist() {
                 let mut meta = inst.mod_meta(&m.name);
                 let Some(mod_id) = meta.mod_id() else { continue };
                 checked += 1;
-                if !updated.contains(&mod_id) {
+                // MO2: the `updated?period=1m` list is only trustworthy for mods
+                // checked within that window. A mod never checked - or checked over
+                // a month ago - gets an individual query regardless of the
+                // intersection, else an update published >1 month ago is missed
+                // forever (the common first-run case on an established mod list).
+                let stale = meta
+                    .last_nexus_update()
+                    .map(|t| now.saturating_sub(t) > MONTH)
+                    .unwrap_or(true);
+                if !stale && !updated.contains(&mod_id) {
                     continue;
+                }
+                if stale {
+                    individual += 1;
                 }
                 match nexus.mod_info(game.def.nexus_game, mod_id) {
                     Ok(remote) => {
                         meta.set_newest_version(&remote.version);
+                        meta.set_last_nexus_update(now);
                         let _ = meta.write(&inst.mods_dir().join(&m.name).join("meta.ini"));
                         if meta.update_available() {
                             updates += 1;
@@ -585,14 +610,30 @@ fn cmd_nexus(args: &[String]) {
                             );
                         }
                     }
-                    Err(e) => eprintln!("  {}: {e}", m.name),
+                    Err(e) => {
+                        // MO2 stops dispatching the moment the account is exhausted.
+                        if e.contains("429") {
+                            rate_limited = true;
+                            eprintln!("  rate limited by Nexus - stopping; remaining mods unchecked.");
+                            break;
+                        }
+                        eprintln!("  {}: {e}", m.name);
+                    }
                 }
             }
             println!(
-                "{updates} update(s) available ({checked} mod(s) with a Nexus id, \
-                 {} recently updated on Nexus).",
+                "{updates} update(s) available ({checked} mod(s) with a Nexus id; \
+                 {individual} queried individually; {} recently updated on Nexus).",
                 updated.len()
             );
+            let rl = nexus.rate_limits();
+            if let Some(h) = rl.hourly_remaining {
+                let daily = rl.daily_remaining.map(|d| format!(", {d} today")).unwrap_or_default();
+                println!("Nexus budget: {h} request(s) left this hour{daily}.");
+            }
+            if rate_limited {
+                eprintln!("Some mods were not checked (hourly limit reached). Re-run after the hour.");
+            }
         }
         _ => {
             eprintln!(
@@ -679,9 +720,23 @@ fn cmd_nxm(args: &[String]) {
                 }
             };
             let name = eidos_nexus::file_name_from_uri(&link)
-                .or_else(|| (!file.file_name.is_empty()).then(|| file.file_name.clone()))
+                .or_else(|| eidos_nexus::sanitize_file_name(&file.file_name))
                 .unwrap_or_else(|| format!("{}-{}.archive", nxm.mod_id, nxm.file_id));
-            let dest = inst.downloads_dir().join(&name);
+            let downloads = inst.downloads_dir();
+            // Don't silently clobber an existing download. If the very same file is
+            // already here (its .meta carries this fileID), stop; otherwise give the
+            // new download a unique `<i>_<name>` (MO2's getDownloadFileName).
+            let existing = downloads.join(&name);
+            if existing.is_file() {
+                let meta = std::fs::read_to_string(format!("{}.meta", existing.display())).unwrap_or_default();
+                if meta.contains(&format!("fileID={}", nxm.file_id)) {
+                    println!("Already downloaded: {}", existing.display());
+                    println!("Install it:  eidos install {} \"{}\"", game.def.id, existing.display());
+                    return;
+                }
+            }
+            let name = eidos_nexus::unique_download_name(&downloads, &name);
+            let dest = downloads.join(&name);
 
             println!("Downloading {} ({}) ...", file.name, name);
             match nexus.download(&link, &dest) {
