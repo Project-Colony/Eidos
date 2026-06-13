@@ -66,6 +66,8 @@ pub struct InstallReport {
     pub stripped: String,
     /// Whether this was installed via the FOMOD scripted installer (default options).
     pub fomod: bool,
+    /// FOMOD plan sources the archive did not actually contain (skipped, non-fatal).
+    pub missing: Vec<String>,
     pub dest: PathBuf,
 }
 
@@ -164,12 +166,13 @@ pub fn install_archive(
                 // A FOMOD scripted installer: run it with the default selections.
                 if let Some(fomod_root) = find_fomod_root(&tmp) {
                     fs::create_dir_all(&dest)?;
-                    apply_fomod_defaults(&fomod_root, &dest)?;
+                    let missing = apply_fomod_defaults(&fomod_root, &dest)?;
                     write_meta(archive, &dest, game_name, guessed_id)?;
                     return Ok(InstallReport {
                         name: name.clone(),
                         stripped: String::new(),
                         fomod: true,
+                        missing,
                         dest: dest.clone(),
                     });
                 }
@@ -184,7 +187,7 @@ pub fn install_archive(
         fs::create_dir_all(&dest)?;
         move_dir_contents(&src, &dest)?;
         write_meta(archive, &dest, game_name, guessed_id)?;
-        Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, dest: dest.clone() })
+        Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, missing: Vec::new(), dest: dest.clone() })
     })();
 
     let _ = fs::remove_dir_all(&tmp);
@@ -357,9 +360,15 @@ fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, InstallError
 /// Copy a computed FOMOD plan from the extracted `root` into `dest`, resolving each
 /// source case-insensitively; later (higher-priority) items overwrite earlier ones.
 /// Sources the archive did not ship are skipped.
-fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Result<(), InstallError> {
+fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Result<Vec<String>, InstallError> {
+    let mut missing = Vec::new();
     for item in plan {
         let Some(src) = resolve_ci(root, &item.source) else {
+            // MO2 logs each plan source the archive did not ship; collect them so the
+            // caller can warn (the empty "no folder" source MO2 ignores by default).
+            if !item.source.trim().is_empty() {
+                missing.push(item.source.clone());
+            }
             continue;
         };
         let mut destination = item.destination.replace('\\', "/");
@@ -382,11 +391,12 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
             fs::copy(&src, &dst)?;
         }
     }
-    Ok(())
+    Ok(missing)
 }
 
 /// Parse the FOMOD under `root` and install it with the default selections.
-fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<(), InstallError> {
+/// Returns the plan sources the archive did not contain.
+fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<Vec<String>, InstallError> {
     let config = parse_fomod_at(root)?;
     let plan = eidos_fomod::build_default_plan(&config, &eidos_fomod::Context::default());
     apply_plan(root, &plan, dest)
@@ -470,9 +480,9 @@ pub fn finish_fomod(
     }
     fs::create_dir_all(&dest)?;
     let plan = eidos_fomod::build_plan(&session.config, selection, &eidos_fomod::Context::default());
-    apply_plan(&session.root, &plan, &dest)?;
+    let missing = apply_plan(&session.root, &plan, &dest)?;
     write_meta(&session.archive, &dest, game_name, guessed_id)?;
-    Ok(InstallReport { name, stripped: String::new(), fomod: true, dest })
+    Ok(InstallReport { name, stripped: String::new(), fomod: true, missing, dest })
 }
 
 #[cfg(test)]
@@ -556,6 +566,18 @@ mod tests {
 
         assert!(dest.path().join("renamed.esp").is_file());
         assert!(!dest.path().join("real.esp").exists());
+    }
+
+    #[test]
+    fn apply_plan_reports_missing_sources() {
+        let root = TempDir::new("root");
+        let dest = TempDir::new("dest");
+        fs::write(root.path().join("present.esp"), b"x").unwrap();
+        let plan = vec![file_item("present.esp", "present.esp"), file_item("absent.esp", "absent.esp")];
+        let missing = apply_plan(root.path(), &plan, dest.path()).unwrap();
+        // The source the archive didn't contain is reported, the present one installed.
+        assert_eq!(missing, vec!["absent.esp".to_string()]);
+        assert!(dest.path().join("present.esp").is_file());
     }
 
     #[test]

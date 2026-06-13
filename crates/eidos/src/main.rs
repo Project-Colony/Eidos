@@ -508,6 +508,12 @@ fn cmd_install(args: &[String]) {
             }
             println!();
             println!("  -> {}", r.dest.display());
+            if !r.missing.is_empty() {
+                eprintln!("  note: {} file(s) the installer expected were not in the archive:", r.missing.len());
+                for m in &r.missing {
+                    eprintln!("    - {m}");
+                }
+            }
             println!("  enabled at the top of the load order. `eidos play {id}` to use it.");
         }
         Err(e) => {
