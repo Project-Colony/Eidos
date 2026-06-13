@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use eidos_instance::ModMeta;
 
-use crate::{ArchiveEntry, ArchiveTree};
+use crate::{fix_directory_name, guess_mod_name, guess_mod_name_and_id, ArchiveEntry, ArchiveTree};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -137,7 +137,12 @@ pub fn install_archive(
 ) -> Result<InstallReport, InstallError> {
     let bin = find_7z().ok_or(InstallError::No7z)?;
 
-    let dest = mods_dir.join(name);
+    // Sanitize the folder name (a real Nexus modName can contain ':' etc.) and
+    // recover the mod id from the filename for the meta.ini when there's no sidecar.
+    let name = fix_directory_name(name).unwrap_or_else(|| "Mod".to_string());
+    let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
+
+    let dest = mods_dir.join(&name);
     if dest.exists() && is_nonempty_dir(&dest) {
         return Err(InstallError::Exists(dest));
     }
@@ -160,9 +165,9 @@ pub fn install_archive(
                 if let Some(fomod_root) = find_fomod_root(&tmp) {
                     fs::create_dir_all(&dest)?;
                     apply_fomod_defaults(&fomod_root, &dest)?;
-                    write_meta(archive, &dest, game_name)?;
+                    write_meta(archive, &dest, game_name, guessed_id)?;
                     return Ok(InstallReport {
-                        name: name.to_string(),
+                        name: name.clone(),
                         stripped: String::new(),
                         fomod: true,
                         dest: dest.clone(),
@@ -178,8 +183,8 @@ pub fn install_archive(
         };
         fs::create_dir_all(&dest)?;
         move_dir_contents(&src, &dest)?;
-        write_meta(archive, &dest, game_name)?;
-        Ok(InstallReport { name: name.to_string(), stripped: base, fomod: false, dest: dest.clone() })
+        write_meta(archive, &dest, game_name, guessed_id)?;
+        Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, dest: dest.clone() })
     })();
 
     let _ = fs::remove_dir_all(&tmp);
@@ -187,18 +192,23 @@ pub fn install_archive(
 }
 
 /// Write a MO2-compatible `meta.ini`, seeded from the download's `<archive>.meta`
-/// sidecar if MO2/Nexus left one next to the file.
-fn write_meta(archive: &Path, dest: &Path, game_name: &str) -> io::Result<()> {
+/// sidecar if MO2/Nexus left one next to the file. `guessed_id` is the mod id
+/// recovered from the filename, used when the sidecar carries none.
+fn write_meta(archive: &Path, dest: &Path, game_name: &str, guessed_id: Option<u64>) -> io::Result<()> {
     // The sidecar is the full archive name + ".meta" (e.g. Mod-1234.7z.meta).
     let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
     let from = ModMeta::read(&sidecar);
 
     let mut meta = ModMeta::default();
     meta.set("gameName", &from.game_name().unwrap_or_else(|| game_name.to_string()));
-    if let Some(id) = from.mod_id() {
+    // Mod id: the sidecar's, else the one guessed from the Nexus filename, so a
+    // manually-downloaded archive with no sidecar can still be update-checked.
+    if let Some(id) = from.mod_id().or(guessed_id) {
         meta.set("modid", &id.to_string());
     }
-    if let Some(v) = from.version() {
+    // Version: the sidecar's, else a date stamp from the archive mtime (MO2's
+    // dYYYY.M.D fallback) so update_available has a baseline to compare against.
+    if let Some(v) = from.version().or_else(|| archive_date_version(archive)) {
         meta.set("version", &v);
     }
     if let Some(nv) = from.newest_version() {
@@ -206,13 +216,64 @@ fn write_meta(archive: &Path, dest: &Path, game_name: &str) -> io::Result<()> {
     }
     // The sidecar's category is a raw Nexus id we don't map yet; leave uncategorised.
     meta.set("category", "\"-1,\"");
-    if let Some(file) = archive.file_name().and_then(|f| f.to_str()) {
-        meta.set("installationFile", file);
-    }
+    // nexusFileStatus mirrors the sidecar's fileCategory (1 = main file by default).
+    meta.set("nexusFileStatus", &from.file_category().unwrap_or_else(|| "1".to_string()));
+    // Record where the archive came from, absolute (MO2 stores the full path for a
+    // file outside the downloads folder).
+    let install_file = fs::canonicalize(archive)
+        .unwrap_or_else(|_| archive.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    meta.set("installationFile", &install_file);
     meta.set("repository", &from.repository().unwrap_or_else(|| "Nexus".to_string()));
     meta.set("endorsed", "0");
     meta.set("tracked", "0");
     meta.write(&dest.join("meta.ini"))
+}
+
+/// MO2's date-stamp version fallback (`dYYYY.M.D`, no zero-padding) from the
+/// archive's modification time, used when the download has no real version.
+fn archive_date_version(archive: &Path) -> Option<String> {
+    let secs = fs::metadata(archive)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    let (y, m, d) = civil_from_unix(secs);
+    Some(format!("d{y}.{m}.{d}"))
+}
+
+/// Year/month/day (UTC) from a Unix timestamp - Hinnant's civil-from-days, so no
+/// calendar crate is needed.
+fn civil_from_unix(secs: u64) -> (i64, u32, u32) {
+    let days = (secs / 86_400) as i64;
+    let z = days + 719_468;
+    let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// The mod folder name for `archive`, with MO2's precedence: the download sidecar's
+/// `modName`, else its `name`, else the filename guess - then sanitized with
+/// [`fix_directory_name`] (real Nexus names contain `:`).
+pub fn mod_name_for(archive: &Path) -> String {
+    let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
+    let meta = ModMeta::read(&sidecar);
+    let picked = meta
+        .mod_name()
+        .or_else(|| meta.name())
+        .unwrap_or_else(|| guess_mod_name(&archive.to_string_lossy()));
+    fix_directory_name(&picked)
+        .or_else(|| fix_directory_name(&guess_mod_name(&archive.to_string_lossy())))
+        .unwrap_or_else(|| "Mod".to_string())
 }
 
 /// Find the directory that contains a `fomod/ModuleConfig.xml` (case-insensitive),
@@ -401,15 +462,17 @@ pub fn finish_fomod(
     mods_dir: &Path,
     game_name: &str,
 ) -> Result<InstallReport, InstallError> {
-    let dest = mods_dir.join(&session.name);
+    let name = fix_directory_name(&session.name).unwrap_or_else(|| "Mod".to_string());
+    let (_, guessed_id) = guess_mod_name_and_id(&session.archive.to_string_lossy());
+    let dest = mods_dir.join(&name);
     if dest.exists() && is_nonempty_dir(&dest) {
         return Err(InstallError::Exists(dest));
     }
     fs::create_dir_all(&dest)?;
     let plan = eidos_fomod::build_plan(&session.config, selection, &eidos_fomod::Context::default());
     apply_plan(&session.root, &plan, &dest)?;
-    write_meta(&session.archive, &dest, game_name)?;
-    Ok(InstallReport { name: session.name.clone(), stripped: String::new(), fomod: true, dest })
+    write_meta(&session.archive, &dest, game_name, guessed_id)?;
+    Ok(InstallReport { name, stripped: String::new(), fomod: true, dest })
 }
 
 #[cfg(test)]
@@ -493,5 +556,26 @@ mod tests {
 
         assert!(dest.path().join("renamed.esp").is_file());
         assert!(!dest.path().join("real.esp").exists());
+    }
+
+    #[test]
+    fn mod_name_for_prefers_sidecar_then_sanitizes() {
+        let dir = TempDir::new("name");
+        let archive = dir.path().join("Beyond Skyrim Bruma-1234-1-0.7z");
+        // No sidecar -> the filename guess (clean here).
+        assert_eq!(mod_name_for(&archive), "Beyond Skyrim Bruma");
+        // A sidecar modName wins, and its ':' is sanitized out of the folder name.
+        fs::write(
+            PathBuf::from(format!("{}.meta", archive.display())),
+            "[General]\nmodName=Beyond Skyrim: Bruma\nname=file name\n",
+        )
+        .unwrap();
+        assert_eq!(mod_name_for(&archive), "Beyond Skyrim Bruma");
+    }
+
+    #[test]
+    fn civil_from_unix_is_correct() {
+        assert_eq!(civil_from_unix(1_700_000_000), (2023, 11, 14)); // 2023-11-14 UTC
+        assert_eq!(civil_from_unix(0), (1970, 1, 1));
     }
 }

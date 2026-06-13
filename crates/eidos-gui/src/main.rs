@@ -460,7 +460,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let (Some(gid), Some(mods_dir)) = (game_id, mods_dir) else {
                 return Task::none();
             };
-            let name = eidos_install::guess_mod_name(&path.to_string_lossy());
+            let name = eidos_install::mod_name_for(&path);
             match eidos_install::open_fomod(&path, &mods_dir, &name) {
                 Ok(Some(session)) => {
                     let selection =

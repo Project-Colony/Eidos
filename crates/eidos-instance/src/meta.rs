@@ -111,6 +111,21 @@ impl ModMeta {
         self.string("installationFile")
     }
 
+    /// The download sidecar's `modName` (the mod's display name on Nexus).
+    pub fn mod_name(&self) -> Option<String> {
+        self.string("modName")
+    }
+
+    /// The sidecar's `name` (the file entry's name), HTML-stripped like MO2.
+    pub fn name(&self) -> Option<String> {
+        self.string("name").map(|s| strip_html(&s)).filter(|s| !s.is_empty())
+    }
+
+    /// The sidecar's `fileCategory` (the Nexus file category id).
+    pub fn file_category(&self) -> Option<String> {
+        self.string("fileCategory")
+    }
+
     pub fn repository(&self) -> Option<String> {
         self.string("repository")
     }
@@ -194,6 +209,21 @@ impl ModMeta {
 fn unquote(v: &str) -> String {
     let v = v.trim();
     v.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(v).to_string()
+}
+
+/// Remove `<...>` tags from a value (MO2's `name` field can carry HTML).
+fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.trim().to_string()
 }
 
 #[cfg(test)]

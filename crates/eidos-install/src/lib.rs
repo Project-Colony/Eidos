@@ -198,7 +198,8 @@ impl ArchiveTree {
 
 mod install;
 pub use install::{
-    finish_fomod, install_archive, open_fomod, FomodSession, InstallError, InstallReport,
+    finish_fomod, install_archive, mod_name_for, open_fomod, FomodSession, InstallError,
+    InstallReport,
 };
 
 /// Known top-level Data folder names (lowercased), from MO2's

@@ -439,7 +439,10 @@ fn cmd_install(args: &[String]) {
     inst.create().ok();
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
 
-    let name = args.get(2).cloned().unwrap_or_else(|| eidos_install::guess_mod_name(archive));
+    let name = args
+        .get(2)
+        .cloned()
+        .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
     match eidos_install::install_archive(std::path::Path::new(archive), &inst.mods_dir(), &name, id) {
         Ok(r) => {
             // Activate the new mod at the top of the active profile's load order,
