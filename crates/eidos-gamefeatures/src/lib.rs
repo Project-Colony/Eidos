@@ -34,6 +34,11 @@ pub fn ini_files_for(game_id: &str) -> &'static [&'static str] {
 /// cleared - they ship it as `STRINGS\`, so the engine only scans `Data/Strings` for
 /// loose files and ignores loose textures/meshes/scripts until it is emptied.
 pub fn enable_bsa_invalidation(ini_dir: &Path, data_dir: &Path, game_id: &str) -> io::Result<()> {
+    // Morrowind uses the numbered [Archives] list, not [Archive] bInvalidateOlderFiles
+    // (see register_morrowind_archives); nothing to do in this path.
+    if game_id == "morrowind" {
+        return Ok(());
+    }
     let target = match game_id {
         "fallout4" | "fallout4vr" => "Fallout4Custom.ini",
         "starfield" => "StarfieldCustom.ini",
@@ -105,6 +110,48 @@ fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
         format!("{bsa}, {}", current.trim())
     };
     set_ini_key(ini, "Archive", key, &value)
+}
+
+/// Register Morrowind mod BSAs in the numbered `[Archives]` list: keep the existing
+/// (vanilla) entries and append any enabled-mod `.bsa` not already present, then
+/// rewrite `Archive 0..N`. Morrowind only loads a BSA that is listed here, so a
+/// BSA-shipping mod is otherwise silently ignored.
+pub fn register_morrowind_archives(ini: &Path, mod_bsas: &[String]) -> io::Result<()> {
+    let mut text = fs::read_to_string(ini).unwrap_or_default();
+    let mut archives = read_numbered_archives(&text);
+    for b in mod_bsas {
+        if !archives.iter().any(|a| a.eq_ignore_ascii_case(b)) {
+            archives.push(b.clone());
+        }
+    }
+    for (i, a) in archives.iter().enumerate() {
+        text = eidos_ini::set_key(&text, "Archives", &format!("Archive {i}"), a);
+    }
+    if let Some(parent) = ini.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(ini, text)
+}
+
+/// The ordered `[Archives] Archive N=` values from INI text.
+fn read_numbered_archives(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_section = false;
+    for line in text.lines() {
+        let l = line.trim();
+        if let Some(s) = eidos_ini::section_header(l) {
+            in_section = s.eq_ignore_ascii_case("Archives");
+            continue;
+        }
+        if in_section {
+            if let Some((k, v)) = eidos_ini::key_value(l) {
+                if k.to_ascii_lowercase().starts_with("archive ") && !v.trim().is_empty() {
+                    out.push(v.trim().to_string());
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Read a `[section] key` value from INI text (the shared parser has a setter but
@@ -305,6 +352,21 @@ mod tests {
         let s = fs::read_to_string(dir.join("Skyrim.ini")).unwrap();
         assert!(s.contains("bInvalidateOlderFiles=1"));
         assert!(!s.contains("sResourceDataDirsFinal")); // Creation/Gamebryo don't use it
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn morrowind_registers_mod_bsas_in_archives_list() {
+        let dir = tmp_dir();
+        let ini = dir.join("Morrowind.ini");
+        // The existing (vanilla) numbered list.
+        fs::write(&ini, "[Archives]\r\nArchive 0=Morrowind.bsa\r\nArchive 1=Tribunal.bsa\r\n").unwrap();
+        register_morrowind_archives(&ini, &["ModX.bsa".to_string(), "Morrowind.bsa".to_string()]).unwrap();
+        let s = fs::read_to_string(&ini).unwrap();
+        assert!(s.contains("Archive 0=Morrowind.bsa"));
+        assert!(s.contains("Archive 1=Tribunal.bsa"));
+        assert!(s.contains("Archive 2=ModX.bsa")); // appended
+        assert_eq!(s.matches("=Morrowind.bsa").count(), 1); // not duplicated
         let _ = fs::remove_dir_all(&dir);
     }
 

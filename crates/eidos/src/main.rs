@@ -97,7 +97,13 @@ fn prepare_inis(
     if ini_files.is_empty() {
         return None;
     }
-    let docs = eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec);
+    let docs = if id == "morrowind" {
+        // Morrowind keeps Morrowind.ini in the install dir (MO2 manages it there),
+        // not My Games, so the per-profile INI cycle is pointed at the game dir.
+        game.install_path.clone()
+    } else {
+        eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec)
+    };
     let prof = inst.active();
 
     if let Ok(n) = prof.seed_inis(&docs, ini_files) {
@@ -116,7 +122,27 @@ fn prepare_inis(
         Ok(()) => eprintln!("eidos play: BSA invalidation on"),
         Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
     }
-    if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
+    if id == "morrowind" {
+        // Morrowind only loads a BSA listed in its numbered [Archives] section;
+        // register every enabled mod's top-level .bsa so BSA-shipping mods work.
+        let mod_bsas: Vec<String> = inst
+            .modlist()
+            .into_iter()
+            .filter(|m| m.enabled)
+            .flat_map(|m| {
+                std::fs::read_dir(&m.path)
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .filter_map(|e| {
+                        let n = e.file_name().to_string_lossy().into_owned();
+                        n.to_ascii_lowercase().ends_with(".bsa").then_some(n)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        let _ = eidos_gamefeatures::register_morrowind_archives(&docs.join("Morrowind.ini"), &mod_bsas);
+    } else if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
         let _ = eidos_gamefeatures::enable_file_selection(&docs, ini);
     }
     Some((docs, ini_files))

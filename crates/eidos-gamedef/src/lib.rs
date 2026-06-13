@@ -221,8 +221,10 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Morrowind",
         nexus_game: "morrowind",
         data_dir: "Data Files",
+        // Morrowind keeps Morrowind.ini in the install directory, not My Games; the
+        // per-profile INI machinery is pointed there by game id (see prepare_inis).
         documents_dir: "",
-        ini_files: &[],
+        ini_files: &["Morrowind.ini"],
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Morrowind.esm"],
         script_extender: None,
@@ -305,7 +307,8 @@ mod tests {
     #[test]
     fn games_with_inis_have_a_documents_dir() {
         for g in GAMES {
-            if !g.ini_files.is_empty() {
+            // Morrowind's INI lives in the install dir, not My Games (special-cased).
+            if !g.ini_files.is_empty() && g.id != "morrowind" {
                 assert!(!g.documents_dir.is_empty(), "{} has INIs but no documents_dir", g.id);
             }
         }
