@@ -47,8 +47,10 @@ impl LayerStack {
     fn whiteout_path(&self, vpath: &str) -> PathBuf {
         let norm = normalize(vpath);
         let name = norm.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let parent = norm.parent().map(Path::to_path_buf).unwrap_or_default();
-        self.overwrite.join(parent).join(format!("{WHITEOUT_PREFIX}{name}"))
+        let parent = norm.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        // Resolve the parent case-insensitively so the marker lands in the same
+        // real directory the file resolves to (not a second case-variant dir).
+        self.resolve_write(&parent).join(format!("{WHITEOUT_PREFIX}{name}"))
     }
 
     /// Find an existing whiteout marker for `vpath`, matching the final path
@@ -114,13 +116,32 @@ impl LayerStack {
         &self.overwrite
     }
 
-    /// The real path in the overwrite layer where a write to `vpath` lands.
+    /// The real path in the overwrite layer where a write to `vpath` lands,
+    /// resolved case-insensitively against the existing overwrite tree: an entry
+    /// that differs only in case is REUSED (so a write / delete / rename hits the
+    /// same real file the reads fold to), and only genuinely-new trailing
+    /// components take the requested casing.
     ///
     /// Writes never touch a lower layer; on first write the daemon copies the
     /// resolved lower file up to this path (copy-on-write) before applying the
-    /// change.
+    /// change. Without the case fold, writing `FOO.TXT` when the overwrite already
+    /// holds `Foo.txt` would create a second case-variant (split-brain), and a
+    /// delete of `FOO.TXT` would miss the `Foo.txt` copy and leave it visible.
     pub fn resolve_write(&self, vpath: &str) -> PathBuf {
-        self.overwrite.join(normalize(vpath))
+        let mut current = self.overwrite.clone();
+        for component in normalize(vpath).components() {
+            let want = component.as_os_str();
+            let exact = current.join(want);
+            if exact.exists() {
+                current = exact;
+                continue;
+            }
+            let matched = fs::read_dir(&current)
+                .ok()
+                .and_then(|rd| rd.flatten().find(|e| eq_ignore_case(e.file_name().as_os_str(), want)));
+            current = matched.map(|e| e.path()).unwrap_or(exact);
+        }
+        current
     }
 
     /// Whether a write to `vpath` needs a copy-up first: it exists in a lower
@@ -557,6 +578,38 @@ mod tests {
         assert_eq!(read(&stack.resolve_read("save.ess").unwrap()), "savedata");
         assert!(stack.resolve_read("save.tmp").is_none()); // old name hidden
         assert_eq!(read(&game.join("save.tmp")), "savedata"); // game pristine
+    }
+
+    #[test]
+    fn writes_and_deletes_fold_case_against_overwrite() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Foo.txt", "vanilla");
+        let stack = LayerStack::new(vec![game], over.clone());
+
+        // Copy the lower file up under its real casing, then diverge it.
+        let dest = stack.open_for_write("Foo.txt").unwrap();
+        fs::write(&dest, "edited").unwrap();
+        assert_eq!(dest, over.join("Foo.txt"));
+
+        // Opening with DIFFERENT casing must reuse the same overwrite file, not
+        // create a second case-variant (split-brain).
+        let again = stack.open_for_write("FOO.TXT").unwrap();
+        assert_eq!(again, over.join("Foo.txt"));
+        let variants: Vec<_> = fs::read_dir(&over)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.eq_ignore_ascii_case("foo.txt"))
+            .collect();
+        assert_eq!(variants.len(), 1, "exactly one overwrite copy, got {variants:?}");
+
+        // Deleting via yet another casing removes the real copy and hides the lower
+        // file - a literal-case delete would have missed the `Foo.txt` copy.
+        stack.remove("foo.TXT").unwrap();
+        assert!(stack.resolve_read("Foo.txt").is_none());
+        assert!(stack.resolve_read("FOO.TXT").is_none());
+        assert!(!over.join("Foo.txt").exists());
     }
 
     #[test]
