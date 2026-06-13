@@ -262,6 +262,12 @@ impl LayerStack {
     /// copy is hidden. File-oriented; lower-only directory renames are not yet
     /// supported.
     pub fn rename(&self, from: &str, to: &str) -> std::io::Result<()> {
+        // A directory rename must move the MERGED subtree (overwrite + every lower
+        // layer), not just the overwrite half - otherwise a lower-only directory
+        // errors and a mixed directory silently loses its lower children.
+        if self.resolve_read(from).is_some_and(|p| p.is_dir()) {
+            return self.rename_dir(from, to);
+        }
         let src = self.open_for_write(from)?;
         let dst = self.resolve_write(to);
         if let Some(parent) = dst.parent() {
@@ -276,6 +282,18 @@ impl LayerStack {
             }
             fs::write(wh, b"")?;
         }
+        Ok(())
+    }
+
+    /// Rename a directory: materialise its merged contents (every layer) under `to`,
+    /// then whiteout `from`. Recurses per child so nested directories and lower-only
+    /// files are copied up and moved, mirroring usvfs's whole-subtree remap.
+    fn rename_dir(&self, from: &str, to: &str) -> std::io::Result<()> {
+        self.make_dir(to)?;
+        for (name, _) in self.list_dir(from) {
+            self.rename(&join_vpath(from, &name), &join_vpath(to, &name))?;
+        }
+        self.remove(from)?;
         Ok(())
     }
 
@@ -362,6 +380,16 @@ fn ntfs_order_key(name: &str) -> Vec<u16> {
 /// Strip a leading slash so a virtual path can be joined onto a real layer root.
 fn normalize(vpath: &str) -> PathBuf {
     PathBuf::from(vpath.trim_start_matches('/'))
+}
+
+/// Join a child entry name onto a virtual directory path.
+fn join_vpath(parent: &str, name: &str) -> String {
+    let p = parent.trim_matches('/');
+    if p.is_empty() {
+        name.to_string()
+    } else {
+        format!("{p}/{name}")
+    }
 }
 
 /// Resolve `vpath` against `root` case-insensitively, component by component,
@@ -744,6 +772,46 @@ mod tests {
         assert!(stack.resolve_read("Foo.txt").is_none());
         assert!(stack.resolve_read("FOO.TXT").is_none());
         assert!(!over.join("Foo.txt").exists());
+    }
+
+    #[test]
+    fn rename_lower_only_directory_moves_the_whole_subtree() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "tools/a.txt", "a");
+        put(&game, "tools/sub/b.txt", "b");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        stack.rename("tools", "tools_bak").unwrap();
+        // Every (lower-only) child arrived at the destination, nesting included...
+        assert_eq!(read(&stack.resolve_read("tools_bak/a.txt").unwrap()), "a");
+        assert_eq!(read(&stack.resolve_read("tools_bak/sub/b.txt").unwrap()), "b");
+        // ...the source is gone (hidden), and the game install stays pristine.
+        assert!(stack.resolve_read("tools/a.txt").is_none());
+        assert!(stack.resolve_read("tools").is_none());
+        assert_eq!(read(&game.join("tools/a.txt")), "a");
+    }
+
+    #[test]
+    fn rename_mixed_directory_keeps_lower_children() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "data/lower.esp", "L"); // only in the game layer
+        let stack = LayerStack::new(vec![game], over);
+        // The game writes a new file into the same dir (overwrite layer).
+        let w = stack.open_for_write("data/over.esp").unwrap();
+        fs::write(&w, "O").unwrap();
+
+        stack.rename("data", "data2").unwrap();
+        // BOTH the lower and the overwrite child move - the lower one is not lost.
+        assert_eq!(read(&stack.resolve_read("data2/lower.esp").unwrap()), "L");
+        assert_eq!(read(&stack.resolve_read("data2/over.esp").unwrap()), "O");
+        let mut names: Vec<String> = stack.list_dir("data2").into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        assert_eq!(names, vec!["lower.esp", "over.esp"]);
+        // Source hidden.
+        assert!(stack.resolve_read("data/lower.esp").is_none());
+        assert!(stack.list_dir("data").is_empty());
     }
 
     #[test]
