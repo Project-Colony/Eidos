@@ -112,7 +112,7 @@ fn prepare_inis(
     }
     // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
     // reset the plugin selection (both written into the deployed profile INIs).
-    match eidos_gamefeatures::enable_bsa_invalidation(&docs, id) {
+    match eidos_gamefeatures::enable_bsa_invalidation(&docs, &inst.overwrite_dir(), id) {
         Ok(()) => eprintln!("eidos play: BSA invalidation on"),
         Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
     }

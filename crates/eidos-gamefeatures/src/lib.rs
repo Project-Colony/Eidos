@@ -33,7 +33,7 @@ pub fn ini_files_for(game_id: &str) -> &'static [&'static str] {
 /// its `[Archive]` INI. FO4/FO4VR/Starfield additionally need `sResourceDataDirsFinal=`
 /// cleared - they ship it as `STRINGS\`, so the engine only scans `Data/Strings` for
 /// loose files and ignores loose textures/meshes/scripts until it is emptied.
-pub fn enable_bsa_invalidation(ini_dir: &Path, game_id: &str) -> io::Result<()> {
+pub fn enable_bsa_invalidation(ini_dir: &Path, data_dir: &Path, game_id: &str) -> io::Result<()> {
     let target = match game_id {
         "fallout4" | "fallout4vr" => "Fallout4Custom.ini",
         "starfield" => "StarfieldCustom.ini",
@@ -47,7 +47,166 @@ pub fn enable_bsa_invalidation(ini_dir: &Path, game_id: &str) -> io::Result<()> 
     if matches!(game_id, "fallout4" | "fallout4vr" | "starfield") {
         set_ini_key(&path, "Archive", "sResourceDataDirsFinal", "")?;
     }
+
+    // Pre-SSE engines (Oblivion/FO3/FNV/Skyrim LE): bInvalidateOlderFiles is
+    // timestamp-relative, so a loose file only wins if newer than the owning BSA -
+    // mod files with preserved archive mtimes routinely lose. MO2 fixes this with
+    // the "ArchiveInvalidation Invalidated" dummy BSA: a minimal archive registered
+    // at the front of the [Archive] list, plus SInvalidationFile cleared so the
+    // legacy ArchiveInvalidation.txt mechanism does not interfere.
+    if let Some(inv) = pre_sse_invalidation(game_id) {
+        // The dummy BSA lives in the Data tree; write it into the writable overwrite
+        // layer (`data_dir`) so the real game install is never touched.
+        let bsa = data_dir.join(inv.bsa_name);
+        if !bsa.exists() {
+            fs::create_dir_all(data_dir)?;
+            fs::write(&bsa, dummy_bsa_bytes(inv.bsa_version))?;
+        }
+        prepend_archive(&path, inv.archive_key, inv.bsa_name)?;
+        set_ini_key(&path, "Archive", "SInvalidationFile", "")?;
+    }
     Ok(())
+}
+
+/// Per-game parameters for the pre-SSE dummy-BSA invalidation; `None` for the
+/// Creation engines (SSE/FO4/Starfield), which use bInvalidateOlderFiles alone.
+struct PreSse {
+    bsa_name: &'static str,
+    bsa_version: u32,
+    archive_key: &'static str,
+}
+
+fn pre_sse_invalidation(game_id: &str) -> Option<PreSse> {
+    match game_id {
+        "oblivion" => {
+            Some(PreSse { bsa_name: "Oblivion - Invalidation.bsa", bsa_version: 0x67, archive_key: "SArchiveList" })
+        }
+        "fallout3" | "falloutnv" => {
+            Some(PreSse { bsa_name: "Fallout - Invalidation.bsa", bsa_version: 0x68, archive_key: "SArchiveList" })
+        }
+        "skyrim" => {
+            Some(PreSse { bsa_name: "Skyrim - Invalidation.bsa", bsa_version: 0x68, archive_key: "sResourceArchiveList" })
+        }
+        _ => None,
+    }
+}
+
+/// Prepend `bsa` to a comma-joined `[Archive]` list key (e.g. `SArchiveList`),
+/// keeping the vanilla archives and skipping if it is already registered.
+fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
+    let existing = fs::read_to_string(ini).unwrap_or_default();
+    let current = get_ini_key(&existing, "Archive", key).unwrap_or_default();
+    if current.split(',').any(|a| a.trim().eq_ignore_ascii_case(bsa)) {
+        return Ok(());
+    }
+    let value = if current.trim().is_empty() {
+        bsa.to_string()
+    } else {
+        format!("{bsa}, {}", current.trim())
+    };
+    set_ini_key(ini, "Archive", key, &value)
+}
+
+/// Read a `[section] key` value from INI text (the shared parser has a setter but
+/// no getter); section and key match case-insensitively.
+fn get_ini_key(text: &str, section: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    for line in text.lines() {
+        let l = line.trim();
+        if let Some(s) = eidos_ini::section_header(l) {
+            in_section = s.eq_ignore_ascii_case(section);
+            continue;
+        }
+        if in_section {
+            if let Some((k, v)) = eidos_ini::key_value(l) {
+                if k.eq_ignore_ascii_case(key) {
+                    return Some(v.trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// MO2's "dummy" invalidation BSA (port of `dummybsa.cpp`): a minimal valid archive
+/// with one empty folder and one zero-byte `dummy.dds`, used purely to be registered
+/// in the archive list so the timestamp invalidation engages. `version` is 0x67
+/// (Oblivion) or 0x68 (FO3/FNV/Skyrim LE). All multi-byte fields are little-endian.
+fn dummy_bsa_bytes(version: u32) -> Vec<u8> {
+    const FILE_NAME: &str = "dummy.dds";
+    let total_file_name_len = (FILE_NAME.len() + 1) as u32; // 10
+
+    let mut out: Vec<u8> = Vec::with_capacity(83);
+    // Header (36 bytes).
+    out.extend_from_slice(b"BSA\0");
+    out.extend_from_slice(&version.to_le_bytes());
+    out.extend_from_slice(&0x24u32.to_le_bytes()); // offset to folder records (= header size)
+    out.extend_from_slice(&(0x01u32 | 0x02).to_le_bytes()); // flags: has dirs + has files
+    out.extend_from_slice(&1u32.to_le_bytes()); // folder count
+    out.extend_from_slice(&1u32.to_le_bytes()); // file count
+    out.extend_from_slice(&1u32.to_le_bytes()); // total folder-names length (empty + null)
+    out.extend_from_slice(&total_file_name_len.to_le_bytes()); // total file-names length
+    out.extend_from_slice(&2u32.to_le_bytes()); // file flags: has dds
+
+    // Folder record (16 bytes): hash of "" (= 0), file count, offset to folder name.
+    out.extend_from_slice(&gen_hash("").to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&(0x34u32 + total_file_name_len).to_le_bytes());
+
+    // File-record block: the folder name ("" + null) then the file record (16 bytes).
+    out.push(0);
+    out.extend_from_slice(&gen_hash(FILE_NAME).to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes()); // size
+    out.extend_from_slice(&(0x44u32 + total_file_name_len + 4).to_le_bytes()); // offset to data
+
+    // The file name + null, then 4 bytes of (zero) file size.
+    out.extend_from_slice(FILE_NAME.as_bytes());
+    out.push(0);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out
+}
+
+fn gen_hash_int(bytes: &[u8]) -> u32 {
+    let mut hash: u32 = 0;
+    for &b in bytes {
+        hash = hash.wrapping_mul(0x1003f).wrapping_add(b as u32);
+    }
+    hash
+}
+
+/// Gamebryo BSA filename hash (port of `dummybsa.cpp::genHash`).
+fn gen_hash(file_name: &str) -> u64 {
+    let lower: Vec<u8> = file_name
+        .bytes()
+        .map(|b| {
+            let c = b.to_ascii_lowercase();
+            if c == b'\\' { b'/' } else { c }
+        })
+        .collect();
+    let ext_pos = lower.iter().rposition(|&b| b == b'.').unwrap_or(lower.len());
+    let length = ext_pos;
+    let ext = &lower[ext_pos..];
+
+    let mut hash: u64 = 0;
+    if length > 0 {
+        let last_before = lower[ext_pos - 1] as u64;
+        let two_before = if length > 2 { lower[ext_pos - 2] as u64 } else { 0 };
+        hash = last_before | (two_before << 8) | ((length as u64) << 16) | ((lower[0] as u64) << 24);
+    }
+    if !ext.is_empty() {
+        match &ext[1..] {
+            b"kf" => hash |= 0x80,
+            b"nif" => hash |= 0x8000,
+            b"dds" => hash |= 0x8080,
+            b"wav" => hash |= 0x8000_0000,
+            _ => {}
+        }
+        let part1_end = ext_pos.saturating_sub(2);
+        let part1: &[u8] = if part1_end > 1 { &lower[1..part1_end] } else { &[] };
+        let temp = (gen_hash_int(part1) as u64).wrapping_add(gen_hash_int(ext) as u64);
+        hash |= (temp & 0xFFFF_FFFF) << 32;
+    }
+    hash
 }
 
 /// MO2 writes `[Launcher] bEnableFileSelection=1` before every run so the Bethesda
@@ -131,7 +290,7 @@ mod tests {
     #[test]
     fn fallout4_invalidation_targets_custom_ini_with_both_keys() {
         let dir = tmp_dir();
-        enable_bsa_invalidation(&dir, "fallout4").unwrap();
+        enable_bsa_invalidation(&dir, &dir, "fallout4").unwrap();
         let s = fs::read_to_string(dir.join("Fallout4Custom.ini")).unwrap();
         assert!(s.contains("bInvalidateOlderFiles=1"));
         assert!(s.contains("sResourceDataDirsFinal=")); // cleared so loose files load
@@ -142,11 +301,47 @@ mod tests {
     #[test]
     fn skyrim_invalidation_only_sets_invalidate_key() {
         let dir = tmp_dir();
-        enable_bsa_invalidation(&dir, "skyrimse").unwrap();
+        enable_bsa_invalidation(&dir, &dir, "skyrimse").unwrap();
         let s = fs::read_to_string(dir.join("Skyrim.ini")).unwrap();
         assert!(s.contains("bInvalidateOlderFiles=1"));
         assert!(!s.contains("sResourceDataDirsFinal")); // Creation/Gamebryo don't use it
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dummy_bsa_has_a_valid_header() {
+        let b = dummy_bsa_bytes(0x67);
+        assert_eq!(b.len(), 83);
+        assert_eq!(&b[0..4], b"BSA\0");
+        assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), 0x67); // version
+        assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()), 0x24); // header size
+        assert_eq!(u32::from_le_bytes(b[16..20].try_into().unwrap()), 1); // folder count
+        assert_eq!(u32::from_le_bytes(b[20..24].try_into().unwrap()), 1); // file count
+        assert!(b.ends_with(b"dummy.dds\0\0\0\0\0")); // name + null + 4-byte size
+    }
+
+    #[test]
+    fn oblivion_invalidation_writes_dummy_bsa_and_registers_it() {
+        let docs = tmp_dir();
+        let data = tmp_dir();
+        // The deployed INI already lists the vanilla archives.
+        fs::write(docs.join("Oblivion.ini"), "[Archive]\r\nSArchiveList=Oblivion - Meshes.bsa\r\n").unwrap();
+        enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
+
+        // The dummy BSA is written into the overwrite (Data) layer, not the game dir.
+        assert!(data.join("Oblivion - Invalidation.bsa").is_file());
+        let ini = fs::read_to_string(docs.join("Oblivion.ini")).unwrap();
+        assert!(ini.contains("bInvalidateOlderFiles=1"));
+        assert!(ini.contains("Oblivion - Invalidation.bsa")); // registered at the front
+        assert!(ini.contains("Oblivion - Meshes.bsa")); // vanilla list kept
+        assert!(ini.contains("SInvalidationFile=")); // legacy mechanism disabled
+        // Idempotent: a second run doesn't double-register.
+        enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
+        let ini2 = fs::read_to_string(docs.join("Oblivion.ini")).unwrap();
+        assert_eq!(ini2.matches("Oblivion - Invalidation.bsa").count(), 1);
+
+        let _ = fs::remove_dir_all(&docs);
+        let _ = fs::remove_dir_all(&data);
     }
 
     #[test]
