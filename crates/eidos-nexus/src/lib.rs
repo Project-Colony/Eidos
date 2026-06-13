@@ -104,10 +104,19 @@ pub struct RemoteFile {
     pub description: String,
 }
 
+/// Nexus rate-limit budget from the `X-RL-*` response headers (MO2 surfaces these
+/// and stops dispatching when exhausted). Fields are `None` until a reply is seen.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RateLimits {
+    pub hourly_remaining: Option<i64>,
+    pub daily_remaining: Option<i64>,
+}
+
 /// The Nexus v1 API client.
 pub struct Nexus {
     agent: ureq::Agent,
     api_key: String,
+    limits: std::cell::Cell<RateLimits>,
 }
 
 fn s(v: &serde_json::Value, k: &str) -> String {
@@ -117,26 +126,60 @@ fn s(v: &serde_json::Value, k: &str) -> String {
 impl Nexus {
     pub fn new(api_key: &str) -> Nexus {
         let agent = ureq::AgentBuilder::new()
-            .user_agent(&format!("Eidos/{} (Linux)", env!("CARGO_PKG_VERSION")))
+            .user_agent(&format!(
+                "Eidos/{} (Linux {})",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::ARCH
+            ))
             .build();
-        Nexus { agent, api_key: api_key.trim().to_string() }
+        Nexus {
+            agent,
+            api_key: api_key.trim().to_string(),
+            limits: std::cell::Cell::new(RateLimits::default()),
+        }
+    }
+
+    /// The most recent rate-limit budget seen (MO2's `X-RL-Hourly/Daily-Remaining`).
+    pub fn rate_limits(&self) -> RateLimits {
+        self.limits.get()
+    }
+
+    fn capture_limits(&self, resp: &ureq::Response) {
+        let parse = |h: &str| resp.header(h).and_then(|x| x.trim().parse::<i64>().ok());
+        self.limits.set(RateLimits {
+            hourly_remaining: parse("X-RL-Hourly-Remaining"),
+            daily_remaining: parse("X-RL-Daily-Remaining"),
+        });
     }
 
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let url = format!("{API_BASE}/{path}");
-        let resp = self
+        // MO2 identifies the client on every v1 request (nxmaccessmanager.cpp
+        // addAPIHeaders): Protocol-Version + Application-Name/-Version with APIKEY.
+        // It also reads the X-RL-* budget from every reply (incl. a 429).
+        match self
             .agent
             .get(&url)
             .set("APIKEY", &self.api_key)
+            .set("Protocol-Version", "1.0.0")
+            .set("Application-Name", "Eidos")
+            .set("Application-Version", env!("CARGO_PKG_VERSION"))
             .call()
-            .map_err(|e| match e {
-                ureq::Error::Status(401, _) => "invalid API key (401)".to_string(),
-                ureq::Error::Status(429, _) => {
-                    "rate limited by Nexus (429) - try again later".to_string()
-                }
-                other => other.to_string(),
-            })?;
-        resp.into_json().map_err(|e| e.to_string())
+        {
+            Ok(resp) => {
+                self.capture_limits(&resp);
+                resp.into_json().map_err(|e| e.to_string())
+            }
+            Err(ureq::Error::Status(code, resp)) => {
+                self.capture_limits(&resp);
+                Err(match code {
+                    401 => "invalid API key (401)".to_string(),
+                    429 => "rate limited by Nexus (429) - try again later".to_string(),
+                    other => format!("Nexus API error (HTTP {other})"),
+                })
+            }
+            Err(other) => Err(other.to_string()),
+        }
     }
 
     /// Validate the key: `users/validate`.
@@ -206,19 +249,40 @@ impl Nexus {
             })
     }
 
-    /// Stream a (non-API) CDN URL to `dest`. Returns the byte count.
+    /// Stream a (non-API) CDN URL to `dest`. Returns the total byte count.
+    ///
+    /// Resumes an interrupted download: if a `<dest>.unfinished` partial is present
+    /// it sends `Range: bytes=<len>-` and appends (MO2 Range-resumes the same
+    /// marker). A server that ignores the range answers `200` instead of `206`, so
+    /// the partial is truncated and the download restarts cleanly.
     pub fn download(&self, url: &str, dest: &Path) -> Result<u64, String> {
-        let resp = self.agent.get(url).call().map_err(|e| e.to_string())?;
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let tmp = unfinished_path(dest); // MO2's in-progress marker (appended, keeps ext)
-        let mut out = fs::File::create(&tmp).map_err(|e| e.to_string())?;
+        let have = fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
+
+        let mut req = self.agent.get(url);
+        if have > 0 {
+            req = req.set("Range", &format!("bytes={have}-"));
+        }
+        let resp = req.call().map_err(|e| e.to_string())?;
+
+        // 206 Partial Content = the server honoured the range, so append; any other
+        // status (200) means it sent the whole file - restart from byte 0.
+        let resuming = have > 0 && resp.status() == 206;
+        let mut out = if resuming {
+            fs::OpenOptions::new().append(true).open(&tmp)
+        } else {
+            fs::File::create(&tmp)
+        }
+        .map_err(|e| e.to_string())?;
+
         let mut reader = resp.into_reader();
         let n = copy_stream(&mut reader, &mut out).map_err(|e| e.to_string())?;
         out.flush().map_err(|e| e.to_string())?;
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
-        Ok(n)
+        Ok(if resuming { have + n } else { n })
     }
 }
 
@@ -243,12 +307,71 @@ fn copy_stream(r: &mut dyn Read, w: &mut dyn Write) -> io::Result<u64> {
     }
 }
 
-/// The file name a CDN URI downloads to (the path's last segment, unescaped).
+/// The file name a CDN URI downloads to: the path's last segment, percent-decoded
+/// and sanitized (an encoded `../` or `/` must not survive into a path join).
 pub fn file_name_from_uri(uri: &str) -> Option<String> {
     let path = uri.split('?').next()?;
     let name = path.rsplit('/').next()?;
-    let name = percent_decode(name);
-    (!name.is_empty()).then_some(name)
+    sanitize_file_name(&percent_decode(name))
+}
+
+/// MO2's `sanitizeFileName` (uibase `filesystemutilities.cpp`): replace control
+/// chars and the Windows-illegal set `\ / : * ? " < > |` with `_`, strip trailing
+/// dots/spaces, and reject the empty / `.` / `..` results (caller falls back to a
+/// synthetic name). Keeps an untrusted CDN/API name from escaping the downloads dir.
+pub fn sanitize_file_name(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim_end_matches(['.', ' ']).to_string();
+    if cleaned.is_empty() || cleaned == "." || cleaned == ".." {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+/// MO2's `getDownloadFileName` uniquification: if `dir/name` already exists, return
+/// the first free `<i>_<name>` (i from 1), else `name` - so re-downloading a file
+/// already on disk never silently clobbers it.
+pub fn unique_download_name(dir: &Path, name: &str) -> String {
+    if !dir.join(name).exists() {
+        return name.to_string();
+    }
+    (1..)
+        .map(|i| format!("{i}_{name}"))
+        .find(|c| !dir.join(c).exists())
+        .unwrap_or_else(|| name.to_string())
+}
+
+/// Flip a download's `.meta` sidecar to `installed=true` / `uninstalled=false`
+/// after the archive is installed (MO2's `markInstalled`), so the Downloads view
+/// and a shared MO2 downloads folder both see it installed. No-op if no sidecar.
+pub fn mark_installed(archive: &Path) -> io::Result<()> {
+    let meta_path = PathBuf::from(format!("{}.meta", archive.display()));
+    let Ok(text) = fs::read_to_string(&meta_path) else {
+        return Ok(());
+    };
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let key = line.trim_start();
+        if key.starts_with("installed=") {
+            out.push_str("installed=true\n");
+        } else if key.starts_with("uninstalled=") {
+            out.push_str("uninstalled=false\n");
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    fs::write(&meta_path, out)
 }
 
 fn percent_decode(sname: &str) -> String {
@@ -401,5 +524,49 @@ mod tests {
             Some("Dynamic String Distributor-107676.7z".to_string())
         );
         assert_eq!(file_name_from_uri("https://host/"), None);
+    }
+
+    #[test]
+    fn sanitizes_encoded_traversal_and_illegal_chars() {
+        // %2e%2e%2f decodes to ../ - the separators must be neutralized so the
+        // name can never escape the downloads dir when joined onto a path.
+        let n = file_name_from_uri("https://cdn/files/%2e%2e%2fevil.7z?md5=x").unwrap();
+        assert!(!n.contains('/') && !n.contains('\\'), "got {n}");
+        assert_ne!(n, "..");
+        assert_eq!(sanitize_file_name("a:b*c?.7z").as_deref(), Some("a_b_c_.7z"));
+        assert_eq!(sanitize_file_name(".."), None);
+        assert_eq!(sanitize_file_name("trailing.  ").as_deref(), Some("trailing"));
+        assert_eq!(sanitize_file_name("   "), None);
+    }
+
+    #[test]
+    fn unique_name_avoids_clobbering_existing_downloads() {
+        let dir = std::env::temp_dir().join(format!("eidos-uniq-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        assert_eq!(unique_download_name(&dir, "Mod.7z"), "Mod.7z");
+        fs::write(dir.join("Mod.7z"), b"x").unwrap();
+        assert_eq!(unique_download_name(&dir, "Mod.7z"), "1_Mod.7z");
+        fs::write(dir.join("1_Mod.7z"), b"x").unwrap();
+        assert_eq!(unique_download_name(&dir, "Mod.7z"), "2_Mod.7z");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mark_installed_flips_sidecar_and_is_a_noop_without_one() {
+        let dir = std::env::temp_dir().join(format!("eidos-mark-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("M.7z");
+        let meta = PathBuf::from(format!("{}.meta", archive.display()));
+        fs::write(&meta, "[General]\nmodID=1\ninstalled=false\nuninstalled=false\nremoved=false\n").unwrap();
+        mark_installed(&archive).unwrap();
+        let t = fs::read_to_string(&meta).unwrap();
+        assert!(t.contains("installed=true"));
+        assert!(t.contains("uninstalled=false"));
+        assert!(t.contains("modID=1")); // other keys preserved
+        // No sidecar = silent no-op, not an error.
+        mark_installed(&dir.join("absent.7z")).unwrap();
+        let _ = fs::remove_dir_all(&dir);
     }
 }
