@@ -344,8 +344,18 @@ impl Filesystem for Eidos {
         // never the read-only mod or game file.
         let accmode = flags.0 & libc::O_ACCMODE;
         let want_write = accmode == libc::O_WRONLY || accmode == libc::O_RDWR;
+        let truncating = want_write && flags.0 & libc::O_TRUNC != 0;
         let real = if want_write {
-            match self.stack.open_for_write(&vpath) {
+            // O_TRUNC discards the existing content, so don't pay to copy the lower
+            // file up first - just prepare the overwrite path (parents + clear
+            // whiteout) and create it empty below. Otherwise copy-up so the backing
+            // file is the Overwrite copy, never the read-only mod/game file.
+            let prepared = if truncating {
+                self.stack.prepare_overwrite(&vpath)
+            } else {
+                self.stack.open_for_write(&vpath)
+            };
+            match prepared {
                 Ok(p) => p,
                 Err(_) => {
                     reply.error(Errno::EIO);
@@ -370,6 +380,12 @@ impl Filesystem for Eidos {
         let mut opts = OpenOptions::new();
         if want_write {
             opts.read(true).write(true);
+            // For O_TRUNC the overwrite file may not exist yet (the copy-up was
+            // skipped): create it and truncate, instead of the old open-then-set_len
+            // which failed (EIO) when the path had no overwrite copy.
+            if truncating {
+                opts.create(true).truncate(true);
+            }
         } else {
             opts.read(true);
         }
@@ -380,9 +396,6 @@ impl Filesystem for Eidos {
                 return;
             }
         };
-        if want_write && flags.0 & libc::O_TRUNC != 0 {
-            let _ = file.set_len(0);
-        }
 
         // Cache the open fd under a fresh handle; try to register it for kernel
         // passthrough (no-op fallback when rootless, where it returns EPERM).
