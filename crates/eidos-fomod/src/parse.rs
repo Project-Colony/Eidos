@@ -47,6 +47,20 @@ fn elements<'a, 'i>(node: Node<'a, 'i>, tag: &str) -> Vec<Node<'a, 'i>> {
     node.children().filter(|c| c.is_element() && c.tag_name().name() == tag).collect()
 }
 
+/// Apply a FOMOD `order` attribute to a parsed list: `Explicit` keeps document
+/// order; `Ascending` (the default when the attribute is absent) and `Descending`
+/// sort by `key` case-insensitively. Stable, so equal keys keep document order.
+fn apply_order<T>(items: &mut [T], order: Option<&str>, key: impl Fn(&T) -> String) {
+    let ord = order.unwrap_or("Ascending");
+    if ord == "Explicit" {
+        return;
+    }
+    items.sort_by_cached_key(|x| key(x).to_ascii_lowercase());
+    if ord == "Descending" {
+        items.reverse();
+    }
+}
+
 impl ModuleConfig {
     /// Parse decoded `ModuleConfig.xml` text.
     pub fn parse(xml: &str) -> Result<ModuleConfig, String> {
@@ -64,9 +78,11 @@ impl ModuleConfig {
                 "moduleDependencies" => mc.module_dependencies = Some(parse_composite(c)),
                 "requiredInstallFiles" => mc.required_files = parse_file_list(c, &mut seq),
                 "installSteps" => {
-                    for s in elements(c, "installStep") {
-                        mc.steps.push(parse_step(s, &mut seq));
-                    }
+                    let mut steps: Vec<InstallStep> =
+                        elements(c, "installStep").into_iter().map(|s| parse_step(s, &mut seq)).collect();
+                    // FOMOD `order` (default Ascending) sorts the steps by name.
+                    apply_order(&mut steps, c.attribute("order"), |s| s.name.clone());
+                    mc.steps.extend(steps);
                 }
                 "conditionalFileInstalls" => mc.conditional_installs = parse_conditional_installs(c, &mut seq),
                 _ => {}
@@ -122,6 +138,10 @@ fn parse_group(node: Node, seq: &mut u32) -> Group {
         for pl in elements(p, "plugin") {
             plugins.push(parse_plugin(pl, seq));
         }
+        // FOMOD `order` (default Ascending) sorts the options by name; each
+        // FileItem's sequence stays document-order so install-priority ties are
+        // unaffected.
+        apply_order(&mut plugins, p.attribute("order"), |pl| pl.name.clone());
     }
     Group { name, group_type, plugins }
 }
@@ -327,6 +347,35 @@ mod tests {
         // "<a/>" in UTF-16LE with a BOM.
         let bytes = [0xFF, 0xFE, b'<', 0, b'a', 0, b'/', 0, b'>', 0];
         assert_eq!(decode_xml(&bytes), "<a/>");
+    }
+
+    #[test]
+    fn plugins_default_to_ascending_order() {
+        const XML: &str = r#"<config>
+  <moduleName>T</moduleName>
+  <installSteps>
+    <installStep name="S">
+      <optionalFileGroups>
+        <group name="G" type="SelectAny">
+          <plugins>
+            <plugin name="Zebra"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+            <plugin name="Apple"><typeDescriptor><type name="Optional"/></typeDescriptor></plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>"#;
+        // No `order` on <plugins> -> MO2 sorts alphabetically.
+        let mc = ModuleConfig::parse(XML).unwrap();
+        let names: Vec<&str> = mc.steps[0].groups[0].plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Apple", "Zebra"]);
+
+        // Explicit keeps document order.
+        let explicit = XML.replace("<plugins>", r#"<plugins order="Explicit">"#);
+        let mc2 = ModuleConfig::parse(&explicit).unwrap();
+        let names2: Vec<&str> = mc2.steps[0].groups[0].plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names2, vec!["Zebra", "Apple"]);
     }
 
     #[test]

@@ -274,7 +274,7 @@ mod tests {
     <installStep name="S">
       <optionalFileGroups>
         <group name="G" type="SelectExactlyOne">
-          <plugins>
+          <plugins order="Explicit">
             <plugin name="Rec">
               <conditionFlags><flag name="v">on</flag></conditionFlags>
               <files><file source="rec.esp" destination="rec.esp"/></files>
