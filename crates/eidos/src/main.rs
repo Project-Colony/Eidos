@@ -233,6 +233,13 @@ fn run_through_view(
     prepare_plugins(id, game, inst);
     let save_bind = prepare_saves(id, game, inst);
 
+    // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
+    // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins.
+    let mut env = env;
+    if let Some(kv) = forced_dll_overrides(inst) {
+        env.push(kv);
+    }
+
     let spec = LaunchSpec {
         layers: inst.load_order(),
         overwrite: inst.overwrite_dir(),
@@ -265,6 +272,41 @@ fn run_through_view(
             exit(1)
         }
     }
+}
+
+/// If any enabled mod (or the Overwrite layer) ships a top-level DLL that shadows a
+/// Wine builtin (ENB/ReShade graphics DLLs, `.asi` loaders), compose the
+/// `WINEDLLOVERRIDES` that makes Wine load it native-then-builtin (`n,b`) -
+/// otherwise the builtin wins and the mod DLL never loads. Mirrors MO2's forced
+/// libraries (its per-executable opt-in), restricted to known graphics/loader names.
+fn forced_dll_overrides(inst: &Instance) -> Option<(String, String)> {
+    const BUILTIN_SHADOWS: &[&str] = &[
+        "d3d8", "d3d9", "d3d10", "d3d11", "d3d12", "dxgi", "dinput", "dinput8", "winmm",
+        "xinput1_3", "x3daudio1_7", "opengl32", "d3dcompiler_47",
+    ];
+    let mut roots: Vec<PathBuf> =
+        inst.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect();
+    roots.push(inst.overwrite_dir());
+
+    let mut stems: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for root in roots {
+        let Ok(rd) = std::fs::read_dir(&root) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if let Some(stem) = name.strip_suffix(".dll") {
+                if BUILTIN_SHADOWS.contains(&stem) {
+                    stems.insert(stem.to_string());
+                }
+            }
+        }
+    }
+    if stems.is_empty() {
+        return None;
+    }
+    let stems: Vec<String> = stems.into_iter().collect();
+    let value =
+        eidos_launch::wine_dll_overrides(&stems, std::env::var("WINEDLLOVERRIDES").ok().as_deref());
+    Some(("WINEDLLOVERRIDES".to_string(), value))
 }
 
 /// Per-game default tools: the script extender, when present in the game dir.

@@ -136,6 +136,14 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // the CWD. If the CWD isn't the game root, every CommonLibSSE-NG SKSE plugin
     // fails with "Failed to locate an appropriate address library" and aborts.
     // `mountpoint` is the game's Data dir, so its parent is the game root.
+    // Become the subreaper for the launched process tree, so a tool or game that
+    // spawns a sibling and exits (Wrye Bash launching the game, a loader-style tool,
+    // FNIS spawning a worker) is still waited on before we tear the union down - the
+    // Linux equivalent of MO2's job-object wait. Reparented descendants become our
+    // children once their direct parent dies.
+    // SAFETY: prctl with a constant option/arg has no memory-safety preconditions.
+    unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1 as libc::c_ulong) };
+
     let mut cmd = Command::new(&spec.command[0]);
     cmd.args(&spec.command[1..]);
     cmd.envs(spec.env.iter().map(|(k, v)| (k, v)));
@@ -151,8 +159,23 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     }
     let status = cmd.status();
 
+    // Wait for any reparented descendants to finish before unmounting, so a process
+    // that outlived its direct parent doesn't get ENOTCONN on the union mid-run (and
+    // the caller's capture_inis runs only once the real workload is gone). The direct
+    // child has already been reaped by `Command::status`.
+    reap_descendants();
+
     drop(session); // unmount
     status
+}
+
+/// Reap every remaining reparented descendant; returns once none are left
+/// (`waitpid` -> `ECHILD`). Blocks like Steam's reaper so the union stays mounted
+/// for the whole process tree.
+fn reap_descendants() {
+    // SAFETY: waitpid(-1, NULL, 0) is a valid blocking wait for any child; it
+    // returns <= 0 (ECHILD) once none remain.
+    while unsafe { libc::waitpid(-1, std::ptr::null_mut(), 0) } > 0 {}
 }
 
 /// Compose a `WINEDLLOVERRIDES` value forcing `stems` to load native-then-builtin
