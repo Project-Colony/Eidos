@@ -22,6 +22,12 @@ use std::path::{Path, PathBuf};
 /// touching the read-only mod and game layers.
 const WHITEOUT_PREFIX: &str = ".eidoswh.";
 
+/// Marker file dropped INSIDE an overwrite directory that was deleted and then
+/// re-created: it makes the directory opaque (its lower-layer contents stay
+/// hidden), matching NTFS where a recreated directory is empty. Distinct from the
+/// per-file `.eidoswh.<name>` whiteout so it is never mistaken for one.
+const OPAQUE_MARKER: &str = ".eidoswh_opaque";
+
 /// An ordered union of layers with a writable top layer.
 ///
 /// `layers[0]` has the highest priority (the last-enabled mod wins on conflict);
@@ -105,10 +111,29 @@ impl LayerStack {
         if let Some(p) = ci_lookup(&self.overwrite, vpath) {
             return Some(p);
         }
-        if self.hidden_by_whiteout(vpath) {
+        if self.hidden_by_whiteout(vpath) || self.under_opaque_dir(vpath) {
             return None;
         }
         self.layers.iter().find_map(|layer| ci_lookup(layer, vpath))
+    }
+
+    /// Whether `vpath` lies under a directory that was deleted and then re-created
+    /// in the overwrite layer (carrying an opaque marker). Such a directory hides
+    /// its lower-layer contents, so a lower file beneath it must not resolve.
+    fn under_opaque_dir(&self, vpath: &str) -> bool {
+        let norm = normalize(vpath);
+        let comps: Vec<_> = norm.components().collect();
+        let mut prefix = PathBuf::new();
+        // Proper ancestors only: each directory above the leaf component.
+        for comp in comps.iter().take(comps.len().saturating_sub(1)) {
+            prefix.push(comp);
+            if let Some(dir) = ci_lookup(&self.overwrite, &prefix.to_string_lossy()) {
+                if dir.join(OPAQUE_MARKER).exists() {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// The overwrite layer's root directory (for statfs / free-space queries).
@@ -177,8 +202,17 @@ impl LayerStack {
     /// returning its real path. Idempotent.
     pub fn make_dir(&self, vpath: &str) -> std::io::Result<PathBuf> {
         let dest = self.resolve_write(vpath);
+        // If this directory was previously deleted (a whiteout) and still exists in
+        // a lower layer, re-creating it must NOT resurrect the deleted lower
+        // contents (NTFS: a recreated directory is empty). Clearing the whiteout
+        // alone would expose them, so drop an opaque marker that list_dir /
+        // resolve_read honour to keep the lower files hidden.
+        let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
         self.clear_whiteout(vpath);
+        if was_deleted && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
+            let _ = fs::write(dest.join(OPAQUE_MARKER), b"");
+        }
         Ok(dest)
     }
 
@@ -251,10 +285,15 @@ impl LayerStack {
         let mut out: Vec<(String, PathBuf)> = Vec::new();
 
         // Overwrite layer first: collect whiteouts (and hide the markers).
+        let mut opaque = false;
         if let Some(dir) = ci_lookup(&self.overwrite, vpath).filter(|d| d.is_dir()) {
             if let Ok(entries) = fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().into_owned();
+                    if name == OPAQUE_MARKER {
+                        opaque = true;
+                        continue;
+                    }
                     if let Some(hidden) = name.strip_prefix(WHITEOUT_PREFIX) {
                         whiteouts.insert(hidden.to_ascii_lowercase());
                         continue;
@@ -266,9 +305,10 @@ impl LayerStack {
             }
         }
 
-        // If this directory was itself deleted and then re-created in the
-        // overwrite layer it is opaque: its lower-layer contents stay hidden.
-        if self.find_whiteout(vpath).is_some() {
+        // If this directory was itself deleted and then re-created in the overwrite
+        // layer it is opaque (a whiteout on it, or an opaque marker inside it): its
+        // lower-layer contents stay hidden.
+        if opaque || self.find_whiteout(vpath).is_some() {
             return out;
         }
 
@@ -660,6 +700,32 @@ mod tests {
         assert_eq!(names, vec!["new.esp"]);
         assert_eq!(read(&stack.resolve_read("data/new.esp").unwrap()), "fresh");
         assert!(stack.resolve_read("data/old.esp").is_none());
+    }
+
+    #[test]
+    fn rmdir_then_mkdir_keeps_deleted_lower_files_hidden() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "cache/a.txt", "lower-a");
+        put(&game, "cache/b.txt", "lower-b");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        // The classic "clear the cache dir, then recreate it" pattern: deleting the
+        // dir removes the per-file child markers, so make_dir must re-establish
+        // opacity itself or the lower files come back.
+        stack.remove("cache/a.txt").unwrap();
+        stack.remove("cache/b.txt").unwrap();
+        stack.remove("cache").unwrap(); // rmdir: destroys the child whiteouts
+        stack.make_dir("cache").unwrap(); // mkdir: recreate
+
+        // NTFS: a recreated directory is empty. The deleted lower files must NOT
+        // resurface in lookups or the listing.
+        assert!(stack.resolve_read("cache/a.txt").is_none(), "a.txt resurrected");
+        assert!(stack.resolve_read("cache/b.txt").is_none(), "b.txt resurrected");
+        let names: Vec<String> = stack.list_dir("cache").into_iter().map(|(n, _)| n).collect();
+        assert!(names.is_empty(), "recreated dir should be empty, got {names:?}");
+        // The game install stays pristine.
+        assert_eq!(read(&game.join("cache/a.txt")), "lower-a");
     }
 
     #[test]
