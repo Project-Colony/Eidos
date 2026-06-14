@@ -132,6 +132,13 @@ enum Message {
     InfoSelectTab(InfoTab),
     NotesChanged(String),
     NotesSave,
+    // ---- toolbar ----
+    /// Re-open the game picker to switch the managed game (MO2 switch-instance).
+    ChangeGame,
+    /// Open the current game's Nexus page in the browser.
+    OpenNexusGame,
+    /// Open the instance's root folder in the file manager.
+    OpenInstanceFolder,
     Noop,
 }
 
@@ -923,6 +930,28 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ChangeGame => {
+            // Re-open the game picker; keep detection and any selection.
+            app.menu_mod = None;
+            app.info_mod = None;
+            app.error = None;
+            app.screen = Screen::Game;
+        }
+        Message::OpenNexusGame => {
+            let domain = selected_game(app).map(|g| g.def.nexus_game).filter(|s| !s.is_empty());
+            let url = match domain {
+                Some(d) => format!("https://www.nexusmods.com/{d}"),
+                None => "https://www.nexusmods.com".to_string(),
+            };
+            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+            app.status = Some(format!("Opening {url}"));
+        }
+        Message::OpenInstanceFolder => {
+            if let Some(inst) = &app.created {
+                let _ = std::process::Command::new("xdg-open").arg(&inst.root).spawn();
+                app.status = Some(format!("Opened {}", inst.root.display()));
+            }
+        }
         Message::ShowModInfo(i) => {
             app.menu_mod = None;
             let notes = match (app.created.as_ref(), app.mods.get(i)) {
@@ -1317,12 +1346,12 @@ fn toolbar<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(2)
         .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::InstallMod))
-        .push(icon_text_btn(IC_NEXUS, "Nexus", Message::Noop))
-        .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::Noop))
+        .push(icon_text_btn(IC_NEXUS, "Nexus", Message::OpenNexusGame))
+        .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::ChangeGame))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
         .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::Noop))
         .push(icon_text_btn(IC_TOOLS, "Tools", Message::Noop))
-        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::Noop))
+        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenInstanceFolder))
         .push(Space::with_width(Length::Fill))
         .push(icon_btn(IC_ENDORSE, 20.0, Some(Message::Noop)))
         .push(icon_btn(IC_UPDATE, 20.0, Some(Message::Noop)))
