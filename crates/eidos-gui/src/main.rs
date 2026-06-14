@@ -36,6 +36,7 @@ const IC_CONFLICT_OVERWRITE: &[u8] = include_bytes!("../assets/icons/conflict-ov
 const IC_CONFLICT_OVERWRITTEN: &[u8] = include_bytes!("../assets/icons/conflict-overwritten.png");
 const IC_CONFLICT_MIXED: &[u8] = include_bytes!("../assets/icons/conflict-mixed.png");
 const IC_CONFLICT_REDUNDANT: &[u8] = include_bytes!("../assets/icons/conflict-redundant.png");
+const IC_CONFLICT_HIDDEN: &[u8] = include_bytes!("../assets/icons/conflict-hidden.png");
 const IC_RUN: &[u8] = include_bytes!("../assets/icons/media-playback-start.png");
 const IC_UP: &[u8] = include_bytes!("../assets/icons/go-up.png");
 const IC_DOWN: &[u8] = include_bytes!("../assets/icons/go-down.png");
@@ -976,7 +977,13 @@ fn toolbar<'a>() -> Element<'a, Message> {
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
-fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag_icon: Option<&'static [u8]>) -> Element<'a, Message> {
+fn mod_row<'a>(
+    i: usize,
+    m: &ModEntry,
+    len: usize,
+    flag_icon: Option<&'static [u8]>,
+    hidden_icon: Option<&'static [u8]>,
+) -> Element<'a, Message> {
     let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
     let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let toggle = button(text(if m.enabled { "[x]" } else { "[ ]" }).size(12.0))
@@ -984,11 +991,15 @@ fn mod_row<'a>(i: usize, m: &ModEntry, len: usize, flag_icon: Option<&'static [u
         .on_press(Message::ToggleMod(i))
         .style(button::secondary);
 
-    // MO2's conflict emblem, or an empty cell.
-    let flag_cell: Element<'a, Message> = match flag_icon {
-        Some(bytes) => container(icon(bytes, 14.0)).width(C_FLAGS).into(),
-        None => text("").width(C_FLAGS).into(),
-    };
+    // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
+    let mut flags = Row::new().spacing(2);
+    if let Some(bytes) = flag_icon {
+        flags = flags.push(icon(bytes, 14.0));
+    }
+    if let Some(bytes) = hidden_icon {
+        flags = flags.push(icon(bytes, 14.0));
+    }
+    let flag_cell: Element<'a, Message> = container(flags).width(C_FLAGS).into();
 
     Row::new()
         .spacing(6)
@@ -1048,7 +1059,17 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         } else {
             None
         };
-        list = list.push(striped(mod_row(i, m, len, flag_icon), i % 2 == 0));
+        // A separate hidden-files glyph (MO2's FLAG_HIDDEN_FILES), shown alongside.
+        let hidden_icon = if m.enabled {
+            app.conflicts
+                .as_ref()
+                .and_then(|c| c.mods.get(&((i + 1) as u32)))
+                .filter(|mc| mc.has_hidden)
+                .map(|_| IC_CONFLICT_HIDDEN)
+        } else {
+            None
+        };
+        list = list.push(striped(mod_row(i, m, len, flag_icon, hidden_icon), i % 2 == 0));
     }
 
     let overwrite = button(
@@ -1306,6 +1327,16 @@ fn compute_conflicts(app: &App) -> Option<ConflictMap> {
             root: m.path.clone(),
         })
         .collect();
+    // MO2's Overwrite is an always-active, top-priority pseudo-mod (xEdit / Bashed
+    // Patch output lands there); include it at the front so the mods it shadows get
+    // the overwritten emblem. Its whiteout markers are skipped by collect_files, and
+    // its reserved origin (u32::MAX) keeps it distinct from BASE_ORIGIN (0).
+    if let Some(inst) = app.created.as_ref() {
+        let ow = inst.overwrite_dir();
+        if ow.is_dir() {
+            layers.insert(0, Layer { origin: u32::MAX, name: "Overwrite".to_string(), root: ow });
+        }
+    }
     layers.push(Layer {
         origin: 0,
         name: format!("[{}]", game.def.id),
