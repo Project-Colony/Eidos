@@ -341,7 +341,7 @@ mod tests {
         list.write_load_order(&dir, &se()).unwrap();
         // The on-disk bytes are CP1252 (é = 0xE9), not UTF-8.
         let raw = fs::read(dir.join("plugins.txt")).unwrap();
-        assert!(raw.iter().any(|&b| b == 0xE9), "accented name must be CP1252-encoded");
+        assert!(raw.contains(&0xE9), "accented name must be CP1252-encoded");
         assert!(std::str::from_utf8(&raw).is_err(), "plugins.txt is not valid UTF-8");
         // ...and read_active decodes it back instead of discarding the file.
         let active = PluginList::read_active(&dir, &se());
