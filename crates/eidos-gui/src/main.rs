@@ -115,6 +115,8 @@ enum Message {
     RenameStart(usize),
     RenameChanged(String),
     RenameCommit,
+    /// Enable/disable an ESP/ESM in the Plugins tab, persisting plugins.txt.
+    TogglePlugin(usize),
     Noop,
 }
 
@@ -861,6 +863,38 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                                 }
                                 Err(e) => app.status = Some(format!("Rename failed: {e}")),
                             }
+                        }
+                    }
+                }
+            }
+        }
+        Message::TogglePlugin(i) => {
+            // Compute the spec + prefix dir up front (immutable borrows of `app`)
+            // before mutating `app.plugins`.
+            let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
+            let prefix = selected_game(app).and_then(|g| g.compatdata.as_ref().map(|cd| cd.join("pfx")));
+            let name = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.name.clone());
+            if let (Some(spec), Some(name)) = (spec, name) {
+                // Base-game masters are implicit and always loaded; refuse to toggle.
+                if spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name)) {
+                    app.status = Some(format!("{name} is a base-game master and is always loaded."));
+                } else if let Some(list) = app.plugins.as_mut() {
+                    let now = list.plugins.get(i).map(|p| p.enabled).unwrap_or(false);
+                    list.set_enabled(&name, !now);
+                    list.refresh(&spec);
+                    match prefix.map(|pfx| plugins_txt_dir(&pfx, &spec)) {
+                        Some(dir) => match list.write_load_order(&dir, &spec) {
+                            Ok(()) => {
+                                app.status =
+                                    Some(format!("{} {name}.", if now { "Disabled" } else { "Enabled" }));
+                            }
+                            Err(e) => app.status = Some(format!("Could not write plugins.txt: {e}")),
+                        },
+                        None => {
+                            app.status = Some(
+                                "Toggled; it will persist once the game's Proton prefix exists (launch it once)."
+                                    .to_string(),
+                            );
                         }
                     }
                 }
@@ -1709,6 +1743,8 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Plugin").size(11.0).width(Length::Fill))
         .push(text("Type").size(11.0).width(Length::Fixed(36.0)));
 
+    // Base-game masters are implicit/always-on; show them as forced, not togglable.
+    let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
     let mut rows = Column::new().spacing(1);
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
@@ -1719,10 +1755,23 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             "esp"
         };
+        let is_primary = spec
+            .as_ref()
+            .map(|s| s.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(&p.name)))
+            .unwrap_or(false);
+        let toggle: Element<'a, Message> = if is_primary {
+            text("[x]").size(11.0).into()
+        } else {
+            button(text(if p.enabled { "[x]" } else { "[ ]" }).size(11.0))
+                .padding(1)
+                .on_press(Message::TogglePlugin(i))
+                .style(button::text)
+                .into()
+        };
         let row = Row::new()
             .spacing(6)
             .push(text(idx).size(11.0).width(Length::Fixed(52.0)))
-            .push(text(if p.enabled { "[x]" } else { "[ ]" }).size(11.0).width(Length::Fixed(28.0)))
+            .push(container(toggle).width(Length::Fixed(28.0)))
             .push(text(p.name.clone()).size(12.0).width(Length::Fill))
             .push(text(kind).size(10.0).width(Length::Fixed(36.0)));
         rows = rows.push(striped(row.into(), i % 2 == 0));
