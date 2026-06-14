@@ -705,11 +705,18 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
             } else if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
-                // build the launch environment. Point the user at the option.
-                app.status = Some(
-                    "To launch from here, set the game's Steam launch option to:  eidos-gui %command%  then press Play in Steam (Eidos opens, then click Run)."
-                        .to_string(),
-                );
+                // build the launch environment. Point the user at the option, with
+                // this binary's absolute path (Steam's launch options don't see
+                // ~/.cargo/bin on PATH) and native d3dcompiler forced so the game's
+                // shader compilation works under Proton. Eidos merges that with any
+                // mod-shipped DLL overrides at launch.
+                let exe = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.to_str().map(str::to_string))
+                    .unwrap_or_else(|| "eidos-gui".to_string());
+                app.status = Some(format!(
+                    "Set the game's Steam launch option to:  WINEDLLOVERRIDES=\"d3dcompiler_47=n\" {exe} %command%  then press Play in Steam (Eidos opens, then click Run)."
+                ));
             } else if let (Some(game), Some(_)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
                 match launch_through_eidos(id, &app.launch_command) {

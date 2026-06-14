@@ -115,6 +115,10 @@ To launch the game itself through Eidos, set its Steam launch option to:
 eidos play skyrimse -- %command%
 ```
 
+Prefix it with `WINEDLLOVERRIDES="d3dcompiler_47=n"` if Proton needs native
+d3dcompiler for shader compilation; Eidos merges that with any DLL overrides a
+mod ships (ENB/ReShade/`.asi` loaders).
+
 ## GUI
 
 ```sh
@@ -126,10 +130,25 @@ welcome -> instance type (portable / global) -> game -> name & location ->
 summary -> create -> main screen.
 
 The two-pane main window is built too: a profile picker (switch, or create a new
-one by copying the current), a mod list you enable/disable and reorder (with a
-per-mod conflict flag), and Data / Plugins / Conflicts / Overwrite / Downloads
-tabs plus a Run button. The Plugins tab is the ESP/ESM/ESL load order; the
-Conflicts tab explains the per-file winners and losers.
+one by copying the current), a mod list you filter, select, reorder and
+right-click for actions (enable/disable, send to top/bottom, open in explorer,
+visit on Nexus, reinstall, rename, remove, information), and Data / Plugins /
+Conflicts / Overwrite / Downloads tabs plus a Run button. The Plugins tab is the
+ESP/ESM/ESL load order (toggle each plugin); the Conflicts tab explains the
+per-file winners and losers; "Information..." opens a per-mod dialog (general,
+conflicts, filetree, notes).
+
+To launch the game through the GUI, set the game's Steam launch option to its
+absolute path (Steam doesn't see `~/.cargo/bin` on PATH), forcing native
+d3dcompiler so Proton shader compilation works:
+
+```
+WINEDLLOVERRIDES="d3dcompiler_47=n" ~/.cargo/bin/eidos-gui %command%
+```
+
+Eidos opens on the game's instance; click Run to launch it through the merged
+view. (The Run button shows this exact line, with the running binary's real
+path, if you press it outside Steam.)
 
 ## Try the proof of concept
 
