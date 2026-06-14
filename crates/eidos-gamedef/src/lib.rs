@@ -5,13 +5,24 @@
 //! and primary masters, and the script-extender loader.
 //!
 //! This is the single source of truth the other crates read from, so adding a
-//! game is one row here instead of edits scattered across detection, plugins, and
-//! game features. The crate is pure data with no dependencies, so everything can
-//! depend on it without cycles.
+//! built-in game is one row in [`GAMES`] instead of edits scattered across
+//! detection, plugins, and game features.
+//!
+//! Games can also be added WITHOUT recompiling, the way MO2's `basic_games` plugin
+//! lets simple games be declared as data: drop a `<id>.toml` into
+//! `$XDG_CONFIG_HOME/eidos/games/` (or `~/.config/eidos/games/`) and it joins the
+//! registry on next launch (see [`all`]). A definition with `load_order = "None"`
+//! and no `ini_files`/`primary_plugins` is a "generic" game - just the file union
+//! over its data dir, no plugins.txt / BSA / INI machinery - which covers most
+//! non-Bethesda games (Stardew, Unity/Unreal titles, ...).
 //!
 //! Not yet modelled (MO2 has them; add when Eidos needs them): DLC/Creation-Club
 //! plugin lists, `SortMechanism` (LOOT/BOSS), game variants (GOTY editions), and
 //! the forced-load library list (we derive that from mods at launch instead).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// How a game persists its plugin load order on disk (MO2's `LoadOrderMechanism`,
 /// specialised to what Eidos actually writes).
@@ -26,6 +37,9 @@ pub enum LoadOrder {
     /// Load order is the plugins' file modification time. Oblivion, Morrowind -
     /// not managed by Eidos's plugin system yet.
     FileTime,
+    /// No plugin load order at all (MO2's `LoadOrderMechanism::None`): a generic,
+    /// non-Bethesda game that mods purely by merging files over its data dir.
+    None,
 }
 
 /// A game's script-extender launch swap. MO2 surfaces the loader as an executable
@@ -245,15 +259,137 @@ pub static GAMES: &[GameDef] = &[
 ];
 
 impl GameDef {
-    /// The definition for an Eidos game id, or `None` if unknown.
+    /// The definition for an Eidos game id (built-in or user TOML), or `None`.
     pub fn for_id(id: &str) -> Option<&'static GameDef> {
-        GAMES.iter().find(|g| g.id == id)
+        all().iter().find(|g| g.id.eq_ignore_ascii_case(id))
     }
 }
 
-/// All known game definitions.
+/// Every game definition Eidos knows: the built-in [`GAMES`] plus any user TOML
+/// definitions in `$XDG_CONFIG_HOME/eidos/games/`, loaded once. A user definition
+/// whose `id` matches a built-in overrides it; the rest are appended.
 pub fn all() -> &'static [GameDef] {
-    GAMES
+    static REGISTRY: OnceLock<Vec<GameDef>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut games: Vec<GameDef> = GAMES.to_vec();
+        for g in load_games_from(&user_games_dir()) {
+            match games.iter_mut().find(|b| b.id.eq_ignore_ascii_case(g.id)) {
+                Some(slot) => *slot = g,
+                None => games.push(g),
+            }
+        }
+        games
+    })
+}
+
+/// The directory user TOML game definitions are read from.
+fn user_games_dir() -> PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config")
+        });
+    base.join("eidos").join("games")
+}
+
+/// Parse every `*.toml` game definition in `dir`, ignoring invalid ones with a
+/// warning. Public for tooling and tests.
+pub fn load_games_from(dir: &Path) -> Vec<GameDef> {
+    let Ok(rd) = fs::read_dir(dir) else { return Vec::new() };
+    let mut out = Vec::new();
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("toml")) {
+            match fs::read_to_string(&p).ok().and_then(|t| parse_game(&t)) {
+                Some(g) => out.push(g),
+                None => eprintln!("eidos: ignoring invalid game definition {}", p.display()),
+            }
+        }
+    }
+    out
+}
+
+/// Parse one TOML game definition into a (leaked, `'static`) [`GameDef`].
+pub fn parse_game(toml: &str) -> Option<GameDef> {
+    toml::from_str::<RawGameDef>(toml).ok().map(RawGameDef::into_gamedef)
+}
+
+/// The owned, deserializable shape of a TOML game definition. The Bethesda-specific
+/// fields all default to empty, so a generic game needs only `id`, `name`,
+/// `steam_app_id`, and `data_dir`.
+#[derive(serde::Deserialize)]
+struct RawGameDef {
+    id: String,
+    name: String,
+    #[serde(default)]
+    short_name: String,
+    #[serde(default)]
+    nexus_game: String,
+    steam_app_id: u32,
+    data_dir: String,
+    #[serde(default)]
+    documents_dir: String,
+    #[serde(default)]
+    ini_files: Vec<String>,
+    #[serde(default = "default_load_order")]
+    load_order: String,
+    #[serde(default)]
+    primary_plugins: Vec<String>,
+    #[serde(default)]
+    script_extender: Option<RawScriptExtender>,
+}
+
+#[derive(serde::Deserialize)]
+struct RawScriptExtender {
+    launcher: String,
+    loader: String,
+}
+
+fn default_load_order() -> String {
+    "None".to_string()
+}
+
+impl RawGameDef {
+    fn into_gamedef(self) -> GameDef {
+        GameDef {
+            id: leak(self.id),
+            name: leak(self.name),
+            short_name: leak(self.short_name),
+            nexus_game: leak(self.nexus_game),
+            steam_app_id: self.steam_app_id,
+            data_dir: leak(self.data_dir),
+            documents_dir: leak(self.documents_dir),
+            ini_files: leak_vec(self.ini_files),
+            load_order: parse_load_order(&self.load_order),
+            primary_plugins: leak_vec(self.primary_plugins),
+            script_extender: self.script_extender.map(|s| ScriptExtender {
+                launcher: leak(s.launcher),
+                loader: leak(s.loader),
+            }),
+        }
+    }
+}
+
+fn parse_load_order(s: &str) -> LoadOrder {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "asterisk" => LoadOrder::Asterisk,
+        "plainlist" => LoadOrder::PlainList,
+        "filetime" => LoadOrder::FileTime,
+        _ => LoadOrder::None,
+    }
+}
+
+/// Leak an owned string to `'static`. Game definitions are loaded once at startup
+/// and live for the whole run, so this permanent allocation is intentional: it lets
+/// a loaded game share the exact `&'static str` shape of a built-in, with zero
+/// ripple on the ~35 read sites across the workspace.
+fn leak(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+fn leak_vec(v: Vec<String>) -> &'static [&'static str] {
+    Box::leak(v.into_iter().map(leak).collect::<Vec<_>>().into_boxed_slice())
 }
 
 #[cfg(test)]
@@ -312,6 +448,77 @@ mod tests {
                 assert!(!g.documents_dir.is_empty(), "{} has INIs but no documents_dir", g.id);
             }
         }
+    }
+
+    #[test]
+    fn parses_a_generic_game_definition() {
+        // The minimum a non-Bethesda game needs: id, name, app id, data dir.
+        let g = parse_game(
+            r#"
+            id = "stardew"
+            name = "Stardew Valley"
+            steam_app_id = 413150
+            data_dir = "Mods"
+            "#,
+        )
+        .unwrap();
+        assert_eq!(g.id, "stardew");
+        assert_eq!(g.steam_app_id, 413150);
+        assert_eq!(g.data_dir, "Mods");
+        // Generic: no Bethesda machinery, so the engine is just the file union.
+        assert_eq!(g.load_order, LoadOrder::None);
+        assert!(g.ini_files.is_empty());
+        assert!(g.primary_plugins.is_empty());
+        assert!(g.script_extender.is_none());
+    }
+
+    #[test]
+    fn parses_a_full_bethesda_style_definition() {
+        let g = parse_game(
+            r#"
+            id = "skyrimse-custom"
+            name = "Skyrim SE (custom)"
+            short_name = "SkyrimSE"
+            nexus_game = "skyrimspecialedition"
+            steam_app_id = 489830
+            data_dir = "Data"
+            documents_dir = "Skyrim Special Edition"
+            ini_files = ["Skyrim.ini", "SkyrimPrefs.ini"]
+            load_order = "Asterisk"
+            primary_plugins = ["Skyrim.esm", "Update.esm"]
+            script_extender = { launcher = "SkyrimSELauncher.exe", loader = "skse64_loader.exe" }
+            "#,
+        )
+        .unwrap();
+        assert_eq!(g.load_order, LoadOrder::Asterisk);
+        assert_eq!(g.ini_files, ["Skyrim.ini", "SkyrimPrefs.ini"].as_slice());
+        assert_eq!(g.primary_plugins, ["Skyrim.esm", "Update.esm"].as_slice());
+        assert_eq!(g.script_extender.unwrap().loader, "skse64_loader.exe");
+    }
+
+    #[test]
+    fn load_games_from_reads_only_toml() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir()
+            .join(format!("eidos-games-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("stardew.toml"),
+            "id = \"stardew\"\nname = \"Stardew\"\nsteam_app_id = 413150\ndata_dir = \"Mods\"\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("notes.txt"), "ignored").unwrap();
+        let games = load_games_from(&dir);
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].id, "stardew");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn invalid_definition_is_skipped() {
+        // Missing the required id / steam_app_id / data_dir -> not parsed.
+        assert!(parse_game("name = \"incomplete\"").is_none());
     }
 
     #[test]

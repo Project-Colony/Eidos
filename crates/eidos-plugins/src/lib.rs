@@ -72,7 +72,9 @@ impl GameSpec {
         let mechanism = match def.load_order {
             eidos_gamedef::LoadOrder::Asterisk => LoadOrderMechanism::Asterisk,
             eidos_gamedef::LoadOrder::PlainList => LoadOrderMechanism::PlainList,
-            eidos_gamedef::LoadOrder::FileTime => return None,
+            // FileTime (Oblivion/Morrowind) and None (generic games) have no Eidos-
+            // managed plugins.txt, so there is no plugin spec to build.
+            eidos_gamedef::LoadOrder::FileTime | eidos_gamedef::LoadOrder::None => return None,
         };
         let esplugin_id = match eidos_game_id {
             "skyrimse" | "skyrimvr" | "enderalse" => GameId::SkyrimSE,
