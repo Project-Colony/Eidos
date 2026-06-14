@@ -150,17 +150,27 @@ pub fn install_archive(
     name: &str,
     game_name: &str,
 ) -> Result<InstallReport, InstallError> {
-    install_archive_with_policy(archive, mods_dir, name, game_name, OverwritePolicy::Fail)
+    install_archive_with_policy(
+        archive,
+        mods_dir,
+        name,
+        game_name,
+        OverwritePolicy::Fail,
+        &eidos_fomod::Context::default(),
+    )
 }
 
-/// Like [`install_archive`] but with an explicit [`OverwritePolicy`] for when
-/// `mods/<name>/` already exists (MO2's merge / replace / rename / cancel).
+/// Like [`install_archive`] but with an explicit [`OverwritePolicy`] for an existing
+/// `mods/<name>/` (MO2's merge / replace / rename / cancel) and a FOMOD install
+/// [`Context`](eidos_fomod::Context) (current plugin states) so a scripted installer's
+/// fileDependency/gameDependency conditions evaluate correctly. See [`fomod_context`].
 pub fn install_archive_with_policy(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
     game_name: &str,
     policy: OverwritePolicy,
+    ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
     // Sanitize the folder name (a real Nexus modName can contain ':' etc.) and
     // recover the mod id from the filename for the meta.ini when there's no sidecar.
@@ -211,7 +221,7 @@ pub fn install_archive_with_policy(
                 // A FOMOD scripted installer: run it with the default selections.
                 if let Some(fomod_root) = find_fomod_root(&tmp) {
                     fs::create_dir_all(&dest)?;
-                    let missing = apply_fomod_defaults(&fomod_root, &dest)?;
+                    let missing = apply_fomod_defaults(&fomod_root, &dest, ctx)?;
                     write_meta(archive, &dest, game_name, guessed_id)?;
                     return Ok(InstallReport {
                         name: name.clone(),
@@ -352,6 +362,30 @@ pub fn mod_name_for(archive: &Path) -> String {
         .unwrap_or_else(|| "Mod".to_string())
 }
 
+/// Build a FOMOD install [`Context`](eidos_fomod::Context) from the current setup:
+/// every plugin (`.esp`/`.esm`/`.esl`) present in the game's Data or an enabled mod
+/// is marked Active, so a scripted installer's fileDependency conditions (usually
+/// "is <master> present/active") evaluate correctly instead of always reading
+/// Missing. Eidos doesn't track the game version, so gameDependency stays permissive.
+pub fn fomod_context(game_data: &Path, enabled_mod_roots: &[PathBuf]) -> eidos_fomod::Context {
+    let mut file_states = std::collections::HashMap::new();
+    let mut scan = |root: &Path| {
+        if let Ok(rd) = fs::read_dir(root) {
+            for e in rd.flatten() {
+                let n = e.file_name().to_string_lossy().to_ascii_lowercase();
+                if n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl") {
+                    file_states.insert(n, "Active".to_string());
+                }
+            }
+        }
+    };
+    scan(game_data);
+    for root in enabled_mod_roots {
+        scan(root);
+    }
+    eidos_fomod::Context { file_states, ..Default::default() }
+}
+
 /// Find the directory that contains a `fomod/ModuleConfig.xml` (case-insensitive),
 /// descending through a wrapper folder or two.
 fn find_fomod_root(tmp: &Path) -> Option<PathBuf> {
@@ -469,9 +503,9 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
 
 /// Parse the FOMOD under `root` and install it with the default selections.
 /// Returns the plan sources the archive did not contain.
-fn apply_fomod_defaults(root: &Path, dest: &Path) -> Result<Vec<String>, InstallError> {
+fn apply_fomod_defaults(root: &Path, dest: &Path, ctx: &eidos_fomod::Context) -> Result<Vec<String>, InstallError> {
     let config = parse_fomod_at(root)?;
-    let plan = eidos_fomod::build_default_plan(&config, &eidos_fomod::Context::default());
+    let plan = eidos_fomod::build_default_plan(&config, ctx);
     apply_plan(root, &plan, dest)
 }
 
@@ -544,6 +578,7 @@ pub fn finish_fomod(
     selection: &eidos_fomod::Selection,
     mods_dir: &Path,
     game_name: &str,
+    ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
     let name = fix_directory_name(&session.name).unwrap_or_else(|| "Mod".to_string());
     let (_, guessed_id) = guess_mod_name_and_id(&session.archive.to_string_lossy());
@@ -552,7 +587,7 @@ pub fn finish_fomod(
         return Err(InstallError::Exists(dest));
     }
     fs::create_dir_all(&dest)?;
-    let plan = eidos_fomod::build_plan(&session.config, selection, &eidos_fomod::Context::default());
+    let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
     let missing = apply_plan(&session.root, &plan, &dest)?;
     write_meta(&session.archive, &dest, game_name, guessed_id)?;
     Ok(InstallReport { name, stripped: String::new(), fomod: true, missing, dest })
@@ -648,8 +683,29 @@ mod tests {
         fs::write(mods.path().join("ExistingMod/a.esp"), b"x").unwrap();
         // The archive is never read - Fail returns before extraction (no 7-Zip needed).
         let archive = mods.path().join("whatever.7z");
-        let r = install_archive_with_policy(&archive, mods.path(), "ExistingMod", "skyrimse", OverwritePolicy::Fail);
+        let r = install_archive_with_policy(
+            &archive,
+            mods.path(),
+            "ExistingMod",
+            "skyrimse",
+            OverwritePolicy::Fail,
+            &eidos_fomod::Context::default(),
+        );
         assert!(matches!(r, Err(InstallError::Exists(_))));
+    }
+
+    #[test]
+    fn fomod_context_marks_present_plugins_active() {
+        let game = TempDir::new("game");
+        let modd = TempDir::new("mod");
+        fs::write(game.path().join("Skyrim.esm"), b"").unwrap();
+        fs::write(modd.path().join("SkyUI.esp"), b"").unwrap();
+        let ctx = fomod_context(game.path(), &[modd.path().to_path_buf()]);
+        // A present plugin reads Active (so fileDependency state="Active" holds); an
+        // absent one is left out, which eval treats as Missing.
+        assert_eq!(ctx.file_states.get("skyrim.esm").map(String::as_str), Some("Active"));
+        assert_eq!(ctx.file_states.get("skyui.esp").map(String::as_str), Some("Active"));
+        assert_eq!(ctx.file_states.get("absent.esp"), None);
     }
 
     #[test]

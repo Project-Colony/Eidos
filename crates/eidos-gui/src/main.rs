@@ -98,6 +98,9 @@ struct FomodWizard {
     step: usize,
     selection: eidos_fomod::Selection,
     game_id: String,
+    /// Current plugin states, so fileDependency/gameDependency conditions evaluate
+    /// against the real setup instead of always reading Missing.
+    ctx: eidos_fomod::Context,
 }
 
 struct App {
@@ -464,9 +467,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let name = eidos_install::mod_name_for(&path);
             match eidos_install::open_fomod(&path, &mods_dir, &name) {
                 Ok(Some(session)) => {
-                    let selection =
-                        eidos_fomod::default_selection(&session.config, &eidos_fomod::Context::default());
-                    app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid });
+                    let enabled_roots: Vec<std::path::PathBuf> =
+                        app.mods.iter().filter(|m| m.enabled).map(|m| m.path.clone()).collect();
+                    let ctx = match selected_game(app) {
+                        Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots),
+                        None => eidos_fomod::Context::default(),
+                    };
+                    let selection = eidos_fomod::default_selection(&session.config, &ctx);
+                    app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid, ctx });
                     app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
                 }
                 Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
@@ -514,7 +522,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let vis = eidos_fomod::visible_steps(
                     &w.session.config,
                     &w.selection,
-                    &eidos_fomod::Context::default(),
+                    &w.ctx,
                 );
                 let mut s = w.step + 1;
                 while s < vis.len() && !vis[s] {
@@ -530,7 +538,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let vis = eidos_fomod::visible_steps(
                     &w.session.config,
                     &w.selection,
-                    &eidos_fomod::Context::default(),
+                    &w.ctx,
                 );
                 let mut s = w.step;
                 while s > 0 {
@@ -545,7 +553,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::FomodInstall => {
             if let Some(w) = app.fomod.take() {
                 if let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) {
-                    match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id) {
+                    match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id, &w.ctx) {
                         Ok(r) => after_install(app, &r.name, r.dest, true),
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
@@ -1541,7 +1549,7 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let config = &w.session.config;
     let total = config.steps.len();
     // Effective option types for this step (re-evaluated against the choices so far).
-    let types = eidos_fomod::step_types(config, &w.selection, &eidos_fomod::Context::default(), w.step);
+    let types = eidos_fomod::step_types(config, &w.selection, &w.ctx, w.step);
 
     let mut col = Column::new().spacing(8).padding(12);
     col = col.push(text(format!("{}  -  FOMOD installer", config.module_name)).size(20.0));
@@ -1594,7 +1602,7 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             }
         }
     }
-    let vis = eidos_fomod::visible_steps(config, &w.selection, &eidos_fomod::Context::default());
+    let vis = eidos_fomod::visible_steps(config, &w.selection, &w.ctx);
     let has_prev = (0..w.step).any(|i| vis.get(i).copied().unwrap_or(false));
     let has_next = (w.step + 1..vis.len()).any(|i| vis[i]);
     let valid = step_valid(w);

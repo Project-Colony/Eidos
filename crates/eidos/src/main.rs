@@ -523,12 +523,18 @@ fn cmd_install(args: &[String]) {
         .find(|a| !a.starts_with("--"))
         .cloned()
         .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
+    // FOMOD condition context: the plugins currently present/active, so a scripted
+    // installer's fileDependency/gameDependency options evaluate correctly.
+    let enabled_roots: Vec<std::path::PathBuf> =
+        inst.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect();
+    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots);
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),
         &inst.mods_dir(),
         &name,
         id,
         policy,
+        &ctx,
     ) {
         Ok(r) => {
             // Activate the new mod at the top of the active profile's load order,
