@@ -171,6 +171,23 @@ impl ModMeta {
         self.set("newestVersion", v);
     }
 
+    /// The user's free-text note for this mod (MO2's modlist Notes column).
+    pub fn notes(&self) -> Option<String> {
+        self.string("notes")
+    }
+
+    /// Set the note text, quoting it the way MO2's QSettings dialect does so a
+    /// value with spaces or commas round-trips. Empty clears it.
+    pub fn set_notes(&mut self, notes: &str) {
+        let trimmed = notes.trim();
+        if trimmed.is_empty() {
+            self.set("notes", "");
+        } else {
+            let escaped = trimmed.replace('\\', "\\\\").replace('"', "\\\"");
+            self.set("notes", &format!("\"{escaped}\""));
+        }
+    }
+
     /// When this mod was last checked against Nexus (unix seconds; `0`/absent ->
     /// `None`). MO2 tracks this so it can trust the `updated?period=1m` bulk list
     /// only for mods checked within the window, and query the rest individually.
@@ -328,6 +345,22 @@ mod tests {
         let mut m = ModMeta::read(&p);
         m.set("repository", "Nexus"); // unchanged
         assert!(!m.is_dirty());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn notes_round_trip_through_quoting() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.notes(), None);
+        m.set_notes("merge with USSEP, keep my patch on top");
+        assert!(m.is_dirty());
+        assert_eq!(m.notes().as_deref(), Some("merge with USSEP, keep my patch on top"));
+        m.write(&p).unwrap();
+        assert_eq!(
+            ModMeta::read(&p).notes().as_deref(),
+            Some("merge with USSEP, keep my patch on top")
+        );
         let _ = fs::remove_file(&p);
     }
 }

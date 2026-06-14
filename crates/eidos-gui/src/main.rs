@@ -63,6 +63,15 @@ enum Tab {
     Downloads,
 }
 
+/// Tabs of the per-mod information dialog (MO2's modinfodialog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InfoTab {
+    General,
+    Conflicts,
+    Filetree,
+    Notes,
+}
+
 #[derive(Debug, Clone)]
 enum Message {
     Next,
@@ -117,6 +126,12 @@ enum Message {
     RenameCommit,
     /// Enable/disable an ESP/ESM in the Plugins tab, persisting plugins.txt.
     TogglePlugin(usize),
+    // ---- per-mod information dialog (MO2 modinfodialog) ----
+    ShowModInfo(usize),
+    CloseInfo,
+    InfoSelectTab(InfoTab),
+    NotesChanged(String),
+    NotesSave,
     Noop,
 }
 
@@ -172,6 +187,11 @@ struct App {
     meta_cache: HashMap<String, RowMeta>,
     /// Two-click guard for the destructive per-mod "Remove" action.
     confirm_remove: Option<usize>,
+    /// The mod whose info dialog is open (None = closed), its active tab, and the
+    /// note text being edited.
+    info_mod: Option<usize>,
+    info_tab: InfoTab,
+    notes_edit: String,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -237,6 +257,9 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         rename: None,
         meta_cache: HashMap::new(),
         confirm_remove: None,
+        info_mod: None,
+        info_tab: InfoTab::General,
+        notes_edit: String::new(),
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -900,6 +923,37 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ShowModInfo(i) => {
+            app.menu_mod = None;
+            let notes = match (app.created.as_ref(), app.mods.get(i)) {
+                (Some(inst), Some(m)) => Some(inst.mod_meta(&m.name).notes().unwrap_or_default()),
+                _ => None,
+            };
+            if let Some(notes) = notes {
+                app.notes_edit = notes;
+                app.info_mod = Some(i);
+                app.info_tab = InfoTab::General;
+            }
+        }
+        Message::CloseInfo => app.info_mod = None,
+        Message::InfoSelectTab(t) => app.info_tab = t,
+        Message::NotesChanged(s) => app.notes_edit = s,
+        Message::NotesSave => {
+            let result = match (app.info_mod, app.created.as_ref()) {
+                (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
+                    let mut meta = inst.mod_meta(&m.name);
+                    meta.set_notes(&app.notes_edit);
+                    (m.name.clone(), meta.write(&inst.meta_path(&m.name)))
+                }),
+                _ => None,
+            };
+            if let Some((name, r)) = result {
+                app.status = Some(match r {
+                    Ok(()) => format!("Saved notes for '{name}'."),
+                    Err(e) => format!("Could not save notes: {e}"),
+                });
+            }
+        }
         Message::Noop => {}
     }
     Task::none()
@@ -1506,6 +1560,8 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     }
 
     col = col
+        .push(menu_item("Information...", Message::ShowModInfo(i)))
+        .push(menu_sep())
         .push(menu_item(if m.enabled { "Disable" } else { "Enable" }, Message::ToggleMod(i)))
         .push(menu_sep())
         .push(menu_item("Send to Top", Message::ModSendTop(i)))
@@ -1546,6 +1602,175 @@ fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
                 color: Color::from_rgb8(0x6E, 0x24, 0x2E),
                 width: 1.0,
                 radius: 3.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+// ---- per-mod information dialog (MO2 modinfodialog) -------------------------
+
+fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, active: bool) -> Element<'a, Message> {
+    button(text(label).size(12.0))
+        .padding([4, 10])
+        .on_press(Message::InfoSelectTab(tab))
+        .style(if active { button::primary } else { button::secondary })
+        .into()
+}
+
+fn info_kv<'a>(k: &'a str, v: String) -> Element<'a, Message> {
+    Row::new()
+        .spacing(8)
+        .push(text(k).size(12.0).width(Length::Fixed(120.0)))
+        .push(text(v).size(12.0).width(Length::Fill))
+        .into()
+}
+
+/// General tab: name/version/category/Nexus id/source/endorsed/tracked + counts.
+fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
+    let meta = app.created.as_ref().map(|inst| inst.mod_meta(&m.name));
+    let files = overwrite_entries(&m.path).len();
+    let mut col = Column::new().spacing(4).push(info_kv("Name", m.name.clone()));
+    if let Some(meta) = &meta {
+        if let Some(v) = meta.version() {
+            col = col.push(info_kv("Version", v));
+        }
+        if let Some(nv) = meta.newest_version() {
+            col = col.push(info_kv("Newest", nv));
+        }
+        if let Some(c) = meta
+            .category()
+            .map(|c| c.trim_end_matches(',').trim().to_string())
+            .filter(|c| !c.is_empty() && c != "-1")
+        {
+            col = col.push(info_kv("Category", c));
+        }
+        if let Some(id) = meta.mod_id() {
+            col = col.push(info_kv("Nexus id", id.to_string()));
+        }
+        if let Some(src) = meta.installation_file() {
+            col = col.push(info_kv("Installed from", src));
+        }
+        col = col
+            .push(info_kv("Endorsed", if meta.endorsed() { "yes".into() } else { "no".into() }))
+            .push(info_kv("Tracked", if meta.tracked() { "yes".into() } else { "no".into() }));
+    }
+    col.push(info_kv("Enabled", if m.enabled { "yes".into() } else { "no".into() }))
+        .push(info_kv("Files", files.to_string()))
+        .push(info_kv("Folder", m.path.display().to_string()))
+        .into()
+}
+
+/// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
+fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    let Some(cmap) = &app.conflicts else {
+        return text("Conflicts not computed yet.").size(12.0).into();
+    };
+    let origin = (i + 1) as u32;
+    let mut wins: Vec<(String, String)> = Vec::new();
+    let mut loses: Vec<(String, String)> = Vec::new();
+    for node in cmap.files.values() {
+        if node.winner == origin && node.is_conflicted() {
+            let losers: Vec<&str> =
+                node.alternatives.iter().filter(|&&a| a != 0).map(|&a| cmap.name(a)).collect();
+            wins.push((node.display_path.clone(), losers.join(", ")));
+        } else if node.winner != origin && node.winner != 0 && node.alternatives.contains(&origin) {
+            loses.push((node.display_path.clone(), cmap.name(node.winner).to_string()));
+        }
+    }
+    let mut col = Column::new().spacing(2);
+    col = col.push(text(format!("Overrides ({}):", wins.len())).size(13.0));
+    if wins.is_empty() {
+        col = col.push(text("  (none)").size(11.0));
+    }
+    for (p, who) in wins.iter().take(300) {
+        col = col.push(text(format!("  {p}   >   {who}")).size(11.0));
+    }
+    col = col
+        .push(Space::with_height(Length::Fixed(8.0)))
+        .push(text(format!("Overridden by ({}):", loses.len())).size(13.0));
+    if loses.is_empty() {
+        col = col.push(text("  (none)").size(11.0));
+    }
+    for (p, who) in loses.iter().take(300) {
+        col = col.push(text(format!("  {p}   <   {who}")).size(11.0));
+    }
+    col.into()
+}
+
+/// Filetree tab: every file the mod ships, relative to its root.
+fn info_filetree<'a>(m: &ModEntry) -> Element<'a, Message> {
+    let entries = overwrite_entries(&m.path);
+    let mut col = Column::new().spacing(1).push(text(format!("{} file(s):", entries.len())).size(12.0));
+    for e in entries.into_iter().take(2000) {
+        col = col.push(text(e).size(11.0));
+    }
+    col.into()
+}
+
+/// Notes tab: an editable note persisted to the mod's meta.ini.
+fn info_notes<'a>(app: &App) -> Element<'a, Message> {
+    Column::new()
+        .spacing(8)
+        .push(text("Note (saved to the mod's meta.ini):").size(12.0))
+        .push(
+            text_input("Add a note...", &app.notes_edit)
+                .on_input(Message::NotesChanged)
+                .on_submit(Message::NotesSave)
+                .padding(6)
+                .size(12.0),
+        )
+        .push(tool_btn("Save note", Message::NotesSave))
+        .into()
+}
+
+/// MO2's per-mod info dialog: a centered modal with General / Conflicts /
+/// Filetree / Notes tabs.
+fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    let Some(m) = app.mods.get(i) else {
+        return Space::new(Length::Shrink, Length::Shrink).into();
+    };
+
+    let title = Row::new()
+        .spacing(8)
+        .push(text(m.name.clone()).size(16.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([3, 10])
+                .on_press(Message::CloseInfo)
+                .style(button::secondary),
+        );
+
+    let tabs = Row::new()
+        .spacing(4)
+        .push(info_tab_btn("General", InfoTab::General, app.info_tab == InfoTab::General))
+        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, app.info_tab == InfoTab::Conflicts))
+        .push(info_tab_btn("Filetree", InfoTab::Filetree, app.info_tab == InfoTab::Filetree))
+        .push(info_tab_btn("Notes", InfoTab::Notes, app.info_tab == InfoTab::Notes));
+
+    let content = match app.info_tab {
+        InfoTab::General => info_general(app, m),
+        InfoTab::Conflicts => info_conflicts(app, i),
+        InfoTab::Filetree => info_filetree(m),
+        InfoTab::Notes => info_notes(app),
+    };
+
+    let card = Column::new()
+        .spacing(10)
+        .push(title)
+        .push(tabs)
+        .push(scrollable(content).height(Length::Fill));
+
+    container(card)
+        .width(Length::Fixed(660.0))
+        .height(Length::Fixed(460.0))
+        .padding(16)
+        .style(|_t: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xEC, 0xDF, 0xC2))),
+            border: Border {
+                color: Color::from_rgb8(0x6E, 0x24, 0x2E),
+                width: 2.0,
+                radius: 4.0.into(),
             },
             ..Default::default()
         })
@@ -1952,10 +2177,12 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         .push(body)
         .push(status_bar(app));
 
+    let mut layers = Stack::new().push(base);
+
     // The right-click action menu floats over the window (MO2's context menu).
     // A full-window catcher behind it dismisses on a click outside the card.
-    match app.menu_mod {
-        Some(i) if i < app.mods.len() => {
+    if let Some(i) = app.menu_mod {
+        if i < app.mods.len() {
             let catcher =
                 mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseMenu);
             let card = container(mod_menu_card(app, i))
@@ -1964,10 +2191,21 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
                 .padding(iced::Padding { top: 150.0, right: 0.0, bottom: 0.0, left: 40.0 })
                 .align_x(iced::alignment::Horizontal::Left)
                 .align_y(iced::alignment::Vertical::Top);
-            Stack::new().push(base).push(catcher).push(card).into()
+            layers = layers.push(catcher).push(card);
         }
-        _ => base.into(),
     }
+
+    // The per-mod info dialog is a centered modal (MO2's modinfodialog).
+    if let Some(i) = app.info_mod {
+        if i < app.mods.len() {
+            let scrim =
+                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseInfo);
+            let dialog = container(mod_info_dialog(app, i)).center(Length::Fill);
+            layers = layers.push(scrim).push(dialog);
+        }
+    }
+
+    layers.into()
 }
 
 /// Shared post-install step: activate the new mod at the top of the load order,

@@ -76,9 +76,14 @@ impl Instance {
         self.root.join("mods")
     }
 
+    /// The `meta.ini` path for a mod (`mods/<name>/meta.ini`).
+    pub fn meta_path(&self, name: &str) -> PathBuf {
+        self.mods_dir().join(name).join("meta.ini")
+    }
+
     /// MO2-compatible metadata for a mod (`mods/<name>/meta.ini`); empty if none.
     pub fn mod_meta(&self, name: &str) -> ModMeta {
-        ModMeta::read(&self.mods_dir().join(name).join("meta.ini"))
+        ModMeta::read(&self.meta_path(name))
     }
 
     /// The instance manifest path (`<root>/eidos-instance.ini`).
