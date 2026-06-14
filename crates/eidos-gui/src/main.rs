@@ -8,11 +8,14 @@
 //! right = Run + Data/Saves/Downloads tabs, plus a status bar. Colony parchment
 //! / burgundy palette. Run with: `cargo run -p eidos-gui`
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use iced::widget::{button, container, image, pick_list, scrollable, text, text_input, Column, Row, Space};
+use iced::widget::{
+    button, container, image, mouse_area, pick_list, scrollable, text, text_input, Column, Row,
+    Space, Stack,
+};
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
@@ -88,6 +91,30 @@ enum Message {
     Refresh,
     OpenFolder(PathBuf),
     ClearOverwrite,
+    // ---- mod-list interactivity (MO2 right-click + filter) ----
+    /// Filter box above the mod list (case-insensitive substring on the name).
+    SearchChanged(String),
+    /// Left-click a mod row: select it and close any open menu.
+    SelectMod(usize),
+    /// Right-click a mod row: select it and open its action menu.
+    OpenModMenu(usize),
+    /// Dismiss the open action menu / rename editor.
+    CloseMenu,
+    /// Reorder shortcuts (MO2 sendModsToTop / sendModsToBottom).
+    ModSendTop(usize),
+    ModSendBottom(usize),
+    /// Open the mod's folder in the file manager (MO2 openExplorer).
+    ModOpenFolder(usize),
+    /// Open the mod's Nexus page in the browser (MO2 visitOnNexus).
+    ModVisitNexus(usize),
+    /// Re-run the installer for this mod (MO2 reinstallMod).
+    ModReinstall(usize),
+    /// Delete the mod from disk (MO2 removeMods); two-click confirm.
+    ModRemove(usize),
+    /// Begin renaming a mod (MO2 renameMod); opens an inline editor.
+    RenameStart(usize),
+    RenameChanged(String),
+    RenameCommit,
     Noop,
 }
 
@@ -131,6 +158,48 @@ struct App {
     tools: Vec<eidos_instance::Tool>,
     /// The picked run target: `None` = the game, `Some(title)` = that tool.
     tool_choice: Option<String>,
+    /// Mod-list filter query (case-insensitive substring on the mod name).
+    search: String,
+    /// The highlighted mod row, if any.
+    selected_mod: Option<usize>,
+    /// The mod whose right-click action menu is open (None = closed).
+    menu_mod: Option<usize>,
+    /// In-progress rename: `(mod index, edited name)`.
+    rename: Option<(usize, String)>,
+    /// Per-mod metadata for the extra columns + context menu, keyed by folder name.
+    meta_cache: HashMap<String, RowMeta>,
+    /// Two-click guard for the destructive per-mod "Remove" action.
+    confirm_remove: Option<usize>,
+}
+
+/// The slice of a mod's `meta.ini` the main window shows (extra columns + the
+/// Nexus action). Cached so a search keystroke doesn't re-read every file.
+#[derive(Debug, Clone, Default)]
+struct RowMeta {
+    version: Option<String>,
+    mod_id: Option<u64>,
+    category: Option<String>,
+    update: bool,
+}
+
+/// Build the per-mod metadata cache for the open instance's mod list.
+fn build_meta_cache(app: &App) -> HashMap<String, RowMeta> {
+    let mut out = HashMap::new();
+    if let Some(inst) = &app.created {
+        for m in &app.mods {
+            let meta = inst.mod_meta(&m.name);
+            out.insert(
+                m.name.clone(),
+                RowMeta {
+                    version: meta.version(),
+                    mod_id: meta.mod_id(),
+                    category: meta.category(),
+                    update: meta.update_available(),
+                },
+            );
+        }
+    }
+    out
 }
 
 /// The run-target picker entry meaning "the game itself".
@@ -160,6 +229,12 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         fomod: None,
         tools: Vec::new(),
         tool_choice: None,
+        search: String::new(),
+        selected_mod: None,
+        menu_mod: None,
+        rename: None,
+        meta_cache: HashMap::new(),
+        confirm_remove: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -193,6 +268,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // Conflicts feed the mod-list emblems, so compute them as soon as the
     // instance opens instead of waiting for the Conflicts tab.
     app.conflicts = compute_conflicts(&app);
+    app.meta_cache = build_meta_cache(&app);
     (app, Task::none())
 }
 
@@ -317,6 +393,15 @@ fn save_mods(app: &App) {
     }
 }
 
+/// Persist the mod list and invalidate everything derived from it (plugin order,
+/// conflict emblems, the per-mod metadata cache).
+fn mods_changed(app: &mut App) {
+    save_mods(app);
+    app.plugins = None;
+    app.conflicts = compute_conflicts(app);
+    app.meta_cache = build_meta_cache(app);
+}
+
 fn update(app: &mut App, message: Message) -> Task<Message> {
     // Any action other than a second Clear click cancels the clear confirmation.
     if !matches!(message, Message::ClearOverwrite) {
@@ -368,6 +453,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.screen = Screen::Main;
                         load_tools(app);
                         app.conflicts = compute_conflicts(app);
+                        app.meta_cache = build_meta_cache(app);
                     }
                     Err(e) => app.error = Some(e.to_string()),
                 }
@@ -389,24 +475,24 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(m) = app.mods.get_mut(i) {
                 m.enabled = !m.enabled;
             }
-            save_mods(app);
-            app.plugins = None;
-            app.conflicts = compute_conflicts(app);
+            mods_changed(app);
         }
         Message::MoveUp(i) => {
             if i > 0 && i < app.mods.len() {
                 app.mods.swap(i - 1, i);
-                save_mods(app);
-                app.plugins = None;
-                app.conflicts = compute_conflicts(app);
+                if app.selected_mod == Some(i) {
+                    app.selected_mod = Some(i - 1);
+                }
+                mods_changed(app);
             }
         }
         Message::MoveDown(i) => {
             if i + 1 < app.mods.len() {
                 app.mods.swap(i, i + 1);
-                save_mods(app);
-                app.plugins = None;
-                app.conflicts = compute_conflicts(app);
+                if app.selected_mod == Some(i) {
+                    app.selected_mod = Some(i + 1);
+                }
+                mods_changed(app);
             }
         }
         Message::SelectTab(t) => {
@@ -424,6 +510,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.mods = inst.profile(&name).modlist();
                 app.plugins = None;
                 app.conflicts = compute_conflicts(app);
+                app.meta_cache = build_meta_cache(app);
+                app.selected_mod = None;
+                app.menu_mod = None;
                 app.status = Some(format!("Switched to profile '{name}'."));
             }
         }
@@ -443,6 +532,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.mods = dest.modlist();
                     app.plugins = None;
                     app.conflicts = compute_conflicts(app);
+                    app.meta_cache = build_meta_cache(app);
+                    app.selected_mod = None;
+                    app.menu_mod = None;
                     app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
                 }
             }
@@ -601,6 +693,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.mods = inst.modlist();
                 app.plugins = None;
                 app.conflicts = compute_conflicts(app);
+                app.meta_cache = build_meta_cache(app);
                 app.status = Some("Refreshed mod list.".to_string());
             }
             load_tools(app);
@@ -624,6 +717,152 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         "Click Clear again to confirm - this permanently deletes everything the game wrote to the Overwrite (configs, new saves, generated files)."
                             .to_string(),
                     );
+                }
+            }
+        }
+        Message::SearchChanged(q) => {
+            app.search = q;
+            // A filter change can hide the menu's target row; keep it simple.
+            app.menu_mod = None;
+            app.rename = None;
+        }
+        Message::SelectMod(i) => {
+            app.selected_mod = Some(i);
+            app.menu_mod = None;
+            app.rename = None;
+            app.confirm_remove = None;
+        }
+        Message::OpenModMenu(i) => {
+            app.selected_mod = Some(i);
+            app.menu_mod = Some(i);
+            app.rename = None;
+            app.confirm_remove = None;
+        }
+        Message::CloseMenu => {
+            app.menu_mod = None;
+            app.rename = None;
+            app.confirm_remove = None;
+        }
+        Message::ModSendTop(i) => {
+            if i < app.mods.len() {
+                let m = app.mods.remove(i);
+                app.mods.insert(0, m);
+                app.selected_mod = Some(0);
+                mods_changed(app);
+            }
+            app.menu_mod = None;
+        }
+        Message::ModSendBottom(i) => {
+            if i < app.mods.len() {
+                let m = app.mods.remove(i);
+                app.selected_mod = Some(app.mods.len());
+                app.mods.push(m);
+                mods_changed(app);
+            }
+            app.menu_mod = None;
+        }
+        Message::ModOpenFolder(i) => {
+            app.menu_mod = None;
+            if let Some(m) = app.mods.get(i) {
+                let _ = std::process::Command::new("xdg-open").arg(&m.path).spawn();
+                app.status = Some(format!("Opened '{}' in your file manager.", m.name));
+            }
+        }
+        Message::ModVisitNexus(i) => {
+            app.menu_mod = None;
+            let domain = selected_game(app).map(|g| g.def.nexus_game).filter(|s| !s.is_empty());
+            let mod_id = app.mods.get(i).and_then(|m| app.meta_cache.get(&m.name)).and_then(|r| r.mod_id);
+            match (domain, mod_id) {
+                (Some(domain), Some(id)) => {
+                    let url = format!("https://www.nexusmods.com/{domain}/mods/{id}");
+                    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                    app.status = Some(format!("Opening {url}"));
+                }
+                _ => {
+                    app.status =
+                        Some("No Nexus mod id on record for this mod (install it from Nexus to link it).".to_string());
+                }
+            }
+        }
+        Message::ModReinstall(i) => {
+            app.menu_mod = None;
+            if let Some(m) = app.mods.get(i) {
+                app.status = Some(format!(
+                    "Reinstalling '{}': pick the archive to install over it.",
+                    m.name
+                ));
+            }
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Mod archives", &["7z", "zip", "rar"])
+                    .set_title("Select the archive to reinstall")
+                    .pick_file(),
+                |handle| Message::ModPicked(handle.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::ModRemove(i) => {
+            if app.confirm_remove == Some(i) {
+                app.confirm_remove = None;
+                app.menu_mod = None;
+                if let Some(m) = app.mods.get(i).cloned() {
+                    match fs::remove_dir_all(&m.path) {
+                        Ok(()) => {
+                            app.mods.remove(i);
+                            app.selected_mod = None;
+                            mods_changed(app);
+                            app.status = Some(format!("Removed '{}'.", m.name));
+                        }
+                        Err(e) => app.status = Some(format!("Remove failed: {e}")),
+                    }
+                }
+            } else {
+                app.confirm_remove = Some(i);
+                if let Some(m) = app.mods.get(i) {
+                    app.status =
+                        Some(format!("Click Remove again to permanently delete '{}' from disk.", m.name));
+                }
+            }
+        }
+        Message::RenameStart(i) => {
+            if let Some(m) = app.mods.get(i) {
+                app.rename = Some((i, m.name.clone()));
+                app.menu_mod = Some(i);
+                app.confirm_remove = None;
+            }
+        }
+        Message::RenameChanged(s) => {
+            if let Some((_, name)) = &mut app.rename {
+                *name = s;
+            }
+        }
+        Message::RenameCommit => {
+            if let Some((i, new_name)) = app.rename.take() {
+                app.menu_mod = None;
+                let new_name = new_name.trim().to_string();
+                let old = app.mods.get(i).cloned();
+                if let Some(old) = old {
+                    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') {
+                        app.status = Some("Invalid mod name.".to_string());
+                    } else if new_name == old.name {
+                        // no-op
+                    } else if let Some(mods_dir) = app.created.as_ref().map(|inst| inst.mods_dir()) {
+                        let dest = mods_dir.join(&new_name);
+                        if dest.exists() {
+                            app.status = Some(format!("A mod named '{new_name}' already exists."));
+                        } else {
+                            match fs::rename(&old.path, &dest) {
+                                Ok(()) => {
+                                    if let Some(m) = app.mods.get_mut(i) {
+                                        m.name = new_name.clone();
+                                        m.path = dest;
+                                    }
+                                    mods_changed(app);
+                                    app.status = Some(format!("Renamed to '{new_name}'."));
+                                }
+                                Err(e) => app.status = Some(format!("Rename failed: {e}")),
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -697,6 +936,23 @@ fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<'a, Message
         .padding(2)
         .style(move |_t: &Theme| container::Style {
             background: Some(Background::Color(row_bg(even))),
+            ..Default::default()
+        })
+        .into()
+}
+
+/// The highlight behind the selected mod row.
+const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct from the stripes
+
+/// A mod-list row background that also reflects selection (MO2's blue highlight,
+/// here a parchment-tan so it reads on the burgundy theme).
+fn list_row<'a>(content: Element<'a, Message>, even: bool, selected: bool) -> Element<'a, Message> {
+    let bg = if selected { SEL_BG } else { row_bg(even) };
+    container(content)
+        .width(Length::Fill)
+        .padding(2)
+        .style(move |_t: &Theme| container::Style {
+            background: Some(Background::Color(bg)),
             ..Default::default()
         })
         .into()
@@ -892,6 +1148,7 @@ fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
 const C_CHECK: Length = Length::Fixed(36.0);
 const C_PRIO: Length = Length::Fixed(26.0);
 const C_FLAGS: Length = Length::Fixed(46.0);
+const C_VERSION: Length = Length::Fixed(64.0);
 const C_MOVE: Length = Length::Fixed(70.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
@@ -985,10 +1242,12 @@ fn toolbar<'a>() -> Element<'a, Message> {
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn mod_row<'a>(
     i: usize,
     m: &ModEntry,
     len: usize,
+    meta: Option<&RowMeta>,
     flag_icon: Option<&'static [u8]>,
     hidden_icon: Option<&'static [u8]>,
 ) -> Element<'a, Message> {
@@ -1009,13 +1268,27 @@ fn mod_row<'a>(
     }
     let flag_cell: Element<'a, Message> = container(flags).width(C_FLAGS).into();
 
-    Row::new()
+    // MO2's Version column; an update marker prefixes it when Nexus has a newer one.
+    let version = meta.and_then(|r| r.version.clone()).unwrap_or_default();
+    let version = match meta {
+        Some(r) if r.update => format!("^ {version}"),
+        _ => version,
+    };
+
+    let row = Row::new()
         .spacing(6)
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
+        .push(text(version).size(11.0).width(C_VERSION))
         .push(flag_cell)
-        .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE))
+        .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
+
+    // Left-click selects, right-click opens the action menu (MO2's context menu).
+    // Inner buttons still get their own clicks; the mouse_area catches the rest.
+    mouse_area(row)
+        .on_press(Message::SelectMod(i))
+        .on_right_press(Message::OpenModMenu(i))
         .into()
 }
 
@@ -1039,20 +1312,33 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(Space::with_width(Length::Fill))
         .push(text(format!("Active: {active}")).size(12.0));
 
+    // MO2's mod-list filter box.
+    let search = text_input("Filter mods by name...", &app.search)
+        .on_input(Message::SearchChanged)
+        .padding(5)
+        .size(12.0);
+
     let header = Row::new()
         .spacing(6)
         .push(text("").width(C_CHECK))
         .push(text("#").size(11.0).width(C_PRIO))
         .push(text("Mod Name").size(11.0).width(Length::Fill))
+        .push(text("Version").size(11.0).width(C_VERSION))
         .push(text("Flags").size(11.0).width(C_FLAGS))
         .push(text("").width(C_MOVE));
 
     let len = app.mods.len();
+    let query = app.search.trim().to_lowercase();
     let mut list = Column::new().spacing(1);
+    let mut shown = 0usize;
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     for (i, m) in app.mods.iter().enumerate() {
+        if !query.is_empty() && !m.name.to_lowercase().contains(&query) {
+            continue;
+        }
+        shown += 1;
         // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
         let flag_icon = if !m.enabled {
             None
@@ -1077,7 +1363,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         } else {
             None
         };
-        list = list.push(striped(mod_row(i, m, len, flag_icon, hidden_icon), i % 2 == 0));
+        let meta = app.meta_cache.get(&m.name);
+        let selected = app.selected_mod == Some(i);
+        list = list.push(list_row(
+            mod_row(i, m, len, meta, flag_icon, hidden_icon),
+            i % 2 == 0,
+            selected,
+        ));
+    }
+    if !app.mods.is_empty() && shown == 0 {
+        list = list.push(text(format!("No mods match \"{}\".", app.search.trim())).size(12.0));
     }
 
     let overwrite = button(
@@ -1094,11 +1389,133 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let inner = Column::new()
         .spacing(6)
         .push(profile)
+        .push(search)
         .push(header)
         .push(scrollable(list).height(Length::Fill))
         .push(overwrite);
 
     container(inner).width(Length::FillPortion(3)).height(Length::Fill).padding(8).style(panel_style).into()
+}
+
+/// A single left-aligned action in the mod context menu.
+fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+    button(text(label).size(12.0))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .on_press(msg)
+        .style(button::text)
+        .into()
+}
+
+/// A small separator line inside the context menu.
+fn menu_sep<'a>() -> Element<'a, Message> {
+    container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        .padding([2, 6])
+        .style(|_t: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xC8, 0xB8, 0x95))),
+            ..Default::default()
+        })
+        .into()
+}
+
+/// MO2's right-click mod menu, rendered as a floating card (the action set from
+/// modlistviewactions.cpp: enable/disable, send-to-top/bottom, explorer, Nexus,
+/// reinstall, rename, remove). Shows the rename editor when a rename is in flight.
+fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    let Some(m) = app.mods.get(i) else {
+        return Space::new(Length::Shrink, Length::Shrink).into();
+    };
+
+    let title = Row::new()
+        .spacing(6)
+        .push(text(m.name.clone()).size(13.0).width(Length::Fill))
+        .push(
+            button(text("x").size(13.0)).padding([1, 6]).on_press(Message::CloseMenu).style(button::text),
+        );
+
+    let mut col = Column::new().spacing(1).push(title);
+
+    // A read-only info line (MO2 surfaces version/category/Nexus id on the row).
+    if let Some(r) = app.meta_cache.get(&m.name) {
+        let mut bits: Vec<String> = Vec::new();
+        if let Some(v) = &r.version {
+            bits.push(format!("v{v}"));
+        }
+        if let Some(c) = r.category.as_deref().map(str::trim).filter(|c| !c.is_empty() && *c != "-1,") {
+            bits.push(format!("cat {}", c.trim_end_matches(',')));
+        }
+        if let Some(id) = r.mod_id {
+            bits.push(format!("Nexus #{id}"));
+        }
+        if !bits.is_empty() {
+            col = col.push(text(bits.join("  ·  ")).size(10.0));
+        }
+    }
+
+    col = col.push(menu_sep());
+
+    // Inline rename editor (MO2 renameMod) takes over the card while active.
+    if let Some((ri, name)) = &app.rename {
+        if *ri == i {
+            let editor = text_input("New name", name)
+                .on_input(Message::RenameChanged)
+                .on_submit(Message::RenameCommit)
+                .padding(5)
+                .size(12.0);
+            let actions = Row::new()
+                .spacing(6)
+                .push(tool_btn("Save", Message::RenameCommit))
+                .push(tool_btn("Cancel", Message::CloseMenu));
+            col = col.push(editor).push(actions);
+            return menu_frame(col.into());
+        }
+    }
+
+    col = col
+        .push(menu_item(if m.enabled { "Disable" } else { "Enable" }, Message::ToggleMod(i)))
+        .push(menu_sep())
+        .push(menu_item("Send to Top", Message::ModSendTop(i)))
+        .push(menu_item("Send to Bottom", Message::ModSendBottom(i)))
+        .push(menu_sep())
+        .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)));
+
+    // Visit on Nexus only when we actually have a mod id to link to.
+    let has_nexus = app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some();
+    if has_nexus {
+        col = col.push(menu_item("Visit on Nexus", Message::ModVisitNexus(i)));
+    }
+
+    col = col
+        .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
+        .push(menu_item("Rename", Message::RenameStart(i)))
+        .push(menu_sep());
+
+    let remove_label = if app.confirm_remove == Some(i) { "Confirm remove?" } else { "Remove" };
+    let remove = button(text(remove_label).size(12.0))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .on_press(Message::ModRemove(i))
+        .style(if app.confirm_remove == Some(i) { button::danger } else { button::text });
+    col = col.push(remove);
+
+    menu_frame(col.into())
+}
+
+/// The bordered card chrome around the context menu's contents.
+fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
+    container(content)
+        .width(Length::Fixed(210.0))
+        .padding(6)
+        .style(|_t: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+            border: Border {
+                color: Color::from_rgb8(0x6E, 0x24, 0x2E),
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
 }
 
 fn data_panel<'a>(app: &App) -> Element<'a, Message> {
@@ -1477,15 +1894,31 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         .push(modlist_pane(app))
         .push(right_pane(app));
 
-    Column::new()
+    let base = Column::new()
         .spacing(4)
         .padding(4)
         .push(header)
         .push(menu_bar())
         .push(toolbar())
         .push(body)
-        .push(status_bar(app))
-        .into()
+        .push(status_bar(app));
+
+    // The right-click action menu floats over the window (MO2's context menu).
+    // A full-window catcher behind it dismisses on a click outside the card.
+    match app.menu_mod {
+        Some(i) if i < app.mods.len() => {
+            let catcher =
+                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseMenu);
+            let card = container(mod_menu_card(app, i))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .padding(iced::Padding { top: 150.0, right: 0.0, bottom: 0.0, left: 40.0 })
+                .align_x(iced::alignment::Horizontal::Left)
+                .align_y(iced::alignment::Vertical::Top);
+            Stack::new().push(base).push(catcher).push(card).into()
+        }
+        _ => base.into(),
+    }
 }
 
 /// Shared post-install step: activate the new mod at the top of the load order,
@@ -1500,6 +1933,7 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
     }
     app.plugins = None;
     app.conflicts = compute_conflicts(app);
+    app.meta_cache = build_meta_cache(app);
     app.status = Some(if fomod {
         format!("Installed '{name}' via FOMOD.")
     } else {
