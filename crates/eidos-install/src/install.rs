@@ -128,26 +128,71 @@ fn is_nonempty_dir(p: &Path) -> bool {
     fs::read_dir(p).map(|mut rd| rd.next().is_some()).unwrap_or(false)
 }
 
+/// How to handle an existing `mods/<name>/` (MO2's overwrite prompt): fail, replace
+/// (wipe + reinstall, keeping the user's meta.ini state), merge (install over the
+/// existing files), or install under a different name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum OverwritePolicy {
+    #[default]
+    Fail,
+    Replace,
+    Merge,
+    Rename(String),
+}
+
 /// Install `archive` into `mods_dir/name`, MO2 Simple-installer style: extract,
 /// strip the wrapper folder to the Data-relative root, move it in, and write a
-/// MO2-compatible `meta.ini` (seeded from a `<archive>.meta` sidecar if present).
+/// MO2-compatible `meta.ini`. Fails if the destination already exists; use
+/// [`install_archive_with_policy`] to replace/merge/rename instead.
 pub fn install_archive(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
     game_name: &str,
 ) -> Result<InstallReport, InstallError> {
-    let bin = find_7z().ok_or(InstallError::No7z)?;
+    install_archive_with_policy(archive, mods_dir, name, game_name, OverwritePolicy::Fail)
+}
 
+/// Like [`install_archive`] but with an explicit [`OverwritePolicy`] for when
+/// `mods/<name>/` already exists (MO2's merge / replace / rename / cancel).
+pub fn install_archive_with_policy(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_name: &str,
+    policy: OverwritePolicy,
+) -> Result<InstallReport, InstallError> {
     // Sanitize the folder name (a real Nexus modName can contain ':' etc.) and
     // recover the mod id from the filename for the meta.ini when there's no sidecar.
-    let name = fix_directory_name(name).unwrap_or_else(|| "Mod".to_string());
+    let mut name = fix_directory_name(name).unwrap_or_else(|| "Mod".to_string());
     let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
 
-    let dest = mods_dir.join(&name);
+    // Resolve a collision with the existing mod folder per the policy. Done before
+    // extraction, so a Fail or a Rename-onto-another-existing needs no 7-Zip.
+    let mut dest = mods_dir.join(&name);
+    let mut preserved: Option<ModMeta> = None;
     if dest.exists() && is_nonempty_dir(&dest) {
-        return Err(InstallError::Exists(dest));
+        match &policy {
+            OverwritePolicy::Fail => return Err(InstallError::Exists(dest)),
+            OverwritePolicy::Merge => {} // install over the existing files
+            OverwritePolicy::Replace => {
+                // Keep the user's metadata (endorsement / category / tracked) across
+                // the wipe, like MO2's REPLACE.
+                preserved = Some(ModMeta::read(&dest.join("meta.ini")));
+                fs::remove_dir_all(&dest)?;
+            }
+            OverwritePolicy::Rename(new) => {
+                name = fix_directory_name(new).unwrap_or_else(|| "Mod".to_string());
+                dest = mods_dir.join(&name);
+                if dest.exists() && is_nonempty_dir(&dest) {
+                    return Err(InstallError::Exists(dest));
+                }
+            }
+        }
     }
+    let merging = policy == OverwritePolicy::Merge;
+
+    let bin = find_7z().ok_or(InstallError::No7z)?;
 
     // Extract into a same-filesystem temp so the final move is a rename.
     let tmp = mods_dir.join(format!(
@@ -185,13 +230,41 @@ pub fn install_archive(
             tmp.join(base.trim_end_matches('/'))
         };
         fs::create_dir_all(&dest)?;
-        move_dir_contents(&src, &dest)?;
+        // A merge installs over existing files (recursive copy); otherwise the dest
+        // is empty/wiped, so a fast top-level rename suffices.
+        if merging {
+            copy_dir_all(&src, &dest)?;
+        } else {
+            move_dir_contents(&src, &dest)?;
+        }
         write_meta(archive, &dest, game_name, guessed_id)?;
         Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, missing: Vec::new(), dest: dest.clone() })
     })();
 
     let _ = fs::remove_dir_all(&tmp);
-    result
+
+    let report = result?;
+    // After a Replace, re-apply the preserved user metadata onto the fresh meta.ini.
+    if let Some(old) = preserved {
+        reapply_user_meta(&old, &report.dest.join("meta.ini"));
+    }
+    Ok(report)
+}
+
+/// Re-apply the user-set fields (endorsement, tracked, category) from a previous
+/// install's meta.ini onto a freshly written one, so a Replace doesn't lose them.
+fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
+    let mut m = ModMeta::read(meta_path);
+    if old.endorsed() {
+        m.set("endorsed", "1");
+    }
+    if old.tracked() {
+        m.set("tracked", "1");
+    }
+    if let Some(c) = old.category() {
+        m.set("category", &format!("\"{c}\""));
+    }
+    let _ = m.write(meta_path);
 }
 
 /// Write a MO2-compatible `meta.ini`, seeded from the download's `<archive>.meta`
@@ -566,6 +639,34 @@ mod tests {
 
         assert!(dest.path().join("renamed.esp").is_file());
         assert!(!dest.path().join("real.esp").exists());
+    }
+
+    #[test]
+    fn fail_policy_errors_when_dest_exists() {
+        let mods = TempDir::new("mods");
+        fs::create_dir_all(mods.path().join("ExistingMod")).unwrap();
+        fs::write(mods.path().join("ExistingMod/a.esp"), b"x").unwrap();
+        // The archive is never read - Fail returns before extraction (no 7-Zip needed).
+        let archive = mods.path().join("whatever.7z");
+        let r = install_archive_with_policy(&archive, mods.path(), "ExistingMod", "skyrimse", OverwritePolicy::Fail);
+        assert!(matches!(r, Err(InstallError::Exists(_))));
+    }
+
+    #[test]
+    fn reapply_user_meta_restores_endorsement_and_category() {
+        let dir = TempDir::new("meta");
+        let old_path = dir.path().join("old.ini");
+        fs::write(&old_path, "[General]\nendorsed=1\ncategory=\"42,\"\ntracked=1\n").unwrap();
+        let old = ModMeta::read(&old_path);
+
+        let new_path = dir.path().join("new.ini");
+        fs::write(&new_path, "[General]\nendorsed=0\ncategory=\"-1,\"\ntracked=0\n").unwrap();
+        reapply_user_meta(&old, &new_path);
+
+        let s = fs::read_to_string(&new_path).unwrap();
+        assert!(s.contains("endorsed=1"));
+        assert!(s.contains("tracked=1"));
+        assert!(s.contains("category=\"42,\""));
     }
 
     #[test]

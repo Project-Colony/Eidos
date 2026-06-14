@@ -509,11 +509,27 @@ fn cmd_install(args: &[String]) {
     inst.create().ok();
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
 
+    // Optional overwrite policy; the positional name is the first non-flag arg.
+    let policy = if args.iter().any(|a| a == "--replace") {
+        eidos_install::OverwritePolicy::Replace
+    } else if args.iter().any(|a| a == "--merge") {
+        eidos_install::OverwritePolicy::Merge
+    } else {
+        eidos_install::OverwritePolicy::Fail
+    };
     let name = args
-        .get(2)
+        .iter()
+        .skip(2)
+        .find(|a| !a.starts_with("--"))
         .cloned()
         .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
-    match eidos_install::install_archive(std::path::Path::new(archive), &inst.mods_dir(), &name, id) {
+    match eidos_install::install_archive_with_policy(
+        std::path::Path::new(archive),
+        &inst.mods_dir(),
+        &name,
+        id,
+        policy,
+    ) {
         Ok(r) => {
             // Activate the new mod at the top of the active profile's load order,
             // like MO2 (a freshly installed mod wins conflicts by default).
@@ -544,6 +560,9 @@ fn cmd_install(args: &[String]) {
         }
         Err(e) => {
             eprintln!("install failed: {e}");
+            if matches!(e, eidos_install::InstallError::Exists(_)) {
+                eprintln!("  (re-run with --replace to reinstall it, or --merge to install over it)");
+            }
             exit(1);
         }
     }
