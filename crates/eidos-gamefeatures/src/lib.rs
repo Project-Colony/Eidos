@@ -12,6 +12,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+mod native_dll;
+pub use native_dll::{ensure_d3dcompiler_47, imported_dlls, scan_imports_provisionable, NativeDllError};
+
 /// The game INI that holds the `[Archive]` section: the first of the per-profile
 /// INIs (see `ini_files_for`).
 pub fn ini_file_for(game_id: &str) -> Option<&'static str> {

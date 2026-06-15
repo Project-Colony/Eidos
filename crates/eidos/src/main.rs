@@ -264,7 +264,7 @@ fn run_through_view(
     // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
     // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins.
     let mut env = env;
-    if let Some(kv) = forced_dll_overrides(inst) {
+    if let Some(kv) = forced_dll_overrides(game, inst) {
         env.push(kv);
     }
 
@@ -302,32 +302,56 @@ fn run_through_view(
     }
 }
 
-/// If any enabled mod (or the Overwrite layer) ships a top-level DLL that shadows a
-/// Wine builtin (ENB/ReShade graphics DLLs, `.asi` loaders), compose the
-/// `WINEDLLOVERRIDES` that makes Wine load it native-then-builtin (`n,b`) -
-/// otherwise the builtin wins and the mod DLL never loads. Mirrors MO2's forced
-/// libraries (its per-executable opt-in), restricted to known graphics/loader names.
-fn forced_dll_overrides(inst: &Instance) -> Option<(String, String)> {
-    const BUILTIN_SHADOWS: &[&str] = &[
+/// Compose the `WINEDLLOVERRIDES` that forces the right DLLs native-then-builtin
+/// (`n,b`) so mod graphics DLLs actually load under Wine. Two cases, mirroring
+/// MO2's forced libraries:
+///
+/// 1. A mod SHIPS a top-level DLL that shadows a Wine builtin (ENB `d3d11`,
+///    ReShade `dxgi`, `.asi` loaders) - force the mod's own native so the builtin
+///    doesn't win.
+/// 2. A mod (often a nested SKSE plugin) IMPORTS `d3dcompiler_47.dll` - Community
+///    Shaders / ENB / ReShade need Microsoft's native HLSL compiler, which no
+///    Proton flavour ships (they all link the Wine builtin, which those mods
+///    reject). Detect by import table and provision the bundled native MS DLL into
+///    the prefix's system32/syswow64 (best-effort - a missing/read-only prefix
+///    never blocks the launch).
+fn forced_dll_overrides(game: &DetectedGame, inst: &Instance) -> Option<(String, String)> {
+    // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
+    // detection below, not by the ship check - mods import it, they don't ship it).
+    const SHIPPED_SHADOWS: &[&str] = &[
         "d3d8", "d3d9", "d3d10", "d3d11", "d3d12", "dxgi", "dinput", "dinput8", "winmm",
-        "xinput1_3", "x3daudio1_7", "opengl32", "d3dcompiler_47",
+        "xinput1_3", "x3daudio1_7", "opengl32",
     ];
     let mut roots: Vec<PathBuf> =
         inst.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect();
     roots.push(inst.overwrite_dir());
 
     let mut stems: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for root in roots {
-        let Ok(rd) = std::fs::read_dir(&root) else { continue };
+    for root in &roots {
+        let Ok(rd) = std::fs::read_dir(root) else { continue };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_ascii_lowercase();
             if let Some(stem) = name.strip_suffix(".dll") {
-                if BUILTIN_SHADOWS.contains(&stem) {
+                if SHIPPED_SHADOWS.contains(&stem) {
                     stems.insert(stem.to_string());
                 }
             }
         }
     }
+
+    // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
+    if eidos_gamefeatures::scan_imports_provisionable(&roots) {
+        if let Some(compatdata) = game.compatdata.as_ref() {
+            let win = compatdata.join("pfx").join("drive_c").join("windows");
+            match eidos_gamefeatures::ensure_d3dcompiler_47(&win) {
+                Ok(true) => eprintln!("eidos play: provisioned native d3dcompiler_47 into the prefix"),
+                Ok(false) => {}
+                Err(e) => eprintln!("eidos play: could not provision d3dcompiler_47: {e}"),
+            }
+        }
+        stems.insert("d3dcompiler_47".to_string());
+    }
+
     if stems.is_empty() {
         return None;
     }

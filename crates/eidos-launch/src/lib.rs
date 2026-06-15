@@ -210,5 +210,11 @@ mod tests {
             "mscoree=d;mshtml=d;dinput8=n,b"
         );
         assert_eq!(wine_dll_overrides(&[], Some("a=b")), "a=b");
+        // The provisioned d3dcompiler_47 folds into the same n,b list (Community
+        // Shaders / ENB), preserving any inherited Proton value.
+        assert_eq!(
+            wine_dll_overrides(&["d3dcompiler_47".into(), "dxgi".into()], Some("mscoree=d")),
+            "mscoree=d;d3dcompiler_47,dxgi=n,b"
+        );
     }
 }
