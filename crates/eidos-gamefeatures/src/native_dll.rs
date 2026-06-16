@@ -14,8 +14,9 @@
 //! redistributable into the prefix's `system32`/`syswow64`, where Wine's loader
 //! finds it once forced native (`WINEDLLOVERRIDES=d3dcompiler_47=n,b`). Bundling
 //! (rather than downloading at runtime) keeps Eidos self-contained, matching how
-//! MO2 ships the same DLL in its `dlls/` folder. See
-//! `assets/d3dcompiler_47/PROVENANCE.md` for the vendored binaries' provenance.
+//! MO2 ships the same DLL in its `dlls/` folder. The same bundle-and-copy mechanism
+//! also provisions the genuine MS DirectX helpers some modding TOOLS need
+//! (d3dcompiler_43 / d3dx9_43 / d3dx11_43). See `assets/PROVENANCE.md`.
 
 use std::collections::BTreeSet;
 use std::ffi::OsString;
@@ -27,16 +28,52 @@ use object::pe::{ImageNtHeaders32, ImageNtHeaders64};
 use object::read::pe::{ImageNtHeaders, ImportTable, PeFile};
 use object::LittleEndian as LE;
 
-/// The genuine Microsoft redistributable d3dcompiler_47 ("Direct3D HLSL Compiler
-/// for Redistribution", PE 10.0.26100.1). x86_64 goes to `system32`, i386 to
-/// `syswow64`. See `assets/d3dcompiler_47/PROVENANCE.md`.
-///   sha256(x86_64) = 9489124759292316d11eae5ffb67b74bfaf0e1853b968137b047567f31c76232
-///   sha256(i386)   = 2ad0d4987fc4624566b190e747c9d95038443956ed816abfd1e2d389b5ec0851
-const X86_64_DLL: &[u8] = include_bytes!("../assets/d3dcompiler_47/x86_64.dll");
-const I386_DLL: &[u8] = include_bytes!("../assets/d3dcompiler_47/i386.dll");
+/// A genuine Microsoft redistributable DLL Eidos bundles to drop into a Proton
+/// prefix (the x86_64 build for `system32`, the i386 build for `syswow64`), because
+/// Wine's builtin is either a broken stub (d3dcompiler) or one some tools reject
+/// (d3dx). `verb` is the winetricks-style name, also the on-disk file stem.
+struct NativeDll {
+    verb: &'static str,
+    x86_64: &'static [u8],
+    i386: &'static [u8],
+}
+
+/// The bundled native DLLs. See `assets/PROVENANCE.md` for provenance + hashes.
+/// d3dcompiler_47 fixes runtime HLSL compilation (Community Shaders/ENB/ReShade);
+/// d3dcompiler_43 + d3dx9_43 + d3dx11_43 cover the modding TOOLS that need the
+/// genuine MS DirectX helpers (BodySlide/Outfit Studio 3D preview, DynDOLOD/TexGen,
+/// CAO texture work).
+const NATIVE_DLLS: &[NativeDll] = &[
+    NativeDll {
+        verb: "d3dcompiler_47",
+        x86_64: include_bytes!("../assets/d3dcompiler_47/x86_64.dll"),
+        i386: include_bytes!("../assets/d3dcompiler_47/i386.dll"),
+    },
+    NativeDll {
+        verb: "d3dcompiler_43",
+        x86_64: include_bytes!("../assets/d3dcompiler_43/x86_64.dll"),
+        i386: include_bytes!("../assets/d3dcompiler_43/i386.dll"),
+    },
+    NativeDll {
+        verb: "d3dx9_43",
+        x86_64: include_bytes!("../assets/d3dx9_43/x86_64.dll"),
+        i386: include_bytes!("../assets/d3dx9_43/i386.dll"),
+    },
+    NativeDll {
+        verb: "d3dx11_43",
+        x86_64: include_bytes!("../assets/d3dx11_43/x86_64.dll"),
+        i386: include_bytes!("../assets/d3dx11_43/i386.dll"),
+    },
+];
 
 /// The DLL the graphics mods import; lower-cased for case-insensitive matching.
 const D3DCOMPILER_47: &str = "d3dcompiler_47.dll";
+
+/// Whether `verb` is a bundled native DLL Eidos can file-copy into a prefix (Tier 1),
+/// as opposed to an installer verb (vcrun/dotnet) that must run winetricks (Tier 2).
+pub fn is_tier1_dll(verb: &str) -> bool {
+    NATIVE_DLLS.iter().any(|d| d.verb == verb)
+}
 
 /// Don't slurp an implausibly large `.dll` (a mislabelled archive) into memory
 /// during the scan; real plugin DLLs are far smaller. The PE header + import table
@@ -153,23 +190,34 @@ fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
     false
 }
 
-/// Deploy the bundled native d3dcompiler_47 into a prefix, arch-aware. `windows_dir`
-/// is the prefix's `drive_c/windows`. A 64-bit (WoW64) prefix - Proton's default,
-/// even for 32-bit games - keeps 64-bit DLLs in `system32` and 32-bit in `syswow64`,
-/// so we write both. A pure 32-bit prefix has no `syswow64` and keeps the 32-bit DLL
-/// in `system32`. We branch on the prefix's actual layout rather than the game's
-/// bitness. Idempotent and best-effort; returns whether anything was written.
-pub fn ensure_d3dcompiler_47(windows_dir: &Path) -> io::Result<bool> {
+/// Deploy a bundled native DLL (`verb`, e.g. "d3dx9_43") into a prefix, arch-aware.
+/// `windows_dir` is the prefix's `drive_c/windows`. A 64-bit (WoW64) prefix - Proton's
+/// default, even for 32-bit games - keeps 64-bit DLLs in `system32` and 32-bit in
+/// `syswow64`, so we write both. A pure 32-bit prefix has no `syswow64` and keeps the
+/// 32-bit DLL in `system32`. We branch on the prefix's actual layout, not the game's
+/// bitness. Returns `Ok(false)` if `verb` is not a bundled DLL. Idempotent and
+/// best-effort; returns whether anything was written.
+pub fn ensure_native_dll(windows_dir: &Path, verb: &str) -> io::Result<bool> {
+    let Some(dll) = NATIVE_DLLS.iter().find(|d| d.verb == verb) else {
+        return Ok(false);
+    };
+    let fname = format!("{}.dll", dll.verb);
     let system32 = windows_dir.join("system32");
     let syswow64 = windows_dir.join("syswow64");
     if syswow64.is_dir() {
-        let a = deploy_native(&system32.join("d3dcompiler_47.dll"), X86_64_DLL)?;
-        let b = deploy_native(&syswow64.join("d3dcompiler_47.dll"), I386_DLL)?;
+        let a = deploy_native(&system32.join(&fname), dll.x86_64)?;
+        let b = deploy_native(&syswow64.join(&fname), dll.i386)?;
         Ok(a || b)
     } else {
         // 32-bit prefix: the 32-bit DLL is the one the game loads, from system32.
-        deploy_native(&system32.join("d3dcompiler_47.dll"), I386_DLL)
+        deploy_native(&system32.join(&fname), dll.i386)
     }
+}
+
+/// Convenience for the game path: ensure the native HLSL compiler (the mod
+/// import-scan trigger). Equivalent to `ensure_native_dll(windows_dir, "d3dcompiler_47")`.
+pub fn ensure_d3dcompiler_47(windows_dir: &Path) -> io::Result<bool> {
+    ensure_native_dll(windows_dir, "d3dcompiler_47")
 }
 
 /// Write `bytes` to `target`, handling the three states an existing entry can be
@@ -237,20 +285,59 @@ mod tests {
         d
     }
 
+    /// Look up a bundled blob by verb + arch (x86_64 when `x64`, else i386).
+    fn blob(verb: &str, x64: bool) -> &'static [u8] {
+        let d = NATIVE_DLLS.iter().find(|d| d.verb == verb).unwrap();
+        if x64 {
+            d.x86_64
+        } else {
+            d.i386
+        }
+    }
+
     #[test]
     fn embedded_blobs_are_the_vendored_native_dlls() {
         // Catches a truncated/replaced vendor blob at test time (sizes from PROVENANCE.md).
-        assert_eq!(X86_64_DLL.len(), 4_691_496);
-        assert_eq!(I386_DLL.len(), 3_657_992);
-        assert_eq!(&X86_64_DLL[..2], b"MZ");
-        assert_eq!(&I386_DLL[..2], b"MZ");
+        let sizes = [
+            ("d3dcompiler_47", 4_691_496usize, 3_657_992usize),
+            ("d3dcompiler_43", 2_526_056, 2_106_216),
+            ("d3dx9_43", 2_401_112, 1_998_168),
+            ("d3dx11_43", 276_832, 248_672),
+        ];
+        assert_eq!(NATIVE_DLLS.len(), sizes.len());
+        for (verb, x64, x86) in sizes {
+            assert_eq!(blob(verb, true).len(), x64, "{verb} x86_64 size");
+            assert_eq!(blob(verb, false).len(), x86, "{verb} i386 size");
+            assert_eq!(&blob(verb, true)[..2], b"MZ", "{verb} x86_64 MZ");
+            assert_eq!(&blob(verb, false)[..2], b"MZ", "{verb} i386 MZ");
+        }
+    }
+
+    #[test]
+    fn tier1_classifier_knows_the_bundled_verbs() {
+        assert!(is_tier1_dll("d3dcompiler_47"));
+        assert!(is_tier1_dll("d3dx9_43"));
+        assert!(is_tier1_dll("d3dx11_43"));
+        assert!(!is_tier1_dll("vcrun2022")); // Tier 2 (winetricks installer)
+        assert!(!is_tier1_dll("dotnet8"));
+    }
+
+    #[test]
+    fn ensure_native_dll_deploys_a_d3dx_verb() {
+        let (win, s32, sw64) = win64_prefix();
+        assert!(ensure_native_dll(&win, "d3dx9_43").unwrap());
+        assert_eq!(fs::read(s32.join("d3dx9_43.dll")).unwrap(), blob("d3dx9_43", true));
+        assert_eq!(fs::read(sw64.join("d3dx9_43.dll")).unwrap(), blob("d3dx9_43", false));
+        // An unknown verb is a clean no-op, not an error.
+        assert!(!ensure_native_dll(&win, "vcrun2022").unwrap());
+        let _ = fs::remove_dir_all(&win);
     }
 
     #[test]
     fn parses_imports_of_a_real_64bit_pe() {
         let dir = tmp_dir();
         let dll = dir.join("native.dll");
-        fs::write(&dll, X86_64_DLL).unwrap();
+        fs::write(&dll, blob("d3dcompiler_47", true)).unwrap();
         let set = imported_dlls(&dll).unwrap();
         assert!(!set.is_empty(), "a real DLL imports at least one library");
         let _ = fs::remove_dir_all(&dir);
@@ -260,7 +347,7 @@ mod tests {
     fn parses_imports_of_a_real_32bit_pe() {
         let dir = tmp_dir();
         let dll = dir.join("native32.dll");
-        fs::write(&dll, I386_DLL).unwrap();
+        fs::write(&dll, blob("d3dcompiler_47", false)).unwrap();
         let set = imported_dlls(&dll).unwrap();
         assert!(!set.is_empty());
         let _ = fs::remove_dir_all(&dir);
@@ -286,7 +373,7 @@ mod tests {
         // Nest the DLL like a real SKSE plugin: <mod>/SKSE/Plugins/foo.dll.
         let nested = dir.join("SKSE/Plugins");
         fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join("foo.dll"), X86_64_DLL).unwrap();
+        fs::write(nested.join("foo.dll"), blob("d3dcompiler_47", true)).unwrap();
 
         // The bundled DLL imports a known set; pick any real import as the needle so
         // the test does not hard-code a specific Windows DLL name.
@@ -319,8 +406,8 @@ mod tests {
         let (win, s32, sw64) = win64_prefix();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap(), "first run writes");
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), X86_64_DLL);
-        assert_eq!(fs::read(sw64.join("d3dcompiler_47.dll")).unwrap(), I386_DLL);
+        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", true));
+        assert_eq!(fs::read(sw64.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", false));
 
         assert!(!ensure_d3dcompiler_47(&win).unwrap(), "second run is a no-op");
         let _ = fs::remove_dir_all(&win);
@@ -334,7 +421,7 @@ mod tests {
         fs::create_dir_all(&s32).unwrap();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap());
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), I386_DLL);
+        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", false));
         assert!(!win.join("syswow64").exists(), "must not create a syswow64");
         let _ = fs::remove_dir_all(&win);
     }
@@ -355,7 +442,7 @@ mod tests {
         // written through into the shared builtin.
         let placed = s32.join("d3dcompiler_47.dll");
         assert!(!fs::symlink_metadata(&placed).unwrap().file_type().is_symlink());
-        assert_eq!(fs::read(&placed).unwrap(), X86_64_DLL);
+        assert_eq!(fs::read(&placed).unwrap(), blob("d3dcompiler_47", true));
         assert_eq!(fs::read(&builtin).unwrap(), b"PRETEND WINE BUILTIN - MUST NOT BE OVERWRITTEN");
         let _ = fs::remove_dir_all(&win);
     }
@@ -366,7 +453,7 @@ mod tests {
         fs::write(s32.join("d3dcompiler_47.dll"), b"old builtin copy").unwrap();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap());
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), X86_64_DLL);
+        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", true));
         assert_eq!(fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(), b"old builtin copy");
         let _ = fs::remove_dir_all(&win);
     }
@@ -381,7 +468,7 @@ mod tests {
         fs::create_dir_all(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap());
-        assert_eq!(fs::read(&target).unwrap(), X86_64_DLL);
+        assert_eq!(fs::read(&target).unwrap(), blob("d3dcompiler_47", true));
         // The original was preserved (the stray dir was cleared and replaced by the
         // real backup), never silently lost.
         assert_eq!(fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(), b"USER ORIGINAL");

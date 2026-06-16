@@ -242,7 +242,7 @@ fn cmd_play(args: &[String]) {
         return;
     }
 
-    run_through_view(id, &game, &inst, command, Vec::new(), None);
+    run_through_view(id, &game, &inst, command, Vec::new(), None, &[]);
 }
 
 /// The shared launch pipeline behind `play` and `tool`: write `plugins.txt`,
@@ -256,15 +256,17 @@ fn run_through_view(
     command: Vec<String>,
     env: Vec<(String, String)>,
     cwd: Option<std::path::PathBuf>,
+    prereqs: &[String],
 ) -> ! {
     let inis = prepare_inis(id, game, inst);
     prepare_plugins(id, game, inst);
     let save_bind = prepare_saves(id, game, inst);
 
     // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
-    // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins.
+    // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
+    // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).
     let mut env = env;
-    if let Some(kv) = forced_dll_overrides(game, inst) {
+    if let Some(kv) = forced_dll_overrides(game, inst, prereqs) {
         env.push(kv);
     }
 
@@ -315,7 +317,13 @@ fn run_through_view(
 ///    reject). Detect by import table and provision the bundled native MS DLL into
 ///    the prefix's system32/syswow64 (best-effort - a missing/read-only prefix
 ///    never blocks the launch).
-fn forced_dll_overrides(game: &DetectedGame, inst: &Instance) -> Option<(String, String)> {
+/// 3. A tool declares Tier-1 DLL prerequisites (`tool_prereqs`, e.g. `d3dx9_43` for
+///    BodySlide's 3D preview) - provision the bundled native and force it too.
+fn forced_dll_overrides(
+    game: &DetectedGame,
+    inst: &Instance,
+    tool_prereqs: &[String],
+) -> Option<(String, String)> {
     // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
     // detection below, not by the ship check - mods import it, they don't ship it).
     const SHIPPED_SHADOWS: &[&str] = &[
@@ -339,17 +347,35 @@ fn forced_dll_overrides(game: &DetectedGame, inst: &Instance) -> Option<(String,
         }
     }
 
+    // The prefix's windows dir, where bundled native DLLs get deployed.
+    let win = game.compatdata.as_ref().map(|cd| cd.join("pfx").join("drive_c").join("windows"));
+
     // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
-        if let Some(compatdata) = game.compatdata.as_ref() {
-            let win = compatdata.join("pfx").join("drive_c").join("windows");
-            match eidos_gamefeatures::ensure_d3dcompiler_47(&win) {
+        if let Some(win) = &win {
+            match eidos_gamefeatures::ensure_d3dcompiler_47(win) {
                 Ok(true) => eprintln!("eidos play: provisioned native d3dcompiler_47 into the prefix"),
                 Ok(false) => {}
                 Err(e) => eprintln!("eidos play: could not provision d3dcompiler_47: {e}"),
             }
         }
         stems.insert("d3dcompiler_47".to_string());
+    }
+
+    // Case 3: a tool's declared Tier-1 DLL prerequisites (the bundled DirectX
+    // helpers). Tier-2 verbs (vcrun/dotnet) are skipped here - they install via
+    // `eidos prereqs`, not WINEDLLOVERRIDES.
+    for verb in tool_prereqs {
+        if eidos_gamefeatures::is_tier1_dll(verb) {
+            if let Some(win) = &win {
+                match eidos_gamefeatures::ensure_native_dll(win, verb) {
+                    Ok(true) => eprintln!("eidos tool: provisioned native {verb} into the prefix"),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("eidos tool: could not provision {verb}: {e}"),
+                }
+            }
+            stems.insert(verb.clone());
+        }
     }
 
     if stems.is_empty() {
@@ -425,6 +451,9 @@ fn cmd_tool(args: &[String]) {
                 exe: std::path::PathBuf::from(exe),
                 args: args[4..].to_vec(),
                 workdir: None,
+                // Seed known tools' runtime prereqs (BodySlide -> d3dx, Synthesis ->
+                // dotnet...); the user can edit tools.ini to override.
+                prereqs: eidos_instance::default_prereqs(title),
             });
             match inst.save_tools(&user) {
                 Ok(()) => println!("Added '{title}'. Run it: eidos tool {id} run {title}"),
@@ -499,6 +528,7 @@ fn cmd_tool(args: &[String]) {
             command.extend(extra);
             // MO2's default working directory for a tool is its own folder.
             let cwd = tool.workdir.clone().or_else(|| exe.parent().map(|p| p.to_path_buf()));
+            let prereqs = tool.prereqs.clone();
 
             if print_only {
                 println!("would run (through the merged view at {}):", game.data_path.display());
@@ -511,7 +541,7 @@ fn cmd_tool(args: &[String]) {
                 }
                 return;
             }
-            run_through_view(id, &game, &inst, command, run.env, cwd);
+            run_through_view(id, &game, &inst, command, run.env, cwd, &prereqs);
         }
         Some(other) => {
             eprintln!("unknown tool subcommand '{other}' (list | add | rm | run)");

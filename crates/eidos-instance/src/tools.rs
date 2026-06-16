@@ -23,6 +23,11 @@ pub struct Tool {
     pub args: Vec<String>,
     /// Working directory; `None` = the executable's own directory (MO2 default).
     pub workdir: Option<PathBuf>,
+    /// Runtime prerequisites to ensure in the prefix before this tool runs
+    /// (winetricks-style verbs, e.g. `["dotnet8", "vcrun2022"]` for Synthesis, or
+    /// `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for the
+    /// Delphi tools (xEdit/SSEEdit) that need nothing extra.
+    pub prereqs: Vec<String>,
 }
 
 /// Read `tools.ini`. A missing file is an empty list.
@@ -40,6 +45,7 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                     exe: PathBuf::new(),
                     args: Vec::new(),
                     workdir: None,
+                    prereqs: Vec::new(),
                 });
             }
             continue;
@@ -60,6 +66,11 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 tool.args = v.split(' ').map(String::from).collect();
             }
             "workdir" if !v.is_empty() => tool.workdir = Some(PathBuf::from(v)),
+            // Comma-separated prerequisite verbs (names are `[a-z0-9_]`, no escaping).
+            "prereqs" if !v.is_empty() => {
+                tool.prereqs =
+                    v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+            }
             _ => {}
         }
     }
@@ -91,6 +102,9 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         if let Some(w) = &t.workdir {
             s.push_str(&format!("workdir={}\n", w.display()));
         }
+        if !t.prereqs.is_empty() {
+            s.push_str(&format!("prereqs={}\n", t.prereqs.join(",")));
+        }
         s.push('\n');
     }
     if let Some(parent) = path.parent() {
@@ -118,8 +132,10 @@ pub fn default_tools(script_extender_loader: Option<&str>, install: &Path) -> Ve
     let mut v = Vec::new();
     if let Some(loader) = script_extender_loader {
         if install.join(loader).is_file() {
+            let title = loader.trim_end_matches(".exe").to_string();
             v.push(Tool {
-                title: loader.trim_end_matches(".exe").to_string(),
+                prereqs: default_prereqs(&title),
+                title,
                 exe: PathBuf::from(loader),
                 args: Vec::new(),
                 workdir: None,
@@ -127,6 +143,34 @@ pub fn default_tools(script_extender_loader: Option<&str>, install: &Path) -> Ve
         }
     }
     v
+}
+
+/// The known runtime prerequisites for a well-known modding tool, by title (so a
+/// freshly-added SSEEdit/Synthesis/BodySlide gets the right verbs without the user
+/// typing them; a user-declared `prereqs=` in tools.ini always wins). Verbs match
+/// the bundled DirectX DLLs (Tier 1) and the winetricks installer verbs (Tier 2).
+pub fn default_prereqs(title: &str) -> Vec<String> {
+    let t = title.to_ascii_lowercase();
+    let has = |needle: &str| t.contains(needle);
+    let verbs: &[&str] = if has("synthesis") {
+        &["dotnet8", "vcrun2022"]
+    } else if has("pandora") {
+        &["dotnetdesktop8"]
+    } else if has("fnis") {
+        &["dotnet48"]
+    } else if has("bodyslide") || has("outfit") {
+        &["d3dx9_43", "d3dcompiler_47"]
+    } else if has("dyndolod") || has("texgen") || has("xlodgen") {
+        &["d3dcompiler_47", "d3dx9_43", "d3dx11_43"]
+    } else if has("cathedral") || has("cao") {
+        &["vcrun2022", "d3dcompiler_47", "d3dx11_43"]
+    } else if has("nemesis") || has("loot") {
+        &["vcrun2022"]
+    } else {
+        // xEdit/SSEEdit/TES5Edit/FO4Edit + script extenders: nothing extra.
+        &[]
+    };
+    verbs.iter().map(|s| s.to_string()).collect()
 }
 
 #[cfg(test)]
@@ -152,12 +196,14 @@ mod tests {
                 // old space-joined `args=` line split it into four.
                 args: vec!["-D:D:\\My Mods\\Data".into(), "-IKnowWhatImDoing".into()],
                 workdir: None,
+                prereqs: Vec::new(),
             },
             Tool {
                 title: "BodySlide".into(),
                 exe: PathBuf::from("Data/CalienteTools/BodySlide/BodySlide x64.exe"),
                 args: Vec::new(),
                 workdir: Some(PathBuf::from("/mnt/Tools")),
+                prereqs: vec!["d3dx9_43".into(), "d3dcompiler_47".into()],
             },
         ];
         write_tools(&p, &tools).unwrap();
@@ -187,8 +233,8 @@ mod tests {
         // file; write_tools must drop such an entry, not emit it.
         let p = tmp();
         let tools = vec![
-            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None },
-            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None },
+            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![] },
+            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![] },
         ];
         write_tools(&p, &tools).unwrap();
         let back = read_tools(&p);
@@ -204,6 +250,7 @@ mod tests {
             exe: PathBuf::from("/custom/skse64_loader.exe"),
             args: vec!["-forcesteamloader".into()],
             workdir: None,
+            prereqs: Vec::new(),
         }];
         let defaults = vec![
             Tool {
@@ -211,17 +258,28 @@ mod tests {
                 exe: PathBuf::from("skse64_loader.exe"),
                 args: Vec::new(),
                 workdir: None,
+                prereqs: Vec::new(),
             },
             Tool {
                 title: "Launcher".into(),
                 exe: PathBuf::from("SkyrimSELauncher.exe"),
                 args: Vec::new(),
                 workdir: None,
+                prereqs: Vec::new(),
             },
         ];
         let merged = merge_tools(user, defaults);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].exe, PathBuf::from("/custom/skse64_loader.exe")); // user won
         assert_eq!(merged[1].title, "Launcher");
+    }
+
+    #[test]
+    fn default_prereqs_maps_known_tools() {
+        assert_eq!(default_prereqs("Synthesis"), vec!["dotnet8", "vcrun2022"]);
+        assert_eq!(default_prereqs("BodySlide x64"), vec!["d3dx9_43", "d3dcompiler_47"]);
+        assert_eq!(default_prereqs("FNIS"), vec!["dotnet48"]);
+        assert!(default_prereqs("SSEEdit").is_empty()); // Delphi, needs nothing extra
+        assert!(default_prereqs("skse64_loader").is_empty());
     }
 }
