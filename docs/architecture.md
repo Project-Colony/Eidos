@@ -121,6 +121,29 @@ The wrapper must also be able to **re-enter the namespace** to launch tools
 (xEdit, FNIS) into the same merged view, exactly as MO2 runs tools "through" the
 VFS.
 
+### Provisioning the prefix (DLLs + tool prerequisites)
+
+A modded Bethesda game (and its tools) needs some Windows runtime bits present in
+the Proton prefix that no Proton flavour supplies. Eidos owns this, in
+`eidos-gamefeatures`:
+
+- **Bundled native DLLs** (`native_dll`): Microsoft's native `d3dcompiler_47`
+  (graphics mods import it for runtime HLSL compilation; Wine's builtin is a broken
+  stub) and the DirectX helpers tools use (`d3dx9_43` / `d3dx11_43` /
+  `d3dcompiler_43`). Detected by PE-import scan or declared per-tool, deployed into
+  the prefix `system32`/`syswow64` (arch-aware) - unlinking Proton's builtin symlink
+  first so the shared install is never written through, backing up any displaced
+  file, idempotent, and forced native via `WINEDLLOVERRIDES=...=n,b`.
+- **Installer verbs** (`prereqs`): the .NET / vcrun runtimes tools like Synthesis
+  need can't be file-copied, so Eidos runs the system `winetricks` pointed straight
+  at Proton's own `wine` + the game prefix (the NaK approach - this bypasses Steam's
+  pressure-vessel and the protontricks + Proton-GE mismatch). Because these download
+  from Microsoft, they run only on the user-consented `eidos prereqs --install`, and
+  a per-instance sentinel makes re-runs no-ops.
+
+Tools run in the **game's own prefix**, so one provisioning pass covers the game
+and every tool.
+
 ## Open risks we are not hiding
 
 The read-write daemon is now hardened and covered by a real-mount integration

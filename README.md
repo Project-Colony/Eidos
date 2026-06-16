@@ -274,7 +274,31 @@ fusermount3 -u /mnt/point
       MO2/usvfs parity fixes: launch with **CWD = game root** (CommonLibSSE-NG
       opens its address library by a CWD-relative path) and **NTFS-like sorted
       `readdir`** (the Creation Engine's loose-file indexer assumes it)
+- [x] Native DLL provisioning for Proton (`eidos-gamefeatures::native_dll`) - no
+      Proton flavour ships Microsoft's native `d3dcompiler_47.dll` (they symlink
+      Wine's builtin HLSL stub, which Community Shaders / ENB / ReShade reject), so
+      Eidos scans enabled mods' DLL import tables (the `object` crate) and, when one
+      imports it, deploys the bundled genuine MS redistributable into the prefix's
+      `system32`/`syswow64` and forces it native - unlinking Proton's builtin symlink
+      first, backing up any displaced file, idempotent and best-effort
+- [x] Modding-tool prerequisites (`eidos prereqs`) - tools run in the game's shared
+      Proton prefix through the merged view, so one prereq set covers them all.
+      Tier 1 (bundled, zero network): the DirectX helpers BodySlide / DynDOLOD / CAO
+      need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`), declared per-tool in
+      `tools.ini` and provisioned at launch. Tier 2 (consented download): the .NET /
+      vcrun verbs Synthesis / Pandora / FNIS need, installed via the system
+      winetricks pointed straight at Proton's own wine (bypassing the protontricks +
+      Proton-GE mismatch), behind an explicit `eidos prereqs <id> --install` / GUI
+      "Tool Setup" button, recorded in a per-instance sentinel
+- [x] GUI to MO2 daily-driver parity (`eidos-gui`) - a mod-list filter box,
+      click-to-select, and a right-click action menu (enable/disable, send to
+      top/bottom, open in explorer, visit on Nexus, reinstall, rename, remove,
+      information); an interactive Plugins tab (toggle ESP/ESM, persisted to
+      `plugins.txt`); a per-mod information dialog (general / conflicts / filetree /
+      editable notes); a Version column; and wired Nexus / Change Game / Settings /
+      Tool Setup toolbar buttons
 - [ ] Casing normalization at mod-import time
+- [ ] Mod-list separators + categories, and LOOT-based plugin auto-sort
 
 The manager layer above the VFS is complete per the MO2 + usvfs study that drove
 this work ([docs/master-pieces.md](docs/master-pieces.md), all 6 master pieces
@@ -282,8 +306,10 @@ done): the mod installer (Simple + FOMOD wizard), plugins, conflicts, profiles,
 `meta.ini`, the instance manifest, per-game Bethesda features (BSA invalidation +
 per-profile INIs/saves off a declarative `GameDef`), and tools through the VFS
 (`eidos tool`), plus Nexus integration beyond it (`eidos-nexus`: nxm:// downloads,
-update checks, the GUI Downloads tab). Next up: LOOT sorting and mod-list UX
-(separators, filtering).
+update checks, the GUI Downloads tab). Since then: the GUI brought up to MO2
+daily-driver parity, native DLL provisioning so Proton graphics mods (Community
+Shaders) and tools (BodySlide) just work, and the `eidos prereqs` tool-prerequisite
+system. Next up: mod-list separators / categories and LOOT plugin sorting.
 
 ## Prior art and references
 

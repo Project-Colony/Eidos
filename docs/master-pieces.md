@@ -26,6 +26,30 @@ helper also landed (its `(game_id, nexus_id)` grouping fn is still pending). #6
 (the module-path-spoofing regression test) is the only quick win untouched - its
 reasoning is already captured in this study, just not yet pinned by a test.
 
+### Beyond the master pieces (2026-06-15)
+
+With the 6 pieces done, the work moved to "make a real modded setup just work" and
+to GUI parity:
+
+- **Native DLL provisioning for Proton** (`eidos-gamefeatures::native_dll`) - no
+  Proton flavour ships Microsoft's native `d3dcompiler_47.dll`, so graphics mods
+  that import it (Community Shaders / ENB / ReShade) fail. Eidos scans enabled mods'
+  PE import tables (the `object` crate) and deploys the bundled genuine MS DLL into
+  the prefix, forcing it native. The same bundle-and-copy mechanism (`ensure_native_dll`)
+  also provides the DirectX helpers (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`)
+  the modding tools need.
+- **Tool prerequisites** (`eidos prereqs`) - a two-tier system: Tier 1 bundles the
+  DirectX DLLs (zero network) and Tier 2 installs the .NET / vcrun verbs via the
+  system winetricks pointed at Proton's own wine (consented download), so xEdit,
+  Synthesis, DynDOLOD, BodySlide etc. run through the merged view with their runtime
+  deps in place. Per-tool prereqs are declared in `tools.ini` with a default map.
+- **GUI to MO2 daily-driver parity** (`eidos-gui`) - mod-list filter + selection +
+  right-click action menu, an interactive Plugins tab, a per-mod information dialog,
+  a Version column, and wired toolbar actions.
+
+Still open: mod-list separators / categories, LOOT plugin auto-sort, and the
+real-run validation of the Proton DLL + tool-prereq provisioning.
+
 ## Executive summary
 
 Eidos has already won the hard, novel battle that defines the project: **the VFS
