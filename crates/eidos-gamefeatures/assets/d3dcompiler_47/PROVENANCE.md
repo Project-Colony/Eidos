@@ -33,4 +33,9 @@ of a build that embeds these binaries.
 ## Not bundled (intentionally)
 
 - `d3dcompiler_43.dll` - older D3DX; not needed by current SKSE-era graphics mods.
-- `vcruntime140.dll` / `msvcp140.dll` - Proton already provides these.
+- `vcruntime140.dll` / `msvcp140.dll` (the VC++ 2015-2022 runtime) - SkyrimSE.exe and
+  many SKSE plugins dynamically import these, but unlike the d3dcompiler stub, Wine's
+  builtin CRT (shipped by every Proton) is functionally adequate and satisfies the
+  imports, so the game and plugins load without the genuine MS redist. Only a specific
+  plugin/tool that the builtin CRT can't satisfy would need a one-off
+  `protontricks <appid> vcrun2022` - not something Eidos provisions.
