@@ -139,6 +139,9 @@ enum Message {
     OpenNexusGame,
     /// Open the instance's root folder in the file manager.
     OpenInstanceFolder,
+    /// Install the modding tools' runtime prerequisites into the prefix
+    /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
+    SetupPrereqs,
     Noop,
 }
 
@@ -333,6 +336,23 @@ fn run_tool_through_eidos(game_id: &str, title: &str) -> std::io::Result<()> {
         .arg(game_id)
         .arg("run")
         .arg(title)
+        .spawn()
+        .map(|_| ())
+}
+
+/// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
+/// --install`). The Tier-2 winetricks step downloads from Microsoft and can take a
+/// while; its output is redirected to `log` (the GUI has no terminal when launched
+/// from Steam) so the user can follow progress and read any error.
+fn run_prereqs_setup(game_id: &str, log: &Path) -> std::io::Result<()> {
+    let out = std::fs::File::create(log)?;
+    let err = out.try_clone()?;
+    std::process::Command::new(find_eidos_binary())
+        .arg("prereqs")
+        .arg(game_id)
+        .arg("--install")
+        .stdout(std::process::Stdio::from(out))
+        .stderr(std::process::Stdio::from(err))
         .spawn()
         .map(|_| ())
 }
@@ -959,6 +979,29 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("Opened {}", inst.root.display()));
             }
         }
+        Message::SetupPrereqs => {
+            let id = selected_game(app).map(|g| g.def.id);
+            let has_prefix = selected_game(app).and_then(|g| g.compatdata.as_ref()).is_some();
+            let log = app.created.as_ref().map(|i| i.root.join("prereqs.log"));
+            match (id, log) {
+                (Some(_), _) if !has_prefix => {
+                    app.status = Some(
+                        "Launch the game once through Steam first so its Proton prefix exists, then run Tool Setup."
+                            .to_string(),
+                    );
+                }
+                (Some(id), Some(log)) => match run_prereqs_setup(id, &log) {
+                    Ok(()) => {
+                        app.status = Some(format!(
+                            "Installing tool prerequisites: bundled DLLs copy now; .NET/vcrun download via winetricks. Progress + errors -> {}",
+                            log.display()
+                        ));
+                    }
+                    Err(e) => app.status = Some(format!("Could not start prereq setup: {e}")),
+                },
+                _ => app.status = Some("Open a game instance first.".to_string()),
+            }
+        }
         Message::ShowModInfo(i) => {
             app.menu_mod = None;
             let notes = match (app.created.as_ref(), app.mods.get(i)) {
@@ -1357,7 +1400,7 @@ fn toolbar<'a>() -> Element<'a, Message> {
         .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::ChangeGame))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
         .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::Noop))
-        .push(icon_text_btn(IC_TOOLS, "Tools", Message::Noop))
+        .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
         .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenInstanceFolder))
         .push(Space::with_width(Length::Fill))
         .push(icon_btn(IC_ENDORSE, 20.0, Some(Message::Noop)))

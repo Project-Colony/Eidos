@@ -18,6 +18,9 @@ pub use native_dll::{
     scan_imports_provisionable, NativeDllError,
 };
 
+mod prereqs;
+pub use prereqs::{cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb};
+
 /// The game INI that holds the `[Archive]` section: the first of the per-profile
 /// INIs (see `ini_files_for`).
 pub fn ini_file_for(game_id: &str) -> Option<&'static str> {

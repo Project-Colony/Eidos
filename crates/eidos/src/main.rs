@@ -529,6 +529,20 @@ fn cmd_tool(args: &[String]) {
             // MO2's default working directory for a tool is its own folder.
             let cwd = tool.workdir.clone().or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
+            // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
+            // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
+            // warn with the fix - without blocking (the user may have it via Steam).
+            let satisfied = satisfied_prereqs(&inst);
+            let missing2: Vec<&String> = prereqs
+                .iter()
+                .filter(|v| eidos_gamefeatures::is_tier2_verb(v) && !satisfied.contains(*v))
+                .collect();
+            if !missing2.is_empty() {
+                let names = missing2.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                eprintln!(
+                    "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
+                );
+            }
 
             if print_only {
                 println!("would run (through the merged view at {}):", game.data_path.display());
@@ -546,6 +560,145 @@ fn cmd_tool(args: &[String]) {
         Some(other) => {
             eprintln!("unknown tool subcommand '{other}' (list | add | rm | run)");
             exit(2);
+        }
+    }
+}
+
+/// The Tier-2 prereq verbs already installed into the prefix (the `prereqs.done`
+/// sentinel in the instance dir), so a re-run is a no-op and the tool warning is quiet.
+fn satisfied_prereqs(inst: &Instance) -> std::collections::BTreeSet<String> {
+    std::fs::read_to_string(inst.root.join("prereqs.done"))
+        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// `eidos prereqs <game-id> [--install]`: show, or install, the runtime
+/// prerequisites the instance's tools declare. Tier-1 (bundled DirectX DLLs) copy
+/// with no network; Tier-2 (vcrun/dotnet) DOWNLOAD from Microsoft via winetricks and
+/// so run only on the explicit `--install`.
+fn cmd_prereqs(args: &[String]) {
+    let Some(id) = args.first() else {
+        eprintln!("usage: eidos prereqs <game-id> [--install]");
+        exit(2);
+    };
+    let install = args.iter().any(|a| a == "--install");
+    let Some(game) = find_game(id) else {
+        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+        exit(1);
+    };
+    let inst = Instance::global(id);
+    inst.create().ok();
+    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+
+    // Union of every tool's declared prereqs, split by tier.
+    let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+    let mut verbs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for t in &tools {
+        verbs.extend(t.prereqs.iter().cloned());
+    }
+    let tier1: Vec<String> = verbs.iter().filter(|v| eidos_gamefeatures::is_tier1_dll(v)).cloned().collect();
+    let tier2: Vec<String> = verbs.iter().filter(|v| eidos_gamefeatures::is_tier2_verb(v)).cloned().collect();
+    // A verb that is neither a bundled DLL nor a known winetricks verb (a tools.ini
+    // typo, or one Eidos hasn't catalogued): surface it rather than silently drop it.
+    let unknown: Vec<String> = verbs
+        .iter()
+        .filter(|v| !eidos_gamefeatures::is_tier1_dll(v) && !eidos_gamefeatures::is_tier2_verb(v))
+        .cloned()
+        .collect();
+    let satisfied = satisfied_prereqs(&inst);
+    let pending2: Vec<String> = tier2.iter().filter(|v| !satisfied.contains(*v)).cloned().collect();
+
+    if !install {
+        println!("Tool prerequisites for {id}:");
+        for t in &tools {
+            if !t.prereqs.is_empty() {
+                println!("  {:<16} {}", t.title, t.prereqs.join(", "));
+            }
+        }
+        let t1 = if tier1.is_empty() { "(none)".to_string() } else { tier1.join(", ") };
+        println!("\nTier 1 (bundled, applied at launch, no download): {t1}");
+        let t2 = if tier2.is_empty() {
+            "(none)".to_string()
+        } else {
+            tier2
+                .iter()
+                .map(|v| format!("{v} [{}]", if satisfied.contains(v) { "done" } else { "pending" }))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        println!("Tier 2 (winetricks, DOWNLOADS from Microsoft): {t2}");
+        if !unknown.is_empty() {
+            println!("Unknown verbs (ignored - typo or uncatalogued): {}", unknown.join(", "));
+        }
+        if !pending2.is_empty() {
+            println!(
+                "\nRun `eidos prereqs {id} --install` to download + install: {}",
+                pending2.join(", ")
+            );
+        }
+        return;
+    }
+
+    if !unknown.is_empty() {
+        eprintln!("eidos prereqs: ignoring unknown verb(s): {}", unknown.join(", "));
+    }
+
+    // --install: Tier 1 (copy bundled DLLs) then the consented Tier 2 (winetricks).
+    let Some(compat) = game.compatdata.as_ref() else {
+        eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
+        exit(1);
+    };
+    let win = compat.join("pfx").join("drive_c").join("windows");
+    for v in &tier1 {
+        match eidos_gamefeatures::ensure_native_dll(&win, v) {
+            Ok(true) => println!("provisioned {v} (bundled)"),
+            Ok(false) => {}
+            Err(e) => eprintln!("could not provision {v}: {e}"),
+        }
+    }
+    if pending2.is_empty() {
+        println!("Tier 2 already satisfied (nothing to download).");
+        return;
+    }
+    let Some(run) =
+        eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
+    else {
+        eprintln!("Could not resolve Proton for {id}.");
+        exit(1);
+    };
+    if !eidos_gamefeatures::cabextract_available() {
+        eprintln!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
+    }
+    let prefix = compat.join("pfx");
+    println!(
+        "Installing {} via winetricks (downloads from Microsoft). Close the game and all \
+         tools first - installing while a session is open can corrupt the prefix.",
+        pending2.join(", ")
+    );
+    // One verb at a time, recording each success, so a later failure does not lose
+    // the earlier installs (a single batched winetricks call would).
+    let mut done = satisfied;
+    let mut failed: Option<(String, String)> = None;
+    for v in &pending2 {
+        println!("  installing {v}...");
+        match eidos_gamefeatures::install_tier2_verb(&run.proton, &prefix, &run.env, v) {
+            Ok(()) => {
+                done.insert(v.clone());
+                let body: String = done.iter().map(|x| format!("{x}\n")).collect();
+                let _ = std::fs::write(inst.root.join("prereqs.done"), body);
+            }
+            Err(e) => {
+                failed = Some((v.clone(), e.to_string()));
+                break;
+            }
+        }
+    }
+    match failed {
+        None => println!("Done."),
+        Some((v, e)) => {
+            eprintln!("winetricks failed on '{v}': {e}");
+            eprintln!("(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)");
+            exit(1);
         }
     }
 }
@@ -954,6 +1107,7 @@ fn main() {
         Some("play") => cmd_play(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
         Some("tool") => cmd_tool(&args[1..]),
+        Some("prereqs") => cmd_prereqs(&args[1..]),
         Some("nexus") => cmd_nexus(&args[1..]),
         Some("nxm") => cmd_nxm(&args[1..]),
         _ => usage(),
