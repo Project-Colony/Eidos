@@ -44,6 +44,28 @@ pub struct ModEntry {
     pub path: PathBuf,
 }
 
+/// Whether a mod folder name marks a SEPARATOR - MO2's `.*_separator` convention
+/// for a visual group divider in the mod list. A separator is a real mod folder
+/// (so it round-trips through `modlist.txt`) but contributes no files, plugins, or
+/// mount layers; it only groups and labels the mods below it.
+pub fn is_separator_name(name: &str) -> bool {
+    name.ends_with("_separator")
+}
+
+impl ModEntry {
+    /// Whether this entry is a separator (derived from its folder name, like MO2 -
+    /// never a stored flag, so it can't go stale on rename).
+    pub fn is_separator(&self) -> bool {
+        is_separator_name(&self.name)
+    }
+
+    /// The name shown to the user: the internal folder name with the `_separator`
+    /// suffix stripped (MO2's `getDisplayName`). A normal mod is unchanged.
+    pub fn display_name(&self) -> &str {
+        self.name.strip_suffix("_separator").unwrap_or(&self.name)
+    }
+}
+
 /// `$XDG_DATA_HOME`, or `$HOME/.local/share`.
 pub fn data_home() -> PathBuf {
     std::env::var_os("XDG_DATA_HOME")
@@ -276,5 +298,24 @@ mod tests {
         inst.set_active_profile("Modded").unwrap();
         assert_eq!(inst.active_profile(), "Modded");
         let _ = fs::remove_dir_all(&inst.root);
+    }
+
+    #[test]
+    fn separator_name_and_display_name() {
+        let sep = ModEntry {
+            name: "Gameplay_separator".into(),
+            enabled: true,
+            path: PathBuf::new(),
+        };
+        assert!(sep.is_separator());
+        assert_eq!(sep.display_name(), "Gameplay");
+
+        let modd = ModEntry { name: "SkyUI".into(), enabled: true, path: PathBuf::new() };
+        assert!(!modd.is_separator());
+        assert_eq!(modd.display_name(), "SkyUI");
+
+        assert!(is_separator_name("X_separator"));
+        assert!(!is_separator_name("Xseparator"));
+        assert!(!is_separator_name("separator_X"));
     }
 }

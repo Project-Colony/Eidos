@@ -188,6 +188,21 @@ impl ModMeta {
         }
     }
 
+    /// A separator's display colour, decoded from MO2's `color=@Variant(...)` (a
+    /// Qt `QColor` serialised by `QSettings`). `None` if absent or unparseable.
+    pub fn color(&self) -> Option<[u8; 3]> {
+        self.raw("color").and_then(variant_qcolor_decode)
+    }
+
+    /// Set (or, with `None`, clear) the separator colour, written in MO2's
+    /// `@Variant(...)` form so an existing MO2 instance reads it back.
+    pub fn set_color(&mut self, rgb: Option<[u8; 3]>) {
+        match rgb {
+            Some(rgb) => self.set("color", &variant_qcolor_encode(rgb)),
+            None => self.set("color", ""),
+        }
+    }
+
     /// When this mod was last checked against Nexus (unix seconds; `0`/absent ->
     /// `None`). MO2 tracks this so it can trust the `updated?period=1m` bulk list
     /// only for mods checked within the window, and query the rest individually.
@@ -219,6 +234,108 @@ impl ModMeta {
         out.push_str(&self.tail);
         fs::write(path, out)
     }
+}
+
+/// Decode a `@Variant(...)` value (Qt `QSettings`-serialised `QColor`) to RGB.
+///
+/// The inner bytes are a `QDataStream`: `[u32 type-id = 67 (QColor)]`, then `[u8
+/// colour-spec]`, then five big-endian `u16` channels `[alpha, red, green, blue,
+/// pad]`, each an 8-bit value scaled by 257 (`0xVV -> 0xVVVV`). Defensive: any
+/// shape we don't recognise yields `None` (the caller falls back to a default).
+fn variant_qcolor_decode(raw: &str) -> Option<[u8; 3]> {
+    let inner = raw.trim().strip_prefix("@Variant(")?.strip_suffix(')')?;
+    let bytes = unescape_variant(inner)?;
+    // type-id(4) + spec(1) + alpha(2) + red(2) + green(2) + blue(2) = 13 minimum.
+    if bytes.len() < 13 {
+        return None;
+    }
+    if u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) != 67 {
+        return None; // not a QColor
+    }
+    let red = u16::from_be_bytes([bytes[7], bytes[8]]);
+    let green = u16::from_be_bytes([bytes[9], bytes[10]]);
+    let blue = u16::from_be_bytes([bytes[11], bytes[12]]);
+    Some([(red >> 8) as u8, (green >> 8) as u8, (blue >> 8) as u8])
+}
+
+/// Encode RGB into MO2's opaque `@Variant(...)` `QColor` form (the inverse of
+/// [`variant_qcolor_decode`]).
+fn variant_qcolor_encode([r, g, b]: [u8; 3]) -> String {
+    let chan = |v: u8| ((v as u16) * 257).to_be_bytes(); // 0xVV -> 0xVVVV
+    let mut bytes: Vec<u8> = Vec::with_capacity(15);
+    bytes.extend_from_slice(&67u32.to_be_bytes()); // QColor type id
+    bytes.push(1); // colour-spec = RGB
+    bytes.extend_from_slice(&0xFFFFu16.to_be_bytes()); // alpha = opaque
+    bytes.extend_from_slice(&chan(r));
+    bytes.extend_from_slice(&chan(g));
+    bytes.extend_from_slice(&chan(b));
+    bytes.extend_from_slice(&0u16.to_be_bytes()); // pad
+    let mut s = String::from("@Variant(");
+    for byte in bytes {
+        if byte == 0 {
+            s.push_str("\\0");
+        } else {
+            s.push_str(&format!("\\x{byte:02x}"));
+        }
+    }
+    s.push(')');
+    s
+}
+
+/// Un-escape the byte stream inside `@Variant(...)` (Qt's `QSettings` escaping:
+/// `\0`, `\xNN`, `\\`, the usual control escapes, else literal).
+fn unescape_variant(s: &str) -> Option<Vec<u8>> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'\\' {
+            out.push(b[i]);
+            i += 1;
+            continue;
+        }
+        i += 1;
+        let c = *b.get(i)?;
+        match c {
+            b'0' => {
+                out.push(0);
+                i += 1;
+            }
+            b'x' | b'X' => {
+                i += 1;
+                let start = i;
+                while i < b.len() && b[i].is_ascii_hexdigit() {
+                    i += 1;
+                }
+                if i == start {
+                    return None;
+                }
+                let hex = std::str::from_utf8(&b[start..i]).ok()?;
+                out.push((u32::from_str_radix(hex, 16).ok()? & 0xff) as u8);
+            }
+            b'\\' => {
+                out.push(b'\\');
+                i += 1;
+            }
+            b'n' => {
+                out.push(b'\n');
+                i += 1;
+            }
+            b'r' => {
+                out.push(b'\r');
+                i += 1;
+            }
+            b't' => {
+                out.push(b'\t');
+                i += 1;
+            }
+            other => {
+                out.push(other);
+                i += 1;
+            }
+        }
+    }
+    Some(out)
 }
 
 /// Strip one layer of surrounding double quotes. MO2 quotes values that contain
@@ -361,6 +478,32 @@ mod tests {
             ModMeta::read(&p).notes().as_deref(),
             Some("merge with USSEP, keep my patch on top")
         );
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn decodes_a_canonical_mo2_separator_color() {
+        // A canonical opaque MO2 QColor: type 67, spec 1, alpha FFFF, then
+        // r=3333 g=6666 b=9999 (each 8-bit*257), pad 0000 -> RGB #336699.
+        let raw = "@Variant(\\0\\0\\0\\x43\\x1\\xff\\xff\\x33\\x33\\x66\\x66\\x99\\x99\\0\\0)";
+        assert_eq!(variant_qcolor_decode(raw), Some([0x33, 0x66, 0x99]));
+        // A short/garbage blob is rejected (caller falls back to the default).
+        assert_eq!(variant_qcolor_decode("@Variant(\\0\\0)"), None);
+        assert_eq!(variant_qcolor_decode("not a variant"), None);
+    }
+
+    #[test]
+    fn color_encode_decode_round_trips_through_modmeta() {
+        for rgb in [[0u8, 0, 0], [0xFF, 0xFF, 0xFF], [0x33, 0x66, 0x99], [0x12, 0xAB, 0x7E]] {
+            assert_eq!(variant_qcolor_decode(&variant_qcolor_encode(rgb)), Some(rgb));
+        }
+        // Through the full ModMeta set/read path (the value survives the INI round-trip).
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        m.set_color(Some([0x33, 0x66, 0x99]));
+        assert!(m.is_dirty());
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).color(), Some([0x33, 0x66, 0x99]));
         let _ = fs::remove_file(&p);
     }
 }

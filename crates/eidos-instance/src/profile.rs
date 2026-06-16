@@ -268,8 +268,13 @@ impl Profile {
     }
 
     /// Enabled mods, highest priority first: the layers to mount at launch.
+    /// Separators are group dividers, not content, so they are never mounted.
     pub fn load_order(&self) -> Vec<PathBuf> {
-        self.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect()
+        self.modlist()
+            .into_iter()
+            .filter(|m| m.enabled && !m.is_separator())
+            .map(|m| m.path)
+            .collect()
     }
 }
 
@@ -498,5 +503,50 @@ mod tests {
         assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 0);
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn separator_round_trips_keeps_position_and_is_excluded_from_load_order() {
+        // A separator is a real `*_separator` folder; it must round-trip in place,
+        // be recognised as a separator, and never become a mount layer.
+        let root = inst_with_mods(&["A", "Sec_separator", "B"]);
+        let p = prof(&root, "Default");
+        let mods = vec![
+            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
+            ModEntry { name: "Sec_separator".into(), enabled: false, path: root.join("mods/Sec_separator") },
+            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
+        ];
+        p.save_modlist(&mods).unwrap();
+
+        // modlist.txt is byte-faithful, including the `-` prefix + `_separator` suffix.
+        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+A\n-Sec_separator\n+B\n");
+
+        // Read back: order + the separator flag preserved, separator at index 1.
+        let read = p.modlist();
+        let names: Vec<_> = read.iter().map(|m| (m.name.clone(), m.enabled)).collect();
+        assert_eq!(
+            names,
+            vec![("A".into(), true), ("Sec_separator".into(), false), ("B".into(), true)]
+        );
+        assert!(read[1].is_separator());
+        assert_eq!(read[1].display_name(), "Sec");
+        assert!(!read[0].is_separator());
+
+        // load_order mounts only A and B - the separator is content-less.
+        let order = p.load_order();
+        assert_eq!(order, vec![root.join("mods/A"), root.join("mods/B")]);
+        let _ = fs::remove_dir_all(&root);
+
+        // An ENABLED separator (alone) still contributes no mount layer.
+        let root2 = inst_with_mods(&["Solo_separator"]);
+        let p2 = prof(&root2, "Default");
+        p2.save_modlist(&[ModEntry {
+            name: "Solo_separator".into(),
+            enabled: true,
+            path: root2.join("mods/Solo_separator"),
+        }])
+        .unwrap();
+        assert!(p2.load_order().is_empty());
+        let _ = fs::remove_dir_all(&root2);
     }
 }

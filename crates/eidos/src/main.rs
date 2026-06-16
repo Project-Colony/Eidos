@@ -59,7 +59,7 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
     // into Overwrite are discovered and win same-name shadowing.
-    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.enabled).collect();
+    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
@@ -128,7 +128,7 @@ fn prepare_inis(
         let mod_bsas: Vec<String> = inst
             .modlist()
             .into_iter()
-            .filter(|m| m.enabled)
+            .filter(|m| m.enabled && !m.is_separator())
             .flat_map(|m| {
                 std::fs::read_dir(&m.path)
                     .into_iter()
@@ -331,7 +331,7 @@ fn forced_dll_overrides(
         "xinput1_3", "x3daudio1_7", "opengl32",
     ];
     let mut roots: Vec<PathBuf> =
-        inst.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect();
+        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
     roots.push(inst.overwrite_dir());
 
     let mut stems: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -733,7 +733,7 @@ fn cmd_install(args: &[String]) {
     // FOMOD condition context: the plugins currently present/active, so a scripted
     // installer's fileDependency/gameDependency options evaluate correctly.
     let enabled_roots: Vec<std::path::PathBuf> =
-        inst.modlist().into_iter().filter(|m| m.enabled).map(|m| m.path).collect();
+        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots);
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),

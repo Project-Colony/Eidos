@@ -212,6 +212,8 @@ struct RowMeta {
     mod_id: Option<u64>,
     category: Option<String>,
     update: bool,
+    /// A separator's display colour (MO2's `color=@Variant(...)`), if set.
+    color: Option<[u8; 3]>,
 }
 
 /// Build the per-mod metadata cache for the open instance's mod list.
@@ -227,6 +229,7 @@ fn build_meta_cache(app: &App) -> HashMap<String, RowMeta> {
                     mod_id: meta.mod_id(),
                     category: meta.category(),
                     update: meta.update_available(),
+                    color: meta.color(),
                 },
             );
         }
@@ -524,6 +527,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.screen = Screen::Welcome;
         }
         Message::ToggleMod(i) => {
+            // A separator is a group divider, not content - it has no toggle (MO2's
+            // canBeEnabled() == false).
+            if app.mods.get(i).is_some_and(|m| m.is_separator()) {
+                return Task::none();
+            }
             if let Some(m) = app.mods.get_mut(i) {
                 m.enabled = !m.enabled;
             }
@@ -612,7 +620,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             match eidos_install::open_fomod(&path, &mods_dir, &name) {
                 Ok(Some(session)) => {
                     let enabled_roots: Vec<std::path::PathBuf> =
-                        app.mods.iter().filter(|m| m.enabled).map(|m| m.path.clone()).collect();
+                        app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
                     let ctx = match selected_game(app) {
                         Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots),
                         None => eidos_fomod::Context::default(),
@@ -1355,7 +1363,7 @@ fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
 fn merged_listing(app: &App) -> Vec<(String, String, bool)> {
     let mut seen = HashSet::new();
     let mut out: Vec<(String, String, bool)> = Vec::new();
-    for m in app.mods.iter().filter(|m| m.enabled) {
+    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator()) {
         if let Ok(rd) = fs::read_dir(&m.path) {
             for e in rd.flatten() {
                 if let Ok(name) = e.file_name().into_string() {
@@ -1459,8 +1467,54 @@ fn mod_row<'a>(
         .into()
 }
 
+/// Default separator bar colour when its `meta.ini` carries none (a parchment tan,
+/// #C8B895).
+const SEPARATOR_ACCENT: Color = Color::from_rgb(0.784, 0.722, 0.584);
+
+/// A separator (group divider) row, MO2-style: a full-width coloured bar with the
+/// display name centred, no checkbox / version / conflict flags, but still movable.
+fn separator_row<'a>(
+    i: usize,
+    m: &ModEntry,
+    len: usize,
+    color: Option<[u8; 3]>,
+    selected: bool,
+) -> Element<'a, Message> {
+    let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
+    let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
+    let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(SEPARATOR_ACCENT);
+
+    let name = container(text(m.display_name().to_string()).size(13.0))
+        .width(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Center);
+
+    let row = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(Space::with_width(C_CHECK)) // no checkbox - a separator isn't content
+        .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
+        .push(name)
+        .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
+
+    container(
+        mouse_area(row).on_press(Message::SelectMod(i)).on_right_press(Message::OpenModMenu(i)),
+    )
+    .width(Length::Fill)
+    .padding(3)
+    .style(move |_t: &Theme| container::Style {
+        background: Some(Background::Color(bg)),
+        border: Border {
+            color: if selected { Color::from_rgb8(0x6E, 0x24, 0x2E) } else { bg },
+            width: if selected { 2.0 } else { 0.0 },
+            radius: 0.0.into(),
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
 fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
-    let active = app.mods.iter().filter(|m| m.enabled).count();
+    let active = app.mods.iter().filter(|m| m.enabled && !m.is_separator()).count();
     let active_name = app.created.as_ref().map(|i| i.active_profile()).unwrap_or_default();
     let mut profile = Row::new().spacing(6).push(text("Profile:").size(12.0));
     if let Some(inst) = &app.created {
@@ -1502,10 +1556,20 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     for (i, m) in app.mods.iter().enumerate() {
-        if !query.is_empty() && !m.name.to_lowercase().contains(&query) {
+        // Separators stay visible under a filter (they anchor the groups); a normal
+        // mod filters on its display name.
+        if !query.is_empty() && !m.is_separator() && !m.display_name().to_lowercase().contains(&query) {
             continue;
         }
         shown += 1;
+        let selected = app.selected_mod == Some(i);
+        // A separator renders as a full-width group header - no checkbox, version,
+        // conflict flags, or content (it never queries the ConflictMap).
+        if m.is_separator() {
+            let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
+            list = list.push(separator_row(i, m, len, color, selected));
+            continue;
+        }
         // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
         let flag_icon = if !m.enabled {
             None
@@ -2004,7 +2068,7 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
     let game = selected_game(app)?;
     let spec = GameSpec::for_id(game.def.id)?;
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
-    let mut enabled: Vec<ModEntry> = app.mods.iter().filter(|m| m.enabled).cloned().collect();
+    let mut enabled: Vec<ModEntry> = app.mods.iter().filter(|m| m.enabled && !m.is_separator()).cloned().collect();
     enabled.reverse(); // modlist is highest-first; plugins discover low-to-high
     sources.extend(enabled.into_iter().map(|m| (m.name, m.path)));
 
@@ -2098,7 +2162,7 @@ fn compute_conflicts(app: &App) -> Option<ConflictMap> {
         .mods
         .iter()
         .enumerate()
-        .filter(|(_, m)| m.enabled)
+        .filter(|(_, m)| m.enabled && !m.is_separator())
         .map(|(i, m)| Layer {
             origin: (i + 1) as u32,
             name: m.name.clone(),
@@ -2134,7 +2198,7 @@ fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let mut counts = (0usize, 0usize, 0usize, 0usize); // overwrites, overwritten, mixed, redundant
     let mut rows = Column::new().spacing(1);
-    for (i, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled) {
+    for (i, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled && !m.is_separator()) {
         let origin = (i + 1) as u32;
         let tag = match map.state(origin) {
             ConflictState::Overwrites => {
