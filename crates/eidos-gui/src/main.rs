@@ -124,6 +124,14 @@ enum Message {
     RenameStart(usize),
     RenameChanged(String),
     RenameCommit,
+    // ---- separators (MO2 group dividers) ----
+    /// Create a new separator above row `i` (or at the top from the toolbar) and
+    /// open its rename editor so the user names it.
+    AddSeparator(usize),
+    /// Set (`Some`) or clear (`None`) a separator's colour.
+    SetSeparatorColor(usize, Option<[u8; 3]>),
+    /// Collapse/expand a separator's group, keyed by its display name.
+    ToggleCollapse(String),
     /// Enable/disable an ESP/ESM in the Plugins tab, persisting plugins.txt.
     TogglePlugin(usize),
     // ---- per-mod information dialog (MO2 modinfodialog) ----
@@ -202,6 +210,9 @@ struct App {
     info_mod: Option<usize>,
     info_tab: InfoTab,
     notes_edit: String,
+    /// Collapsed separators, keyed by display name (MO2 keys by display name too).
+    /// Persisted per-profile so the grouping state survives a relaunch.
+    collapsed: HashSet<String>,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -273,6 +284,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         info_mod: None,
         info_tab: InfoTab::General,
         notes_edit: String::new(),
+        collapsed: HashSet::new(),
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -307,6 +319,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // instance opens instead of waiting for the Conflicts tab.
     app.conflicts = compute_conflicts(&app);
     app.meta_cache = build_meta_cache(&app);
+    app.collapsed = load_collapsed(&app);
     (app, Task::none())
 }
 
@@ -457,6 +470,28 @@ fn mods_changed(app: &mut App) {
     app.meta_cache = build_meta_cache(app);
 }
 
+/// The active profile's collapsed-separators file (MO2 keeps this per-profile, out
+/// of `modlist.txt`/`meta.ini` so the load order stays clean).
+fn collapsed_path(app: &App) -> Option<PathBuf> {
+    app.created.as_ref().map(|inst| inst.active().dir().join("collapsed_separators.txt"))
+}
+
+/// Load the collapsed-separator set for the active profile.
+fn load_collapsed(app: &App) -> HashSet<String> {
+    collapsed_path(app)
+        .and_then(|p| fs::read_to_string(p).ok())
+        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+/// Persist the collapsed-separator set (one display name per line).
+fn save_collapsed(app: &App) {
+    if let Some(p) = collapsed_path(app) {
+        let body: String = app.collapsed.iter().map(|n| format!("{n}\n")).collect();
+        let _ = fs::write(p, body);
+    }
+}
+
 fn update(app: &mut App, message: Message) -> Task<Message> {
     // Any action other than a second Clear click cancels the clear confirmation.
     if !matches!(message, Message::ClearOverwrite) {
@@ -571,6 +606,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.plugins = None;
                 app.conflicts = compute_conflicts(app);
                 app.meta_cache = build_meta_cache(app);
+                app.collapsed = load_collapsed(app);
                 app.selected_mod = None;
                 app.menu_mod = None;
                 app.status = Some(format!("Switched to profile '{name}'."));
@@ -892,7 +928,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::RenameStart(i) => {
             if let Some(m) = app.mods.get(i) {
-                app.rename = Some((i, m.name.clone()));
+                // Edit the display name; a separator's `_separator` suffix is stripped
+                // for editing and re-applied on commit (MO2 getDisplayName/makeInternalName).
+                app.rename = Some((i, m.display_name().to_string()));
                 app.menu_mod = Some(i);
                 app.confirm_remove = None;
             }
@@ -903,19 +941,22 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::RenameCommit => {
-            if let Some((i, new_name)) = app.rename.take() {
+            if let Some((i, typed)) = app.rename.take() {
                 app.menu_mod = None;
-                let new_name = new_name.trim().to_string();
+                let typed = typed.trim().to_string();
                 let old = app.mods.get(i).cloned();
                 if let Some(old) = old {
-                    if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') {
-                        app.status = Some("Invalid mod name.".to_string());
+                    // A separator keeps its `_separator` suffix on disk + in modlist.txt.
+                    let new_name =
+                        if old.is_separator() { format!("{typed}_separator") } else { typed.clone() };
+                    if typed.is_empty() || typed.contains('/') || typed.contains('\\') {
+                        app.status = Some("Invalid name.".to_string());
                     } else if new_name == old.name {
                         // no-op
                     } else if let Some(mods_dir) = app.created.as_ref().map(|inst| inst.mods_dir()) {
                         let dest = mods_dir.join(&new_name);
                         if dest.exists() {
-                            app.status = Some(format!("A mod named '{new_name}' already exists."));
+                            app.status = Some(format!("'{typed}' already exists."));
                         } else {
                             match fs::rename(&old.path, &dest) {
                                 Ok(()) => {
@@ -924,7 +965,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                                         m.path = dest;
                                     }
                                     mods_changed(app);
-                                    app.status = Some(format!("Renamed to '{new_name}'."));
+                                    app.status = Some(format!("Renamed to '{typed}'."));
                                 }
                                 Err(e) => app.status = Some(format!("Rename failed: {e}")),
                             }
@@ -932,6 +973,61 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             }
+        }
+        Message::AddSeparator(i) => {
+            app.menu_mod = None;
+            let mods_dir = app.created.as_ref().map(|inst| inst.mods_dir());
+            if let Some(mods_dir) = mods_dir {
+                // A unique "Separator N" display name -> folder "<name>_separator".
+                let mut n = 1usize;
+                let mut display = "Separator".to_string();
+                while mods_dir.join(format!("{display}_separator")).exists() {
+                    n += 1;
+                    display = format!("Separator {n}");
+                }
+                let folder = format!("{display}_separator");
+                let dest = mods_dir.join(&folder);
+                match fs::create_dir_all(&dest) {
+                    Ok(()) => {
+                        // Minimal meta.ini, mirroring MO2's createMod.
+                        let _ = fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\n");
+                        let idx = i.min(app.mods.len());
+                        app.mods.insert(idx, ModEntry { name: folder, enabled: true, path: dest });
+                        mods_changed(app);
+                        app.selected_mod = Some(idx);
+                        // Open its rename editor so the user names it straight away.
+                        app.rename = Some((idx, display));
+                        app.menu_mod = Some(idx);
+                    }
+                    Err(e) => app.status = Some(format!("Could not create separator: {e}")),
+                }
+            }
+        }
+        Message::SetSeparatorColor(i, rgb) => {
+            app.menu_mod = None;
+            let result = match (app.mods.get(i).cloned(), app.created.as_ref()) {
+                (Some(m), Some(inst)) if m.is_separator() => {
+                    let mut meta = inst.mod_meta(&m.name);
+                    meta.set_color(rgb);
+                    Some((m.display_name().to_string(), meta.write(&inst.meta_path(&m.name))))
+                }
+                _ => None,
+            };
+            if let Some((display, r)) = result {
+                match r {
+                    Ok(()) => {
+                        app.meta_cache = build_meta_cache(app); // pick up the new colour
+                        app.status = Some(format!("Set the colour for '{display}'."));
+                    }
+                    Err(e) => app.status = Some(format!("Could not set colour: {e}")),
+                }
+            }
+        }
+        Message::ToggleCollapse(name) => {
+            if !app.collapsed.remove(&name) {
+                app.collapsed.insert(name);
+            }
+            save_collapsed(app);
         }
         Message::TogglePlugin(i) => {
             // Compute the spec + prefix dir up front (immutable borrows of `app`)
@@ -1478,11 +1574,19 @@ fn separator_row<'a>(
     m: &ModEntry,
     len: usize,
     color: Option<[u8; 3]>,
+    collapsed: bool,
     selected: bool,
 ) -> Element<'a, Message> {
     let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
     let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(SEPARATOR_ACCENT);
+
+    // The collapse/expand toggle sits in the checkbox column (a separator has no
+    // checkbox); it hides/shows the mods grouped beneath this separator.
+    let collapse = button(text(if collapsed { "[+]" } else { "[-]" }).size(11.0))
+        .padding([1, 4])
+        .on_press(Message::ToggleCollapse(m.display_name().to_string()))
+        .style(button::text);
 
     let name = container(text(m.display_name().to_string()).size(13.0))
         .width(Length::Fill)
@@ -1491,7 +1595,7 @@ fn separator_row<'a>(
     let row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(Space::with_width(C_CHECK)) // no checkbox - a separator isn't content
+        .push(container(collapse).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(name)
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
@@ -1533,11 +1637,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(Space::with_width(Length::Fill))
         .push(text(format!("Active: {active}")).size(12.0));
 
-    // MO2's mod-list filter box.
-    let search = text_input("Filter mods by name...", &app.search)
-        .on_input(Message::SearchChanged)
-        .padding(5)
-        .size(12.0);
+    // MO2's mod-list filter box, plus a button to drop a separator at the top.
+    let search = Row::new()
+        .spacing(6)
+        .push(
+            text_input("Filter mods by name...", &app.search)
+                .on_input(Message::SearchChanged)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(tool_btn("+ Separator", Message::AddSeparator(0)));
 
     let header = Row::new()
         .spacing(6)
@@ -1555,21 +1664,29 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
+    // Tracks whether the current separator's group is collapsed, so its mods hide.
+    let mut in_collapsed = false;
     for (i, m) in app.mods.iter().enumerate() {
-        // Separators stay visible under a filter (they anchor the groups); a normal
-        // mod filters on its display name.
-        if !query.is_empty() && !m.is_separator() && !m.display_name().to_lowercase().contains(&query) {
+        let selected = app.selected_mod == Some(i);
+        // A separator renders as a full-width group header - no checkbox, version,
+        // conflict flags, or content (it never queries the ConflictMap). It always
+        // shows (even under a filter, and even when its own group is collapsed).
+        if m.is_separator() {
+            let collapsed = app.collapsed.contains(m.display_name());
+            in_collapsed = collapsed;
+            shown += 1;
+            let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
+            list = list.push(separator_row(i, m, len, color, collapsed, selected));
+            continue;
+        }
+        // Mods under a collapsed separator are hidden; otherwise filter by name.
+        if in_collapsed {
+            continue;
+        }
+        if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             continue;
         }
         shown += 1;
-        let selected = app.selected_mod == Some(i);
-        // A separator renders as a full-width group header - no checkbox, version,
-        // conflict flags, or content (it never queries the ConflictMap).
-        if m.is_separator() {
-            let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
-            list = list.push(separator_row(i, m, len, color, selected));
-            continue;
-        }
         // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
         let flag_icon = if !m.enabled {
             None
@@ -1659,7 +1776,7 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let title = Row::new()
         .spacing(6)
-        .push(text(m.name.clone()).size(13.0).width(Length::Fill))
+        .push(text(m.display_name().to_string()).size(13.0).width(Length::Fill))
         .push(
             button(text("x").size(13.0)).padding([1, 6]).on_press(Message::CloseMenu).style(button::text),
         );
@@ -1702,6 +1819,23 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         }
     }
 
+    // A separator gets a reduced menu: rename, colour, reorder, add-above, remove
+    // (no enable/disable, information, reinstall, or Nexus - MO2 parity).
+    if m.is_separator() {
+        let current = app.meta_cache.get(&m.name).and_then(|r| r.color);
+        col = col
+            .push(menu_item("Rename", Message::RenameStart(i)))
+            .push(separator_swatches(i, current))
+            .push(menu_sep())
+            .push(menu_item("Send to Top", Message::ModSendTop(i)))
+            .push(menu_item("Send to Bottom", Message::ModSendBottom(i)))
+            .push(menu_item("Add separator above", Message::AddSeparator(i)))
+            .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)))
+            .push(menu_sep())
+            .push(remove_button(app, i));
+        return menu_frame(col.into());
+    }
+
     col = col
         .push(menu_item("Information...", Message::ShowModInfo(i)))
         .push(menu_sep())
@@ -1721,17 +1855,61 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     col = col
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
         .push(menu_item("Rename", Message::RenameStart(i)))
-        .push(menu_sep());
+        .push(menu_item("Add separator above", Message::AddSeparator(i)))
+        .push(menu_sep())
+        .push(remove_button(app, i));
 
-    let remove_label = if app.confirm_remove == Some(i) { "Confirm remove?" } else { "Remove" };
-    let remove = button(text(remove_label).size(12.0))
+    menu_frame(col.into())
+}
+
+/// The two-click Remove button shared by the mod and separator menus.
+fn remove_button<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    let label = if app.confirm_remove == Some(i) { "Confirm remove?" } else { "Remove" };
+    button(text(label).size(12.0))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(Message::ModRemove(i))
-        .style(if app.confirm_remove == Some(i) { button::danger } else { button::text });
-    col = col.push(remove);
+        .style(if app.confirm_remove == Some(i) { button::danger } else { button::text })
+        .into()
+}
 
-    menu_frame(col.into())
+/// A small palette of colour swatches for a separator (iced has no native colour
+/// dialog), plus an "x" to clear back to the default.
+fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Element<'a, Message> {
+    const PALETTE: &[[u8; 3]] = &[
+        [0x8b, 0x2e, 0x2e],
+        [0x8b, 0x5e, 0x2e],
+        [0x6e, 0x6e, 0x2e],
+        [0x2e, 0x6e, 0x3e],
+        [0x2e, 0x5e, 0x8b],
+        [0x5e, 0x2e, 0x8b],
+        [0x55, 0x55, 0x55],
+    ];
+    let mut row = Row::new().spacing(3).align_y(iced::Alignment::Center).push(text("Colour").size(10.0));
+    for &rgb in PALETTE {
+        let [r, g, b] = rgb;
+        let sel = current == Some(rgb);
+        let sw = button(Space::new(Length::Fixed(15.0), Length::Fixed(13.0)))
+            .padding(0)
+            .on_press(Message::SetSeparatorColor(i, Some(rgb)))
+            .style(move |_t: &Theme, _s: button::Status| button::Style {
+                background: Some(Background::Color(Color::from_rgb8(r, g, b))),
+                border: Border {
+                    color: Color::from_rgb8(0x3a, 0x2a, 0x1a),
+                    width: if sel { 2.0 } else { 0.5 },
+                    radius: 2.0.into(),
+                },
+                ..Default::default()
+            });
+        row = row.push(sw);
+    }
+    row.push(
+        button(text("x").size(10.0))
+            .padding([1, 4])
+            .on_press(Message::SetSeparatorColor(i, None))
+            .style(button::text),
+    )
+    .into()
 }
 
 /// The bordered card chrome around the context menu's contents.
