@@ -19,7 +19,8 @@ use iced::widget::{
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::{Instance, InstanceKind, ModEntry};
+use eidos_instance::settings::{Settings, Theme as PrefTheme};
+use eidos_instance::{Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
@@ -60,6 +61,7 @@ enum Tab {
     Plugins,
     Conflicts,
     Overwrite,
+    Saves,
     Downloads,
 }
 
@@ -70,6 +72,13 @@ enum InfoTab {
     Conflicts,
     Filetree,
     Notes,
+}
+
+/// Tabs of the Preferences modal (MO2's Settings dialog).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    General,
+    Nexus,
 }
 
 #[derive(Debug, Clone)]
@@ -167,6 +176,143 @@ enum Message {
     CollisionRenameCommit,
     /// Dismiss the collision prompt without installing.
     CollisionCancel,
+    // ---- Settings / Preferences (MO2's Settings dialog) ----
+    /// Open the Preferences modal (toolbar Settings button + File menu).
+    OpenSettings,
+    /// Dismiss the Preferences modal, discarding unsaved edits.
+    CloseSettings,
+    /// Switch the Preferences tab (General / Nexus).
+    SettingsTabSelected(SettingsTab),
+    /// Edit the Nexus API key field.
+    ApiKeyChanged(String),
+    /// Validate + persist the entered Nexus API key.
+    ApiKeyValidateStart,
+    /// The key validation finished: the account on success, else an error.
+    ApiKeyValidateResult(Result<eidos_nexus::Account, String>),
+    /// Set the preferred colour theme.
+    ThemeChanged(PrefTheme),
+    /// Set the default game id to open (`None` = none).
+    DefaultGameChanged(Option<String>),
+    // ---- Executables dialog (MO2's Modify Executables) ----
+    /// Open the Executables editor (toolbar Executables button + Tools menu).
+    ShowExecutablesDialog,
+    /// Dismiss the Executables editor.
+    CloseExecutablesDialog,
+    /// Select a tool in the Executables editor list.
+    SelectExecutableTool(usize),
+    /// Append a blank user tool and select it for editing.
+    AddExecutableTool,
+    /// Delete the selected user tool (defaults are read-only).
+    DeleteExecutableTool,
+    /// Reorder the selected user tool up / down (within the user range).
+    MoveExecutableUp,
+    MoveExecutableDown,
+    /// Edit buffers for the selected tool.
+    ToolTitleChanged(String),
+    ToolExeChanged(String),
+    ToolWorkdirChanged(String),
+    ToolArgsChanged(String),
+    ToolPrereqsChanged(String),
+    /// Persist the user tool list to `tools.ini`.
+    SaveExecutablesDialog,
+    // ---- Endorse / per-mod flags (MO2 endorseMod) ----
+    /// Toggle endorse <-> abstain for a mod, based on its current state.
+    ModEndorse(usize),
+    /// The endorse/abstain finished: the new endorsed state, or an error.
+    ModEndorsed(usize, Result<bool, String>),
+    /// Toggle the mod's local "Track" flag (MO2's Track; no network).
+    ModTrack(usize),
+    /// Toggle the mod's "Ignore update" flag (MO2's Ignore update; no network).
+    ModIgnoreUpdate(usize),
+    // ---- mod creation (MO2 Create empty mod / Install from folder) ----
+    /// Create an empty mod folder and open its rename editor (MO2 createEmptyMod).
+    CreateEmptyMod,
+    /// Open a folder picker to install from an already-unpacked mod directory.
+    InstallFromFolder,
+    /// The folder picker returned a directory (or `None` if cancelled).
+    FolderPicked(Option<PathBuf>),
+    // ---- Mod update check (MO2 "Check for updates") ----
+    /// Run a Nexus update check across the instance's mods (toolbar + Tools menu).
+    CheckUpdates,
+    /// The update check finished: the summary, or an error.
+    UpdatesChecked(Result<eidos_nexus::UpdateCheckResult, String>),
+    // ---- menu bar wiring ----
+    /// Show / hide the About box (Help menu).
+    ShowAbout,
+    CloseAbout,
+    /// Open / close the View dropdown (iced has no native menu).
+    OpenViewMenu,
+    CloseViewMenu,
+    /// Toggle the toolbar / status bar visibility (View menu).
+    ToggleToolbar,
+    ToggleStatusBar,
+    /// Collapse / expand every separator group (View menu).
+    CollapseAllGroups,
+    ExpandAllGroups,
+    // ---- Saves tab (MO2's savegame list) ----
+    /// Re-scan the active profile's save directory.
+    RefreshSaves,
+    /// Delete a save file (two-click confirm); arms the guard on the first click.
+    DeleteSave(usize),
+    /// Second click: actually delete the armed save.
+    ConfirmDeleteSave(usize),
+    // ---- Downloads manager (MO2's downloads list) ----
+    /// Re-scan the downloads directory + reload each archive's `.meta` status.
+    RefreshDownloads,
+    /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).
+    DeleteDownload(usize),
+    /// Second click: actually delete the armed download.
+    ConfirmDeleteDownload(usize),
+    // ---- multi-select + batch actions (MO2 multi-row selection) ----
+    /// Ctrl+click a mod row: add/remove it from the selection set without
+    /// disturbing the others.
+    SelectModToggle(usize),
+    /// Shift+click a mod row: extend the selection from the focus anchor to `i`.
+    SelectModExtend(usize),
+    /// Clear the multi-selection (Escape / click into empty space).
+    ClearSelection,
+    /// Enable or disable every selected mod in one go (MO2's right-click batch).
+    BatchToggleMods,
+    /// First click arms the batch-remove confirmation; second click executes.
+    BatchRemoveMods,
+    /// Second click: actually remove every selected mod from disk.
+    ConfirmBatchRemove,
+    /// Move the whole selection to the top / bottom of the load order.
+    BatchSendTop,
+    BatchSendBottom,
+    // ---- profile management (MO2 profiles dialog: rename / delete / copy) ----
+    /// Right-click a profile chip: open its action menu (None elsewhere closes it).
+    ProfileMenuOpen(String),
+    /// Dismiss the open profile action menu / inline editor.
+    ProfileCloseMenu,
+    /// Begin renaming a profile (opens an inline editor in the menu).
+    ProfileRenameStart(String),
+    /// Edit the rename target.
+    ProfileRenameChanged(String),
+    /// Commit the rename (`Instance::rename_profile`).
+    ProfileRenameCommit,
+    /// Begin a named copy of a profile (opens an inline editor in the menu).
+    ProfileCopyStart(String),
+    /// Edit the new-copy name.
+    ProfileCopyChanged(String),
+    /// Commit the copy (`Profile::create_from`) and switch to it.
+    ProfileCopyCommit,
+    /// First click arms a profile deletion; second click executes it.
+    ProfileDeleteConfirm(String),
+    /// Second click: actually delete the armed profile (`Instance::delete_profile`).
+    ProfileDeleteCommit(String),
+    // ---- drag-and-drop reorder (MO2 row drag) ----
+    /// Begin a potential drag from row `i` (also selects it).
+    DragStart(usize),
+    /// The pointer entered row `i` during a drag (updates the drop target).
+    DragOver(usize),
+    /// The drag ended: commit the move if the drop row differs from the source.
+    DragDrop,
+    /// Abandon an in-flight drag (filter change / Escape).
+    DragCancel,
+    // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
+    /// The held keyboard modifiers changed (from key press/release subscriptions).
+    ModifiersChanged(iced::keyboard::Modifiers),
     Noop,
 }
 
@@ -177,9 +323,76 @@ struct FomodWizard {
     step: usize,
     selection: eidos_fomod::Selection,
     game_id: String,
+    /// The source archive, kept so the download can be marked installed on finish.
+    archive: PathBuf,
     /// Current plugin states, so fileDependency/gameDependency conditions evaluate
     /// against the real setup instead of always reading Missing.
     ctx: eidos_fomod::Context,
+}
+
+/// An open Executables editor (MO2's Modify Executables dialog). The list shown is
+/// the user's `tools.ini` entries (editable, movable, deletable) followed by the
+/// per-game defaults (read-only); the first `user_len` rows are the user's.
+struct ExecutablesDialogState {
+    /// Display order: user tools first, then read-only per-game defaults.
+    merged: Vec<Tool>,
+    /// How many leading `merged` entries are the user's (editable) tools.
+    user_len: usize,
+    /// The selected row, if any.
+    selected: Option<usize>,
+    // Edit buffers mirroring the selected tool (committed back into `merged`).
+    title: String,
+    exe: String,
+    workdir: String,
+    /// Arguments, one per line in the editor (filtered for blanks on save).
+    args: String,
+    /// Prerequisite verbs, comma-separated in the editor.
+    prereqs: String,
+}
+
+impl ExecutablesDialogState {
+    /// Load the buffers from the selected tool (or clear them when nothing is set).
+    fn load_buffers(&mut self) {
+        match self.selected.and_then(|i| self.merged.get(i)) {
+            Some(t) => {
+                self.title = t.title.clone();
+                self.exe = t.exe.display().to_string();
+                self.workdir = t.workdir.as_ref().map(|w| w.display().to_string()).unwrap_or_default();
+                self.args = t.args.join("\n");
+                self.prereqs = t.prereqs.join(", ");
+            }
+            None => {
+                self.title.clear();
+                self.exe.clear();
+                self.workdir.clear();
+                self.args.clear();
+                self.prereqs.clear();
+            }
+        }
+    }
+
+    /// Whether the selected row is an editable user tool (vs a read-only default).
+    fn selected_is_user(&self) -> bool {
+        matches!(self.selected, Some(i) if i < self.user_len)
+    }
+
+    /// Write the current edit buffers back into the selected user tool.
+    fn commit_buffers(&mut self) {
+        if !self.selected_is_user() {
+            return;
+        }
+        let Some(i) = self.selected else { return };
+        let Some(t) = self.merged.get_mut(i) else { return };
+        t.title = self.title.trim().to_string();
+        t.exe = PathBuf::from(self.exe.trim());
+        t.workdir = {
+            let w = self.workdir.trim();
+            if w.is_empty() { None } else { Some(PathBuf::from(w)) }
+        };
+        t.args = self.args.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+        t.prereqs =
+            self.prereqs.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    }
 }
 
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
@@ -191,6 +404,47 @@ struct CollisionPrompt {
     game_id: String,
     /// Editable target for the Rename option (defaults to a free suggestion).
     rename_to: String,
+}
+
+/// The install status of a downloaded archive, derived from its `.meta` sidecar
+/// (MO2's downloads-list state column).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DownloadState {
+    /// No `.meta` sidecar (a manually dropped archive) - status unknown.
+    Untracked,
+    /// Downloaded but not yet installed into a mod.
+    Ready,
+    /// Already installed into a mod.
+    Installed,
+    /// Was installed then uninstalled (the mod was removed).
+    Uninstalled,
+}
+
+/// One row of the Downloads manager: a completed archive plus its cached status,
+/// so the panel does not re-read every `.meta` sidecar on each redraw.
+#[derive(Debug, Clone)]
+struct DownloadRow {
+    /// The archive's file name.
+    name: String,
+    /// The absolute path to the archive.
+    path: PathBuf,
+    /// Size in bytes.
+    size: u64,
+    /// The installed `version` from the `.meta` sidecar (empty if none).
+    version: String,
+    /// The friendly mod name from the sidecar, if any (Nexus `modName`).
+    mod_name: Option<String>,
+    /// The derived install status.
+    state: DownloadState,
+}
+
+/// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
+/// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
+/// move is only applied on release, and only when `from != hover_over`.
+#[derive(Debug, Clone, Copy)]
+struct DragState {
+    from: usize,
+    hover_over: usize,
 }
 
 struct App {
@@ -245,6 +499,72 @@ struct App {
     collapsed: HashSet<String>,
     /// Active category filter (a top-level category id), or `None` for all.
     category_filter: Option<i32>,
+    // ---- Settings / Nexus account (the status bar + endorse/update read these) ----
+    /// The Preferences modal is open.
+    settings_open: bool,
+    /// The active Preferences tab.
+    settings_tab: SettingsTab,
+    /// The editable Nexus API key field.
+    settings_api_key: String,
+    /// The validated Nexus account, if the stored key checked out (or was cached).
+    nexus_account: Option<eidos_nexus::Account>,
+    /// A key validation is in flight (guards the button + concurrent validations).
+    api_key_validating: bool,
+    /// The last key-validation error, shown inline in the dialog.
+    api_key_error: Option<String>,
+    /// The persisted app-global preferences (theme, default game).
+    prefs: Settings,
+    // ---- Executables dialog ----
+    /// The open Executables editor, if any (None = closed).
+    executables: Option<ExecutablesDialogState>,
+    // ---- Endorse / update in-flight + counts ----
+    /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
+    endorsing: Option<usize>,
+    /// Enabled mods that are endorsed (recomputed in `mods_changed`).
+    endorsed_count: usize,
+    /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).
+    updated_count: usize,
+    /// A Nexus mod-update check is in flight (guards the Update button).
+    update_in_progress: bool,
+    // ---- menu-bar UI toggles + About ----
+    /// The toolbar / status bar are visible (View menu toggles).
+    ui_toolbar_visible: bool,
+    ui_statusbar_visible: bool,
+    /// The View dropdown is open (iced has no native menu, so it's a floating card).
+    view_menu_open: bool,
+    /// The About box is open.
+    about_open: bool,
+    // ---- Saves tab ----
+    /// The active profile's save files (newest first), lazily loaded.
+    saves: Vec<SaveEntry>,
+    /// Two-click guard for a save deletion (the save's index in `saves`).
+    confirm_delete_save: Option<usize>,
+    // ---- Downloads manager ----
+    /// The completed downloads (cached so the panel does not re-scan on redraw).
+    downloads: Vec<DownloadRow>,
+    /// Two-click guard for a download deletion (the row's index in `downloads`).
+    confirm_delete_download: Option<usize>,
+    // ---- multi-select + batch actions ----
+    /// The multi-selection set (indices into `app.mods`). `selected_mod` stays the
+    /// focus anchor for single-row UI; this set drives batch actions and the row
+    /// highlight when more than one row is selected.
+    selected_mods: HashSet<usize>,
+    /// Two-click guard for the destructive batch "Remove selected" action.
+    confirm_batch_remove: bool,
+    /// The keyboard modifiers currently held, so a plain left-click can branch to
+    /// Ctrl-toggle / Shift-extend (iced fires a fixed `on_press` message otherwise).
+    modifiers: iced::keyboard::Modifiers,
+    /// An in-flight drag-to-reorder (None = not dragging).
+    drag_state: Option<DragState>,
+    // ---- profile management (MO2 profiles dialog) ----
+    /// The profile whose right-click action menu is open (None = closed).
+    profile_menu: Option<String>,
+    /// In-progress profile rename: `(original name, edited name)`.
+    profile_rename: Option<(String, String)>,
+    /// In-progress named copy: `(source name, edited new name)`.
+    profile_copy: Option<(String, String)>,
+    /// Two-click guard for a profile deletion (the armed profile name).
+    profile_delete_confirm: Option<String>,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -344,6 +664,36 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         notes_edit: String::new(),
         collapsed: HashSet::new(),
         category_filter: None,
+        settings_open: false,
+        settings_tab: SettingsTab::Nexus,
+        // Prefill the key field from the shared store (the same key `eidos nexus
+        // key` writes), so it survives across sessions without a network round trip.
+        settings_api_key: eidos_instance::settings::load_nexus_key().unwrap_or_default(),
+        nexus_account: None,
+        api_key_validating: false,
+        api_key_error: None,
+        prefs: Settings::load(),
+        executables: None,
+        endorsing: None,
+        endorsed_count: 0,
+        updated_count: 0,
+        update_in_progress: false,
+        ui_toolbar_visible: true,
+        ui_statusbar_visible: true,
+        view_menu_open: false,
+        about_open: false,
+        saves: Vec::new(),
+        confirm_delete_save: None,
+        downloads: Vec::new(),
+        confirm_delete_download: None,
+        selected_mods: HashSet::new(),
+        confirm_batch_remove: false,
+        modifiers: iced::keyboard::Modifiers::default(),
+        drag_state: None,
+        profile_menu: None,
+        profile_rename: None,
+        profile_copy: None,
+        profile_delete_confirm: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -379,6 +729,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     app.conflicts = compute_conflicts(&app);
     app.meta_cache = build_meta_cache(&app);
     app.collapsed = load_collapsed(&app);
+    recompute_counts(&mut app);
     (app, Task::none())
 }
 
@@ -401,6 +752,43 @@ fn load_tools(app: &mut App) {
         }
     }
     app.tools = merged;
+}
+
+/// The stored Nexus API key (the same key the CLI's `eidos nexus key` writes),
+/// shared via `eidos-instance`'s settings store so the key never diverges.
+fn load_nexus_api_key() -> Option<String> {
+    eidos_instance::settings::load_nexus_key()
+}
+
+/// Build the Executables editor state for the open instance: the user's tools.ini
+/// entries (editable) followed by the per-game defaults (read-only). Recomputed
+/// every open so a game switch picks up the right script-extender defaults; `None`
+/// when no instance is open.
+fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
+    let (game, inst) = (selected_game(app)?, app.created.as_ref()?);
+    let user = inst.tools();
+    let user_len = user.len();
+    let defaults = eidos_instance::default_tools(
+        game.def.script_extender.as_ref().map(|se| se.loader),
+        &game.install_path,
+    );
+    let merged = eidos_instance::merge_tools(user, defaults);
+    let mut state = ExecutablesDialogState {
+        merged,
+        user_len,
+        selected: None,
+        title: String::new(),
+        exe: String::new(),
+        workdir: String::new(),
+        args: String::new(),
+        prereqs: String::new(),
+    };
+    // Select the first user tool, if any, so the editor opens with something.
+    if user_len > 0 {
+        state.selected = Some(0);
+        state.load_buffers();
+    }
+    Some(state)
 }
 
 /// Spawn `eidos tool <id> run <title>`: the CLI resolves the tool + Proton and
@@ -527,6 +915,53 @@ fn mods_changed(app: &mut App) {
     app.plugins = None;
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
+    recompute_counts(app);
+}
+
+/// Make `name` the active profile and reload all per-profile view state (mod list,
+/// plugin/conflict caches, collapsed groups, saves), clearing any transient
+/// selection / menu / drag. Shared by the profile switch, copy, rename, and delete
+/// flows so they can never drift apart.
+fn switch_to_profile(app: &mut App, name: &str) {
+    if let Some(inst) = &app.created {
+        let _ = inst.set_active_profile(name);
+        app.mods = inst.profile(name).modlist();
+    }
+    app.plugins = None;
+    app.conflicts = compute_conflicts(app);
+    app.meta_cache = build_meta_cache(app);
+    app.collapsed = load_collapsed(app);
+    recompute_counts(app);
+    app.selected_mod = None;
+    app.selected_mods.clear();
+    app.drag_state = None;
+    app.menu_mod = None;
+    // Saves are per-profile; drop the cache so the Saves tab reloads.
+    app.saves = Vec::new();
+    app.confirm_delete_save = None;
+}
+
+/// Recompute the profile-row Endorsed / Updated counts (MO2 surfaces these). Only
+/// real, enabled mods count; separators and disabled mods do not.
+fn recompute_counts(app: &mut App) {
+    let mut endorsed = 0usize;
+    let mut updated = 0usize;
+    if let Some(inst) = &app.created {
+        for m in &app.mods {
+            if !m.enabled || m.is_separator() {
+                continue;
+            }
+            let meta = inst.mod_meta(&m.name);
+            if meta.endorsed() {
+                endorsed += 1;
+            }
+            if meta.update_available() {
+                updated += 1;
+            }
+        }
+    }
+    app.endorsed_count = endorsed;
+    app.updated_count = updated;
 }
 
 /// The active profile's collapsed-separators file (MO2 keeps this per-profile, out
@@ -555,6 +990,19 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
     // Any action other than a second Clear click cancels the clear confirmation.
     if !matches!(message, Message::ClearOverwrite) {
         app.confirm_clear = false;
+    }
+    // A pending save/download deletion is armed by the first Delete click; any
+    // other action (including arming a different row) cancels the previous one.
+    if !matches!(message, Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)) {
+        app.confirm_delete_save = None;
+    }
+    if !matches!(message, Message::DeleteDownload(_) | Message::ConfirmDeleteDownload(_)) {
+        app.confirm_delete_download = None;
+    }
+    // The batch-remove confirmation is armed by the first click; any other action
+    // (including merely re-rendering on a modifier change) cancels it.
+    if !matches!(message, Message::BatchRemoveMods | Message::ConfirmBatchRemove) {
+        app.confirm_batch_remove = false;
     }
     match message {
         Message::Next => {
@@ -637,6 +1085,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 if app.selected_mod == Some(i) {
                     app.selected_mod = Some(i - 1);
                 }
+                swap_in_selection(app, i - 1, i);
                 mods_changed(app);
             }
         }
@@ -646,6 +1095,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 if app.selected_mod == Some(i) {
                     app.selected_mod = Some(i + 1);
                 }
+                swap_in_selection(app, i, i + 1);
                 mods_changed(app);
             }
         }
@@ -657,6 +1107,13 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if t == Tab::Conflicts && app.conflicts.is_none() {
                 app.conflicts = compute_conflicts(app);
             }
+            // Lazily fill the Saves / Downloads caches the first time each tab opens.
+            if t == Tab::Saves && app.saves.is_empty() {
+                load_saves(app);
+            }
+            if t == Tab::Downloads && app.downloads.is_empty() {
+                load_downloads(app);
+            }
         }
         Message::SwitchProfile(name) => {
             if let Some(inst) = &app.created {
@@ -667,7 +1124,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.meta_cache = build_meta_cache(app);
                 app.collapsed = load_collapsed(app);
                 app.selected_mod = None;
+                app.selected_mods.clear();
+                app.drag_state = None;
                 app.menu_mod = None;
+                // Saves are per-profile; drop the cache so the Saves tab reloads.
+                app.saves = Vec::new();
+                app.confirm_delete_save = None;
                 app.status = Some(format!("Switched to profile '{name}'."));
             }
         }
@@ -689,8 +1151,120 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     app.conflicts = compute_conflicts(app);
                     app.meta_cache = build_meta_cache(app);
                     app.selected_mod = None;
+                    app.selected_mods.clear();
+                    app.drag_state = None;
                     app.menu_mod = None;
+                    app.saves = Vec::new();
+                    app.confirm_delete_save = None;
                     app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
+                }
+            }
+        }
+        // ---- profile management (rename / delete / named copy) --------------
+        Message::ProfileMenuOpen(name) => {
+            app.profile_menu = Some(name);
+            app.profile_rename = None;
+            app.profile_copy = None;
+            app.profile_delete_confirm = None;
+        }
+        Message::ProfileCloseMenu => {
+            app.profile_menu = None;
+            app.profile_rename = None;
+            app.profile_copy = None;
+            app.profile_delete_confirm = None;
+        }
+        Message::ProfileRenameStart(name) => {
+            app.profile_rename = Some((name.clone(), name));
+            app.profile_copy = None;
+            app.profile_delete_confirm = None;
+        }
+        Message::ProfileRenameChanged(s) => {
+            if let Some((_, edited)) = &mut app.profile_rename {
+                *edited = s;
+            }
+        }
+        Message::ProfileRenameCommit => {
+            if let (Some(inst), Some((old, edited))) = (&app.created, app.profile_rename.clone()) {
+                let new = edited.trim().to_string();
+                if new.is_empty() || new.contains('/') || new.contains('\\') {
+                    app.status = Some("Invalid profile name.".to_string());
+                } else if new == old {
+                    // no-op: just close the editor
+                    app.profile_rename = None;
+                    app.profile_menu = None;
+                } else {
+                    let was_active = inst.active_profile() == old;
+                    match inst.rename_profile(&old, &new) {
+                        Ok(()) => {
+                            app.profile_rename = None;
+                            app.profile_menu = None;
+                            // rename_profile already followed the active pointer; reload
+                            // the view when the renamed profile was the active one.
+                            if was_active {
+                                switch_to_profile(app, &new);
+                            }
+                            app.status = Some(format!("Renamed profile to '{new}'."));
+                        }
+                        // Keep the editor open on a collision so the user can retype.
+                        Err(e) => app.status = Some(format!("Rename failed: {e}")),
+                    }
+                }
+            }
+        }
+        Message::ProfileCopyStart(name) => {
+            // Prefill a free "<name> Copy" target so the editor never collides at once.
+            let suggested = app
+                .created
+                .as_ref()
+                .map(|inst| suggest_free_profile_name(inst, &format!("{name} Copy")))
+                .unwrap_or_else(|| format!("{name} Copy"));
+            app.profile_copy = Some((name, suggested));
+            app.profile_rename = None;
+            app.profile_delete_confirm = None;
+        }
+        Message::ProfileCopyChanged(s) => {
+            if let Some((_, edited)) = &mut app.profile_copy {
+                *edited = s;
+            }
+        }
+        Message::ProfileCopyCommit => {
+            if let (Some(inst), Some((src_name, edited))) = (&app.created, app.profile_copy.clone()) {
+                let new = edited.trim().to_string();
+                if new.is_empty() || new.contains('/') || new.contains('\\') {
+                    app.status = Some("Invalid profile name.".to_string());
+                } else if inst.profile(&new).dir().exists() {
+                    app.status = Some(format!("Profile '{new}' already exists."));
+                } else {
+                    let src = inst.profile(&src_name);
+                    let dest = inst.profile(&new);
+                    match dest.create_from(&src) {
+                        Ok(()) => {
+                            app.profile_copy = None;
+                            app.profile_menu = None;
+                            switch_to_profile(app, &new);
+                            app.status = Some(format!("Created '{new}' (copy of '{src_name}')."));
+                        }
+                        Err(e) => app.status = Some(format!("Copy failed: {e}")),
+                    }
+                }
+            }
+        }
+        Message::ProfileDeleteConfirm(name) => {
+            // First click arms; clicking the same profile again commits.
+            app.profile_delete_confirm = Some(name);
+            app.profile_rename = None;
+            app.profile_copy = None;
+        }
+        Message::ProfileDeleteCommit(name) => {
+            app.profile_delete_confirm = None;
+            if let Some(inst) = &app.created {
+                match inst.delete_profile(&name) {
+                    Ok(()) => {
+                        app.profile_menu = None;
+                        app.status = Some(format!("Deleted profile '{name}'."));
+                    }
+                    // Backend guards the active / last profile; surface its reason.
+                    Err(e) => app.status = Some(format!("Delete failed: {e}")),
                 }
             }
         }
@@ -728,12 +1302,13 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.status = Some(format!("Cannot install: this mod requires {req}."));
                     } else {
                         let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                        app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid, ctx });
+                        app.fomod =
+                            Some(FomodWizard { session, step: 0, selection, game_id: gid, archive: path, ctx });
                         app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
                     }
                 }
                 Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
-                    Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
+                    Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
                     Err(eidos_install::InstallError::Exists(_)) => {
                         // MO2's QueryOverwriteDialog: let the user Merge/Replace/Rename.
                         let rename_to = suggest_free_name(&mods_dir, &name);
@@ -814,8 +1389,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::FomodInstall => {
             if let Some(w) = app.fomod.take() {
                 if let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) {
+                    let archive = w.archive.clone();
                     match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id, &w.ctx) {
-                        Ok(r) => after_install(app, &r.name, r.dest, true),
+                        Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
                 }
@@ -889,6 +1465,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.plugins = None;
                 app.conflicts = compute_conflicts(app);
                 app.meta_cache = build_meta_cache(app);
+                recompute_counts(app);
+                // The list was rebuilt; selection / drag indices no longer hold.
+                app.selected_mods.clear();
+                app.drag_state = None;
                 app.status = Some("Refreshed mod list.".to_string());
             }
             load_tools(app);
@@ -920,23 +1500,84 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             // A filter change can hide the menu's target row; keep it simple.
             app.menu_mod = None;
             app.rename = None;
+            app.drag_state = None;
         }
         Message::CategoryFilterChanged(id) => {
             app.category_filter = id;
             app.menu_mod = None;
             app.rename = None;
+            app.drag_state = None;
         }
         Message::SelectMod(i) => {
+            // A held modifier turns a plain click into a multi-select gesture (iced
+            // can only fire a fixed `on_press` message, so we branch on the live
+            // modifier state captured by the keyboard subscription).
+            if app.modifiers.control() || app.modifiers.command() {
+                return update(app, Message::SelectModToggle(i));
+            }
+            if app.modifiers.shift() {
+                return update(app, Message::SelectModExtend(i));
+            }
+            // Plain click: single focus + collapse the multi-selection to just it,
+            // and arm a potential drag from this row (committed only if it moves).
+            app.selected_mod = Some(i);
+            app.selected_mods.clear();
+            app.menu_mod = None;
+            app.rename = None;
+            app.confirm_remove = None;
+            app.drag_state = Some(DragState { from: i, hover_over: i });
+        }
+        Message::SelectModToggle(i) => {
+            // Ctrl+click: flip this row's membership; the first toggle also seeds the
+            // set from the current focus so the anchor row stays selected.
+            if app.selected_mods.is_empty() {
+                if let Some(f) = app.selected_mod {
+                    app.selected_mods.insert(f);
+                }
+            }
+            if !app.selected_mods.remove(&i) {
+                app.selected_mods.insert(i);
+            }
             app.selected_mod = Some(i);
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
+            app.drag_state = None;
+        }
+        Message::SelectModExtend(i) => {
+            // Shift+click: select the contiguous run from the focus anchor to `i`.
+            // With no anchor yet, behaves like a plain single select.
+            let anchor = app.selected_mod.unwrap_or(i);
+            let (lo, hi) = (anchor.min(i), anchor.max(i));
+            app.selected_mods.clear();
+            for idx in lo..=hi {
+                if idx < app.mods.len() {
+                    app.selected_mods.insert(idx);
+                }
+            }
+            app.selected_mod = Some(i);
+            app.menu_mod = None;
+            app.rename = None;
+            app.confirm_remove = None;
+            app.drag_state = None;
+        }
+        Message::ClearSelection => {
+            app.selected_mods.clear();
+            app.drag_state = None;
+            app.menu_mod = None;
         }
         Message::OpenModMenu(i) => {
+            // Right-clicking a row already in the multi-selection keeps the whole
+            // set (MO2 batch context menu); right-clicking outside it selects just
+            // that row first.
+            if !app.selected_mods.contains(&i) {
+                app.selected_mods.clear();
+            }
             app.selected_mod = Some(i);
             app.menu_mod = Some(i);
             app.rename = None;
             app.confirm_remove = None;
+            app.drag_state = None;
         }
         Message::CloseMenu => {
             app.menu_mod = None;
@@ -1009,6 +1650,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => {
                             app.mods.remove(i);
                             app.selected_mod = None;
+                            app.selected_mods.clear();
+                            app.drag_state = None;
                             mods_changed(app);
                             app.status = Some(format!("Removed '{}'.", m.name));
                         }
@@ -1261,6 +1904,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             // Re-open the game picker; keep detection and any selection.
             app.menu_mod = None;
             app.info_mod = None;
+            app.executables = None;
+            app.selected_mod = None;
+            app.selected_mods.clear();
+            app.drag_state = None;
+            app.profile_menu = None;
+            app.profile_rename = None;
+            app.profile_copy = None;
+            app.profile_delete_confirm = None;
             app.error = None;
             app.screen = Screen::Game;
         }
@@ -1333,9 +1984,651 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 });
             }
         }
+        // ---- Settings / Preferences ------------------------------------------
+        Message::OpenSettings => {
+            app.menu_mod = None;
+            app.api_key_error = None;
+            // Re-read the stored key so the field reflects what's on disk.
+            app.settings_api_key = eidos_instance::settings::load_nexus_key().unwrap_or_default();
+            app.settings_open = true;
+        }
+        Message::CloseSettings => {
+            app.settings_open = false;
+            app.api_key_error = None;
+        }
+        Message::SettingsTabSelected(t) => app.settings_tab = t,
+        Message::ApiKeyChanged(s) => {
+            app.settings_api_key = s;
+            app.api_key_error = None;
+        }
+        Message::ApiKeyValidateStart => {
+            let key = app.settings_api_key.trim().to_string();
+            if key.is_empty() {
+                app.api_key_error = Some("Enter your personal Nexus API key.".to_string());
+                return Task::none();
+            }
+            if app.api_key_validating {
+                return Task::none();
+            }
+            app.api_key_validating = true;
+            app.api_key_error = None;
+            // Blocking ureq inside the async closure, like SortPlugins.
+            return Task::perform(
+                async move { eidos_nexus::Nexus::new(&key).validate() },
+                Message::ApiKeyValidateResult,
+            );
+        }
+        Message::ApiKeyValidateResult(result) => {
+            app.api_key_validating = false;
+            match result {
+                Ok(account) => {
+                    // Persist the validated key so the CLI and a relaunch both see it.
+                    let key = app.settings_api_key.trim().to_string();
+                    let saved = eidos_instance::settings::save_nexus_key(&key);
+                    app.status = Some(match &saved {
+                        Ok(()) => format!("Connected to Nexus as {}.", account.name),
+                        Err(e) => format!("Validated, but could not save the key: {e}"),
+                    });
+                    app.nexus_account = Some(account);
+                }
+                Err(e) => {
+                    app.api_key_error = Some(e);
+                }
+            }
+        }
+        Message::ThemeChanged(t) => {
+            app.prefs.theme = t;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        Message::DefaultGameChanged(g) => {
+            app.prefs.default_game = g;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        // ---- Executables dialog ----------------------------------------------
+        Message::ShowExecutablesDialog => {
+            app.menu_mod = None;
+            match open_executables_dialog(app) {
+                Some(state) => app.executables = Some(state),
+                None => app.status = Some("Open a game instance first.".to_string()),
+            }
+        }
+        Message::CloseExecutablesDialog => app.executables = None,
+        Message::SelectExecutableTool(i) => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                state.selected = Some(i);
+                state.load_buffers();
+            }
+        }
+        Message::AddExecutableTool => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                let tool = Tool {
+                    title: "New Tool".to_string(),
+                    exe: PathBuf::new(),
+                    args: Vec::new(),
+                    workdir: None,
+                    prereqs: Vec::new(),
+                };
+                // User tools sit at the front, ahead of the read-only defaults.
+                state.merged.insert(state.user_len, tool);
+                state.selected = Some(state.user_len);
+                state.user_len += 1;
+                state.load_buffers();
+            }
+        }
+        Message::DeleteExecutableTool => {
+            if let Some(state) = &mut app.executables {
+                if state.selected_is_user() {
+                    if let Some(i) = state.selected {
+                        state.merged.remove(i);
+                        state.user_len -= 1;
+                        state.selected = None;
+                        state.load_buffers();
+                    }
+                }
+            }
+        }
+        Message::MoveExecutableUp => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                if let Some(i) = state.selected {
+                    if i > 0 && i < state.user_len {
+                        state.merged.swap(i, i - 1);
+                        state.selected = Some(i - 1);
+                    }
+                }
+            }
+        }
+        Message::MoveExecutableDown => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                if let Some(i) = state.selected {
+                    if i + 1 < state.user_len {
+                        state.merged.swap(i, i + 1);
+                        state.selected = Some(i + 1);
+                    }
+                }
+            }
+        }
+        Message::ToolTitleChanged(s) => {
+            if let Some(state) = &mut app.executables {
+                state.title = s;
+            }
+        }
+        Message::ToolExeChanged(s) => {
+            if let Some(state) = &mut app.executables {
+                state.exe = s;
+            }
+        }
+        Message::ToolWorkdirChanged(s) => {
+            if let Some(state) = &mut app.executables {
+                state.workdir = s;
+            }
+        }
+        Message::ToolArgsChanged(s) => {
+            if let Some(state) = &mut app.executables {
+                state.args = s;
+            }
+        }
+        Message::ToolPrereqsChanged(s) => {
+            if let Some(state) = &mut app.executables {
+                state.prereqs = s;
+            }
+        }
+        Message::SaveExecutablesDialog => {
+            if let Some(state) = &mut app.executables {
+                state.commit_buffers();
+                // Reject a blank or control-char title up front (write_tools would
+                // silently drop it, losing the user's edit without warning).
+                let bad = state.merged[..state.user_len].iter().find(|t| {
+                    let title = t.title.trim();
+                    title.is_empty() || title.chars().any(char::is_control)
+                });
+                if bad.is_some() {
+                    app.status = Some("Every tool needs a non-empty, single-line title.".to_string());
+                    return Task::none();
+                }
+                let user_tools: Vec<Tool> = state.merged[..state.user_len].to_vec();
+                if let Some(inst) = &app.created {
+                    match inst.save_tools(&user_tools) {
+                        Ok(()) => {
+                            app.executables = None;
+                            load_tools(app); // refresh the run-target picker
+                            app.status = Some("Saved executables.".to_string());
+                        }
+                        Err(e) => app.status = Some(format!("Could not save executables: {e}")),
+                    }
+                }
+            }
+        }
+        // ---- Endorse ---------------------------------------------------------
+        Message::ModEndorse(i) => {
+            if app.endorsing.is_some() {
+                return Task::none();
+            }
+            let Some(key) = load_nexus_api_key() else {
+                app.status = Some(
+                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
+                );
+                return Task::none();
+            };
+            let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
+            let info = app.created.as_ref().zip(app.mods.get(i)).filter(|(_, m)| !m.is_separator()).map(
+                |(inst, m)| {
+                    let meta = inst.mod_meta(&m.name);
+                    (meta.mod_id(), meta.version().unwrap_or_default(), meta.endorsed())
+                },
+            );
+            let (Some(domain), Some((Some(mod_id), version, endorsed))) = (domain, info) else {
+                app.status = Some("This mod has no Nexus id to endorse.".to_string());
+                return Task::none();
+            };
+            // Toggle: endorse when not yet endorsed, abstain when already endorsed.
+            let endorse = !endorsed;
+            app.endorsing = Some(i);
+            app.status = Some(
+                if endorse { "Endorsing on Nexus...".to_string() } else { "Abstaining on Nexus...".to_string() },
+            );
+            return Task::perform(
+                async move {
+                    eidos_nexus::Nexus::new(&key).set_endorsed(&domain, mod_id, &version, endorse)
+                },
+                move |r| Message::ModEndorsed(i, r),
+            );
+        }
+        Message::ModEndorsed(i, result) => {
+            app.endorsing = None;
+            match result {
+                Ok(now_endorsed) => {
+                    // Persist the new state into the mod's meta.ini, then refresh.
+                    if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
+                        let mut meta = inst.mod_meta(&m.name);
+                        meta.set("endorsed", if now_endorsed { "1" } else { "0" });
+                        let _ = meta.write(&inst.meta_path(&m.name));
+                        app.status = Some(format!(
+                            "{} '{}' on Nexus.",
+                            if now_endorsed { "Endorsed" } else { "Abstained from" },
+                            m.display_name()
+                        ));
+                    }
+                    recompute_counts(app);
+                }
+                Err(e) => app.status = Some(format!("Endorse failed: {e}")),
+            }
+        }
+        // ---- per-mod local flags (Track / Ignore update) --------------------
+        Message::ModTrack(i) => {
+            app.menu_mod = None;
+            if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
+                if !m.is_separator() {
+                    let mut meta = inst.mod_meta(&m.name);
+                    let now = !meta.tracked();
+                    meta.set_tracked(now);
+                    let _ = meta.write(&inst.meta_path(&m.name));
+                    app.status = Some(format!(
+                        "{} '{}'.",
+                        if now { "Tracking" } else { "Untracked" },
+                        m.display_name()
+                    ));
+                }
+            }
+        }
+        Message::ModIgnoreUpdate(i) => {
+            app.menu_mod = None;
+            if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
+                if !m.is_separator() {
+                    let mut meta = inst.mod_meta(&m.name);
+                    let now = !meta.ignore_update();
+                    meta.set_ignore_update(now);
+                    let _ = meta.write(&inst.meta_path(&m.name));
+                    app.status = Some(format!(
+                        "{} updates for '{}'.",
+                        if now { "Ignoring" } else { "Checking" },
+                        m.display_name()
+                    ));
+                    // The update markers + count exclude ignored mods, so refresh.
+                    app.meta_cache = build_meta_cache(app);
+                    recompute_counts(app);
+                }
+            }
+        }
+        // ---- mod creation (Create empty mod / Install from folder) ----------
+        Message::CreateEmptyMod => {
+            app.menu_mod = None;
+            if let Some(inst) = &app.created {
+                // A unique "New Mod N" name, never colliding on disk.
+                let mut n = 1usize;
+                let mut name = "New Mod".to_string();
+                while inst.mods_dir().join(&name).exists() {
+                    n += 1;
+                    name = format!("New Mod {n}");
+                }
+                match inst.create_empty_mod(&name) {
+                    Ok(entry) => {
+                        // New mods land at the TOP of the list (highest priority,
+                        // matching where a fresh install goes) - index = end of vec.
+                        let idx = app.mods.len();
+                        app.mods.push(entry);
+                        mods_changed(app);
+                        app.selected_mod = Some(idx);
+                        app.selected_mods.clear();
+                        // Open its rename editor so the user names it straight away.
+                        app.rename = Some((idx, name));
+                        app.menu_mod = Some(idx);
+                    }
+                    Err(e) => app.status = Some(format!("Could not create mod: {e}")),
+                }
+            }
+        }
+        Message::InstallFromFolder => {
+            app.menu_mod = None;
+            // Pick an already-unpacked mod directory off-thread.
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .set_title("Select an unpacked mod folder to install")
+                    .pick_folder(),
+                |handle| Message::FolderPicked(handle.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::FolderPicked(picked) => {
+            let Some(src) = picked else { return Task::none() };
+            let mods_dir = app.created.as_ref().map(|i| i.mods_dir());
+            let Some(mods_dir) = mods_dir else {
+                return Task::none();
+            };
+            // Name the new mod after the chosen folder (sanitized + de-duplicated).
+            let raw = src.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let base = eidos_install::fix_directory_name(&raw).unwrap_or_else(|| "New Mod".to_string());
+            let name = suggest_free_name(&mods_dir, &base);
+            let dest = mods_dir.join(&name);
+            // Copy the folder's CONTENTS into mods/<name>/ (not the folder itself),
+            // mirroring how an archive's root is laid out.
+            match copy_dir_contents(&src, &dest) {
+                Ok(()) => after_install(app, &name, dest, false, None),
+                Err(e) => {
+                    let _ = fs::remove_dir_all(&dest);
+                    app.status = Some(format!("Install from folder failed: {e}"));
+                }
+            }
+        }
+        // ---- Mod update check ------------------------------------------------
+        Message::CheckUpdates => {
+            if app.update_in_progress {
+                return Task::none();
+            }
+            let Some(key) = load_nexus_api_key() else {
+                app.status = Some(
+                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
+                );
+                return Task::none();
+            };
+            let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
+                return Task::none();
+            };
+            let Some(inst) = app.created.clone() else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            app.update_in_progress = true;
+            app.status = Some("Checking Nexus for mod updates...".to_string());
+            return Task::perform(
+                async move {
+                    let nexus = eidos_nexus::Nexus::new(&key);
+                    eidos_nexus::check_updates(&nexus, &inst, &domain)
+                },
+                Message::UpdatesChecked,
+            );
+        }
+        Message::UpdatesChecked(result) => {
+            app.update_in_progress = false;
+            match result {
+                Ok(r) => {
+                    // Re-read meta so the `^` markers + counts pick up the writes.
+                    app.meta_cache = build_meta_cache(app);
+                    recompute_counts(app);
+                    let mut msg = format!(
+                        "Update check: {} mods checked, {} update(s) found.",
+                        r.checked, r.updates_found
+                    );
+                    if r.rate_limited {
+                        msg.push_str(" Hourly Nexus limit reached - some mods were left unchecked.");
+                    }
+                    app.status = Some(msg);
+                }
+                Err(e) => app.status = Some(format!("Update check failed: {e}")),
+            }
+        }
+        // ---- menu bar --------------------------------------------------------
+        Message::ShowAbout => {
+            app.menu_mod = None;
+            app.about_open = true;
+        }
+        Message::CloseAbout => app.about_open = false,
+        Message::OpenViewMenu => app.view_menu_open = true,
+        Message::CloseViewMenu => app.view_menu_open = false,
+        Message::ToggleToolbar => {
+            app.ui_toolbar_visible = !app.ui_toolbar_visible;
+            app.view_menu_open = false;
+        }
+        Message::ToggleStatusBar => {
+            app.ui_statusbar_visible = !app.ui_statusbar_visible;
+            app.view_menu_open = false;
+        }
+        Message::CollapseAllGroups => {
+            // Collapse every separator's group (key by display name, like MO2).
+            for m in &app.mods {
+                if m.is_separator() {
+                    app.collapsed.insert(m.display_name().to_string());
+                }
+            }
+            save_collapsed(app);
+            app.view_menu_open = false;
+        }
+        Message::ExpandAllGroups => {
+            app.collapsed.clear();
+            save_collapsed(app);
+            app.view_menu_open = false;
+        }
+        // ---- Saves tab ----
+        Message::RefreshSaves => {
+            load_saves(app);
+            app.status = Some(format!("Found {} save file(s).", app.saves.len()));
+        }
+        Message::DeleteSave(i) => {
+            // First click arms the confirm; clicking a different row re-arms it.
+            app.confirm_delete_save = Some(i);
+        }
+        Message::ConfirmDeleteSave(i) => {
+            // Only act on the armed row, and re-check the index (the list may have
+            // shifted if the file vanished out from under us).
+            if app.confirm_delete_save == Some(i) {
+                if let Some(save) = app.saves.get(i) {
+                    let name = save.filename.clone();
+                    match std::fs::remove_file(&save.path) {
+                        Ok(()) => app.status = Some(format!("Deleted save '{name}'.")),
+                        // Already gone is success enough; surface real errors.
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            app.status = Some(format!("Save '{name}' was already gone."));
+                        }
+                        Err(e) => app.status = Some(format!("Could not delete '{name}': {e}")),
+                    }
+                }
+                load_saves(app);
+            }
+        }
+        // ---- Downloads manager ----
+        Message::RefreshDownloads => {
+            load_downloads(app);
+            app.status = Some(format!("Found {} download(s).", app.downloads.len()));
+        }
+        Message::DeleteDownload(i) => {
+            app.confirm_delete_download = Some(i);
+        }
+        Message::ConfirmDeleteDownload(i) => {
+            if app.confirm_delete_download == Some(i) {
+                if let Some(row) = app.downloads.get(i) {
+                    let name = row.name.clone();
+                    // Remove the archive and its `.meta` sidecar together (MO2 keeps
+                    // them paired). A missing sidecar is fine.
+                    let meta = PathBuf::from(format!("{}.meta", row.path.display()));
+                    let archive_res = std::fs::remove_file(&row.path);
+                    let _ = std::fs::remove_file(&meta);
+                    match archive_res {
+                        Ok(()) => app.status = Some(format!("Deleted download '{name}'.")),
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            app.status = Some(format!("Download '{name}' was already gone."));
+                        }
+                        Err(e) => app.status = Some(format!("Could not delete '{name}': {e}")),
+                    }
+                }
+                load_downloads(app);
+            }
+        }
+        Message::BatchToggleMods => {
+            // MO2-style batch enable/disable: if any selected real mod is enabled,
+            // the whole selection is disabled; otherwise the whole selection is
+            // enabled. Separators carry no toggle and are skipped.
+            let targets: Vec<usize> = real_selection(app);
+            if targets.is_empty() {
+                app.status = Some("Select one or more mods first.".to_string());
+                return Task::none();
+            }
+            let any_on = targets.iter().any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
+            let new_state = !any_on;
+            for &i in &targets {
+                if let Some(m) = app.mods.get_mut(i) {
+                    m.enabled = new_state;
+                }
+            }
+            mods_changed(app);
+            app.menu_mod = None;
+            app.status = Some(format!(
+                "{} {} mod(s).",
+                if new_state { "Enabled" } else { "Disabled" },
+                targets.len()
+            ));
+        }
+        Message::BatchRemoveMods => {
+            let n = real_selection(app).len();
+            if n == 0 {
+                app.status = Some("Select one or more mods first.".to_string());
+                return Task::none();
+            }
+            app.confirm_batch_remove = true;
+            app.status =
+                Some(format!("Click Remove again to permanently delete {n} mod(s) from disk."));
+        }
+        Message::ConfirmBatchRemove => {
+            app.confirm_batch_remove = false;
+            app.menu_mod = None;
+            // Delete from the highest index down so the lower indices stay valid.
+            let mut targets = real_selection(app);
+            targets.sort_unstable();
+            let mut removed = 0usize;
+            let mut failed = 0usize;
+            for &i in targets.iter().rev() {
+                if let Some(m) = app.mods.get(i).cloned() {
+                    match fs::remove_dir_all(&m.path) {
+                        Ok(()) => {
+                            app.mods.remove(i);
+                            removed += 1;
+                        }
+                        Err(_) => failed += 1,
+                    }
+                }
+            }
+            app.selected_mods.clear();
+            app.selected_mod = None;
+            mods_changed(app);
+            app.status = Some(if failed == 0 {
+                format!("Removed {removed} mod(s).")
+            } else {
+                format!("Removed {removed} mod(s); {failed} could not be deleted.")
+            });
+        }
+        Message::BatchSendTop => {
+            // Lift the whole selection (keeping its relative order) to the top.
+            let mut targets = real_selection(app);
+            if targets.is_empty() {
+                return Task::none();
+            }
+            targets.sort_unstable();
+            let moved: Vec<ModEntry> = targets.iter().rev().map(|&i| app.mods.remove(i)).collect();
+            for m in moved.into_iter() {
+                app.mods.insert(0, m);
+            }
+            // The selection is now the leading block.
+            app.selected_mods = (0..targets.len()).collect();
+            app.selected_mod = Some(0);
+            mods_changed(app);
+            app.menu_mod = None;
+        }
+        Message::BatchSendBottom => {
+            let mut targets = real_selection(app);
+            if targets.is_empty() {
+                return Task::none();
+            }
+            targets.sort_unstable();
+            let moved: Vec<ModEntry> = targets.iter().rev().map(|&i| app.mods.remove(i)).collect();
+            let base = app.mods.len();
+            // `moved` is in reverse order; push them so the block keeps its order.
+            for m in moved.into_iter().rev() {
+                app.mods.push(m);
+            }
+            app.selected_mods = (base..base + targets.len()).collect();
+            app.selected_mod = Some(base);
+            mods_changed(app);
+            app.menu_mod = None;
+        }
+        Message::DragStart(i) => {
+            // Arm a drag and (re)select the row, unless a modifier means the click
+            // was a multi-select gesture (then leave the existing selection alone).
+            if app.modifiers.control()
+                || app.modifiers.command()
+                || app.modifiers.shift()
+            {
+                return update(app, Message::SelectMod(i));
+            }
+            app.selected_mod = Some(i);
+            // Pressing a row that is NOT already in the multi-selection collapses the
+            // selection to it; pressing one that IS keeps the group (so a mis-press
+            // does not wipe a careful Ctrl/Shift selection). Drag still moves one row.
+            if !app.selected_mods.contains(&i) {
+                app.selected_mods.clear();
+            }
+            app.menu_mod = None;
+            app.rename = None;
+            app.confirm_remove = None;
+            app.drag_state = Some(DragState { from: i, hover_over: i });
+        }
+        Message::DragOver(i) => {
+            if let Some(d) = &mut app.drag_state {
+                d.hover_over = i;
+            }
+        }
+        Message::DragDrop => {
+            if let Some(d) = app.drag_state.take() {
+                if d.from != d.hover_over && d.from < app.mods.len() && d.hover_over < app.mods.len()
+                {
+                    let m = app.mods.remove(d.from);
+                    // Land the dragged row at the drop target's slot. Removing the
+                    // source shifts everything after it down by one, so a downward
+                    // drop targets `hover_over - 1`; an upward drop targets it as-is.
+                    let to = if d.hover_over > d.from { d.hover_over - 1 } else { d.hover_over };
+                    let to = to.min(app.mods.len());
+                    app.mods.insert(to, m);
+                    app.selected_mod = Some(to);
+                    app.selected_mods.clear();
+                    mods_changed(app);
+                }
+            }
+        }
+        Message::DragCancel => {
+            app.drag_state = None;
+        }
+        Message::ModifiersChanged(mods) => {
+            app.modifiers = mods;
+        }
         Message::Noop => {}
     }
     Task::none()
+}
+
+/// Keep the multi-selection consistent when two rows are swapped (MoveUp/MoveDown):
+/// a selected index follows its row to the new slot.
+fn swap_in_selection(app: &mut App, a: usize, b: usize) {
+    let has_a = app.selected_mods.contains(&a);
+    let has_b = app.selected_mods.contains(&b);
+    if has_a == has_b {
+        return; // both or neither selected: the set is unchanged by the swap.
+    }
+    if has_a {
+        app.selected_mods.remove(&a);
+        app.selected_mods.insert(b);
+    } else {
+        app.selected_mods.remove(&b);
+        app.selected_mods.insert(a);
+    }
+}
+
+/// The real (non-separator) mods in the current multi-selection, as indices into
+/// `app.mods`. Falls back to the single focus row when the set is empty, so a batch
+/// action invoked with just one row selected still does the obvious thing.
+fn real_selection(app: &App) -> Vec<usize> {
+    let mut set = app.selected_mods.clone();
+    if set.is_empty() {
+        if let Some(f) = app.selected_mod {
+            set.insert(f);
+        }
+    }
+    set.into_iter()
+        .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator()))
+        .collect()
 }
 
 // ---- theme -------------------------------------------------------------------
@@ -1413,13 +2706,29 @@ const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct fro
 
 /// A mod-list row background that also reflects selection (MO2's blue highlight,
 /// here a parchment-tan so it reads on the burgundy theme).
-fn list_row<'a>(content: Element<'a, Message>, even: bool, selected: bool) -> Element<'a, Message> {
+fn list_row<'a>(
+    content: Element<'a, Message>,
+    even: bool,
+    selected: bool,
+    drop_target: bool,
+) -> Element<'a, Message> {
     let bg = if selected { SEL_BG } else { row_bg(even) };
     container(content)
         .width(Length::Fill)
         .padding(2)
         .style(move |_t: &Theme| container::Style {
             background: Some(Background::Color(bg)),
+            // During a drag, the hovered drop target gets a burgundy accent border
+            // (iced 0.13 has no native drag image, so this is the drop-position cue).
+            border: Border {
+                color: if drop_target {
+                    Color::from_rgb8(0x6E, 0x24, 0x2E)
+                } else {
+                    Color::TRANSPARENT
+                },
+                width: if drop_target { 2.0 } else { 0.0 },
+                radius: 0.0.into(),
+            },
             ..Default::default()
         })
         .into()
@@ -1683,31 +2992,63 @@ fn merged_listing(app: &App) -> Vec<(String, String, bool)> {
     out
 }
 
+/// The menu bar. iced 0.13 has no native dropdown widget, so most top-level items
+/// fire the single most useful action (MO2's most-used per menu): File -> open the
+/// instance folder, Tools -> Executables, Run -> run the current target, Help ->
+/// About. View opens a small floating menu (it has several toggles to host).
 fn menu_bar<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(0)
-        .push(flat_btn("File", Message::Noop))
-        .push(flat_btn("View", Message::Noop))
-        .push(flat_btn("Tools", Message::Noop))
-        .push(flat_btn("Run", Message::Noop))
-        .push(flat_btn("Help", Message::Noop));
+        .push(flat_btn("File", Message::OpenInstanceFolder))
+        .push(flat_btn("View", Message::OpenViewMenu))
+        .push(flat_btn("Tools", Message::ShowExecutablesDialog))
+        // Shortcut hints inline, MO2-style (the keys are wired in `subscription`).
+        .push(flat_btn("Run (Ctrl+R)", Message::Run))
+        .push(flat_btn("Refresh (F5)", Message::Refresh))
+        .push(flat_btn("Help", Message::ShowAbout));
     container(row).width(Length::Fill).padding(1).style(bar_style).into()
 }
 
-fn toolbar<'a>() -> Element<'a, Message> {
+/// The View dropdown's contents (floats over the window via the Stack, dismissed
+/// by a click outside). Hosts the toolbar/status-bar toggles + collapse/expand-all.
+fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
+    let toolbar_label = if app.ui_toolbar_visible { "Hide toolbar" } else { "Show toolbar" };
+    let status_label = if app.ui_statusbar_visible { "Hide status bar" } else { "Show status bar" };
+    let col = Column::new()
+        .spacing(1)
+        .push(menu_item(toolbar_label, Message::ToggleToolbar))
+        .push(menu_item(status_label, Message::ToggleStatusBar))
+        .push(menu_sep())
+        .push(menu_item("Collapse all groups", Message::CollapseAllGroups))
+        .push(menu_item("Expand all groups", Message::ExpandAllGroups));
+    menu_frame(col.into())
+}
+
+fn toolbar<'a>(app: &App) -> Element<'a, Message> {
+    // Greyed (no on_press) while a Nexus call for that action is in flight; the
+    // first selected mod is the endorse target (MO2's toolbar endorse button); it
+    // must be a real mod with a Nexus id to act on.
+    let endorse_target = app.selected_mod.filter(|&i| {
+        app.mods.get(i).is_some_and(|m| {
+            !m.is_separator()
+                && app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some()
+        })
+    });
+    let endorse_msg = (app.endorsing.is_none()).then(|| endorse_target.map(Message::ModEndorse)).flatten();
+    let update_msg = (!app.update_in_progress).then_some(Message::CheckUpdates);
     let row = Row::new()
         .spacing(2)
         .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::InstallMod))
         .push(icon_text_btn(IC_NEXUS, "Nexus", Message::OpenNexusGame))
         .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::ChangeGame))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
-        .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::Noop))
+        .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::ShowExecutablesDialog))
         .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
-        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenInstanceFolder))
+        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenSettings))
         .push(Space::with_width(Length::Fill))
-        .push(icon_btn(IC_ENDORSE, 20.0, Some(Message::Noop)))
-        .push(icon_btn(IC_UPDATE, 20.0, Some(Message::Noop)))
-        .push(icon_btn(IC_HELP, 20.0, Some(Message::Noop)));
+        .push(icon_btn(IC_ENDORSE, 20.0, endorse_msg))
+        .push(icon_btn(IC_UPDATE, 20.0, update_msg))
+        .push(icon_btn(IC_HELP, 20.0, Some(Message::ShowAbout)));
     container(row).width(Length::Fill).padding(2).style(bar_style).into()
 }
 
@@ -1757,10 +3098,13 @@ fn mod_row<'a>(
         .push(flag_cell)
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
 
-    // Left-click selects, right-click opens the action menu (MO2's context menu).
+    // Left-press selects + arms a drag, entering during a drag retargets the drop,
+    // release commits it; right-click opens the action menu (MO2's context menu).
     // Inner buttons still get their own clicks; the mouse_area catches the rest.
     mouse_area(row)
-        .on_press(Message::SelectMod(i))
+        .on_press(Message::DragStart(i))
+        .on_enter(Message::DragOver(i))
+        .on_release(Message::DragDrop)
         .on_right_press(Message::OpenModMenu(i))
         .into()
 }
@@ -1803,7 +3147,11 @@ fn separator_row<'a>(
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
 
     container(
-        mouse_area(row).on_press(Message::SelectMod(i)).on_right_press(Message::OpenModMenu(i)),
+        mouse_area(row)
+            .on_press(Message::DragStart(i))
+            .on_enter(Message::DragOver(i))
+            .on_release(Message::DragDrop)
+            .on_right_press(Message::OpenModMenu(i)),
     )
     .width(Length::Fill)
     .padding(3)
@@ -1826,18 +3174,26 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     if let Some(inst) = &app.created {
         for name in inst.profiles() {
             let selected = name == active_name;
-            profile = profile.push(
-                button(text(name.clone()).size(12.0))
-                    .padding(4)
-                    .on_press(Message::SwitchProfile(name.clone()))
-                    .style(if selected { button::primary } else { button::secondary }),
-            );
+            // Left-click switches (MO2's profile selector); right-click opens the
+            // rename / copy / delete menu (MO2's Profiles dialog actions).
+            let chip = button(text(name.clone()).size(12.0))
+                .padding(4)
+                .on_press(Message::SwitchProfile(name.clone()))
+                .style(if selected { button::primary } else { button::secondary });
+            profile = profile
+                .push(mouse_area(chip).on_right_press(Message::ProfileMenuOpen(name.clone())));
         }
     }
     let profile = profile
         .push(tool_btn("+ New", Message::NewProfile))
         .push(Space::with_width(Length::Fill))
-        .push(text(format!("Active: {active}")).size(12.0));
+        .push(
+            text(format!(
+                "Active: {active}  |  Endorsed: {}  |  Updates: {}",
+                app.endorsed_count, app.updated_count
+            ))
+            .size(12.0),
+        );
 
     // The category catalog (resolves ids -> names; drives the filter + the column).
     let cats = app.created.as_ref().map(|i| i.category_factory());
@@ -1879,7 +3235,9 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 .text_size(12.0)
                 .padding(5),
         )
-        .push(tool_btn("+ Separator", Message::AddSeparator(0)));
+        .push(tool_btn("+ Separator", Message::AddSeparator(0)))
+        .push(tool_btn("+ Empty mod", Message::CreateEmptyMod))
+        .push(tool_btn("Install folder", Message::InstallFromFolder));
 
     let header = Row::new()
         .spacing(6)
@@ -1901,8 +3259,11 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     }
     // Tracks whether the current separator's group is collapsed, so its mods hide.
     let mut in_collapsed = false;
+    // The live drag's drop target, if any, so its row shows a feedback border.
+    let drop_target = app.drag_state.map(|d| d.hover_over);
     for (i, m) in app.mods.iter().enumerate() {
-        let selected = app.selected_mod == Some(i);
+        // A row is highlighted when it is the focus row or in the multi-selection.
+        let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
         // A separator renders as a full-width group header - no checkbox, version,
         // conflict flags, or content (it never queries the ConflictMap). It always
         // shows (even under a filter, and even when its own group is collapsed).
@@ -1963,11 +3324,15 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             None
         };
         let meta = app.meta_cache.get(&m.name);
-        let selected = app.selected_mod == Some(i);
+        // Show the drop-target border only while a drag is genuinely in motion (the
+        // hovered row differs from the grabbed one), so a plain click never flashes.
+        let is_drop = drop_target == Some(i)
+            && app.drag_state.is_some_and(|d| d.from != d.hover_over);
         list = list.push(list_row(
             mod_row(i, m, len, meta, flag_icon, hidden_icon),
             i % 2 == 0,
             selected,
+            is_drop,
         ));
     }
     if !app.mods.is_empty() && shown == 0 {
@@ -1985,12 +3350,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     .on_press(Message::SelectTab(Tab::Overwrite))
     .style(button::text);
 
+    // Wrap the list so the pointer leaving its bounds during a drag cancels it
+    // (MO2 drops nothing when you release outside the list).
+    let list_area = mouse_area(scrollable(list).height(Length::Fill)).on_exit(Message::DragCancel);
+
     let inner = Column::new()
         .spacing(6)
         .push(profile)
         .push(search)
         .push(header)
-        .push(scrollable(list).height(Length::Fill))
+        .push(list_area)
         .push(overwrite);
 
     container(inner).width(Length::FillPortion(3)).height(Length::Fill).padding(8).style(panel_style).into()
@@ -2024,6 +3393,12 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(m) = app.mods.get(i) else {
         return Space::new(Length::Shrink, Length::Shrink).into();
     };
+
+    // When more than one mod is selected, the right-click menu becomes a batch menu
+    // (MO2 swaps the per-mod actions for selection-wide ones).
+    if app.selected_mods.len() > 1 {
+        return batch_mod_menu_card(app);
+    }
 
     let title = Row::new()
         .spacing(6)
@@ -2097,19 +3472,79 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .push(menu_sep())
         .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)));
 
-    // Visit on Nexus only when we actually have a mod id to link to.
+    // Visit on Nexus + Endorse + Track only when we have a mod id to act on. The
+    // Endorse / Track labels reflect the current state (MO2 toggles them).
+    let meta = app.created.as_ref().map(|inst| inst.mod_meta(&m.name));
     let has_nexus = app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some();
     if has_nexus {
         col = col.push(menu_item("Visit on Nexus", Message::ModVisitNexus(i)));
+        let endorsed = meta.as_ref().is_some_and(|mm| mm.endorsed());
+        let endorse_label = if endorsed { "Abstain (un-endorse)" } else { "Endorse" };
+        col = col.push(menu_item(endorse_label, Message::ModEndorse(i)));
+        let tracked = meta.as_ref().is_some_and(|mm| mm.tracked());
+        let track_label = if tracked { "Untrack" } else { "Track" };
+        col = col.push(menu_item(track_label, Message::ModTrack(i)));
     }
+    // Ignore update is a local flag (MO2 shows it for any mod, Nexus id or not).
+    let ignored = meta.as_ref().is_some_and(|mm| mm.ignore_update());
+    let ignore_label = if ignored { "Check for updates" } else { "Ignore updates" };
+    col = col.push(menu_item(ignore_label, Message::ModIgnoreUpdate(i)));
 
     col = col
+        .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
         .push(menu_item("Rename", Message::RenameStart(i)))
         .push(menu_item("Add separator above", Message::AddSeparator(i)))
         .push(menu_sep())
         .push(remove_button(app, i));
 
+    menu_frame(col.into())
+}
+
+/// The batch context menu shown when several mods are selected at once (MO2's
+/// multi-row right-click): enable/disable, send-to-top/bottom, and a two-click
+/// Remove that wipes the whole selection from disk.
+fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
+    let targets = real_selection(app);
+    let n = targets.len();
+    // Mirror the batch toggle's decision so the label reads true ("Disable" when
+    // any selected mod is on, else "Enable").
+    let any_on = targets.iter().any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
+    let toggle_label = if any_on { "Disable selected" } else { "Enable selected" };
+
+    let title = Row::new()
+        .spacing(6)
+        .push(text(format!("{n} mods selected")).size(13.0).width(Length::Fill))
+        .push(
+            button(text("x").size(13.0))
+                .padding([1, 6])
+                .on_press(Message::CloseMenu)
+                .style(button::text),
+        );
+
+    // Two-click guard: the first click arms (BatchRemoveMods), the second executes
+    // (ConfirmBatchRemove). The label + danger style flip once armed.
+    let (remove_label, remove_msg) = if app.confirm_batch_remove {
+        ("Confirm remove?", Message::ConfirmBatchRemove)
+    } else {
+        ("Remove selected", Message::BatchRemoveMods)
+    };
+    let remove = button(text(remove_label).size(12.0))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .on_press(remove_msg)
+        .style(if app.confirm_batch_remove { button::danger } else { button::text });
+
+    let col = Column::new()
+        .spacing(1)
+        .push(title)
+        .push(menu_sep())
+        .push(menu_item(toggle_label, Message::BatchToggleMods))
+        .push(menu_sep())
+        .push(menu_item("Send to Top", Message::BatchSendTop))
+        .push(menu_item("Send to Bottom", Message::BatchSendBottom))
+        .push(menu_sep())
+        .push(remove);
     menu_frame(col.into())
 }
 
@@ -2406,74 +3841,171 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
+/// Format a file's modified time as `YYYY-MM-DD HH:MM` (UTC), with only std - no
+/// chrono. Used for the Saves "Date" column.
+fn format_mtime(t: std::time::SystemTime) -> String {
+    let Ok(dur) = t.duration_since(std::time::UNIX_EPOCH) else {
+        return "-".to_string();
+    };
+    let secs = dur.as_secs() as i64;
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    let (hh, mm) = ((tod / 3600) % 24, (tod % 3600) / 60);
+    // Civil date from a day count (Howard Hinnant's algorithm), days since epoch.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02} {hh:02}:{mm:02}")
+}
+
+/// Human-readable byte size for the Saves / Downloads size columns.
+fn format_size(bytes: u64) -> String {
+    let b = bytes as f64;
+    if b >= 1024.0 * 1024.0 {
+        format!("{:.1} MiB", b / (1024.0 * 1024.0))
+    } else if b >= 1024.0 {
+        format!("{:.0} KiB", b / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// The Saves tab: the active profile's save files (name / date / size) plus
+/// open-folder + per-save delete. MO2's savegame list.
+fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(inst) = &app.created else {
+        return text("No instance open.").into();
+    };
+    let dir = inst.active().saves_dir();
+
+    let header = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(text("Save").size(13.0))
+        .push(Space::with_width(Length::Fill))
+        .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
+        .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshSaves));
+
+    let col_header = Row::new()
+        .spacing(8)
+        .push(text("Name").size(11.0).width(Length::Fill))
+        .push(text("Date").size(11.0).width(Length::Fixed(130.0)))
+        .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
+        .push(Space::with_width(Length::Fixed(80.0)));
+
+    let mut rows = Column::new().spacing(2);
+    if app.saves.is_empty() {
+        rows = rows.push(
+            text("(no saves yet) Saves your game writes for this profile appear here.")
+                .size(12.0),
+        );
+    }
+    for (i, save) in app.saves.iter().take(SAVES_LIST_CAP).enumerate() {
+        let armed = app.confirm_delete_save == Some(i);
+        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
+            .padding(4)
+            .on_press(if armed { Message::ConfirmDeleteSave(i) } else { Message::DeleteSave(i) })
+            .style(if armed { button::danger } else { button::secondary });
+        let row = Row::new()
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .push(text(save.filename.clone()).size(12.0).width(Length::Fill))
+            .push(text(format_mtime(save.mtime)).size(11.0).width(Length::Fixed(130.0)))
+            .push(text(format_size(save.size)).size(11.0).width(Length::Fixed(80.0)))
+            .push(container(del).width(Length::Fixed(80.0)));
+        rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+    }
+
+    Column::new()
+        .spacing(6)
+        .push(header)
+        .push(text(dir.display().to_string()).size(10.0))
+        .push(col_header)
+        .push(scrollable(rows).height(Length::Fill))
+        .into()
+}
+
+/// A short status label for a download row (MO2's downloads state column).
+fn download_state_label(state: DownloadState) -> &'static str {
+    match state {
+        DownloadState::Untracked => "-",
+        DownloadState::Ready => "Ready",
+        DownloadState::Installed => "Installed",
+        DownloadState::Uninstalled => "Uninstalled",
+    }
+}
+
 fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
         return text("No instance open.").into();
     };
     let dir = inst.downloads_dir();
 
-    // Downloaded archives (skip .meta/.unfinished sidecars), newest first.
-    let mut entries: Vec<(String, std::path::PathBuf, u64, std::time::SystemTime)> =
-        std::fs::read_dir(&dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter_map(|e| {
-                let p = e.path();
-                let name = p.file_name()?.to_string_lossy().into_owned();
-                let lower = name.to_ascii_lowercase();
-                let is_archive = lower.ends_with(".7z")
-                    || lower.ends_with(".zip")
-                    || lower.ends_with(".rar");
-                if !is_archive {
-                    return None;
-                }
-                let md = e.metadata().ok()?;
-                Some((name, p, md.len(), md.modified().ok()?))
-            })
-            .collect();
-    entries.sort_by(|a, b| b.3.cmp(&a.3));
+    let header = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(text("Downloads").size(13.0))
+        .push(Space::with_width(Length::Fill))
+        .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
+        .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshDownloads));
+
+    let col_header = Row::new()
+        .spacing(8)
+        .push(text("Name").size(11.0).width(Length::Fill))
+        .push(text("Version").size(11.0).width(Length::Fixed(80.0)))
+        .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
+        .push(text("Status").size(11.0).width(Length::Fixed(90.0)))
+        .push(Space::with_width(Length::Fixed(150.0)));
 
     let mut rows = Column::new().spacing(2);
-    if entries.is_empty() {
+    if app.downloads.is_empty() {
         rows = rows.push(
             text("No downloads yet. On Nexus, use \"Mod Manager Download\" once the handler is registered (eidos nxm --register), or drop archives here.")
                 .size(11.0),
         );
     }
-    for (i, (name, path, size, _)) in entries.into_iter().enumerate() {
-        // Version from the MO2-format .meta sidecar, when present.
-        let meta = eidos_instance::ModMeta::read(&std::path::PathBuf::from(format!(
-            "{}.meta",
-            path.display()
-        )));
-        let version = meta.version().unwrap_or_default();
-        let row = Row::new()
+    for (i, row) in app.downloads.iter().enumerate() {
+        let armed = app.confirm_delete_download == Some(i);
+        // Two action buttons: Install (re-run the installer) and Delete.
+        let install = button(text("Install").size(11.0))
+            .padding(4)
+            .on_press(Message::ModPicked(Some(row.path.clone())))
+            .style(button::primary);
+        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
+            .padding(4)
+            .on_press(if armed { Message::ConfirmDeleteDownload(i) } else { Message::DeleteDownload(i) })
+            .style(if armed { button::danger } else { button::secondary });
+        // Prefer the friendly Nexus mod name when present, else the file name.
+        let display = row.mod_name.clone().unwrap_or_else(|| row.name.clone());
+        let r = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(name).size(12.0).width(Length::Fill))
-            .push(text(version).size(11.0).width(Length::Fixed(90.0)))
-            .push(text(format!("{:.1} MiB", size as f64 / (1024.0 * 1024.0))).size(11.0).width(Length::Fixed(80.0)))
+            .push(text(display).size(12.0).width(Length::Fill))
+            .push(text(row.version.clone()).size(11.0).width(Length::Fixed(80.0)))
+            .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(80.0)))
+            .push(text(download_state_label(row.state)).size(11.0).width(Length::Fixed(90.0)))
             .push(
-                button(text("Install").size(11.0))
-                    .padding(4)
-                    .on_press(Message::ModPicked(Some(path))),
+                Row::new()
+                    .spacing(4)
+                    .width(Length::Fixed(150.0))
+                    .push(install)
+                    .push(del),
             );
-        rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+        rows = rows.push(striped(container(r).padding(3).into(), i % 2 == 0));
     }
 
     Column::new()
         .spacing(6)
-        .push(
-            Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(text("Downloads").size(13.0))
-                .push(Space::with_width(Length::Fill))
-                .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
-                .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::Refresh)),
-        )
+        .push(header)
         .push(text(dir.display().to_string()).size(10.0))
+        .push(col_header)
         .push(scrollable(rows).height(Length::Fill))
         .into()
 }
@@ -2718,6 +4250,7 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(tab_btn("Plugins", Tab::Plugins, app.tab == Tab::Plugins))
         .push(tab_btn("Conflicts", Tab::Conflicts, app.tab == Tab::Conflicts))
         .push(tab_btn("Overwrite", Tab::Overwrite, app.tab == Tab::Overwrite))
+        .push(tab_btn("Saves", Tab::Saves, app.tab == Tab::Saves))
         .push(tab_btn("Downloads", Tab::Downloads, app.tab == Tab::Downloads));
 
     let content = match app.tab {
@@ -2725,6 +4258,7 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         Tab::Plugins => plugins_panel(app),
         Tab::Conflicts => conflicts_panel(app),
         Tab::Overwrite => overwrite_panel(app),
+        Tab::Saves => saves_panel(app),
         Tab::Downloads => downloads_panel(app),
     };
 
@@ -2738,10 +4272,24 @@ fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         InstanceKind::Portable => "Portable",
     };
     let game = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
-    let left = app.status.clone().unwrap_or_else(|| format!("{game} - {kind} - Default"));
+    // A live multi-selection count takes the left slot (MO2's "N selected"), unless a
+    // transient status message is showing; otherwise the instance summary.
+    let left = if let Some(s) = app.status.clone() {
+        s
+    } else if app.selected_mods.len() > 1 {
+        format!("{} mods selected", app.selected_mods.len())
+    } else {
+        format!("{game} - {kind} - Default")
+    };
+    // The Nexus account, if connected this session (MO2's status-bar login state).
+    let account = match &app.nexus_account {
+        Some(a) if a.is_premium => format!("Nexus: {} (Premium)", a.name),
+        Some(a) => format!("Nexus: {}", a.name),
+        None => "not logged in".to_string(),
+    };
     let row = Row::new()
         .push(text(left).size(11.0).width(Length::Fill))
-        .push(text("not logged in").size(11.0));
+        .push(text(account).size(11.0));
     container(row).width(Length::Fill).padding(4).style(bar_style).into()
 }
 
@@ -2758,14 +4306,14 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         .push(modlist_pane(app))
         .push(right_pane(app));
 
-    let base = Column::new()
-        .spacing(4)
-        .padding(4)
-        .push(header)
-        .push(menu_bar())
-        .push(toolbar())
-        .push(body)
-        .push(status_bar(app));
+    let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());
+    if app.ui_toolbar_visible {
+        base = base.push(toolbar(app));
+    }
+    base = base.push(body);
+    if app.ui_statusbar_visible {
+        base = base.push(status_bar(app));
+    }
 
     let mut layers = Stack::new().push(base);
 
@@ -2803,7 +4351,128 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // The Preferences modal (MO2's Settings dialog).
+    if app.settings_open {
+        let scrim =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseSettings);
+        let dialog = container(settings_dialog(app)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The Executables editor (MO2's Modify Executables dialog).
+    if let Some(state) = &app.executables {
+        let scrim = mouse_area(Space::new(Length::Fill, Length::Fill))
+            .on_press(Message::CloseExecutablesDialog);
+        let dialog = container(executables_dialog(state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The About box (Help menu).
+    if app.about_open {
+        let scrim = mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseAbout);
+        let dialog = container(about_dialog()).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The View dropdown floats just under the menu bar, near the View item.
+    if app.view_menu_open {
+        let catcher =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseViewMenu);
+        let card = container(view_menu_card(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(iced::Padding { top: 44.0, right: 0.0, bottom: 0.0, left: 44.0 })
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
+        layers = layers.push(catcher).push(card);
+    }
+
+    // The per-profile menu (rename / copy / delete), opened by right-clicking a
+    // profile chip. A catcher behind it dismisses on an outside click.
+    if let Some(name) = app.profile_menu.clone() {
+        let catcher =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::ProfileCloseMenu);
+        let card = container(profile_menu_card(app, &name))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(iced::Padding { top: 120.0, right: 0.0, bottom: 0.0, left: 60.0 })
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
+        layers = layers.push(catcher).push(card);
+    }
+
     layers.into()
+}
+
+/// The per-profile context menu (MO2's profile manager actions), opened by
+/// right-clicking a profile chip: rename, copy-to-new, delete (two-click confirm).
+fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Message> {
+    let title = Row::new()
+        .spacing(6)
+        .push(text(format!("Profile: {name}")).size(13.0).width(Length::Fill))
+        .push(
+            button(text("x").size(13.0))
+                .padding([1, 6])
+                .on_press(Message::ProfileCloseMenu)
+                .style(button::text),
+        );
+    let mut col = Column::new().spacing(1).push(title).push(menu_sep());
+
+    // Rename: an inline editor when armed, else a menu item that arms it.
+    match &app.profile_rename {
+        Some((orig, edited)) if orig == name => {
+            col = col.push(
+                text_input("New name", edited)
+                    .on_input(Message::ProfileRenameChanged)
+                    .on_submit(Message::ProfileRenameCommit)
+                    .padding(5)
+                    .size(12.0),
+            );
+        }
+        _ => col = col.push(menu_item("Rename", Message::ProfileRenameStart(name.to_string()))),
+    }
+
+    // Copy to a new profile: an inline editor when armed, else a menu item.
+    match &app.profile_copy {
+        Some((src, edited)) if src == name => {
+            col = col.push(
+                text_input("Copy name", edited)
+                    .on_input(Message::ProfileCopyChanged)
+                    .on_submit(Message::ProfileCopyCommit)
+                    .padding(5)
+                    .size(12.0),
+            );
+        }
+        _ => col = col.push(menu_item("Copy to new...", Message::ProfileCopyStart(name.to_string()))),
+    }
+
+    col = col.push(menu_sep());
+    // Delete: two-click confirm (backend refuses the active / last profile).
+    let delete: Element<'a, Message> = if app.profile_delete_confirm.as_deref() == Some(name) {
+        button(text("Click again to delete").size(12.0))
+            .padding([2, 6])
+            .width(Length::Fill)
+            .on_press(Message::ProfileDeleteCommit(name.to_string()))
+            .style(button::danger)
+            .into()
+    } else {
+        menu_item("Delete", Message::ProfileDeleteConfirm(name.to_string()))
+    };
+    col = col.push(delete);
+
+    container(col).max_width(240.0).padding(8).style(card_style).into()
+}
+
+/// Suggest a free profile name near `base` (`base`, `base 2`, `base 3`, ...) so the
+/// copy editor never starts on a name that already collides.
+fn suggest_free_profile_name(inst: &Instance, base: &str) -> String {
+    if !inst.profile(base).dir().exists() {
+        return base.to_string();
+    }
+    (2..1000)
+        .map(|n| format!("{base} {n}"))
+        .find(|cand| !inst.profile(cand).dir().exists())
+        .unwrap_or_else(|| base.to_string())
 }
 
 /// Suggest a free mod-folder name near `name` (`name (2)`, `name (3)`, ...) for the
@@ -2833,6 +4502,7 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
     let disabled_roots: Vec<std::path::PathBuf> =
         app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
+    let archive = c.archive.clone();
     match eidos_install::install_archive_with_policy(
         &c.archive,
         &mods_dir,
@@ -2841,7 +4511,7 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
         policy,
         &ctx,
     ) {
-        Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
+        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&archive)),
         Err(eidos_install::InstallError::Exists(_)) => {
             // A Rename target that also exists: keep the prompt open for another try.
             app.status = Some("That name also exists - pick another.".to_string());
@@ -2851,10 +4521,94 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
     }
 }
 
+/// Cap on the rows the Saves / Downloads panels render (matches the 500-entry
+/// cap on the Data / Overwrite listings).
+const SAVES_LIST_CAP: usize = 500;
+
+/// Re-scan the active profile's save directory into `app.saves`.
+fn load_saves(app: &mut App) {
+    app.saves = match &app.created {
+        Some(inst) => inst.savegames(),
+        None => Vec::new(),
+    };
+    app.confirm_delete_save = None;
+}
+
+/// Re-scan the downloads directory into `app.downloads`, reading each archive's
+/// `.meta` sidecar for its version + install status. Newest first.
+fn load_downloads(app: &mut App) {
+    let Some(inst) = &app.created else {
+        app.downloads = Vec::new();
+        app.confirm_delete_download = None;
+        return;
+    };
+    let dir = inst.downloads_dir();
+    let mut entries: Vec<(DownloadRow, std::time::SystemTime)> = std::fs::read_dir(&dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let p = e.path();
+            let name = p.file_name()?.to_string_lossy().into_owned();
+            let lower = name.to_ascii_lowercase();
+            let is_archive =
+                lower.ends_with(".7z") || lower.ends_with(".zip") || lower.ends_with(".rar");
+            if !is_archive {
+                return None;
+            }
+            let md = e.metadata().ok()?;
+            // Version + install status from the MO2-format `.meta` sidecar.
+            let meta =
+                eidos_instance::ModMeta::read(&PathBuf::from(format!("{}.meta", p.display())));
+            let has_meta =
+                std::fs::metadata(PathBuf::from(format!("{}.meta", p.display()))).is_ok();
+            let state = if !has_meta {
+                DownloadState::Untracked
+            } else if meta.uninstalled() {
+                DownloadState::Uninstalled
+            } else if meta.installed() {
+                DownloadState::Installed
+            } else {
+                DownloadState::Ready
+            };
+            let row = DownloadRow {
+                name,
+                path: p,
+                size: md.len(),
+                version: meta.version().unwrap_or_default(),
+                mod_name: meta.mod_name(),
+                state,
+            };
+            Some((row, md.modified().ok()?))
+        })
+        .collect();
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    app.downloads = entries.into_iter().map(|(r, _)| r).take(SAVES_LIST_CAP).collect();
+    app.confirm_delete_download = None;
+}
+
+/// Recursively copy the CONTENTS of `src` into `dst` (creating `dst`), MO2's
+/// "Install from folder": the new mod folder mirrors the chosen directory's root
+/// rather than nesting the directory inside itself.
+fn copy_dir_contents(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_contents(&from, &to)?;
+        } else {
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
 /// Shared post-install step: give the new mod the highest priority (wins conflicts
 /// by default, like MO2), reload the list, and invalidate the plugin + conflict
 /// caches. modlist() is lowest-priority-first, so highest = the END of the list.
-fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
+fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive: Option<&Path>) {
     if let Some(inst) = &app.created {
         let mut ml = inst.modlist();
         ml.retain(|m| m.name != name);
@@ -2862,9 +4616,20 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
         let _ = inst.save_modlist(&ml);
         app.mods = inst.modlist();
     }
+    // Flip the source archive's `.meta` status to installed (MO2 marks the
+    // download), so the Downloads manager shows it as installed. Best-effort: a
+    // manually dropped archive with no sidecar is a no-op.
+    if let Some(a) = archive {
+        let _ = eidos_nexus::mark_installed(a);
+    }
     app.plugins = None;
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
+    // Refresh the cached downloads only if they were already loaded, so the
+    // status column reflects the new install without a full re-scan otherwise.
+    if !app.downloads.is_empty() {
+        load_downloads(app);
+    }
     app.status = Some(if fomod {
         format!("Installed '{name}' via FOMOD.")
     } else {
@@ -2924,6 +4689,309 @@ fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> {
                 .style(button::text),
         );
     container(card).max_width(460.0).padding(16).style(card_style).into()
+}
+
+// ---- Preferences modal (MO2's Settings dialog) -----------------------------
+
+/// A wrapped game id for the default-game `pick_list` (so it has a Display label).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DefaultGameChoice {
+    /// `None` = "(none)".
+    id: Option<String>,
+    label: String,
+}
+
+impl std::fmt::Display for DefaultGameChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+/// A wrapped theme for the theme `pick_list`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ThemeChoice(PrefTheme);
+
+impl std::fmt::Display for ThemeChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self.0 {
+            PrefTheme::System => "Follow system",
+            PrefTheme::Light => "Light",
+            PrefTheme::Dark => "Dark",
+        })
+    }
+}
+
+fn settings_tab_btn<'a>(label: &'a str, tab: SettingsTab, active: bool) -> Element<'a, Message> {
+    button(text(label).size(12.0))
+        .padding([4, 10])
+        .on_press(Message::SettingsTabSelected(tab))
+        .style(if active { button::primary } else { button::secondary })
+        .into()
+}
+
+fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
+    let header = Row::new()
+        .spacing(6)
+        .push(text("Settings").size(16.0).width(Length::Fill))
+        .push(button(text("x").size(14.0)).padding([1, 8]).on_press(Message::CloseSettings).style(button::text));
+
+    let tabs = Row::new()
+        .spacing(4)
+        .push(settings_tab_btn("General", SettingsTab::General, app.settings_tab == SettingsTab::General))
+        .push(settings_tab_btn("Nexus", SettingsTab::Nexus, app.settings_tab == SettingsTab::Nexus));
+
+    let body: Element<'a, Message> = match app.settings_tab {
+        SettingsTab::Nexus => {
+            // The validate/connect button greys out while a check is in flight.
+            let connect_label = if app.api_key_validating { "Checking..." } else { "Validate & Save" };
+            let mut connect = button(text(connect_label).size(12.0)).padding([5, 12]).style(button::primary);
+            if !app.api_key_validating {
+                connect = connect.on_press(Message::ApiKeyValidateStart);
+            }
+            let field = text_input("Personal API key", &app.settings_api_key)
+                .on_input(Message::ApiKeyChanged)
+                .on_submit(Message::ApiKeyValidateStart)
+                .padding(6)
+                .size(12.0)
+                .width(Length::Fill);
+
+            let mut col = Column::new()
+                .spacing(8)
+                .push(text("Personal Nexus Mods API key").size(13.0))
+                .push(
+                    text("Get it from nexusmods.com -> Account -> API Keys (Personal API Key). It is stored at ~/.config/eidos/nexus.ini and shared with the CLI.")
+                        .size(10.0),
+                )
+                .push(Row::new().spacing(8).push(field).push(connect));
+
+            if let Some(account) = &app.nexus_account {
+                let suffix = if account.is_premium { " (Premium)" } else { "" };
+                col = col.push(text(format!("Connected as {}{}.", account.name, suffix)).size(11.0));
+            }
+            if let Some(err) = &app.api_key_error {
+                col = col.push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
+            }
+            col.into()
+        }
+        SettingsTab::General => {
+            let themes = vec![
+                ThemeChoice(PrefTheme::System),
+                ThemeChoice(PrefTheme::Light),
+                ThemeChoice(PrefTheme::Dark),
+            ];
+            let theme_row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Theme").size(12.0).width(Length::Fixed(120.0)))
+                .push(
+                    pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
+                        Message::ThemeChanged(c.0)
+                    })
+                    .text_size(12.0)
+                    .padding(6),
+                );
+
+            // Default-game dropdown: "(none)" plus every supported game.
+            let mut games = vec![DefaultGameChoice { id: None, label: "(none)".to_string() }];
+            for g in eidos_games::catalog() {
+                games.push(DefaultGameChoice { id: Some(g.id.to_string()), label: g.name.to_string() });
+            }
+            let selected_game = games
+                .iter()
+                .find(|c| c.id == app.prefs.default_game)
+                .cloned()
+                .unwrap_or_else(|| DefaultGameChoice { id: None, label: "(none)".to_string() });
+            let game_row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Default game").size(12.0).width(Length::Fixed(120.0)))
+                .push(
+                    pick_list(games, Some(selected_game), |c: DefaultGameChoice| {
+                        Message::DefaultGameChanged(c.id)
+                    })
+                    .text_size(12.0)
+                    .padding(6),
+                );
+
+            Column::new()
+                .spacing(10)
+                .push(theme_row)
+                .push(game_row)
+                .push(text("Theme and default game are saved to ~/.config/eidos/settings.ini.").size(10.0))
+                .into()
+        }
+    };
+
+    let card = Column::new()
+        .spacing(12)
+        .push(header)
+        .push(tabs)
+        .push(container(body).width(Length::Fill).padding(4));
+    container(card).max_width(560.0).padding(16).style(card_style).into()
+}
+
+// ---- Executables editor (MO2's Modify Executables) --------------------------
+
+fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+    let header = Row::new()
+        .spacing(6)
+        .push(text("Executables").size(16.0).width(Length::Fill))
+        .push(
+            button(text("x").size(14.0))
+                .padding([1, 8])
+                .on_press(Message::CloseExecutablesDialog)
+                .style(button::text),
+        );
+
+    // The tool list: user tools first (editable), then a "(defaults)" divider and
+    // the read-only per-game defaults.
+    let mut list = Column::new().spacing(1);
+    for (i, t) in state.merged.iter().enumerate() {
+        if i == state.user_len && i < state.merged.len() {
+            list = list.push(text("Defaults (read-only)").size(10.0));
+        }
+        let selected = state.selected == Some(i);
+        let label = if t.title.trim().is_empty() { "(unnamed)" } else { t.title.trim() };
+        let is_default = i >= state.user_len;
+        let display = if is_default { format!("{label}  (default)") } else { label.to_string() };
+        list = list.push(
+            button(text(display).size(12.0))
+                .width(Length::Fill)
+                .padding([3, 6])
+                .on_press(Message::SelectExecutableTool(i))
+                .style(if selected { button::primary } else { button::text }),
+        );
+    }
+    if state.merged.is_empty() {
+        list = list.push(text("No tools yet. Click Add to create one.").size(11.0));
+    }
+    let list_pane = container(scrollable(list).height(Length::Fill))
+        .width(Length::Fixed(200.0))
+        .height(Length::Fixed(280.0))
+        .padding(4)
+        .style(panel_style);
+
+    let list_actions = Row::new()
+        .spacing(4)
+        .push(tool_btn("Add", Message::AddExecutableTool))
+        .push(del_button(state))
+        .push(move_button("Up", Message::MoveExecutableUp, can_move_up(state)))
+        .push(move_button("Down", Message::MoveExecutableDown, can_move_down(state)));
+
+    let left = Column::new().spacing(6).push(list_pane).push(list_actions);
+
+    // The editor pane (only meaningful for a selected user tool).
+    let editor: Element<'a, Message> = if state.selected_is_user() {
+        Column::new()
+            .spacing(8)
+            .push(exe_field("Title", &state.title, Message::ToolTitleChanged))
+            .push(exe_field("Executable (path)", &state.exe, Message::ToolExeChanged))
+            .push(exe_field("Working dir (optional)", &state.workdir, Message::ToolWorkdirChanged))
+            .push(text("Arguments (one per line)").size(11.0))
+            .push(
+                text_input("", &state.args)
+                    .on_input(Message::ToolArgsChanged)
+                    .padding(6)
+                    .size(12.0)
+                    .width(Length::Fill),
+            )
+            .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
+            .into()
+    } else if state.selected.is_some() {
+        Column::new()
+            .spacing(8)
+            .push(text("This is a per-game default and cannot be edited.").size(12.0))
+            .push(text("Add a user tool with the same title to override it.").size(10.0))
+            .into()
+    } else {
+        Column::new()
+            .spacing(8)
+            .push(text("Select a tool to edit, or click Add to create one.").size(12.0))
+            .into()
+    };
+    let right = container(editor).width(Length::Fill).padding(4);
+
+    let panes = Row::new().spacing(12).push(left).push(right);
+
+    let footer = Row::new()
+        .spacing(8)
+        .push(Space::with_width(Length::Fill))
+        .push(tool_btn("Cancel", Message::CloseExecutablesDialog))
+        .push(
+            button(text("Save").size(12.0))
+                .padding([5, 14])
+                .on_press(Message::SaveExecutablesDialog)
+                .style(button::primary),
+        );
+
+    let card = Column::new().spacing(12).push(header).push(panes).push(footer);
+    container(card).max_width(720.0).padding(16).style(card_style).into()
+}
+
+/// A labelled single-line field for the Executables editor.
+fn exe_field<'a>(
+    label: &'a str,
+    value: &str,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> Element<'a, Message> {
+    Column::new()
+        .spacing(2)
+        .push(text(label).size(11.0))
+        .push(text_input("", value).on_input(on_input).padding(6).size(12.0).width(Length::Fill))
+        .into()
+}
+
+/// The Delete button: active only when a user tool is selected.
+fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+    let mut b = button(text("Delete").size(12.0)).padding(6).style(button::danger);
+    if state.selected_is_user() {
+        b = b.on_press(Message::DeleteExecutableTool);
+    }
+    b.into()
+}
+
+/// A reorder button, greyed when the move is not possible.
+fn move_button<'a>(label: &'a str, msg: Message, enabled: bool) -> Element<'a, Message> {
+    let mut b = button(text(label).size(12.0)).padding(6).style(button::secondary);
+    if enabled {
+        b = b.on_press(msg);
+    }
+    b.into()
+}
+
+fn can_move_up(state: &ExecutablesDialogState) -> bool {
+    matches!(state.selected, Some(i) if i > 0 && i < state.user_len)
+}
+
+fn can_move_down(state: &ExecutablesDialogState) -> bool {
+    matches!(state.selected, Some(i) if i + 1 < state.user_len)
+}
+
+// ---- About box --------------------------------------------------------------
+
+fn about_dialog<'a>() -> Element<'a, Message> {
+    let card = Column::new()
+        .spacing(8)
+        .push(text("Eidos").size(20.0))
+        .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(12.0))
+        .push(
+            text("A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus integration.")
+                .size(12.0),
+        )
+        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(text("Shortcuts").size(13.0))
+        .push(
+            text("Ctrl+R run   ·   F5 refresh   ·   Ctrl+click multi-select   ·   Shift+click range   ·   Esc clear   ·   drag a row to reorder")
+                .size(11.0),
+        )
+        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([5, 14])
+                .on_press(Message::CloseAbout)
+                .style(button::primary),
+        );
+    container(card).max_width(440.0).padding(16).style(card_style).into()
 }
 
 fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
@@ -3076,10 +5144,52 @@ fn view(app: &App) -> Element<'_, Message> {
     container(inner).width(Length::Fill).height(Length::Fill).padding(20).into()
 }
 
+/// Keyboard subscription: surface global shortcuts and keep the live modifier state
+/// in sync so a plain mod-row click can branch to Ctrl-toggle / Shift-extend.
+///
+/// Shortcuts only fire on the main screen, and only when no modal / inline editor is
+/// stealing input, so they never clobber typing into a text field. Mirrors MO2's
+/// global accelerators: F5 (Refresh) and Ctrl+R (Run).
+fn subscription(app: &App) -> iced::Subscription<Message> {
+    use iced::keyboard::{self, key::Named, Key};
+
+    // Track held modifiers from every key press AND release (a release with no
+    // remaining keys still carries the updated modifier set).
+    let track_press = keyboard::on_key_press(|_key, mods| Some(Message::ModifiersChanged(mods)));
+    let track_release =
+        keyboard::on_key_release(|_key, mods| Some(Message::ModifiersChanged(mods)));
+
+    // App shortcuts. `on_key_press` takes a plain `fn`, so it cannot read `app`;
+    // the handlers themselves no-op off the main screen / while a modal is open.
+    let shortcuts = keyboard::on_key_press(|key, mods| match key.as_ref() {
+        Key::Named(Named::F5) => Some(Message::Refresh),
+        // Ctrl+R launches the current run target (MO2's Run accelerator).
+        Key::Character("r") if mods.control() => Some(Message::Run),
+        Key::Named(Named::Escape) => Some(Message::ClearSelection),
+        _ => None,
+    });
+
+    // The shortcut stream is gated on the main screen (the wizard/FOMOD views have
+    // their own focus); modifier tracking always runs so the set is never stale.
+    let mut subs = vec![track_press, track_release];
+    if app.screen == Screen::Main
+        && app.fomod.is_none()
+        && app.rename.is_none()
+        && !app.settings_open
+        && app.executables.is_none()
+        && app.collision.is_none()
+        && app.info_mod.is_none()
+    {
+        subs.push(shortcuts);
+    }
+    iced::Subscription::batch(subs)
+}
+
 fn main() -> iced::Result {
     // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
     let launch_command: Vec<String> = std::env::args().skip(1).collect();
     iced::application("Eidos", update, view)
         .theme(theme)
+        .subscription(subscription)
         .run_with(move || new(launch_command.clone()))
 }

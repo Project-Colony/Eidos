@@ -10,6 +10,7 @@ edition.workspace = true
 iced = { version = "0.13", features = ["image"] }
 eidos-games = { path = "../eidos-games" }
 eidos-instance = { path = "../eidos-instance" }
+eidos-nexus = { path = "../eidos-nexus" }
 eidos-plugins = { path = "../eidos-plugins" }
 eidos-loot = { path = "../eidos-loot" }
 eidos-conflicts = { path = "../eidos-conflicts" }

@@ -1060,6 +1060,7 @@ dependencies = [
  "eidos-install",
  "eidos-instance",
  "eidos-loot",
+ "eidos-nexus",
  "eidos-plugins",
  "iced",
  "rfd",
@@ -1105,6 +1106,7 @@ dependencies = [
 name = "eidos-nexus"
 version = "0.0.0"
 dependencies = [
+ "eidos-instance",
  "serde_json",
  "ureq",
 ]

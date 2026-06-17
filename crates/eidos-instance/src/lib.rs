@@ -21,11 +21,13 @@ mod categories;
 mod manifest;
 mod meta;
 mod profile;
+pub mod settings;
 mod tools;
 pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
-pub use profile::Profile;
+pub use profile::{Profile, SaveEntry};
+pub use settings::{Settings, Theme};
 pub use tools::{default_prereqs, default_tools, merge_tools, read_tools, write_tools, Tool};
 
 /// Where an instance is stored.
@@ -198,6 +200,11 @@ impl Instance {
         self.active().load_order()
     }
 
+    /// The active profile's save files (newest first), MO2's savegame list.
+    pub fn savegames(&self) -> Vec<crate::SaveEntry> {
+        self.active().savegames()
+    }
+
     // ---- profiles ----
 
     /// `<root>/profiles/`.
@@ -312,6 +319,28 @@ impl Instance {
         }
         self.profile(name).delete()
     }
+
+    // ---- mod creation ----
+
+    /// Create an empty mod folder (`mods/<name>/`) with a minimal `meta.ini`,
+    /// MO2's "Create empty mod". Returns the [`ModEntry`] so the caller can splice
+    /// it into the active profile's list. Refuses an empty, path-separated, or
+    /// already-existing name; the new folder is enabled by default.
+    pub fn create_empty_mod(&self, name: &str) -> std::io::Result<ModEntry> {
+        use std::io::{Error, ErrorKind};
+        let name = name.trim();
+        if name.is_empty() || name.contains('/') || name.contains('\\') {
+            return Err(Error::new(ErrorKind::InvalidInput, "invalid mod name"));
+        }
+        let dest = self.mods_dir().join(name);
+        if dest.exists() {
+            return Err(Error::new(ErrorKind::AlreadyExists, format!("mod '{name}' exists")));
+        }
+        fs::create_dir_all(&dest)?;
+        // A minimal meta.ini, mirroring MO2's createMod.
+        fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n")?;
+        Ok(ModEntry { name: name.to_string(), enabled: true, path: dest })
+    }
 }
 
 #[cfg(test)]
@@ -380,6 +409,23 @@ mod tests {
         assert!(!inst.profiles_dir().join("Default").exists());
         // Cannot delete the last remaining profile.
         assert!(inst.delete_profile("Modded").is_err());
+        let _ = fs::remove_dir_all(&inst.root);
+    }
+
+    #[test]
+    fn create_empty_mod_writes_minimal_meta() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let entry = inst.create_empty_mod("My New Mod").unwrap();
+        assert_eq!(entry.name, "My New Mod");
+        assert!(entry.enabled);
+        assert!(entry.path.is_dir());
+        assert!(entry.path.join("meta.ini").is_file());
+        // A second create of the same name collides.
+        assert!(inst.create_empty_mod("My New Mod").is_err());
+        // Illegal names are refused (no folder is created).
+        assert!(inst.create_empty_mod("").is_err());
+        assert!(inst.create_empty_mod("a/b").is_err());
         let _ = fs::remove_dir_all(&inst.root);
     }
 

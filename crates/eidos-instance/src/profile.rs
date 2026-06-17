@@ -20,6 +20,19 @@ pub struct Profile {
     pub name: String,
 }
 
+/// One save file in a profile's `saves/` directory (MO2's savegame list).
+#[derive(Debug, Clone)]
+pub struct SaveEntry {
+    /// The file's name (e.g. `Save1_quicksave.ess`).
+    pub filename: String,
+    /// The absolute path on disk.
+    pub path: PathBuf,
+    /// Size in bytes.
+    pub size: u64,
+    /// Last-modified time (used as the in-game date proxy).
+    pub mtime: std::time::SystemTime,
+}
+
 impl Profile {
     /// `<instance>/profiles/<name>/`.
     pub fn dir(&self) -> PathBuf {
@@ -133,6 +146,35 @@ impl Profile {
             }
         }
         Ok(n)
+    }
+
+    /// List this profile's save files (`profil/saves/<file>`), newest first and
+    /// capped to a sane number. Directories and dotfiles are skipped; this never
+    /// errors - a missing or unreadable saves dir yields an empty list.
+    pub fn savegames(&self) -> Vec<SaveEntry> {
+        let mut out: Vec<SaveEntry> = fs::read_dir(self.saves_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| {
+                let md = e.metadata().ok()?;
+                if !md.is_file() {
+                    return None;
+                }
+                let filename = e.file_name().into_string().ok()?;
+                if filename.starts_with('.') {
+                    return None;
+                }
+                Some(SaveEntry {
+                    filename,
+                    path: e.path(),
+                    size: md.len(),
+                    mtime: md.modified().ok()?,
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+        out
     }
 
     /// Where to read the mod list from: the profile's own file, or - for the
@@ -524,6 +566,36 @@ mod tests {
         fs::write(prefix_saves.join("Save3.ess"), b"z").unwrap();
         assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 0);
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn savegames_lists_files_newest_first_and_skips_dirs() {
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        let saves = p.saves_dir();
+        fs::create_dir_all(&saves).unwrap();
+        // Write `Old` first, then sleep so `New` gets a strictly later mtime.
+        fs::write(saves.join("Old.ess"), b"old").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(saves.join("New.ess"), b"newer-and-bigger").unwrap();
+        // A subdirectory and a dotfile are both ignored.
+        fs::create_dir_all(saves.join("backup")).unwrap();
+        fs::write(saves.join(".DS_Store"), b"junk").unwrap();
+
+        let list = p.savegames();
+        let names: Vec<_> = list.iter().map(|s| s.filename.clone()).collect();
+        assert_eq!(names, vec!["New.ess".to_string(), "Old.ess".to_string()]);
+        assert_eq!(list[0].size, "newer-and-bigger".len() as u64);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn savegames_is_empty_when_no_saves_dir() {
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        assert!(p.savegames().is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 

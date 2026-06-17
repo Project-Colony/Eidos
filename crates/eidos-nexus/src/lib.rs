@@ -123,6 +123,18 @@ fn s(v: &serde_json::Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string()
 }
 
+/// The `version` an endorsement request must carry: the mod's installed version,
+/// trimmed, or `"1.0"` when it is blank (Nexus rejects an empty version, but
+/// tolerates a placeholder for mods with no recorded version).
+fn endorse_version(version: &str) -> &str {
+    let v = version.trim();
+    if v.is_empty() {
+        "1.0"
+    } else {
+        v
+    }
+}
+
 impl Nexus {
     pub fn new(api_key: &str) -> Nexus {
         let agent = ureq::AgentBuilder::new()
@@ -152,34 +164,87 @@ impl Nexus {
         });
     }
 
+    /// The MO2 status-code mapping shared by every request (401 = bad key,
+    /// 429 = rate limited, else a generic message with the code).
+    fn status_err(code: u16) -> String {
+        match code {
+            401 => "invalid API key (401)".to_string(),
+            429 => "rate limited by Nexus (429) - try again later".to_string(),
+            other => format!("Nexus API error (HTTP {other})"),
+        }
+    }
+
+    /// Attach MO2's four identifying headers + APIKEY to a request (every v1 call
+    /// carries these, per nxmaccessmanager.cpp addAPIHeaders).
+    fn with_headers(&self, req: ureq::Request) -> ureq::Request {
+        req.set("APIKEY", &self.api_key)
+            .set("Protocol-Version", "1.0.0")
+            .set("Application-Name", "Eidos")
+            .set("Application-Version", env!("CARGO_PKG_VERSION"))
+    }
+
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let url = format!("{API_BASE}/{path}");
         // MO2 identifies the client on every v1 request (nxmaccessmanager.cpp
         // addAPIHeaders): Protocol-Version + Application-Name/-Version with APIKEY.
         // It also reads the X-RL-* budget from every reply (incl. a 429).
-        match self
-            .agent
-            .get(&url)
-            .set("APIKEY", &self.api_key)
-            .set("Protocol-Version", "1.0.0")
-            .set("Application-Name", "Eidos")
-            .set("Application-Version", env!("CARGO_PKG_VERSION"))
-            .call()
-        {
+        match self.with_headers(self.agent.get(&url)).call() {
             Ok(resp) => {
                 self.capture_limits(&resp);
                 resp.into_json().map_err(|e| e.to_string())
             }
             Err(ureq::Error::Status(code, resp)) => {
                 self.capture_limits(&resp);
-                Err(match code {
-                    401 => "invalid API key (401)".to_string(),
-                    429 => "rate limited by Nexus (429) - try again later".to_string(),
-                    other => format!("Nexus API error (HTTP {other})"),
-                })
+                Err(Nexus::status_err(code))
             }
             Err(other) => Err(other.to_string()),
         }
+    }
+
+    /// Send a request with a `version` form field in the body, used by the
+    /// endorsement endpoints (MO2's endorseMod posts `version=<installed>`). The
+    /// reply body is ignored - only success/failure matters. Captures the X-RL-*
+    /// budget on success and on a Status error, exactly like [`get`].
+    fn send_with_version(&self, req: ureq::Request, version: &str) -> Result<(), String> {
+        match self.with_headers(req).send_form(&[("version", version)]) {
+            Ok(resp) => {
+                self.capture_limits(&resp);
+                Ok(())
+            }
+            Err(ureq::Error::Status(code, resp)) => {
+                self.capture_limits(&resp);
+                Err(Nexus::status_err(code))
+            }
+            Err(other) => Err(other.to_string()),
+        }
+    }
+
+    /// Endorse a mod: `POST games/{game}/mods/{id}/endorse` with the installed
+    /// `version` (MO2's endorseMod). Nexus requires the version in the body; pass
+    /// the mod's installed version, falling back to `"1.0"` when it is unknown.
+    pub fn endorse(&self, game: &str, mod_id: u64, version: &str) -> Result<(), String> {
+        let url = format!("{API_BASE}/games/{game}/mods/{mod_id}/endorse");
+        self.send_with_version(self.agent.post(&url), endorse_version(version))
+    }
+
+    /// Abstain from endorsing a mod: `POST games/{game}/mods/{id}/abstain`
+    /// (MO2's "Won't endorse" / un-endorse). Same `version` requirement as
+    /// [`endorse`].
+    pub fn abstain(&self, game: &str, mod_id: u64, version: &str) -> Result<(), String> {
+        let url = format!("{API_BASE}/games/{game}/mods/{mod_id}/abstain");
+        self.send_with_version(self.agent.post(&url), endorse_version(version))
+    }
+
+    /// Endorse when `endorse` is true, abstain when false - the toggling action the
+    /// GUI binds to its Endorse button (it reads the mod's current `endorsed()`
+    /// state to pick the direction). Returns the resulting endorsed state on success.
+    pub fn set_endorsed(&self, game: &str, mod_id: u64, version: &str, endorse: bool) -> Result<bool, String> {
+        if endorse {
+            self.endorse(game, mod_id, version)?;
+        } else {
+            self.abstain(game, mod_id, version)?;
+        }
+        Ok(endorse)
     }
 
     /// Validate the key: `users/validate`.
@@ -284,6 +349,117 @@ impl Nexus {
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
         Ok(if resuming { have + n } else { n })
     }
+}
+
+/// One mod whose installed version is behind the latest seen on Nexus, surfaced by
+/// [`check_updates`] so the GUI can list exactly what changed without re-reading
+/// every `meta.ini`.
+#[derive(Debug, Clone)]
+pub struct ModUpdate {
+    /// The mods/ folder name (the GUI maps this back to its row).
+    pub name: String,
+    /// The installed version recorded in `meta.ini` (may be empty).
+    pub installed: String,
+    /// The newest version reported by Nexus.
+    pub latest: String,
+}
+
+/// The outcome of a GUI-triggered update check across an instance's mods. Mirrors
+/// the CLI summary so the GUI status bar can report the same numbers, plus the
+/// per-mod list of mods now behind.
+#[derive(Debug, Clone, Default)]
+pub struct UpdateCheckResult {
+    /// Mods with a Nexus id that were considered.
+    pub checked: u32,
+    /// Of those, how many a remote query was actually issued for.
+    pub queried: u32,
+    /// Mods now behind the latest Nexus version (`updates.len()`).
+    pub updates_found: u32,
+    /// The mods now behind, with their versions.
+    pub updates: Vec<ModUpdate>,
+    /// True if the hourly budget was exhausted and the loop stopped early, leaving
+    /// some mods unchecked (MO2 stops dispatching the moment the account is spent).
+    pub rate_limited: bool,
+    /// The Nexus hourly request budget remaining after the check, if a reply set it.
+    pub hourly_remaining: Option<i64>,
+    /// The Nexus daily request budget remaining after the check, if a reply set it.
+    pub daily_remaining: Option<i64>,
+}
+
+/// Run a Nexus update check across every mod in `inst` (the GUI-callable port of
+/// `eidos nexus update`). `nexus_game` is the game's Nexus domain
+/// (`GameDef::nexus_game`, e.g. `skyrimspecialedition`).
+///
+/// MO2's strategy: one `updated?period=1m` bulk query, then an individual
+/// `mod_info` only for mods in that window's intersection OR never/long-ago
+/// checked (so an update published over a month ago is not missed on a fresh
+/// instance). Each queried mod has `newestVersion` and `lastNexusUpdate` written
+/// back to its `meta.ini`; the GUI re-reads `update_available()` afterward to
+/// refresh its row markers. The loop stops on the first 429, returning what it had.
+///
+/// This is blocking I/O (`ureq`); the GUI runs it inside a `Task::perform` closure
+/// on iced's executor, exactly like the plugin-sort task. The `Instance` is
+/// `Clone`, so the closure can own a clone and complete harmlessly even if the
+/// user switches instances mid-check.
+pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game: &str) -> Result<UpdateCheckResult, String> {
+    // One "updated this month" query, then only fetch the intersection - stays
+    // inside the API rate limits (MO2's approach).
+    let updated = nexus.updated_mod_ids(nexus_game, "1m")?;
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    const MONTH: u64 = 30 * 24 * 3600;
+
+    let mut result = UpdateCheckResult::default();
+    for m in inst.modlist() {
+        let mut meta = inst.mod_meta(&m.name);
+        let Some(mod_id) = meta.mod_id() else { continue };
+        result.checked += 1;
+
+        // The `updated?period=1m` list is only trustworthy for mods checked within
+        // that window. A mod never checked - or checked over a month ago - gets an
+        // individual query regardless of the intersection, else an update published
+        // more than a month ago is missed forever (the common first-run case).
+        let stale = meta.last_nexus_update().map(|t| now.saturating_sub(t) > MONTH).unwrap_or(true);
+        if !stale && !updated.contains(&mod_id) {
+            continue;
+        }
+        result.queried += 1;
+
+        match nexus.mod_info(nexus_game, mod_id) {
+            Ok(remote) => {
+                meta.set_newest_version(&remote.version);
+                meta.set_last_nexus_update(now);
+                // A failed write is not fatal: the in-memory result is still correct,
+                // the GUI just won't see the `^` marker persist across a restart.
+                let _ = meta.write(&inst.meta_path(&m.name));
+                if meta.update_available() {
+                    result.updates.push(ModUpdate {
+                        name: m.name.clone(),
+                        installed: meta.version().unwrap_or_default(),
+                        latest: remote.version,
+                    });
+                }
+            }
+            Err(e) => {
+                // MO2 stops dispatching the moment the account is exhausted.
+                if e.contains("429") {
+                    result.rate_limited = true;
+                    break;
+                }
+                // A single mod's failure (deleted page, transient error) must not
+                // abort the whole check - skip it and keep going, like the CLI.
+            }
+        }
+    }
+
+    result.updates_found = result.updates.len() as u32;
+    let rl = nexus.rate_limits();
+    result.hourly_remaining = rl.hourly_remaining;
+    result.daily_remaining = rl.daily_remaining;
+    Ok(result)
 }
 
 /// MO2 appends `.unfinished` to the FULL archive name (`Mod-1.0.7z.unfinished`),
@@ -550,6 +726,35 @@ mod tests {
         fs::write(dir.join("1_Mod.7z"), b"x").unwrap();
         assert_eq!(unique_download_name(&dir, "Mod.7z"), "2_Mod.7z");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn endorse_version_falls_back_to_a_placeholder() {
+        // Nexus requires a non-empty version in the endorsement body; a blank or
+        // whitespace-only installed version becomes the placeholder "1.0".
+        assert_eq!(endorse_version("1.3.1"), "1.3.1");
+        assert_eq!(endorse_version("  2.0.4  "), "2.0.4"); // trimmed
+        assert_eq!(endorse_version(""), "1.0");
+        assert_eq!(endorse_version("   "), "1.0");
+    }
+
+    #[test]
+    fn status_err_maps_the_mo2_codes() {
+        assert_eq!(Nexus::status_err(401), "invalid API key (401)");
+        assert!(Nexus::status_err(429).contains("429"));
+        assert!(Nexus::status_err(429).contains("rate limited"));
+        assert_eq!(Nexus::status_err(503), "Nexus API error (HTTP 503)");
+    }
+
+    #[test]
+    fn update_check_result_defaults_are_empty() {
+        // A fresh result reports nothing checked and no updates - the GUI relies on
+        // these zero defaults before a check runs.
+        let r = UpdateCheckResult::default();
+        assert_eq!((r.checked, r.queried, r.updates_found), (0, 0, 0));
+        assert!(r.updates.is_empty());
+        assert!(!r.rate_limited);
+        assert!(r.hourly_remaining.is_none() && r.daily_remaining.is_none());
     }
 
     #[test]

@@ -138,6 +138,28 @@ impl ModMeta {
         matches!(self.raw("tracked").map(str::trim), Some("1") | Some("true"))
     }
 
+    /// MO2's "Ignore update": when set, the mod is excluded from the update
+    /// markers + count even if Nexus reports a newer version.
+    pub fn ignore_update(&self) -> bool {
+        matches!(self.raw("ignoreUpdate").map(str::trim), Some("1") | Some("true"))
+    }
+
+    /// Endorse / abstain the mod locally (the network side is handled by the
+    /// caller); mirrors the `1`/`0` form `endorsed()` reads.
+    pub fn set_endorsed(&mut self, b: bool) {
+        self.set("endorsed", if b { "1" } else { "0" });
+    }
+
+    /// Track / untrack the mod (local flag only, MO2's "Track").
+    pub fn set_tracked(&mut self, b: bool) {
+        self.set("tracked", if b { "1" } else { "0" });
+    }
+
+    /// Set / clear MO2's "Ignore update" flag for the mod.
+    pub fn set_ignore_update(&mut self, b: bool) {
+        self.set("ignoreUpdate", if b { "1" } else { "0" });
+    }
+
     /// A Nexus update is available when `newestVersion` is present and differs
     /// from the installed `version`. (String compare, matching MO2's own check;
     /// a future Nexus crate fills `newestVersion`.)
@@ -169,6 +191,43 @@ impl ModMeta {
     /// Record the latest version seen on Nexus (for update checks).
     pub fn set_newest_version(&mut self, v: &str) {
         self.set("newestVersion", v);
+    }
+
+    // ---- download lifecycle (the Downloads-manager status column) ----
+    // These mirror the flags `write_download_meta` writes in the `.meta` sidecar,
+    // using the same `true`/`false` form MO2's download manager records.
+
+    /// The archive has been installed into a mod (`installed=true`).
+    pub fn installed(&self) -> bool {
+        matches!(self.raw("installed").map(str::trim), Some("true") | Some("1"))
+    }
+
+    /// Mark the archive installed / not installed.
+    pub fn set_installed(&mut self, b: bool) {
+        self.set("installed", if b { "true" } else { "false" });
+    }
+
+    /// The archive's mod was later removed (`uninstalled=true`).
+    pub fn uninstalled(&self) -> bool {
+        matches!(self.raw("uninstalled").map(str::trim), Some("true") | Some("1"))
+    }
+
+    pub fn set_uninstalled(&mut self, b: bool) {
+        self.set("uninstalled", if b { "true" } else { "false" });
+    }
+
+    /// The download was paused mid-transfer (`paused=true`).
+    pub fn paused(&self) -> bool {
+        matches!(self.raw("paused").map(str::trim), Some("true") | Some("1"))
+    }
+
+    /// The download was hidden/removed in the manager (`removed=true`).
+    pub fn removed(&self) -> bool {
+        matches!(self.raw("removed").map(str::trim), Some("true") | Some("1"))
+    }
+
+    pub fn set_removed(&mut self, b: bool) {
+        self.set("removed", if b { "true" } else { "false" });
     }
 
     /// The user's free-text note for this mod (MO2's modlist Notes column).
@@ -504,6 +563,57 @@ mod tests {
         assert!(m.is_dirty());
         m.write(&p).unwrap();
         assert_eq!(ModMeta::read(&p).color(), Some([0x33, 0x66, 0x99]));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn download_lifecycle_flags_read_the_sidecar_form() {
+        // The `true`/`false` form `write_download_meta` records is read back.
+        let p = tmp_ini(concat!(
+            "[General]\n",
+            "version=1.2\n",
+            "installed=true\nuninstalled=false\npaused=false\nremoved=false\n",
+        ));
+        let m = ModMeta::read(&p);
+        assert!(m.installed());
+        assert!(!m.uninstalled());
+        assert!(!m.paused());
+        assert!(!m.removed());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn download_lifecycle_setters_round_trip() {
+        let p = tmp_ini("[General]\ninstalled=false\nuninstalled=false\n");
+        let mut m = ModMeta::read(&p);
+        m.set_installed(true);
+        m.set_uninstalled(true);
+        m.set_removed(true);
+        assert!(m.is_dirty());
+        m.write(&p).unwrap();
+        let r = ModMeta::read(&p);
+        assert!(r.installed());
+        assert!(r.uninstalled());
+        assert!(r.removed());
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn endorse_track_ignore_setters_round_trip() {
+        let p = tmp_ini("[General]\nendorsed=0\n");
+        let mut m = ModMeta::read(&p);
+        assert!(!m.endorsed());
+        assert!(!m.tracked());
+        assert!(!m.ignore_update());
+        m.set_endorsed(true);
+        m.set_tracked(true);
+        m.set_ignore_update(true);
+        assert!(m.is_dirty());
+        m.write(&p).unwrap();
+        let r = ModMeta::read(&p);
+        assert!(r.endorsed());
+        assert!(r.tracked());
+        assert!(r.ignore_update());
         let _ = fs::remove_file(&p);
     }
 }

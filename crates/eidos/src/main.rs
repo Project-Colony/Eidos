@@ -1009,23 +1009,16 @@ fn cmd_install(args: &[String]) {
     }
 }
 
-/// `~/.config/eidos/nexus.ini`, holding the personal Nexus API key.
+/// `~/.config/eidos/nexus.ini`, holding the personal Nexus API key. Delegates to
+/// the shared `eidos-instance` settings store so the CLI and the GUI can never
+/// disagree on the path or the file format.
 fn nexus_key_path() -> std::path::PathBuf {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
-        .map(std::path::PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| home().join(".config"));
-    config.join("eidos").join("nexus.ini")
+    eidos_instance::settings::nexus_key_path()
 }
 
-/// The stored Nexus API key, if any.
+/// The stored Nexus API key, if any (the shared store the GUI also reads).
 fn load_nexus_key() -> Option<String> {
-    let text = std::fs::read_to_string(nexus_key_path()).ok()?;
-    text.lines()
-        .filter_map(|l| l.trim().split_once('='))
-        .find(|(k, _)| k.trim() == "api_key")
-        .map(|(_, v)| v.trim().to_string())
-        .filter(|v| !v.is_empty())
+    eidos_instance::settings::load_nexus_key()
 }
 
 /// A connected Nexus client, or exit with a pointer to `eidos nexus key`.
@@ -1051,10 +1044,7 @@ fn cmd_nexus(args: &[String]) {
             match eidos_nexus::Nexus::new(key).validate() {
                 Ok(acct) => {
                     let path = nexus_key_path();
-                    if let Some(p) = path.parent() {
-                        let _ = std::fs::create_dir_all(p);
-                    }
-                    if let Err(e) = std::fs::write(&path, format!("[Nexus]\napi_key={key}\n")) {
+                    if let Err(e) = eidos_instance::settings::save_nexus_key(key) {
                         eprintln!("could not store the key at {}: {e}", path.display());
                         exit(1);
                     }
