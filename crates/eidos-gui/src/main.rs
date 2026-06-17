@@ -229,6 +229,9 @@ struct RowMeta {
     category_id: Option<i32>,
     /// That category resolved to a display name (MO2 Category column).
     category_name: Option<String>,
+    /// MO2 Content column: a compact letters string of the kinds of content the mod
+    /// ships (P/A/T/M/S/K/I/U/F), empty if none.
+    content_tags: String,
     update: bool,
     /// A separator's display colour (MO2's `color=@Variant(...)`), if set.
     color: Option<[u8; 3]>,
@@ -264,6 +267,7 @@ fn build_meta_cache(app: &App) -> HashMap<String, RowMeta> {
                     mod_id: meta.mod_id(),
                     category_id,
                     category_name,
+                    content_tags: eidos_install::classify_content_dir(&m.path).tags(),
                     update: meta.update_available(),
                     color: meta.color(),
                 },
@@ -1452,6 +1456,7 @@ const C_PRIO: Length = Length::Fixed(26.0);
 const C_FLAGS: Length = Length::Fixed(46.0);
 const C_VERSION: Length = Length::Fixed(64.0);
 const C_CATEGORY: Length = Length::Fixed(96.0);
+const C_CONTENT: Length = Length::Fixed(78.0);
 const C_MOVE: Length = Length::Fixed(70.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
@@ -1579,6 +1584,8 @@ fn mod_row<'a>(
     };
     // MO2's Category column: the mod's primary category, resolved to a name.
     let category = meta.and_then(|r| r.category_name.clone()).unwrap_or_default();
+    // MO2's Content column: a compact letters summary of what the mod ships.
+    let content = meta.map(|r| r.content_tags.clone()).unwrap_or_default();
 
     let row = Row::new()
         .spacing(6)
@@ -1586,6 +1593,7 @@ fn mod_row<'a>(
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
         .push(text(category).size(11.0).width(C_CATEGORY))
+        .push(text(content).size(10.0).width(C_CONTENT))
         .push(text(version).size(11.0).width(C_VERSION))
         .push(flag_cell)
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
@@ -1720,6 +1728,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(text("#").size(11.0).width(C_PRIO))
         .push(text("Mod Name").size(11.0).width(Length::Fill))
         .push(text("Category").size(11.0).width(C_CATEGORY))
+        .push(text("Content").size(11.0).width(C_CONTENT))
         .push(text("Version").size(11.0).width(C_VERSION))
         .push(text("Flags").size(11.0).width(C_FLAGS))
         .push(text("").width(C_MOVE));

@@ -245,6 +245,92 @@ const GAMEBRYO_FOLDERS: &[&str] = &[
 /// `GamebryoModDataChecker::possibleFileExtensions`.
 const GAMEBRYO_SUFFIXES: &[&str] = &["esp", "esm", "esl", "bsa", "ba2", "modgroups", "ini"];
 
+/// What kinds of content a mod ships - MO2's `ModDataContent` (the Content column
+/// icons), shallow structural detection: top-level dirs by name + files by
+/// extension, no record parsing.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ContentFlags {
+    pub plugins: bool,
+    pub bsa: bool,
+    pub textures: bool,
+    pub meshes: bool,
+    pub scripts: bool,
+    pub skse: bool,
+    pub interface: bool,
+    pub sound: bool,
+    pub facegen: bool,
+}
+
+impl ContentFlags {
+    /// A compact letters string in MO2 icon order, e.g. `"P A T M"` (empty if none).
+    /// P=plugin, A=archive (BSA), T=textures, M=meshes, S=scripts, K=SKSE,
+    /// I=interface, U=sound, F=FaceGen.
+    pub fn tags(&self) -> String {
+        let mut s = String::new();
+        for (on, ch) in [
+            (self.plugins, 'P'),
+            (self.bsa, 'A'),
+            (self.textures, 'T'),
+            (self.meshes, 'M'),
+            (self.scripts, 'S'),
+            (self.skse, 'K'),
+            (self.interface, 'I'),
+            (self.sound, 'U'),
+            (self.facegen, 'F'),
+        ] {
+            if on {
+                if !s.is_empty() {
+                    s.push(' ');
+                }
+                s.push(ch);
+            }
+        }
+        s
+    }
+}
+
+/// Detect a mod's content kinds by a SHALLOW scan of its directory (MO2's
+/// `GamebryoModDataContent` is shallow: top-level dirs by name, top-level files by
+/// extension, plus FaceGen one level under meshes/textures). Cheap enough to run
+/// per mod on a refresh.
+pub fn classify_content_dir(root: &std::path::Path) -> ContentFlags {
+    let mut c = ContentFlags::default();
+    let Ok(rd) = std::fs::read_dir(root) else { return c };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            match name.as_str() {
+                "textures" | "icons" | "bookart" => c.textures = true,
+                "meshes" => c.meshes = true,
+                "interface" | "menus" => c.interface = true,
+                "music" | "sound" => c.sound = true,
+                "scripts" => c.scripts = true,
+                "skse" | "obse" | "f4se" | "nvse" | "fose" | "mwse" | "dllplugins" => c.skse = true,
+                _ => {}
+            }
+            // FaceGen lives one level down (meshes/FaceGenData, textures/FaceGenData).
+            if matches!(name.as_str(), "meshes" | "textures") && !c.facegen {
+                if let Ok(sub) = std::fs::read_dir(e.path()) {
+                    if sub
+                        .flatten()
+                        .any(|s| s.file_name().to_string_lossy().eq_ignore_ascii_case("facegendata"))
+                    {
+                        c.facegen = true;
+                    }
+                }
+            }
+        } else if let Some((_, ext)) = name.rsplit_once('.') {
+            match ext {
+                "esp" | "esm" | "esl" => c.plugins = true,
+                "bsa" | "ba2" => c.bsa = true,
+                _ => {}
+            }
+        }
+    }
+    c
+}
+
 /// Guess a clean mod name AND the Nexus mod id from a (possibly Nexus-suffixed)
 /// archive filename: `Foo - Bar-19181-1-7-1575746557.7z` -> `("Foo - Bar", Some(19181))`.
 /// Mirrors MO2's `interpretNexusFileName`: the trailing
@@ -405,5 +491,30 @@ mod tests {
         assert_eq!(fix_directory_name(r"a/b\c<d>e").as_deref(), Some("abcde"));
         assert_eq!(fix_directory_name("   "), None);
         assert_eq!(fix_directory_name(":::"), None);
+    }
+
+    #[test]
+    fn classify_content_detects_kinds_shallow() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir()
+            .join(format!("eidos-content-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        std::fs::create_dir_all(root.join("Textures")).unwrap();
+        std::fs::create_dir_all(root.join("Meshes/FaceGenData")).unwrap();
+        std::fs::create_dir_all(root.join("SKSE/Plugins")).unwrap();
+        std::fs::write(root.join("MyMod.esp"), b"").unwrap();
+        std::fs::write(root.join("MyMod.bsa"), b"").unwrap();
+        std::fs::write(root.join("meta.ini"), b"").unwrap();
+
+        let c = classify_content_dir(&root);
+        assert!(c.plugins && c.bsa && c.textures && c.meshes && c.skse && c.facegen);
+        assert!(!c.sound && !c.interface);
+        // Tags string in MO2 icon order, space-separated.
+        assert_eq!(c.tags(), "P A T M K F");
+        // An empty (or separator) folder has no content.
+        let empty = root.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert_eq!(classify_content_dir(&empty).tags(), "");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
