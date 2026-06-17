@@ -13,8 +13,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{
-    button, container, image, mouse_area, pick_list, scrollable, text, text_input, Column, Row,
-    Space, Stack,
+    button, checkbox, container, image, mouse_area, pick_list, scrollable, text, text_input, Column,
+    Row, Space, Stack,
 };
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
@@ -1722,10 +1722,8 @@ fn mod_row<'a>(
 ) -> Element<'a, Message> {
     let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
     let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
-    let toggle = button(text(if m.enabled { "[x]" } else { "[ ]" }).size(12.0))
-        .padding(3)
-        .on_press(Message::ToggleMod(i))
-        .style(button::secondary);
+    // MO2's left-hand checkbox: a real square box, checked when the mod is enabled.
+    let toggle = checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16);
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
     let mut flags = Row::new().spacing(2);
