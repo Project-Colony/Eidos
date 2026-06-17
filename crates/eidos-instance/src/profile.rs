@@ -184,9 +184,15 @@ impl Profile {
         fs::remove_dir_all(self.dir())
     }
 
-    /// The mod list for this profile: every folder in the shared `mods/`, in
-    /// priority order with enabled state, reconciled with this profile's
-    /// `modlist.txt`. Top of the list = highest priority.
+    /// The mod list for this profile: every folder in the shared `mods/`, with
+    /// enabled state, reconciled with this profile's `modlist.txt`.
+    ///
+    /// Returned in MO2's DISPLAY order: index 0 = TOP of the list = LOWEST priority
+    /// (loaded first, loses file conflicts); the last entry = highest priority (wins,
+    /// just above the always-on Overwrite). The on-disk `modlist.txt` keeps MO2's
+    /// storage convention (highest priority FIRST), so it round-trips with MO2; this
+    /// reverses it for display. Consumers that need launch/priority order (the FUSE
+    /// `load_order`, plugin discovery, conflict origins) re-reverse to highest-first.
     pub fn modlist(&self) -> Vec<ModEntry> {
         let mods_dir = self.mods_dir();
         let mut present: Vec<String> = fs::read_dir(&mods_dir)
@@ -228,6 +234,10 @@ impl Profile {
                 out.push(ModEntry { path: mods_dir.join(&name), name, enabled: true });
             }
         }
+        // `out` is built highest-priority-first (file order). MO2 DISPLAYS the list
+        // the other way up - lowest priority at the top - so reverse for the return.
+        // (This preserves every entry's priority; only the vec orientation flips.)
+        out.reverse();
         out
     }
 
@@ -243,7 +253,9 @@ impl Profile {
     pub fn save_modlist(&self, mods: &[ModEntry]) -> io::Result<()> {
         fs::create_dir_all(self.dir())?;
         let mut s = String::new();
-        for m in mods {
+        // `mods` is in MO2 DISPLAY order (lowest priority first); the file stores
+        // highest priority first (MO2's on-disk convention), so write it reversed.
+        for m in mods.iter().rev() {
             s.push(if m.enabled { '+' } else { '-' });
             s.push_str(&m.name);
             s.push('\n');
@@ -269,12 +281,18 @@ impl Profile {
 
     /// Enabled mods, highest priority first: the layers to mount at launch.
     /// Separators are group dividers, not content, so they are never mounted.
+    ///
+    /// `modlist()` returns MO2 display order (lowest priority first), so reverse to
+    /// the highest-priority-first order the union mount expects (layer 0 wins).
     pub fn load_order(&self) -> Vec<PathBuf> {
-        self.modlist()
+        let mut v: Vec<PathBuf> = self
+            .modlist()
             .into_iter()
             .filter(|m| m.enabled && !m.is_separator())
             .map(|m| m.path)
-            .collect()
+            .collect();
+        v.reverse();
+        v
     }
 }
 
@@ -369,9 +387,10 @@ mod tests {
         assert_eq!(read, vec![("A".into(), false), ("C".into(), true), ("B".into(), true)]);
 
         // The one-deep backup holds the previous list and sits in the same dir.
+        // The file stores highest-priority first (reverse of the in-memory v1).
         let bak = p.dir().join("modlist.txt.bak");
         assert!(bak.is_file(), "expected a one-deep modlist.txt.bak backup");
-        assert_eq!(fs::read_to_string(&bak).unwrap(), "+C\n-B\n+A\n");
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "+A\n-B\n+C\n");
 
         // No temp file lingers after a successful save.
         assert!(!p.dir().join("modlist.txt.tmp").exists());
@@ -406,9 +425,10 @@ mod tests {
         let p = prof(&root, "Default");
         fs::create_dir_all(p.dir()).unwrap();
         // MO2 '*' foreign line (enabled), and +/- with padding that must be trimmed.
+        // The file is highest-priority first; modlist() returns it reversed (display order).
         fs::write(p.modlist_path(), "*A\n-  B\n+ C \n").unwrap();
         let got: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-        assert_eq!(got, vec![("A".into(), true), ("B".into(), false), ("C".into(), true)]);
+        assert_eq!(got, vec![("C".into(), true), ("B".into(), false), ("A".into(), true)]);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -437,22 +457,24 @@ mod tests {
     #[test]
     fn default_profile_falls_back_to_legacy_flat_modlist() {
         let root = inst_with_mods(&["A", "B"]);
-        // A pre-profiles instance: a flat <root>/modlist.txt.
+        // A pre-profiles instance: a flat <root>/modlist.txt (highest-priority first).
         fs::write(root.join("modlist.txt"), "-A\n+B\n").unwrap();
         let p = prof(&root, "Default");
+        // modlist() returns display order (reverse of the file): B (top) then A.
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-        assert_eq!(read, vec![("A".into(), false), ("B".into(), true)]);
+        assert_eq!(read, vec![("B".into(), true), ("A".into(), false)]);
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn new_mods_are_appended_enabled() {
+    fn new_mods_are_reconciled_enabled() {
         let root = inst_with_mods(&["A", "New"]);
         let p = prof(&root, "Default");
         p.save_modlist(&[ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") }]).unwrap();
-        // "New" exists on disk but not in the saved list -> appended, enabled.
+        // "New" exists on disk but not in the saved list -> reconciled, enabled, at
+        // the lowest priority (the top of the display order, before the listed mods).
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-        assert_eq!(read, vec![("A".into(), true), ("New".into(), true)]);
+        assert_eq!(read, vec![("New".into(), true), ("A".into(), true)]);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -506,6 +528,29 @@ mod tests {
     }
 
     #[test]
+    fn display_order_file_order_and_load_order_stay_consistent() {
+        // The orientation contract: modlist() is MO2 display order (lowest priority
+        // at the top); the file stores highest-priority first; load_order() re-reverses
+        // to highest-first for the mount. A regression here silently inverts conflicts.
+        let root = inst_with_mods(&["Low", "High"]);
+        let p = prof(&root, "Default");
+        // Display order: Low at the top (lowest priority), High at the bottom (highest).
+        p.save_modlist(&[
+            ModEntry { name: "Low".into(), enabled: true, path: root.join("mods/Low") },
+            ModEntry { name: "High".into(), enabled: true, path: root.join("mods/High") },
+        ])
+        .unwrap();
+        // The file is highest-priority first (MO2 on-disk convention).
+        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+High\n+Low\n");
+        // modlist() round-trips the display order.
+        let names: Vec<_> = p.modlist().iter().map(|m| m.name.clone()).collect();
+        assert_eq!(names, vec!["Low".to_string(), "High".to_string()]);
+        // load_order() mounts highest priority first, so High wins same-name conflicts.
+        assert_eq!(p.load_order(), vec![root.join("mods/High"), root.join("mods/Low")]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn separator_round_trips_keeps_position_and_is_excluded_from_load_order() {
         // A separator is a real `*_separator` folder; it must round-trip in place,
         // be recognised as a separator, and never become a mount layer.
@@ -518,8 +563,9 @@ mod tests {
         ];
         p.save_modlist(&mods).unwrap();
 
-        // modlist.txt is byte-faithful, including the `-` prefix + `_separator` suffix.
-        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+A\n-Sec_separator\n+B\n");
+        // modlist.txt is byte-faithful, including the `-` prefix + `_separator` suffix,
+        // and stored highest-priority first (reverse of the in-memory display order).
+        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+B\n-Sec_separator\n+A\n");
 
         // Read back: order + the separator flag preserved, separator at index 1.
         let read = p.modlist();
@@ -532,9 +578,10 @@ mod tests {
         assert_eq!(read[1].display_name(), "Sec");
         assert!(!read[0].is_separator());
 
-        // load_order mounts only A and B - the separator is content-less.
+        // load_order mounts only A and B - the separator is content-less - in
+        // highest-priority-first order (B is below A in the display, so it wins).
         let order = p.load_order();
-        assert_eq!(order, vec![root.join("mods/A"), root.join("mods/B")]);
+        assert_eq!(order, vec![root.join("mods/B"), root.join("mods/A")]);
         let _ = fs::remove_dir_all(&root);
 
         // An ENABLED separator (alone) still contributes no mount layer.

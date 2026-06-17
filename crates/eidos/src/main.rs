@@ -23,23 +23,20 @@ fn find_game(id: &str) -> Option<DetectedGame> {
 
 /// The plugin-discovery sources in ASCENDING priority (later wins same-name
 /// shadowing), as fed to [`eidos_plugins::PluginList::discover`]: the game's own
-/// Data (lowest), then each enabled mod (the modlist is highest-priority first,
-/// so reversed), then the Overwrite layer LAST (highest). Overwrite is the
-/// always-on writable top layer the launcher mounts, mirroring MO2's
-/// always-active top-priority Overwrite pseudo-mod - plugins a tool wrote there
-/// (xEdit / Bashed Patch output) must be discovered, not dropped from plugins.txt.
+/// Data (lowest), then each enabled mod from lowest to highest priority, then the
+/// Overwrite layer LAST (highest). Overwrite is the always-on writable top layer
+/// the launcher mounts, mirroring MO2's always-active top-priority Overwrite
+/// pseudo-mod - plugins a tool wrote there (xEdit / Bashed Patch output) must be
+/// discovered, not dropped from plugins.txt.
 fn plugin_sources(
     game_data: &std::path::Path,
-    enabled_highest_first: &[ModEntry],
+    enabled_lowest_first: &[ModEntry],
     overwrite: &std::path::Path,
 ) -> Vec<(String, PathBuf)> {
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game_data.to_path_buf())];
-    sources.extend(
-        enabled_highest_first
-            .iter()
-            .rev()
-            .map(|m| (m.name.clone(), m.path.clone())),
-    );
+    // `modlist()` is already in ascending-priority (MO2 display) order, so feed the
+    // mods through as-is: lowest priority first, highest last.
+    sources.extend(enabled_lowest_first.iter().map(|m| (m.name.clone(), m.path.clone())));
     sources.push(("overwrite".to_string(), overwrite.to_path_buf()));
     sources
 }
@@ -975,11 +972,11 @@ fn cmd_install(args: &[String]) {
         &ctx,
     ) {
         Ok(r) => {
-            // Activate the new mod at the top of the active profile's load order,
-            // like MO2 (a freshly installed mod wins conflicts by default).
+            // Give the new mod the highest priority so it wins conflicts by default,
+            // like MO2. modlist() is lowest-priority-first, so highest = the END.
             let mut ml = inst.modlist();
             ml.retain(|m| m.name != r.name);
-            ml.insert(0, ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
+            ml.push(ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
             let _ = inst.save_modlist(&ml);
 
             // If this archive came from a Nexus download, flag its .meta installed

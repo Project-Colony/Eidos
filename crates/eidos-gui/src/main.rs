@@ -2495,9 +2495,10 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
     let game = selected_game(app)?;
     let spec = GameSpec::for_id(game.def.id)?;
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
-    let mut enabled: Vec<ModEntry> = app.mods.iter().filter(|m| m.enabled && !m.is_separator()).cloned().collect();
-    enabled.reverse(); // modlist is highest-first; plugins discover low-to-high
-    sources.extend(enabled.into_iter().map(|m| (m.name, m.path)));
+    // app.mods is MO2 display order (lowest priority first) = the ascending order
+    // plugin discovery wants, so feed it through as-is.
+    let enabled = app.mods.iter().filter(|m| m.enabled && !m.is_separator());
+    sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
 
     let mut list = PluginList::discover(&sources, &spec);
     if let Some(cd) = game.compatdata.as_ref() {
@@ -2607,6 +2608,10 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 /// last as origin 0. `None` if there is no game.
 fn compute_conflicts(app: &App) -> Option<ConflictMap> {
     let game = selected_game(app)?;
+    // app.mods is MO2 display order (lowest priority first); the conflict crate wants
+    // layers highest-priority first, so reverse. The origin stays the app.mods index
+    // + 1 (NOT the layer position), so conflicts_panel's `origin = i + 1` lookup over
+    // app.mods still maps to the same mod.
     let mut layers: Vec<Layer> = app
         .mods
         .iter()
@@ -2617,6 +2622,7 @@ fn compute_conflicts(app: &App) -> Option<ConflictMap> {
             name: m.name.clone(),
             root: m.path.clone(),
         })
+        .rev()
         .collect();
     // MO2's Overwrite is an always-active, top-priority pseudo-mod (xEdit / Bashed
     // Patch output lands there); include it at the front so the mods it shadows get
@@ -2853,13 +2859,14 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
     }
 }
 
-/// Shared post-install step: activate the new mod at the top of the load order,
-/// reload the list, and invalidate the plugin + conflict caches.
+/// Shared post-install step: give the new mod the highest priority (wins conflicts
+/// by default, like MO2), reload the list, and invalidate the plugin + conflict
+/// caches. modlist() is lowest-priority-first, so highest = the END of the list.
 fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
     if let Some(inst) = &app.created {
         let mut ml = inst.modlist();
         ml.retain(|m| m.name != name);
-        ml.insert(0, ModEntry { name: name.to_string(), enabled: true, path: dest });
+        ml.push(ModEntry { name: name.to_string(), enabled: true, path: dest });
         let _ = inst.save_modlist(&ml);
         app.mods = inst.modlist();
     }
