@@ -156,6 +156,17 @@ enum Message {
     /// Install the modding tools' runtime prerequisites into the prefix
     /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
     SetupPrereqs,
+    // ---- install-collision chooser (MO2 QueryOverwriteDialog) ----
+    /// Install over the existing mod's files.
+    CollisionMerge,
+    /// Wipe the existing mod and reinstall (keeps its endorsement/category).
+    CollisionReplace,
+    /// Edit the rename target for the colliding install.
+    CollisionRenameChanged(String),
+    /// Install under the entered new name.
+    CollisionRenameCommit,
+    /// Dismiss the collision prompt without installing.
+    CollisionCancel,
     Noop,
 }
 
@@ -169,6 +180,17 @@ struct FomodWizard {
     /// Current plugin states, so fileDependency/gameDependency conditions evaluate
     /// against the real setup instead of always reading Missing.
     ctx: eidos_fomod::Context,
+}
+
+/// A mod-install name collision: `mods/<name>/` already exists, so the user picks
+/// Merge / Replace / Rename / Cancel - MO2's QueryOverwriteDialog.
+struct CollisionPrompt {
+    archive: PathBuf,
+    /// The colliding (already sanitized) mod name.
+    name: String,
+    game_id: String,
+    /// Editable target for the Rename option (defaults to a free suggestion).
+    rename_to: String,
 }
 
 struct App {
@@ -194,6 +216,8 @@ struct App {
     launch_command: Vec<String>,
     /// An open FOMOD installer wizard, if the user is mid-install.
     fomod: Option<FomodWizard>,
+    /// An open install-collision prompt (target mod name already exists).
+    collision: Option<CollisionPrompt>,
     /// Tools runnable through the merged view (user tools.ini + per-game
     /// defaults), shown in the run-target picker next to Run.
     tools: Vec<eidos_instance::Tool>,
@@ -306,6 +330,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_clear: false,
         launch_command,
         fomod: None,
+        collision: None,
         tools: Vec::new(),
         tool_choice: None,
         search: String::new(),
@@ -709,6 +734,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
                 Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
                     Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
+                    Err(eidos_install::InstallError::Exists(_)) => {
+                        // MO2's QueryOverwriteDialog: let the user Merge/Replace/Rename.
+                        let rename_to = suggest_free_name(&mods_dir, &name);
+                        app.collision = Some(CollisionPrompt { archive: path, name: name.clone(), game_id: gid, rename_to });
+                        app.status = Some(format!("'{name}' already exists - choose how to install."));
+                    }
                     Err(e) => app.status = Some(format!("Install failed: {e}")),
                 },
                 Err(e) => app.status = Some(format!("Install failed: {e}")),
@@ -1201,6 +1232,26 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             }
+        }
+        Message::CollisionMerge => run_collision_install(app, eidos_install::OverwritePolicy::Merge),
+        Message::CollisionReplace => run_collision_install(app, eidos_install::OverwritePolicy::Replace),
+        Message::CollisionRenameChanged(s) => {
+            if let Some(c) = &mut app.collision {
+                c.rename_to = s;
+            }
+        }
+        Message::CollisionRenameCommit => {
+            if let Some(new) = app.collision.as_ref().map(|c| c.rename_to.trim().to_string()) {
+                if new.is_empty() {
+                    app.status = Some("Enter a name to install under.".to_string());
+                } else {
+                    run_collision_install(app, eidos_install::OverwritePolicy::Rename(new));
+                }
+            }
+        }
+        Message::CollisionCancel => {
+            app.collision = None;
+            app.status = Some("Install cancelled.".to_string());
         }
         Message::ChangeGame => {
             // Re-open the game picker; keep detection and any selection.
@@ -2734,7 +2785,60 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         }
     }
 
+    // The install-collision chooser is a centered modal (MO2's QueryOverwriteDialog).
+    if let Some(c) = &app.collision {
+        let scrim =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CollisionCancel);
+        let dialog = container(collision_dialog(c)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     layers.into()
+}
+
+/// Suggest a free mod-folder name near `name` (`name (2)`, `name (3)`, ...) for the
+/// Rename option, so the prefilled value doesn't immediately collide again.
+fn suggest_free_name(mods_dir: &std::path::Path, name: &str) -> String {
+    if !mods_dir.join(name).exists() {
+        return name.to_string();
+    }
+    (2..1000)
+        .map(|n| format!("{name} ({n})"))
+        .find(|cand| !mods_dir.join(cand).exists())
+        .unwrap_or_else(|| name.to_string())
+}
+
+/// Retry the pending collision install under `policy`. Reuses the same discovery as
+/// a normal install (rebuilds the FOMOD context in case the archive turns out to be
+/// a FOMOD). A Rename that collides again re-opens the prompt.
+fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
+    let Some(c) = app.collision.take() else { return };
+    let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+        app.status = Some("Open a game instance first.".to_string());
+        return;
+    };
+    let mods_dir = inst.mods_dir();
+    let enabled_roots: Vec<std::path::PathBuf> =
+        app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let disabled_roots: Vec<std::path::PathBuf> =
+        app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
+    match eidos_install::install_archive_with_policy(
+        &c.archive,
+        &mods_dir,
+        &c.name,
+        &c.game_id,
+        policy,
+        &ctx,
+    ) {
+        Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
+        Err(eidos_install::InstallError::Exists(_)) => {
+            // A Rename target that also exists: keep the prompt open for another try.
+            app.status = Some("That name also exists - pick another.".to_string());
+            app.collision = Some(c);
+        }
+        Err(e) => app.status = Some(format!("Install failed: {e}")),
+    }
 }
 
 /// Shared post-install step: activate the new mod at the top of the load order,
@@ -2755,6 +2859,60 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool) {
     } else {
         format!("Installed '{name}'.")
     });
+}
+
+/// The install-collision chooser card (MO2's QueryOverwriteDialog): Merge / Replace
+/// / Rename / Cancel for an already-existing `mods/<name>/`.
+fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> {
+    let buttons = Row::new()
+        .spacing(8)
+        .push(
+            button(text("Merge").size(12.0))
+                .padding([4, 10])
+                .on_press(Message::CollisionMerge)
+                .style(button::secondary),
+        )
+        .push(
+            button(text("Replace").size(12.0))
+                .padding([4, 10])
+                .on_press(Message::CollisionReplace)
+                .style(button::danger),
+        );
+    let rename = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Rename:").size(12.0))
+        .push(
+            text_input("new name", &c.rename_to)
+                .on_input(Message::CollisionRenameChanged)
+                .on_submit(Message::CollisionRenameCommit)
+                .padding(5)
+                .size(12.0)
+                .width(Length::Fill),
+        )
+        .push(
+            button(text("Install").size(12.0))
+                .padding([4, 10])
+                .on_press(Message::CollisionRenameCommit)
+                .style(button::primary),
+        );
+    let card = Column::new()
+        .spacing(10)
+        .push(text(format!("\"{}\" already exists", c.name)).size(15.0))
+        .push(text("A mod with this name is already installed. Choose how to install it:").size(12.0))
+        .push(buttons)
+        .push(
+            text("Merge installs over the existing files. Replace wipes the mod and reinstalls (your endorsement and category are kept).")
+                .size(10.0),
+        )
+        .push(rename)
+        .push(
+            button(text("Cancel").size(12.0))
+                .padding([4, 10])
+                .on_press(Message::CollisionCancel)
+                .style(button::text),
+        );
+    container(card).max_width(460.0).padding(16).style(card_style).into()
 }
 
 fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
