@@ -8,6 +8,7 @@
 //! `eidos` binary for the game-aware front end.
 
 use std::fs;
+use std::os::unix::process::ExitStatusExt;
 use std::path::PathBuf;
 use std::process::exit;
 
@@ -63,7 +64,11 @@ fn main() {
         cwd: None,
     };
     match launch(spec) {
-        Ok(status) => exit(status.code().unwrap_or(0)),
+        // Propagate the child's real status. `code()` is `None` when the child was
+        // killed by a signal, so fall back to the shell convention 128 + signal -
+        // otherwise a signal-killed (crashed) command would exit 0 and hide the
+        // failure, matching what the `eidos` front end already does.
+        Ok(status) => exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1))),
         Err(e) => {
             eprintln!("eidos-launch: {e}");
             exit(1)

@@ -130,7 +130,9 @@ pub static GAMES: &[GameDef] = &[
         nexus_game: "skyrim",
         data_dir: "Data",
         documents_dir: "Skyrim",
-        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini"],
+        // The gamebryo engine reads SkyrimCustom.ini in LE too (MO2 manages it as a
+        // per-profile INI, same as SkyrimSE), so include it in the per-profile set.
+        ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Skyrim.esm", "Update.esm"],
         script_extender: Some(ScriptExtender {

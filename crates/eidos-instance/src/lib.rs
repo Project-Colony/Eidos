@@ -272,6 +272,46 @@ impl Instance {
         }
         Ok(())
     }
+
+    /// Rename a profile, keeping the manifest's active-profile pointer consistent:
+    /// if the renamed profile was the active one, the pointer follows it (so it
+    /// never dangles). Refuses a no-op, a missing source, or an existing target.
+    /// Use this rather than [`Profile::rename`] directly so the manifest stays sound.
+    pub fn rename_profile(&self, old: &str, new: &str) -> std::io::Result<()> {
+        use std::io::{Error, ErrorKind};
+        if new.trim().is_empty() || old == new {
+            return Err(Error::new(ErrorKind::InvalidInput, "invalid new profile name"));
+        }
+        if !self.profile(old).dir().is_dir() {
+            return Err(Error::new(ErrorKind::NotFound, format!("no profile '{old}'")));
+        }
+        if self.profile(new).dir().exists() {
+            return Err(Error::new(ErrorKind::AlreadyExists, format!("profile '{new}' exists")));
+        }
+        // Capture whether the manifest pointed at `old` BEFORE the rename: afterwards
+        // `old`'s directory is gone and active_profile() would already have fallen back.
+        let was_active =
+            self.read_manifest().and_then(|m| m.selected_profile).as_deref() == Some(old);
+        self.profile(old).rename(new)?;
+        if was_active {
+            self.set_active_profile(new)?;
+        }
+        Ok(())
+    }
+
+    /// Delete a profile. Refuses to delete the ACTIVE profile or the LAST remaining
+    /// one (MO2 disables both - you must switch away / keep at least one), so the
+    /// manifest can never point at a deleted profile.
+    pub fn delete_profile(&self, name: &str) -> std::io::Result<()> {
+        use std::io::{Error, ErrorKind};
+        if self.active_profile() == name {
+            return Err(Error::new(ErrorKind::InvalidInput, "cannot delete the active profile"));
+        }
+        if self.profiles().len() <= 1 {
+            return Err(Error::new(ErrorKind::InvalidInput, "cannot delete the last profile"));
+        }
+        self.profile(name).delete()
+    }
 }
 
 #[cfg(test)]
@@ -306,6 +346,40 @@ mod tests {
         // With the selected profile present, it is honoured verbatim.
         inst.set_active_profile("Modded").unwrap();
         assert_eq!(inst.active_profile(), "Modded");
+        let _ = fs::remove_dir_all(&inst.root);
+    }
+
+    #[test]
+    fn rename_profile_follows_the_active_pointer() {
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable).unwrap();
+        fs::create_dir_all(inst.profiles_dir().join("Default")).unwrap();
+        fs::create_dir_all(inst.profiles_dir().join("Modded")).unwrap();
+        inst.set_active_profile("Modded").unwrap();
+        // Renaming the ACTIVE profile updates the manifest pointer (no dangling).
+        inst.rename_profile("Modded", "Heavy").unwrap();
+        assert_eq!(inst.active_profile(), "Heavy");
+        assert!(inst.profiles_dir().join("Heavy").is_dir());
+        assert!(!inst.profiles_dir().join("Modded").exists());
+        // Renaming onto an existing name is refused.
+        assert!(inst.rename_profile("Default", "Heavy").is_err());
+        let _ = fs::remove_dir_all(&inst.root);
+    }
+
+    #[test]
+    fn delete_profile_guards_active_and_last() {
+        let inst = tmp_instance();
+        inst.ensure_manifest("skyrimse", InstanceKind::Portable).unwrap();
+        fs::create_dir_all(inst.profiles_dir().join("Default")).unwrap();
+        fs::create_dir_all(inst.profiles_dir().join("Modded")).unwrap();
+        inst.set_active_profile("Modded").unwrap();
+        // Cannot delete the active profile.
+        assert!(inst.delete_profile("Modded").is_err());
+        // A non-active one deletes fine.
+        inst.delete_profile("Default").unwrap();
+        assert!(!inst.profiles_dir().join("Default").exists());
+        // Cannot delete the last remaining profile.
+        assert!(inst.delete_profile("Modded").is_err());
         let _ = fs::remove_dir_all(&inst.root);
     }
 
