@@ -305,6 +305,22 @@ impl PluginList {
             false
         }
     }
+
+    /// Reorder plugins to follow `sorted` (a list of plugin file names, e.g. from
+    /// LOOT). Names are matched case-insensitively. Plugins absent from `sorted`
+    /// keep their relative order and are appended after the sorted ones (the sort is
+    /// stable). Call `refresh` afterwards to recompute indexes and re-apply Eidos's
+    /// master-before-dependent invariant, which always backstops the LOOT order.
+    pub fn apply_sorted_order(&mut self, sorted: &[String]) {
+        let rank: std::collections::HashMap<String, usize> = sorted
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_ascii_lowercase(), i))
+            .collect();
+        let tail = sorted.len();
+        self.plugins
+            .sort_by_key(|p| rank.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(tail));
+    }
 }
 
 /// Parse a plugin header with esplugin: `(is_master, is_light, is_medium, masters)`.

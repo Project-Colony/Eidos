@@ -11,6 +11,7 @@ iced = { version = "0.13", features = ["image"] }
 eidos-games = { path = "../eidos-games" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-plugins = { path = "../eidos-plugins" }
+eidos-loot = { path = "../eidos-loot" }
 eidos-conflicts = { path = "../eidos-conflicts" }
 eidos-install = { path = "../eidos-install" }
 eidos-fomod = { path = "../eidos-fomod" }

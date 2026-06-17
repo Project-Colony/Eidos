@@ -815,6 +815,106 @@ fn cmd_export(args: &[String]) {
     }
 }
 
+/// `eidos sort <game-id> [--dry-run] [--update-masterlist]` - run LOOT's real
+/// graph sort (via the pure-Rust libloot) over this instance's plugins and write
+/// the optimised order to plugins.txt / loadorder.txt. Mirrors `prepare_plugins`'
+/// discovery so the sorted set matches exactly what a launch would deploy.
+fn cmd_sort(args: &[String]) {
+    let Some(id) = args.first() else {
+        eprintln!("usage: eidos sort <game-id> [--dry-run] [--update-masterlist]");
+        exit(2);
+    };
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    let update = args.iter().any(|a| a == "--update-masterlist");
+
+    if !eidos_loot::is_supported(id) {
+        eprintln!("LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game).");
+        exit(1);
+    }
+    let Some(game) = find_game(id) else {
+        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+        exit(1);
+    };
+    let Some(spec) = eidos_plugins::GameSpec::for_id(id) else {
+        eprintln!("No plugin support for '{id}'.");
+        exit(1);
+    };
+    let Some(compatdata) = game.compatdata.as_ref() else {
+        eprintln!("No Proton prefix found for '{id}'. Launch it once through Steam first.");
+        exit(1);
+    };
+    let prefix = compatdata.join("pfx");
+    let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+
+    let inst = Instance::global(id);
+    let _ = inst.ensure_profiles();
+
+    // Discover exactly what a launch would deploy, preserving the current order.
+    let enabled: Vec<ModEntry> =
+        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).collect();
+    let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
+    let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
+    list.apply_prefix_state(&local_dir, &spec);
+    list.refresh(&spec);
+
+    if list.plugins.is_empty() {
+        eprintln!("No plugins discovered for '{id}'; nothing to sort.");
+        exit(1);
+    }
+
+    // Fetch/cache the per-game masterlist + shared prelude.
+    let (_game_type, repo) = eidos_loot::loot_support(id).unwrap();
+    let cache = inst.root.join("loot");
+    let (masterlist, prelude) = match eidos_loot::ensure_masterlist(repo, &cache, update) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Could not obtain masterlist: {e}");
+            exit(1);
+        }
+    };
+    let userlist = cache.join("userlist.yaml");
+
+    // Hand LOOT every discovered plugin by (name, real resolved path).
+    let plugins: Vec<(String, PathBuf)> =
+        list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+
+    let sorted = match eidos_loot::sort(
+        id,
+        &game.install_path,
+        &local_dir,
+        &plugins,
+        &masterlist,
+        &prelude,
+        Some(&userlist),
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("LOOT sort failed: {e}");
+            exit(1);
+        }
+    };
+
+    if dry_run {
+        println!("LOOT-sorted order ({} plugins):", sorted.len());
+        for (i, n) in sorted.iter().enumerate() {
+            println!("  {i:>3}  {n}");
+        }
+        println!("\n(dry run - nothing written; drop --dry-run to apply)");
+        return;
+    }
+
+    list.apply_sorted_order(&sorted);
+    list.refresh(&spec);
+    let active = list.plugins.iter().filter(|p| p.enabled).count();
+    match list.write_load_order(&local_dir, &spec) {
+        Ok(()) => println!("Sorted {} plugins ({active} active) and wrote the load order.", sorted.len()),
+        Err(e) => {
+            eprintln!("Could not write load order: {e}");
+            exit(1);
+        }
+    }
+}
+
 fn cmd_install(args: &[String]) {
     let (Some(id), Some(archive)) = (args.first(), args.get(1)) else {
         eprintln!("usage: eidos install <game-id> <archive> [name]");
@@ -1204,7 +1304,8 @@ fn usage() -> ! {
          \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view\n\
          \x20 eidos nexus key|status|update     connect a Nexus account / check for mod updates\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
-         \x20 eidos export <id> [-o file]       export the mod list to CSV (MO2 format; --active = enabled only)"
+         \x20 eidos export <id> [-o file]       export the mod list to CSV (MO2 format; --active = enabled only)\n\
+         \x20 eidos sort <id> [--dry-run]       LOOT-sort the plugin load order (--update-masterlist to refresh)"
     );
     exit(2);
 }
@@ -1222,6 +1323,7 @@ fn main() {
         Some("tool") => cmd_tool(&args[1..]),
         Some("prereqs") => cmd_prereqs(&args[1..]),
         Some("export") => cmd_export(&args[1..]),
+        Some("sort") => cmd_sort(&args[1..]),
         Some("nexus") => cmd_nexus(&args[1..]),
         Some("nxm") => cmd_nxm(&args[1..]),
         _ => usage(),

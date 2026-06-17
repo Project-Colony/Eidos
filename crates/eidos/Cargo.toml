@@ -15,6 +15,7 @@ eidos-games = { path = "../eidos-games" }
 eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-plugins = { path = "../eidos-plugins" }
+eidos-loot = { path = "../eidos-loot" }
 eidos-install = { path = "../eidos-install" }
 eidos-gamefeatures = { path = "../eidos-gamefeatures" }
 eidos-nexus = { path = "../eidos-nexus" }

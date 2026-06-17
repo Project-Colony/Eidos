@@ -136,6 +136,10 @@ enum Message {
     ToggleCollapse(String),
     /// Enable/disable an ESP/ESM in the Plugins tab, persisting plugins.txt.
     TogglePlugin(usize),
+    /// Run LOOT's graph sort over the discovered plugins (MO2's "Sort" button).
+    SortPlugins,
+    /// LOOT finished: the optimised plugin-name order, or an error message.
+    PluginsSorted(Result<Vec<String>, String>),
     // ---- per-mod information dialog (MO2 modinfodialog) ----
     ShowModInfo(usize),
     CloseInfo,
@@ -1092,6 +1096,81 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                                     .to_string(),
                             );
                         }
+                    }
+                }
+            }
+        }
+        Message::SortPlugins => {
+            // Gather everything the (static) async closure needs, cloned out of
+            // `app`, then run the masterlist fetch + LOOT sort off the UI thread.
+            let Some(game) = selected_game(app) else { return Task::none() };
+            let id = game.def.id;
+            if !eidos_loot::is_supported(id) {
+                app.status = Some(format!("LOOT sorting is not available for {id}."));
+                return Task::none();
+            }
+            let Some(spec) = GameSpec::for_id(id) else { return Task::none() };
+            let Some(cd) = game.compatdata.as_ref() else {
+                app.status =
+                    Some("Launch the game once through Steam first so its prefix exists.".to_string());
+                return Task::none();
+            };
+            let Some(list) = app.plugins.as_ref() else {
+                app.status = Some("No plugins computed yet.".to_string());
+                return Task::none();
+            };
+            let id = id.to_string();
+            let install = game.install_path.clone();
+            let local_dir = plugins_txt_dir(&cd.join("pfx"), &spec);
+            let cache = app
+                .created
+                .as_ref()
+                .map(|i| i.root.join("loot"))
+                .unwrap_or_else(|| eidos_instance::Instance::global(&id).root.join("loot"));
+            let plugins: Vec<(String, PathBuf)> =
+                list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+            app.status = Some("Sorting plugins with LOOT...".to_string());
+            return Task::perform(
+                async move {
+                    let repo = eidos_loot::loot_support(&id).unwrap().1;
+                    let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, false)
+                        .map_err(|e| e.to_string())?;
+                    let userlist = cache.join("userlist.yaml");
+                    eidos_loot::sort(&id, &install, &local_dir, &plugins, &ml, &pre, Some(&userlist))
+                        .map_err(|e| e.to_string())
+                },
+                Message::PluginsSorted,
+            );
+        }
+        Message::PluginsSorted(result) => {
+            let sorted = match result {
+                Ok(s) => s,
+                Err(e) => {
+                    app.status = Some(format!("LOOT sort failed: {e}"));
+                    return Task::none();
+                }
+            };
+            // Recompute spec + prefix dir (immutable borrows) before mutating plugins.
+            let info = selected_game(app).and_then(|g| {
+                let spec = GameSpec::for_id(g.def.id)?;
+                let dir = g.compatdata.as_ref().map(|cd| plugins_txt_dir(&cd.join("pfx"), &spec));
+                Some((spec, dir))
+            });
+            let Some((spec, dir)) = info else { return Task::none() };
+            if let Some(list) = app.plugins.as_mut() {
+                list.apply_sorted_order(&sorted);
+                list.refresh(&spec);
+                match dir {
+                    Some(d) => match list.write_load_order(&d, &spec) {
+                        Ok(()) => {
+                            app.status = Some(format!("LOOT sorted {} plugins.", sorted.len()));
+                        }
+                        Err(e) => {
+                            app.status = Some(format!("Sorted, but writing the load order failed: {e}"));
+                        }
+                    },
+                    None => {
+                        app.status = Some("Sorted in memory (no prefix yet to persist it).".to_string());
                     }
                 }
             }
@@ -2361,9 +2440,23 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let active = list.plugins.iter().filter(|p| p.enabled).count();
     let missing = list.missing_masters();
-    let mut head = Column::new()
-        .spacing(2)
+
+    // Top row: the plugin count plus a "Sort with LOOT" action (MO2's Sort button),
+    // shown only for games LOOT can sort.
+    let loot_ok = selected_game(app).map(|g| eidos_loot::is_supported(g.def.id)).unwrap_or(false);
+    let mut top = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
         .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(12.0));
+    if loot_ok {
+        top = top.push(
+            button(text("Sort with LOOT").size(11.0))
+                .padding([3, 8])
+                .on_press(Message::SortPlugins)
+                .style(button::secondary),
+        );
+    }
+    let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
         head = head.push(
             text(format!("! {} missing master(s) - the game would crash", missing.len())).size(12.0),

@@ -1,0 +1,12 @@
+[package]
+name = "eidos-loot"
+description = "Eidos LOOT-based plugin sorting (libloot) + masterlist fetch/cache"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+version = "0.0.0"
+
+[dependencies]
+libloot = "0.29"
+ureq = "2"
+eidos-plugins = { path = "../eidos-plugins" }
