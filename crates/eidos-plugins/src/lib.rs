@@ -195,17 +195,18 @@ impl PluginList {
                         p.enabled = false;
                     }
                 } else {
-                    // MO2 (`pluginlist.cpp:2133` `enabled(forceLoaded)`): a newly-seen
-                    // plugin starts INACTIVE unless it is a force-loaded primary (game
-                    // master). Plugins already recorded in the prefix's plugins.txt keep
-                    // their state - apply_prefix_state runs after discover.
-                    let is_primary = spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name));
+                    // A plugin from an ENABLED mod is active by default (MO2's opt-out
+                    // model: enabling a mod activates its plugins; the user then
+                    // unchecks the ones they don't want in the Plugins tab). Only a
+                    // force-disabled .esl starts off. Plugins already recorded in the
+                    // prefix's plugins.txt keep their state - apply_prefix_state runs
+                    // after discover.
                     idx.insert(key, plugins.len());
                     plugins.push(Plugin {
                         name,
                         origin_mod: origin.clone(),
                         path,
-                        enabled: is_primary && !force_disabled,
+                        enabled: !force_disabled,
                         force_disabled,
                         is_master,
                         is_light,
@@ -489,28 +490,30 @@ mod tests {
         assert!(!le_p.enabled);
 
         // Skyrim SE supports light plugins, so the same file is NOT force-disabled
-        // (the user can enable it); like any newly-seen plugin it starts inactive.
+        // and, coming from an enabled mod, is active by default (MO2's opt-out model).
         let se_list = PluginList::discover(&sources, &se());
         let se_p = se_list.plugins.iter().find(|p| p.name == "Patch.esl").unwrap();
         assert!(!se_p.force_disabled, ".esl is enableable on a light-capable game");
-        assert!(!se_p.enabled, "MO2 defaults a newly-seen plugin inactive");
+        assert!(se_p.enabled, "a plugin from an enabled mod is active by default");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn discover_defaults_primary_active_others_inactive() {
+    fn discover_defaults_plugins_from_enabled_mods_active() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static N: AtomicUsize = AtomicUsize::new(0);
         let n = N.fetch_add(1, Ordering::Relaxed);
         let dir = std::env::temp_dir().join(format!("eidos-def-{}-{}", std::process::id(), n));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Skyrim.esm"), b"").unwrap(); // a primary master
-        std::fs::write(dir.join("MyMod.esp"), b"").unwrap(); // a fresh normal plugin
+        std::fs::write(dir.join("MyMod.esp"), b"").unwrap(); // a normal mod plugin
         let list = PluginList::discover(&[(String::new(), dir.clone())], &se());
         let esm = list.plugins.iter().find(|p| p.name.eq_ignore_ascii_case("Skyrim.esm")).unwrap();
         let esp = list.plugins.iter().find(|p| p.name == "MyMod.esp").unwrap();
-        assert!(esm.enabled, "a forced primary game master defaults active");
-        assert!(!esp.enabled, "a newly-seen normal plugin defaults inactive (MO2 parity)");
+        // MO2 opt-out model: a plugin from an enabled mod is active by default; the
+        // user disables the ones they don't want.
+        assert!(esm.enabled, "a game master defaults active");
+        assert!(esp.enabled, "a plugin from an enabled mod defaults active");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
