@@ -1055,6 +1055,7 @@ version = "0.0.0"
 dependencies = [
  "eidos-conflicts",
  "eidos-fomod",
+ "eidos-gamefeatures",
  "eidos-games",
  "eidos-install",
  "eidos-instance",

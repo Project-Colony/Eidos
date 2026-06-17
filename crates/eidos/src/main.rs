@@ -262,6 +262,21 @@ fn run_through_view(
     prepare_plugins(id, game, inst);
     let save_bind = prepare_saves(id, game, inst);
 
+    // Soft advisory: an ENB (game root, outside the Data mount) and Community
+    // Shaders (an enabled SKSE-plugin mod) both inject into the D3D11 pipeline.
+    // They can run together, but users often don't realise both are active - so we
+    // note it, never block.
+    {
+        let cs_roots: Vec<PathBuf> =
+            inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
+        if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
+            eprintln!(
+                "eidos play: note - ENB (game root) and Community Shaders (a mod) are both active. \
+                 Both can run together; if visuals look wrong, disable one in its INI."
+            );
+        }
+    }
+
     // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
     // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
     // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).

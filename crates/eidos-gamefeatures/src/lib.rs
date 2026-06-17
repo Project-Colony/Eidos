@@ -14,8 +14,8 @@ use std::path::Path;
 
 mod native_dll;
 pub use native_dll::{
-    ensure_d3dcompiler_47, ensure_native_dll, imported_dlls, is_tier1_dll,
-    scan_imports_provisionable, NativeDllError,
+    community_shaders_in_roots, enb_cs_conflict, enb_in_game_root, ensure_d3dcompiler_47,
+    ensure_native_dll, imported_dlls, is_tier1_dll, scan_imports_provisionable, NativeDllError,
 };
 
 mod prereqs;

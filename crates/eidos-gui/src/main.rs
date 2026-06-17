@@ -815,10 +815,29 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!(
                     "Set the game's Steam launch option to:  WINEDLLOVERRIDES=\"d3dcompiler_47=n\" {exe} %command%  then press Play in Steam (Eidos opens, then click Run)."
                 ));
-            } else if let (Some(game), Some(_)) = (selected_game(app), &app.created) {
+            } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
+                // Soft advisory if an ENB (game root) and Community Shaders (an
+                // enabled mod) are both active - prepended to the launch status,
+                // never blocking. The CLI emits the same note to stderr, which the
+                // GUI does not surface, so we recompute it here.
+                let cs_roots: Vec<std::path::PathBuf> = inst
+                    .modlist()
+                    .into_iter()
+                    .filter(|m| m.enabled && !m.is_separator())
+                    .map(|m| m.path)
+                    .collect();
+                let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
                 match launch_through_eidos(id, &app.launch_command) {
-                    Ok(()) => app.status = Some(format!("Launching {} through Eidos...", game.def.name)),
+                    Ok(()) => {
+                        let mut s = format!("Launching {} through Eidos...", game.def.name);
+                        if both_active {
+                            s = format!(
+                                "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
+                            );
+                        }
+                        app.status = Some(s);
+                    }
                     Err(e) => app.status = Some(format!("Launch failed: {e}")),
                 }
             } else {

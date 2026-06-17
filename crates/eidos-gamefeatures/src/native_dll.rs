@@ -190,6 +190,71 @@ fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
     false
 }
 
+// ---- ENB / Community Shaders coexistence advisory ------------------------------
+//
+// ENB and Community Shaders both inject into the Direct3D 11 pipeline. They can
+// load together without crashing, but users routinely run both unknowingly and
+// then chase visual artifacts or redundant post-processing. Eidos surfaces a soft,
+// informational note before launch when it sees both - never a block.
+//
+// The two live in different places, so detection differs:
+//   * ENB ships its `d3d11.dll` wrapper + `enbseries.ini`/`enblocal.ini` +
+//     `enbseries/` in the GAME ROOT (next to the .exe), which is OUTSIDE Eidos's
+//     Data-only mount - so we scan `install_path` directly.
+//   * Community Shaders is an ordinary SKSE plugin under Data, shipped by a mod as
+//     `SKSE/Plugins/CommunityShaders.dll` - so we scan the enabled mod roots.
+
+/// Community Shaders' conventional location, relative to a Data-relative mod root.
+const COMMUNITY_SHADERS_REL: [&str; 3] = ["SKSE", "Plugins", "CommunityShaders.dll"];
+
+/// Whether an ENB is installed in the GAME ROOT (next to the executable).
+///
+/// Scans `install_path` itself - never a mod root, never a mounted layer, since
+/// ENB lives outside Eidos's Data mount. Keys on the unambiguous `enb`-prefixed
+/// markers (`enblocal.ini`, `enbseries.ini`, or the `enbseries/` folder), matched
+/// case-insensitively. A bare `d3d11.dll` is deliberately NOT treated as ENB: it is
+/// also how ReShade and other wrappers ship, and would mislabel them.
+pub fn enb_in_game_root(install_path: &Path) -> bool {
+    let Ok(rd) = fs::read_dir(install_path) else { return false };
+    rd.flatten().any(|e| {
+        let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+        match name.as_str() {
+            "enblocal.ini" | "enbseries.ini" => true,
+            "enbseries" => e.file_type().map(|t| t.is_dir()).unwrap_or(false),
+            _ => false,
+        }
+    })
+}
+
+/// Whether any of `roots` (enabled, Data-relative mod folders) ships the Community
+/// Shaders SKSE plugin at `SKSE/Plugins/CommunityShaders.dll`, each path segment
+/// matched case-insensitively (Windows-authored mods vary the casing of `SKSE`).
+pub fn community_shaders_in_roots(roots: &[PathBuf]) -> bool {
+    roots.iter().any(|r| ci_resolve(r, &COMMUNITY_SHADERS_REL).is_some())
+}
+
+/// The Wave-3d coexistence advisory: an ENB in the game root AND Community Shaders
+/// in an enabled mod. Soft signal only - both can load together without crashing.
+pub fn enb_cs_conflict(install_path: &Path, enabled_mod_roots: &[PathBuf]) -> bool {
+    enb_in_game_root(install_path) && community_shaders_in_roots(enabled_mod_roots)
+}
+
+/// Resolve `rel` under `root`, matching each component case-insensitively. Returns
+/// the real on-disk path if every component matches, else `None`. Cheap (one
+/// `read_dir` per component); it resolves names rather than following symlinks.
+fn ci_resolve(root: &Path, rel: &[&str]) -> Option<PathBuf> {
+    let mut cur = root.to_path_buf();
+    for comp in rel {
+        let want = comp.to_ascii_lowercase();
+        let hit = fs::read_dir(&cur)
+            .ok()?
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().to_ascii_lowercase() == want)?;
+        cur = hit.path();
+    }
+    Some(cur)
+}
+
 /// Deploy a bundled native DLL (`verb`, e.g. "d3dx9_43") into a prefix, arch-aware.
 /// `windows_dir` is the prefix's `drive_c/windows`. A 64-bit (WoW64) prefix - Proton's
 /// default, even for 32-bit games - keeps 64-bit DLLs in `system32` and 32-bit in
@@ -283,6 +348,57 @@ mod tests {
             .join(format!("eidos-nd-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn enb_detected_by_enb_markers_only() {
+        let root = tmp_dir();
+        assert!(!enb_in_game_root(&root)); // empty game root
+
+        // A bare d3d11.dll must NOT register as ENB (ReShade / other wrappers ship it).
+        fs::write(root.join("d3d11.dll"), b"x").unwrap();
+        assert!(!enb_in_game_root(&root));
+
+        // enblocal.ini (case-insensitive) is the unambiguous ENB marker.
+        fs::write(root.join("ENBLocal.ini"), b"x").unwrap();
+        assert!(enb_in_game_root(&root));
+        let _ = fs::remove_dir_all(&root);
+
+        // The enbseries/ folder alone also counts.
+        let root2 = tmp_dir();
+        fs::create_dir_all(root2.join("enbseries")).unwrap();
+        assert!(enb_in_game_root(&root2));
+        let _ = fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn community_shaders_detected_case_insensitively() {
+        let m = tmp_dir();
+        assert!(!community_shaders_in_roots(&[m.clone()]));
+        // Windows-cased segments must still match on a case-sensitive fs.
+        fs::create_dir_all(m.join("skse/Plugins")).unwrap();
+        fs::write(m.join("skse/Plugins/communityshaders.dll"), b"x").unwrap();
+        assert!(community_shaders_in_roots(&[m.clone()]));
+        let _ = fs::remove_dir_all(&m);
+    }
+
+    #[test]
+    fn conflict_needs_both_sides() {
+        let root = tmp_dir();
+        let modr = tmp_dir();
+        fs::write(root.join("enbseries.ini"), b"x").unwrap();
+        // Only ENB present -> no advisory.
+        assert!(!enb_cs_conflict(&root, &[modr.clone()]));
+        // Add Community Shaders -> advisory fires.
+        fs::create_dir_all(modr.join("SKSE/Plugins")).unwrap();
+        fs::write(modr.join("SKSE/Plugins/CommunityShaders.dll"), b"x").unwrap();
+        assert!(enb_cs_conflict(&root, &[modr.clone()]));
+        // CS without ENB -> no advisory.
+        let empty_root = tmp_dir();
+        assert!(!enb_cs_conflict(&empty_root, &[modr.clone()]));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&modr);
+        let _ = fs::remove_dir_all(&empty_root);
     }
 
     /// Look up a bundled blob by verb + arch (x86_64 when `x64`, else i386).

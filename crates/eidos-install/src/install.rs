@@ -9,6 +9,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::SystemTime;
 
 use eidos_instance::ModMeta;
 
@@ -214,6 +215,9 @@ pub fn install_archive_with_policy(
 
     let result = (|| {
         extract_all(bin, archive, &tmp)?;
+        // Heal NTFS-style case collisions a raw extraction leaves on ext4, before
+        // anything (wrapper detection, FOMOD, the move) reads the tree.
+        normalize_case_collisions(&tmp)?;
         let tree = ArchiveTree::from_dir(&tmp)?;
         let base = match tree.simple_archive_base() {
             Some(b) => b,
@@ -552,6 +556,13 @@ pub fn open_fomod(
         let _ = fs::remove_dir_all(&tmp);
         return Err(e);
     }
+    // Heal NTFS-style case collisions before reading the tree, so a `fomod/` vs
+    // `FOMOD/` split can't make find_fomod_root pick a variant nondeterministically
+    // (same invariant the simple-install path relies on).
+    if let Err(e) = normalize_case_collisions(&tmp) {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e.into());
+    }
     let Some(root) = find_fomod_root(&tmp) else {
         let _ = fs::remove_dir_all(&tmp);
         return Ok(None);
@@ -593,6 +604,202 @@ pub fn finish_fomod(
     Ok(InstallReport { name, stripped: String::new(), fomod: true, missing, dest })
 }
 
+// ---- case-collision normalisation -------------------------------------------
+//
+// Windows (NTFS) is case-insensitive and case-preserving: an archive that holds
+// two entries differing only in ASCII case (e.g. `textures/foo.dds` AND
+// `Textures/foo.dds`) collapses to ONE file at extraction (last write wins). On
+// case-sensitive ext4 a raw `7z x` leaves BOTH as distinct files, and Eidos's
+// case-folding VFS would then resolve the virtual path to one nondeterministically
+// while the other sits orphaned. `normalize_case_collisions` heals this once, on
+// the freshly-extracted tree, before anything else reads it.
+//
+// It is deliberately NARROW: only genuine case-colliding siblings are touched.
+// Non-colliding names keep their original casing - blanket lower-casing would be
+// redundant (the VFS already folds case) and would diverge from MO2.
+
+/// Collapse every directory's case-colliding children into a single canonical,
+/// lower-cased entry, recursively and in place. Best-effort and idempotent.
+///
+/// Resolution rules (NTFS-equivalent, deterministic):
+/// - dir + dir: merge children into one lower-cased dir, recurse.
+/// - file + file: keep the oldest `mtime` (the author's original; later same-name
+///   entries are usually repack dupes), breaking ties by lexicographic name.
+/// - file + dir: the file wins the canonical name; the dir is moved aside to
+///   `<name>_dir` so its contents are never dropped.
+/// - symlinks: treated as opaque, name-only entries; never followed (no loops).
+/// - non-UTF8 names: logged and skipped; siblings are still normalised.
+fn normalize_case_collisions(dir: &Path) -> io::Result<()> {
+    resolve_dir_collisions(dir)?;
+    // Recurse into the now-collision-free real subdirectories so nested collisions
+    // (and collisions inside dirs merged above) settle too.
+    for e in fs::read_dir(dir)?.flatten() {
+        let p = e.path();
+        if is_real_dir(&p) {
+            normalize_case_collisions(&p)?;
+        }
+    }
+    Ok(())
+}
+
+/// Resolve case-collisions among the immediate children of `dir` (one level).
+fn resolve_dir_collisions(dir: &Path) -> io::Result<()> {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
+    for e in fs::read_dir(dir)?.flatten() {
+        match e.file_name().to_str() {
+            Some(s) => groups.entry(s.to_ascii_lowercase()).or_default().push(e.path()),
+            None => eprintln!(
+                "eidos install: skipping case-normalisation of non-UTF8 name {:?}",
+                e.file_name()
+            ),
+        }
+    }
+    for (key, members) in groups {
+        if members.len() > 1 {
+            resolve_group(dir, &key, members)?;
+        }
+    }
+    Ok(())
+}
+
+/// Collapse one collision group (>= 2 entries whose names lower-case to `key`,
+/// `existing` ones living in `parent`) into a single canonical entry in `parent`.
+fn resolve_group(parent: &Path, key: &str, members: Vec<PathBuf>) -> io::Result<()> {
+    let (dirs, opaques): (Vec<PathBuf>, Vec<PathBuf>) =
+        members.into_iter().partition(|p| is_real_dir(p));
+
+    if opaques.is_empty() {
+        // All directories: merge into one lower-cased canonical dir.
+        merge_dirs_into(parent, key, &dirs)?;
+        return Ok(());
+    }
+
+    // A file/symlink wins the canonical name. Any colliding directories move aside
+    // to `<key>_dir` so their contents survive.
+    if !dirs.is_empty() {
+        merge_dirs_into(parent, &format!("{key}_dir"), &dirs)?;
+    }
+    let survivor = pick_oldest(&opaques);
+    for o in &opaques {
+        if *o != survivor {
+            fs::remove_file(o)?; // removes the symlink/regular file, never a target
+        }
+    }
+    rename_if_needed(&survivor, &parent.join(key))
+}
+
+/// Merge `dirs` (case-variants of one name in `parent`) into a single directory
+/// named `target_name`. Staged under a fresh temp name first so an in-place rename
+/// can never clobber a doomed sibling on case-sensitive ext4, then published.
+fn merge_dirs_into(parent: &Path, target_name: &str, dirs: &[PathBuf]) -> io::Result<()> {
+    let staging = parent.join(format!(".eidos-case-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+    fs::create_dir(&staging)?;
+    for d in dirs {
+        merge_into(d, &staging)?;
+        // `d` should be empty now; remove it. If a skipped non-UTF8 collision left a
+        // child behind, leave the residual dir (no data loss) and note it.
+        if fs::remove_dir(d).is_err() {
+            eprintln!("eidos install: left residual dir after case-merge: {}", d.display());
+        }
+    }
+    // Belt-and-braces: settle any collision the staged union still holds.
+    resolve_dir_collisions(&staging)?;
+    publish_staging(parent, target_name, &staging)
+}
+
+/// Publish a finished `staging` directory under `parent/target_name`. If an entry
+/// already holds that name: a directory is merged into (case folds together); a
+/// FILE or symlink is left intact and the staged union lands at the first free
+/// `target_name_<n>` instead - so neither the pre-existing entry nor the merged
+/// contents are ever lost (the alternative `merge_into` on a file is ENOTDIR, which
+/// would abort the whole install).
+fn publish_staging(parent: &Path, target_name: &str, staging: &Path) -> io::Result<()> {
+    let target = parent.join(target_name);
+    if target.exists() {
+        if is_real_dir(&target) {
+            merge_into(staging, &target)?;
+            let _ = fs::remove_dir_all(staging);
+            return Ok(());
+        }
+        // Occupied by a file/symlink: find the first free suffixed name.
+        let mut n = 1;
+        let free = loop {
+            let cand = parent.join(format!("{target_name}_{n}"));
+            if !cand.exists() {
+                break cand;
+            }
+            n += 1;
+        };
+        return fs::rename(staging, free);
+    }
+    fs::rename(staging, &target)
+}
+
+/// Move every child of `src` into `dst` (both existing dirs), resolving a
+/// case-insensitive collision with an existing `dst` child by the same rules.
+fn merge_into(src: &Path, dst: &Path) -> io::Result<()> {
+    for e in fs::read_dir(src)?.flatten() {
+        let name = e.file_name();
+        let child = e.path();
+        let key = match name.to_str() {
+            Some(s) => s.to_ascii_lowercase(),
+            None => {
+                // Non-UTF8: best-effort move as-is; skip (don't clobber) if taken.
+                let target = dst.join(&name);
+                if !target.exists() {
+                    fs::rename(&child, &target)?;
+                } else {
+                    eprintln!("eidos install: skipping non-UTF8 case-merge of {child:?}");
+                }
+                continue;
+            }
+        };
+        match ci_find(dst, &key)? {
+            None => fs::rename(&child, dst.join(&name))?, // no collision: preserve casing
+            Some(existing) => resolve_group(dst, &key, vec![existing, child])?,
+        }
+    }
+    Ok(())
+}
+
+/// The oldest-`mtime` member, breaking ties by the lexicographically-smallest
+/// file name so the choice is deterministic across runs.
+fn pick_oldest(paths: &[PathBuf]) -> PathBuf {
+    paths
+        .iter()
+        .min_by(|a, b| mtime(a).cmp(&mtime(b)).then_with(|| a.file_name().cmp(&b.file_name())))
+        .cloned()
+        .expect("a collision group is never empty")
+}
+
+fn mtime(p: &Path) -> SystemTime {
+    fs::symlink_metadata(p).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// A real directory, NOT a symlink to one (symlinks are treated as opaque).
+fn is_real_dir(p: &Path) -> bool {
+    fs::symlink_metadata(p).map(|m| m.file_type().is_dir()).unwrap_or(false)
+}
+
+/// The existing child of `dir` whose name lower-cases to `key`, if any.
+fn ci_find(dir: &Path, key: &str) -> io::Result<Option<PathBuf>> {
+    for e in fs::read_dir(dir)?.flatten() {
+        if e.file_name().to_str().is_some_and(|s| s.eq_ignore_ascii_case(key)) {
+            return Ok(Some(e.path()));
+        }
+    }
+    Ok(None)
+}
+
+/// Rename `from` to `to` unless they are already the same path.
+fn rename_if_needed(from: &Path, to: &Path) -> io::Result<()> {
+    if from != to {
+        fs::rename(from, to)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -628,6 +835,216 @@ mod tests {
             install_if_usable: false,
             sequence: 0,
         }
+    }
+
+    // ---- case-collision normalisation -------------------------------------
+
+    /// Write `content` to `root/rel`, creating parent dirs.
+    fn write_at(root: &Path, rel: &str, content: &[u8]) {
+        let p = root.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, content).unwrap();
+    }
+
+    /// Force a file's mtime so the "oldest wins" rule is testable deterministically
+    /// (writing content stamps mtime to ~now, so set it afterwards). std-only.
+    fn set_mtime(root: &Path, rel: &str, secs: u64) {
+        let f = fs::OpenOptions::new().write(true).open(root.join(rel)).unwrap();
+        let t = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        f.set_times(std::fs::FileTimes::new().set_modified(t)).unwrap();
+    }
+
+    /// Sorted recursive listing of `root` (dirs end `/`, symlinks end `@`), for
+    /// structural assertions and the idempotency snapshot.
+    fn rel_paths(root: &Path) -> Vec<String> {
+        fn walk(base: &Path, dir: &Path, out: &mut Vec<String>) {
+            let mut entries: Vec<_> = fs::read_dir(dir).unwrap().flatten().collect();
+            entries.sort_by_key(|e| e.file_name());
+            for e in entries {
+                let p = e.path();
+                let rel = p.strip_prefix(base).unwrap().to_string_lossy().into_owned();
+                let ft = fs::symlink_metadata(&p).unwrap().file_type();
+                if ft.is_symlink() {
+                    out.push(format!("{rel}@"));
+                } else if ft.is_dir() {
+                    out.push(format!("{rel}/"));
+                    walk(base, &p, out);
+                } else {
+                    out.push(rel);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, root, &mut out);
+        out
+    }
+
+    #[test]
+    fn case_collision_file_same_dir() {
+        let t = TempDir::new("ccfsd");
+        write_at(t.path(), "meshes/armor.nif", b"a");
+        write_at(t.path(), "Meshes/armor.nif", b"b");
+        normalize_case_collisions(t.path()).unwrap();
+        // One canonical lower-case dir, one file.
+        assert_eq!(rel_paths(t.path()), vec!["meshes/".to_string(), "meshes/armor.nif".to_string()]);
+    }
+
+    #[test]
+    fn case_collision_file_keeps_oldest_mtime() {
+        let t = TempDir::new("ccmtime");
+        write_at(t.path(), "meshes/armor.nif", b"OLD");
+        write_at(t.path(), "Meshes/armor.nif", b"NEW");
+        set_mtime(t.path(), "meshes/armor.nif", 100);
+        set_mtime(t.path(), "Meshes/armor.nif", 200);
+        normalize_case_collisions(t.path()).unwrap();
+        assert_eq!(fs::read(t.path().join("meshes/armor.nif")).unwrap(), b"OLD");
+    }
+
+    #[test]
+    fn case_collision_dir_merge() {
+        let t = TempDir::new("ccdm");
+        write_at(t.path(), "meshes/a.nif", b"a");
+        write_at(t.path(), "Meshes/b.nif", b"b");
+        normalize_case_collisions(t.path()).unwrap();
+        assert_eq!(
+            rel_paths(t.path()),
+            vec!["meshes/".to_string(), "meshes/a.nif".to_string(), "meshes/b.nif".to_string()]
+        );
+    }
+
+    #[test]
+    fn case_collision_nested_dir() {
+        let t = TempDir::new("ccnd");
+        write_at(t.path(), "data/meshes/a.nif", b"a");
+        write_at(t.path(), "Data/Meshes/b.nif", b"b");
+        normalize_case_collisions(t.path()).unwrap();
+        assert_eq!(
+            rel_paths(t.path()),
+            vec![
+                "data/".to_string(),
+                "data/meshes/".to_string(),
+                "data/meshes/a.nif".to_string(),
+                "data/meshes/b.nif".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn case_collision_file_vs_dir() {
+        let t = TempDir::new("ccfvd");
+        fs::write(t.path().join("textures"), b"file").unwrap();
+        write_at(t.path(), "Textures/inside.txt", b"in");
+        normalize_case_collisions(t.path()).unwrap();
+        assert!(t.path().join("textures").is_file(), "file wins the canonical name");
+        assert!(
+            t.path().join("textures_dir/inside.txt").is_file(),
+            "dir is moved aside, contents preserved"
+        );
+    }
+
+    #[test]
+    fn case_collision_file_vs_dir_aside_name_taken() {
+        // Regression: `textures` (file) + `Textures/` (dir) move the dir aside to
+        // `textures_dir`, but a pre-existing FILE already holds that name. The merge
+        // must NOT read_dir a file (ENOTDIR aborts the whole install); both the
+        // pre-existing file and the rescued dir contents must survive.
+        let t = TempDir::new("ccfvd_taken");
+        fs::write(t.path().join("textures"), b"file").unwrap();
+        write_at(t.path(), "Textures/inside.txt", b"in");
+        fs::write(t.path().join("textures_dir"), b"unrelated").unwrap();
+        normalize_case_collisions(t.path()).unwrap();
+        assert!(t.path().join("textures").is_file(), "file wins the canonical name");
+        assert_eq!(
+            fs::read(t.path().join("textures_dir")).unwrap(),
+            b"unrelated",
+            "pre-existing file at the aside name is untouched"
+        );
+        assert!(
+            t.path().join("textures_dir_1/inside.txt").is_file(),
+            "moved-aside dir lands at the first free suffixed name, nothing lost"
+        );
+    }
+
+    #[test]
+    fn case_collision_symlink_preserved() {
+        use std::os::unix::fs::symlink;
+        let t = TempDir::new("ccsym");
+        symlink("some_target", t.path().join("current")).unwrap();
+        write_at(t.path(), "Current/f.txt", b"x");
+        normalize_case_collisions(t.path()).unwrap();
+        // The symlink (opaque) wins the canonical name and is NOT dereferenced.
+        let meta = fs::symlink_metadata(t.path().join("current")).unwrap();
+        assert!(meta.file_type().is_symlink(), "symlink preserved as-is");
+        assert_eq!(fs::read_link(t.path().join("current")).unwrap().to_str(), Some("some_target"));
+        assert!(t.path().join("current_dir/f.txt").is_file(), "colliding dir moved aside");
+    }
+
+    #[test]
+    fn case_collision_non_utf8_skipped() {
+        use std::os::unix::ffi::OsStrExt;
+        let t = TempDir::new("ccnonutf8");
+        // A genuine collision that MUST still resolve.
+        write_at(t.path(), "Foo/a.txt", b"a");
+        write_at(t.path(), "foo/b.txt", b"b");
+        // A non-UTF8 sibling that must be left untouched (no panic).
+        let bad = t.path().join(std::ffi::OsStr::from_bytes(b"weird\xff\xfename"));
+        fs::write(&bad, b"keep").unwrap();
+        normalize_case_collisions(t.path()).unwrap();
+        assert!(t.path().join("foo/a.txt").is_file() && t.path().join("foo/b.txt").is_file());
+        assert!(bad.exists(), "non-UTF8 entry is skipped, not lost");
+    }
+
+    #[test]
+    fn case_collision_idempotent() {
+        let t = TempDir::new("ccidem");
+        write_at(t.path(), "meshes/a.nif", b"a");
+        write_at(t.path(), "Meshes/b.nif", b"b");
+        write_at(t.path(), "data/Meshes/c.nif", b"c");
+        write_at(t.path(), "Data/meshes/d.nif", b"d");
+        normalize_case_collisions(t.path()).unwrap();
+        let after_first = rel_paths(t.path());
+        normalize_case_collisions(t.path()).unwrap();
+        assert_eq!(after_first, rel_paths(t.path()), "second pass is a no-op");
+    }
+
+    #[test]
+    fn case_collision_empty_dir_preserved() {
+        let t = TempDir::new("ccempty");
+        write_at(t.path(), "Meshes/file.nif", b"x");
+        fs::create_dir_all(t.path().join("meshes/empty_subdir")).unwrap();
+        normalize_case_collisions(t.path()).unwrap();
+        assert!(t.path().join("meshes/file.nif").is_file());
+        assert!(t.path().join("meshes/empty_subdir").is_dir(), "empty dir survives the merge");
+    }
+
+    #[test]
+    fn case_collision_deep_three_way() {
+        let t = TempDir::new("ccdeep");
+        write_at(t.path(), "A/B/C/file.txt", b"1");
+        write_at(t.path(), "a/b/c/file.txt", b"2");
+        write_at(t.path(), "A/b/C/file.txt", b"3");
+        normalize_case_collisions(t.path()).unwrap();
+        // Everything collapses to a single all-lower-case chain with one file.
+        assert_eq!(
+            rel_paths(t.path()),
+            vec![
+                "a/".to_string(),
+                "a/b/".to_string(),
+                "a/b/c/".to_string(),
+                "a/b/c/file.txt".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn case_collision_no_change_without_collision() {
+        let t = TempDir::new("ccnone");
+        // Mixed casing but NO sibling collides: every name must keep its casing.
+        write_at(t.path(), "Meshes/Armor.nif", b"a");
+        write_at(t.path(), "Meshes/Sub/Armor.nif", b"b");
+        let before = rel_paths(t.path());
+        normalize_case_collisions(t.path()).unwrap();
+        assert_eq!(before, rel_paths(t.path()), "non-colliding names are never touched");
     }
 
     // MO2 parity (copyLeaf): a file with an empty destination lands at
