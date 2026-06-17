@@ -957,11 +957,15 @@ fn cmd_install(args: &[String]) {
         .find(|a| !a.starts_with("--"))
         .cloned()
         .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
-    // FOMOD condition context: the plugins currently present/active, so a scripted
-    // installer's fileDependency/gameDependency options evaluate correctly.
+    // FOMOD condition context: plugins in enabled mods read Active, plugins in
+    // disabled mods read Inactive, so a scripted installer's fileDependency /
+    // gameDependency options evaluate correctly (MO2 distinguishes the two).
+    let ml = inst.modlist();
     let enabled_roots: Vec<std::path::PathBuf> =
-        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
-    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots);
+        ml.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let disabled_roots: Vec<std::path::PathBuf> =
+        ml.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),
         &inst.mods_dir(),

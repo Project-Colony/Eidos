@@ -48,6 +48,43 @@ pub fn eval(cond: &Condition, flags: &HashMap<String, String>, ctx: &Context) ->
     }
 }
 
+/// Whether the FOMOD's `<moduleDependencies>` are satisfied by the context. MO2
+/// refuses the whole install when they are not (e.g. a required master/SKSE is
+/// absent). No `<moduleDependencies>` element means always installable.
+pub fn module_dependencies_met(config: &ModuleConfig, ctx: &Context) -> bool {
+    match &config.module_dependencies {
+        Some(cond) => eval(cond, &ctx.flags, ctx),
+        None => true,
+    }
+}
+
+/// A human-readable description of the FOMOD's module-level dependencies when they
+/// are NOT met (so the caller can tell the user what the mod requires), else `None`.
+pub fn unmet_module_dependencies(config: &ModuleConfig, ctx: &Context) -> Option<String> {
+    let cond = config.module_dependencies.as_ref()?;
+    if eval(cond, &ctx.flags, ctx) {
+        return None;
+    }
+    Some(describe_condition(cond))
+}
+
+/// Render a condition into a short human phrase (for the unmet-dependency message).
+fn describe_condition(c: &Condition) -> String {
+    match c {
+        Condition::File { file, state } => format!("'{file}' must be {}", state.to_lowercase()),
+        Condition::Flag { flag, value } => format!("flag '{flag}' must be '{value}'"),
+        Condition::Version { kind, version } => format!("{kind} version must be >= {version}"),
+        Condition::Sub { op, conditions } => {
+            let joiner = match op {
+                Operator::And => " and ",
+                Operator::Or => " or ",
+            };
+            let parts: Vec<String> = conditions.iter().map(describe_condition).collect();
+            parts.join(joiner)
+        }
+    }
+}
+
 /// A plugin's effective type: the first conditional pattern that holds, else the
 /// default (MO2's `getPluginDependencyType`).
 pub fn effective_type(plugin: &Plugin, flags: &HashMap<String, String>, ctx: &Context) -> PluginType {
@@ -157,7 +194,18 @@ pub fn build_plan(config: &ModuleConfig, selection: &Selection, ctx: &Context) -
                     for (n, v) in &plugin.condition_flags {
                         flags.insert(n.clone(), v.clone());
                     }
-                    files.extend(plugin.files.iter().cloned());
+                }
+                // A selected option installs all its files. An UNSELECTED option still
+                // installs files flagged `alwaysInstall` (unconditional) or
+                // `installIfUsable` (when the option is usable - effective type is not
+                // NotUsable). MO2's FOMOD installer honours both flags; Eidos used to
+                // drop them, silently skipping files the author meant to ship.
+                let etype = (!on).then(|| effective_type(plugin, &flags, ctx));
+                let usable = etype != Some(PluginType::NotUsable);
+                for f in &plugin.files {
+                    if on || f.always_install || (f.install_if_usable && usable) {
+                        files.push(f.clone());
+                    }
                 }
             }
         }
@@ -376,6 +424,68 @@ mod tests {
         assert!(!eval(&off, &flags, &ctx));
         assert!(eval(&Condition::Sub { op: Operator::Or, conditions: vec![on.clone(), off.clone()] }, &flags, &ctx));
         assert!(!eval(&Condition::Sub { op: Operator::And, conditions: vec![on, off] }, &flags, &ctx));
+    }
+
+    #[test]
+    fn always_install_and_if_usable_honour_unselected_options() {
+        // SelectAny preselects only Required/Recommended, so both options are OFF by
+        // default. Their files install only per the alwaysInstall / installIfUsable flags.
+        const X: &str = r#"<config>
+  <moduleName>T</moduleName>
+  <installSteps>
+    <installStep name="S">
+      <optionalFileGroups>
+        <group name="G" type="SelectAny">
+          <plugins>
+            <plugin name="UsableOpt">
+              <files>
+                <file source="normal.esp" destination="normal.esp"/>
+                <file source="u_if.esp" destination="u_if.esp" installIfUsable="true"/>
+              </files>
+              <typeDescriptor><type name="Optional"/></typeDescriptor>
+            </plugin>
+            <plugin name="Bad">
+              <files>
+                <file source="b_if.esp" destination="b_if.esp" installIfUsable="true"/>
+                <file source="b_always.esp" destination="b_always.esp" alwaysInstall="true"/>
+              </files>
+              <typeDescriptor><type name="NotUsable"/></typeDescriptor>
+            </plugin>
+          </plugins>
+        </group>
+      </optionalFileGroups>
+    </installStep>
+  </installSteps>
+</config>"#;
+        let mc = ModuleConfig::parse(X).unwrap();
+        let plan = build_default_plan(&mc, &Context::default());
+        let d: Vec<&str> = plan.iter().map(|f| f.destination.as_str()).collect();
+        assert!(!d.contains(&"normal.esp"), "a plain file of an unselected option is skipped");
+        assert!(d.contains(&"u_if.esp"), "installIfUsable on a usable (Optional) option installs");
+        assert!(!d.contains(&"b_if.esp"), "installIfUsable on a NotUsable option does NOT install");
+        assert!(d.contains(&"b_always.esp"), "alwaysInstall installs even on a NotUsable option");
+    }
+
+    #[test]
+    fn module_dependencies_gate_the_install() {
+        const X: &str = r#"<config>
+  <moduleName>T</moduleName>
+  <moduleDependencies operator="And">
+    <fileDependency file="Required.esm" state="Active"/>
+  </moduleDependencies>
+  <installSteps><installStep name="S"><optionalFileGroups/></installStep></installSteps>
+</config>"#;
+        let mc = ModuleConfig::parse(X).unwrap();
+        // Unmet: the required master is absent -> Missing.
+        let empty = Context::default();
+        assert!(!module_dependencies_met(&mc, &empty));
+        let msg = unmet_module_dependencies(&mc, &empty).expect("should report unmet");
+        assert!(msg.contains("Required.esm"), "message names the requirement: {msg}");
+        // Met: mark the master Active.
+        let mut ctx = Context::default();
+        ctx.file_states.insert("required.esm".into(), "Active".into());
+        assert!(module_dependencies_met(&mc, &ctx));
+        assert!(unmet_module_dependencies(&mc, &ctx).is_none());
     }
 
     #[test]

@@ -29,6 +29,9 @@ pub enum InstallError {
     NeedsFomod,
     /// A FOMOD's `ModuleConfig.xml` could not be parsed.
     Fomod(String),
+    /// The FOMOD's `<moduleDependencies>` are not satisfied; MO2 refuses the install.
+    /// The string describes what the mod requires.
+    UnmetDependency(String),
     /// The target `mods/<name>/` already exists and is not empty.
     Exists(PathBuf),
     Io(io::Error),
@@ -46,6 +49,9 @@ impl fmt::Display for InstallError {
                 write!(f, "this is a FOMOD scripted installer - not yet supported (Tier 2)")
             }
             InstallError::Fomod(e) => write!(f, "FOMOD parse error: {e}"),
+            InstallError::UnmetDependency(d) => {
+                write!(f, "this mod's requirements are not met: {d}")
+            }
             InstallError::Exists(p) => write!(f, "target already exists: {}", p.display()),
             InstallError::Io(e) => write!(f, "{e}"),
         }
@@ -367,25 +373,45 @@ pub fn mod_name_for(archive: &Path) -> String {
 }
 
 /// Build a FOMOD install [`Context`](eidos_fomod::Context) from the current setup:
-/// every plugin (`.esp`/`.esm`/`.esl`) present in the game's Data or an enabled mod
-/// is marked Active, so a scripted installer's fileDependency conditions (usually
-/// "is <master> present/active") evaluate correctly instead of always reading
-/// Missing. Eidos doesn't track the game version, so gameDependency stays permissive.
-pub fn fomod_context(game_data: &Path, enabled_mod_roots: &[PathBuf]) -> eidos_fomod::Context {
+/// a plugin (`.esp`/`.esm`/`.esl`) in the game's Data or an enabled mod is marked
+/// Active; one present only in a DISABLED mod is marked Inactive; anything absent
+/// reads Missing. This lets a scripted installer's `fileDependency` conditions
+/// (which distinguish Active / Inactive / Missing) evaluate like MO2 instead of
+/// collapsing Inactive into Missing. Eidos doesn't track the game version, so
+/// gameDependency stays permissive.
+pub fn fomod_context(
+    game_data: &Path,
+    enabled_mod_roots: &[PathBuf],
+    disabled_mod_roots: &[PathBuf],
+) -> eidos_fomod::Context {
     let mut file_states = std::collections::HashMap::new();
-    let mut scan = |root: &Path| {
+    let mut scan = |root: &Path, state: &str| {
         if let Ok(rd) = fs::read_dir(root) {
             for e in rd.flatten() {
                 let n = e.file_name().to_string_lossy().to_ascii_lowercase();
                 if n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl") {
-                    file_states.insert(n, "Active".to_string());
+                    // Active always wins (a plugin shipped by both an enabled and a
+                    // disabled mod is Active); so only record Inactive when nothing
+                    // already marked it Active.
+                    match state {
+                        "Active" => {
+                            file_states.insert(n, "Active".to_string());
+                        }
+                        _ => {
+                            file_states.entry(n).or_insert_with(|| "Inactive".to_string());
+                        }
+                    }
                 }
             }
         }
     };
-    scan(game_data);
+    // Disabled first (Inactive), then enabled + game Data (Active) so Active wins.
+    for root in disabled_mod_roots {
+        scan(root, "Inactive");
+    }
+    scan(game_data, "Active");
     for root in enabled_mod_roots {
-        scan(root);
+        scan(root, "Active");
     }
     eidos_fomod::Context { file_states, ..Default::default() }
 }
@@ -509,6 +535,10 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
 /// Returns the plan sources the archive did not contain.
 fn apply_fomod_defaults(root: &Path, dest: &Path, ctx: &eidos_fomod::Context) -> Result<Vec<String>, InstallError> {
     let config = parse_fomod_at(root)?;
+    // MO2 refuses the install outright when <moduleDependencies> are unmet.
+    if let Some(req) = eidos_fomod::unmet_module_dependencies(&config, ctx) {
+        return Err(InstallError::UnmetDependency(req));
+    }
     let plan = eidos_fomod::build_default_plan(&config, ctx);
     apply_plan(root, &plan, dest)
 }
@@ -535,6 +565,13 @@ impl FomodSession {
     /// `None` if the archive did not ship it.
     pub fn resolve(&self, rel: &str) -> Option<PathBuf> {
         resolve_ci(&self.root, rel)
+    }
+
+    /// If this FOMOD's `<moduleDependencies>` are not met by `ctx`, a human
+    /// description of what it requires (so a front end can refuse before showing the
+    /// wizard, as MO2 does), else `None`.
+    pub fn unmet_dependencies(&self, ctx: &eidos_fomod::Context) -> Option<String> {
+        eidos_fomod::unmet_module_dependencies(&self.config, ctx)
     }
 }
 
@@ -596,6 +633,11 @@ pub fn finish_fomod(
     let dest = mods_dir.join(&name);
     if dest.exists() && is_nonempty_dir(&dest) {
         return Err(InstallError::Exists(dest));
+    }
+    // Belt-and-braces: never install a FOMOD whose module dependencies are unmet,
+    // even if a caller skipped the upfront check (MO2 parity).
+    if let Some(req) = eidos_fomod::unmet_module_dependencies(&session.config, ctx) {
+        return Err(InstallError::UnmetDependency(req));
     }
     fs::create_dir_all(&dest)?;
     let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
@@ -1117,12 +1159,33 @@ mod tests {
         let modd = TempDir::new("mod");
         fs::write(game.path().join("Skyrim.esm"), b"").unwrap();
         fs::write(modd.path().join("SkyUI.esp"), b"").unwrap();
-        let ctx = fomod_context(game.path(), &[modd.path().to_path_buf()]);
+        let ctx = fomod_context(game.path(), &[modd.path().to_path_buf()], &[]);
         // A present plugin reads Active (so fileDependency state="Active" holds); an
         // absent one is left out, which eval treats as Missing.
         assert_eq!(ctx.file_states.get("skyrim.esm").map(String::as_str), Some("Active"));
         assert_eq!(ctx.file_states.get("skyui.esp").map(String::as_str), Some("Active"));
         assert_eq!(ctx.file_states.get("absent.esp"), None);
+    }
+
+    #[test]
+    fn fomod_context_distinguishes_inactive_from_missing() {
+        let game = TempDir::new("game");
+        let en = TempDir::new("enabled");
+        let dis = TempDir::new("disabled");
+        fs::write(en.path().join("Active.esp"), b"").unwrap();
+        fs::write(dis.path().join("Disabled.esp"), b"").unwrap();
+        // A plugin shipped by BOTH an enabled and a disabled mod must read Active.
+        fs::write(en.path().join("Shared.esp"), b"").unwrap();
+        fs::write(dis.path().join("Shared.esp"), b"").unwrap();
+        let ctx = fomod_context(
+            game.path(),
+            &[en.path().to_path_buf()],
+            &[dis.path().to_path_buf()],
+        );
+        assert_eq!(ctx.file_states.get("active.esp").map(String::as_str), Some("Active"));
+        assert_eq!(ctx.file_states.get("disabled.esp").map(String::as_str), Some("Inactive"));
+        assert_eq!(ctx.file_states.get("shared.esp").map(String::as_str), Some("Active"));
+        assert_eq!(ctx.file_states.get("absent.esp"), None); // -> Missing
     }
 
     #[test]

@@ -691,13 +691,21 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 Ok(Some(session)) => {
                     let enabled_roots: Vec<std::path::PathBuf> =
                         app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+                    let disabled_roots: Vec<std::path::PathBuf> =
+                        app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
                     let ctx = match selected_game(app) {
-                        Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots),
+                        Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots, &disabled_roots),
                         None => eidos_fomod::Context::default(),
                     };
-                    let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                    app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid, ctx });
-                    app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
+                    // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
+                    // showing the wizard - tell the user what is missing and stop.
+                    if let Some(req) = session.unmet_dependencies(&ctx) {
+                        app.status = Some(format!("Cannot install: this mod requires {req}."));
+                    } else {
+                        let selection = eidos_fomod::default_selection(&session.config, &ctx);
+                        app.fomod = Some(FomodWizard { session, step: 0, selection, game_id: gid, ctx });
+                        app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
+                    }
                 }
                 Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
                     Ok(r) => after_install(app, &r.name, r.dest, r.fomod),
