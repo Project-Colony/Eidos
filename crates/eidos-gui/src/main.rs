@@ -2567,22 +2567,16 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .as_ref()
             .map(|s| s.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(&p.name)))
             .unwrap_or(false);
+        // MO2-style checkbox. A checkbox with no `on_toggle` renders disabled/greyed,
+        // which is exactly the look for the non-togglable cases.
         let toggle: Element<'a, Message> = if is_primary {
-            // A forced game master: always on, never togglable.
-            text("[x]").size(11.0).into()
+            // A forced game master: always on, never togglable (checked + greyed).
+            checkbox("", true).size(15).into()
         } else if p.force_disabled {
-            // An .esl on a no-light engine: can never load, so show a static,
-            // greyed, non-togglable box rather than a clickable toggle.
-            text("[-]").size(11.0).style(|t: &Theme| iced::widget::text::Style {
-                color: Some(t.palette().text.scale_alpha(0.4)),
-            })
-            .into()
+            // An .esl on a no-light engine: can never load (unchecked + greyed).
+            checkbox("", false).size(15).into()
         } else {
-            button(text(if p.enabled { "[x]" } else { "[ ]" }).size(11.0))
-                .padding(1)
-                .on_press(Message::TogglePlugin(i))
-                .style(button::text)
-                .into()
+            checkbox("", p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
         };
         let row = Row::new()
             .spacing(6)
