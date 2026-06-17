@@ -103,6 +103,8 @@ enum Message {
     // ---- mod-list interactivity (MO2 right-click + filter) ----
     /// Filter box above the mod list (case-insensitive substring on the name).
     SearchChanged(String),
+    /// Narrow the mod list to a top-level category (`None` = all).
+    CategoryFilterChanged(Option<i32>),
     /// Left-click a mod row: select it and close any open menu.
     SelectMod(usize),
     /// Right-click a mod row: select it and open its action menu.
@@ -213,6 +215,8 @@ struct App {
     /// Collapsed separators, keyed by display name (MO2 keys by display name too).
     /// Persisted per-profile so the grouping state survives a relaunch.
     collapsed: HashSet<String>,
+    /// Active category filter (a top-level category id), or `None` for all.
+    category_filter: Option<i32>,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -221,24 +225,45 @@ struct App {
 struct RowMeta {
     version: Option<String>,
     mod_id: Option<u64>,
-    category: Option<String>,
+    /// The mod's PRIMARY category id (MO2 `category=` first id), for filtering.
+    category_id: Option<i32>,
+    /// That category resolved to a display name (MO2 Category column).
+    category_name: Option<String>,
     update: bool,
     /// A separator's display colour (MO2's `color=@Variant(...)`), if set.
     color: Option<[u8; 3]>,
+}
+
+/// One entry in the category-filter dropdown (`None` id = "all").
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CategoryChoice {
+    id: Option<i32>,
+    label: String,
+}
+
+impl std::fmt::Display for CategoryChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
 }
 
 /// Build the per-mod metadata cache for the open instance's mod list.
 fn build_meta_cache(app: &App) -> HashMap<String, RowMeta> {
     let mut out = HashMap::new();
     if let Some(inst) = &app.created {
+        // The category catalog (resolves `category=` ids to names); built once.
+        let cats = inst.category_factory();
         for m in &app.mods {
             let meta = inst.mod_meta(&m.name);
+            let category_id = meta.category().as_deref().and_then(eidos_instance::parse_primary);
+            let category_name = category_id.and_then(|id| cats.name_for_id(id)).map(str::to_string);
             out.insert(
                 m.name.clone(),
                 RowMeta {
                     version: meta.version(),
                     mod_id: meta.mod_id(),
-                    category: meta.category(),
+                    category_id,
+                    category_name,
                     update: meta.update_available(),
                     color: meta.color(),
                 },
@@ -285,6 +310,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         info_tab: InfoTab::General,
         notes_edit: String::new(),
         collapsed: HashSet::new(),
+        category_filter: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -826,6 +852,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::SearchChanged(q) => {
             app.search = q;
             // A filter change can hide the menu's target row; keep it simple.
+            app.menu_mod = None;
+            app.rename = None;
+        }
+        Message::CategoryFilterChanged(id) => {
+            app.category_filter = id;
             app.menu_mod = None;
             app.rename = None;
         }
@@ -1420,6 +1451,7 @@ const C_CHECK: Length = Length::Fixed(36.0);
 const C_PRIO: Length = Length::Fixed(26.0);
 const C_FLAGS: Length = Length::Fixed(46.0);
 const C_VERSION: Length = Length::Fixed(64.0);
+const C_CATEGORY: Length = Length::Fixed(96.0);
 const C_MOVE: Length = Length::Fixed(70.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
@@ -1545,12 +1577,15 @@ fn mod_row<'a>(
         Some(r) if r.update => format!("^ {version}"),
         _ => version,
     };
+    // MO2's Category column: the mod's primary category, resolved to a name.
+    let category = meta.and_then(|r| r.category_name.clone()).unwrap_or_default();
 
     let row = Row::new()
         .spacing(6)
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
+        .push(text(category).size(11.0).width(C_CATEGORY))
         .push(text(version).size(11.0).width(C_VERSION))
         .push(flag_cell)
         .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
@@ -1637,7 +1672,33 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(Space::with_width(Length::Fill))
         .push(text(format!("Active: {active}")).size(12.0));
 
-    // MO2's mod-list filter box, plus a button to drop a separator at the top.
+    // The category catalog (resolves ids -> names; drives the filter + the column).
+    let cats = app.created.as_ref().map(|i| i.category_factory());
+
+    // Category-filter dropdown: "All" + the top-level categories actually in use.
+    let mut choices = vec![CategoryChoice { id: None, label: "All categories".to_string() }];
+    if let Some(cf) = &cats {
+        let mut used: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
+        for r in app.meta_cache.values() {
+            if let Some(mut cur) = r.category_id {
+                for _ in 0..32 {
+                    match cf.parent_id(cur) {
+                        Some(p) if p != 0 && p != cur => cur = p,
+                        _ => break,
+                    }
+                }
+                used.insert(cur);
+            }
+        }
+        for (id, name) in cf.all_top_level() {
+            if used.contains(&id) {
+                choices.push(CategoryChoice { id: Some(id), label: name.to_string() });
+            }
+        }
+    }
+    let selected = choices.iter().find(|c| c.id == app.category_filter).cloned();
+
+    // MO2's mod-list filter box + a category dropdown + a button to drop a separator.
     let search = Row::new()
         .spacing(6)
         .push(
@@ -1646,6 +1707,11 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 .padding(5)
                 .size(12.0),
         )
+        .push(
+            pick_list(choices, selected, |c: CategoryChoice| Message::CategoryFilterChanged(c.id))
+                .text_size(12.0)
+                .padding(5),
+        )
         .push(tool_btn("+ Separator", Message::AddSeparator(0)));
 
     let header = Row::new()
@@ -1653,6 +1719,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(text("").width(C_CHECK))
         .push(text("#").size(11.0).width(C_PRIO))
         .push(text("Mod Name").size(11.0).width(Length::Fill))
+        .push(text("Category").size(11.0).width(C_CATEGORY))
         .push(text("Version").size(11.0).width(C_VERSION))
         .push(text("Flags").size(11.0).width(C_FLAGS))
         .push(text("").width(C_MOVE));
@@ -1672,6 +1739,11 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // conflict flags, or content (it never queries the ConflictMap). It always
         // shows (even under a filter, and even when its own group is collapsed).
         if m.is_separator() {
+            // A category filter is about content; hide separators (no category) while
+            // it's active, otherwise they show as group anchors.
+            if app.category_filter.is_some() {
+                continue;
+            }
             let collapsed = app.collapsed.contains(m.display_name());
             in_collapsed = collapsed;
             shown += 1;
@@ -1679,12 +1751,23 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             list = list.push(separator_row(i, m, len, color, collapsed, selected));
             continue;
         }
-        // Mods under a collapsed separator are hidden; otherwise filter by name.
+        // Mods under a collapsed separator are hidden; otherwise filter by name + category.
         if in_collapsed {
             continue;
         }
         if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             continue;
+        }
+        if let Some(fid) = app.category_filter {
+            let matches = app
+                .meta_cache
+                .get(&m.name)
+                .and_then(|r| r.category_id)
+                .zip(cats.as_ref())
+                .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid));
+            if !matches {
+                continue;
+            }
         }
         shown += 1;
         // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
@@ -1789,8 +1872,8 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         if let Some(v) = &r.version {
             bits.push(format!("v{v}"));
         }
-        if let Some(c) = r.category.as_deref().map(str::trim).filter(|c| !c.is_empty() && *c != "-1,") {
-            bits.push(format!("cat {}", c.trim_end_matches(',')));
+        if let Some(c) = &r.category_name {
+            bits.push(format!("cat {c}"));
         }
         if let Some(id) = r.mod_id {
             bits.push(format!("Nexus #{id}"));
@@ -1959,11 +2042,7 @@ fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
         if let Some(nv) = meta.newest_version() {
             col = col.push(info_kv("Newest", nv));
         }
-        if let Some(c) = meta
-            .category()
-            .map(|c| c.trim_end_matches(',').trim().to_string())
-            .filter(|c| !c.is_empty() && c != "-1")
-        {
+        if let Some(c) = app.meta_cache.get(&m.name).and_then(|r| r.category_name.clone()) {
             col = col.push(info_kv("Category", c));
         }
         if let Some(id) = meta.mod_id() {

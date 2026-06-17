@@ -17,10 +17,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+mod categories;
 mod manifest;
 mod meta;
 mod profile;
 mod tools;
+pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
 pub use profile::Profile;
@@ -106,6 +108,13 @@ impl Instance {
     /// MO2-compatible metadata for a mod (`mods/<name>/meta.ini`); empty if none.
     pub fn mod_meta(&self, name: &str) -> ModMeta {
         ModMeta::read(&self.meta_path(name))
+    }
+
+    /// The category catalog: the instance's `categories.dat` if present (MO2
+    /// format), else MO2's built-in defaults. Resolves a mod's `category=` ids to
+    /// display names.
+    pub fn category_factory(&self) -> CategoryFactory {
+        CategoryFactory::load(&self.root.join("categories.dat"))
     }
 
     /// The instance manifest path (`<root>/eidos-instance.ini`).
