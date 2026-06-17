@@ -112,6 +112,11 @@ pub struct Plugin {
     /// The real file on disk.
     pub path: PathBuf,
     pub enabled: bool,
+    /// Force-disabled: an `.esl` on an engine without light-plugin support
+    /// (Skyrim LE / FO3 / FNV). It can never be activated (loading it would consume
+    /// a normal index slot and shift every later plugin), so the UI must not offer a
+    /// toggle - distinct from a merely default-inactive plugin the user CAN enable.
+    pub force_disabled: bool,
     /// Header master flag (0x01).
     pub is_master: bool,
     /// Light plugin (`.esl` or the 0x200 flag).
@@ -173,6 +178,10 @@ impl PluginList {
                         // Unparseable: fall back to the extension.
                         (is_master_ext(&key), is_light_ext(&key), false, Vec::new())
                     });
+                // An `.esl` on a no-light engine is force-disabled (a packaging error;
+                // loading it would consume a normal index slot and shift every later
+                // plugin's index).
+                let force_disabled = is_light_ext(&key) && !spec.light_supported();
                 if let Some(&i) = idx.get(&key) {
                     let p = &mut plugins[i];
                     p.path = path;
@@ -181,18 +190,23 @@ impl PluginList {
                     p.is_light = is_light;
                     p.is_medium = is_medium;
                     p.masters = masters;
+                    p.force_disabled = force_disabled;
+                    if force_disabled {
+                        p.enabled = false;
+                    }
                 } else {
-                    // MO2 force-disables an `.esl` on an engine without light-plugin
-                    // support (Skyrim LE / FO3 / FNV) - it is a packaging error, and
-                    // letting it load would consume a normal index slot and shift
-                    // every later plugin's displayed index.
-                    let force_off = is_light_ext(&key) && !spec.light_supported();
+                    // MO2 (`pluginlist.cpp:2133` `enabled(forceLoaded)`): a newly-seen
+                    // plugin starts INACTIVE unless it is a force-loaded primary (game
+                    // master). Plugins already recorded in the prefix's plugins.txt keep
+                    // their state - apply_prefix_state runs after discover.
+                    let is_primary = spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name));
                     idx.insert(key, plugins.len());
                     plugins.push(Plugin {
                         name,
                         origin_mod: origin.clone(),
                         path,
-                        enabled: !force_off,
+                        enabled: is_primary && !force_disabled,
+                        force_disabled,
                         is_master,
                         is_light,
                         is_medium,
@@ -402,6 +416,7 @@ mod tests {
             origin_mod: String::new(),
             path: PathBuf::from(name),
             enabled: true,
+            force_disabled: false,
             is_master: lower.ends_with(".esm"),
             is_light: lower.ends_with(".esl"),
             is_medium: false,
@@ -465,17 +480,37 @@ mod tests {
         std::fs::write(dir.join("Patch.esl"), b"").unwrap();
         let sources = vec![(String::new(), dir.clone())];
 
-        // Skyrim LE (PlainList, no light support): the .esl is discovered DISABLED.
+        // Skyrim LE (PlainList, no light support): the .esl is FORCE-disabled - it
+        // can never be activated, distinct from a merely default-inactive plugin.
         let le = GameSpec::for_id("skyrim").unwrap();
         let listed = PluginList::discover(&sources, &le);
-        assert!(
-            !listed.plugins.iter().find(|p| p.name == "Patch.esl").unwrap().enabled,
-            ".esl must be force-disabled on a no-light game"
-        );
+        let le_p = listed.plugins.iter().find(|p| p.name == "Patch.esl").unwrap();
+        assert!(le_p.force_disabled, ".esl must be force-disabled on a no-light game");
+        assert!(!le_p.enabled);
 
-        // Skyrim SE supports light plugins, so the same file is enabled.
+        // Skyrim SE supports light plugins, so the same file is NOT force-disabled
+        // (the user can enable it); like any newly-seen plugin it starts inactive.
         let se_list = PluginList::discover(&sources, &se());
-        assert!(se_list.plugins.iter().find(|p| p.name == "Patch.esl").unwrap().enabled);
+        let se_p = se_list.plugins.iter().find(|p| p.name == "Patch.esl").unwrap();
+        assert!(!se_p.force_disabled, ".esl is enableable on a light-capable game");
+        assert!(!se_p.enabled, "MO2 defaults a newly-seen plugin inactive");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn discover_defaults_primary_active_others_inactive() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("eidos-def-{}-{}", std::process::id(), n));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Skyrim.esm"), b"").unwrap(); // a primary master
+        std::fs::write(dir.join("MyMod.esp"), b"").unwrap(); // a fresh normal plugin
+        let list = PluginList::discover(&[(String::new(), dir.clone())], &se());
+        let esm = list.plugins.iter().find(|p| p.name.eq_ignore_ascii_case("Skyrim.esm")).unwrap();
+        let esp = list.plugins.iter().find(|p| p.name == "MyMod.esp").unwrap();
+        assert!(esm.enabled, "a forced primary game master defaults active");
+        assert!(!esp.enabled, "a newly-seen normal plugin defaults inactive (MO2 parity)");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

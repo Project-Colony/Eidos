@@ -156,7 +156,9 @@ impl PluginList {
                 for p in &mut self.plugins {
                     let lname = p.name.to_ascii_lowercase();
                     if active_set.contains(&lname) {
-                        p.enabled = true;
+                        // A force-disabled .esl can never be activated, even if a stale
+                        // plugins.txt lists it.
+                        p.enabled = !p.force_disabled;
                     } else if plugins_txt_present && order_set.contains(&lname) && !primaries.contains(&lname) {
                         // listed in loadorder.txt but not active in plugins.txt
                         p.enabled = false;
@@ -182,7 +184,7 @@ impl PluginList {
             active.iter().enumerate().map(|(i, (n, _))| (n.to_ascii_lowercase(), i)).collect();
         for p in &mut self.plugins {
             if let Some(&e) = enabled.get(&p.name.to_ascii_lowercase()) {
-                p.enabled = e;
+                p.enabled = e && !p.force_disabled;
             }
         }
         self.plugins
@@ -238,6 +240,7 @@ mod tests {
             origin_mod: String::new(),
             path: PathBuf::from(name),
             enabled,
+            force_disabled: false,
             is_master: name.to_ascii_lowercase().ends_with(".esm"),
             is_light: false,
             is_medium: false,
@@ -318,6 +321,20 @@ mod tests {
     }
 
     #[test]
+    fn force_disabled_plugin_never_activated_by_prefix_state() {
+        // A force-disabled .esl must stay off even if a stale plugins.txt lists it
+        // active (it would otherwise consume an index slot it can't legally have).
+        let mut esl = pl("Light.esl", false);
+        esl.force_disabled = true;
+        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)] };
+        list.apply_active(&[("Light.esl".into(), true), ("Normal.esp".into(), true)]);
+        let light = list.plugins.iter().find(|p| p.name == "Light.esl").unwrap();
+        let normal = list.plugins.iter().find(|p| p.name == "Normal.esp").unwrap();
+        assert!(!light.enabled, "force-disabled stays off despite an active listing");
+        assert!(normal.enabled, "a normal plugin still honours the active listing");
+    }
+
+    #[test]
     fn plain_list_writes_active_names_only() {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
@@ -371,7 +388,7 @@ mod tests {
             .write_load_order(&dir, &spec)
             .unwrap();
 
-        // A fresh discovery defaults everything enabled, in arbitrary order.
+        // A fresh list in arbitrary order; prefix state decides enabled/disabled.
         let mut fresh =
             PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)] };
         fresh.apply_prefix_state(&dir, &spec);

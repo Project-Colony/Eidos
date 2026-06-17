@@ -1132,10 +1132,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
             let prefix = selected_game(app).and_then(|g| g.compatdata.as_ref().map(|cd| cd.join("pfx")));
             let name = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.name.clone());
+            let forced = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.force_disabled).unwrap_or(false);
             if let (Some(spec), Some(name)) = (spec, name) {
                 // Base-game masters are implicit and always loaded; refuse to toggle.
                 if spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name)) {
                     app.status = Some(format!("{name} is a base-game master and is always loaded."));
+                } else if forced {
+                    app.status =
+                        Some(format!("{name} is a light plugin this game can't load and stays off."));
                 } else if let Some(list) = app.plugins.as_mut() {
                     let now = list.plugins.get(i).map(|p| p.enabled).unwrap_or(false);
                     list.set_enabled(&name, !now);
@@ -2565,7 +2569,15 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .map(|s| s.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(&p.name)))
             .unwrap_or(false);
         let toggle: Element<'a, Message> = if is_primary {
+            // A forced game master: always on, never togglable.
             text("[x]").size(11.0).into()
+        } else if p.force_disabled {
+            // An .esl on a no-light engine: can never load, so show a static,
+            // greyed, non-togglable box rather than a clickable toggle.
+            text("[-]").size(11.0).style(|t: &Theme| iced::widget::text::Style {
+                color: Some(t.palette().text.scale_alpha(0.4)),
+            })
+            .into()
         } else {
             button(text(if p.enabled { "[x]" } else { "[ ]" }).size(11.0))
                 .padding(1)
