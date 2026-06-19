@@ -213,6 +213,10 @@ enum Message {
     ToolWorkdirChanged(String),
     ToolArgsChanged(String),
     ToolPrereqsChanged(String),
+    /// Open a native file picker for the tool's executable (Browse button).
+    BrowseToolExe,
+    /// Open a native folder picker for the tool's working directory (Browse button).
+    BrowseToolWorkdir,
     /// Persist the user tool list to `tools.ini`.
     SaveExecutablesDialog,
     // ---- Endorse / per-mod flags (MO2 endorseMod) ----
@@ -2128,6 +2132,15 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ToolTitleChanged(s) => {
             if let Some(state) = &mut app.executables {
+                // Auto-seed prereqs from the title for known tools (e.g. BodySlide ->
+                // d3dx9_43, d3dcompiler_47), mirroring the CLI, but only when the user
+                // has not entered any prereqs yet (never clobber their edit).
+                if state.prereqs.trim().is_empty() {
+                    let seeded = eidos_instance::default_prereqs(&s).join(", ");
+                    if !seeded.is_empty() {
+                        state.prereqs = seeded;
+                    }
+                }
                 state.title = s;
             }
         }
@@ -2150,6 +2163,31 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(state) = &mut app.executables {
                 state.prereqs = s;
             }
+        }
+        Message::BrowseToolExe => {
+            // Start the picker in the game install dir (where tool exes usually live).
+            let start = selected_game(app).map(|g| g.install_path.clone());
+            let mut dlg = rfd::AsyncFileDialog::new()
+                .add_filter("Executables", &["exe"])
+                .set_title("Select the tool executable");
+            if let Some(dir) = start {
+                dlg = dlg.set_directory(dir);
+            }
+            return Task::perform(dlg.pick_file(), |h| match h {
+                Some(h) => Message::ToolExeChanged(h.path().display().to_string()),
+                None => Message::Noop,
+            });
+        }
+        Message::BrowseToolWorkdir => {
+            let start = selected_game(app).map(|g| g.install_path.clone());
+            let mut dlg = rfd::AsyncFileDialog::new().set_title("Select the working directory");
+            if let Some(dir) = start {
+                dlg = dlg.set_directory(dir);
+            }
+            return Task::perform(dlg.pick_folder(), |h| match h {
+                Some(h) => Message::ToolWorkdirChanged(h.path().display().to_string()),
+                None => Message::Noop,
+            });
         }
         Message::SaveExecutablesDialog => {
             if let Some(state) = &mut app.executables {
@@ -4896,8 +4934,18 @@ fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message
         Column::new()
             .spacing(8)
             .push(exe_field("Title", &state.title, Message::ToolTitleChanged))
-            .push(exe_field("Executable (path)", &state.exe, Message::ToolExeChanged))
-            .push(exe_field("Working dir (optional)", &state.workdir, Message::ToolWorkdirChanged))
+            .push(exe_field_browse(
+                "Executable (path)",
+                &state.exe,
+                Message::ToolExeChanged,
+                Message::BrowseToolExe,
+            ))
+            .push(exe_field_browse(
+                "Working dir (optional)",
+                &state.workdir,
+                Message::ToolWorkdirChanged,
+                Message::BrowseToolWorkdir,
+            ))
             .push(text("Arguments (one per line)").size(11.0))
             .push(
                 text_input("", &state.args)
@@ -4950,6 +4998,21 @@ fn exe_field<'a>(
         .push(text(label).size(11.0))
         .push(text_input("", value).on_input(on_input).padding(6).size(12.0).width(Length::Fill))
         .into()
+}
+
+/// Like [`exe_field`] but with a Browse button that opens a native file/folder
+/// picker (`browse` message), so the user can pick the path instead of typing it.
+fn exe_field_browse<'a>(
+    label: &'a str,
+    value: &str,
+    on_input: impl Fn(String) -> Message + 'a,
+    browse: Message,
+) -> Element<'a, Message> {
+    let row = Row::new()
+        .spacing(4)
+        .push(text_input("", value).on_input(on_input).padding(6).size(12.0).width(Length::Fill))
+        .push(button(text("Browse...").size(11.0)).padding([5, 8]).on_press(browse).style(button::secondary));
+    Column::new().spacing(2).push(text(label).size(11.0)).push(row).into()
 }
 
 /// The Delete button: active only when a user tool is selected.
