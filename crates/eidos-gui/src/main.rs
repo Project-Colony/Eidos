@@ -4269,9 +4269,9 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(Space::with_width(Length::Fill))
         .push(text("Run:").size(13.0))
         .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(13.0).padding(8))
+        .push(Space::with_width(Length::Fill))
         .push(
             button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
                 .padding(10)
