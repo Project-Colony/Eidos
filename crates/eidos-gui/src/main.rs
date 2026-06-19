@@ -1837,7 +1837,13 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some("Sorting plugins with LOOT...".to_string());
             return Task::perform(
                 async move {
-                    let repo = eidos_loot::loot_support(&id).unwrap().1;
+                    // `is_supported(id)` was checked above and loot_support is a pure
+                    // map, so this is always Some here; handle None gracefully anyway
+                    // rather than unwrap (robust to any future refactor of the guard).
+                    let repo = match eidos_loot::loot_support(&id) {
+                        Some((_, repo)) => repo,
+                        None => return Err(format!("LOOT sorting is not available for {id}.")),
+                    };
                     let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, false)
                         .map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");

@@ -377,9 +377,13 @@ fn ntfs_order_key(name: &str) -> Vec<u16> {
     upper.encode_utf16().collect()
 }
 
-/// Strip a leading slash so a virtual path can be joined onto a real layer root.
+/// Turn a virtual path into a clean relative path that can be joined onto a real
+/// layer root. Keeps only `Normal` segments: the leading slash, `.`, `..`, and
+/// empty segments are dropped, so a vpath can never traverse out of its layer root
+/// (defence in depth - the kernel never forwards `..` to FUSE lookups, but a vpath
+/// constructed any other way stays contained).
 fn normalize(vpath: &str) -> PathBuf {
-    PathBuf::from(vpath.trim_start_matches('/'))
+    vpath.split('/').filter(|s| !s.is_empty() && *s != "." && *s != "..").collect()
 }
 
 /// Join a child entry name onto a virtual directory path.
@@ -598,6 +602,33 @@ mod tests {
         let stack = LayerStack::new(vec![game], over);
         // The game engine asks with completely different casing.
         assert_eq!(read(&stack.resolve_read("textures/armor.dds").unwrap()), "tex");
+    }
+
+    #[test]
+    fn normalize_strips_traversal_segments() {
+        // `..`, `.`, leading slash, and empty segments are dropped, so a vpath can
+        // never resolve outside its layer root (defence in depth).
+        assert_eq!(normalize("/a/b"), PathBuf::from("a/b"));
+        assert_eq!(normalize("a/../../b"), PathBuf::from("a/b"));
+        assert_eq!(normalize("../../etc/passwd"), PathBuf::from("etc/passwd"));
+        assert_eq!(normalize("a/./b//c"), PathBuf::from("a/b/c"));
+        // No component is ever ParentDir / RootDir.
+        assert!(normalize("../x/..").components().all(|c| matches!(c, std::path::Component::Normal(_))));
+    }
+
+    #[test]
+    fn resolve_read_cannot_escape_the_layer_root() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "ok.txt", "in");
+        // A secret one level above the game root must stay unreachable.
+        std::fs::write(t.0.join("secret.txt"), "SECRET").unwrap();
+
+        let stack = LayerStack::new(vec![game], over);
+        assert_eq!(read(&stack.resolve_read("ok.txt").unwrap()), "in");
+        // `..` is normalised away, so this resolves to <root>/secret.txt (absent), not
+        // the parent's secret.
+        assert!(stack.resolve_read("../secret.txt").is_none());
     }
 
     #[test]

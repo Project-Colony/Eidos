@@ -459,6 +459,11 @@ fn find_ci(dir: &Path, name_lower: &str) -> Option<PathBuf> {
 fn resolve_ci(root: &Path, rel: &str) -> Option<PathBuf> {
     let mut cur = root.to_path_buf();
     for part in rel.split(['/', '\\']).filter(|s| !s.is_empty()) {
+        // Security: refuse a `..` segment so an attacker-controlled FOMOD source
+        // path can't read files outside the extracted archive root.
+        if part == ".." {
+            return None;
+        }
         let exact = cur.join(part);
         if exact.exists() {
             cur = exact;
@@ -497,6 +502,17 @@ fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, InstallError
 /// Copy a computed FOMOD plan from the extracted `root` into `dest`, resolving each
 /// source case-insensitively; later (higher-priority) items overwrite earlier ones.
 /// Sources the archive did not ship are skipped.
+/// Whether a relative install path would escape its base directory: it contains a
+/// `..` parent segment, or is absolute / rooted. A benign FOMOD destination is
+/// always a plain relative path inside the mod folder, so any of these is a
+/// path-traversal attempt (or corruption) that must be refused.
+fn escapes_root(rel: &str) -> bool {
+    use std::path::Component;
+    Path::new(rel)
+        .components()
+        .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+}
+
 fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Result<Vec<String>, InstallError> {
     let mut missing = Vec::new();
     for item in plan {
@@ -517,6 +533,14 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
             if let Some(name) = item.source.rsplit(['/', '\\']).find(|s| !s.is_empty()) {
                 destination.push_str(name);
             }
+        }
+        // Security: the destination comes from attacker-controlled FOMOD XML. Refuse
+        // any path that escapes the mod folder (a `..` segment or an absolute path) -
+        // otherwise a crafted `<file destination="../../...">` would write anywhere.
+        if escapes_root(&destination) {
+            return Err(InstallError::Fomod(format!(
+                "refusing install path that escapes the mod folder: '{destination}'"
+            )));
         }
         let dst = dest.join(&destination);
         if item.is_folder {
@@ -1133,6 +1157,46 @@ mod tests {
 
         assert!(dest.path().join("renamed.esp").is_file());
         assert!(!dest.path().join("real.esp").exists());
+    }
+
+    #[test]
+    fn apply_plan_refuses_path_traversal_destination() {
+        // A malicious FOMOD destination that escapes the mod folder must be refused,
+        // not written outside it.
+        let root = TempDir::new("root");
+        let dest = TempDir::new("dest");
+        fs::write(root.path().join("evil.esp"), b"data").unwrap();
+        // A sentinel that must NOT be overwritten.
+        let outside = dest.path().parent().unwrap().join("eidos-traversal-victim");
+        let _ = fs::remove_file(&outside);
+
+        let plan = vec![file_item("evil.esp", "../eidos-traversal-victim")];
+        let r = apply_plan(root.path(), &plan, dest.path());
+        assert!(matches!(r, Err(InstallError::Fomod(_))), "traversal must be refused");
+        assert!(!outside.exists(), "nothing must be written outside the mod folder");
+
+        // An absolute destination is refused too.
+        let plan2 = vec![file_item("evil.esp", "/tmp/eidos-traversal-abs")];
+        assert!(matches!(apply_plan(root.path(), &plan2, dest.path()), Err(InstallError::Fomod(_))));
+    }
+
+    #[test]
+    fn resolve_ci_refuses_dotdot_source() {
+        // A `..` in an attacker-controlled FOMOD source must not read outside root.
+        let root = TempDir::new("root");
+        fs::create_dir_all(root.path().join("sub")).unwrap();
+        assert!(resolve_ci(root.path(), "sub").is_some());
+        assert!(resolve_ci(root.path(), "../root").is_none());
+        assert!(resolve_ci(root.path(), "sub/../../etc").is_none());
+    }
+
+    #[test]
+    fn escapes_root_detects_traversal() {
+        assert!(escapes_root("../x"));
+        assert!(escapes_root("a/../../b"));
+        assert!(escapes_root("/abs/path"));
+        assert!(!escapes_root("a/b/c.esp"));
+        assert!(!escapes_root("textures/foo.dds"));
     }
 
     #[test]
