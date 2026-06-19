@@ -2720,16 +2720,6 @@ fn bar_style(_theme: &Theme) -> container::Style {
     }
 }
 
-/// A flat, combo-box-looking button (bordered light field), for dropdowns.
-fn combo_style(_theme: &Theme, _status: button::Status) -> button::Style {
-    button::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xF7, 0xF0, 0xDE))),
-        text_color: Color::from_rgb8(0x2B, 0x20, 0x18),
-        border: Border { color: Color::from_rgb8(0xB8, 0xA5, 0x80), width: 1.0, radius: 3.0.into() },
-        shadow: Default::default(),
-    }
-}
-
 fn row_bg(even: bool) -> Color {
     if even {
         Color::from_rgb8(0xF3, 0xEA, 0xD3)
@@ -2804,11 +2794,6 @@ fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
 /// A flat, menu/toolbar-style button (no chrome until hovered).
 fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     button(text(label).size(13.0)).padding(6).on_press(msg).style(button::text).into()
-}
-
-/// A combo-box-looking button with a dropdown caret.
-fn combo<'a>(label: String, msg: Message) -> Element<'a, Message> {
-    button(text(format!("{label}   v")).size(12.0)).padding(6).on_press(msg).style(combo_style).into()
 }
 
 fn icon<'a>(bytes: &'static [u8], size: f32) -> Element<'a, Message> {
@@ -4273,9 +4258,9 @@ fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 }
 
 fn right_pane<'a>(app: &App) -> Element<'a, Message> {
-    let game_name = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
     // Run-target picker (MO2's executables combo): the game, or any tool run
-    // through the same merged view.
+    // through the same merged view. The game's launcher/binary + script extender are
+    // auto-detected as tools, so they show up here alongside the user's tools.
     let run_options: Vec<String> = std::iter::once(RUN_GAME.to_string())
         .chain(app.tools.iter().map(|t| t.title.clone()))
         .collect();
@@ -4283,9 +4268,10 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
 
     let top = Row::new()
         .spacing(8)
-        .push(combo(game_name.to_string(), Message::Noop))
+        .align_y(iced::Alignment::Center)
         .push(Space::with_width(Length::Fill))
-        .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(12.0).padding(8))
+        .push(text("Run:").size(13.0))
+        .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(13.0).padding(8))
         .push(
             button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
                 .padding(10)
