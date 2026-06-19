@@ -735,14 +735,22 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game
 /// defaults), keeping the current pick when it still exists.
+/// The auto-detectable executables for a game (launcher, binary, script extender),
+/// from its `GameDef` - fed to `default_tools` for MO2-style file-existence detection.
+fn game_executables(g: &eidos_games::DetectedGame) -> eidos_instance::GameExecutables<'_> {
+    eidos_instance::GameExecutables {
+        game_name: g.def.name,
+        launcher: g.def.script_extender.as_ref().map(|se| se.launcher),
+        binary: Some(g.def.game_binary),
+        script_extender: g.def.script_extender.as_ref().map(|se| se.loader),
+    }
+}
+
 fn load_tools(app: &mut App) {
     let merged = match (selected_game(app), &app.created) {
         (Some(g), Some(inst)) => eidos_instance::merge_tools(
             inst.tools(),
-            eidos_instance::default_tools(
-                g.def.script_extender.as_ref().map(|se| se.loader),
-                &g.install_path,
-            ),
+            eidos_instance::default_tools(game_executables(g), &g.install_path),
         ),
         _ => Vec::new(),
     };
@@ -768,10 +776,7 @@ fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
     let (game, inst) = (selected_game(app)?, app.created.as_ref()?);
     let user = inst.tools();
     let user_len = user.len();
-    let defaults = eidos_instance::default_tools(
-        game.def.script_extender.as_ref().map(|se| se.loader),
-        &game.install_path,
-    );
+    let defaults = eidos_instance::default_tools(game_executables(game), &game.install_path);
     let merged = eidos_instance::merge_tools(user, defaults);
     let mut state = ExecutablesDialogState {
         merged,

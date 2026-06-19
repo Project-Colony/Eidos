@@ -399,12 +399,20 @@ fn forced_dll_overrides(
     Some(("WINEDLLOVERRIDES".to_string(), value))
 }
 
-/// Per-game default tools: the script extender, when present in the game dir.
+/// Per-game default tools auto-detected in the game dir: the script extender, the
+/// vanilla launcher, and the game binary - whichever are present.
 fn default_tools(game: &DetectedGame) -> Vec<eidos_instance::Tool> {
-    eidos_instance::default_tools(
-        game.def.script_extender.as_ref().map(|se| se.loader),
-        &game.install_path,
-    )
+    eidos_instance::default_tools(game_executables(game), &game.install_path)
+}
+
+/// The auto-detectable executables for a game, from its `GameDef`.
+fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecutables<'_> {
+    eidos_instance::GameExecutables {
+        game_name: game.def.name,
+        launcher: game.def.script_extender.as_ref().map(|se| se.launcher),
+        binary: Some(game.def.game_binary),
+        script_extender: game.def.script_extender.as_ref().map(|se| se.loader),
+    }
 }
 
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |

@@ -28,7 +28,9 @@ pub use manifest::Manifest;
 pub use meta::ModMeta;
 pub use profile::{Profile, SaveEntry};
 pub use settings::{Settings, Theme};
-pub use tools::{default_prereqs, default_tools, merge_tools, read_tools, write_tools, Tool};
+pub use tools::{
+    default_prereqs, default_tools, merge_tools, read_tools, write_tools, GameExecutables, Tool,
+};
 
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -81,6 +81,11 @@ pub struct GameDef {
     pub load_order: LoadOrder,
     /// The game's own master plugins, pinned to the top of the order.
     pub primary_plugins: &'static [&'static str],
+    /// The game's main executable in the install dir, e.g. `SkyrimSE.exe`. Eidos
+    /// auto-detects it (and the launcher + script extender) as a default tool when
+    /// the file is present, mirroring MO2's game-plugin `executables()`. Empty if
+    /// unknown.
+    pub game_binary: &'static str,
     /// The script-extender launch swap, if known - the vanilla launcher and the
     /// loader (SKSE/F4SE/...) to run instead. `None` where the launcher is not
     /// known with confidence (add a row to enable it for a game).
@@ -104,6 +109,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
+        game_binary: "SkyrimSE.exe",
         script_extender: Some(ScriptExtender {
             launcher: "SkyrimSELauncher.exe",
             loader: "skse64_loader.exe",
@@ -120,6 +126,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
+        game_binary: "SkyrimVR.exe",
         script_extender: None,
     },
     GameDef {
@@ -135,6 +142,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Skyrim.esm", "Update.esm"],
+        game_binary: "TESV.exe",
         script_extender: Some(ScriptExtender {
             launcher: "SkyrimLauncher.exe",
             loader: "skse_loader.exe",
@@ -151,6 +159,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
+        game_binary: "SkyrimSE.exe",
         script_extender: None,
     },
     GameDef {
@@ -164,6 +173,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
+        game_binary: "Fallout4.exe",
         script_extender: Some(ScriptExtender {
             launcher: "Fallout4Launcher.exe",
             loader: "f4se_loader.exe",
@@ -180,6 +190,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
+        game_binary: "Fallout4VR.exe",
         script_extender: None,
     },
     GameDef {
@@ -193,6 +204,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["FalloutNV.esm"],
+        game_binary: "FalloutNV.exe",
         script_extender: Some(ScriptExtender {
             launcher: "FalloutNVLauncher.exe",
             loader: "nvse_loader.exe",
@@ -209,6 +221,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Fallout3.esm"],
+        game_binary: "Fallout3.exe",
         script_extender: Some(ScriptExtender {
             launcher: "FalloutLauncher.exe",
             loader: "fose_loader.exe",
@@ -225,6 +238,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Oblivion.ini", "OblivionPrefs.ini"],
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Oblivion.esm"],
+        game_binary: "Oblivion.exe",
         script_extender: Some(ScriptExtender {
             launcher: "OblivionLauncher.exe",
             loader: "obse_loader.exe",
@@ -243,6 +257,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["Morrowind.ini"],
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Morrowind.esm"],
+        game_binary: "Morrowind.exe",
         script_extender: None,
     },
     GameDef {
@@ -256,6 +271,7 @@ pub static GAMES: &[GameDef] = &[
         ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
+        game_binary: "Starfield.exe",
         script_extender: None,
     },
 ];
@@ -339,6 +355,8 @@ struct RawGameDef {
     #[serde(default)]
     primary_plugins: Vec<String>,
     #[serde(default)]
+    game_binary: String,
+    #[serde(default)]
     script_extender: Option<RawScriptExtender>,
 }
 
@@ -365,6 +383,7 @@ impl RawGameDef {
             ini_files: leak_vec(self.ini_files),
             load_order: parse_load_order(&self.load_order),
             primary_plugins: leak_vec(self.primary_plugins),
+            game_binary: leak(self.game_binary),
             script_extender: self.script_extender.map(|s| ScriptExtender {
                 launcher: leak(s.launcher),
                 loader: leak(s.loader),

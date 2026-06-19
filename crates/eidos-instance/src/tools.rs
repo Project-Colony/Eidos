@@ -125,22 +125,62 @@ pub fn merge_tools(user: Vec<Tool>, defaults: Vec<Tool>) -> Vec<Tool> {
     out
 }
 
-/// Per-game default tools (MO2's plugin-provided executables): the script
-/// extender, when its loader is present in the game install dir. Decoupled
-/// inputs so both the CLI and the GUI can call it without a GameDef dependency.
-pub fn default_tools(script_extender_loader: Option<&str>, install: &Path) -> Vec<Tool> {
+/// The per-game executables Eidos auto-detects as default tools, mirroring MO2's
+/// game-plugin `executables()`: the script-extender loader, the vanilla launcher,
+/// and the game's own binary. Decoupled inputs (no GameDef dependency) so both the
+/// CLI and the GUI can build it. Any empty / `None` field is skipped.
+#[derive(Debug, Clone, Copy)]
+pub struct GameExecutables<'a> {
+    /// Display name of the game, used to title the launcher + binary entries.
+    pub game_name: &'a str,
+    /// The vanilla launcher Steam runs, e.g. `SkyrimSELauncher.exe`.
+    pub launcher: Option<&'a str>,
+    /// The game's own binary, e.g. `SkyrimSE.exe`.
+    pub binary: Option<&'a str>,
+    /// The script-extender loader, e.g. `skse64_loader.exe`.
+    pub script_extender: Option<&'a str>,
+}
+
+/// Add a default tool for `exe` only if its file is present in `install` (detection
+/// is by file existence, like MO2's game plugins).
+fn push_tool_if_present(v: &mut Vec<Tool>, install: &Path, title: String, exe: &str) {
+    if !exe.is_empty() && install.join(exe).is_file() {
+        v.push(Tool {
+            prereqs: default_prereqs(&title),
+            title,
+            exe: PathBuf::from(exe),
+            args: Vec::new(),
+            workdir: None,
+        });
+    }
+}
+
+/// The default tool list for a game, auto-detected by file existence in `install`
+/// (MO2's game-plugin `executables()`): the script extender (the usual play
+/// target) first, then the vanilla launcher, then the bare game binary - each ONLY
+/// when its file is actually present. Because this is re-checked on every load, a
+/// tool installed later (e.g. SKSE after the instance was created) appears on the
+/// next load with no user action, exactly like MO2.
+pub fn default_tools(execs: GameExecutables, install: &Path) -> Vec<Tool> {
     let mut v = Vec::new();
-    if let Some(loader) = script_extender_loader {
-        if install.join(loader).is_file() {
-            let title = loader.trim_end_matches(".exe").to_string();
-            v.push(Tool {
-                prereqs: default_prereqs(&title),
-                title,
-                exe: PathBuf::from(loader),
-                args: Vec::new(),
-                workdir: None,
-            });
-        }
+    if let Some(loader) = execs.script_extender.filter(|s| !s.is_empty()) {
+        push_tool_if_present(&mut v, install, loader.trim_end_matches(".exe").to_string(), loader);
+    }
+    if let Some(launcher) = execs.launcher.filter(|s| !s.is_empty()) {
+        let title = if execs.game_name.is_empty() {
+            launcher.trim_end_matches(".exe").to_string()
+        } else {
+            format!("{} Launcher", execs.game_name)
+        };
+        push_tool_if_present(&mut v, install, title, launcher);
+    }
+    if let Some(binary) = execs.binary.filter(|s| !s.is_empty()) {
+        let title = if execs.game_name.is_empty() {
+            binary.trim_end_matches(".exe").to_string()
+        } else {
+            execs.game_name.to_string()
+        };
+        push_tool_if_present(&mut v, install, title, binary);
     }
     v
 }
@@ -183,6 +223,48 @@ mod tests {
     fn tmp() -> PathBuf {
         let n = N.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("eidos-tools-{}-{}.ini", std::process::id(), n))
+    }
+
+    fn tmp_dir() -> PathBuf {
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("eidos-tools-dir-{}-{}", std::process::id(), n));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn default_tools_detects_present_executables_and_picks_up_new_ones() {
+        let dir = tmp_dir();
+        let execs = GameExecutables {
+            game_name: "Skyrim Special Edition",
+            launcher: Some("SkyrimSELauncher.exe"),
+            binary: Some("SkyrimSE.exe"),
+            script_extender: Some("skse64_loader.exe"),
+        };
+
+        // Only the launcher + binary exist; SKSE is not installed yet.
+        std::fs::write(dir.join("SkyrimSELauncher.exe"), b"").unwrap();
+        std::fs::write(dir.join("SkyrimSE.exe"), b"").unwrap();
+        let titles: Vec<String> =
+            default_tools(execs, &dir).into_iter().map(|t| t.title).collect();
+        assert!(titles.contains(&"Skyrim Special Edition Launcher".to_string()));
+        assert!(titles.contains(&"Skyrim Special Edition".to_string()));
+        assert!(!titles.iter().any(|t| t.contains("skse")), "absent SKSE is not listed");
+
+        // Install SKSE afterwards: a fresh detection (MO2 re-runs this on every load)
+        // picks it up automatically, no user action.
+        std::fs::write(dir.join("skse64_loader.exe"), b"").unwrap();
+        let titles2: Vec<String> =
+            default_tools(execs, &dir).into_iter().map(|t| t.title).collect();
+        assert!(titles2.contains(&"skse64_loader".to_string()), "SKSE auto-detected after install");
+        // The script extender comes first (the usual play target).
+        assert_eq!(titles2.first().map(String::as_str), Some("skse64_loader"));
+
+        // A game with nothing present yields no default tools.
+        let empty = tmp_dir();
+        assert!(default_tools(execs, &empty).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&empty);
     }
 
     #[test]
