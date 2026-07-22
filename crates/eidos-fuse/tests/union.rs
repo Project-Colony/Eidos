@@ -166,6 +166,25 @@ fn delete_hides_file_and_keeps_game_pristine() {
     assert_eq!(fs::read(game.join("removeme.dat")).unwrap(), b"x"); // game pristine
 }
 
+fn recreate_after_delete_starts_empty() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    // The lower-layer file is LONGER than what we rewrite, so any resurrected
+    // bytes would survive as trailing garbage after the new content.
+    put(&game, "gen.json", b"OLD-CONTENT-MUCH-LONGER-THAN-NEW");
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    // The delete-then-recreate cycle of modding tools (xEdit backups, DynDOLOD
+    // regen, PapyrusUtil JSON rewrites): unlink, then open(O_CREAT) = FUSE CREATE.
+    fs::remove_file(mnt.join("gen.json")).unwrap();
+    fs::write(mnt.join("gen.json"), b"new").unwrap();
+    assert_eq!(fs::read(mnt.join("gen.json")).unwrap(), b"new"); // no stale tail
+
+    drop(s);
+    assert_eq!(fs::read(game.join("gen.json")).unwrap(), b"OLD-CONTENT-MUCH-LONGER-THAN-NEW"); // game pristine
+    assert_eq!(fs::read(over.join("gen.json")).unwrap(), b"new"); // overwrite holds only the new bytes
+}
+
 fn rename_moves_file_through_mount() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -306,6 +325,7 @@ fn main() {
         ("write_copies_up_and_keeps_sources_pristine", write_copies_up_and_keeps_sources_pristine, false),
         ("create_new_file_and_dir_land_in_overwrite", create_new_file_and_dir_land_in_overwrite, false),
         ("delete_hides_file_and_keeps_game_pristine", delete_hides_file_and_keeps_game_pristine, true),
+        ("recreate_after_delete_starts_empty", recreate_after_delete_starts_empty, true),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),

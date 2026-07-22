@@ -185,9 +185,13 @@ pub fn install_archive_with_policy(
     let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
 
     // Resolve a collision with the existing mod folder per the policy. Done before
-    // extraction, so a Fail or a Rename-onto-another-existing needs no 7-Zip.
+    // extraction, so a Fail or a Rename-onto-another-existing needs no 7-Zip. The
+    // Replace WIPE itself is deferred until the archive has extracted and its
+    // layout/FOMOD plan resolved (the destructive step comes last, like MO2), so a
+    // missing 7z, a corrupt archive or a bad FOMOD can never destroy the old mod.
     let mut dest = mods_dir.join(&name);
     let mut preserved: Option<ModMeta> = None;
+    let mut replacing = false;
     if dest.exists() && is_nonempty_dir(&dest) {
         match &policy {
             OverwritePolicy::Fail => return Err(InstallError::Exists(dest)),
@@ -196,7 +200,7 @@ pub fn install_archive_with_policy(
                 // Keep the user's metadata (endorsement / category / tracked) across
                 // the wipe, like MO2's REPLACE.
                 preserved = Some(ModMeta::read(&dest.join("meta.ini")));
-                fs::remove_dir_all(&dest)?;
+                replacing = true;
             }
             OverwritePolicy::Rename(new) => {
                 name = fix_directory_name(new).unwrap_or_else(|| "Mod".to_string());
@@ -230,8 +234,19 @@ pub fn install_archive_with_policy(
             None => {
                 // A FOMOD scripted installer: run it with the default selections.
                 if let Some(fomod_root) = find_fomod_root(&tmp) {
+                    // Parse the module, check its dependencies and build the plan
+                    // BEFORE the destructive step: every fallible stage runs while
+                    // the old mod is still intact.
+                    let config = parse_fomod_at(&fomod_root)?;
+                    if let Some(req) = eidos_fomod::unmet_module_dependencies(&config, ctx) {
+                        return Err(InstallError::UnmetDependency(req));
+                    }
+                    let plan = eidos_fomod::build_default_plan(&config, ctx);
+                    if replacing {
+                        fs::remove_dir_all(&dest)?;
+                    }
                     fs::create_dir_all(&dest)?;
-                    let missing = apply_fomod_defaults(&fomod_root, &dest, ctx)?;
+                    let missing = apply_plan(&fomod_root, &plan, &dest)?;
                     write_meta(archive, &dest, game_name, guessed_id)?;
                     return Ok(InstallReport {
                         name: name.clone(),
@@ -249,6 +264,10 @@ pub fn install_archive_with_policy(
         } else {
             tmp.join(base.trim_end_matches('/'))
         };
+        // Extraction + layout resolution succeeded: only now is the old mod wiped.
+        if replacing {
+            fs::remove_dir_all(&dest)?;
+        }
         fs::create_dir_all(&dest)?;
         // A merge installs over existing files (recursive copy); otherwise the dest
         // is empty/wiped, so a fast top-level rename suffices.
@@ -553,18 +572,6 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
         }
     }
     Ok(missing)
-}
-
-/// Parse the FOMOD under `root` and install it with the default selections.
-/// Returns the plan sources the archive did not contain.
-fn apply_fomod_defaults(root: &Path, dest: &Path, ctx: &eidos_fomod::Context) -> Result<Vec<String>, InstallError> {
-    let config = parse_fomod_at(root)?;
-    // MO2 refuses the install outright when <moduleDependencies> are unmet.
-    if let Some(req) = eidos_fomod::unmet_module_dependencies(&config, ctx) {
-        return Err(InstallError::UnmetDependency(req));
-    }
-    let plan = eidos_fomod::build_default_plan(&config, ctx);
-    apply_plan(root, &plan, dest)
 }
 
 /// A FOMOD extracted and parsed, awaiting the user's choices (the GUI wizard). The
@@ -943,6 +950,32 @@ mod tests {
         let mut out = Vec::new();
         walk(root, root, &mut out);
         out
+    }
+
+    #[test]
+    fn replace_with_bad_archive_keeps_the_old_mod() {
+        // The Replace wipe must come AFTER extraction succeeds: a garbage archive
+        // (or a missing 7z) must leave the existing mod untouched.
+        let t = TempDir::new("replsafe");
+        let mods = t.path().join("mods");
+        write_at(&mods, "MyMod/textures/a.dds", b"precious");
+        write_at(&mods, "MyMod/meta.ini", b"[General]\nendorsed=1\n");
+        let bogus = t.path().join("not-an-archive.7z");
+        fs::write(&bogus, b"this is not a 7z file").unwrap();
+
+        let r = install_archive_with_policy(
+            &bogus,
+            &mods,
+            "MyMod",
+            "Skyrim Special Edition",
+            OverwritePolicy::Replace,
+            &eidos_fomod::Context::default(),
+        );
+        assert!(r.is_err(), "a garbage archive must not install");
+        // Whatever the failure (No7z on a bare system, extraction failure with 7z
+        // present), the old mod must still be fully intact.
+        assert_eq!(fs::read(mods.join("MyMod/textures/a.dds")).unwrap(), b"precious");
+        assert_eq!(fs::read(mods.join("MyMod/meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
     }
 
     #[test]

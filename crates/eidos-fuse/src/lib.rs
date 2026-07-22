@@ -597,10 +597,15 @@ impl Filesystem for Eidos {
         let vpath = join(&parent_vpath, &name.to_string_lossy());
 
         // Materialise the file (and any missing parents) in the Overwrite layer.
+        // CREATE means "this file did not exist" (the kernel only sends it after a
+        // negative lookup), so the new file must start EMPTY: prepare_overwrite
+        // clears any whiteout WITHOUT copying a deleted lower-layer file up, and
+        // truncate(true) guarantees zero length. Using open_for_write here would
+        // resurrect the old bytes of a deleted mod/game file into the "new" file.
         let opened = (|| -> std::io::Result<(PathBuf, File, Metadata)> {
-            let dest = self.stack.open_for_write(&vpath)?;
+            let dest = self.stack.prepare_overwrite(&vpath)?;
             let file =
-                OpenOptions::new().read(true).write(true).create(true).truncate(false).open(&dest)?;
+                OpenOptions::new().read(true).write(true).create(true).truncate(true).open(&dest)?;
             let meta = fs::symlink_metadata(&dest)?;
             Ok((dest, file, meta))
         })();
