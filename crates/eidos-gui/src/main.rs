@@ -229,7 +229,10 @@ enum Message {
     /// Toggle endorse <-> abstain for a mod, based on its current state.
     ModEndorse(usize),
     /// The endorse/abstain finished: the new endorsed state, or an error.
-    ModEndorsed(usize, Result<bool, String>),
+    /// Endorse round-trip done. Carries the mod's FOLDER NAME (not an index): the
+    /// list can shift while the network call is in flight, and writing the result
+    /// into whatever mod now sits at the old index would corrupt its meta.ini.
+    ModEndorsed(String, Result<bool, String>),
     /// Toggle the mod's local "Track" flag (MO2's Track; no network).
     ModTrack(usize),
     /// Toggle the mod's "Ignore update" flag (MO2's Ignore update; no network).
@@ -924,18 +927,30 @@ fn find_eidos_binary() -> PathBuf {
 /// Launch the game through Eidos: spawn `eidos play <id> -- <command>` (with the
 /// script-extender swap applied), which mounts the merged mods over the game's
 /// Data dir in a private namespace and runs the command through it.
-fn play_command(game_id: &str, command: &[String]) -> std::process::Command {
+/// Build the `eidos play` command, swapping the vanilla launcher for the script
+/// extender's loader - but only if the loader actually exists on disk (a swap to
+/// a missing skse64_loader.exe would just make Proton fail cryptically). Returns
+/// the command plus a warning to surface when the extender is not installed.
+fn play_command(game_id: &str, command: &[String]) -> (std::process::Command, Option<String>) {
     let mut swapped: Vec<String> = command.to_vec();
+    let mut warning = None;
     if let Some((from, to)) = script_extender_swap(game_id) {
         for a in swapped.iter_mut() {
             if a.contains(from) {
-                *a = a.replace(from, to);
+                let candidate = a.replace(from, to);
+                if Path::new(&candidate).is_file() {
+                    *a = candidate;
+                } else {
+                    warning = Some(format!(
+                        "{to} is not installed - launching the vanilla launcher (script-extender mods will not load)."
+                    ));
+                }
             }
         }
     }
     let mut cmd = std::process::Command::new(find_eidos_binary());
     cmd.arg("play").arg(game_id).arg("--").args(&swapped);
-    cmd
+    (cmd, warning)
 }
 
 /// Spawn a launch and start tracking it: the child's stdout+stderr go to a
@@ -999,7 +1014,7 @@ fn finish_run(app: &mut App) {
     let run = app.running.take();
     if let Some(inst) = &app.created {
         app.mods = inst.modlist();
-        app.plugins = None;
+        invalidate_plugins(app);
         app.conflicts = compute_conflicts(app);
         app.meta_cache = build_meta_cache(app);
         recompute_counts(app);
@@ -1066,13 +1081,23 @@ fn save_mods(app: &App) -> Option<String> {
     inst.save_modlist(&app.mods).err().map(|e| format!("Could not save the mod list: {e}"))
 }
 
+/// Drop the plugin-order cache - and, when the Plugins tab is open, recompute it
+/// immediately so the pane updates in place instead of blanking to the
+/// placeholder until the user leaves and re-enters the tab.
+fn invalidate_plugins(app: &mut App) {
+    app.plugins = None;
+    if app.tab == Tab::Plugins && app.created.is_some() {
+        app.plugins = compute_plugins(app);
+    }
+}
+
 /// Persist the mod list and invalidate everything derived from it (plugin order,
 /// conflict emblems, the per-mod metadata cache).
 fn mods_changed(app: &mut App) {
     if let Some(err) = save_mods(app) {
         app.status = Some(err);
     }
-    app.plugins = None;
+    invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
     recompute_counts(app);
@@ -1087,7 +1112,7 @@ fn switch_to_profile(app: &mut App, name: &str) {
         let _ = inst.set_active_profile(name);
         app.mods = inst.profile(name).modlist();
     }
-    app.plugins = None;
+    invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
     app.collapsed = load_collapsed(app);
@@ -1211,6 +1236,20 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         load_tools(app);
                         app.conflicts = compute_conflicts(app);
                         app.meta_cache = build_meta_cache(app);
+                        // Everything cached from a previously-open instance is
+                        // stale for this one: plugin order, saves, downloads,
+                        // selection and counts all belong to the old instance.
+                        app.plugins = None;
+                        app.saves = Vec::new();
+                        app.confirm_delete_save = None;
+                        app.downloads = Vec::new();
+                        app.confirm_delete_download = None;
+                        app.selected_mod = None;
+                        app.selected_mods.clear();
+                        app.drag_state = None;
+                        app.menu_mod = None;
+                        app.collapsed = load_collapsed(app);
+                        recompute_counts(app);
                     }
                     Err(e) => app.error = Some(e.to_string()),
                 }
@@ -1276,25 +1315,15 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SwitchProfile(name) => {
-            if let Some(inst) = &app.created {
-                let _ = inst.set_active_profile(&name);
-                app.mods = inst.profile(&name).modlist();
-                app.plugins = None;
-                app.conflicts = compute_conflicts(app);
-                app.meta_cache = build_meta_cache(app);
-                app.collapsed = load_collapsed(app);
-                app.selected_mod = None;
-                app.selected_mods.clear();
-                app.drag_state = None;
-                app.menu_mod = None;
-                // Saves are per-profile; drop the cache so the Saves tab reloads.
-                app.saves = Vec::new();
-                app.confirm_delete_save = None;
+            // One shared path (switch_to_profile) so the reload steps - incl.
+            // recompute_counts, which this handler used to skip - never drift.
+            if app.created.is_some() {
+                switch_to_profile(app, &name);
                 app.status = Some(format!("Switched to profile '{name}'."));
             }
         }
         Message::NewProfile => {
-            if let Some(inst) = &app.created {
+            let created = app.created.as_ref().map(|inst| {
                 let existing = inst.profiles();
                 let mut n = existing.len() + 1;
                 let mut name = format!("Profile {n}");
@@ -1303,21 +1332,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     name = format!("Profile {n}");
                 }
                 let src = inst.active();
-                let dest = inst.profile(&name);
-                if dest.create_from(&src).is_ok() {
-                    let _ = inst.set_active_profile(&name);
-                    app.mods = dest.modlist();
-                    app.plugins = None;
-                    app.conflicts = compute_conflicts(app);
-                    app.meta_cache = build_meta_cache(app);
-                    app.selected_mod = None;
-                    app.selected_mods.clear();
-                    app.drag_state = None;
-                    app.menu_mod = None;
-                    app.saves = Vec::new();
-                    app.confirm_delete_save = None;
-                    app.status = Some(format!("Created '{name}' (copy of '{}').", src.name));
-                }
+                let ok = inst.profile(&name).create_from(&src).is_ok();
+                (name, src.name, ok)
+            });
+            if let Some((name, src_name, true)) = created {
+                switch_to_profile(app, &name);
+                app.status = Some(format!("Created '{name}' (copy of '{src_name}')."));
             }
         }
         // ---- profile management (rename / delete / named copy) --------------
@@ -1608,13 +1628,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
                 // `game`/`inst` are no longer used below; their borrows end here so
                 // `start_run` can take `&mut app`.
-                let cmd = play_command(id, &app.launch_command);
+                let (cmd, se_warning) = play_command(id, &app.launch_command);
                 start_run(app, game_name, cmd);
-                if both_active {
+                // Prepend advisories to whatever status start_run set.
+                for note in [se_warning, both_active.then(|| {
+                    "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI).".to_string()
+                })].into_iter().flatten() {
                     if let Some(s) = app.status.take() {
-                        app.status = Some(format!(
-                            "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
-                        ));
+                        app.status = Some(format!("{note} {s}"));
                     }
                 }
             } else {
@@ -1653,7 +1674,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::Refresh => {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
-                app.plugins = None;
+                invalidate_plugins(app);
                 app.conflicts = compute_conflicts(app);
                 app.meta_cache = build_meta_cache(app);
                 recompute_counts(app);
@@ -1782,6 +1803,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let m = app.mods.remove(i);
                 app.mods.insert(0, m);
                 app.selected_mod = Some(0);
+                // Every other row's index shifted: a stale multi-selection here
+                // could feed the wrong rows into a batch remove.
+                app.selected_mods.clear();
                 mods_changed(app);
             }
             app.menu_mod = None;
@@ -1791,6 +1815,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let m = app.mods.remove(i);
                 app.selected_mod = Some(app.mods.len());
                 app.mods.push(m);
+                app.selected_mods.clear();
                 mods_changed(app);
             }
             app.menu_mod = None;
@@ -1926,6 +1951,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         let _ = fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\n");
                         let idx = i.min(app.mods.len());
                         app.mods.insert(idx, ModEntry { name: folder, enabled: true, path: dest });
+                        // Indices at/after the insertion point shifted.
+                        app.selected_mods.clear();
                         mods_changed(app);
                         app.selected_mod = Some(idx);
                         // Open its rename editor so the user names it straight away.
@@ -2079,6 +2106,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 Some((spec, dir))
             });
             let Some((spec, dir)) = info else { return Task::none() };
+            // A refresh may have invalidated the cache while LOOT ran off-thread;
+            // recompute instead of silently discarding the sort (the report would
+            // otherwise pop over an unsorted list).
+            if app.plugins.is_none() {
+                app.plugins = compute_plugins(app);
+            }
             if let Some(list) = app.plugins.as_mut() {
                 list.apply_sorted_order(&sorted);
                 list.refresh(&spec);
@@ -2446,6 +2479,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
+            let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
             let info = app.created.as_ref().zip(app.mods.get(i)).filter(|(_, m)| !m.is_separator()).map(
                 |(inst, m)| {
                     let meta = inst.mod_meta(&m.name);
@@ -2466,15 +2500,18 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 async move {
                     eidos_nexus::Nexus::new(&key).set_endorsed(&domain, mod_id, &version, endorse)
                 },
-                move |r| Message::ModEndorsed(i, r),
+                move |r| Message::ModEndorsed(folder.clone(), r),
             );
         }
-        Message::ModEndorsed(i, result) => {
+        Message::ModEndorsed(folder, result) => {
             app.endorsing = None;
             match result {
                 Ok(now_endorsed) => {
-                    // Persist the new state into the mod's meta.ini, then refresh.
-                    if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
+                    // Persist by folder name: the row index from before the network
+                    // round-trip may point at a different mod by now.
+                    if let (Some(inst), Some(m)) =
+                        (app.created.as_ref(), app.mods.iter().find(|m| m.name == folder))
+                    {
                         let mut meta = inst.mod_meta(&m.name);
                         meta.set("endorsed", if now_endorsed { "1" } else { "0" });
                         let _ = meta.write(&inst.meta_path(&m.name));
@@ -3216,10 +3253,25 @@ fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
 
 /// Top-level entries of the merged view: each name, the source providing it
 /// (highest-priority enabled mod, or the game data), and whether it's a folder.
+/// Winner attribution matches what the FUSE layer actually serves: Overwrite
+/// first, then mods from HIGHEST display priority down, then the game data.
 fn merged_listing(app: &App) -> Vec<(String, String, bool)> {
     let mut seen = HashSet::new();
     let mut out: Vec<(String, String, bool)> = Vec::new();
-    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator()) {
+    if let Some(inst) = app.created.as_ref() {
+        if let Ok(rd) = fs::read_dir(inst.overwrite_dir()) {
+            for e in rd.flatten() {
+                if let Ok(name) = e.file_name().into_string() {
+                    if seen.insert(name.clone()) {
+                        out.push((name, "[Overwrite]".to_string(), e.path().is_dir()));
+                    }
+                }
+            }
+        }
+    }
+    // `app.mods` is display order = lowest priority first; the merged view's
+    // winner is the highest, so walk it in reverse.
+    for m in app.mods.iter().rev().filter(|m| m.enabled && !m.is_separator()) {
         if let Ok(rd) = fs::read_dir(&m.path) {
             for e in rd.flatten() {
                 if let Ok(name) = e.file_name().into_string() {
@@ -4282,14 +4334,19 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
     // plugin discovery wants, so feed it through as-is.
     let enabled = app.mods.iter().filter(|m| m.enabled && !m.is_separator());
     sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
+    // The Overwrite layer is a plugin source too (a cleaned/generated .esp lands
+    // there) - the launch path includes it, so the GUI must agree.
+    if let Some(inst) = app.created.as_ref() {
+        sources.push(("overwrite".to_string(), inst.overwrite_dir()));
+    }
 
     let mut list = PluginList::discover(&sources, &spec);
     if let Some(cd) = game.compatdata.as_ref() {
+        // Same primitive as the launch path: for PlainList games this also keeps
+        // "in loadorder.txt but not plugins.txt" DISABLED instead of silently
+        // re-enabling plugins the user turned off.
         let dir = plugins_txt_dir(&cd.join("pfx"), &spec);
-        let existing = PluginList::read_active(&dir, &spec);
-        if !existing.is_empty() {
-            list.apply_active(&existing);
-        }
+        list.apply_prefix_state(&dir, &spec);
     }
     list.refresh(&spec);
     Some(list)
@@ -4933,7 +4990,7 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive:
     if let Some(a) = archive {
         let _ = eidos_nexus::mark_installed(a);
     }
-    app.plugins = None;
+    invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
     // Refresh the cached downloads only if they were already loaded, so the

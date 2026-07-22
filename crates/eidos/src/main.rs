@@ -258,7 +258,35 @@ fn cmd_play(args: &[String]) {
         return;
     }
 
+    let mut command = command;
+    swap_script_extender(id, &mut command);
     run_through_view(id, &game, &inst, command, Vec::new(), None, &[]);
+}
+
+/// Swap the vanilla launcher for the game's script-extender loader inside a Steam
+/// `%command%`, when the game has one AND the loader actually exists on disk
+/// (a swap to a missing skse64_loader.exe would make Proton exit with a cryptic
+/// error). Mirrors the GUI's swap, so `eidos play <id> -- %command%` behaves the
+/// same whether or not the GUI is in the middle.
+fn swap_script_extender(id: &str, command: &mut [String]) {
+    let Some(se) = eidos_games::GameDef::for_id(id).and_then(|g| g.script_extender) else {
+        return;
+    };
+    for a in command.iter_mut() {
+        if a.contains(se.launcher) {
+            let candidate = a.replace(se.launcher, se.loader);
+            if std::path::Path::new(&candidate).is_file() {
+                eprintln!("eidos play: running {} (script extender) instead of {}", se.loader, se.launcher);
+                *a = candidate;
+            } else {
+                eprintln!(
+                    "eidos play: {} is not installed - launching the vanilla {} \
+                     (script-extender mods will not load)",
+                    se.loader, se.launcher
+                );
+            }
+        }
+    }
 }
 
 /// The shared launch pipeline behind `play` and `tool`: write `plugins.txt`,
