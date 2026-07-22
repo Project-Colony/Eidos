@@ -101,7 +101,7 @@ impl Theme {
 /// The app-global preferences that are not secret. The Nexus API key is stored
 /// separately (see `load_nexus_key`/`save_nexus_key`) so it never lands in this
 /// file.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     /// The color theme to render in.
     pub theme: Theme,
@@ -109,6 +109,22 @@ pub struct Settings {
     pub default_game: Option<String>,
     /// The last window size in logical pixels, `(width, height)`.
     pub window_size: Option<(u32, u32)>,
+    /// Lock the GUI while a launched game/tool runs (MO2's `[Settings] lock_gui`,
+    /// on by default): the main window is blocked behind an overlay until the
+    /// process exits, with an Unlock escape hatch.
+    pub lock_gui: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            theme: Theme::default(),
+            default_game: None,
+            window_size: None,
+            // MO2 defaults `lock_gui` to true, and an absent key means "on".
+            lock_gui: true,
+        }
+    }
 }
 
 impl Settings {
@@ -149,6 +165,10 @@ impl Settings {
                 "default_game" if !v.is_empty() => s.default_game = Some(v.to_string()),
                 "window_width" => width = v.parse().ok(),
                 "window_height" => height = v.parse().ok(),
+                // Any value other than an explicit off keeps locking on (default).
+                "lock_gui" => {
+                    s.lock_gui = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                }
                 _ => {}
             }
         }
@@ -163,7 +183,7 @@ impl Settings {
 
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
-        let mut out = format!("[eidos]\ntheme={}\n", self.theme.as_str());
+        let mut out = format!("[eidos]\ntheme={}\nlock_gui={}\n", self.theme.as_str(), self.lock_gui);
         if let Some(game) = &self.default_game {
             out.push_str("default_game=");
             out.push_str(game);
@@ -241,6 +261,7 @@ mod tests {
         assert_eq!(s.theme, Theme::System);
         assert_eq!(s.default_game, None);
         assert_eq!(s.window_size, None);
+        assert!(s.lock_gui, "locking the GUI during a run is on by default (MO2 parity)");
     }
 
     #[test]
@@ -249,6 +270,7 @@ mod tests {
             theme: Theme::Dark,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
+            lock_gui: false,
         };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
@@ -256,9 +278,21 @@ mod tests {
 
     #[test]
     fn settings_round_trip_minimal() {
-        let s = Settings { theme: Theme::Light, default_game: None, window_size: None };
+        let s = Settings { theme: Theme::Light, default_game: None, window_size: None, lock_gui: true };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn lock_gui_defaults_on_and_parses_off() {
+        // Absent key -> on (MO2 default).
+        assert!(Settings::parse("[eidos]\ntheme=dark\n").lock_gui);
+        // Explicit off forms.
+        for off in ["false", "0", "no", "off", "OFF"] {
+            assert!(!Settings::parse(&format!("lock_gui={off}\n")).lock_gui, "{off} should disable");
+        }
+        // Anything else stays on.
+        assert!(Settings::parse("lock_gui=true\n").lock_gui);
     }
 
     #[test]
@@ -295,6 +329,7 @@ mod tests {
             theme: Theme::Dark,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
+            lock_gui: false,
         };
         fs::write(&path, s.to_ini()).unwrap();
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());

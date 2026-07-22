@@ -7,7 +7,9 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-iced = { version = "0.13", features = ["image"] }
+# `smol` enables iced's timer subscriptions (`iced::time::every`), used to poll a
+# launched game for exit while the GUI is locked.
+iced = { version = "0.13", features = ["image", "smol"] }
 eidos-games = { path = "../eidos-games" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-nexus = { path = "../eidos-nexus" }

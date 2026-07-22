@@ -147,8 +147,12 @@ enum Message {
     TogglePlugin(usize),
     /// Run LOOT's graph sort over the discovered plugins (MO2's "Sort" button).
     SortPlugins,
-    /// LOOT finished: the optimised plugin-name order, or an error message.
-    PluginsSorted(Result<Vec<String>, String>),
+    /// LOOT finished: the optimised plugin-name order plus the (advisory) report,
+    /// or an error. The inner `Result` is the report: it may fail without losing the
+    /// successfully-computed order.
+    PluginsSorted(Result<(Vec<String>, Result<eidos_loot::LootReport, String>), String>),
+    /// Dismiss the LOOT report modal.
+    CloseLootReport,
     // ---- per-mod information dialog (MO2 modinfodialog) ----
     ShowModInfo(usize),
     CloseInfo,
@@ -193,6 +197,8 @@ enum Message {
     ThemeChanged(PrefTheme),
     /// Set the default game id to open (`None` = none).
     DefaultGameChanged(Option<String>),
+    /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
+    ToggleLockGui(bool),
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,
@@ -317,6 +323,13 @@ enum Message {
     // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
     /// The held keyboard modifiers changed (from key press/release subscriptions).
     ModifiersChanged(iced::keyboard::Modifiers),
+    // ---- run lock (MO2's "lock GUI while the application runs") ----
+    /// Poll tick while a game/tool runs: checks whether the child has exited and,
+    /// if so, unlocks the UI and refreshes (MO2's afterRun).
+    PollRunning,
+    /// The user clicked Unlock: stop waiting and re-enable the UI, but leave the
+    /// game running (MO2's force-unlock never kills the process).
+    ForceUnlock,
     Noop,
 }
 
@@ -569,6 +582,28 @@ struct App {
     profile_copy: Option<(String, String)>,
     /// Two-click guard for a profile deletion (the armed profile name).
     profile_delete_confirm: Option<String>,
+    // ---- run lock (MO2's "lock GUI while the application runs") ----
+    /// A launched game/tool we are waiting on. While `Some` and `prefs.lock_gui`
+    /// is set, the window is blocked behind the lock overlay until it exits (or the
+    /// user clicks Unlock). `None` = nothing running / not locked.
+    running: Option<RunningState>,
+    // ---- LOOT report (MO2's post-sort report dialog) ----
+    /// The report from the last LOOT sort, shown as a modal so the user sees
+    /// missing masters / messages / dirty-plugin advice. `None` = no report open.
+    loot_report: Option<eidos_loot::LootReport>,
+}
+
+/// A game/tool launched through Eidos that the GUI is waiting on. A detached
+/// thread `wait()`s the `eidos` child (which itself outlives the game, holding the
+/// FUSE mount) and flips `done` when it exits; a poll subscription notices and
+/// unlocks. `pid` is shown in the lock overlay (MO2 shows the running process).
+struct RunningState {
+    /// What is running (the tool title or the game name), for the overlay text.
+    title: String,
+    /// The `eidos` child's pid, surfaced in the overlay like MO2's process list.
+    pid: u32,
+    /// Flipped to `true` by the wait thread once the child exits.
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -698,6 +733,8 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_rename: None,
         profile_copy: None,
         profile_delete_confirm: None,
+        running: None,
+        loot_report: None,
     };
     if let Some(i) = auto {
         app.selected = Some(i);
@@ -802,14 +839,13 @@ fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
 
 /// Spawn `eidos tool <id> run <title>`: the CLI resolves the tool + Proton and
 /// runs it through the merged view (same single-process requirement as `play`).
-fn run_tool_through_eidos(game_id: &str, title: &str) -> std::io::Result<()> {
+fn run_tool_through_eidos(game_id: &str, title: &str) -> std::io::Result<std::process::Child> {
     std::process::Command::new(find_eidos_binary())
         .arg("tool")
         .arg(game_id)
         .arg("run")
         .arg(title)
         .spawn()
-        .map(|_| ())
 }
 
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
@@ -874,7 +910,7 @@ fn find_eidos_binary() -> PathBuf {
 /// Launch the game through Eidos: spawn `eidos play <id> -- <command>` (with the
 /// script-extender swap applied), which mounts the merged mods over the game's
 /// Data dir in a private namespace and runs the command through it.
-fn launch_through_eidos(game_id: &str, command: &[String]) -> std::io::Result<()> {
+fn launch_through_eidos(game_id: &str, command: &[String]) -> std::io::Result<std::process::Child> {
     let mut cmd: Vec<String> = command.to_vec();
     if let Some((from, to)) = script_extender_swap(game_id) {
         for a in cmd.iter_mut() {
@@ -888,8 +924,50 @@ fn launch_through_eidos(game_id: &str, command: &[String]) -> std::io::Result<()
         .arg(game_id)
         .arg("--")
         .args(&cmd)
-        .spawn()?;
-    Ok(())
+        .spawn()
+}
+
+/// Begin tracking a launched game/tool: spawn a detached thread that `wait()`s the
+/// `eidos` child (reaping it, so no zombie) and flips a shared flag on exit. When
+/// `lock_gui` is set, also raise the lock overlay (the poll subscription unlocks on
+/// exit). When locking is off this still reaps the child but stays interactive.
+fn start_run(app: &mut App, title: String, child: std::process::Child) {
+    use std::sync::atomic::Ordering;
+    let pid = child.id();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let signal = done.clone();
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+        signal.store(true, Ordering::SeqCst);
+    });
+    if app.prefs.lock_gui {
+        app.running = Some(RunningState { title: title.clone(), pid, done });
+        app.status = Some(format!("Running {title} - Eidos is locked until it exits (or click Unlock)."));
+    } else {
+        app.status = Some(format!("Launching {title}... (GUI lock is off)"));
+    }
+}
+
+/// Clear the run lock and refresh the way MO2's `afterRun` does: the game may have
+/// rewritten plugins.txt / loadorder.txt while playing, so re-read the mod list,
+/// load order and conflicts. Called from the exit poll once the child exits.
+fn finish_run(app: &mut App) {
+    let title = app.running.take().map(|r| r.title).unwrap_or_default();
+    if let Some(inst) = &app.created {
+        app.mods = inst.modlist();
+        app.plugins = None;
+        app.conflicts = compute_conflicts(app);
+        app.meta_cache = build_meta_cache(app);
+        recompute_counts(app);
+        app.selected_mods.clear();
+        app.drag_state = None;
+    }
+    app.status = Some(if title.is_empty() {
+        "Application exited. Refreshed plugins and load order.".to_string()
+    } else {
+        format!("{title} exited. Refreshed plugins and load order.")
+    });
 }
 
 fn selected_game(app: &App) -> Option<&DetectedGame> {
@@ -1414,12 +1492,16 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.tool_choice = (choice != RUN_GAME).then_some(choice);
         }
         Message::Run => {
-            if let Some(title) = app.tool_choice.clone() {
+            if app.running.is_some() {
+                // Already waiting on a launched application (MO2 won't launch a
+                // second one while locked); ignore the repeat Run.
+                app.status = Some("An application is already running. Unlock first to launch another.".to_string());
+            } else if let Some(title) = app.tool_choice.clone() {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
-                if let Some(game) = selected_game(app) {
-                    let id = game.def.id;
+                // `id` is Copy, so the immutable `game` borrow ends before `start_run`.
+                if let Some(id) = selected_game(app).map(|g| g.def.id) {
                     match run_tool_through_eidos(id, &title) {
-                        Ok(()) => app.status = Some(format!("Launching {title} through the merged view...")),
+                        Ok(child) => start_run(app, title, child),
                         Err(e) => app.status = Some(format!("Tool launch failed: {e}")),
                     }
                 } else {
@@ -1441,6 +1523,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 ));
             } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
+                let game_name = game.def.name.to_string();
                 // Soft advisory if an ENB (game root) and Community Shaders (an
                 // enabled mod) are both active - prepended to the launch status,
                 // never blocking. The CLI emits the same note to stderr, which the
@@ -1452,21 +1535,46 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     .map(|m| m.path)
                     .collect();
                 let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
+                // `game`/`inst` are no longer used below; their borrows end here so
+                // `start_run` can take `&mut app`.
                 match launch_through_eidos(id, &app.launch_command) {
-                    Ok(()) => {
-                        let mut s = format!("Launching {} through Eidos...", game.def.name);
+                    Ok(child) => {
+                        start_run(app, game_name, child);
                         if both_active {
-                            s = format!(
-                                "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
-                            );
+                            if let Some(s) = app.status.take() {
+                                app.status = Some(format!(
+                                    "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
+                                ));
+                            }
                         }
-                        app.status = Some(s);
                     }
                     Err(e) => app.status = Some(format!("Launch failed: {e}")),
                 }
             } else {
                 app.status = Some("Create or open an instance first.".to_string());
             }
+        }
+        Message::PollRunning => {
+            // The poll subscription fires while a launch is being waited on; once
+            // the wait thread reports the child exited, unlock and refresh.
+            let exited = app
+                .running
+                .as_ref()
+                .map(|r| r.done.load(std::sync::atomic::Ordering::SeqCst))
+                .unwrap_or(false);
+            if exited {
+                finish_run(app);
+            }
+        }
+        Message::ForceUnlock => {
+            // Stop waiting but leave the game running (MO2's force-unlock never kills
+            // it). The wait thread stays alive and still reaps the child on exit.
+            if let Some(r) = app.running.take() {
+                app.status = Some(format!("Unlocked - {} is still running.", r.title));
+            }
+        }
+        Message::CloseLootReport => {
+            app.loot_report = None;
         }
         Message::Refresh => {
             if let Some(inst) = &app.created {
@@ -1843,6 +1951,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 .unwrap_or_else(|| eidos_instance::Instance::global(&id).root.join("loot"));
             let plugins: Vec<(String, PathBuf)> =
                 list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+            // The enabled (active) plugin names, lowercased - drives which plugins the
+            // LOOT report covers and what counts as a missing master.
+            let enabled_lower: std::collections::HashSet<String> = list
+                .plugins
+                .iter()
+                .filter(|p| p.enabled)
+                .map(|p| p.name.to_ascii_lowercase())
+                .collect();
             app.status = Some("Sorting plugins with LOOT...".to_string());
             return Task::perform(
                 async move {
@@ -1856,15 +1972,25 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, false)
                         .map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");
-                    eidos_loot::sort(&id, &install, &local_dir, &plugins, &ml, &pre, Some(&userlist))
-                        .map_err(|e| e.to_string())
+                    let order = eidos_loot::sort(&id, &install, &local_dir, &plugins, &ml, &pre, Some(&userlist))
+                        .map_err(|e| e.to_string())?;
+                    // Build the post-sort report (general messages + per-plugin
+                    // missing masters / messages / dirty info) for the modal, the
+                    // same way MO2 shows its LOOT dialog after a sort. This is
+                    // advisory: a report failure must NOT discard the successful
+                    // sort, so it is an inner Result the handler tolerates.
+                    let report = eidos_loot::report(
+                        &id, &install, &local_dir, &plugins, &enabled_lower, &ml, &pre, Some(&userlist),
+                    )
+                    .map_err(|e| e.to_string());
+                    Ok((order, report))
                 },
                 Message::PluginsSorted,
             );
         }
         Message::PluginsSorted(result) => {
-            let sorted = match result {
-                Ok(s) => s,
+            let (sorted, report_res) = match result {
+                Ok(x) => x,
                 Err(e) => {
                     app.status = Some(format!("LOOT sort failed: {e}"));
                     return Task::none();
@@ -1892,6 +2018,17 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     None => {
                         app.status = Some("Sorted in memory (no prefix yet to persist it).".to_string());
                     }
+                }
+            }
+            // Show the LOOT report (MO2 always pops its dialog after a sort), so the
+            // user sees missing masters / warnings / cleaning advice - or a clean bill.
+            // The order was already applied above; a report failure only costs the
+            // dialog, never the sort.
+            match report_res {
+                Ok(report) => app.loot_report = Some(report),
+                Err(e) => {
+                    let base = app.status.take().unwrap_or_default();
+                    app.status = Some(format!("{base} (LOOT report unavailable: {e})"));
                 }
             }
         }
@@ -2059,6 +2196,12 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DefaultGameChanged(g) => {
             app.prefs.default_game = g;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        Message::ToggleLockGui(v) => {
+            app.prefs.lock_gui = v;
             if let Err(e) = app.prefs.save() {
                 app.status = Some(format!("Could not save preferences: {e}"));
             }
@@ -4436,6 +4579,38 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         layers = layers.push(catcher).push(card);
     }
 
+    // The LOOT report (MO2's post-sort dialog): a centered modal listing general
+    // messages + per-plugin missing masters / messages / dirty advice.
+    if let Some(report) = &app.loot_report {
+        let scrim =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseLootReport);
+        let dialog = container(loot_report_dialog(report)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The run lock (MO2's "lock GUI while the application runs"): a full-window
+    // overlay that blocks everything beneath it until the game exits or the user
+    // clicks Unlock. Added last so it sits on top of every other layer.
+    if let Some(run) = &app.running {
+        // A backdrop that swallows EVERY pointer event (press/release/right/scroll)
+        // so nothing beneath it is reachable - clicks, context menus and the modlist
+        // scroll wheel are all inert while locked. `interaction` also tells the Stack
+        // to mark lower layers unavailable for scroll.
+        let scrim = mouse_area(
+            container(Space::new(Length::Fill, Length::Fill)).style(|_| container::Style {
+                background: Some(iced::Color { a: 0.55, ..iced::Color::BLACK }.into()),
+                ..Default::default()
+            }),
+        )
+        .on_press(Message::Noop)
+        .on_release(Message::Noop)
+        .on_right_press(Message::Noop)
+        .on_scroll(|_| Message::Noop)
+        .interaction(iced::mouse::Interaction::NotAllowed);
+        let dialog = container(running_lock_card(run)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     layers.into()
 }
 
@@ -4848,11 +5023,24 @@ fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                     .padding(6),
                 );
 
+            // MO2's "lock GUI while an executable runs" toggle.
+            let lock_row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Run behaviour").size(12.0).width(Length::Fixed(120.0)))
+                .push(
+                    checkbox("Lock the window while a game or tool is running", app.prefs.lock_gui)
+                        .on_toggle(Message::ToggleLockGui)
+                        .size(16)
+                        .text_size(12.0),
+                );
+
             Column::new()
                 .spacing(10)
                 .push(theme_row)
                 .push(game_row)
-                .push(text("Theme and default game are saved to ~/.config/eidos/settings.ini.").size(10.0))
+                .push(lock_row)
+                .push(text("Saved to ~/.config/eidos/settings.ini.").size(10.0))
                 .into()
         }
     };
@@ -5054,6 +5242,123 @@ fn about_dialog<'a>() -> Element<'a, Message> {
     container(card).max_width(440.0).padding(16).style(card_style).into()
 }
 
+/// MO2's run-lock overlay card: the GUI is locked while the launched application
+/// runs. Shows what is running and offers Unlock (which stops waiting but leaves
+/// the game running - MO2's force-unlock never kills the process).
+fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> {
+    let card = Column::new()
+        .spacing(10)
+        .align_x(iced::alignment::Horizontal::Center)
+        .push(text("Eidos is locked while the application runs").size(18.0))
+        .push(text(format!("{}  (pid {})", run.title, run.pid)).size(13.0))
+        .push(
+            text("It is being run through the merged mod view. Loading a save or starting a new game writes the load order; Eidos refreshes when it exits.")
+                .size(11.0),
+        )
+        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(
+            button(text("Unlock").size(13.0))
+                .padding([6, 22])
+                .on_press(Message::ForceUnlock)
+                .style(button::primary),
+        )
+        .push(
+            text("Unlock re-enables the GUI but leaves the game running.")
+                .size(10.0)
+                .color(Color::from_rgb8(0x6A, 0x5A, 0x40)),
+        );
+    container(card).max_width(470.0).padding(20).style(card_style).into()
+}
+
+/// One LOOT message rendered with MO2's severity prefix and a severity colour
+/// (Error red, Warning amber, Say muted).
+fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, Message> {
+    use eidos_loot::MessageType;
+    let (prefix, color) = match m.kind {
+        MessageType::Error => ("Error: ", Color::from_rgb8(0x8A, 0x2A, 0x2A)),
+        MessageType::Warn => ("Warning: ", Color::from_rgb8(0xB0, 0x6A, 0x10)),
+        MessageType::Say => ("", Color::from_rgb8(0x4A, 0x40, 0x30)),
+    };
+    text(format!("{prefix}{}", m.text)).size(11.0).color(color).into()
+}
+
+/// MO2's post-sort LOOT report dialog: a summary line, then LOOT's general messages
+/// and a per-plugin list of problems (missing masters, messages, dirty-plugin
+/// cleaning advice). Shown after every sort, like MO2's LOOT dialog.
+fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element<'a, Message> {
+    let summary = if report.is_empty() {
+        "LOOT found no issues - your load order is clean.".to_string()
+    } else {
+        let mut parts: Vec<String> = Vec::new();
+        if report.error_count() > 0 {
+            parts.push(format!("{} error(s)", report.error_count()));
+        }
+        if report.warning_count() > 0 {
+            parts.push(format!("{} warning(s)", report.warning_count()));
+        }
+        if report.missing_master_count() > 0 {
+            parts.push(format!("{} with missing masters", report.missing_master_count()));
+        }
+        if report.dirty_count() > 0 {
+            parts.push(format!("{} need cleaning", report.dirty_count()));
+        }
+        if parts.is_empty() {
+            "LOOT messages".to_string()
+        } else {
+            parts.join(", ")
+        }
+    };
+
+    let mut body = Column::new().spacing(12);
+
+    if !report.general.is_empty() {
+        let mut sec = Column::new().spacing(3).push(text("General messages").size(14.0));
+        for m in &report.general {
+            sec = sec.push(loot_message_row(m));
+        }
+        body = body.push(sec);
+    }
+
+    for p in &report.plugins {
+        let mut sec = Column::new().spacing(2).push(text(p.name.clone()).size(13.0));
+        if !p.missing_masters.is_empty() {
+            sec = sec.push(
+                text(format!("Missing masters: {}", p.missing_masters.join(", ")))
+                    .size(11.0)
+                    .color(Color::from_rgb8(0x8A, 0x2A, 0x2A)),
+            );
+        }
+        for m in &p.messages {
+            sec = sec.push(loot_message_row(m));
+        }
+        for d in &p.dirty {
+            let util = if d.cleaning_utility.is_empty() { "?" } else { d.cleaning_utility.as_str() };
+            sec = sec.push(
+                text(format!(
+                    "Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)",
+                    d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
+                ))
+                .size(11.0)
+                .color(Color::from_rgb8(0xB0, 0x6A, 0x10)),
+            );
+        }
+        body = body.push(sec);
+    }
+
+    let card = Column::new()
+        .spacing(10)
+        .push(text("LOOT report").size(20.0))
+        .push(text(summary).size(12.0))
+        .push(scrollable(body).height(Length::Fixed(360.0)))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([5, 14])
+                .on_press(Message::CloseLootReport)
+                .style(button::primary),
+        );
+    container(card).max_width(580.0).padding(16).style(card_style).into()
+}
+
 fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
     use eidos_fomod::GroupType::*;
     match t {
@@ -5239,8 +5544,18 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.executables.is_none()
         && app.collision.is_none()
         && app.info_mod.is_none()
+        // Don't fire shortcuts (especially Ctrl+R) while the GUI is locked behind a
+        // running game or a LOOT report is open.
+        && app.running.is_none()
+        && app.loot_report.is_none()
     {
         subs.push(shortcuts);
+    }
+    // While waiting on a launched game/tool, poll for its exit so we can unlock.
+    if app.running.is_some() {
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(600)).map(|_| Message::PollRunning),
+        );
     }
     iced::Subscription::batch(subs)
 }

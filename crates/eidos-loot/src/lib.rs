@@ -354,6 +354,185 @@ pub fn metadata(
     Ok(out)
 }
 
+/// One plugin's entry in a [`LootReport`]: the problems LOOT found worth showing
+/// the user after a sort - missing masters, evaluated messages, and dirty-plugin
+/// (needs-cleaning) advisories. Only plugins with at least one of these appear in
+/// the report (mirrors MO2, which only lists problem plugins in its LOOT dialog).
+#[derive(Debug, Clone)]
+pub struct PluginReport {
+    pub name: String,
+    /// Masters this plugin declares that are not present in the load order.
+    pub missing_masters: Vec<String>,
+    pub messages: Vec<LootMessage>,
+    pub dirty: Vec<LootDirtyInfo>,
+}
+
+impl PluginReport {
+    fn has_issues(&self) -> bool {
+        !self.missing_masters.is_empty() || !self.messages.is_empty() || !self.dirty.is_empty()
+    }
+}
+
+/// The result of a LOOT run, mirroring MO2's post-sort report dialog: LOOT's
+/// general messages plus a per-plugin list of problems (missing masters, messages,
+/// dirty info). Built by [`report`] from the same inputs as [`sort`].
+#[derive(Debug, Clone, Default)]
+pub struct LootReport {
+    /// LOOT's general messages (not tied to a plugin): masterlist news, global
+    /// advice/warnings. Conditions are already evaluated, so only true ones appear.
+    pub general: Vec<LootMessage>,
+    /// Per-plugin problems, in load order. Only plugins with an issue are listed.
+    pub plugins: Vec<PluginReport>,
+}
+
+impl LootReport {
+    /// No general messages and no plugin has any issue (a clean report).
+    pub fn is_empty(&self) -> bool {
+        self.general.is_empty() && self.plugins.is_empty()
+    }
+
+    /// Total error-severity messages (general + per-plugin).
+    pub fn error_count(&self) -> usize {
+        self.count_kind(MessageType::Error)
+    }
+
+    /// Total warning-severity messages (general + per-plugin).
+    pub fn warning_count(&self) -> usize {
+        self.count_kind(MessageType::Warn)
+    }
+
+    fn count_kind(&self, kind: MessageType) -> usize {
+        let general = self.general.iter().filter(|m| m.kind == kind).count();
+        let plugin: usize = self
+            .plugins
+            .iter()
+            .map(|p| p.messages.iter().filter(|m| m.kind == kind).count())
+            .sum();
+        general + plugin
+    }
+
+    /// Number of plugins LOOT reports a missing master for.
+    pub fn missing_master_count(&self) -> usize {
+        self.plugins.iter().filter(|p| !p.missing_masters.is_empty()).count()
+    }
+
+    /// Number of plugins LOOT flagged as dirty (needs cleaning).
+    pub fn dirty_count(&self) -> usize {
+        self.plugins.iter().filter(|p| !p.dirty.is_empty()).count()
+    }
+}
+
+/// Convert a slice of libloot messages (general or per-plugin) to [`LootMessage`]s,
+/// keeping only those whose evaluated English text is non-empty.
+fn convert_messages(messages: &[libloot::metadata::Message]) -> Vec<LootMessage> {
+    messages
+        .iter()
+        .filter_map(|m| {
+            english_text(m.content()).map(|text| LootMessage {
+                kind: convert_message_type(m.message_type()),
+                text,
+            })
+        })
+        .collect()
+}
+
+/// Build a full LOOT [`LootReport`] (general messages + per-plugin missing
+/// masters / messages / dirty info), mirroring MO2's post-sort report dialog.
+///
+/// `plugins` is the full set (loaded so conditions evaluate exactly as in [`sort`];
+/// the actual active state is read from the game's load order). `enabled_lower` is
+/// the set of **enabled** plugin names, lowercased: only enabled plugins are
+/// reported (MO2 drops disabled ones), and a master is "missing" when a plugin
+/// declares it but it is not enabled - matching Eidos's own crash predictor, since
+/// a disabled master is a guaranteed CTD. Plugins with no issues are omitted.
+// Mirrors `sort`/`metadata`'s input list (game id + paths + masterlist set) plus the
+// enabled set; splitting these into a struct would only obscure the call site.
+#[allow(clippy::too_many_arguments)]
+pub fn report(
+    game_id: &str,
+    game_path: &Path,
+    game_local_path: &Path,
+    plugins: &[(String, PathBuf)],
+    enabled_lower: &std::collections::HashSet<String>,
+    masterlist: &Path,
+    prelude: &Path,
+    userlist: Option<&Path>,
+) -> Result<LootReport, LootError> {
+    let (game_type, _repo) =
+        loot_support(game_id).ok_or_else(|| LootError::Unsupported(game_id.to_string()))?;
+
+    let mut game = Game::with_local_path(game_type, game_path, game_local_path)
+        .map_err(|e| LootError::Loot(e.to_string()))?;
+
+    {
+        let db = game.database();
+        let mut db = db.write().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+        db.load_masterlist_with_prelude(masterlist, prelude)
+            .map_err(|e| LootError::Loot(e.to_string()))?;
+        if let Some(ul) = userlist {
+            if ul.is_file() {
+                db.load_userlist(ul).map_err(|e| LootError::Loot(e.to_string()))?;
+            }
+        }
+    }
+
+    let paths: Vec<&Path> = plugins.iter().map(|(_, p)| p.as_path()).collect();
+    game.load_plugin_headers(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
+    game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
+
+    // A master is "present" only if it is enabled; a disabled master won't load and
+    // will crash any enabled dependent, so it must count as missing (matches
+    // `eidos_plugins::PluginList::missing_masters`).
+    let present = enabled_lower;
+
+    let general = {
+        let db = game.database();
+        let db = db.read().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+        let msgs = db
+            .general_messages(MergeMode::WithUserMetadata, EvalMode::Evaluate)
+            .map_err(|e| LootError::Loot(e.to_string()))?;
+        convert_messages(&msgs)
+    };
+
+    let mut plugin_reports = Vec::new();
+    for (name, _) in plugins {
+        // MO2 only reports on enabled plugins; a disabled plugin's issues don't
+        // matter because it won't load.
+        if !enabled_lower.contains(&name.to_ascii_lowercase()) {
+            continue;
+        }
+        let missing_masters = game
+            .plugin(name)
+            .and_then(|p| p.masters().ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| !present.contains(&m.to_ascii_lowercase()))
+            .collect::<Vec<_>>();
+
+        let evaluated = {
+            let db = game.database();
+            let db = db.read().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+            db.plugin_metadata(name, MergeMode::WithUserMetadata, EvalMode::Evaluate)
+                .map_err(|e| LootError::Loot(e.to_string()))?
+        };
+
+        let (messages, dirty) = match evaluated {
+            Some(meta) => (
+                convert_messages(meta.messages()),
+                meta.dirty_info().iter().map(convert_dirty).collect(),
+            ),
+            None => (Vec::new(), Vec::new()),
+        };
+
+        let entry = PluginReport { name: name.clone(), missing_masters, messages, dirty };
+        if entry.has_issues() {
+            plugin_reports.push(entry);
+        }
+    }
+
+    Ok(LootReport { general, plugins: plugin_reports })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,5 +640,52 @@ mod tests {
         let crc_only = PluginMetadataBundle { crc: Some(1), ..PluginMetadataBundle::default() };
         assert!(!crc_only.is_empty());
         assert!(!crc_only.needs_cleaning());
+    }
+
+    fn msg(kind: MessageType, text: &str) -> LootMessage {
+        LootMessage { kind, text: text.to_string() }
+    }
+
+    #[test]
+    fn loot_report_counts_aggregate_general_and_per_plugin() {
+        let report = LootReport {
+            general: vec![msg(MessageType::Warn, "g warn"), msg(MessageType::Say, "g note")],
+            plugins: vec![
+                PluginReport {
+                    name: "A.esp".into(),
+                    missing_masters: vec!["Base.esm".into()],
+                    messages: vec![msg(MessageType::Error, "p err")],
+                    dirty: vec![],
+                },
+                PluginReport {
+                    name: "B.esp".into(),
+                    missing_masters: vec![],
+                    messages: vec![],
+                    dirty: vec![LootDirtyInfo {
+                        crc: 1,
+                        cleaning_utility: "xEdit".into(),
+                        itm_count: 2,
+                        deleted_reference_count: 0,
+                        deleted_navmesh_count: 0,
+                    }],
+                },
+            ],
+        };
+
+        assert!(!report.is_empty());
+        assert_eq!(report.error_count(), 1, "one per-plugin error");
+        assert_eq!(report.warning_count(), 1, "one general warning");
+        assert_eq!(report.missing_master_count(), 1, "only A.esp is missing a master");
+        assert_eq!(report.dirty_count(), 1, "only B.esp is dirty");
+    }
+
+    #[test]
+    fn empty_loot_report_is_empty_with_zero_counts() {
+        let report = LootReport::default();
+        assert!(report.is_empty());
+        assert_eq!(report.error_count(), 0);
+        assert_eq!(report.warning_count(), 0);
+        assert_eq!(report.missing_master_count(), 0);
+        assert_eq!(report.dirty_count(), 0);
     }
 }
