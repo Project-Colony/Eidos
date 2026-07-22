@@ -202,14 +202,16 @@ impl Profile {
     /// profile's saves rather than later adopting the stale prefix saves.
     pub fn create_from(&self, other: &Profile) -> io::Result<()> {
         fs::create_dir_all(self.dir())?;
+        // Propagate per-file failures: silently skipping files would report a
+        // successful copy while producing a profile missing its modlist or INIs.
         if let Ok(rd) = fs::read_dir(other.dir()) {
             for e in rd.flatten() {
                 let from = e.path();
                 let to = self.dir().join(e.file_name());
                 if from.is_file() {
-                    let _ = fs::copy(&from, &to);
+                    fs::copy(&from, &to)?;
                 } else if from.is_dir() {
-                    let _ = copy_dir_recursive(&from, &to);
+                    copy_dir_recursive(&from, &to)?;
                 }
             }
         }
@@ -243,6 +245,10 @@ impl Profile {
             .flatten()
             .filter(|e| e.path().is_dir())
             .filter_map(|e| e.file_name().into_string().ok())
+            // Dot-dirs are never mods: in-flight/crashed `.eidos-install-*`
+            // extraction temps (and any other hidden dir) must not show up as
+            // installed, enabled mods.
+            .filter(|n| !n.starts_with('.'))
             .collect();
         present.sort();
 

@@ -161,11 +161,11 @@ impl ModMeta {
     }
 
     /// A Nexus update is available when `newestVersion` is present and differs
-    /// from the installed `version`. (String compare, matching MO2's own check;
-    /// a future Nexus crate fills `newestVersion`.)
+    /// from the installed `version` - compared by numeric segments, so cosmetic
+    /// differences ("1.5" vs "1.5.0", "v1.2" vs "1.2") don't flag phantom updates.
     pub fn update_available(&self) -> bool {
         match (self.version(), self.newest_version()) {
-            (Some(v), Some(n)) => v != n,
+            (Some(v), Some(n)) => !same_version(&v, &n),
             _ => false,
         }
     }
@@ -292,6 +292,37 @@ impl ModMeta {
         }
         out.push_str(&self.tail);
         fs::write(path, out)
+    }
+}
+
+/// Whether two version strings denote the same version, compared by numeric
+/// segments: a leading `v`/`V` is ignored, `.`/`-`/`_` split segments, and
+/// trailing zero segments are insignificant ("1.5" == "1.5.0" == "v1.5"). If
+/// either side has a non-numeric segment, falls back to a trimmed
+/// case-insensitive string compare (e.g. "1.5SE" style tags).
+fn same_version(a: &str, b: &str) -> bool {
+    fn segments(s: &str) -> Option<Vec<u64>> {
+        let t = s.trim().trim_start_matches(['v', 'V']);
+        let mut out = Vec::new();
+        for part in t.split(['.', '-', '_']) {
+            if part.is_empty() {
+                continue;
+            }
+            out.push(part.parse::<u64>().ok()?);
+        }
+        (!out.is_empty()).then_some(out)
+    }
+    match (segments(a), segments(b)) {
+        (Some(mut x), Some(mut y)) => {
+            while x.last() == Some(&0) {
+                x.pop();
+            }
+            while y.last() == Some(&0) {
+                y.pop();
+            }
+            x == y
+        }
+        _ => a.trim().eq_ignore_ascii_case(b.trim()),
     }
 }
 
@@ -615,5 +646,20 @@ mod tests {
         assert!(r.tracked());
         assert!(r.ignore_update());
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn version_compare_ignores_cosmetic_differences() {
+        // Same version, different spellings: no phantom update.
+        assert!(same_version("1.5", "1.5.0"));
+        assert!(same_version("v1.2", "1.2"));
+        assert!(same_version("1.5.0.0", "1.5"));
+        assert!(same_version("2-1", "2.1"));
+        // Genuinely different.
+        assert!(!same_version("1.5", "1.5.1"));
+        assert!(!same_version("1.4", "1.5"));
+        // Non-numeric tags fall back to string compare.
+        assert!(same_version("1.5SE", "1.5se"));
+        assert!(!same_version("1.5SE", "1.5AE"));
     }
 }

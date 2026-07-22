@@ -192,7 +192,9 @@ enum Message {
     /// Validate + persist the entered Nexus API key.
     ApiKeyValidateStart,
     /// The key validation finished: the account on success, else an error.
-    ApiKeyValidateResult(Result<eidos_nexus::Account, String>),
+    /// Carries the key that was actually VALIDATED, so an edit made to the field
+    /// during the round-trip is never saved as if it had been checked.
+    ApiKeyValidateResult(String, Result<eidos_nexus::Account, String>),
     /// Set the preferred colour theme.
     ThemeChanged(PrefTheme),
     /// Set the default game id to open (`None` = none).
@@ -426,6 +428,9 @@ struct CollisionPrompt {
     game_id: String,
     /// Editable target for the Rename option (defaults to a free suggestion).
     rename_to: String,
+    /// The prompt guards an in-progress FOMOD wizard (still open in `app.fomod`
+    /// with the user's choices): resolve via `finish_fomod`, not a re-extract.
+    fomod: bool,
 }
 
 /// The install status of a downloaded archive, derived from its `.meta` sidecar
@@ -1492,7 +1497,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     Err(eidos_install::InstallError::Exists(_)) => {
                         // MO2's QueryOverwriteDialog: let the user Merge/Replace/Rename.
                         let rename_to = suggest_free_name(&mods_dir, &name);
-                        app.collision = Some(CollisionPrompt { archive: path, name: name.clone(), game_id: gid, rename_to });
+                        app.collision = Some(CollisionPrompt { archive: path, name: name.clone(), game_id: gid, rename_to, fomod: false });
                         app.status = Some(format!("'{name}' already exists - choose how to install."));
                     }
                     Err(e) => app.status = Some(format!("Install failed: {e}")),
@@ -1567,13 +1572,38 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::FomodInstall => {
+            let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
+                return Task::none();
+            };
+            // Collision check BEFORE consuming the wizard: a reinstall must offer
+            // Merge/Replace/Rename (MO2's QueryOverwriteDialog) with the user's
+            // choices intact, not dead-end and discard them.
+            if let Some(w) = app.fomod.as_ref() {
+                if let Some(name) = eidos_install::collision_name(&mods_dir, w.session.mod_name()) {
+                    let rename_to = suggest_free_name(&mods_dir, &name);
+                    app.collision = Some(CollisionPrompt {
+                        archive: w.archive.clone(),
+                        name: name.clone(),
+                        game_id: w.game_id.clone(),
+                        rename_to,
+                        fomod: true,
+                    });
+                    app.status = Some(format!("'{name}' already exists - choose how to install."));
+                    return Task::none();
+                }
+            }
             if let Some(w) = app.fomod.take() {
-                if let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) {
-                    let archive = w.archive.clone();
-                    match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id, &w.ctx) {
-                        Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
-                        Err(e) => app.status = Some(format!("Install failed: {e}")),
-                    }
+                let archive = w.archive.clone();
+                match eidos_install::finish_fomod(
+                    w.session,
+                    &w.selection,
+                    &mods_dir,
+                    &w.game_id,
+                    &w.ctx,
+                    eidos_install::OverwritePolicy::Fail,
+                ) {
+                    Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
+                    Err(e) => app.status = Some(format!("Install failed: {e}")),
                 }
             }
         }
@@ -2275,16 +2305,19 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.api_key_error = None;
             // Blocking ureq inside the async closure, like SortPlugins.
             return Task::perform(
-                async move { eidos_nexus::Nexus::new(&key).validate() },
-                Message::ApiKeyValidateResult,
+                async move {
+                    let result = eidos_nexus::Nexus::new(&key).validate();
+                    (key, result)
+                },
+                |(key, result)| Message::ApiKeyValidateResult(key, result),
             );
         }
-        Message::ApiKeyValidateResult(result) => {
+        Message::ApiKeyValidateResult(key, result) => {
             app.api_key_validating = false;
             match result {
                 Ok(account) => {
-                    // Persist the validated key so the CLI and a relaunch both see it.
-                    let key = app.settings_api_key.trim().to_string();
+                    // Persist the key that was validated (the field may have been
+                    // edited during the round-trip) so the CLI and a relaunch see it.
                     let saved = eidos_instance::settings::save_nexus_key(&key);
                     app.status = Some(match &saved {
                         Ok(()) => format!("Connected to Nexus as {}.", account.name),
@@ -4860,6 +4893,29 @@ fn suggest_free_name(mods_dir: &std::path::Path, name: &str) -> String {
 /// a FOMOD). A Rename that collides again re-opens the prompt.
 fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
     let Some(c) = app.collision.take() else { return };
+    // A FOMOD reinstall: the wizard (with the user's choices) is still open in
+    // app.fomod - resolve through finish_fomod, never by re-extracting with
+    // default selections.
+    if c.fomod {
+        let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else { return };
+        // A Rename onto another existing mod re-opens the prompt BEFORE the
+        // session is consumed (its drop would delete the extracted tree).
+        if let eidos_install::OverwritePolicy::Rename(new) = &policy {
+            if eidos_install::collision_name(&mods_dir, new).is_some() {
+                app.status = Some("That name also exists - pick another.".to_string());
+                app.collision = Some(c);
+                return;
+            }
+        }
+        let Some(w) = app.fomod.take() else { return };
+        let archive = w.archive.clone();
+        match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id, &w.ctx, policy)
+        {
+            Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
+            Err(e) => app.status = Some(format!("Install failed: {e}")),
+        }
+        return;
+    }
     let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
         app.status = Some("Open a game instance first.".to_string());
         return;
@@ -5695,7 +5751,16 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
 
 fn view(app: &App) -> Element<'_, Message> {
     if let Some(w) = &app.fomod {
-        return fomod_wizard_view(w);
+        let base = fomod_wizard_view(w);
+        // A reinstall collision raised from inside the wizard must be able to
+        // show over it (the wizard replaces the whole view).
+        if let Some(c) = &app.collision {
+            let scrim =
+                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CollisionCancel);
+            let dialog = container(collision_dialog(c)).center(Length::Fill);
+            return Stack::new().push(base).push(scrim).push(dialog).into();
+        }
+        return base;
     }
     if app.screen == Screen::Main {
         return main_screen(app);

@@ -137,12 +137,18 @@ fn endorse_version(version: &str) -> &str {
 
 impl Nexus {
     pub fn new(api_key: &str) -> Nexus {
+        // Read/write timeouts detect a stalled connection (which would otherwise
+        // hang a task forever and leave GUI buttons greyed) without capping the
+        // total duration of a legitimately long download.
         let agent = ureq::AgentBuilder::new()
             .user_agent(&format!(
                 "Eidos/{} (Linux {})",
                 env!("CARGO_PKG_VERSION"),
                 std::env::consts::ARCH
             ))
+            .timeout_connect(std::time::Duration::from_secs(10))
+            .timeout_read(std::time::Duration::from_secs(30))
+            .timeout_write(std::time::Duration::from_secs(30))
             .build();
         Nexus {
             agent,
@@ -444,8 +450,10 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
                 }
             }
             Err(e) => {
-                // MO2 stops dispatching the moment the account is exhausted.
-                if e.contains("429") {
+                // MO2 stops dispatching the moment the account is exhausted. Match
+                // our own status_err wording, not a bare "429" - a mod id or file
+                // size containing 429 in some other error text must not trip this.
+                if e.contains("rate limited") {
                     result.rate_limited = true;
                     break;
                 }
@@ -551,13 +559,23 @@ pub fn mark_installed(archive: &Path) -> io::Result<()> {
 }
 
 fn percent_decode(sname: &str) -> String {
+    // Pure byte-level decoding: slicing the &str (`&sname[i+1..i+3]`) would panic
+    // when a multi-byte UTF-8 character follows a stray '%' in a CDN URI.
+    fn hex(b: u8) -> Option<u8> {
+        match b {
+            b'0'..=b'9' => Some(b - b'0'),
+            b'a'..=b'f' => Some(b - b'a' + 10),
+            b'A'..=b'F' => Some(b - b'A' + 10),
+            _ => None,
+        }
+    }
     let b = sname.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&sname[i + 1..i + 3], 16) {
-                out.push(v);
+            if let (Some(hi), Some(lo)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push(hi * 16 + lo);
                 i += 3;
                 continue;
             }

@@ -212,6 +212,9 @@ pub fn install_archive_with_policy(
         }
     }
     let merging = policy == OverwritePolicy::Merge;
+    // Whether `dest` is ours to clean up on failure (a fresh install, not a
+    // merge/replace over a pre-existing mod folder).
+    let fresh = !dest.exists();
 
     let bin = find_7z().ok_or(InstallError::No7z)?;
 
@@ -281,6 +284,12 @@ pub fn install_archive_with_policy(
     })();
 
     let _ = fs::remove_dir_all(&tmp);
+
+    // A failed FRESH install must not leave half-copied debris that the mod list
+    // would show as an installed, enabled mod.
+    if result.is_err() && fresh {
+        let _ = fs::remove_dir_all(&dest);
+    }
 
     let report = result?;
     // After a Replace, re-apply the preserved user metadata onto the fresh meta.ini.
@@ -591,6 +600,12 @@ impl Drop for FomodSession {
 }
 
 impl FomodSession {
+    /// The (unsanitized) mod name this session will install under, for collision
+    /// checks before the session is consumed.
+    pub fn mod_name(&self) -> &str {
+        &self.name
+    }
+
     /// Resolve a FOMOD-relative path (e.g. a plugin or module image) to its
     /// extracted on-disk path, matching each component case-insensitively. Returns
     /// `None` if the archive did not ship it.
@@ -651,29 +666,68 @@ pub fn open_fomod(
     }))
 }
 
-/// Apply the chosen selection and finish the FOMOD install.
+/// The sanitized destination folder name for `raw`, if installing it into
+/// `mods_dir` would collide with an existing non-empty mod folder. Lets a front
+/// end detect the collision BEFORE consuming a [`FomodSession`] (whose drop
+/// removes the extraction temp, losing the user's wizard choices).
+pub fn collision_name(mods_dir: &Path, raw: &str) -> Option<String> {
+    let name = fix_directory_name(raw).unwrap_or_else(|| "Mod".to_string());
+    let dest = mods_dir.join(&name);
+    (dest.exists() && is_nonempty_dir(&dest)).then_some(name)
+}
+
+/// Apply the chosen selection and finish the FOMOD install, resolving a
+/// destination collision per `policy` (like [`install_archive_with_policy`]):
+/// Fail returns `Exists`, Merge installs over, Replace preserves the user
+/// metadata and wipes only after the plan is built, Rename installs under the
+/// new name (failing if that also exists).
 pub fn finish_fomod(
     session: FomodSession,
     selection: &eidos_fomod::Selection,
     mods_dir: &Path,
     game_name: &str,
     ctx: &eidos_fomod::Context,
+    policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
-    let name = fix_directory_name(&session.name).unwrap_or_else(|| "Mod".to_string());
+    let mut name = fix_directory_name(&session.name).unwrap_or_else(|| "Mod".to_string());
     let (_, guessed_id) = guess_mod_name_and_id(&session.archive.to_string_lossy());
-    let dest = mods_dir.join(&name);
+    let mut dest = mods_dir.join(&name);
+    let mut preserved: Option<ModMeta> = None;
+    let mut replacing = false;
     if dest.exists() && is_nonempty_dir(&dest) {
-        return Err(InstallError::Exists(dest));
+        match &policy {
+            OverwritePolicy::Fail => return Err(InstallError::Exists(dest)),
+            OverwritePolicy::Merge => {}
+            OverwritePolicy::Replace => {
+                preserved = Some(ModMeta::read(&dest.join("meta.ini")));
+                replacing = true;
+            }
+            OverwritePolicy::Rename(new) => {
+                name = fix_directory_name(new).unwrap_or_else(|| "Mod".to_string());
+                dest = mods_dir.join(&name);
+                if dest.exists() && is_nonempty_dir(&dest) {
+                    return Err(InstallError::Exists(dest));
+                }
+            }
+        }
     }
     // Belt-and-braces: never install a FOMOD whose module dependencies are unmet,
     // even if a caller skipped the upfront check (MO2 parity).
     if let Some(req) = eidos_fomod::unmet_module_dependencies(&session.config, ctx) {
         return Err(InstallError::UnmetDependency(req));
     }
-    fs::create_dir_all(&dest)?;
+    // Build the plan (pure) before the destructive step, so a bad selection can
+    // never cost the existing mod.
     let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
+    if replacing {
+        fs::remove_dir_all(&dest)?;
+    }
+    fs::create_dir_all(&dest)?;
     let missing = apply_plan(&session.root, &plan, &dest)?;
     write_meta(&session.archive, &dest, game_name, guessed_id)?;
+    if let Some(old) = preserved {
+        reapply_user_meta(&old, &dest.join("meta.ini"));
+    }
     Ok(InstallReport { name, stripped: String::new(), fomod: true, missing, dest })
 }
 

@@ -291,6 +291,11 @@ impl Instance {
         if new.trim().is_empty() || old == new {
             return Err(Error::new(ErrorKind::InvalidInput, "invalid new profile name"));
         }
+        // A separator (or a dot-component) would escape profiles/ - the GUI already
+        // filters these, but the library must hold on its own.
+        if new.contains(['/', '\\']) || new == "." || new == ".." {
+            return Err(Error::new(ErrorKind::InvalidInput, "profile names cannot contain path separators"));
+        }
         if !self.profile(old).dir().is_dir() {
             return Err(Error::new(ErrorKind::NotFound, format!("no profile '{old}'")));
         }

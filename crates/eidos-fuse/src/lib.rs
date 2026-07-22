@@ -357,8 +357,8 @@ impl Filesystem for Eidos {
             };
             match prepared {
                 Ok(p) => p,
-                Err(_) => {
-                    reply.error(Errno::EIO);
+                Err(e) => {
+                    reply.error(e.into());
                     return;
                 }
             }
@@ -391,8 +391,8 @@ impl Filesystem for Eidos {
         }
         let file = match opts.open(&real) {
             Ok(f) => f,
-            Err(_) => {
-                reply.error(Errno::EIO);
+            Err(e) => {
+                reply.error(e.into());
                 return;
             }
         };
@@ -494,7 +494,7 @@ impl Filesystem for Eidos {
         if let Some(file) = cached {
             match read_full_at(&file, offset, size as usize) {
                 Ok(buf) => reply.data(&buf),
-                Err(_) => reply.error(Errno::EIO),
+                Err(e) => reply.error(e.into()),
             }
             return;
         }
@@ -513,7 +513,7 @@ impl Filesystem for Eidos {
         };
         match File::open(&real).and_then(|f| read_full_at(&f, offset, size as usize)) {
             Ok(buf) => reply.data(&buf),
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -611,8 +611,8 @@ impl Filesystem for Eidos {
         })();
         let (real, file, meta) = match opened {
             Ok(t) => t,
-            Err(_) => {
-                reply.error(Errno::EIO);
+            Err(e) => {
+                reply.error(e.into());
                 return;
             }
         };
@@ -656,7 +656,7 @@ impl Filesystem for Eidos {
         if let Some(file) = cached {
             match write_all_at(&file, data, offset) {
                 Ok(()) => reply.written(data.len() as u32),
-                Err(_) => reply.error(Errno::EIO),
+                Err(e) => reply.error(e.into()),
             }
             return;
         }
@@ -676,7 +676,7 @@ impl Filesystem for Eidos {
         })();
         match written {
             Ok(()) => reply.written(data.len() as u32),
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -696,8 +696,8 @@ impl Filesystem for Eidos {
         let vpath = join(&parent_vpath, &name.to_string_lossy());
         let meta = match self.stack.make_dir(&vpath).and_then(fs::symlink_metadata) {
             Ok(m) => m,
-            Err(_) => {
-                reply.error(Errno::EIO);
+            Err(e) => {
+                reply.error(e.into());
                 return;
             }
         };
@@ -730,7 +730,7 @@ impl Filesystem for Eidos {
                 let ino = self.inodes.lock_recover().lookup(&vpath);
                 reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
             }
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -786,8 +786,8 @@ impl Filesystem for Eidos {
                 }
                 Ok(())
             })();
-            if r.is_err() {
-                reply.error(Errno::EIO);
+            if let Err(e) = r {
+                reply.error(e.into());
                 return;
             }
         }
@@ -807,7 +807,7 @@ impl Filesystem for Eidos {
         match cached {
             Some(file) => match file.sync_all() {
                 Ok(()) => reply.ok(),
-                Err(_) => reply.error(Errno::EIO),
+                Err(e) => reply.error(e.into()),
             },
             None => reply.ok(),
         }
@@ -824,7 +824,7 @@ impl Filesystem for Eidos {
         }
         match self.stack.remove(&vpath) {
             Ok(()) => reply.ok(),
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -844,7 +844,7 @@ impl Filesystem for Eidos {
         }
         match self.stack.remove(&vpath) {
             Ok(()) => reply.ok(),
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -882,7 +882,7 @@ impl Filesystem for Eidos {
                 self.inodes.lock_recover().rename(&from, &to);
                 reply.ok();
             }
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 
@@ -977,7 +977,7 @@ impl Filesystem for Eidos {
                 s.f_namemax as u32,
                 s.f_frsize as u32,
             ),
-            Err(_) => reply.error(Errno::EIO),
+            Err(e) => reply.error(e.into()),
         }
     }
 }

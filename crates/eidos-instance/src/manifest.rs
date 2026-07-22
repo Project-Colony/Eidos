@@ -80,7 +80,18 @@ impl Manifest {
             out.push_str(p);
             out.push('\n');
         }
-        fs::write(path, out)
+        // Atomic replace (tmp + rename): a crash mid-write must never leave a torn
+        // manifest - a manifest that fails to parse makes the whole instance look
+        // uninitialised on the next start.
+        let tmp = path.with_extension("ini.tmp");
+        fs::write(&tmp, out)?;
+        match fs::rename(&tmp, path) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                Err(e)
+            }
+        }
     }
 }
 

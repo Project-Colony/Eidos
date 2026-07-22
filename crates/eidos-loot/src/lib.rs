@@ -98,13 +98,34 @@ pub fn ensure_masterlist(
 }
 
 fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
-    let body = ureq::get(url)
+    // Bounded timeouts: a stalled connection must fail the fetch, not hang the
+    // caller forever (the GUI sorts off-thread but its Sort button stays greyed).
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(60))
+        .build();
+    let body = agent
+        .get(url)
         .call()
         .map_err(|e| LootError::Fetch(format!("{url}: {e}")))?
         .into_string()
         .map_err(|e| LootError::Fetch(format!("{url}: {e}")))?;
-    fs::write(dest, body)?;
-    Ok(())
+    // Guard against an HTML error page or a truncated body poisoning the cache:
+    // a masterlist is YAML and starts with real content, never a doctype.
+    if body.trim_start().starts_with('<') || body.len() < 64 {
+        return Err(LootError::Fetch(format!("{url}: unexpected response (not a masterlist)")));
+    }
+    // Atomic replace so a failed/interrupted download never truncates a good
+    // cached copy - the cached masterlist keeps working offline.
+    let tmp = dest.with_extension("yaml.tmp");
+    fs::write(&tmp, body)?;
+    match fs::rename(&tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e.into())
+        }
+    }
 }
 
 /// Run LOOT's sort and return the optimised order of `plugins` (by name).

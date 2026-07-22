@@ -198,7 +198,8 @@ impl ArchiveTree {
 
 mod install;
 pub use install::{
-    finish_fomod, fomod_context, install_archive, install_archive_with_policy, mod_name_for,
+    collision_name, finish_fomod, fomod_context, install_archive, install_archive_with_policy,
+    mod_name_for,
     open_fomod, FomodSession, InstallError, InstallReport, OverwritePolicy,
 };
 
