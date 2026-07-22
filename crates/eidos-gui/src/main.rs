@@ -330,6 +330,8 @@ enum Message {
     /// The user clicked Unlock: stop waiting and re-enable the UI, but leave the
     /// game running (MO2's force-unlock never kills the process).
     ForceUnlock,
+    /// Dismiss the transient status-bar message (the small x next to it).
+    ClearStatus,
     Noop,
 }
 
@@ -587,6 +589,10 @@ struct App {
     /// is set, the window is blocked behind the lock overlay until it exits (or the
     /// user clicks Unlock). `None` = nothing running / not locked.
     running: Option<RunningState>,
+    /// The `eidos` binary lacks CAP_SYS_ADMIN (setcap wiped by a rebuild): FUSE
+    /// passthrough will be off and SKSE plugin DLLs may fail to load. Drives the
+    /// persistent warning banner; rechecked on Refresh and after every run.
+    cap_missing: bool,
     // ---- LOOT report (MO2's post-sort report dialog) ----
     /// The report from the last LOOT sort, shown as a modal so the user sees
     /// missing masters / messages / dirty-plugin advice. `None` = no report open.
@@ -604,6 +610,15 @@ struct RunningState {
     pid: u32,
     /// Flipped to `true` by the wait thread once the child exits.
     done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The child's exit status, stored by the wait thread just before `done`.
+    outcome: std::sync::Arc<std::sync::Mutex<Option<std::process::ExitStatus>>>,
+    /// The per-run log file capturing the child's stdout+stderr (launch errors
+    /// are invisible otherwise - the GUI has no terminal when started from Steam).
+    log: Option<PathBuf>,
+    /// Whether the lock overlay is up. `false` = "lock GUI" is off (or the user
+    /// clicked Unlock): the run is still TRACKED (exit refresh, double-launch
+    /// guard, error reporting) but the window stays interactive.
+    lock: bool,
 }
 
 /// The slice of a mod's `meta.ini` the main window shows (extra columns + the
@@ -734,6 +749,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
+        cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary()),
         loot_report: None,
     };
     if let Some(i) = auto {
@@ -837,15 +853,13 @@ fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
     Some(state)
 }
 
-/// Spawn `eidos tool <id> run <title>`: the CLI resolves the tool + Proton and
-/// runs it through the merged view (same single-process requirement as `play`).
-fn run_tool_through_eidos(game_id: &str, title: &str) -> std::io::Result<std::process::Child> {
-    std::process::Command::new(find_eidos_binary())
-        .arg("tool")
-        .arg(game_id)
-        .arg("run")
-        .arg(title)
-        .spawn()
+/// The `eidos tool <id> run <title>` command: the CLI resolves the tool + Proton
+/// and runs it through the merged view (same single-process requirement as
+/// `play`). Returned unspawned so `start_run` can route its output to a log.
+fn tool_command(game_id: &str, title: &str) -> std::process::Command {
+    let mut cmd = std::process::Command::new(find_eidos_binary());
+    cmd.arg("tool").arg(game_id).arg("run").arg(title);
+    cmd
 }
 
 /// Install the tools' runtime prerequisites into the prefix (`eidos prereqs <id>
@@ -910,50 +924,79 @@ fn find_eidos_binary() -> PathBuf {
 /// Launch the game through Eidos: spawn `eidos play <id> -- <command>` (with the
 /// script-extender swap applied), which mounts the merged mods over the game's
 /// Data dir in a private namespace and runs the command through it.
-fn launch_through_eidos(game_id: &str, command: &[String]) -> std::io::Result<std::process::Child> {
-    let mut cmd: Vec<String> = command.to_vec();
+fn play_command(game_id: &str, command: &[String]) -> std::process::Command {
+    let mut swapped: Vec<String> = command.to_vec();
     if let Some((from, to)) = script_extender_swap(game_id) {
-        for a in cmd.iter_mut() {
+        for a in swapped.iter_mut() {
             if a.contains(from) {
                 *a = a.replace(from, to);
             }
         }
     }
-    std::process::Command::new(find_eidos_binary())
-        .arg("play")
-        .arg(game_id)
-        .arg("--")
-        .args(&cmd)
-        .spawn()
+    let mut cmd = std::process::Command::new(find_eidos_binary());
+    cmd.arg("play").arg(game_id).arg("--").args(&swapped);
+    cmd
 }
 
-/// Begin tracking a launched game/tool: spawn a detached thread that `wait()`s the
-/// `eidos` child (reaping it, so no zombie) and flips a shared flag on exit. When
-/// `lock_gui` is set, also raise the lock overlay (the poll subscription unlocks on
-/// exit). When locking is off this still reaps the child but stays interactive.
-fn start_run(app: &mut App, title: String, child: std::process::Child) {
+/// Spawn a launch and start tracking it: the child's stdout+stderr go to a
+/// per-run log under the instance (the GUI has no terminal when started from
+/// Steam), a detached thread `wait()`s it (reaping it, so no zombie) and records
+/// its exit status, and the poll subscription refreshes on exit. When `lock_gui`
+/// is set the lock overlay also comes up; otherwise the run is tracked without
+/// blocking the window.
+fn start_run(app: &mut App, title: String, mut cmd: std::process::Command) {
     use std::sync::atomic::Ordering;
+    let log = app.created.as_ref().and_then(|inst| {
+        let dir = inst.root.join("logs");
+        std::fs::create_dir_all(&dir).ok()?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        Some(dir.join(format!("run-{stamp}.log")))
+    });
+    if let Some(p) = &log {
+        if let Ok(f) = std::fs::File::create(p) {
+            if let Ok(out) = f.try_clone() {
+                cmd.stdout(std::process::Stdio::from(out));
+            }
+            cmd.stderr(std::process::Stdio::from(f));
+        }
+    }
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            app.status = Some(format!("Launch failed: {e}"));
+            return;
+        }
+    };
     let pid = child.id();
     let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let signal = done.clone();
+    let outcome = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let (signal, slot) = (done.clone(), outcome.clone());
     std::thread::spawn(move || {
         let mut child = child;
-        let _ = child.wait();
+        let status = child.wait().ok();
+        if let Ok(mut s) = slot.lock() {
+            *s = status;
+        }
         signal.store(true, Ordering::SeqCst);
     });
-    if app.prefs.lock_gui {
-        app.running = Some(RunningState { title: title.clone(), pid, done });
-        app.status = Some(format!("Running {title} - Eidos is locked until it exits (or click Unlock)."));
+    let lock = app.prefs.lock_gui;
+    app.running = Some(RunningState { title: title.clone(), pid, done, outcome, log, lock });
+    app.status = Some(if lock {
+        format!("Running {title} - Eidos is locked until it exits (or click Unlock).")
     } else {
-        app.status = Some(format!("Launching {title}... (GUI lock is off)"));
-    }
+        format!("Running {title}...")
+    });
 }
 
 /// Clear the run lock and refresh the way MO2's `afterRun` does: the game may have
 /// rewritten plugins.txt / loadorder.txt while playing, so re-read the mod list,
 /// load order and conflicts. Called from the exit poll once the child exits.
+/// A non-zero exit is reported with the run log's path so failures are diagnosable.
 fn finish_run(app: &mut App) {
-    let title = app.running.take().map(|r| r.title).unwrap_or_default();
+    let run = app.running.take();
     if let Some(inst) = &app.created {
         app.mods = inst.modlist();
         app.plugins = None;
@@ -963,10 +1006,36 @@ fn finish_run(app: &mut App) {
         app.selected_mods.clear();
         app.drag_state = None;
     }
-    app.status = Some(if title.is_empty() {
-        "Application exited. Refreshed plugins and load order.".to_string()
+    if app.created.is_some() {
+        // The session may have written new saves; the Saves tab must not go stale
+        // exactly when they appear.
+        load_saves(app);
+    }
+    // A rebuild may have wiped the launch capability while we played; re-check so
+    // the warning banner is current for the next run.
+    app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
+    let Some(run) = run else {
+        app.status = Some("Application exited. Refreshed plugins and load order.".to_string());
+        return;
+    };
+    let failed = run
+        .outcome
+        .lock()
+        .ok()
+        .and_then(|s| *s)
+        .map(|st| !st.success())
+        .unwrap_or(false);
+    app.status = Some(if failed {
+        match &run.log {
+            Some(p) => format!(
+                "{} exited with an error - see the log: {}",
+                run.title,
+                p.display()
+            ),
+            None => format!("{} exited with an error.", run.title),
+        }
     } else {
-        format!("{title} exited. Refreshed plugins and load order.")
+        format!("{} exited. Refreshed plugins and load order.", run.title)
     });
 }
 
@@ -989,16 +1058,20 @@ fn planned_instance(app: &App) -> Option<Instance> {
     })
 }
 
-fn save_mods(app: &App) {
-    if let Some(inst) = &app.created {
-        let _ = inst.save_modlist(&app.mods);
-    }
+/// Persist the mod list, surfacing a failure instead of losing it silently (a
+/// full disk or permission problem would otherwise revert the user's changes on
+/// the next restart with no warning). Returns the error text, if any.
+fn save_mods(app: &App) -> Option<String> {
+    let inst = app.created.as_ref()?;
+    inst.save_modlist(&app.mods).err().map(|e| format!("Could not save the mod list: {e}"))
 }
 
 /// Persist the mod list and invalidate everything derived from it (plugin order,
 /// conflict emblems, the per-mod metadata cache).
 fn mods_changed(app: &mut App) {
-    save_mods(app);
+    if let Some(err) = save_mods(app) {
+        app.status = Some(err);
+    }
     app.plugins = None;
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
@@ -1500,10 +1573,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
                 // `id` is Copy, so the immutable `game` borrow ends before `start_run`.
                 if let Some(id) = selected_game(app).map(|g| g.def.id) {
-                    match run_tool_through_eidos(id, &title) {
-                        Ok(child) => start_run(app, title, child),
-                        Err(e) => app.status = Some(format!("Tool launch failed: {e}")),
-                    }
+                    let cmd = tool_command(id, &title);
+                    start_run(app, title, cmd);
                 } else {
                     app.status = Some("Create or open an instance first.".to_string());
                 }
@@ -1537,18 +1608,14 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
                 // `game`/`inst` are no longer used below; their borrows end here so
                 // `start_run` can take `&mut app`.
-                match launch_through_eidos(id, &app.launch_command) {
-                    Ok(child) => {
-                        start_run(app, game_name, child);
-                        if both_active {
-                            if let Some(s) = app.status.take() {
-                                app.status = Some(format!(
-                                    "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
-                                ));
-                            }
-                        }
+                let cmd = play_command(id, &app.launch_command);
+                start_run(app, game_name, cmd);
+                if both_active {
+                    if let Some(s) = app.status.take() {
+                        app.status = Some(format!(
+                            "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI). {s}"
+                        ));
                     }
-                    Err(e) => app.status = Some(format!("Launch failed: {e}")),
                 }
             } else {
                 app.status = Some("Create or open an instance first.".to_string());
@@ -1567,14 +1634,21 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ForceUnlock => {
-            // Stop waiting but leave the game running (MO2's force-unlock never kills
-            // it). The wait thread stays alive and still reaps the child on exit.
-            if let Some(r) = app.running.take() {
-                app.status = Some(format!("Unlocked - {} is still running.", r.title));
+            // Drop the overlay but KEEP tracking (MO2 stops waiting entirely; we
+            // keep the exit poll so the afterRun refresh still happens and the
+            // game's own plugins.txt rewrite is never clobbered by stale GUI state).
+            // The game is never killed.
+            if let Some(r) = app.running.as_mut() {
+                r.lock = false;
+                let title = r.title.clone();
+                app.status = Some(format!("Unlocked - {title} is still running."));
             }
         }
         Message::CloseLootReport => {
             app.loot_report = None;
+        }
+        Message::ClearStatus => {
+            app.status = None;
         }
         Message::Refresh => {
             if let Some(inst) = &app.created {
@@ -1589,6 +1663,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some("Refreshed mod list.".to_string());
             }
             load_tools(app);
+            // F5 is also the "I just ran setcap" recheck for the warning banner.
+            app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
         }
         Message::OpenFolder(p) => {
             let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
@@ -4452,12 +4528,18 @@ fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     let game = selected_game(app).map(|g| g.def.name).unwrap_or("Instance");
     // A live multi-selection count takes the left slot (MO2's "N selected"), unless a
     // transient status message is showing; otherwise the instance summary.
+    let showing_status = app.status.is_some();
     let left = if let Some(s) = app.status.clone() {
         s
     } else if app.selected_mods.len() > 1 {
         format!("{} mods selected", app.selected_mods.len())
     } else {
-        format!("{game} - {kind} - Default")
+        let profile = app
+            .created
+            .as_ref()
+            .map(|i| i.active().name)
+            .unwrap_or_else(|| "Default".to_string());
+        format!("{game} - {kind} - {profile}")
     };
     // The Nexus account, if connected this session (MO2's status-bar login state).
     let account = match &app.nexus_account {
@@ -4465,9 +4547,20 @@ fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         Some(a) => format!("Nexus: {}", a.name),
         None => "not logged in".to_string(),
     };
-    let row = Row::new()
-        .push(text(left).size(11.0).width(Length::Fill))
-        .push(text(account).size(11.0));
+    let mut row = Row::new()
+        .align_y(iced::Alignment::Center)
+        .push(text(left).size(11.0).width(Length::Fill));
+    if showing_status {
+        // A tiny dismiss so a stale message stops masking the selection count and
+        // instance summary.
+        row = row.push(
+            button(text("x").size(10.0))
+                .padding([0, 6])
+                .on_press(Message::ClearStatus)
+                .style(button::text),
+        );
+    }
+    row = row.push(text(account).size(11.0));
     container(row).width(Length::Fill).padding(4).style(bar_style).into()
 }
 
@@ -4487,6 +4580,13 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());
     if app.ui_toolbar_visible {
         base = base.push(toolbar(app));
+    }
+    // Persistent warning while the eidos binary lacks CAP_SYS_ADMIN: launches
+    // still work but FUSE passthrough is off and SKSE plugin DLLs may fail to
+    // load. Every rebuild wipes the capability, so this fires often enough that
+    // silence cost real debugging time.
+    if app.cap_missing {
+        base = base.push(cap_warning_banner());
     }
     base = base.push(body);
     if app.ui_statusbar_visible {
@@ -4590,8 +4690,9 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
 
     // The run lock (MO2's "lock GUI while the application runs"): a full-window
     // overlay that blocks everything beneath it until the game exits or the user
-    // clicks Unlock. Added last so it sits on top of every other layer.
-    if let Some(run) = &app.running {
+    // clicks Unlock. Added last so it sits on top of every other layer. A tracked
+    // run with `lock` off (setting disabled, or force-unlocked) shows no overlay.
+    if let Some(run) = app.running.as_ref().filter(|r| r.lock) {
         // A backdrop that swallows EVERY pointer event (press/release/right/scroll)
         // so nothing beneath it is reachable - clicks, context menus and the modlist
         // scroll wheel are all inert while locked. `interaction` also tells the Stack
@@ -5242,6 +5343,50 @@ fn about_dialog<'a>() -> Element<'a, Message> {
     container(card).max_width(440.0).padding(16).style(card_style).into()
 }
 
+/// The persistent CAP_SYS_ADMIN warning banner: the launch binary lost its file
+/// capability (every rebuild wipes it), so FUSE passthrough is off and
+/// script-extender DLLs may fail to image-map in-game. Shows the exact fix
+/// command; F5 rechecks after running it.
+fn cap_warning_banner<'a>() -> Element<'a, Message> {
+    let cmd = format!(
+        "sudo setcap cap_sys_admin+ep {}",
+        find_eidos_binary().display()
+    );
+    let row = Row::new()
+        .spacing(10)
+        .align_y(iced::Alignment::Center)
+        .push(text("FUSE passthrough is OFF (capability lost after a rebuild): SKSE plugin DLLs may fail to load. Fix, then press F5:").size(11.0))
+        .push(
+            container(text(cmd).size(11.0))
+                .padding([2, 8])
+                .style(|_| container::Style {
+                    background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+                    border: Border {
+                        color: Color::from_rgb8(0xB0, 0x6A, 0x10),
+                        width: 1.0,
+                        radius: 3.0.into(),
+                    },
+                    ..Default::default()
+                }),
+        )
+        .push(Space::with_width(Length::Fill))
+        .push(flat_btn("Re-check (F5)", Message::Refresh));
+    container(row)
+        .width(Length::Fill)
+        .padding([4, 8])
+        .style(|_| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xF6, 0xE3, 0xC0))),
+            border: Border {
+                color: Color::from_rgb8(0xB0, 0x6A, 0x10),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            text_color: Some(Color::from_rgb8(0x6B, 0x42, 0x0A)),
+            ..Default::default()
+        })
+        .into()
+}
+
 /// MO2's run-lock overlay card: the GUI is locked while the launched application
 /// runs. Shows what is running and offers Unlock (which stops waiting but leaves
 /// the game running - MO2's force-unlock never kills the process).
@@ -5545,8 +5690,8 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.collision.is_none()
         && app.info_mod.is_none()
         // Don't fire shortcuts (especially Ctrl+R) while the GUI is locked behind a
-        // running game or a LOOT report is open.
-        && app.running.is_none()
+        // running game or a LOOT report is open. An unlocked tracked run keeps them.
+        && app.running.as_ref().is_none_or(|r| !r.lock)
         && app.loot_report.is_none()
     {
         subs.push(shortcuts);

@@ -11,6 +11,7 @@ edition.workspace = true
 # launched game for exit while the GUI is locked.
 iced = { version = "0.13", features = ["image", "smol"] }
 eidos-games = { path = "../eidos-games" }
+eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-nexus = { path = "../eidos-nexus" }
 eidos-plugins = { path = "../eidos-plugins" }

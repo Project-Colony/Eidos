@@ -103,16 +103,31 @@ fn prepare_inis(
     };
     let prof = inst.active();
 
-    if let Ok(n) = prof.seed_inis(&docs, ini_files) {
-        if n > 0 {
-            eprintln!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name);
+    match prof.seed_inis(&docs, ini_files) {
+        Ok(n) if n > 0 => {
+            eprintln!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name)
         }
+        Ok(_) => {}
+        Err(e) => eprintln!("eidos play: WARNING - could not seed profile INIs: {e}"),
     }
-    if let Ok(n) = prof.deploy_inis(&docs, ini_files) {
-        if n > 0 {
-            eprintln!("eidos play: deployed {n} profile INI(s) into the prefix");
+    // If the deploy fails, the prefix keeps its OLD INIs; capturing those back
+    // after the run would clobber the profile's copies with stale content. So a
+    // failed deploy disables this run's capture (see the return below).
+    let deploy_ok = match prof.deploy_inis(&docs, ini_files) {
+        Ok(n) => {
+            if n > 0 {
+                eprintln!("eidos play: deployed {n} profile INI(s) into the prefix");
+            }
+            true
         }
-    }
+        Err(e) => {
+            eprintln!(
+                "eidos play: WARNING - could not deploy profile INIs into the prefix ({e}); \
+                 the game runs with the prefix's own INIs and they will NOT be captured back"
+            );
+            false
+        }
+    };
     // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
     // reset the plugin selection (both written into the deployed profile INIs).
     match eidos_gamefeatures::enable_bsa_invalidation(&docs, &inst.overwrite_dir(), id) {
@@ -140,9 +155,13 @@ fn prepare_inis(
             .collect();
         let _ = eidos_gamefeatures::register_morrowind_archives(&docs.join("Morrowind.ini"), &mod_bsas);
     } else if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
-        let _ = eidos_gamefeatures::enable_file_selection(&docs, ini);
+        if let Err(e) = eidos_gamefeatures::enable_file_selection(&docs, ini) {
+            eprintln!("eidos play: could not enable launcher file selection: {e}");
+        }
     }
-    Some((docs, ini_files))
+    // No capture cycle when the deploy failed: the prefix INIs are not this
+    // profile's state and must not overwrite it after the run.
+    deploy_ok.then_some((docs, ini_files))
 }
 
 /// Before launch: give the active profile its own saves. Seed the profile from

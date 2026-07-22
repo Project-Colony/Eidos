@@ -103,6 +103,17 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
     let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
     if !privileged {
+        // Degrading silently here cost real debugging time: without passthrough,
+        // relocation-heavy SKSE plugin DLLs fail to image-map and the only in-game
+        // symptom is plugins mysteriously missing. Say it loudly, with the fix.
+        let exe = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "<this eidos binary>".to_string());
+        eprintln!(
+            "eidos: no CAP_SYS_ADMIN (setcap is wiped by every rebuild) - running rootless, \
+             FUSE passthrough OFF; script-extender plugin DLLs may fail to load.\n\
+             eidos: fix with:  sudo setcap cap_sys_admin+ep {exe}"
+        );
         check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) })?;
         std::fs::write("/proc/self/setgroups", "deny")?;
         std::fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;
@@ -119,10 +130,19 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
 
     // Extra redirects (e.g. the active profile's saves over the prefix save dir).
     // Both ends must exist for the bind; best-effort so a missing dir or a failed
-    // bind never blocks the game from starting.
+    // bind never blocks the game from starting - but a failure is REPORTED, because
+    // a silently missing saves bind means this session's saves land in the prefix
+    // and vanish from the profile with no visible symptom until much later.
     for (src, dst) in &spec.binds {
-        if std::fs::create_dir_all(src).is_ok() && std::fs::create_dir_all(dst).is_ok() {
-            let _ = bind_mount(src, dst);
+        let prep = std::fs::create_dir_all(src).and_then(|()| std::fs::create_dir_all(dst));
+        let result = prep.and_then(|()| bind_mount(src, dst));
+        if let Err(e) = result {
+            eprintln!(
+                "eidos: WARNING - bind of {} over {} failed ({e}); files written there \
+                 this session will land in the target directly, not in the profile",
+                src.display(),
+                dst.display()
+            );
         }
     }
 
@@ -193,9 +213,44 @@ pub fn wine_dll_overrides(stems: &[String], inherited: Option<&str>) -> String {
     parts.join(";")
 }
 
+/// Whether `binary` carries CAP_SYS_ADMIN in its file capabilities (the
+/// `setcap cap_sys_admin+ep` state FUSE passthrough needs). Reads the
+/// `security.capability` xattr directly, so it works without the libcap tools.
+/// Every rebuild of the binary wipes the xattr, which silently degrades launches
+/// to rootless mode - front ends use this to warn instead of degrading silently.
+pub fn binary_has_cap_sys_admin(binary: &Path) -> bool {
+    let Ok(path) = std::ffi::CString::new(binary.as_os_str().as_encoded_bytes()) else {
+        return false;
+    };
+    let name = c"security.capability";
+    let mut buf = [0u8; 64];
+    // SAFETY: valid NUL-terminated strings and a correctly-sized buffer.
+    let n = unsafe {
+        libc::getxattr(path.as_ptr(), name.as_ptr(), buf.as_mut_ptr().cast(), buf.len())
+    };
+    // VFS cap data (v2/v3): u32 magic+flags, then permitted-lo at bytes 4..8.
+    // CAP_SYS_ADMIN is capability 21, in the low word.
+    if n < 8 {
+        return false;
+    }
+    let permitted_lo = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    permitted_lo & (1 << 21) != 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn missing_binary_or_xattr_reports_no_cap() {
+        // A path that does not exist has no capability.
+        assert!(!binary_has_cap_sys_admin(Path::new("/nonexistent/eidos")));
+        // A plain file without the xattr has no capability.
+        let p = std::env::temp_dir().join(format!("eidos-capcheck-{}", std::process::id()));
+        std::fs::write(&p, b"x").unwrap();
+        assert!(!binary_has_cap_sys_admin(&p));
+        let _ = std::fs::remove_file(&p);
+    }
 
     #[test]
     fn dll_overrides_compose_and_merge() {

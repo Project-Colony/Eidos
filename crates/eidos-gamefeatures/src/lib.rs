@@ -277,12 +277,34 @@ pub fn enable_file_selection(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
 /// format-preserving [`eidos_ini::set_key`]; section and key match
 /// case-insensitively.
 pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Result<()> {
-    let existing = fs::read_to_string(path).unwrap_or_default();
+    // A missing file is created; an EXISTING file must never be truncated because
+    // it cannot be read. Bethesda INIs localized in Windows-1252 (accented FR/DE
+    // text) are not valid UTF-8: decode those as Latin-1 - a byte-for-byte
+    // reversible mapping - edit, and encode back, preserving every original byte.
+    let (existing, latin1) = match fs::read(path) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => (s, false),
+            Err(e) => {
+                let s: String = e.into_bytes().iter().map(|&b| b as char).collect();
+                (s, true)
+            }
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => (String::new(), false),
+        Err(e) => return Err(e),
+    };
     let out = eidos_ini::set_key(&existing, section, key, value);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, out)
+    if latin1 {
+        // Chars above U+00FF cannot occur: the decoded input round-trips and the
+        // inserted section/key/value text is ASCII. Guard anyway.
+        let bytes: Vec<u8> =
+            out.chars().map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' }).collect();
+        fs::write(path, bytes)
+    } else {
+        fs::write(path, out)
+    }
 }
 
 #[cfg(test)]
@@ -295,6 +317,22 @@ mod tests {
     fn tmp() -> PathBuf {
         std::env::temp_dir()
             .join(format!("eidos-gf-{}-{}.ini", std::process::id(), N.fetch_add(1, Ordering::Relaxed)))
+    }
+
+    #[test]
+    fn non_utf8_ini_is_edited_without_truncation() {
+        // Windows-1252 INI ("Général" with an 0xE9 é): the update must preserve
+        // every original byte instead of wiping the file as unreadable.
+        let p = tmp();
+        let original = b"[G\xE9n\xE9ral]\nsLanguage=FRENCH\n".to_vec();
+        fs::write(&p, &original).unwrap();
+        set_ini_key(&p, "Launcher", "bEnableFileSelection", "1").unwrap();
+        let after = fs::read(&p).unwrap();
+        let after_str: String = after.iter().map(|&b| b as char).collect();
+        assert!(after.windows(original.len() - 1).any(|w| w == &original[..original.len() - 1]),
+            "original bytes (incl. 0xE9) must be preserved: {after_str:?}");
+        assert!(after_str.contains("[Launcher]") && after_str.contains("bEnableFileSelection=1"));
+        let _ = fs::remove_file(&p);
     }
 
     #[test]

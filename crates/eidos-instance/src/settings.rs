@@ -49,7 +49,16 @@ pub fn save_nexus_key(key: &str) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, format!("[Nexus]\napi_key={}\n", key.trim()))
+    fs::write(&path, format!("[Nexus]\napi_key={}\n", key.trim()))?;
+    // An API key is a credential: keep it out of other users' reach (0600), the
+    // same as ssh does. Applied after the write so a pre-existing 0644 file from
+    // an older Eidos gets tightened too.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
 }
 
 /// The `[Nexus]` `api_key=` value from a `nexus.ini` body, if non-empty. Split
