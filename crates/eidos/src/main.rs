@@ -1400,9 +1400,51 @@ fn usage() -> ! {
          \x20 eidos nexus key|status|update     connect a Nexus account / check for mod updates\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
          \x20 eidos export <id> [-o file]       export the mod list to CSV (MO2 format; --active = enabled only)\n\
-         \x20 eidos sort <id> [--dry-run]       LOOT-sort the plugin load order (--update-masterlist to refresh)"
+         \x20 eidos sort <id> [--dry-run]       LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
+         \x20 eidos import <id> <mo2-profile>   take over an MO2 profile's mod order + plugin state"
     );
     exit(2);
+}
+
+/// `eidos import <game-id> <mo2-profile-dir>`: adopt an existing Mod Organizer 2
+/// profile's mod order, enabled states and load order.
+fn cmd_import(args: &[String]) -> ! {
+    let (Some(id), Some(dir)) = (args.first(), args.get(1)) else { usage() };
+    let inst = Instance::global(id);
+    if !inst.exists() {
+        eprintln!("eidos import: no instance for '{id}' - run `eidos init {id}` first.");
+        exit(1);
+    }
+    match inst.import_mo2_profile(std::path::Path::new(dir)) {
+        Ok(r) => {
+            println!(
+                "Imported {} mod(s) from {dir} into profile '{}'.",
+                r.matched,
+                inst.active_profile()
+            );
+            if r.kept_local > 0 {
+                println!("{} local mod(s) MO2 did not list were kept at the bottom.", r.kept_local);
+            }
+            if r.plugin_files > 0 {
+                println!("Load order imported ({} file(s)).", r.plugin_files);
+            }
+            if !r.missing.is_empty() {
+                println!("\n{} mod(s) MO2 listed are not installed here:", r.missing.len());
+                for m in r.missing.iter().take(40) {
+                    println!("  - {m}");
+                }
+                if r.missing.len() > 40 {
+                    println!("  ... and {} more", r.missing.len() - 40);
+                }
+                println!("Install them, then run this again to place them in order.");
+            }
+            exit(0)
+        }
+        Err(e) => {
+            eprintln!("eidos import: {e}");
+            exit(1)
+        }
+    }
 }
 
 fn main() {
@@ -1421,6 +1463,7 @@ fn main() {
         Some("sort") => cmd_sort(&args[1..]),
         Some("nexus") => cmd_nexus(&args[1..]),
         Some("nxm") => cmd_nxm(&args[1..]),
+        Some("import") => cmd_import(&args[1..]),
         _ => usage(),
     }
 }

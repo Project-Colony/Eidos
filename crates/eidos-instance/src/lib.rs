@@ -14,6 +14,7 @@
 //! <root>/.base             bind-stash mountpoint for the pristine game files
 //! ```
 
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -383,6 +384,102 @@ impl Instance {
         fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n")?;
         Ok(ModEntry { name: name.to_string(), enabled: true, path: dest })
     }
+
+    /// Import an existing Mod Organizer 2 profile into this instance's ACTIVE
+    /// profile: the mod order and enabled states from its `modlist.txt`, plus its
+    /// plugin state (`plugins.txt` / `loadorder.txt`) verbatim.
+    ///
+    /// Eidos already speaks MO2's formats, so this is a filter-and-copy: only mods
+    /// whose folder actually exists under `mods/` are taken (matched
+    /// case-insensitively, since MO2 ran on a case-insensitive filesystem), any
+    /// local mod MO2 never knew about is appended at the bottom, and everything
+    /// MO2 listed but we do not have is reported rather than silently dropped.
+    pub fn import_mo2_profile(&self, mo2_profile_dir: &Path) -> std::io::Result<Mo2Import> {
+        use std::io::{Error, ErrorKind};
+        let src_modlist = mo2_profile_dir.join("modlist.txt");
+        if !src_modlist.is_file() {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                format!("no modlist.txt in {}", mo2_profile_dir.display()),
+            ));
+        }
+        // Our mods, keyed by lowercased folder name.
+        let present: HashMap<String, ModEntry> =
+            self.modlist().into_iter().map(|m| (m.name.to_ascii_lowercase(), m)).collect();
+
+        let text = fs::read_to_string(&src_modlist)?;
+        let mut ordered: Vec<ModEntry> = Vec::new();
+        let mut taken: HashSet<String> = HashSet::new();
+        let mut missing: Vec<String> = Vec::new();
+        // MO2 writes highest priority first; our in-memory list is display order
+        // (lowest first), so collect then reverse.
+        for line in text.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (enabled, name) = match line.split_at(1) {
+                ("+", rest) => (true, rest.trim()),
+                ("-", rest) => (false, rest.trim()),
+                // MO2 marks unmanaged/foreign mods with '*'; we do not model those.
+                ("*", _) => continue,
+                _ => (true, line),
+            };
+            if name.is_empty() {
+                continue;
+            }
+            let key = name.to_ascii_lowercase();
+            match present.get(&key) {
+                Some(m) if taken.insert(key) => {
+                    ordered.push(ModEntry { enabled, ..m.clone() });
+                }
+                Some(_) => {} // duplicate line
+                None => missing.push(name.to_string()),
+            }
+        }
+        ordered.reverse();
+        let matched = ordered.len();
+
+        // Anything of ours MO2 did not list keeps its state, at the bottom
+        // (lowest priority), so importing never loses a locally-installed mod.
+        let mut kept_local = 0usize;
+        let mut final_list: Vec<ModEntry> = Vec::new();
+        for m in self.modlist() {
+            if !taken.contains(&m.name.to_ascii_lowercase()) {
+                final_list.push(m);
+                kept_local += 1;
+            }
+        }
+        final_list.extend(ordered);
+        self.save_modlist(&final_list)?;
+
+        // The plugin state transfers verbatim - the formats are identical.
+        let prof = self.active();
+        let mut plugins = 0usize;
+        for f in ["plugins.txt", "loadorder.txt"] {
+            let src = mo2_profile_dir.join(f);
+            if src.is_file() {
+                fs::create_dir_all(prof.dir())?;
+                fs::copy(&src, prof.dir().join(f))?;
+                plugins += 1;
+            }
+        }
+
+        Ok(Mo2Import { matched, kept_local, missing, plugin_files: plugins })
+    }
+}
+
+/// What an [`Instance::import_mo2_profile`] run took over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Mo2Import {
+    /// Mods MO2 listed that we have, whose order and enabled state were applied.
+    pub matched: usize,
+    /// Local mods MO2 never listed, kept at the bottom of the order.
+    pub kept_local: usize,
+    /// Mods MO2 listed that are not installed here (install them, then re-import).
+    pub missing: Vec<String>,
+    /// How many of `plugins.txt` / `loadorder.txt` were imported.
+    pub plugin_files: usize,
 }
 
 /// Move every entry of `from` into `to`, merging into existing directories and
@@ -510,6 +607,45 @@ mod tests {
         assert!(is_separator_name("X_separator"));
         assert!(!is_separator_name("Xseparator"));
         assert!(!is_separator_name("separator_X"));
+    }
+
+    #[test]
+    fn mo2_import_applies_order_and_states_keeping_local_mods() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        for m in ["SkyUI", "USSEP", "LocalOnly"] {
+            fs::create_dir_all(inst.mods_dir().join(m)).unwrap();
+        }
+        // An MO2 profile: highest priority first, USSEP disabled, one mod we lack.
+        let mo2 = inst.root.join("mo2profile");
+        fs::create_dir_all(&mo2).unwrap();
+        fs::write(mo2.join("modlist.txt"), "+SkyUI\n-ussep\n+NotInstalled\n*Foreign\n").unwrap();
+        fs::write(mo2.join("plugins.txt"), b"*Skyrim.esm\n*SkyUI.esp\n").unwrap();
+
+        let r = inst.import_mo2_profile(&mo2).unwrap();
+        assert_eq!(r.matched, 2, "SkyUI + USSEP matched (case-insensitively)");
+        assert_eq!(r.kept_local, 1, "LocalOnly is kept");
+        assert_eq!(r.missing, vec!["NotInstalled".to_string()]);
+        assert_eq!(r.plugin_files, 1);
+
+        // Display order is lowest-priority-first: the untouched local mod sits at
+        // the bottom, then MO2's order with SkyUI highest (last).
+        let names: Vec<String> = inst.modlist().into_iter().map(|m| m.name).collect();
+        assert_eq!(names, vec!["LocalOnly", "USSEP", "SkyUI"]);
+        let ussep = inst.modlist().into_iter().find(|m| m.name == "USSEP").unwrap();
+        assert!(!ussep.enabled, "MO2 had it disabled");
+        assert!(inst.modlist().into_iter().find(|m| m.name == "SkyUI").unwrap().enabled);
+        // The plugin state came across into the active profile.
+        assert_eq!(fs::read(inst.active().plugins_txt_path()).unwrap(), b"*Skyrim.esm\n*SkyUI.esp\n");
+    }
+
+    #[test]
+    fn mo2_import_rejects_a_directory_without_a_modlist() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let empty = inst.root.join("not-a-profile");
+        fs::create_dir_all(&empty).unwrap();
+        assert!(inst.import_mo2_profile(&empty).is_err());
     }
 
     #[test]

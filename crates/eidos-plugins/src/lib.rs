@@ -336,6 +336,26 @@ impl PluginList {
         self.plugins
             .sort_by_key(|p| rank.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(tail));
     }
+
+    /// Move the plugin at `index` one slot towards the start (`up`) or the end of
+    /// the load order, MO2's manual reorder. Returns whether anything moved -
+    /// `refresh` afterwards re-applies the ordering invariants, which may pull the
+    /// plugin back if the move would break masters-before-dependents.
+    pub fn move_plugin(&mut self, index: usize, up: bool) -> bool {
+        let target = if up {
+            match index.checked_sub(1) {
+                Some(t) => t,
+                None => return false,
+            }
+        } else {
+            index + 1
+        };
+        if index >= self.plugins.len() || target >= self.plugins.len() {
+            return false;
+        }
+        self.plugins.swap(index, target);
+        true
+    }
 }
 
 /// Parse a plugin header with esplugin: `(is_master, is_light, is_medium, masters)`.

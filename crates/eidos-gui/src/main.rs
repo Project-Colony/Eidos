@@ -346,6 +346,17 @@ enum Message {
     OverwriteToModCommit,
     /// Dismiss the prompt.
     OverwriteToModCancel,
+    // ---- MO2 profile import ----
+    /// Open the folder picker for an existing MO2 profile directory.
+    ImportMo2Pick,
+    /// The picked MO2 profile directory (`None` = cancelled).
+    ImportMo2Picked(Option<PathBuf>),
+    /// Open a URL in the user's browser (LOOT advice links in the report).
+    OpenUrl(String),
+    // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
+    /// Move the plugin at this index one slot earlier / later in the load order.
+    PluginMoveUp(usize),
+    PluginMoveDown(usize),
     Noop,
 }
 
@@ -833,7 +844,19 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     app.meta_cache = build_meta_cache(&app);
     app.collapsed = load_collapsed(&app);
     recompute_counts(&mut app);
-    (app, Task::none())
+    // A stored key means the user IS connected: validate it in the background so
+    // the status bar shows the account instead of "not logged in" every session.
+    let startup = match load_nexus_api_key() {
+        Some(key) => Task::perform(
+            async move {
+                let result = eidos_nexus::Nexus::new(&key).validate();
+                (key, result)
+            },
+            |(key, result)| Message::ApiKeyValidateResult(key, result),
+        ),
+        None => Task::none(),
+    };
+    (app, startup)
 }
 
 /// Reload the tool list for the open instance (user `tools.ini` + per-game
@@ -1813,6 +1836,77 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::OverwriteToModCancel => {
             app.overwrite_to_mod = None;
+        }
+        Message::OpenUrl(url) => {
+            // Only ever hand a real web link to the browser.
+            if url.starts_with("https://") || url.starts_with("http://") {
+                let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+                app.status = Some(format!("Opened {url}"));
+            }
+        }
+        Message::PluginMoveUp(i) | Message::PluginMoveDown(i) => {
+            let up = matches!(message, Message::PluginMoveUp(_));
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            let mut moved = false;
+            if let Some(list) = app.plugins.as_mut() {
+                moved = list.move_plugin(i, up);
+                if moved {
+                    // refresh() re-applies masters-before-dependents, so an illegal
+                    // move is corrected rather than written out.
+                    list.refresh(&spec);
+                }
+            }
+            if !moved {
+                return Task::none();
+            }
+            let written =
+                app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
+            if let Err(e) = written {
+                app.status = Some(format!("Could not write the load order: {e}"));
+            }
+        }
+        Message::ImportMo2Pick => {
+            if app.created.is_none() {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            }
+            app.profile_menu = None;
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .set_title("Select the MO2 profile folder (the one holding modlist.txt)")
+                    .pick_folder(),
+                |h| Message::ImportMo2Picked(h.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::ImportMo2Picked(picked) => {
+            let Some(dir) = picked else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            match inst.import_mo2_profile(&dir) {
+                Ok(r) => {
+                    app.mods = inst.modlist();
+                    drop_files_cache(app, None);
+                    invalidate_plugins(app);
+                    app.conflicts = compute_conflicts(app);
+                    app.meta_cache = build_meta_cache(app);
+                    recompute_counts(app);
+                    app.selected_mod = None;
+                    app.selected_mods.clear();
+                    let mut s = format!("Imported {} mod(s) from MO2.", r.matched);
+                    if r.plugin_files > 0 {
+                        s.push_str(" Load order imported.");
+                    }
+                    if !r.missing.is_empty() {
+                        s.push_str(&format!(
+                            " {} mod(s) MO2 listed are not installed here (install them, then import again).",
+                            r.missing.len()
+                        ));
+                    }
+                    app.status = Some(s);
+                }
+                Err(e) => app.status = Some(format!("MO2 import failed: {e}")),
+            }
         }
         Message::OverwriteToModCommit => {
             let Some(name) = app.overwrite_to_mod.take().map(|s| s.trim().to_string()) else {
@@ -4659,6 +4753,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
     let mut rows = Column::new().spacing(1);
+    let total = list.plugins.len();
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
         let kind = if p.is_light {
@@ -4683,12 +4778,26 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             checkbox("", p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
         };
+        // Manual reorder (MO2 lets the load order be moved by hand, not only
+        // LOOT-sorted). refresh() re-applies the invariants after each move, so an
+        // illegal position is corrected rather than persisted.
+        let mut up = button(text("^").size(10.0)).padding([0, 5]).style(button::text);
+        if i > 0 {
+            up = up.on_press(Message::PluginMoveUp(i));
+        }
+        let mut down = button(text("v").size(10.0)).padding([0, 5]).style(button::text);
+        if i + 1 < total {
+            down = down.on_press(Message::PluginMoveDown(i));
+        }
         let row = Row::new()
             .spacing(6)
+            .align_y(iced::Alignment::Center)
             .push(text(idx).size(11.0).width(Length::Fixed(52.0)))
             .push(container(toggle).width(Length::Fixed(28.0)))
             .push(text(p.name.clone()).size(12.0).width(Length::Fill))
-            .push(text(kind).size(10.0).width(Length::Fixed(36.0)));
+            .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
+            .push(up)
+            .push(down);
         rows = rows.push(striped(row.into(), i % 2 == 0));
     }
 
@@ -5096,6 +5205,11 @@ fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Message> {
         }
         _ => col = col.push(menu_item("Copy to new...", Message::ProfileCopyStart(name.to_string()))),
     }
+
+    col = col.push(menu_sep());
+    // Take over an existing MO2 profile's mod order + load order, so a migrating
+    // user does not re-tick dozens of mods and plugins by hand.
+    col = col.push(menu_item("Import from MO2...", Message::ImportMo2Pick));
 
     col = col.push(menu_sep());
     // Delete: two-click confirm (backend refuses the active / last profile).
@@ -5794,8 +5908,46 @@ fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> {
     container(card).max_width(470.0).padding(20).style(card_style).into()
 }
 
+/// Split a CommonMark string into plain runs and `[label](url)` links, in order.
+/// LOOT's messages are markdown, and rendering them verbatim showed the bracket
+/// syntax to the user; this keeps the label and hands back the URL to open.
+fn split_markdown_links(text: &str) -> Vec<(String, Option<String>)> {
+    let mut out: Vec<(String, Option<String>)> = Vec::new();
+    let bytes = text.as_bytes();
+    let mut plain = String::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        // A link is `[label](url)` with no nested bracket in the label.
+        if bytes[i] == b'[' {
+            if let Some(close) = text[i + 1..].find(']').map(|p| i + 1 + p) {
+                if text.as_bytes().get(close + 1) == Some(&b'(') {
+                    if let Some(end) = text[close + 2..].find(')').map(|p| close + 2 + p) {
+                        let label = &text[i + 1..close];
+                        let url = &text[close + 2..end];
+                        if !label.is_empty() && !url.is_empty() {
+                            if !plain.is_empty() {
+                                out.push((std::mem::take(&mut plain), None));
+                            }
+                            out.push((label.to_string(), Some(url.to_string())));
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        plain.push(text[i..].chars().next().unwrap_or('\0'));
+        i += text[i..].chars().next().map(char::len_utf8).unwrap_or(1);
+    }
+    if !plain.is_empty() {
+        out.push((plain, None));
+    }
+    out
+}
+
 /// One LOOT message rendered with MO2's severity prefix and a severity colour
-/// (Error red, Warning amber, Say muted).
+/// (Error red, Warning amber, Say muted). Markdown links become clickable
+/// buttons that open in the browser, instead of showing raw `[label](url)`.
 fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, Message> {
     use eidos_loot::MessageType;
     let (prefix, color) = match m.kind {
@@ -5803,7 +5955,27 @@ fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, Message> {
         MessageType::Warn => ("Warning: ", Color::from_rgb8(0xB0, 0x6A, 0x10)),
         MessageType::Say => ("", Color::from_rgb8(0x4A, 0x40, 0x30)),
     };
-    text(format!("{prefix}{}", m.text)).size(11.0).color(color).into()
+    let parts = split_markdown_links(&m.text);
+    if parts.iter().all(|(_, url)| url.is_none()) {
+        return text(format!("{prefix}{}", m.text)).size(11.0).color(color).into();
+    }
+    let mut row = Row::new().spacing(0).align_y(iced::Alignment::Center);
+    if !prefix.is_empty() {
+        row = row.push(text(prefix).size(11.0).color(color));
+    }
+    for (label, url) in parts {
+        row = match url {
+            Some(u) => row.push(
+                button(text(label).size(11.0).color(Color::from_rgb8(0x2B, 0x4F, 0x8A)))
+                    .padding(0)
+                    .on_press(Message::OpenUrl(u))
+                    .style(button::text),
+            ),
+            None => row.push(text(label).size(11.0).color(color)),
+        };
+    }
+    // `wrap` keeps a long advisory readable instead of running off the dialog.
+    row.wrap().into()
 }
 
 /// MO2's post-sort LOOT report dialog: a summary line, then LOOT's general messages
@@ -6100,4 +6272,52 @@ fn main() -> iced::Result {
         .theme(theme)
         .subscription(subscription)
         .run_with(move || new(launch_command.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn markdown_links_are_split_from_surrounding_text() {
+        // A real LOOT message shape: prose, a link, more prose.
+        let parts = split_markdown_links(
+            "Please install [SSEEdit v4.1.5d](https://www.nexusmods.com/x/mods/164) to clean it.",
+        );
+        assert_eq!(
+            parts,
+            vec![
+                ("Please install ".to_string(), None),
+                (
+                    "SSEEdit v4.1.5d".to_string(),
+                    Some("https://www.nexusmods.com/x/mods/164".to_string())
+                ),
+                (" to clean it.".to_string(), None),
+            ]
+        );
+    }
+
+    #[test]
+    fn plain_text_and_malformed_links_stay_verbatim() {
+        assert_eq!(
+            split_markdown_links("no links here"),
+            vec![("no links here".to_string(), None)]
+        );
+        // Unclosed / empty forms are not links and must round-trip unchanged.
+        for s in ["[label](", "[label] (url)", "[](url)", "[label]()", "a [b c"] {
+            let parts = split_markdown_links(s);
+            let rebuilt: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+            assert_eq!(rebuilt, s, "{s:?} must survive unchanged");
+            assert!(parts.iter().all(|(_, u)| u.is_none()), "{s:?} is not a link");
+        }
+    }
+
+    #[test]
+    fn multibyte_text_around_a_link_is_not_split_mid_character() {
+        // A non-ASCII message must not panic or corrupt (byte-indexed scanning).
+        let parts = split_markdown_links("Réglé - voir [le fil](https://loot.example/é) déjà");
+        let rebuilt: String = parts.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(rebuilt, "Réglé - voir le fil déjà");
+        assert_eq!(parts[1].1.as_deref(), Some("https://loot.example/é"));
+    }
 }
