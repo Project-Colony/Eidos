@@ -242,6 +242,18 @@ pub fn collect_files(root: &Path) -> (Vec<String>, bool) {
                 if depth == 0 && name == "fomod" {
                     continue;
                 }
+                // `is_dir()` follows symlinks, so a link pointing at an ancestor
+                // would recurse forever (hanging the GUI on every recompute).
+                // Never descend THROUGH a symlink; a linked file is still listed
+                // below, which is what the union serves anyway.
+                if e.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
+                    continue;
+                }
+                // Depth guard for the pathological case a symlink can't cause
+                // (deeply nested real trees): Bethesda data is nowhere near this.
+                if depth >= 64 {
+                    continue;
+                }
                 rec(base, &p, depth + 1, out, hidden);
             } else {
                 if depth == 0 && (name == "meta.ini" || name == "readme.txt") {
@@ -471,5 +483,18 @@ mod tests {
         let node = map.files.values().next().unwrap();
         assert_eq!(node.winner, 1);
         assert_eq!(node.alternatives, vec![2]);
+    }
+
+    #[test]
+    fn a_symlink_loop_does_not_hang_the_scan() {
+        let t = Tmp::new();
+        let layer = t.layer(1, "Looper", &["meshes/a.nif"]);
+        // A directory symlink pointing back at the layer root: following it would
+        // recurse forever.
+        std::os::unix::fs::symlink(&layer.root, layer.root.join("meshes/loop")).unwrap();
+
+        let (files, _) = collect_files(&layer.root);
+        // Terminates, and still reports the real file.
+        assert!(files.iter().any(|f| f == "meshes/a.nif"), "got {files:?}");
     }
 }

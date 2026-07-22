@@ -63,6 +63,9 @@ enum Tab {
     Overwrite,
     Saves,
     Downloads,
+    /// Live health checks for this setup (MO2's problems/diagnostics panel, plus
+    /// the Linux-specific ones MO2 never needed).
+    Diagnostics,
 }
 
 /// Tabs of the per-mod information dialog (MO2's modinfodialog).
@@ -4646,7 +4649,204 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .into()
 }
 
-fn tab_btn<'a>(label: &'a str, t: Tab, selected: bool) -> Element<'a, Message> {
+/// How serious a diagnostic is: `Problem` needs action (it will break or lose
+/// something), `Advice` is worth knowing, `Ok` is a passing check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiagLevel {
+    Problem,
+    Advice,
+    Ok,
+}
+
+/// One health check: what it found, and what to do about it.
+struct Diagnostic {
+    level: DiagLevel,
+    title: String,
+    detail: String,
+}
+
+/// Run every health check for the current setup - MO2's problems panel, plus the
+/// Linux-specific ones MO2 never needed (the launch capability above all, which
+/// silently disables FUSE passthrough after each rebuild).
+fn diagnostics(app: &App) -> Vec<Diagnostic> {
+    let mut out: Vec<Diagnostic> = Vec::new();
+
+    if app.cap_missing {
+        out.push(Diagnostic {
+            level: DiagLevel::Problem,
+            title: "FUSE passthrough is off (launch capability missing)".to_string(),
+            detail: format!(
+                "Script-extender plugin DLLs may fail to load in-game. Run:  sudo setcap cap_sys_admin+ep {}  then press F5. Every rebuild of that binary wipes it.",
+                find_eidos_binary().display()
+            ),
+        });
+    } else {
+        out.push(Diagnostic {
+            level: DiagLevel::Ok,
+            title: "FUSE passthrough available".to_string(),
+            detail: "The launch binary carries CAP_SYS_ADMIN, so reads and DLL mapping go through the kernel.".to_string(),
+        });
+    }
+
+    // Missing masters: the single most reliable crash predictor.
+    match app.plugins.as_ref() {
+        Some(list) => {
+            let missing = list.missing_masters();
+            if missing.is_empty() {
+                out.push(Diagnostic {
+                    level: DiagLevel::Ok,
+                    title: "No missing masters".to_string(),
+                    detail: format!("All {} plugins have their masters enabled.", list.plugins.len()),
+                });
+            } else {
+                let mut detail = missing
+                    .iter()
+                    .take(8)
+                    .map(|(p, m)| format!("{p} needs {m}"))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                if missing.len() > 8 {
+                    detail.push_str(&format!("; and {} more", missing.len() - 8));
+                }
+                out.push(Diagnostic {
+                    level: DiagLevel::Problem,
+                    title: format!("{} plugin(s) are missing a master", missing.len()),
+                    detail: format!("{detail}. The game will crash on load - enable or install them."),
+                });
+            }
+        }
+        None => out.push(Diagnostic {
+            level: DiagLevel::Advice,
+            title: "Load order not computed yet".to_string(),
+            detail: "Open the Plugins tab to analyse the load order.".to_string(),
+        }),
+    }
+
+    // ENB + Community Shaders both injecting into D3D11.
+    if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
+        let cs_roots: Vec<PathBuf> = inst
+            .modlist()
+            .into_iter()
+            .filter(|m| m.enabled && !m.is_separator())
+            .map(|m| m.path)
+            .collect();
+        if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: "ENB and Community Shaders are both active".to_string(),
+                detail: "They can run together, but if visuals look wrong disable one in its INI."
+                    .to_string(),
+            });
+        }
+    }
+
+    // A non-empty Overwrite is generated content sitting outside any mod.
+    if let Some(inst) = app.created.as_ref() {
+        if !inst.overwrite_is_empty() {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: "The Overwrite holds generated files".to_string(),
+                detail: "Tool output (xEdit, DynDOLOD, Nemesis) is sitting outside any mod. Turn it into one from the Overwrite tab so it can be ordered and disabled.".to_string(),
+            });
+        }
+        // Debris from an interrupted install.
+        let debris: Vec<String> = fs::read_dir(inst.mods_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.starts_with(".eidos-install"))
+            .collect();
+        if !debris.is_empty() {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: format!("{} leftover extraction folder(s)", debris.len()),
+                detail: format!(
+                    "An install was interrupted. They are ignored by the mod list and safe to delete from {}.",
+                    inst.mods_dir().display()
+                ),
+            });
+        }
+    }
+
+    // The game rewrites its own load order; a profile that never captured one is
+    // still riding on the prefix's copy.
+    if let Some(inst) = app.created.as_ref() {
+        let prof = inst.active();
+        if !prof.has_plugin_state() {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: format!("Profile '{}' has no load order of its own yet", prof.name),
+                detail: "It will adopt the current one on the next launch, after which switching profiles switches load orders.".to_string(),
+            });
+        }
+    }
+
+    // LOOT coverage for this game.
+    if let Some(game) = selected_game(app) {
+        if !eidos_loot::is_supported(game.def.id) {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: format!("LOOT cannot sort {}", game.def.name),
+                detail: "This game orders plugins by file timestamp; sort it by hand in the Plugins tab.".to_string(),
+            });
+        }
+        if game.compatdata.is_none() {
+            out.push(Diagnostic {
+                level: DiagLevel::Problem,
+                title: "No Proton prefix found".to_string(),
+                detail: "Launch the game once through Steam so its prefix exists; until then the load order and INIs cannot be deployed.".to_string(),
+            });
+        }
+    }
+
+    out
+}
+
+/// The Diagnostics tab label, carrying the count of things needing attention.
+fn diagnostics_tab_label(app: &App) -> String {
+    let n = diagnostics(app).iter().filter(|d| d.level == DiagLevel::Problem).count();
+    if n > 0 {
+        format!("Diagnostics ({n})")
+    } else {
+        "Diagnostics".to_string()
+    }
+}
+
+fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
+    let checks = diagnostics(app);
+    let problems = checks.iter().filter(|d| d.level == DiagLevel::Problem).count();
+    let summary = if problems == 0 {
+        "No problems found.".to_string()
+    } else {
+        format!("{problems} problem(s) need attention.")
+    };
+    let mut col = Column::new()
+        .spacing(8)
+        .push(text("Diagnostics").size(13.0))
+        .push(text(summary).size(12.0));
+    for d in checks {
+        let (tag, color) = match d.level {
+            DiagLevel::Problem => ("PROBLEM", Color::from_rgb8(0x8A, 0x2A, 0x2A)),
+            DiagLevel::Advice => ("ADVICE", Color::from_rgb8(0xB0, 0x6A, 0x10)),
+            DiagLevel::Ok => ("OK", Color::from_rgb8(0x3E, 0x73, 0x50)),
+        };
+        let card = Column::new()
+            .spacing(2)
+            .push(
+                Row::new()
+                    .spacing(6)
+                    .align_y(iced::Alignment::Center)
+                    .push(text(tag).size(9.0).color(color).width(Length::Fixed(58.0)))
+                    .push(text(d.title).size(12.0).width(Length::Fill)),
+            )
+            .push(text(d.detail).size(10.5).color(Color::from_rgb8(0x6A, 0x5A, 0x40)));
+        col = col.push(container(card).padding([4, 6]).width(Length::Fill).style(card_style));
+    }
+    scrollable(col).height(Length::Fill).into()
+}
+
+fn tab_btn<'a>(label: String, t: Tab, selected: bool) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .padding(6)
         .on_press(Message::SelectTab(t))
@@ -4949,12 +5149,13 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
 
     let tabs = Row::new()
         .spacing(4)
-        .push(tab_btn("Data", Tab::Data, app.tab == Tab::Data))
-        .push(tab_btn("Plugins", Tab::Plugins, app.tab == Tab::Plugins))
-        .push(tab_btn("Conflicts", Tab::Conflicts, app.tab == Tab::Conflicts))
-        .push(tab_btn("Overwrite", Tab::Overwrite, app.tab == Tab::Overwrite))
-        .push(tab_btn("Saves", Tab::Saves, app.tab == Tab::Saves))
-        .push(tab_btn("Downloads", Tab::Downloads, app.tab == Tab::Downloads));
+        .push(tab_btn("Data".to_string(), Tab::Data, app.tab == Tab::Data))
+        .push(tab_btn("Plugins".to_string(), Tab::Plugins, app.tab == Tab::Plugins))
+        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, app.tab == Tab::Conflicts))
+        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, app.tab == Tab::Overwrite))
+        .push(tab_btn("Saves".to_string(), Tab::Saves, app.tab == Tab::Saves))
+        .push(tab_btn("Downloads".to_string(), Tab::Downloads, app.tab == Tab::Downloads))
+        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, app.tab == Tab::Diagnostics));
 
     let content = match app.tab {
         Tab::Data => data_panel(app),
@@ -4963,6 +5164,7 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         Tab::Overwrite => overwrite_panel(app),
         Tab::Saves => saves_panel(app),
         Tab::Downloads => downloads_panel(app),
+        Tab::Diagnostics => diagnostics_panel(app),
     };
 
     let inner = Column::new().spacing(8).push(top).push(tabs).push(content);

@@ -127,7 +127,10 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         game_binary: "SkyrimVR.exe",
-        script_extender: None,
+        script_extender: Some(ScriptExtender {
+            launcher: "SkyrimVRLauncher.exe",
+            loader: "sksevr_loader.exe",
+        }),
     },
     GameDef {
         id: "skyrim",
@@ -160,7 +163,11 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         game_binary: "SkyrimSE.exe",
-        script_extender: None,
+        // Enderal SE ships as a Skyrim SE reskin and uses SKSE64 unchanged.
+        script_extender: Some(ScriptExtender {
+            launcher: "Enderal Launcher.exe",
+            loader: "skse64_loader.exe",
+        }),
     },
     GameDef {
         id: "fallout4",
@@ -191,7 +198,10 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
         game_binary: "Fallout4VR.exe",
-        script_extender: None,
+        script_extender: Some(ScriptExtender {
+            launcher: "Fallout4VRLauncher.exe",
+            loader: "f4sevr_loader.exe",
+        }),
     },
     GameDef {
         id: "falloutnv",
@@ -272,7 +282,10 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
         game_binary: "Starfield.exe",
-        script_extender: None,
+        script_extender: Some(ScriptExtender {
+            launcher: "Starfield.exe",
+            loader: "sfse_loader.exe",
+        }),
     },
 ];
 
@@ -572,6 +585,10 @@ mod tests {
         assert_eq!(se.launcher, "SkyrimSELauncher.exe");
         assert_eq!(se.loader, "skse64_loader.exe");
         // Games whose launcher we do not know stay None rather than guessing.
-        assert!(GameDef::for_id("starfield").unwrap().script_extender.is_none());
+        // Every script-extended game now declares its loader (VR + Enderal + SFSE).
+        assert_eq!(GameDef::for_id("starfield").unwrap().script_extender.unwrap().loader, "sfse_loader.exe");
+        assert_eq!(GameDef::for_id("skyrimvr").unwrap().script_extender.unwrap().loader, "sksevr_loader.exe");
+        assert_eq!(GameDef::for_id("fallout4vr").unwrap().script_extender.unwrap().loader, "f4sevr_loader.exe");
+        assert_eq!(GameDef::for_id("enderalse").unwrap().script_extender.unwrap().loader, "skse64_loader.exe");
     }
 }
