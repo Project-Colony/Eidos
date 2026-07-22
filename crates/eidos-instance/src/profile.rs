@@ -54,6 +54,74 @@ impl Profile {
         self.dir().join("plugins.txt")
     }
 
+    /// This profile's stored load order (`loadorder.txt`), the companion to
+    /// [`Self::plugins_txt_path`] that records where INACTIVE plugins sit.
+    pub fn loadorder_txt_path(&self) -> PathBuf {
+        self.dir().join("loadorder.txt")
+    }
+
+    /// The two files that make up this profile's plugin state.
+    fn plugin_state_files(&self) -> [(PathBuf, &'static str); 2] {
+        [
+            (self.plugins_txt_path(), "plugins.txt"),
+            (self.loadorder_txt_path(), "loadorder.txt"),
+        ]
+    }
+
+    /// Whether this profile already owns a plugin state (so it should drive the
+    /// load order rather than the prefix's copy).
+    pub fn has_plugin_state(&self) -> bool {
+        self.plugins_txt_path().is_file()
+    }
+
+    /// One-time migration, mirroring [`Self::seed_inis`]: adopt the prefix's
+    /// existing `plugins.txt`/`loadorder.txt` (`src_dir` = where the game reads
+    /// them) into this profile, without overwriting a state the profile already
+    /// owns. Returns how many files were seeded.
+    pub fn seed_plugin_state(&self, src_dir: &Path) -> io::Result<u32> {
+        fs::create_dir_all(self.dir())?;
+        let mut n = 0;
+        for (dst, name) in self.plugin_state_files() {
+            let src = src_dir.join(name);
+            if !dst.exists() && src.is_file() {
+                fs::copy(&src, &dst)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Deploy this profile's plugin state into `dst_dir` before launch, so the
+    /// game (and Eidos's own pre-launch pass) sees THIS profile's load order.
+    /// Returns how many files were deployed.
+    pub fn deploy_plugin_state(&self, dst_dir: &Path) -> io::Result<u32> {
+        fs::create_dir_all(dst_dir)?;
+        let mut n = 0;
+        for (src, name) in self.plugin_state_files() {
+            if src.is_file() {
+                fs::copy(&src, dst_dir.join(name))?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
+    /// Capture the plugin state back from `src_dir` after the game exits: Skyrim
+    /// rewrites `plugins.txt` itself, and those changes belong to the profile that
+    /// was played. Returns how many files were captured.
+    pub fn capture_plugin_state(&self, src_dir: &Path) -> io::Result<u32> {
+        fs::create_dir_all(self.dir())?;
+        let mut n = 0;
+        for (dst, name) in self.plugin_state_files() {
+            let src = src_dir.join(name);
+            if src.is_file() {
+                fs::copy(&src, &dst)?;
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     /// This profile's stored copy of a game INI (e.g. `Skyrim.ini`). The profile
     /// owns its INIs; they are deployed into the Proton prefix at launch.
     pub fn ini_path(&self, ini_file: &str) -> PathBuf {
@@ -673,5 +741,44 @@ mod tests {
         .unwrap();
         assert!(p2.load_order().is_empty());
         let _ = fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn plugin_state_seeds_deploys_and_captures_per_profile() {
+        let root = inst_with_mods(&["A"]);
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::write(prefix.join("plugins.txt"), b"*Alpha.esp\nBeta.esp\n").unwrap();
+        fs::write(prefix.join("loadorder.txt"), b"Alpha.esp\nBeta.esp\n").unwrap();
+
+        // Seed: the profile adopts the prefix's existing order once.
+        let a = prof(&root, "Default");
+        assert!(!a.has_plugin_state());
+        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 2);
+        assert!(a.has_plugin_state());
+        // Seeding again must not clobber the profile's own copy.
+        fs::write(a.plugins_txt_path(), b"*Alpha.esp\n").unwrap();
+        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 0);
+        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n");
+
+        // A second profile has its own, independent state.
+        let b = prof(&root, "Testing");
+        assert!(!b.has_plugin_state());
+        fs::create_dir_all(b.dir()).unwrap();
+        fs::write(b.plugins_txt_path(), b"*Beta.esp\n").unwrap();
+
+        // Deploy: whichever profile is active drives what the game reads.
+        assert_eq!(b.deploy_plugin_state(&prefix).unwrap(), 1);
+        assert_eq!(fs::read(prefix.join("plugins.txt")).unwrap(), b"*Beta.esp\n");
+        a.deploy_plugin_state(&prefix).unwrap();
+        assert_eq!(fs::read(prefix.join("plugins.txt")).unwrap(), b"*Alpha.esp\n");
+
+        // Capture: the game's own rewrite comes back into the played profile only.
+        fs::write(prefix.join("plugins.txt"), b"*Alpha.esp\n*Beta.esp\n").unwrap();
+        assert_eq!(a.capture_plugin_state(&prefix).unwrap(), 2);
+        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n*Beta.esp\n");
+        assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), b"*Beta.esp\n");
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

@@ -337,6 +337,15 @@ enum Message {
     ForceUnlock,
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
+    // ---- Overwrite -> mod (MO2's "Create mod from Overwrite") ----
+    /// Open the name prompt for turning the Overwrite into a mod.
+    OverwriteToModStart,
+    /// The typed target mod name (an existing mod merges, a new one is created).
+    OverwriteToModName(String),
+    /// Move the Overwrite's contents into that mod.
+    OverwriteToModCommit,
+    /// Dismiss the prompt.
+    OverwriteToModCancel,
     Noop,
 }
 
@@ -499,6 +508,8 @@ struct App {
     status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.
     confirm_clear: bool,
+    /// The in-progress "create mod from Overwrite" name, if that prompt is open.
+    overwrite_to_mod: Option<String>,
     /// The Proton command Steam passed via `%command%` (empty if launched
     /// standalone). The Run button launches the game through this.
     launch_command: Vec<String>,
@@ -732,6 +743,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
+        overwrite_to_mod: None,
         launch_command,
         fomod: None,
         collision: None,
@@ -1781,6 +1793,55 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::ClearStatus => {
             app.status = None;
         }
+        Message::OverwriteToModStart => {
+            if app.created.as_ref().is_some_and(|i| i.overwrite_is_empty()) {
+                app.status = Some("The Overwrite is empty - nothing to turn into a mod.".to_string());
+            } else {
+                // Default to a fresh, non-colliding name, like the installer does.
+                let suggestion = app
+                    .created
+                    .as_ref()
+                    .map(|i| suggest_free_name(&i.mods_dir(), "Overwrite output"))
+                    .unwrap_or_else(|| "Overwrite output".to_string());
+                app.overwrite_to_mod = Some(suggestion);
+            }
+        }
+        Message::OverwriteToModName(s) => {
+            if app.overwrite_to_mod.is_some() {
+                app.overwrite_to_mod = Some(s);
+            }
+        }
+        Message::OverwriteToModCancel => {
+            app.overwrite_to_mod = None;
+        }
+        Message::OverwriteToModCommit => {
+            let Some(name) = app.overwrite_to_mod.take().map(|s| s.trim().to_string()) else {
+                return Task::none();
+            };
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let existing = inst.mods_dir().join(&name).exists();
+            match inst.overwrite_into_mod(&name) {
+                Ok(dest) => {
+                    // Highest priority (the end of the display order), which is where
+                    // the Overwrite's content effectively sat.
+                    if !app.mods.iter().any(|m| m.name == name) {
+                        app.mods.push(ModEntry { name: name.clone(), enabled: true, path: dest });
+                    }
+                    drop_files_cache(app, None);
+                    mods_changed(app);
+                    app.status = Some(if existing {
+                        format!("Moved the Overwrite into '{name}'.")
+                    } else {
+                        format!("Created mod '{name}' from the Overwrite.")
+                    });
+                }
+                Err(e) => {
+                    app.status = Some(format!("Could not create the mod: {e}"));
+                    // Keep the prompt open so the name can be fixed.
+                    app.overwrite_to_mod = Some(name);
+                }
+            }
+        }
         Message::Refresh => {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
@@ -2110,7 +2171,6 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             // Compute the spec + prefix dir up front (immutable borrows of `app`)
             // before mutating `app.plugins`.
             let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
-            let prefix = selected_game(app).and_then(|g| g.compatdata.as_ref().map(|cd| cd.join("pfx")));
             let name = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.name.clone());
             let forced = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.force_disabled).unwrap_or(false);
             if let (Some(spec), Some(name)) = (spec, name) {
@@ -2120,25 +2180,25 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 } else if forced {
                     app.status =
                         Some(format!("{name} is a light plugin this game can't load and stays off."));
-                } else if let Some(list) = app.plugins.as_mut() {
-                    let now = list.plugins.get(i).map(|p| p.enabled).unwrap_or(false);
-                    list.set_enabled(&name, !now);
-                    list.refresh(&spec);
-                    match prefix.map(|pfx| plugins_txt_dir(&pfx, &spec)) {
-                        Some(dir) => match list.write_load_order(&dir, &spec) {
-                            Ok(()) => {
-                                app.status =
-                                    Some(format!("{} {name}.", if now { "Disabled" } else { "Enabled" }));
-                            }
-                            Err(e) => app.status = Some(format!("Could not write plugins.txt: {e}")),
-                        },
-                        None => {
-                            app.status = Some(
-                                "Toggled; it will persist once the game's Proton prefix exists (launch it once)."
-                                    .to_string(),
-                            );
-                        }
+                } else if app.plugins.is_some() {
+                    let mut now = false;
+                    if let Some(list) = app.plugins.as_mut() {
+                        now = list.plugins.get(i).map(|p| p.enabled).unwrap_or(false);
+                        list.set_enabled(&name, !now);
+                        list.refresh(&spec);
                     }
+                    // Persist to the profile (which owns the order) and the prefix.
+                    // Both borrows below are shared, so this is fine after the
+                    // mutation above has ended.
+                    let written = app
+                        .plugins
+                        .as_ref()
+                        .map(|list| write_plugin_state(app, list, &spec))
+                        .transpose();
+                    app.status = Some(match written {
+                        Ok(_) => format!("{} {name}.", if now { "Disabled" } else { "Enabled" }),
+                        Err(e) => format!("Could not write the load order: {e}"),
+                    });
                 }
             }
         }
@@ -2189,7 +2249,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         Some((_, repo)) => repo,
                         None => return Err(format!("LOOT sorting is not available for {id}.")),
                     };
-                    let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, false)
+                    // Refresh the masterlist on every sort, like MO2/LOOT; a failed
+                    // download falls back to the cached copy.
+                    let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, true)
                         .map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");
                     let order = eidos_loot::sort(&id, &install, &local_dir, &plugins, &ml, &pre, Some(&userlist))
@@ -2217,12 +2279,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
             };
             // Recompute spec + prefix dir (immutable borrows) before mutating plugins.
-            let info = selected_game(app).and_then(|g| {
-                let spec = GameSpec::for_id(g.def.id)?;
-                let dir = g.compatdata.as_ref().map(|cd| plugins_txt_dir(&cd.join("pfx"), &spec));
-                Some((spec, dir))
-            });
-            let Some((spec, dir)) = info else { return Task::none() };
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
             // A refresh may have invalidated the cache while LOOT ran off-thread;
             // recompute instead of silently discarding the sort (the report would
             // otherwise pop over an unsorted list).
@@ -2232,20 +2291,13 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(list) = app.plugins.as_mut() {
                 list.apply_sorted_order(&sorted);
                 list.refresh(&spec);
-                match dir {
-                    Some(d) => match list.write_load_order(&d, &spec) {
-                        Ok(()) => {
-                            app.status = Some(format!("LOOT sorted {} plugins.", sorted.len()));
-                        }
-                        Err(e) => {
-                            app.status = Some(format!("Sorted, but writing the load order failed: {e}"));
-                        }
-                    },
-                    None => {
-                        app.status = Some("Sorted in memory (no prefix yet to persist it).".to_string());
-                    }
-                }
             }
+            let written =
+                app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
+            app.status = Some(match written {
+                Ok(_) => format!("LOOT sorted {} plugins.", sorted.len()),
+                Err(e) => format!("Sorted, but writing the load order failed: {e}"),
+            });
             // Show the LOOT report (MO2 always pops its dialog after a sort), so the
             // user sees missing masters / warnings / cleaning advice - or a clean bill.
             // The order was already applied above; a report failure only costs the
@@ -4270,6 +4322,9 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 .size(12.0)
                 .width(Length::Fill),
         )
+        // MO2's central Overwrite workflow: turn what the game/tools generated into
+        // a real, orderable mod instead of only being able to delete it.
+        .push(tool_btn("Create mod...", Message::OverwriteToModStart))
         .push(tool_btn("Open folder", Message::OpenFolder(dir.clone())))
         .push(
             button(text(if app.confirm_clear { "Confirm clear?" } else { "Clear" }).size(12.0))
@@ -4277,6 +4332,38 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::ClearOverwrite)
                 .style(if app.confirm_clear { button::danger } else { button::secondary }),
         );
+
+    // The inline name prompt, shown while "Create mod..." is armed. Typing an
+    // existing mod's name merges into it (MO2's "move content to mod").
+    let prompt: Option<Element<'a, Message>> = app.overwrite_to_mod.as_ref().map(|name| {
+        let exists = inst.mods_dir().join(name.trim()).exists();
+        let hint = if exists {
+            "merges into that existing mod"
+        } else {
+            "creates a new mod at the top of the priority order"
+        };
+        Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(text("Mod name").size(12.0))
+            .push(
+                text_input("Mod name", name)
+                    .on_input(Message::OverwriteToModName)
+                    .on_submit(Message::OverwriteToModCommit)
+                    .padding(5)
+                    .size(12.0)
+                    .width(Length::Fixed(260.0)),
+            )
+            .push(text(hint).size(10.0).width(Length::Fill))
+            .push(
+                button(text("Create").size(12.0))
+                    .padding([4, 12])
+                    .on_press(Message::OverwriteToModCommit)
+                    .style(button::primary),
+            )
+            .push(tool_btn("Cancel", Message::OverwriteToModCancel))
+            .into()
+    });
 
     let entries = cached_entries(app, &dir);
     let mut c = Column::new().spacing(2);
@@ -4289,11 +4376,11 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         c = c.push(text(e).size(11.0));
     }
 
-    Column::new()
-        .spacing(8)
-        .push(actions)
-        .push(scrollable(c).height(Length::Fill))
-        .into()
+    let mut col = Column::new().spacing(8).push(actions);
+    if let Some(p) = prompt {
+        col = col.push(p);
+    }
+    col.push(scrollable(c).height(Length::Fill)).into()
 }
 
 /// Format a file's modified time as `YYYY-MM-DD HH:MM` (UTC), with only std - no
@@ -4491,15 +4578,41 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
     }
 
     let mut list = PluginList::discover(&sources, &spec);
-    if let Some(cd) = game.compatdata.as_ref() {
-        // Same primitive as the launch path: for PlainList games this also keeps
-        // "in loadorder.txt but not plugins.txt" DISABLED instead of silently
-        // re-enabling plugins the user turned off.
-        let dir = plugins_txt_dir(&cd.join("pfx"), &spec);
-        list.apply_prefix_state(&dir, &spec);
+    // The load order is per-profile: read the active profile's own copy once it
+    // has one, and otherwise the prefix's (which the profile adopts on first
+    // launch). Same primitive as the launch path, so for PlainList games this also
+    // keeps "in loadorder.txt but not plugins.txt" DISABLED instead of silently
+    // re-enabling plugins the user turned off.
+    let profile_state = app
+        .created
+        .as_ref()
+        .map(|i| i.active())
+        .filter(|p| p.has_plugin_state())
+        .map(|p| p.dir());
+    match profile_state {
+        Some(dir) => list.apply_prefix_state(&dir, &spec),
+        None => {
+            if let Some(cd) = game.compatdata.as_ref() {
+                let dir = plugins_txt_dir(&cd.join("pfx"), &spec);
+                list.apply_prefix_state(&dir, &spec);
+            }
+        }
     }
     list.refresh(&spec);
     Some(list)
+}
+
+/// Persist the plugin load order: into the active profile (which owns it) AND
+/// into the prefix the game reads, so a profile switch swaps load orders and the
+/// game still sees the current one without waiting for the next launch.
+fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io::Result<()> {
+    if let Some(inst) = app.created.as_ref() {
+        list.write_load_order(&inst.active().dir(), spec)?;
+    }
+    if let Some(cd) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
+        list.write_load_order(&plugins_txt_dir(&cd.join("pfx"), spec), spec)?;
+    }
+    Ok(())
 }
 
 fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {

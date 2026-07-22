@@ -41,15 +41,17 @@ fn plugin_sources(
     sources
 }
 
-/// Before launch: discover this instance's plugins, preserve any existing load
-/// order from the prefix, re-validate the invariants, and write
-/// `plugins.txt`/`loadorder.txt` where the game reads them. Best-effort - a game
-/// with no plugin system or no Proton prefix is simply skipped.
-fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
-    let Some(spec) = eidos_plugins::GameSpec::for_id(id) else { return };
+/// Before launch: deploy the active profile's load order, discover this
+/// instance's plugins, re-validate the invariants, and write
+/// `plugins.txt`/`loadorder.txt` where the game reads them. Returns that
+/// directory so the caller can capture the game's own rewrite back into the
+/// profile. Best-effort - a game with no plugin system or no Proton prefix is
+/// simply skipped (`None`).
+fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) -> Option<PathBuf> {
+    let spec = eidos_plugins::GameSpec::for_id(id)?;
     let Some(compatdata) = game.compatdata.as_ref() else {
         eprintln!("eidos play: no Proton prefix found, skipping plugins.txt");
-        return;
+        return None;
     };
     let prefix = compatdata.join("pfx");
 
@@ -61,10 +63,25 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
 
+    let dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    // Per-profile load order: adopt whatever is already in the prefix the first
+    // time this profile runs, then deploy the PROFILE's copy so the state below
+    // (and the game) is this profile's, not the last-played one's.
+    let prof = inst.active();
+    match prof.seed_plugin_state(&dir) {
+        Ok(n) if n > 0 => {
+            eprintln!("eidos play: adopted the existing load order into profile '{}'", prof.name)
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("eidos play: WARNING - could not seed the profile load order: {e}"),
+    }
+    if let Err(e) = prof.deploy_plugin_state(&dir) {
+        eprintln!("eidos play: WARNING - could not deploy the profile load order: {e}");
+    }
+
     // Preserve the user's existing order + enabled state (their MO2 or prior-run
     // plugins.txt / loadorder.txt). For PlainList games this also keeps disabled
     // plugins disabled (recorded only in loadorder.txt), not just the actives.
-    let dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
     list.apply_prefix_state(&dir, &spec);
     list.refresh(&spec);
 
@@ -73,9 +90,14 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) {
     }
     let active = list.plugins.iter().filter(|p| p.enabled).count();
     match list.write_load_order(&dir, &spec) {
-        Ok(()) => eprintln!("eidos play: wrote {active} active plugins to plugins.txt"),
+        Ok(()) => {
+            eprintln!("eidos play: wrote {active} active plugins to plugins.txt");
+            // Keep the profile's own copy in step with what the game will read.
+            let _ = prof.capture_plugin_state(&dir);
+        }
         Err(e) => eprintln!("eidos play: could not write plugins.txt: {e}"),
     }
+    Some(dir)
 }
 
 /// Before launch: give the active profile its own INIs in the prefix. Seed the
@@ -303,7 +325,7 @@ fn run_through_view(
     prereqs: &[String],
 ) -> ! {
     let inis = prepare_inis(id, game, inst);
-    prepare_plugins(id, game, inst);
+    let plugins_dir = prepare_plugins(id, game, inst);
     let save_bind = prepare_saves(id, game, inst);
 
     // Soft advisory: an ENB (game root, outside the Data mount) and Community
@@ -346,6 +368,18 @@ fn run_through_view(
         if let Ok(n) = inst.active().capture_inis(&docs, ini_files) {
             if n > 0 {
                 eprintln!("eidos: captured {n} INI(s) back into profile '{}'", inst.active_profile());
+            }
+        }
+    }
+    // Skyrim rewrites plugins.txt itself (activating a plugin in-game, or the
+    // launcher's own pass): that belongs to the profile that was just played.
+    if let Some(dir) = plugins_dir {
+        if let Ok(n) = inst.active().capture_plugin_state(&dir) {
+            if n > 0 {
+                eprintln!(
+                    "eidos: captured the load order back into profile '{}'",
+                    inst.active_profile()
+                );
             }
         }
     }

@@ -15,7 +15,7 @@
 //! ```
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod categories;
 mod manifest;
@@ -150,6 +150,41 @@ impl Instance {
 
     pub fn overwrite_dir(&self) -> PathBuf {
         self.root.join("overwrite")
+    }
+
+    /// Whether the Overwrite currently holds anything.
+    pub fn overwrite_is_empty(&self) -> bool {
+        fs::read_dir(self.overwrite_dir()).into_iter().flatten().flatten().next().is_none()
+    }
+
+    /// MO2's "Create mod from Overwrite" / "Move content to mod": move everything
+    /// the game wrote into `mods/<name>/`, leaving the Overwrite empty.
+    ///
+    /// `name` must be a plain folder name. An existing mod is MERGED into
+    /// (matching MO2's move-into-existing-mod), a new one gets a minimal
+    /// `meta.ini`. Both live under the instance root, so the moves are renames
+    /// rather than copies. Returns the mod folder's path.
+    pub fn overwrite_into_mod(&self, name: &str) -> std::io::Result<PathBuf> {
+        use std::io::{Error, ErrorKind};
+        let name = name.trim();
+        if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            return Err(Error::new(ErrorKind::InvalidInput, "invalid mod name"));
+        }
+        let src = self.overwrite_dir();
+        if self.overwrite_is_empty() {
+            return Err(Error::new(ErrorKind::NotFound, "the Overwrite is empty"));
+        }
+        let dest = self.mods_dir().join(name);
+        let fresh = !dest.exists();
+        fs::create_dir_all(&dest)?;
+        move_tree(&src, &dest)?;
+        if fresh {
+            // The same minimal meta.ini `create_empty_mod` writes, so the new mod
+            // reads back like any other.
+            let _ =
+                fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n");
+        }
+        Ok(dest)
     }
 
     /// Bind-stash mountpoint for the pristine game files (used at launch).
@@ -350,6 +385,28 @@ impl Instance {
     }
 }
 
+/// Move every entry of `from` into `to`, merging into existing directories and
+/// leaving `from` empty. Both sides live under the instance root (one
+/// filesystem), so entries move by rename; a rename that fails because the
+/// destination directory already exists recurses into it.
+fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    for e in fs::read_dir(from)?.flatten() {
+        let src = e.path();
+        let dst = to.join(e.file_name());
+        if src.is_dir() && dst.exists() {
+            // Merge rather than clobber, then drop the now-empty source dir.
+            move_tree(&src, &dst)?;
+            let _ = fs::remove_dir(&src);
+        } else {
+            if dst.exists() {
+                fs::remove_file(&dst)?;
+            }
+            fs::rename(&src, &dst)?;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +510,56 @@ mod tests {
         assert!(is_separator_name("X_separator"));
         assert!(!is_separator_name("Xseparator"));
         assert!(!is_separator_name("separator_X"));
+    }
+
+    #[test]
+    fn overwrite_into_new_mod_moves_everything_and_empties_it() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        fs::create_dir_all(ow.join("SKSE/Plugins")).unwrap();
+        fs::write(ow.join("SKSE/Plugins/gen.json"), b"generated").unwrap();
+        fs::write(ow.join("loose.txt"), b"x").unwrap();
+        assert!(!inst.overwrite_is_empty());
+
+        let dest = inst.overwrite_into_mod("Generated Output").unwrap();
+        assert_eq!(fs::read(dest.join("SKSE/Plugins/gen.json")).unwrap(), b"generated");
+        assert_eq!(fs::read(dest.join("loose.txt")).unwrap(), b"x");
+        assert!(dest.join("meta.ini").is_file(), "a fresh mod gets a meta.ini");
+        assert!(inst.overwrite_is_empty(), "the Overwrite must be left empty");
+    }
+
+    #[test]
+    fn overwrite_into_existing_mod_merges_without_clobbering() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let target = inst.mods_dir().join("MyMod");
+        fs::create_dir_all(target.join("meshes")).unwrap();
+        fs::write(target.join("meshes/keep.nif"), b"keep").unwrap();
+        fs::write(target.join("meta.ini"), b"[General]\nendorsed=1\n").unwrap();
+
+        let ow = inst.overwrite_dir();
+        fs::create_dir_all(ow.join("meshes")).unwrap();
+        fs::write(ow.join("meshes/new.nif"), b"new").unwrap();
+
+        inst.overwrite_into_mod("MyMod").unwrap();
+        assert_eq!(fs::read(target.join("meshes/keep.nif")).unwrap(), b"keep");
+        assert_eq!(fs::read(target.join("meshes/new.nif")).unwrap(), b"new");
+        // An existing mod keeps its own metadata.
+        assert_eq!(fs::read(target.join("meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
+        assert!(inst.overwrite_is_empty());
+    }
+
+    #[test]
+    fn overwrite_into_mod_rejects_bad_names_and_an_empty_overwrite() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        // Empty Overwrite.
+        assert!(inst.overwrite_into_mod("Whatever").is_err());
+        fs::write(inst.overwrite_dir().join("f.txt"), b"x").unwrap();
+        for bad in ["", "  ", "a/b", "a\\b", "..", "."] {
+            assert!(inst.overwrite_into_mod(bad).is_err(), "{bad:?} must be rejected");
+        }
+        assert!(!inst.overwrite_is_empty(), "a rejected move leaves the Overwrite alone");
     }
 }

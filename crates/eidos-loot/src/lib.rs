@@ -82,15 +82,28 @@ pub fn ensure_masterlist(
     let masterlist = cache_dir.join("masterlist.yaml");
     let prelude = cache_dir.join("prelude.yaml");
     fs::create_dir_all(cache_dir)?;
+    // A refresh is best-effort: if the download fails but a cached copy exists,
+    // sorting proceeds with it (LOOT stays usable offline). Only a MISSING file
+    // makes a failed fetch fatal.
+    let refresh = |url: String, dest: &Path| -> Result<(), LootError> {
+        match fetch(&url, dest) {
+            Ok(()) => Ok(()),
+            Err(e) if dest.is_file() => {
+                eprintln!("eidos: keeping the cached {}: {e}", dest.display());
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    };
     if update || !masterlist.is_file() {
-        fetch(
-            &format!("https://raw.githubusercontent.com/loot/{repo}/{MASTERLIST_BRANCH}/masterlist.yaml"),
+        refresh(
+            format!("https://raw.githubusercontent.com/loot/{repo}/{MASTERLIST_BRANCH}/masterlist.yaml"),
             &masterlist,
         )?;
     }
     if update || !prelude.is_file() {
-        fetch(
-            &format!("https://raw.githubusercontent.com/loot/prelude/{MASTERLIST_BRANCH}/prelude.yaml"),
+        refresh(
+            format!("https://raw.githubusercontent.com/loot/prelude/{MASTERLIST_BRANCH}/prelude.yaml"),
             &prelude,
         )?;
     }
