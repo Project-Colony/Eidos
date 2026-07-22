@@ -200,7 +200,8 @@ mod install;
 pub use install::{
     collision_name, finish_fomod, fomod_context, install_archive, install_archive_with_policy,
     mod_name_for,
-    open_fomod, FomodSession, InstallError, InstallReport, OverwritePolicy,
+    extract_to_temp, install_extracted, open_archive, ExtractedTree, FomodSession, InstallError,
+    InstallReport, Opened, OverwritePolicy,
 };
 
 /// Known top-level Data folder names (lowercased), from MO2's

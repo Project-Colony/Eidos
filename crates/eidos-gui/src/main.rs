@@ -431,6 +431,9 @@ struct CollisionPrompt {
     /// The prompt guards an in-progress FOMOD wizard (still open in `app.fomod`
     /// with the user's choices): resolve via `finish_fomod`, not a re-extract.
     fomod: bool,
+    /// The archive already extracted, kept alive so resolving the collision costs
+    /// no second 7-Zip pass. `None` only for a prompt raised without one.
+    tree: Option<eidos_install::ExtractedTree>,
 }
 
 /// The install status of a downloaded archive, derived from its `.meta` sidecar
@@ -473,6 +476,10 @@ struct DragState {
     from: usize,
     hover_over: usize,
 }
+
+/// One Data-tab row: entry name, the layer providing it, and whether it is a
+/// folder (the merged view as the FUSE union would serve it).
+type DataRow = (String, String, bool);
 
 struct App {
     screen: Screen,
@@ -601,6 +608,21 @@ struct App {
     /// passthrough will be off and SKSE plugin DLLs may fail to load. Drives the
     /// persistent warning banner; rechecked on Refresh and after every run.
     cap_missing: bool,
+    /// Cached per-layer file walks for the conflict analysis, keyed by layer name
+    /// (mod folder / "Overwrite" / "[game]"). RefCell so the read-path
+    /// `compute_conflicts(&App)` can fill missing entries; a toggle or reorder
+    /// then rebuilds the map without touching the filesystem at all. Entries are
+    /// dropped when a layer's contents change (install/remove/rename/run).
+    files_cache: std::cell::RefCell<HashMap<String, (Vec<String>, bool)>>,
+    // ---- view memoisation (these listings ran on EVERY redraw) ----
+    /// Bumped whenever the mod list or anything on disk changes; the memoised
+    /// listings below rebuild only when it moves.
+    view_generation: std::cell::Cell<u64>,
+    /// Memoised Data-tab merged listing, with the generation it was built at.
+    data_listing: std::cell::RefCell<Option<(u64, Vec<DataRow>)>>,
+    /// Memoised recursive file listings per directory (the Overwrite tab and the
+    /// mod-info file tree), each with the generation it was built at.
+    listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, Vec<String>)>>,
     // ---- LOOT report (MO2's post-sort report dialog) ----
     /// The report from the last LOOT sort, shown as a modal so the user sees
     /// missing masters / messages / dirty-plugin advice. `None` = no report open.
@@ -758,6 +780,10 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_delete_confirm: None,
         running: None,
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary()),
+        files_cache: std::cell::RefCell::new(HashMap::new()),
+        view_generation: std::cell::Cell::new(0),
+        data_listing: std::cell::RefCell::new(None),
+        listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
     };
     if let Some(i) = auto {
@@ -1019,6 +1045,8 @@ fn finish_run(app: &mut App) {
     let run = app.running.take();
     if let Some(inst) = &app.created {
         app.mods = inst.modlist();
+        // The session wrote into the Overwrite (and tools may have edited mods).
+        drop_files_cache(app, None);
         invalidate_plugins(app);
         app.conflicts = compute_conflicts(app);
         app.meta_cache = build_meta_cache(app);
@@ -1086,6 +1114,30 @@ fn save_mods(app: &App) -> Option<String> {
     inst.save_modlist(&app.mods).err().map(|e| format!("Could not save the mod list: {e}"))
 }
 
+/// Invalidate every memoised view listing. Cheap: the listings rebuild lazily on
+/// the next redraw that needs them. The stored entries are dropped rather than
+/// left to accumulate one stale copy per directory ever viewed.
+fn bump_views(app: &App) {
+    app.view_generation.set(app.view_generation.get().wrapping_add(1));
+    app.data_listing.borrow_mut().take();
+    app.listing_cache.borrow_mut().clear();
+}
+
+/// Drop cached per-layer file walks: one layer by name (a mod whose contents
+/// just changed), or every layer (`None`) when anything might have moved. Also
+/// invalidates the memoised view listings, which derive from the same trees.
+fn drop_files_cache(app: &App, layer: Option<&str>) {
+    let mut cache = app.files_cache.borrow_mut();
+    match layer {
+        Some(name) => {
+            cache.remove(name);
+        }
+        None => cache.clear(),
+    }
+    drop(cache);
+    bump_views(app);
+}
+
 /// Drop the plugin-order cache - and, when the Plugins tab is open, recompute it
 /// immediately so the pane updates in place instead of blanking to the
 /// placeholder until the user leaves and re-enters the tab.
@@ -1102,6 +1154,9 @@ fn mods_changed(app: &mut App) {
     if let Some(err) = save_mods(app) {
         app.status = Some(err);
     }
+    // The merged view depends on which mods are enabled and in what order, not
+    // just on their contents.
+    bump_views(app);
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
@@ -1471,8 +1526,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let name = eidos_install::mod_name_for(&path);
-            match eidos_install::open_fomod(&path, &mods_dir, &name) {
-                Ok(Some(session)) => {
+            // One extraction, then classify: a plain archive installs straight from
+            // the extracted tree instead of being unpacked a second time.
+            match eidos_install::open_archive(&path, &mods_dir, &name) {
+                Ok(eidos_install::Opened::Fomod(session)) => {
                     let enabled_roots: Vec<std::path::PathBuf> =
                         app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
                     let disabled_roots: Vec<std::path::PathBuf> =
@@ -1481,6 +1538,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots, &disabled_roots),
                         None => eidos_fomod::Context::default(),
                     };
+                    let session = *session;
                     // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
                     // showing the wizard - tell the user what is missing and stop.
                     if let Some(req) = session.unmet_dependencies(&ctx) {
@@ -1492,16 +1550,36 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
                     }
                 }
-                Ok(None) => match eidos_install::install_archive(&path, &mods_dir, &name, &gid) {
-                    Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
-                    Err(eidos_install::InstallError::Exists(_)) => {
-                        // MO2's QueryOverwriteDialog: let the user Merge/Replace/Rename.
-                        let rename_to = suggest_free_name(&mods_dir, &name);
-                        app.collision = Some(CollisionPrompt { archive: path, name: name.clone(), game_id: gid, rename_to, fomod: false });
-                        app.status = Some(format!("'{name}' already exists - choose how to install."));
+                Ok(eidos_install::Opened::Simple(tree)) => {
+                    let ctx = eidos_fomod::Context::default();
+                    match eidos_install::install_extracted(
+                        &tree,
+                        &path,
+                        &mods_dir,
+                        &name,
+                        &gid,
+                        eidos_install::OverwritePolicy::Fail,
+                        &ctx,
+                    ) {
+                        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
+                        Err(eidos_install::InstallError::Exists(_)) => {
+                            // MO2's QueryOverwriteDialog: let the user Merge/Replace/
+                            // Rename. The extracted tree rides along so resolving it
+                            // needs no re-extract.
+                            let rename_to = suggest_free_name(&mods_dir, &name);
+                            app.collision = Some(CollisionPrompt {
+                                archive: path,
+                                name: name.clone(),
+                                game_id: gid,
+                                rename_to,
+                                fomod: false,
+                                tree: Some(tree),
+                            });
+                            app.status = Some(format!("'{name}' already exists - choose how to install."));
+                        }
+                        Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
-                    Err(e) => app.status = Some(format!("Install failed: {e}")),
-                },
+                }
                 Err(e) => app.status = Some(format!("Install failed: {e}")),
             }
         }
@@ -1587,6 +1665,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         game_id: w.game_id.clone(),
                         rename_to,
                         fomod: true,
+                        // The wizard (still open) owns the extracted tree.
+                        tree: None,
                     });
                     app.status = Some(format!("'{name}' already exists - choose how to install."));
                     return Task::none();
@@ -1704,6 +1784,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::Refresh => {
             if let Some(inst) = &app.created {
                 app.mods = inst.modlist();
+                // F5 = full re-scan: every cached file walk may be stale.
+                drop_files_cache(app, None);
                 invalidate_plugins(app);
                 app.conflicts = compute_conflicts(app);
                 app.meta_cache = build_meta_cache(app);
@@ -1730,6 +1812,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => "Overwrite cleared.".to_string(),
                         Err(e) => format!("Clear failed: {e}"),
                     });
+                    drop_files_cache(app, Some("Overwrite"));
+                    app.conflicts = compute_conflicts(app);
                 } else {
                     app.confirm_clear = true;
                     app.status = Some(
@@ -1900,6 +1984,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                             app.selected_mod = None;
                             app.selected_mods.clear();
                             app.drag_state = None;
+                            drop_files_cache(app, Some(&m.name));
                             mods_changed(app);
                             app.status = Some(format!("Removed '{}'.", m.name));
                         }
@@ -1952,6 +2037,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                                         m.name = new_name.clone();
                                         m.path = dest;
                                     }
+                                    // The cache is keyed by name; the old key is stale.
+                                    drop_files_cache(app, Some(&old.name));
                                     mods_changed(app);
                                     app.status = Some(format!("Renamed to '{typed}'."));
                                 }
@@ -2834,6 +2921,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     match fs::remove_dir_all(&m.path) {
                         Ok(()) => {
                             app.mods.remove(i);
+                            drop_files_cache(app, Some(&m.name));
                             removed += 1;
                         }
                         Err(_) => failed += 1,
@@ -3253,6 +3341,21 @@ const C_CONTENT: Length = Length::Fixed(78.0);
 const C_MOVE: Length = Length::Fixed(70.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
+/// [`overwrite_entries`] memoised against the view generation: the Overwrite tab
+/// and the mod-info file tree re-render constantly, and each render used to walk
+/// the whole tree again. Rebuilds only after something changes on disk.
+fn cached_entries(app: &App, dir: &Path) -> Vec<String> {
+    let gen = app.view_generation.get();
+    if let Some((at, entries)) = app.listing_cache.borrow().get(dir) {
+        if *at == gen {
+            return entries.clone();
+        }
+    }
+    let entries = overwrite_entries(dir);
+    app.listing_cache.borrow_mut().insert(dir.to_path_buf(), (gen, entries.clone()));
+    entries
+}
+
 fn overwrite_entries(dir: &Path) -> Vec<String> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let Ok(rd) = fs::read_dir(dir) else { return };
@@ -3284,13 +3387,27 @@ fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// [`merged_listing`] memoised against the view generation - it read every
+/// enabled mod's directory on each redraw of the Data tab.
+fn cached_merged_listing(app: &App) -> Vec<DataRow> {
+    let gen = app.view_generation.get();
+    if let Some((at, entries)) = app.data_listing.borrow().as_ref() {
+        if *at == gen {
+            return entries.clone();
+        }
+    }
+    let entries = merged_listing(app);
+    *app.data_listing.borrow_mut() = Some((gen, entries.clone()));
+    entries
+}
+
 /// Top-level entries of the merged view: each name, the source providing it
 /// (highest-priority enabled mod, or the game data), and whether it's a folder.
 /// Winner attribution matches what the FUSE layer actually serves: Overwrite
 /// first, then mods from HIGHEST display priority down, then the game data.
-fn merged_listing(app: &App) -> Vec<(String, String, bool)> {
+fn merged_listing(app: &App) -> Vec<DataRow> {
     let mut seen = HashSet::new();
-    let mut out: Vec<(String, String, bool)> = Vec::new();
+    let mut out: Vec<DataRow> = Vec::new();
     if let Some(inst) = app.created.as_ref() {
         if let Ok(rd) = fs::read_dir(inst.overwrite_dir()) {
             for e in rd.flatten() {
@@ -3974,7 +4091,7 @@ fn info_kv<'a>(k: &'a str, v: String) -> Element<'a, Message> {
 /// General tab: name/version/category/Nexus id/source/endorsed/tracked + counts.
 fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
     let meta = app.created.as_ref().map(|inst| inst.mod_meta(&m.name));
-    let files = overwrite_entries(&m.path).len();
+    let files = cached_entries(app, &m.path).len();
     let mut col = Column::new().spacing(4).push(info_kv("Name", m.name.clone()));
     if let Some(meta) = &meta {
         if let Some(v) = meta.version() {
@@ -4040,8 +4157,8 @@ fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
 }
 
 /// Filetree tab: every file the mod ships, relative to its root.
-fn info_filetree<'a>(m: &ModEntry) -> Element<'a, Message> {
-    let entries = overwrite_entries(&m.path);
+fn info_filetree<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
+    let entries = cached_entries(app, &m.path);
     let mut col = Column::new().spacing(1).push(text(format!("{} file(s):", entries.len())).size(12.0));
     for e in entries.into_iter().take(2000) {
         col = col.push(text(e).size(11.0));
@@ -4092,7 +4209,7 @@ fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
         InfoTab::Conflicts => info_conflicts(app, i),
-        InfoTab::Filetree => info_filetree(m),
+        InfoTab::Filetree => info_filetree(app, m),
         InfoTab::Notes => info_notes(app),
     };
 
@@ -4126,7 +4243,7 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Type").size(11.0).width(Length::Fixed(70.0)));
 
     let mut list = Column::new().spacing(1);
-    let entries = merged_listing(app);
+    let entries = cached_merged_listing(app);
     if entries.is_empty() {
         list = list.push(text("(empty)").size(12.0));
     }
@@ -4161,7 +4278,7 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 .style(if app.confirm_clear { button::danger } else { button::secondary }),
         );
 
-    let entries = overwrite_entries(&dir);
+    let entries = cached_entries(app, &dir);
     let mut c = Column::new().spacing(2);
     if entries.is_empty() {
         c = c.push(text("(empty)").size(12.0));
@@ -4506,7 +4623,27 @@ fn compute_conflicts(app: &App) -> Option<ConflictMap> {
         name: format!("[{}]", game.def.id),
         root: game.data_path.clone(),
     });
-    Some(ConflictMap::build(&layers))
+    Some(build_conflicts_cached(app, layers))
+}
+
+/// Build the conflict map from cached per-layer file walks: only layers missing
+/// from the cache touch the filesystem, so a toggle/reorder (same set of mods)
+/// re-derives winners entirely in memory. The cache is keyed by layer name
+/// (mod folder names are unique; the game/Overwrite pseudo-layers use their
+/// bracketed display names).
+fn build_conflicts_cached(app: &App, layers: Vec<Layer>) -> ConflictMap {
+    let mut cache = app.files_cache.borrow_mut();
+    let parts: Vec<(Layer, (Vec<String>, bool))> = layers
+        .into_iter()
+        .map(|l| {
+            let files = cache
+                .entry(l.name.clone())
+                .or_insert_with(|| eidos_conflicts::collect_files(&l.root))
+                .clone();
+            (l, files)
+        })
+        .collect();
+    ConflictMap::build_from(&parts)
 }
 
 fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
@@ -4927,14 +5064,28 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
         app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     let archive = c.archive.clone();
-    match eidos_install::install_archive_with_policy(
-        &c.archive,
-        &mods_dir,
-        &c.name,
-        &c.game_id,
-        policy,
-        &ctx,
-    ) {
+    // Reuse the tree extracted when the collision was raised; only fall back to a
+    // fresh extraction if it is gone.
+    let result = match c.tree.as_ref() {
+        Some(tree) => eidos_install::install_extracted(
+            tree,
+            &c.archive,
+            &mods_dir,
+            &c.name,
+            &c.game_id,
+            policy,
+            &ctx,
+        ),
+        None => eidos_install::install_archive_with_policy(
+            &c.archive,
+            &mods_dir,
+            &c.name,
+            &c.game_id,
+            policy,
+            &ctx,
+        ),
+    };
+    match result {
         Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&archive)),
         Err(eidos_install::InstallError::Exists(_)) => {
             // A Rename target that also exists: keep the prompt open for another try.
@@ -5046,6 +5197,8 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive:
     if let Some(a) = archive {
         let _ = eidos_nexus::mark_installed(a);
     }
+    // The installed mod's tree changed (and a FOMOD may have replaced it wholesale).
+    drop_files_cache(app, Some(name));
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);

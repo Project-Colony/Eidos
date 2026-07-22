@@ -99,14 +99,23 @@ impl ConflictMap {
     /// Analyse `layers`, given **highest priority first** (e.g. the mod list with
     /// the game data appended as origin 0). Walks each layer once.
     pub fn build(layers: &[Layer]) -> ConflictMap {
+        let parts: Vec<(Layer, (Vec<String>, bool))> =
+            layers.iter().map(|l| (l.clone(), collect_files(&l.root))).collect();
+        Self::build_from(&parts)
+    }
+
+    /// Like [`build`](Self::build), but from pre-collected per-layer file lists
+    /// (the output of [`collect_files`]). Lets a caller cache the expensive
+    /// filesystem walks and re-derive winners in memory - toggling a mod then
+    /// costs no I/O at all.
+    pub fn build_from(parts: &[(Layer, (Vec<String>, bool))]) -> ConflictMap {
         let mut files: BTreeMap<String, FileNode> = BTreeMap::new();
 
         // Highest priority first: the first layer to provide a path wins it; the
         // rest become alternatives, accumulating in descending-priority order.
         let mut layer_hidden: HashMap<OriginId, bool> = HashMap::new();
-        for layer in layers {
-            let (rels, hidden) = collect_files(&layer.root);
-            if hidden {
+        for (layer, (rels, hidden)) in parts {
+            if *hidden {
                 layer_hidden.insert(layer.origin, true);
             }
             for rel in rels {
@@ -123,7 +132,7 @@ impl ConflictMap {
         }
 
         let mut mods: HashMap<OriginId, ModConflicts> = HashMap::new();
-        for layer in layers {
+        for (layer, _) in parts {
             mods.entry(layer.origin).or_default();
         }
 
@@ -189,7 +198,7 @@ impl ConflictMap {
             };
         }
 
-        let names = layers.iter().map(|l| (l.origin, l.name.clone())).collect();
+        let names = parts.iter().map(|(l, _)| (l.origin, l.name.clone())).collect();
         ConflictMap { files, mods, names }
     }
 
@@ -213,7 +222,10 @@ impl ConflictMap {
 /// was skipped, mirroring MO2's `hasHiddenFiles` (a mod with hidden files gets its
 /// own flag). The Overwrite layer's `.eidoswh*` whiteout/opacity markers are
 /// manager artifacts and are skipped too, so they never appear as conflicting files.
-fn collect_files(root: &Path) -> (Vec<String>, bool) {
+/// Walk one layer's tree into the relative file list [`ConflictMap::build_from`]
+/// consumes, plus whether any `.mohidden` entry was skipped. Public so callers
+/// can cache these walks and rebuild the map in memory.
+pub fn collect_files(root: &Path) -> (Vec<String>, bool) {
     fn rec(base: &Path, dir: &Path, depth: usize, out: &mut Vec<String>, hidden: &mut bool) {
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {

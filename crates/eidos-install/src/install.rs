@@ -179,6 +179,29 @@ pub fn install_archive_with_policy(
     policy: OverwritePolicy,
     ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
+    // A Fail collision needs no 7-Zip at all - check before paying for extraction.
+    if policy == OverwritePolicy::Fail {
+        if let Some(n) = collision_name(mods_dir, name) {
+            return Err(InstallError::Exists(mods_dir.join(n)));
+        }
+    }
+    let tree = extract_to_temp(archive, mods_dir)?;
+    install_extracted(&tree, archive, mods_dir, name, game_name, policy, ctx)
+}
+
+/// Install an already-extracted archive (see [`open_archive`]), resolving a
+/// destination collision per `policy`. Splitting this from the extraction is what
+/// lets the GUI classify an archive once and install it without a second pass.
+#[allow(clippy::too_many_arguments)]
+pub fn install_extracted(
+    tree: &ExtractedTree,
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_name: &str,
+    policy: OverwritePolicy,
+    ctx: &eidos_fomod::Context,
+) -> Result<InstallReport, InstallError> {
     // Sanitize the folder name (a real Nexus modName can contain ':' etc.) and
     // recover the mod id from the filename for the meta.ini when there's no sidecar.
     let mut name = fix_directory_name(name).unwrap_or_else(|| "Mod".to_string());
@@ -216,27 +239,18 @@ pub fn install_archive_with_policy(
     // merge/replace over a pre-existing mod folder).
     let fresh = !dest.exists();
 
-    let bin = find_7z().ok_or(InstallError::No7z)?;
-
-    // Extract into a same-filesystem temp so the final move is a rename.
-    let tmp = mods_dir.join(format!(
-        ".eidos-install-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    ));
-    fs::create_dir_all(&tmp)?;
+    // The archive is already extracted (same filesystem as mods/, so the final
+    // move is a rename); `tree` owns the temp and removes it when the caller
+    // drops it.
+    let tmp = tree.path();
 
     let result = (|| {
-        extract_all(bin, archive, &tmp)?;
-        // Heal NTFS-style case collisions a raw extraction leaves on ext4, before
-        // anything (wrapper detection, FOMOD, the move) reads the tree.
-        normalize_case_collisions(&tmp)?;
-        let tree = ArchiveTree::from_dir(&tmp)?;
-        let base = match tree.simple_archive_base() {
+        let layout = ArchiveTree::from_dir(tmp)?;
+        let base = match layout.simple_archive_base() {
             Some(b) => b,
             None => {
                 // A FOMOD scripted installer: run it with the default selections.
-                if let Some(fomod_root) = find_fomod_root(&tmp) {
+                if let Some(fomod_root) = find_fomod_root(tmp) {
                     // Parse the module, check its dependencies and build the plan
                     // BEFORE the destructive step: every fallible stage runs while
                     // the old mod is still intact.
@@ -263,7 +277,7 @@ pub fn install_archive_with_policy(
             }
         };
         let src = if base.is_empty() {
-            tmp.clone()
+            tmp.to_path_buf()
         } else {
             tmp.join(base.trim_end_matches('/'))
         };
@@ -282,8 +296,6 @@ pub fn install_archive_with_policy(
         write_meta(archive, &dest, game_name, guessed_id)?;
         Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, missing: Vec::new(), dest: dest.clone() })
     })();
-
-    let _ = fs::remove_dir_all(&tmp);
 
     // A failed FRESH install must not leave half-copied debris that the mod list
     // would show as an installed, enabled mod.
@@ -583,20 +595,46 @@ fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Resul
     Ok(missing)
 }
 
-/// A FOMOD extracted and parsed, awaiting the user's choices (the GUI wizard). The
-/// extraction temp is removed when the session is dropped.
-pub struct FomodSession {
-    pub config: eidos_fomod::ModuleConfig,
-    root: PathBuf,
+/// An archive already extracted into a temp directory beside `mods/`, with NTFS
+/// case collisions healed. Holding one means the expensive 7-Zip pass is already
+/// paid for: [`install_extracted`] installs straight from it, so a simple archive
+/// is never extracted twice. The temp is removed when this is dropped.
+pub struct ExtractedTree {
     tmp: PathBuf,
-    name: String,
-    archive: PathBuf,
 }
 
-impl Drop for FomodSession {
+impl ExtractedTree {
+    /// The extracted tree's root on disk.
+    pub fn path(&self) -> &Path {
+        &self.tmp
+    }
+}
+
+impl Drop for ExtractedTree {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.tmp);
     }
+}
+
+/// What an archive turned out to be once extracted (see [`open_archive`]).
+pub enum Opened {
+    /// A FOMOD scripted installer: drive the wizard, then [`finish_fomod`].
+    Fomod(Box<FomodSession>),
+    /// A plain archive, already extracted: install it with [`install_extracted`].
+    Simple(ExtractedTree),
+}
+
+/// A FOMOD extracted and parsed, awaiting the user's choices (the GUI wizard). The
+/// extraction temp is removed when the session is dropped (via [`ExtractedTree`]).
+pub struct FomodSession {
+    pub config: eidos_fomod::ModuleConfig,
+    root: PathBuf,
+    /// RAII guard only: `root` points inside this tree, so it must outlive the
+    /// session, and its drop removes the extraction temp.
+    #[allow(dead_code)]
+    tree: ExtractedTree,
+    name: String,
+    archive: PathBuf,
 }
 
 impl FomodSession {
@@ -621,13 +659,11 @@ impl FomodSession {
     }
 }
 
-/// Extract `archive`; if it is a FOMOD, return a session whose `config` drives a
-/// wizard. Returns `Ok(None)` for a non-FOMOD archive (use [`install_archive`]).
-pub fn open_fomod(
-    archive: &Path,
-    mods_dir: &Path,
-    name: &str,
-) -> Result<Option<FomodSession>, InstallError> {
+/// Extract `archive` into a fresh temp directory beside `mods_dir` and heal
+/// NTFS-style case collisions, so everything downstream (wrapper detection,
+/// FOMOD lookup, the move) reads a consistent tree. The returned handle owns the
+/// temp and removes it on drop, including on the `?` paths here.
+pub fn extract_to_temp(archive: &Path, mods_dir: &Path) -> Result<ExtractedTree, InstallError> {
     let bin = find_7z().ok_or(InstallError::No7z)?;
     let tmp = mods_dir.join(format!(
         ".eidos-install-{}-{}",
@@ -635,35 +671,32 @@ pub fn open_fomod(
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&tmp)?;
-    if let Err(e) = extract_all(bin, archive, &tmp) {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(e);
-    }
-    // Heal NTFS-style case collisions before reading the tree, so a `fomod/` vs
-    // `FOMOD/` split can't make find_fomod_root pick a variant nondeterministically
-    // (same invariant the simple-install path relies on).
-    if let Err(e) = normalize_case_collisions(&tmp) {
-        let _ = fs::remove_dir_all(&tmp);
-        return Err(e.into());
-    }
-    let Some(root) = find_fomod_root(&tmp) else {
-        let _ = fs::remove_dir_all(&tmp);
-        return Ok(None);
+    let tree = ExtractedTree { tmp };
+    extract_all(bin, archive, &tree.tmp)?;
+    normalize_case_collisions(&tree.tmp)?;
+    Ok(tree)
+}
+
+/// Extract `archive` once and classify it: a FOMOD (whose `config` drives the
+/// wizard) or a plain archive whose extracted tree is handed back so installing
+/// it costs no second extraction.
+pub fn open_archive(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+) -> Result<Opened, InstallError> {
+    let tree = extract_to_temp(archive, mods_dir)?;
+    let Some(root) = find_fomod_root(&tree.tmp) else {
+        return Ok(Opened::Simple(tree));
     };
-    let config = match parse_fomod_at(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            let _ = fs::remove_dir_all(&tmp);
-            return Err(e);
-        }
-    };
-    Ok(Some(FomodSession {
+    let config = parse_fomod_at(&root)?;
+    Ok(Opened::Fomod(Box::new(FomodSession {
         config,
         root,
-        tmp,
+        tree,
         name: name.to_string(),
         archive: archive.to_path_buf(),
-    }))
+    })))
 }
 
 /// The sanitized destination folder name for `raw`, if installing it into
