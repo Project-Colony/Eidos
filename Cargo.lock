@@ -1139,6 +1139,7 @@ dependencies = [
  "eidos-games",
  "eidos-install",
  "eidos-instance",
+ "eidos-launch",
  "eidos-loot",
  "eidos-nexus",
  "eidos-plugins",
