@@ -29,6 +29,27 @@ const WHITEOUT_PREFIX: &str = ".eidoswh.";
 /// per-file `.eidoswh.<name>` whiteout so it is never mistaken for one.
 const OPAQUE_MARKER: &str = ".eidoswh_opaque";
 
+/// Suffix marking a file or directory the user hid from the virtual view, MO2's
+/// convention (`filetree.cpp` renames through a `FileRenamer` with HIDE/UNHIDE).
+/// Hiding is a rename inside the mod, never a delete, so it is undone by
+/// stripping the suffix back off.
+pub const HIDDEN_SUFFIX: &str = ".mohidden";
+
+/// Whether a single path component names something the user hid. Case-insensitive:
+/// the rest of the stack folds case, and a mod folder copied off a Windows box can
+/// come back as `.MOHIDDEN`.
+pub fn is_hidden_name(name: &str) -> bool {
+    name.len() > HIDDEN_SUFFIX.len()
+        && name[name.len() - HIDDEN_SUFFIX.len()..].eq_ignore_ascii_case(HIDDEN_SUFFIX)
+}
+
+/// Whether any component of a virtual path was hidden - a hidden DIRECTORY takes
+/// its whole subtree with it, which is how MO2 lets one click suppress a mod's
+/// entire `meshes/` without touching the files.
+fn under_hidden(vpath: &str) -> bool {
+    vpath.split(['/', '\\']).any(is_hidden_name)
+}
+
 /// An ordered union of layers with a writable top layer.
 ///
 /// `layers[0]` has the highest priority (the last-enabled mod wins on conflict);
@@ -137,6 +158,13 @@ impl LayerStack {
     /// otherwise each mod layer is tried in priority order, falling through to
     /// the game data layer last. Returns `None` if nothing provides the path.
     pub fn resolve_read(&self, vpath: &str) -> Option<PathBuf> {
+        // A hidden file (or anything under a hidden directory) is not part of the
+        // virtual view at all: `list_dir` never emits it, and refusing to resolve
+        // it here means a path guessed or remembered by the game cannot reach it
+        // either. The mod keeps the bytes; the game simply cannot see them.
+        if under_hidden(vpath) {
+            return None;
+        }
         if let Some(p) = ci_lookup(&self.overwrite, vpath) {
             return Some(p);
         }
@@ -381,6 +409,9 @@ impl LayerStack {
                         whiteouts.insert(hidden.to_ascii_lowercase());
                         continue;
                     }
+                    if is_hidden_name(&name) {
+                        continue;
+                    }
                     if seen.insert(name.to_ascii_lowercase()) {
                         out.push((name, entry.path()));
                     }
@@ -403,6 +434,12 @@ impl LayerStack {
                 let name = entry.file_name().to_string_lossy().into_owned();
                 let key = name.to_ascii_lowercase();
                 if whiteouts.contains(&key) {
+                    continue;
+                }
+                // A user-hidden entry is dropped without claiming its name, so a
+                // lower layer's copy of the file it shadowed becomes the winner -
+                // which is the whole point of hiding one mod's stray override.
+                if is_hidden_name(&name) {
                     continue;
                 }
                 if seen.insert(key) {
@@ -831,6 +868,52 @@ mod tests {
             .find(|(n, _)| n.eq_ignore_ascii_case("shared.dat"))
             .unwrap();
         assert_eq!(read(&shared.1), "mod version");
+    }
+
+    #[test]
+    fn a_hidden_file_leaves_the_view_and_lets_the_lower_layer_win() {
+        let t = TempTree::new();
+        let (game, modd, over) = (t.sub("game"), t.sub("mod"), t.sub("over"));
+        put(&game, "textures/rock.dds", "vanilla");
+        // What hiding actually produces on disk: the override renamed, not removed.
+        put(&modd, "textures/rock.dds.mohidden", "the override we suppressed");
+        put(&modd, "textures/tree.dds", "still active");
+
+        let stack = LayerStack::new(vec![modd, game], over);
+        let mut names: Vec<String> =
+            stack.list_dir("textures").into_iter().map(|(n, _)| n).collect();
+        names.sort();
+        // The suffixed name never appears, and rock.dds is the vanilla file again.
+        assert_eq!(names, vec!["rock.dds", "tree.dds"]);
+        assert_eq!(read(&stack.resolve_read("textures/rock.dds").unwrap()), "vanilla");
+        // Nor can it be reached by asking for the suffixed path directly.
+        assert!(stack.resolve_read("textures/rock.dds.mohidden").is_none());
+    }
+
+    #[test]
+    fn hiding_a_directory_hides_everything_under_it() {
+        let t = TempTree::new();
+        let (modd, over) = (t.sub("mod"), t.sub("over"));
+        put(&modd, "meshes.MOHIDDEN/actors/body.nif", "suppressed");
+        put(&modd, "meshes/actors/head.nif", "active");
+
+        let stack = LayerStack::new(vec![modd], over);
+        let names: Vec<String> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+        // Mixed case, because a mod folder round-tripped through Windows comes
+        // back shouting.
+        assert_eq!(names, vec!["meshes"]);
+        assert!(stack.resolve_read("meshes.MOHIDDEN/actors/body.nif").is_none());
+        assert!(stack.resolve_read("meshes/actors/head.nif").is_some());
+    }
+
+    #[test]
+    fn a_dotfile_is_not_mistaken_for_a_hidden_entry() {
+        // `.mohidden` on its own is a legitimate (if odd) file name, not a marker:
+        // the suffix has to be attached to something for the rename to be undoable.
+        assert!(!is_hidden_name(".mohidden"));
+        assert!(is_hidden_name("a.mohidden"));
+        assert!(!is_hidden_name("mohidden"));
+        assert!(!is_hidden_name("foo.mohidden.bak"));
     }
 
     #[test]
