@@ -4791,6 +4791,26 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 detail: "This game orders plugins by file timestamp; sort it by hand in the Plugins tab.".to_string(),
             });
         }
+        // A Flatpak-Steam Proton runs from the host here, which can fail to resolve
+        // its sandbox libraries. Eidos will not re-launch through `flatpak run`:
+        // that would put the game in Flatpak's sandbox, blind to the FUSE union in
+        // our private namespace, and it would silently play vanilla.
+        if let Some(cd) = game.compatdata.as_ref() {
+            let flatpak = eidos_games::proton_command(
+                &home(),
+                game.def.steam_app_id,
+                cd,
+                &game.install_path,
+            )
+            .is_some_and(|r| r.flatpak);
+            if flatpak {
+                out.push(Diagnostic {
+                    level: DiagLevel::Problem,
+                    title: "Proton comes from the Flatpak Steam install".to_string(),
+                    detail: "It ships its runtime and steamclient libraries inside the sandbox, so running it from the host may fail. Install a Proton in ~/.steam/root/compatibilitytools.d/ and select it for this game.".to_string(),
+                });
+            }
+        }
         if game.compatdata.is_none() {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,

@@ -17,6 +17,9 @@ use std::path::{Path, PathBuf};
 
 use crate::{quoted_pair, steam_libraries};
 
+/// The Flatpak application id of the official Steam package.
+pub const STEAM_FLATPAK_ID: &str = "com.valvesoftware.Steam";
+
 /// A ready-to-spawn Proton invocation for one app.
 #[derive(Debug, Clone)]
 pub struct ProtonRun {
@@ -27,6 +30,10 @@ pub struct ProtonRun {
     /// (`SteamAppId`/`SteamGameId`/`STEAM_COMPAT_APP_ID`), and
     /// `STEAM_COMPAT_INSTALL_PATH`/`STEAM_COMPAT_LIBRARY_PATHS` (the game's dir/library).
     pub env: Vec<(String, String)>,
+    /// This Proton belongs to the Flatpak Steam install. Eidos still runs it from
+    /// the host (see [`is_flatpak_steam`]), but front ends warn, because its
+    /// sandbox libraries may not resolve.
+    pub flatpak: bool,
 }
 
 impl ProtonRun {
@@ -52,16 +59,10 @@ impl ProtonRun {
 /// The Steam root (the install holding `config/config.vdf` and
 /// `compatibilitytools.d`), canonicalized.
 pub fn steam_root(home: &Path) -> Option<PathBuf> {
-    let roots = [
-        home.join(".steam/steam"),
-        home.join(".local/share/Steam"),
-        home.join(".steam/root"),
-        home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"),
-    ];
-    roots
-        .iter()
+    crate::steam_roots(home)
+        .into_iter()
         .find(|r| r.join("config/config.vdf").is_file())
-        .map(|r| fs::canonicalize(r).unwrap_or_else(|_| r.to_path_buf()))
+        .map(|r| fs::canonicalize(&r).unwrap_or(r))
 }
 
 /// The compat-tool name configured for `app_id` in `config.vdf`
@@ -180,14 +181,27 @@ pub fn proton_command(
     install_path: &Path,
 ) -> Option<ProtonRun> {
     let root = steam_root(home)?;
-    let name = compat_tool_name(&root, app_id).or_else(|| {
-        // Fallback: the last tool that touched the prefix.
-        fs::read_to_string(compatdata.join("version"))
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+    let name = compat_tool_name(&root, app_id)
+        .or_else(|| {
+            // Fallback: the last tool that touched the prefix.
+            fs::read_to_string(compatdata.join("version"))
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| config_info_name(compatdata))?;
+    let proton = find_proton_binary(&root, home, &name)
+        .or_else(|| proton_from_config_info(compatdata))
+        .or_else(|| {
+        let fallback = any_installed_proton(&root, home);
+        if let Some(p) = &fallback {
+            eprintln!(
+                "eidos: compat tool '{name}' not found; falling back to {}",
+                p.display()
+            );
+        }
+        fallback
     })?;
-    let proton = find_proton_binary(&root, home, &name)?;
 
     let app = app_id.to_string();
     let mut env = vec![
@@ -206,7 +220,97 @@ pub fn proton_command(
     if let Some(lib) = library_root(install_path).or_else(|| library_root(compatdata)) {
         env.push(("STEAM_COMPAT_LIBRARY_PATHS".to_string(), lib.to_string_lossy().into_owned()));
     }
-    Some(ProtonRun { proton, env })
+    let flatpak = is_flatpak_steam(&proton) || is_flatpak_steam(&root);
+    Some(ProtonRun { proton, env, flatpak })
+}
+
+/// Resolve a Proton from the prefix's `config_info`, which Proton itself writes.
+///
+/// Line 1 is the build's own declared name and lines 2+ are paths into its
+/// `files/` or `dist/` tree. The name can disagree with the directory it is
+/// installed in (distro-repackaged builds do this), so the paths are the
+/// reliable half: walk one up from the `files/`/`dist/` component to reach the
+/// tool directory and take its `proton`. Returns the NAME for the normal lookup
+/// path; [`proton_from_config_info`] returns the binary directly.
+fn config_info_name(compatdata: &Path) -> Option<String> {
+    let text = fs::read_to_string(compatdata.join("config_info")).ok()?;
+    text.lines().next().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+}
+
+/// The `proton` binary named by a prefix's `config_info` path lines, if it exists.
+fn proton_from_config_info(compatdata: &Path) -> Option<PathBuf> {
+    let text = fs::read_to_string(compatdata.join("config_info")).ok()?;
+    for line in text.lines().skip(1).map(str::trim) {
+        let p = Path::new(line);
+        // .../GE-Proton10-34/files/lib/... -> .../GE-Proton10-34/proton
+        let tool_dir = p
+            .ancestors()
+            .find(|a| matches!(a.file_name().and_then(|n| n.to_str()), Some("files") | Some("dist")))
+            .and_then(Path::parent);
+        if let Some(dir) = tool_dir {
+            let proton = dir.join("proton");
+            if proton.is_file() {
+                return Some(proton);
+            }
+        }
+    }
+    None
+}
+
+/// Whether this path belongs to the Flatpak Steam installation.
+///
+/// Deliberately a DIAGNOSTIC, not a switch. Flatpak Steam ships Proton with its
+/// runtime and steamclient libraries inside the sandbox, so running that Proton
+/// bare from the host can fail to resolve them. The obvious fix - re-launching
+/// through `flatpak run` - is wrong for Eidos: the game would start in Flatpak's
+/// own sandbox, which cannot see the FUSE union mounted in our private mount
+/// namespace, and it would silently play VANILLA. So Eidos warns clearly and
+/// keeps the mount, rather than trading a loud failure for a silent one.
+pub fn is_flatpak_steam(path: &Path) -> bool {
+    path.components().any(|c| c.as_os_str() == STEAM_FLATPAK_ID)
+}
+
+/// Any Proton installed on this machine, best first, when the configured tool
+/// cannot be resolved.
+///
+/// Without this a fresh prefix, a renamed compat tool or a `config.vdf` Eidos
+/// failed to parse means "no Proton" and the launch simply does not happen.
+/// Running the newest available build is far more useful than refusing, and the
+/// preference order matches what a modded Bethesda setup wants: GE builds first
+/// (they carry the media foundation and DLL fixes those games need), then the
+/// highest version number.
+fn any_installed_proton(steam_root: &Path, home: &Path) -> Option<PathBuf> {
+    let mut found: Vec<(bool, Vec<u32>, PathBuf)> = Vec::new();
+    let mut consider = |dir: &Path| {
+        let proton = dir.join("proton");
+        if !proton.is_file() {
+            return;
+        }
+        let name = dir.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
+        let is_ge = name.contains("ge-proton") || name.contains("proton-ge");
+        // Version digits in order, so GE-Proton10-34 sorts above GE-Proton9-20.
+        let version: Vec<u32> = name
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .collect();
+        found.push((is_ge, version, proton));
+    };
+    if let Ok(rd) = fs::read_dir(steam_root.join("compatibilitytools.d")) {
+        for e in rd.flatten() {
+            consider(&e.path());
+        }
+    }
+    for lib in steam_libraries(home) {
+        let Ok(rd) = fs::read_dir(lib.join("steamapps/common")) else { continue };
+        for e in rd.flatten() {
+            if e.file_name().to_string_lossy().to_ascii_lowercase().starts_with("proton") {
+                consider(&e.path());
+            }
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    found.into_iter().next().map(|(_, _, p)| p)
 }
 
 #[cfg(test)]
@@ -333,6 +437,61 @@ mod tests {
         assert_eq!(argv[1], "waitforexitandrun");
         assert!(argv[2].ends_with("SSEEdit.exe"));
         assert_eq!(argv[3], "-quickautoclean");
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn flatpak_steam_paths_are_recognised() {
+        // The predicate drives a WARNING, never a re-launch: running the game
+        // through `flatpak run` would hide the FUSE mount from it.
+        assert!(is_flatpak_steam(Path::new(
+            "/home/u/.var/app/com.valvesoftware.Steam/.local/share/Steam/compatibilitytools.d/GE/proton"
+        )));
+        assert!(is_flatpak_steam(Path::new(
+            "/home/u/.var/app/com.valvesoftware.Steam/data/Steam"
+        )));
+        // A native install must not be flagged.
+        assert!(!is_flatpak_steam(Path::new(
+            "/home/u/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+        )));
+        assert!(!is_flatpak_steam(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Proton 9.0")));
+    }
+
+    #[test]
+    fn config_info_resolves_a_build_whose_name_lies() {
+        // Distro-repackaged builds declare a name that does not match the folder
+        // they live in, so the PATH lines are the reliable half.
+        let root = tmp_root();
+        let tool = root.join("compatibilitytools.d/GE-Proton10-34");
+        fs::create_dir_all(tool.join("files/lib")).unwrap();
+        fs::write(tool.join("proton"), "#!/bin/sh\n").unwrap();
+        let compat = root.join("compatdata/489830");
+        fs::create_dir_all(&compat).unwrap();
+        fs::write(
+            compat.join("config_info"),
+            format!("CachyOS-11.0-100\n{}/files/lib/wine/\n", tool.display()),
+        )
+        .unwrap();
+
+        // Line 1 is the (mismatching) declared name...
+        assert_eq!(config_info_name(&compat).as_deref(), Some("CachyOS-11.0-100"));
+        // ...but the path lines still find the real binary.
+        assert_eq!(proton_from_config_info(&compat).as_deref(), Some(tool.join("proton").as_path()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn any_installed_proton_prefers_ge_then_highest_version() {
+        let root = tmp_root();
+        for name in ["GE-Proton9-20", "GE-Proton10-34", "Proton 9.0"] {
+            let d = root.join("compatibilitytools.d").join(name);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("proton"), "#!/bin/sh\n").unwrap();
+        }
+        let home = tmp_root();
+        let best = any_installed_proton(&root, &home).unwrap();
+        assert!(best.to_string_lossy().contains("GE-Proton10-34"), "got {}", best.display());
+        let _ = fs::remove_dir_all(&root);
         let _ = fs::remove_dir_all(&home);
     }
 

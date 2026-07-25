@@ -63,22 +63,49 @@ pub fn home() -> PathBuf {
 /// symlink to the same place; canonicalizing collapses them. `libraryfolders.vdf`
 /// adds libraries on other drives.
 pub fn steam_libraries(home: &Path) -> Vec<PathBuf> {
-    let roots = [
+    let mut libs = Vec::new();
+    for root in steam_roots(home) {
+        // Steam has shipped both spellings of this file over the years, and a
+        // client that has never added a second library may only have the
+        // singular one. Reading both costs nothing and avoids a "no games
+        // found" that the user cannot explain.
+        // Three known locations: the modern plural under steamapps, the singular
+        // some (and older) clients write, and the copy under config/ that current
+        // clients also maintain. Reading all three costs three failed opens and
+        // avoids a "no games found" the user cannot explain.
+        for rel in ["steamapps/libraryfolders.vdf", "steamapps/libraryfolder.vdf", "config/libraryfolders.vdf"] {
+            if let Ok(content) = fs::read_to_string(root.join(rel)) {
+                for path in kv_all(&content, "path") {
+                    add_lib(&mut libs, Path::new(&path));
+                }
+            }
+        }
+        add_lib(&mut libs, &root);
+    }
+    libs
+}
+
+/// Every plausible Steam install root on this machine, in preference order.
+///
+/// Distributions disagree about where Steam lives: the classic
+/// `~/.steam/steam` symlink, the modern `~/.local/share/Steam`, Debian and
+/// Ubuntu's `~/.steam/debian-installation`, and the Flatpak's own data dir. A
+/// missing root here surfaces to the user as "Eidos cannot find my game", so
+/// the list is deliberately generous - a non-existent path costs one failed
+/// stat.
+pub fn steam_roots(home: &Path) -> Vec<PathBuf> {
+    [
         home.join(".steam/steam"),
         home.join(".local/share/Steam"),
         home.join(".steam/root"),
+        home.join(".steam/debian-installation"),
         home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam"),
-    ];
-    let mut libs = Vec::new();
-    for root in &roots {
-        if let Ok(content) = fs::read_to_string(root.join("steamapps/libraryfolders.vdf")) {
-            for path in kv_all(&content, "path") {
-                add_lib(&mut libs, Path::new(&path));
-            }
-        }
-        add_lib(&mut libs, root);
-    }
-    libs
+        home.join(".var/app/com.valvesoftware.Steam/data/Steam"),
+        home.join("snap/steam/common/.local/share/Steam"),
+    ]
+    .into_iter()
+    .filter(|p| p.is_dir())
+    .collect()
 }
 
 /// Every installed app across all libraries (supported or not).

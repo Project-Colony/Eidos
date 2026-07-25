@@ -76,16 +76,25 @@ pub fn install_tier2_verb(
     let proton_dir = proton.parent().ok_or_else(|| {
         io::Error::new(io::ErrorKind::NotFound, format!("malformed Proton path: {}", proton.display()))
     })?;
-    let wine = proton_dir.join("files/bin/wine");
-    let wineserver = proton_dir.join("files/bin/wineserver");
-    // Fail loudly if Proton's wine is missing, so winetricks can't silently fall back
-    // to a system `wine` (a different version) against this Proton prefix.
-    if !wine.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("Proton wine not found at {}", wine.display()),
-        ));
-    }
+    // Valve's official builds put wine under `files/bin`; several community and
+    // distro-repackaged builds use `dist/bin` instead. Try both before giving up,
+    // or a perfectly good Proton is rejected on layout alone.
+    let (wine, wineserver) = ["files/bin", "dist/bin"]
+        .iter()
+        .map(|d| (proton_dir.join(d).join("wine"), proton_dir.join(d).join("wineserver")))
+        .find(|(w, _)| w.is_file())
+        .ok_or_else(|| {
+            // Fail loudly rather than letting winetricks silently fall back to a
+            // system `wine` (a different version) against this Proton prefix.
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!(
+                    "Proton wine not found under {}/files/bin or {}/dist/bin",
+                    proton_dir.display(),
+                    proton_dir.display()
+                ),
+            )
+        })?;
 
     let mut cmd = Command::new(&winetricks);
     cmd.arg("-q")

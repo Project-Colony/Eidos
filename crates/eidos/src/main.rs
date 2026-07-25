@@ -285,6 +285,25 @@ fn cmd_play(args: &[String]) {
     run_through_view(id, &game, &inst, command, Vec::new(), None, &[]);
 }
 
+/// Warn when the resolved Proton belongs to the Flatpak Steam install.
+///
+/// Eidos deliberately still runs it from the host: re-launching through
+/// `flatpak run` would start the game in Flatpak's sandbox, which cannot see the
+/// FUSE union mounted in our private namespace, so the game would silently play
+/// VANILLA. A loud warning beats a silent wrong result, and the fix the user
+/// actually wants is a native Proton (or native Steam).
+fn warn_if_flatpak_proton(run: &eidos_games::ProtonRun) {
+    if run.flatpak {
+        eprintln!(
+            "eidos: WARNING - this Proton belongs to the Flatpak Steam install ({}).\n\
+             eidos: it ships its runtime and steamclient libraries inside the sandbox, so running\n\
+             eidos: it from the host may fail to resolve them. If the launch misbehaves, install a\n\
+             eidos: Proton in ~/.steam/root/compatibilitytools.d/ and select it for the game.",
+            run.proton.display()
+        );
+    }
+}
+
 /// Swap the vanilla launcher for the game's script-extender loader inside a Steam
 /// `%command%`, when the game has one AND the loader actually exists on disk
 /// (a swap to a missing skse64_loader.exe would make Proton exit with a cryptic
@@ -625,6 +644,7 @@ fn cmd_tool(args: &[String]) {
                 exit(1);
             };
 
+            warn_if_flatpak_proton(&run);
             let mut command = run.command(&exe, &tool.args);
             command.extend(extra);
             // MO2's default working directory for a tool is its own folder.
@@ -767,6 +787,7 @@ fn cmd_prereqs(args: &[String]) {
         eprintln!("Could not resolve Proton for {id}.");
         exit(1);
     };
+    warn_if_flatpak_proton(&run);
     if !eidos_gamefeatures::cabextract_available() {
         eprintln!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
