@@ -27,7 +27,7 @@ mod tools;
 pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
-pub use profile::{untweak_ini, Profile, SaveEntry, TweakedKey};
+pub use profile::{untweak_ini, ListTrust, Profile, SaveEntry, TweakedKey};
 pub use settings::{Settings, Theme};
 pub use tools::{
     default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, write_tools,
@@ -265,6 +265,14 @@ impl Instance {
         fs::create_dir_all(self.overwrite_dir())?;
         self.ensure_profiles()?;
         Ok(())
+    }
+
+    /// The active profile's mod list plus whether it is fit to persist - see
+    /// [`Profile::modlist_checked`]. A front end that saves the list back should
+    /// use this and surface the reason, rather than discovering the refusal at
+    /// write time.
+    pub fn modlist_checked(&self) -> (Vec<ModEntry>, ListTrust) {
+        self.active().modlist_checked()
     }
 
     /// The active profile's mod list (folders in the shared `mods/`, in priority

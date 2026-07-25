@@ -1096,14 +1096,6 @@ fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
     None
 }
 
-/// The (launcher exe, script-extender loader) swap for a game: launching through
-/// Eidos runs the script extender (SKSE/F4SE/...) instead of the vanilla
-/// launcher, matching how a modded game is actually played.
-fn script_extender_swap(game_id: &str) -> Option<(&'static str, &'static str)> {
-    eidos_games::GameDef::for_id(game_id)
-        .and_then(|g| g.script_extender)
-        .map(|se| (se.launcher, se.loader))
-}
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
 /// multi-threaded, so it cannot enter a user namespace itself; the single-process
@@ -1133,15 +1125,32 @@ fn find_eidos_binary() -> PathBuf {
 fn play_command(game_id: &str, command: &[String]) -> (std::process::Command, Option<String>) {
     let mut swapped: Vec<String> = command.to_vec();
     let mut warning = None;
-    if let Some((from, to)) = script_extender_swap(game_id) {
+    if let Some((from, prefer)) = launch_targets(game_id) {
         for a in swapped.iter_mut() {
-            if a.contains(from) {
+            if !a.contains(from) {
+                continue;
+            }
+            // First target that is actually on disk wins.
+            let picked = prefer.iter().find_map(|to| {
                 let candidate = a.replace(from, to);
-                if Path::new(&candidate).is_file() {
+                Path::new(&candidate).is_file().then_some((*to, candidate))
+            });
+            match picked {
+                Some((to, candidate)) => {
+                    // Falling back past the script extender is worth saying out
+                    // loud: the game will start, and every SKSE mod will be inert.
+                    if Some(to) != prefer.first().copied() {
+                        warning = Some(format!(
+                            "{} is not installed - launching {to} directly, so script-extender mods will not load.",
+                            prefer[0]
+                        ));
+                    }
                     *a = candidate;
-                } else {
+                }
+                None => {
                     warning = Some(format!(
-                        "{to} is not installed - launching the vanilla launcher (script-extender mods will not load)."
+                        "Neither {} nor the game binary was found next to {from}; launching it unchanged.",
+                        prefer.join(" nor ")
                     ));
                 }
             }
@@ -1150,6 +1159,23 @@ fn play_command(game_id: &str, command: &[String]) -> (std::process::Command, Op
     let mut cmd = std::process::Command::new(find_eidos_binary());
     cmd.arg("play").arg(game_id).arg("--").args(&swapped);
     (cmd, warning)
+}
+
+/// What to run INSTEAD of the vanilla Bethesda launcher, best first: the script
+/// extender's loader, then the game binary. Returns `(launcher name, preferences)`.
+///
+/// Steam's `%command%` for these games often points at `<Game>Launcher.exe`, and
+/// running that through a mod manager is never what the user wants. It is a
+/// separate settings app that re-scans Data and rewrites `plugins.txt`, undoing
+/// the load order Eidos just deployed - MO2 runs the game binary or the extender
+/// and never the launcher, which is also why Eidos already writes
+/// `bEnableFileSelection` to stop the launcher resetting the plugin selection.
+/// On top of that the launcher is simply fragile under Proton, where the game
+/// itself runs fine.
+fn launch_targets(game_id: &str) -> Option<(&'static str, Vec<&'static str>)> {
+    let def = eidos_games::GameDef::for_id(game_id)?;
+    let se = def.script_extender?;
+    Some((se.launcher, vec![se.loader, def.game_binary]))
 }
 
 /// Spawn a launch and start tracking it: the child's stdout+stderr go to a
@@ -5449,6 +5475,21 @@ struct Diagnostic {
 fn diagnostics(app: &App) -> Vec<Diagnostic> {
     let mut out: Vec<Diagnostic> = Vec::new();
 
+    // First, because while it is showing nothing else in this tab is trustworthy:
+    // the mod list Eidos is working from does not match what is on disk, so the
+    // conflict map, the load order and the layer stack are all built from a
+    // partial picture. Saving is refused for as long as this is true.
+    if let Some(why) = app.created.as_ref().and_then(|i| i.modlist_checked().1.reason().map(str::to_string)) {
+        out.push(Diagnostic {
+            level: DiagLevel::Problem,
+            title: "The mod list does not match the mods folder".to_string(),
+            detail: format!(
+                "{why} Eidos will not save the mod list until this is resolved, so the order and \
+                 enabled state on disk are safe. If a drive holds your mods, mount it and press F5."
+            ),
+        });
+    }
+
     if app.cap_missing {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
@@ -7797,6 +7838,76 @@ mod tests {
     }
     fn names(v: &[ModEntry]) -> Vec<&str> {
         v.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    /// A throwaway game dir holding the named executables.
+    fn game_dir(exes: &[&str]) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("eidos-play-{}-{}", std::process::id(), n));
+        fs::create_dir_all(&d).unwrap();
+        for e in exes {
+            fs::write(d.join(e), b"MZ").unwrap();
+        }
+        d
+    }
+
+    /// The args `play_command` will hand to `eidos play`, i.e. everything after `--`.
+    fn played(game_id: &str, command: &[String]) -> (Vec<String>, Option<String>) {
+        let (cmd, warning) = play_command(game_id, command);
+        let args: Vec<String> =
+            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let after = args.iter().position(|a| a == "--").map(|i| args[i + 1..].to_vec());
+        (after.unwrap_or_default(), warning)
+    }
+
+    #[test]
+    fn the_vanilla_launcher_is_never_what_gets_run() {
+        // Steam's %command% for Skyrim SE points at SkyrimSELauncher.exe, and the
+        // Bethesda launcher is a settings app that rewrites plugins.txt - running
+        // it through a mod manager undoes the load order that was just deployed.
+        let d = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe"]);
+        let cmd = vec!["proton".to_string(), d.join("SkyrimSELauncher.exe").display().to_string()];
+
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[1].ends_with("SkyrimSE.exe"), "{args:?}");
+        // And the user is told why their SKSE mods will do nothing.
+        assert!(warning.as_deref().unwrap_or_default().contains("skse64_loader.exe"), "{warning:?}");
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn the_script_extender_still_wins_when_it_is_installed() {
+        let d = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe", "skse64_loader.exe"]);
+        let cmd = vec![d.join("SkyrimSELauncher.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[0].ends_with("skse64_loader.exe"), "{args:?}");
+        // Nothing was given up, so nothing to warn about.
+        assert_eq!(warning, None);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_command_that_is_already_the_game_is_left_alone() {
+        let d = game_dir(&["SkyrimSE.exe", "skse64_loader.exe"]);
+        let cmd = vec![d.join("SkyrimSE.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        // No launcher in the command means no swap - we do not second-guess a
+        // target the user or Steam already chose.
+        assert!(args[0].ends_with("SkyrimSE.exe"), "{args:?}");
+        assert_eq!(warning, None);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn an_empty_game_dir_leaves_the_command_untouched_and_says_so() {
+        let d = game_dir(&[]);
+        let cmd = vec![d.join("SkyrimSELauncher.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[0].ends_with("SkyrimSELauncher.exe"), "{args:?}");
+        assert!(warning.is_some());
+        fs::remove_dir_all(&d).ok();
     }
 
     #[test]

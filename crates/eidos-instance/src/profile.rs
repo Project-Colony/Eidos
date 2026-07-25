@@ -361,22 +361,57 @@ impl Profile {
     /// reverses it for display. Consumers that need launch/priority order (the FUSE
     /// `load_order`, plugin discovery, conflict origins) re-reverse to highest-first.
     pub fn modlist(&self) -> Vec<ModEntry> {
+        self.modlist_checked().0
+    }
+
+    /// [`Profile::modlist`] plus whether the result is SAFE TO PERSIST.
+    ///
+    /// Like MO2, the disk decides which mods exist and `modlist.txt` decides only
+    /// their order and enabled state, so an entry whose folder is gone drops out
+    /// of the list. Unlike MO2, the drop is not automatically written back:
+    /// `MO2::refreshModStatus` rewrites `modlist.txt` inside the same refresh, and
+    /// its one apparent guard (`if (m_ModStatus.empty()) return;`, profile.cpp:254)
+    /// is unreachable because the synthetic overwrite entry always makes the count
+    /// non-zero. Point MO2 at an empty mods folder and the curated order is gone.
+    ///
+    /// That case is not exotic here. A mod pool is hundreds of gigabytes, so it
+    /// routinely lives on another drive reached by a bind mount or symlink - and an
+    /// unmounted bind-mount target is an existing, readable, EMPTY directory. The
+    /// scan would report "you have no mods" for a fully intact pool, and the next
+    /// click would make that permanent. So the caller is told when a result is only
+    /// fit to display, and [`Profile::save_modlist`] refuses to write it.
+    pub fn modlist_checked(&self) -> (Vec<ModEntry>, ListTrust) {
         let mods_dir = self.mods_dir();
-        let mut present: Vec<String> = fs::read_dir(&mods_dir)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .filter(|e| e.path().is_dir())
-            .filter_map(|e| e.file_name().into_string().ok())
-            // Dot-dirs are never mods: in-flight/crashed `.eidos-install-*`
-            // extraction temps (and any other hidden dir) must not show up as
-            // installed, enabled mods.
-            .filter(|n| !n.starts_with('.'))
-            .collect();
-        present.sort();
+        // `file_type()` reads the dirent's d_type instead of stat()ing the target.
+        // Two things follow, both load-bearing: a directory that is readable but
+        // not SEARCHABLE (mode 0600, an exFAT mount whose dmask drops +x) still
+        // reports its children's kinds, where `path().is_dir()` returns false for
+        // every one of them and empties the whole list; and a DANGLING symlink is
+        // distinguishable from an absent folder.
+        let scan = fs::read_dir(&mods_dir).map(|rd| {
+            let mut names: Vec<String> = rd
+                .flatten()
+                .filter(|e| e.file_type().is_ok_and(|t| t.is_dir() || t.is_symlink()))
+                .filter_map(|e| e.file_name().into_string().ok())
+                // Eidos's own in-flight/crashed extraction temps are not mods. Only
+                // ours: a leading dot is legal in a mod name and real mods use it
+                // (".NET Script Framework" is a near-universal Skyrim SE
+                // dependency), so filtering every dot-dir would silently erase them.
+                .filter(|n| !n.starts_with(INSTALL_TEMP_PREFIX))
+                .collect();
+            names.sort();
+            names
+        });
+        // An unreadable mods/ is NOT an empty one. Saying so is the difference
+        // between "the user deleted their mods" and "the drive is not mounted".
+        let (present, readable) = match scan {
+            Ok(names) => (names, true),
+            Err(_) => (Vec::new(), false),
+        };
 
         let mut out: Vec<ModEntry> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
+        let mut listed = 0usize;
 
         if let Ok(content) = fs::read_to_string(self.modlist_source()) {
             for line in content.lines() {
@@ -395,21 +430,27 @@ impl Profile {
                 } else {
                     (true, line)
                 };
+                listed += 1;
                 if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
                     out.push(ModEntry { name: name.to_string(), enabled, path: mods_dir.join(name) });
                 }
             }
         }
+        // A folder nobody listed: a mod dropped in by hand. MO2 appends it at the
+        // highest priority and leaves it DISABLED - it has no idea where in the
+        // conflict order it belongs, and enabling it silently could overwrite half
+        // the load order's files on the next launch.
         for name in present {
             if seen.insert(name.clone()) {
-                out.push(ModEntry { path: mods_dir.join(&name), name, enabled: true });
+                out.push(ModEntry { path: mods_dir.join(&name), name, enabled: false });
             }
         }
+        let trust = ListTrust::judge(readable, listed, out.len());
         // `out` is built highest-priority-first (file order). MO2 DISPLAYS the list
         // the other way up - lowest priority at the top - so reverse for the return.
         // (This preserves every entry's priority; only the vec orientation flips.)
         out.reverse();
-        out
+        (out, trust)
     }
 
     /// Persist this profile's mod list (`+Name` enabled, `-Name` disabled).
@@ -422,6 +463,11 @@ impl Profile {
     /// "everything enabled, alphabetical", destroying the curated order. The
     /// previous list is also copied one-deep to `modlist.txt.bak` first.
     pub fn save_modlist(&self, mods: &[ModEntry]) -> io::Result<()> {
+        if let Some(why) = self.unsafe_to_persist() {
+            // Loud and non-destructive: the caller surfaces this and the curated
+            // order stays on disk untouched.
+            return Err(io::Error::new(io::ErrorKind::InvalidData, why));
+        }
         fs::create_dir_all(self.dir())?;
         let mut s = String::new();
         // `mods` is in MO2 DISPLAY order (lowest priority first); the file stores
@@ -467,6 +513,15 @@ impl Profile {
     }
 }
 
+/// A list smaller than this is never second-guessed - losing two of five entries
+/// is an ordinary edit.
+const MIN_ACTIVES: usize = 10;
+/// Both thresholds must be crossed for a loss to look accidental rather than
+/// deliberate. Shared by the plugin-order capture and the mod-list reconciliation
+/// so "this looks like an accident" means one thing across the instance.
+const MAX_ABSOLUTE_DROP: usize = 10;
+const MAX_RELATIVE_DROP: f64 = 0.30;
+
 /// Why a capture would lose too much of the active set to be trusted, or `None`
 /// when it looks like a legitimate edit.
 ///
@@ -476,10 +531,6 @@ impl Profile {
 /// absolute and a relative threshold must be crossed, so small lists are never
 /// second-guessed.
 fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
-    const MIN_ACTIVES: usize = 10;
-    const MAX_ABSOLUTE_DROP: usize = 10;
-    const MAX_RELATIVE_DROP: f64 = 0.30;
-
     let before = count_actives(profile)?;
     let after = count_actives(candidate)?;
     if before <= MIN_ACTIVES || after >= before {
@@ -515,6 +566,124 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+impl Profile {
+    /// Why writing `modlist.txt` right now would destroy the curated order rather
+    /// than record an edit, or `None` when it is safe.
+    ///
+    /// The check is deliberately absolute rather than proportional, because the
+    /// disaster is absolute: the mod pool is unreachable, so the in-memory list is
+    /// missing EVERYTHING and any save flattens the order to nothing. A user who
+    /// really did delete every mod hits this too and has to say so by removing
+    /// `modlist.txt` themselves - an annoyance, weighed against permanently losing
+    /// the one thing on disk that cannot be re-derived: which of forty overlapping
+    /// mods wins each file conflict, and which are installed but deliberately off.
+    ///
+    /// MO2 has no equivalent. `Profile::refreshModStatus` rewrites the file inside
+    /// the same refresh that dropped the entries, and the guard that looks like
+    /// protection (`if (m_ModStatus.empty()) return;`) cannot fire because the
+    /// synthetic overwrite entry always makes the count non-zero.
+    fn unsafe_to_persist(&self) -> Option<String> {
+        let listed = match fs::read_to_string(self.modlist_source()) {
+            Ok(text) => text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .count(),
+            // No list yet: nothing to lose, and this is how a fresh instance starts.
+            Err(_) => return None,
+        };
+        if listed == 0 {
+            return None;
+        }
+        match fs::read_dir(self.mods_dir()) {
+            Err(e) => Some(format!(
+                "the mods folder could not be read ({e}); refusing to overwrite a list of \
+                 {listed} mod(s). Is the drive it lives on mounted?"
+            )),
+            Ok(rd) => {
+                let any = rd
+                    .flatten()
+                    .any(|e| e.file_type().is_ok_and(|t| t.is_dir() || t.is_symlink()));
+                (!any).then(|| {
+                    format!(
+                        "the mods folder is empty while the saved list has {listed} mod(s); \
+                         refusing to overwrite it. If the mods really are gone, delete \
+                         {} to start over.",
+                        self.modlist_path().display()
+                    )
+                })
+            }
+        }
+    }
+}
+
+/// Prefix of Eidos's own extraction temporaries under `mods/`. Only directories
+/// starting with this are hidden from the mod list; every other name, leading dot
+/// included, is a mod the user installed.
+const INSTALL_TEMP_PREFIX: &str = ".eidos-install-";
+
+/// Whether a freshly-scanned mod list may be written back over `modlist.txt`.
+///
+/// The reconciliation is destructive by nature - it exists to forget mods that are
+/// gone - so it needs the same kind of sanity check the plugin-order capture has
+/// (see [`active_loss`]). The order and enabled state are pure user labour,
+/// derivable from nothing else on disk; the mod files themselves are replaceable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListTrust {
+    /// The scan agrees with the file, or differs by a plausible amount. Safe to save.
+    Good,
+    /// The scan lost implausibly much. Fine to DISPLAY, never to persist. Carries a
+    /// sentence explaining what was seen, for the status bar and the log.
+    Suspect(String),
+}
+
+impl ListTrust {
+    pub fn is_good(&self) -> bool {
+        matches!(self, ListTrust::Good)
+    }
+
+    /// The reason a list is not to be trusted, if it is not.
+    pub fn reason(&self) -> Option<&str> {
+        match self {
+            ListTrust::Good => None,
+            ListTrust::Suspect(why) => Some(why),
+        }
+    }
+
+    /// Judge a scan: `listed` entries parsed out of `modlist.txt`, `kept` of them
+    /// still backed by a folder.
+    ///
+    /// Thresholds mirror [`active_loss`] deliberately - one rule of thumb for
+    /// "this looks like an accident, not an edit" across the whole instance.
+    fn judge(readable: bool, listed: usize, kept: usize) -> ListTrust {
+        if !readable {
+            return ListTrust::Suspect(
+                "the mods folder could not be read (is the drive it lives on mounted?)".to_string(),
+            );
+        }
+        let lost = listed.saturating_sub(kept);
+        if lost == 0 {
+            return ListTrust::Good;
+        }
+        // Everything vanishing at once is never a real edit. This is the unmounted
+        // drive, the wrong instance root, the permissions accident.
+        if kept == 0 && listed > 0 {
+            return ListTrust::Suspect(format!(
+                "all {listed} listed mod(s) are missing from the mods folder"
+            ));
+        }
+        if listed > MIN_ACTIVES
+            && lost > MAX_ABSOLUTE_DROP
+            && (lost as f64 / listed as f64) > MAX_RELATIVE_DROP
+        {
+            return ListTrust::Suspect(format!(
+                "{lost} of {listed} listed mod(s) are missing from the mods folder"
+            ));
+        }
+        ListTrust::Good
+    }
 }
 
 /// One key an INI tweak overwrote, kept so the post-run capture can restore the
@@ -848,14 +1017,105 @@ mod tests {
     }
 
     #[test]
-    fn new_mods_are_reconciled_enabled() {
+    fn a_folder_nobody_listed_appears_disabled() {
         let root = inst_with_mods(&["A", "New"]);
         let p = prof(&root, "Default");
         p.save_modlist(&[ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") }]).unwrap();
-        // "New" exists on disk but not in the saved list -> reconciled, enabled, at
-        // the lowest priority (the top of the display order, before the listed mods).
+        // "New" exists on disk but not in the saved list. It appears, but DISABLED
+        // (MO2 parity): nothing knows where in the conflict order it belongs, and
+        // silently enabling it could overwrite half the load order's files on the
+        // next launch. A mod installed THROUGH Eidos never takes this path - the
+        // installer writes its own modlist entry.
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-        assert_eq!(read, vec![("New".into(), true), ("A".into(), true)]);
+        assert_eq!(read, vec![("New".into(), false), ("A".into(), true)]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_whose_folder_is_gone_leaves_the_list_but_not_the_file() {
+        let root = inst_with_mods(&["A", "B"]);
+        let p = prof(&root, "Default");
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        p.save_modlist(&[e("A"), e("B")]).unwrap();
+
+        fs::remove_dir_all(root.join("mods/B")).unwrap();
+        let (list, trust) = p.modlist_checked();
+        assert_eq!(list.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["A"]);
+        // One of two gone is an ordinary edit, not an accident.
+        assert!(trust.is_good(), "{trust:?}");
+        // The file still says both until something saves - the drop is a view.
+        assert!(fs::read_to_string(p.modlist_path()).unwrap().contains("B"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unmounted_mods_folder_cannot_flatten_the_order() {
+        // The disaster case: mods/ lives on another drive via a bind mount, and the
+        // mount is not up. The directory EXISTS and is READABLE and is EMPTY, so
+        // every guard that only checks for existence sails straight through.
+        let root = inst_with_mods(&["A", "B", "C"]);
+        let p = prof(&root, "Default");
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        p.save_modlist(&[e("A"), e("B"), e("C")]).unwrap();
+        let before = fs::read_to_string(p.modlist_path()).unwrap();
+
+        for m in ["A", "B", "C"] {
+            fs::remove_dir_all(root.join("mods").join(m)).unwrap();
+        }
+        let (list, trust) = p.modlist_checked();
+        assert!(list.is_empty());
+        assert!(!trust.is_good(), "an empty scan against a non-empty list must not be trusted");
+
+        // And the save is refused rather than silently flattening the order.
+        let err = p.save_modlist(&[]).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(fs::read_to_string(p.modlist_path()).unwrap(), before);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_unreadable_mods_folder_is_not_an_empty_one() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = inst_with_mods(&["A", "B"]);
+        let p = prof(&root, "Default");
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        p.save_modlist(&[e("A"), e("B")]).unwrap();
+
+        let mods = root.join("mods");
+        fs::set_permissions(&mods, fs::Permissions::from_mode(0o000)).unwrap();
+        let (_, trust) = p.modlist_checked();
+        let refused = p.save_modlist(&[]).is_err();
+        // Restore before asserting, so a failure does not leave an unremovable dir.
+        fs::set_permissions(&mods, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(!trust.is_good(), "a read error must not read as 'you have no mods'");
+        assert!(refused);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_whose_name_starts_with_a_dot_is_kept() {
+        // ".NET Script Framework" is a real, near-universal Skyrim SE dependency.
+        // Only Eidos's own extraction temps are hidden from the list.
+        let root = inst_with_mods(&[".NET Script Framework", ".eidos-install-abc123", "A"]);
+        let p = prof(&root, "Default");
+        let names: Vec<String> = p.modlist().iter().map(|m| m.name.clone()).collect();
+        assert!(names.iter().any(|n| n == ".NET Script Framework"), "{names:?}");
+        assert!(!names.iter().any(|n| n.starts_with(".eidos-install-")), "{names:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_dangling_symlink_is_still_a_row() {
+        // A mod symlinked to a drive that is not mounted is BROKEN, not absent: its
+        // position, enabled state and intended target are the irreplaceable part,
+        // and dropping the row throws them away. `path().is_dir()` follows the link
+        // and cannot tell this from a deleted mod; `file_type()` can.
+        let root = inst_with_mods(&["A"]);
+        std::os::unix::fs::symlink(root.join("nowhere"), root.join("mods/Linked")).unwrap();
+        let p = prof(&root, "Default");
+        let names: Vec<String> = p.modlist().iter().map(|m| m.name.clone()).collect();
+        assert!(names.iter().any(|n| n == "Linked"), "{names:?}");
         let _ = fs::remove_dir_all(&root);
     }
 
