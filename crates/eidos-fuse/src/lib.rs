@@ -352,7 +352,31 @@ fn mount_config() -> Config {
     // Config is #[non_exhaustive]; build via Default and set the public field.
     let mut config = Config::default();
     config.mount_options = vec![MountOption::FSName("eidos".to_string())];
+
+    // Serve requests from several event loops. A game's loading screen issues
+    // metadata requests far faster than one thread can answer them while each
+    // answer costs real directory I/O, so a single loop serialises the whole
+    // startup behind the slowest resolution. `clone_fd` gives each worker its own
+    // /dev/fuse fd (Linux 4.5+), which is what makes the extra threads actually
+    // parallel rather than contending on one channel.
+    //
+    // The handlers are already safe for this: every piece of shared state is
+    // behind a mutex, and `Filesystem` takes `&self`. Bounded at 4 because the
+    // work is I/O-bound; more threads buy nothing and cost context switches.
+    config.n_threads = Some(fuse_threads());
+    config.clone_fd = true;
     config
+}
+
+/// Event-loop threads to run. Defaults to 4, capped by the machine's parallelism,
+/// and overridable with `EIDOS_FUSE_THREADS` (1 makes the daemon single-threaded
+/// again, which is the first thing to try when diagnosing a concurrency bug).
+fn fuse_threads() -> usize {
+    if let Some(n) = std::env::var("EIDOS_FUSE_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
+        return n.max(1);
+    }
+    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    cpus.clamp(1, 4)
 }
 
 impl Eidos {
