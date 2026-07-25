@@ -75,14 +75,14 @@ impl PluginList {
             }
         }
         let (cp1252, _, _) = encoding_rs::WINDOWS_1252.encode(&plugins);
-        write_atomic(&dir.join("plugins.txt"), &cp1252)?;
+        write_atomic(&canonical_path(dir, "plugins.txt"), &cp1252)?;
 
         let mut order = format!("{HEADER}\r\n");
         for p in &self.plugins {
             order.push_str(&p.name);
             order.push_str("\r\n");
         }
-        write_atomic(&dir.join("loadorder.txt"), order.as_bytes())?;
+        write_atomic(&canonical_path(dir, "loadorder.txt"), order.as_bytes())?;
         Ok(())
     }
 
@@ -90,7 +90,7 @@ impl PluginList {
     /// asterisk games a leading `*` means active; for plain games every listed
     /// plugin is active. A missing/unreadable file yields an empty vec.
     pub fn read_active(dir: &Path, spec: &GameSpec) -> Vec<(String, bool)> {
-        let Some(text) = read_decoded(&dir.join("plugins.txt")) else {
+        let Some(text) = newest_variant(dir, "plugins.txt").and_then(|p| read_decoded(&p)) else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -114,7 +114,7 @@ impl PluginList {
     /// Header/blank lines skipped; a missing file yields an empty vec. For
     /// PlainList games this is the only record of where INACTIVE plugins sit.
     pub fn read_load_order(dir: &Path) -> Vec<String> {
-        let Some(text) = read_decoded(&dir.join("loadorder.txt")) else {
+        let Some(text) = newest_variant(dir, "loadorder.txt").and_then(|p| read_decoded(&p)) else {
             return Vec::new();
         };
         text.lines()
@@ -190,6 +190,64 @@ impl PluginList {
         self.plugins
             .sort_by_key(|p| pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX));
     }
+}
+
+/// The path to WRITE a prefix control file at, collapsing case variants.
+///
+/// The prefix lives on a case-sensitive filesystem while the game came from a
+/// case-insensitive one, so `Plugins.txt` and `plugins.txt` can both exist and
+/// the game may read the one Eidos did not write. Wine resolves a missing exact
+/// name by scanning the directory, so ONE file is always enough - which makes
+/// collapsing strictly safer than keeping several in sync.
+///
+/// Keeps whichever spelling already exists (the game chose it), preferring the
+/// most recently written when several do, and deletes the losers so they cannot
+/// be read back later. Scoped to the caller's own directory and filename.
+pub fn canonical_path(dir: &Path, name: &str) -> PathBuf {
+    let mut variants: Vec<PathBuf> = case_variants(dir, name);
+    if variants.is_empty() {
+        return dir.join(name);
+    }
+    // Newest first: that is the file the game actually wrote.
+    variants.sort_by_key(|p| {
+        std::cmp::Reverse(
+            fs::metadata(p).and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH),
+        )
+    });
+    let keep = variants.remove(0);
+    for stale in variants {
+        match fs::remove_file(&stale) {
+            Ok(()) => eprintln!(
+                "eidos: removed a stale case variant {} (keeping {})",
+                stale.display(),
+                keep.display()
+            ),
+            Err(e) => eprintln!("eidos: could not remove {}: {e}", stale.display()),
+        }
+    }
+    keep
+}
+
+/// The path to READ a prefix control file from: the newest existing case
+/// variant, or `None` when there is none.
+pub fn newest_variant(dir: &Path, name: &str) -> Option<PathBuf> {
+    case_variants(dir, name)
+        .into_iter()
+        .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
+}
+
+/// Every entry of `dir` whose name equals `name` ignoring ASCII case.
+fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            e.file_name().to_str().is_some_and(|n| n.eq_ignore_ascii_case(name))
+                && e.path().is_file()
+        })
+        .map(|e| e.path())
+        .collect()
 }
 
 /// Atomically replace `path`: write a sibling `.tmp` then rename over it (atomic
@@ -366,6 +424,92 @@ mod tests {
             active,
             vec![("Caf\u{e9} Society.esp".to_string(), true), ("Plain.esp".to_string(), false)]
         );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_case_variant_in_the_prefix_is_read_and_collapsed() {
+        let dir = std::env::temp_dir().join(format!("eidos-cv-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // The game wrote `Plugins.txt`; Eidos has always written `plugins.txt`.
+        // Reading the hard-coded lowercase name would miss the game's own file.
+        fs::write(dir.join("Plugins.txt"), b"*FromGame.esp\r\n").unwrap();
+        let spec = GameSpec::for_id("skyrimse").unwrap();
+        let active = PluginList::read_active(&dir, &spec);
+        assert_eq!(active, vec![("FromGame.esp".to_string(), true)]);
+
+        // Writing keeps the spelling the game chose rather than adding a second
+        // file the game might read instead.
+        let mut list = PluginList { plugins: vec![] };
+        list.plugins.push(crate::Plugin {
+            name: "Written.esp".into(),
+            origin_mod: String::new(),
+            path: PathBuf::new(),
+            enabled: true,
+            force_disabled: false,
+            is_master: false,
+            is_light: false,
+            is_medium: false,
+            masters: vec![],
+            priority: 0,
+            index: None,
+        });
+        list.write_load_order(&dir, &spec).unwrap();
+        let variants: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.eq_ignore_ascii_case("plugins.txt"))
+            .collect();
+        assert_eq!(variants, vec!["Plugins.txt".to_string()], "must not create a second variant");
+        assert!(read_decoded(&dir.join("Plugins.txt")).unwrap().contains("Written.esp"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn several_variants_collapse_to_the_newest() {
+        let dir = std::env::temp_dir().join(format!("eidos-cv2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("plugins.txt"), b"*old.esp\r\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(dir.join("Plugins.txt"), b"*new.esp\r\n").unwrap();
+
+        let spec = GameSpec::for_id("skyrimse").unwrap();
+        // The newest is what the game last wrote, so it is the truth.
+        assert_eq!(
+            PluginList::read_active(&dir, &spec),
+            vec![("new.esp".to_string(), true)]
+        );
+
+        // A write collapses to one file, so nothing stale can be read later.
+        // (Non-empty: writing an empty list is refused by design, so it would
+        // never reach the collapse.)
+        let list = PluginList {
+            plugins: vec![crate::Plugin {
+                name: "new.esp".into(),
+                origin_mod: String::new(),
+                path: PathBuf::new(),
+                enabled: true,
+                force_disabled: false,
+                is_master: false,
+                is_light: false,
+                is_medium: false,
+                masters: vec![],
+                priority: 0,
+                index: None,
+            }],
+        };
+        list.write_load_order(&dir, &spec).unwrap();
+        let n = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("plugins.txt"))
+            .count();
+        assert_eq!(n, 1, "case variants must be collapsed, not left to drift");
         let _ = fs::remove_dir_all(&dir);
     }
 

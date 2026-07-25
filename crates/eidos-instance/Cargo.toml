@@ -8,3 +8,7 @@ edition.workspace = true
 
 [dependencies]
 eidos-ini = { path = "../eidos-ini" }
+# For case-variant resolution of the prefix control files (plugins.txt etc.):
+# the prefix is case-sensitive while the game came from a case-insensitive
+# filesystem, so both spellings can exist and only one is the truth.
+eidos-plugins = { path = "../eidos-plugins" }

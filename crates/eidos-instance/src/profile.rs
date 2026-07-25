@@ -82,8 +82,8 @@ impl Profile {
         fs::create_dir_all(self.dir())?;
         let mut n = 0;
         for (dst, name) in self.plugin_state_files() {
-            let src = src_dir.join(name);
-            if !dst.exists() && src.is_file() {
+            let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
+            if !dst.exists() {
                 fs::copy(&src, &dst)?;
                 n += 1;
             }
@@ -99,7 +99,11 @@ impl Profile {
         let mut n = 0;
         for (src, name) in self.plugin_state_files() {
             if src.is_file() {
-                fs::copy(&src, dst_dir.join(name))?;
+                // Write to the casing the prefix already uses, collapsing any
+                // variants: the game is on a case-sensitive filesystem but came
+                // from a case-insensitive one, and would happily read a
+                // `Plugins.txt` we did not write.
+                fs::copy(&src, eidos_plugins::canonical_path(dst_dir, name))?;
                 n += 1;
             }
         }
@@ -113,11 +117,26 @@ impl Profile {
         fs::create_dir_all(self.dir())?;
         let mut n = 0;
         for (dst, name) in self.plugin_state_files() {
-            let src = src_dir.join(name);
-            if src.is_file() {
-                fs::copy(&src, &dst)?;
-                n += 1;
+            // Read whichever spelling the game actually wrote last.
+            let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
+            // A game that crashed during shutdown rewrites plugins.txt with the
+            // active set partially cleared. Copying that back permanently
+            // destroys a load order the user may have spent hours on, so a
+            // capture that loses most of the actives is refused rather than
+            // trusted. Same spirit as the "never write an empty list" guard on
+            // the write side.
+            if name == "plugins.txt" {
+                if let Some(reason) = active_loss(&dst, &src) {
+                    eprintln!(
+                        "eidos: NOT capturing plugins.txt back into profile '{}': {reason}. \
+                         The profile keeps its own copy; the prefix file is left alone.",
+                        self.name
+                    );
+                    continue;
+                }
             }
+            fs::copy(&src, &dst)?;
+            n += 1;
         }
         Ok(n)
     }
@@ -410,6 +429,37 @@ impl Profile {
         v.reverse();
         v
     }
+}
+
+/// Why a capture would lose too much of the active set to be trusted, or `None`
+/// when it looks like a legitimate edit.
+///
+/// Only fires on a LARGE loss from an already-large list: dropping a couple of
+/// plugins is exactly what a user does on purpose, while dropping most of a
+/// 200-plugin order is what a half-written crash artefact looks like. Both an
+/// absolute and a relative threshold must be crossed, so small lists are never
+/// second-guessed.
+fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
+    const MIN_ACTIVES: usize = 10;
+    const MAX_ABSOLUTE_DROP: usize = 10;
+    const MAX_RELATIVE_DROP: f64 = 0.30;
+
+    let before = count_actives(profile)?;
+    let after = count_actives(candidate)?;
+    if before <= MIN_ACTIVES || after >= before {
+        return None;
+    }
+    let dropped = before - after;
+    let relative = dropped as f64 / before as f64;
+    (dropped > MAX_ABSOLUTE_DROP && relative > MAX_RELATIVE_DROP).then(|| {
+        format!("it drops {dropped} of {before} active plugins ({:.0}%)", relative * 100.0)
+    })
+}
+
+/// Active (`*`-prefixed) entries in a plugins.txt, or `None` if unreadable.
+fn count_actives(path: &Path) -> Option<usize> {
+    let text = fs::read_to_string(path).ok()?;
+    Some(text.lines().filter(|l| l.trim_start().starts_with('*')).count())
 }
 
 /// Recursively copy a directory tree, skipping symlinks (matching MO2's `copyDir`
@@ -741,6 +791,59 @@ mod tests {
         .unwrap();
         assert!(p2.load_order().is_empty());
         let _ = fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn a_crash_mangled_plugins_txt_is_not_captured_back() {
+        let root = inst_with_mods(&["A"]);
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+
+        // A real 200-plugin order in the profile.
+        let full: String = (0..200).map(|i| format!("*Mod{i}.esp\n")).collect();
+        fs::write(p.plugins_txt_path(), &full).unwrap();
+        // What a game that died during shutdown leaves behind: the active set
+        // mostly cleared, the names still listed.
+        let mangled: String = (0..200)
+            .map(|i| if i < 5 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
+            .collect();
+        fs::write(prefix.join("plugins.txt"), &mangled).unwrap();
+
+        p.capture_plugin_state(&prefix).unwrap();
+        assert_eq!(
+            fs::read_to_string(p.plugins_txt_path()).unwrap(),
+            full,
+            "a crash artefact must not be allowed to destroy the load order"
+        );
+
+        // A legitimate edit - the user turning a handful of mods off - goes through.
+        let edited: String = (0..200)
+            .map(|i| if i < 195 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
+            .collect();
+        fs::write(prefix.join("plugins.txt"), &edited).unwrap();
+        p.capture_plugin_state(&prefix).unwrap();
+        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), edited);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn small_load_orders_are_never_second_guessed() {
+        // Turning off 4 of 6 plugins is a big RELATIVE drop but an obviously
+        // deliberate one; the guard must not fire on lists this size.
+        let root = inst_with_mods(&["A"]);
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\n*e\n*f\n").unwrap();
+        fs::write(prefix.join("plugins.txt"), "*a\n*b\nc\nd\ne\nf\n").unwrap();
+
+        p.capture_plugin_state(&prefix).unwrap();
+        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), "*a\n*b\nc\nd\ne\nf\n");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
