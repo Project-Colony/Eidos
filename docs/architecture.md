@@ -188,6 +188,52 @@ that does **not** yet close:
   documented limitation to close later.
 - **Steam churn.** Proton updates and the launch-option dance are an ongoing
   integration surface.
+- **The game clears `plugins.txt` when launched through the mount.** Open, and
+  the most important thing on this list. Eidos deploys a correct file; ~26
+  seconds later, as the game starts, it comes back with Bethesda's header and no
+  active plugins - including the Creation Club entries that live in the real
+  `Data` and involve no mod at all. The same launch without Eidos leaves the file
+  alone. Measured and ruled out: the game IS in our mount namespace, the union IS
+  mounted over `Data`, and from inside that namespace under the game's own uid
+  every plugin is listed. Since the wipe takes the unmodded Creation Club entries
+  with it, the working theory is that the game's whole `Data` enumeration fails
+  while `ls` succeeds - some property of `readdir`/`getattr` the Creation Engine
+  expects and the daemon does not provide. The capture guard keeps it from
+  degrading the profile, so this costs a playthrough's mods rather than the
+  user's curated order, but it is not fixed.
+
+### Caching, and one flag that had to go
+
+Metadata caching is what keeps a Bethesda startup from stalling in the daemon,
+and three of its four kernel-side pieces are on: negative dentries for the paths
+Wine probes and never finds, a long positive entry/attr TTL (mod layers are
+immutable for the life of a mount), and `FOPEN_CACHE_DIR` on `opendir`.
+
+`FOPEN_KEEP_CACHE` is **off**, and the reasoning that put it there is worth
+recording because it was wrong in an instructive way. The argument ran: mod files
+do not change behind the mount, the layers are immutable, every write goes
+through this daemon - therefore the kernel can keep its page cache across opens.
+Both premises are true. The conclusion does not follow, because a lower-layer
+file does not keep its *identity*: the first write copies it up, so one virtual
+path - and one FUSE inode, since inodes are keyed on the path - ends up backed by
+a different file on disk while the kernel still holds pages read from the old
+one. Under passthrough the kernel serves those reads without consulting the
+daemon, so nothing downstream can notice.
+
+That explanation is also not sufficient, which is why the flag is off rather than
+narrowed. Restricting it to files outside the overwrite layer was tried and
+Skyrim still crashed, reading files that were never written to. The measurement
+that settled it: with all four caches on, the game dies on a null dereference at
+a fixed address seconds after the main menu, with zero mods installed; each cache
+was then disabled individually and only this one changed the outcome. The cost of
+losing it is nil - `EIDOS_FUSE_STATS` reports `read 0` for a full load, because
+passthrough serves every byte in the kernel, so those pages were already cached
+against the backing file.
+
+The lesson generalises: `EIDOS_FUSE_NO_CACHE` now takes names
+(`attr,neg,keep,dir`) rather than being all-or-nothing. A switch that only
+answers "is it the caching?" costs a rebuild per hypothesis; one that answers
+"which caching?" costs four launches.
 
 ## References
 

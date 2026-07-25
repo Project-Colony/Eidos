@@ -114,12 +114,20 @@ not exist (DLL search-order walks, `.ini` sidecars, script-extender config
 probes). Eidos answers that kernel-side: failed lookups reply as **negative
 dentries** with a short TTL rather than a bare `ENOENT`, positive entry/attr TTLs
 run long because mod layers are immutable for the life of a mount, and `opendir`
-sets `FOPEN_CACHE_DIR | FOPEN_KEEP_CACHE` so the kernel serves repeat
-enumerations itself. Requests are served from several event loops over
-`clone_fd`. Two escape hatches ship with it, because "the game sees stale data"
-has to be testable against caching as the suspect in a single run:
-`EIDOS_FUSE_NO_CACHE=1` zeroes every TTL, and `EIDOS_FUSE_STATS=1` dumps per-op
-counters (lookup hit/miss ratio, getattr, readdir, open, read, write) at unmount.
+sets `FOPEN_CACHE_DIR` so the kernel serves repeat enumerations itself. Requests
+are served from several event loops over `clone_fd`.
+
+`FOPEN_KEEP_CACHE` is deliberately **not** among them: it crashed Skyrim SE
+outright (see [Known issues](#known-issues)), and the counters show why giving it
+up costs nothing - with passthrough active the daemon serves *zero* reads, so the
+kernel was already caching those pages against the backing file.
+
+The escape hatches ship with the caching, because "the game sees stale data" has
+to be testable against caching as the suspect in a single run:
+`EIDOS_FUSE_NO_CACHE=1` turns all of it off and `EIDOS_FUSE_NO_CACHE=attr,neg,keep,dir`
+names them one at a time, which is what let the crash above be bisected to a
+single flag in four launches. `EIDOS_FUSE_STATS=1` dumps per-op counters (lookup
+hit/miss ratio, getattr, readdir, open, read, write) at unmount, and
 `EIDOS_FUSE_THREADS=1` restores single-threaded serving when diagnosing a
 concurrency bug.
 
@@ -208,29 +216,71 @@ summary -> create -> main screen.
 
 The two-pane main window is built too: a profile picker (switch, or create a new
 one by copying the current), a mod list you filter, select, reorder, group with
-separators, narrow by category and right-click for actions (enable/disable, send
-to top/bottom, open in explorer, visit on Nexus, reinstall, rename, remove,
-information), plus Data / Plugins / Conflicts / Overwrite / Saves / Downloads /
-Diagnostics tabs and a Run button with a run-target picker. The Plugins tab is
-the ESP/ESM/ESL load order (toggle each plugin, reorder by hand, or sort with
-LOOT and read the post-sort report, whose advice links open in your browser); the
-Conflicts tab explains the per-file winners and losers; the Overwrite tab turns
-what the game wrote into a real mod in one step; "Information..." opens a per-mod
-dialog (general, conflicts, filetree, notes); and Diagnostics runs live health
-checks - the launch capability above all, plus missing masters, which is the
-single most reliable crash predictor.
+separators, narrow by category and right-click for actions, plus Data / Plugins /
+Conflicts / Overwrite / Saves / Downloads / Diagnostics tabs and a Run button
+with a run-target picker.
 
-To launch the game through the GUI, set the game's Steam launch option to its
-absolute path (Steam doesn't see `~/.cargo/bin` on PATH), forcing native
-d3dcompiler so Proton shader compilation works:
+Reordering is not only send-to-top/bottom: MO2's targeted moves are here too -
+send above the first conflicting mod, below the last, to an explicit priority, or
+into a separator's group. They all run through one shared move helper, so the
+off-by-one that comes from removing rows before re-inserting them exists in one
+place instead of five.
+
+**Data** is a real tree of the merged view, expanded one level at a time so
+opening a node costs one directory read per layer that has it rather than a
+recursive walk of every enabled mod. Every node names the layer that actually
+provides it, in the same order the FUSE layer serves. **Plugins** is the
+ESP/ESM/ESL load order (toggle, reorder by hand, or sort with LOOT and read the
+post-sort report, whose advice links open in your browser). **Conflicts**
+explains the per-file winners and losers. **Overwrite** turns what the game wrote
+into a real mod in one step. **Saves** parses each save's header - character,
+level, location, playtime - and diffs the plugin list baked into it against your
+current one, with a button that enables the mods it needs, because naming them
+and leaving you to it is the boring half.
+
+"Information..." opens a per-mod dialog: general, conflicts, filetree, INI
+tweaks, notes. From the filetree (and from the Data tree) any file can be
+**hidden** - renamed to `<name>.mohidden`, which drops it out of the virtual view
+without deleting it, so one mod's three stray meshes can be suppressed without
+touching priorities. **INI Tweaks** lists the fragments a mod ships in its
+`INI Tweaks/` folder; the enabled ones are merged into the profile's game INI at
+launch, in priority order, and taken back off when the run's INIs are captured -
+otherwise a tweak silently becomes a setting and disabling it would do nothing.
+
+Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
+**BAIN** packages (tick the sub-packages, which merge in order) and a **manual**
+picker that shows the archive tree and lets you point at the data root when no
+heuristic recognises the layout. No archive is refused.
+
+**Diagnostics** runs live health checks: the launch capability above all, missing
+masters (the single most reliable crash predictor), archives no active plugin
+will load, whether the mod list still matches the mods folder, and - after a run
+- what the script extender's own log says about each of its plugin DLLs, which
+turns "did my SKSE plugins load?" from an inference into evidence.
+
+To launch the game through the GUI, set the game's Steam launch option to the
+binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 
 ```
-WINEDLLOVERRIDES="d3dcompiler_47=n" ~/.cargo/bin/eidos-gui %command%
+~/.cargo/bin/eidos-gui %command%
 ```
 
 Eidos opens on the game's instance; click Run to launch it through the merged
 view. (The Run button shows this exact line, with the running binary's real
 path, if you press it outside Steam.)
+
+Steam's `%command%` for the Bethesda titles usually points at
+`<Game>Launcher.exe`. Eidos never runs it: the launcher is a separate settings
+app that re-scans `Data` and rewrites `plugins.txt`, undoing the load order that
+was just deployed. It swaps in the script extender's loader if one is installed,
+the game binary otherwise, and says so when it has to fall back - a game that
+starts with every SKSE mod inert is worse than one that does not start.
+
+Older instructions here forced `WINEDLLOVERRIDES="d3dcompiler_47=n"`. That is no
+longer needed and was never quite right: an override to *native* only helps if a
+genuine `d3dcompiler_47.dll` is already in the prefix. Eidos now scans the
+enabled mods' DLL imports, deploys the real Microsoft DLL itself, and only then
+sets the override.
 
 ## Try the proof of concept
 
@@ -250,9 +300,29 @@ cargo build -p eidos-fuse  # the union daemon on its own
 
 The `eidos-fuse` integration suite is not a mock: it mounts a real union inside
 its own private user+mount namespace (no root, no host mounts touched) and drives
-19 checks through the kernel, including a writable `MAP_SHARED` mmap round-trip
-and the negative-dentry cases. If the user namespace is unavailable it says so
-and skips only the checks a racing host service could disturb.
+20 checks through the kernel, including a writable `MAP_SHARED` mmap round-trip,
+the negative-dentry cases, and a root union carrying a Data union inside it. If
+the user namespace is unavailable it says so and skips only the checks a racing
+host service could disturb. It runs `harness = false` (the namespace must be
+entered before any thread exists), so cargo's own summary line reports zero for
+it - read the suite's own `union integration result:` line instead.
+
+### Diagnosing the VFS
+
+Two environment variables exist for when the game sees something the filesystem
+does not agree with:
+
+```sh
+EIDOS_FUSE_STATS=1                  # op counters, dumped at unmount
+EIDOS_FUSE_NO_CACHE=1               # every kernel-side cache off
+EIDOS_FUSE_NO_CACHE=attr,neg,keep,dir   # or name them individually
+```
+
+The granular form is what found the crash described under Known issues: turning
+all four off answers "is it the caching?", and only naming them answers "which
+one". The counters answer the other half - a load that shows `read 0` is one
+where `FUSE_PASSTHROUGH` served every byte in the kernel, so anything you were
+about to tune on the read path is already free.
 
 ## Mount a union by hand
 
@@ -419,6 +489,24 @@ layers themselves stay pristine even here.
       `opendir`, `RLIMIT_NOFILE` raised at init, several event loops over
       `clone_fd`, and per-op counters under `EIDOS_FUSE_STATS` so a metadata storm
       is measurable instead of guessed at
+- [x] MO2's remaining daily-driver features - hidden files (`.mohidden`, honoured
+      by the resolver so a hidden file leaves the merged view *without claiming its
+      name*, which is what lets the layer below win); a recursive Data tree with
+      per-node origin; targeted mod-list moves (above/below the first/last
+      conflicting mod, to a priority, into a separator); BAIN sub-package and
+      manual installers so no archive is refused; save-header parsing with the
+      save's own plugin list diffed against the current one; mod-shipped INI
+      tweaks merged at launch and un-merged at capture; orphan-archive and
+      script-extender-log diagnostics
+- [x] Guards against the failure modes that quietly destroy a setup - the mod list
+      is derived from the mods directory like MO2's, but unlike MO2's the
+      reconciliation is not written back blind: a mods folder that is unreadable,
+      or empty while the saved list is not, refuses the save instead of flattening
+      a curated order (MO2 has no equivalent guard - `refreshModStatus` rewrites
+      `modlist.txt` in the same pass that dropped the entries). Same rule on the
+      plugin side: a capture that clears the active set entirely is refused at any
+      size, because the names are still listed so nothing was uninstalled, and no
+      edit produces that
 - [ ] Casing normalization at mod-import time
 - [ ] Packaging and distribution. The launch capability constrains this: a file
       capability lives in the `security.capability` xattr of the executable and
@@ -441,7 +529,48 @@ profile import), LOOT sorting, native DLL provisioning so Proton graphics mods
 (Community Shaders) and tools (BodySlide) just work, the `eidos prereqs`
 tool-prerequisite system, and a correctness-plus-caching pass over the daemon
 itself. Next up: casing normalization at import, more game families proven
-in-game, and packaging.
+in-game, and packaging - plus the open `plugins.txt` question under Known issues,
+which is the one thing standing between a working mount and a working playthrough.
+
+## Known issues
+
+**Skyrim SE clears `plugins.txt` when launched through the mount.** Open, and the
+one that matters.
+
+Eidos deploys a correct `plugins.txt` before launch - verified, with the mod
+plugins marked active. Roughly 26 seconds later, as the game itself starts, the
+file comes back rewritten with Bethesda's own header and *no active plugins at
+all*, including the Creation Club entries that live in the real `Data` and have
+nothing to do with any mod. Launch the same game with the same file and no Eidos
+and it is untouched, so the mount is the difference.
+
+What has been ruled out, each by measurement rather than argument:
+
+- the game IS in Eidos's mount namespace, and the union IS mounted over `Data`
+  (`/proc/<pid>/mounts` from inside it)
+- from that namespace, under the game's own uid, `Data` lists all twelve plugins
+  including the mods' - so it is not "the game cannot see them"
+- it is not the save bind, not the INIs (`bEnableFileSelection=1` is set), and
+  not the FUSE caching (that was a separate crash, fixed below)
+
+Since the wipe takes the Creation Club plugins with it, the working theory is
+that the *whole* `Data` enumeration fails on the game's side while `ls` succeeds -
+something about how the Creation Engine walks the directory (attributes, inode
+numbers, `FindFirstFileEx` semantics) that the daemon's `readdir`/`getattr` does
+not satisfy. Not yet demonstrated.
+
+Mitigated but not fixed: the capture guard means the empty file is no longer
+copied back into the profile, so the load order stops degrading between launches
+and Eidos redeploys a correct one every time.
+
+**`FOPEN_KEEP_CACHE` is off.** Fixed, and worth knowing why. It crashed Skyrim SE
+on a null dereference seconds after the main menu, deterministically, with zero
+mods installed; the other three kernel-side caches were bisected out individually
+and only this one mattered. The measured cost of losing it is nothing: with
+`FUSE_PASSTHROUGH` active the daemon serves *zero* reads (`EIDOS_FUSE_STATS`
+reports `read 0` for a full load), so the kernel was already caching those pages
+against the backing file. Re-enable with `EIDOS_FUSE_KEEP_CACHE=1` if you want to
+investigate the passthrough interaction.
 
 ## Prior art and references
 
