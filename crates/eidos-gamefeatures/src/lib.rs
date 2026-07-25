@@ -7,10 +7,18 @@
 //! that ships loose overrides is silently ignored without it. MO2's
 //! `GamebryoBSAInvalidation` writes `[Archive] bInvalidateOlderFiles=1` into the
 //! game INI (plus a dummy BSA + `SInvalidationFile` dance for pre-SSE engines).
+//!
+//! The archive side is also where the ORPHAN diagnostic lives ([`orphan_archives`]):
+//! a `.bsa`/`.ba2` is only loaded if an active plugin's base name owns it or the INI
+//! registers it, so an archive matching neither is dead weight - the mod looks
+//! installed and contributes nothing. That check needs file names and the plugin
+//! list only. Eidos deliberately does NOT parse archive contents: five format
+//! generations of reader would buy nothing, since the game opens its own archives
+//! and the FUSE union never has to serve files from inside one.
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod native_dll;
 pub use native_dll::{
@@ -24,6 +32,12 @@ pub use prefix_registry::{ensure_registry, registry_blob};
 mod prereqs;
 pub use prereqs::{
     cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,
+};
+
+mod savegame;
+pub use savegame::{
+    missing_plugins, parse_sse_save, KnownPlugin, MissingPlugin, ModFolder, SaveCompression,
+    SaveInfo, SaveParseError, SavePluginState,
 };
 
 /// The game INI that holds the `[Archive]` section: the first of the per-profile
@@ -110,12 +124,32 @@ fn pre_sse_invalidation(game_id: &str) -> Option<PreSse> {
     }
 }
 
+/// The Bethesda engines truncate an INI value at 255 characters. That is why the
+/// Creation games ship their archive list split across `sResourceArchiveList` and
+/// `sResourceArchiveList2` (MO2 splits at the last comma before 256 in
+/// `skyrimsedataarchives.cpp::writeArchiveList`).
+const INI_VALUE_MAX: usize = 255;
+
+/// The `...List2` continuation of an archive-list key, when the engine has one.
+/// Only the Creation-engine key is split in two; the older `SArchiveList`
+/// (Oblivion/FO3/FNV) has no continuation, so an overflow there cannot be helped.
+fn continuation_key(key: &str) -> Option<&'static str> {
+    key.eq_ignore_ascii_case("sResourceArchiveList").then_some("sResourceArchiveList2")
+}
+
 /// Prepend `bsa` to a comma-joined `[Archive]` list key (e.g. `SArchiveList`),
 /// keeping the vanilla archives and skipping if it is already registered.
 fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
-    let existing = fs::read_to_string(ini).unwrap_or_default();
-    let current = get_ini_key(&existing, "Archive", key).unwrap_or_default();
-    if current.split(',').any(|a| a.trim().eq_ignore_ascii_case(bsa)) {
+    let (existing, _) = read_ini_text(ini)?;
+    let listed = |v: Option<&str>| {
+        v.unwrap_or_default().split(',').any(|a| a.trim().eq_ignore_ascii_case(bsa))
+    };
+    let current = eidos_ini::get_key(&existing, "Archive", key).unwrap_or_default();
+    let cont = continuation_key(key);
+    let cont_value = cont.and_then(|c| eidos_ini::get_key(&existing, "Archive", c));
+    // Check the continuation too: a previous run may have pushed the dummy past the
+    // 255-char cut into List2, and re-prepending it would register it twice.
+    if listed(Some(current)) || listed(cont_value) {
         return Ok(());
     }
     let value = if current.trim().is_empty() {
@@ -123,7 +157,35 @@ fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
     } else {
         format!("{bsa}, {}", current.trim())
     };
+
+    // Overflow moves to the FRONT of the continuation key: the engine reads the
+    // first list then the second, so the relative order - and with it archive
+    // precedence - survives the split.
+    if let (Some(c), true) = (cont, value.len() > INI_VALUE_MAX) {
+        let (head, tail) = split_archive_value(&value);
+        if !tail.is_empty() {
+            let rest = cont_value.unwrap_or_default().trim();
+            let merged = if rest.is_empty() { tail.to_string() } else { format!("{tail}, {rest}") };
+            set_ini_key(ini, "Archive", key, head)?;
+            return set_ini_key(ini, "Archive", c, &merged);
+        }
+    }
     set_ini_key(ini, "Archive", key, &value)
+}
+
+/// Split a comma-joined archive list at the last comma that still fits in
+/// [`INI_VALUE_MAX`], returning `(head, tail)`. A single entry longer than the
+/// limit has no usable split point and is returned whole (the engine will truncate
+/// it, but silently dropping it here would be worse).
+fn split_archive_value(value: &str) -> (&str, &str) {
+    // A comma AT index INI_VALUE_MAX still leaves a head of exactly 255 chars, so
+    // the search window is one past the limit. Commas are ASCII, so a byte position
+    // is always a char boundary here.
+    let limit = value.len().min(INI_VALUE_MAX + 1);
+    match value.as_bytes()[..limit].iter().rposition(|&b| b == b',') {
+        Some(i) => (value[..i].trim_end(), value[i + 1..].trim_start()),
+        None => (value, ""),
+    }
 }
 
 /// Register Morrowind mod BSAs in the numbered `[Archives]` list: keep the existing
@@ -131,9 +193,15 @@ fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
 /// rewrite `Archive 0..N`. Morrowind only loads a BSA that is listed here, so a
 /// BSA-shipping mod is otherwise silently ignored.
 pub fn register_morrowind_archives(ini: &Path, mod_bsas: &[String]) -> io::Result<()> {
-    let mut text = fs::read_to_string(ini).unwrap_or_default();
+    let (mut text, _) = read_ini_text(ini)?;
     let mut archives = read_numbered_archives(&text);
     for b in mod_bsas {
+        // The Morrowind engine only knows BSA. The shared [`mod_archives`] walk also
+        // returns `.ba2` (FO4/Starfield), and a `.ba2` listed here would be a dead
+        // entry the engine logs about, so drop anything that is not a BSA.
+        if !b.to_ascii_lowercase().ends_with(".bsa") {
+            continue;
+        }
         if !archives.iter().any(|a| a.eq_ignore_ascii_case(b)) {
             archives.push(b.clone());
         }
@@ -168,25 +236,130 @@ fn read_numbered_archives(text: &str) -> Vec<String> {
     out
 }
 
-/// Read a `[section] key` value from INI text (the shared parser has a setter but
-/// no getter); section and key match case-insensitively.
-fn get_ini_key(text: &str, section: &str, key: &str) -> Option<String> {
-    let mut in_section = false;
-    for line in text.lines() {
-        let l = line.trim();
-        if let Some(s) = eidos_ini::section_header(l) {
-            in_section = s.eq_ignore_ascii_case(section);
-            continue;
+/// Whether `name` is a Bethesda archive: `.bsa` (Gamebryo through Skyrim SE) or
+/// `.ba2` (Fallout 4, Fallout 76, Starfield).
+pub fn is_archive_name(name: &str) -> bool {
+    let l = name.to_ascii_lowercase();
+    l.ends_with(".bsa") || l.ends_with(".ba2")
+}
+
+/// The archives each mod ships at the top of its folder, as `(mod name, archive
+/// file name)`. Mods keep the caller's order (mod priority) and each mod's
+/// archives are sorted by name, because `read_dir` order is arbitrary and a
+/// diagnostic list that reshuffles between refreshes is unreadable.
+///
+/// `mods` is `(name, folder)` for the mods the caller counts as live - enabled and
+/// not a separator - since only those reach the union. Only the top level of each
+/// folder is scanned: a mod folder maps onto the game's `Data` root and the engine
+/// loads archives from `Data` alone, so a `.bsa` sitting in a subfolder is never
+/// read by the game. An unreadable mod folder contributes nothing rather than
+/// failing the whole walk - this feeds a diagnostic, not a launch step.
+pub fn mod_archives(mods: &[(String, PathBuf)]) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for (name, dir) in mods {
+        let Ok(entries) = fs::read_dir(dir) else { continue };
+        let mut found: Vec<String> = entries
+            .flatten()
+            // A directory named `*.bsa` is not an archive. `file_type` is a cheap
+            // lstat that cannot fail for an entry we just listed; if it does, keep
+            // the entry - a missed archive is worse than a spurious one.
+            .filter(|e| !e.file_type().is_ok_and(|t| t.is_dir()))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| is_archive_name(n))
+            .collect();
+        found.sort_by_key(|n| n.to_ascii_lowercase());
+        out.extend(found.into_iter().map(|a| (name.clone(), a)));
+    }
+    out
+}
+
+/// The archives no active plugin can load and that the INI does not register: dead
+/// weight, and a classic silent failure - a mod ships `MyMod - Textures.bsa`, its
+/// `MyMod.esp` is disabled or was renamed by a patch, and the mod appears installed
+/// while contributing nothing. Returns the offending `(mod name, archive)` pairs in
+/// input order.
+///
+/// `archives` comes from [`mod_archives`], `active_plugin_names` is the ENABLED
+/// plugins' file names (`Foo.esp`), and `ini_archives` from
+/// [`registered_archives`] - an archive named there loads on its own and is never
+/// an orphan.
+pub fn orphan_archives(
+    archives: &[(String, String)],
+    active_plugin_names: &[String],
+    ini_archives: &[String],
+) -> Vec<(String, String)> {
+    let bases: Vec<String> = active_plugin_names
+        .iter()
+        .map(|p| base_name(p).to_ascii_lowercase())
+        .filter(|b| !b.is_empty())
+        .collect();
+    archives
+        .iter()
+        .filter(|(_, archive)| {
+            if ini_archives.iter().any(|r| r.trim().eq_ignore_ascii_case(archive)) {
+                return false;
+            }
+            let lower = archive.to_ascii_lowercase();
+            let stem = base_name(&lower);
+            // Stricter than MO2's `hasAssociatedPlugin` (`mainwindow.cpp:2081-2093`),
+            // which only asks whether the archive name STARTS WITH a plugin's base
+            // name: that ties `MyMod2 - Textures.bsa` to `MyMod.esp` and hides a real
+            // orphan. The engine's own rule is `<base>.bsa` or `<base> - <suffix>.bsa`
+            // (`- Textures`, `- Main`, `- Voices_en0`), so demanding equality or the
+            // `" - "` separator is both stricter and closer to what the game loads.
+            !bases.iter().any(|b| {
+                stem == b || stem.strip_prefix(b.as_str()).is_some_and(|r| r.starts_with(" - "))
+            })
+        })
+        .cloned()
+        .collect()
+}
+
+/// A file name without its last extension (`MyMod - Textures.bsa` -> `MyMod -
+/// Textures`, `Foo.esp` -> `Foo`). A name with no dot is its own base.
+fn base_name(file: &str) -> &str {
+    file.rsplit_once('.').map_or(file, |(stem, _)| stem)
+}
+
+/// The archives an INI registers explicitly. These load regardless of the plugin
+/// list, so they are never orphans. Every list key across the engine generations is
+/// read: `SArchiveList` (Oblivion/FO3/FNV), `sResourceArchiveList` plus its
+/// `sResourceArchiveList2` continuation (Skyrim onwards - reading only the first
+/// would report the whole tail of a split list as orphaned), and Morrowind's
+/// numbered `[Archives]` block. Order is preserved and duplicates collapse.
+pub fn registered_archives(ini_text: &str) -> Vec<String> {
+    let mut out = read_numbered_archives(ini_text);
+    for key in ["SArchiveList", "sResourceArchiveList", "sResourceArchiveList2"] {
+        let Some(value) = eidos_ini::get_key(ini_text, "Archive", key) else { continue };
+        out.extend(value.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned));
+    }
+    let mut seen: Vec<String> = Vec::with_capacity(out.len());
+    out.retain(|a| {
+        let l = a.to_ascii_lowercase();
+        let fresh = !seen.contains(&l);
+        if fresh {
+            seen.push(l);
         }
-        if in_section {
-            if let Some((k, v)) = eidos_ini::key_value(l) {
-                if k.eq_ignore_ascii_case(key) {
-                    return Some(v.trim().to_string());
-                }
+        fresh
+    });
+    out
+}
+
+/// [`registered_archives`] unioned across a game's per-profile INIs in `ini_dir`
+/// (for Morrowind that directory is the game install, where MO2 keeps its INI).
+/// Missing or unreadable INIs contribute nothing: this only ever widens the
+/// exemption set, so a read failure can at worst report an extra orphan.
+pub fn registered_archives_in(ini_dir: &Path, game_id: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for file in ini_files_for(game_id) {
+        let Ok((text, _)) = read_ini_text(&ini_dir.join(file)) else { continue };
+        for a in registered_archives(&text) {
+            if !out.iter().any(|e| e.eq_ignore_ascii_case(&a)) {
+                out.push(a);
             }
         }
     }
-    None
+    out
 }
 
 /// MO2's "dummy" invalidation BSA (port of `dummybsa.cpp`): a minimal valid archive
@@ -277,26 +450,30 @@ pub fn enable_file_selection(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
     set_ini_key(&ini_dir.join(ini_file), "Launcher", "bEnableFileSelection", "1")
 }
 
+/// Read an INI file as text, returning `(text, was Latin-1)`. A missing file reads
+/// as empty so callers can create it; any other error is returned, because an
+/// EXISTING file must never be treated as empty - a caller would then truncate it.
+///
+/// Bethesda INIs localized in Windows-1252 (accented FR/DE text) are not valid
+/// UTF-8: those decode as Latin-1, a byte-for-byte reversible mapping, so an edit
+/// can encode back and preserve every original byte (see [`set_ini_key`]).
+fn read_ini_text(path: &Path) -> io::Result<(String, bool)> {
+    match fs::read(path) {
+        Ok(bytes) => match String::from_utf8(bytes) {
+            Ok(s) => Ok((s, false)),
+            Err(e) => Ok((e.into_bytes().iter().map(|&b| b as char).collect(), true)),
+        },
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok((String::new(), false)),
+        Err(e) => Err(e),
+    }
+}
+
 /// Set `[section] key=value` in an INI file on disk, preserving everything else
 /// (and the file's CRLF/LF style). A thin file-I/O wrapper over the shared,
 /// format-preserving [`eidos_ini::set_key`]; section and key match
 /// case-insensitively.
 pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Result<()> {
-    // A missing file is created; an EXISTING file must never be truncated because
-    // it cannot be read. Bethesda INIs localized in Windows-1252 (accented FR/DE
-    // text) are not valid UTF-8: decode those as Latin-1 - a byte-for-byte
-    // reversible mapping - edit, and encode back, preserving every original byte.
-    let (existing, latin1) = match fs::read(path) {
-        Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(s) => (s, false),
-            Err(e) => {
-                let s: String = e.into_bytes().iter().map(|&b| b as char).collect();
-                (s, true)
-            }
-        },
-        Err(e) if e.kind() == io::ErrorKind::NotFound => (String::new(), false),
-        Err(e) => return Err(e),
-    };
+    let (existing, latin1) = read_ini_text(path)?;
     let out = eidos_ini::set_key(&existing, section, key, value);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -423,6 +600,152 @@ mod tests {
     }
 
     #[test]
+    fn morrowind_registration_ignores_ba2() {
+        let dir = tmp_dir();
+        let ini = dir.join("Morrowind.ini");
+        fs::write(&ini, "[Archives]\r\nArchive 0=Morrowind.bsa\r\n").unwrap();
+        // The shared walk returns .ba2 too; the Morrowind engine cannot read one.
+        register_morrowind_archives(&ini, &["ModX.bsa".into(), "ModY.ba2".into()]).unwrap();
+        let s = fs::read_to_string(&ini).unwrap();
+        assert!(s.contains("Archive 1=ModX.bsa"));
+        assert!(!s.contains("ModY.ba2"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // --- the orphan-archive diagnostic -------------------------------------
+
+    fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
+        v.iter().map(|(m, a)| ((*m).to_string(), (*a).to_string())).collect()
+    }
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn archive_is_matched_to_its_own_plugin_only() {
+        let archives = pairs(&[
+            ("A", "MyMod.bsa"),             // exact base name
+            ("A", "MyMod - Textures.bsa"),  // the engine's suffix form
+            ("B", "MyMod2 - Textures.bsa"), // MO2's loose startsWith would miss this
+            ("C", "Unrelated.bsa"),
+        ]);
+        let orphans = orphan_archives(&archives, &names(&["MyMod.esp"]), &[]);
+        assert_eq!(orphans, pairs(&[("B", "MyMod2 - Textures.bsa"), ("C", "Unrelated.bsa")]));
+
+        // Enabling MyMod2.esp rescues its archive and nothing else.
+        let orphans = orphan_archives(&archives, &names(&["MyMod.esp", "MyMod2.esp"]), &[]);
+        assert_eq!(orphans, pairs(&[("C", "Unrelated.bsa")]));
+    }
+
+    #[test]
+    fn disabled_plugin_orphans_its_archive() {
+        let archives = pairs(&[("A", "MyMod - Textures.bsa")]);
+        // The caller passes ACTIVE plugins only: MyMod.esp exists but is unchecked,
+        // so its archive is dead weight and must be reported.
+        assert_eq!(orphan_archives(&archives, &names(&["Skyrim.esm"]), &[]), archives);
+        // Same file with the plugin enabled: silent.
+        assert!(orphan_archives(&archives, &names(&["Skyrim.esm", "MyMod.esp"]), &[]).is_empty());
+    }
+
+    #[test]
+    fn ini_registered_archive_is_never_an_orphan() {
+        let archives = pairs(&[("A", "Standalone.bsa"), ("A", "Other.bsa")]);
+        // Registered in the INI (case-insensitively): it loads without any plugin.
+        let ini = names(&["standalone.bsa"]);
+        assert_eq!(orphan_archives(&archives, &[], &ini), pairs(&[("A", "Other.bsa")]));
+    }
+
+    #[test]
+    fn ba2_is_treated_like_bsa() {
+        let archives = pairs(&[
+            ("A", "MyMod - Main.ba2"),
+            ("A", "MyMod - Textures.ba2"),
+            ("B", "Ghost - Main.ba2"),
+            ("B", "Ghost.bsa"),
+        ]);
+        let orphans = orphan_archives(&archives, &names(&["MyMod.esp"]), &[]);
+        assert_eq!(orphans, pairs(&[("B", "Ghost - Main.ba2"), ("B", "Ghost.bsa")]));
+    }
+
+    #[test]
+    fn orphan_matching_is_case_insensitive_and_extension_agnostic() {
+        let archives = pairs(&[("A", "MYMOD - TEXTURES.BSA"), ("A", "Lights.bsa")]);
+        // Plugin extensions differ (.esm/.esl/.esp) and Windows names are case-blind.
+        let orphans = orphan_archives(&archives, &names(&["mymod.esm", "Lights.esl"]), &[]);
+        assert!(orphans.is_empty(), "{orphans:?}");
+    }
+
+    #[test]
+    fn orphan_matching_tolerates_degenerate_names() {
+        // A plugin that is only an extension, an archive with no stem, empty lists:
+        // nothing here may panic or match by accident.
+        let archives = pairs(&[("A", ".bsa"), ("A", "x.bsa"), ("A", "noext")]);
+        assert_eq!(orphan_archives(&archives, &names(&[".esp", ""]), &[]).len(), 3);
+        assert!(orphan_archives(&[], &names(&["A.esp"]), &[]).is_empty());
+    }
+
+    #[test]
+    fn mod_archives_walks_only_the_top_level() {
+        let a = tmp_dir();
+        let b = tmp_dir();
+        fs::write(a.join("Zeta.bsa"), b"").unwrap();
+        fs::write(a.join("Alpha.ba2"), b"").unwrap();
+        fs::write(a.join("readme.txt"), b"").unwrap();
+        fs::create_dir_all(a.join("Bogus.bsa")).unwrap(); // a DIRECTORY named .bsa
+        fs::create_dir_all(a.join("textures")).unwrap();
+        fs::write(a.join("textures/Deep.bsa"), b"").unwrap(); // not in the Data root
+        fs::write(b.join("B.bsa"), b"").unwrap();
+
+        let mods =
+            vec![("ModA".to_string(), a.clone()), ("ModB".to_string(), b.clone()),
+                 ("Gone".to_string(), a.join("does-not-exist"))];
+        // Mod order preserved, archives sorted inside a mod, a missing folder skipped.
+        assert_eq!(
+            mod_archives(&mods),
+            pairs(&[("ModA", "Alpha.ba2"), ("ModA", "Zeta.bsa"), ("ModB", "B.bsa")])
+        );
+        let _ = fs::remove_dir_all(&a);
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn registered_archives_reads_every_list_key() {
+        // Skyrim onwards splits the list in two because the engine truncates an INI
+        // value at 255 chars; reading only the first key would orphan the tail.
+        let text = "[Archive]\r\nsResourceArchiveList=Skyrim - Misc.bsa, Skyrim - Shaders.bsa\r\n\
+                    sResourceArchiveList2= Skyrim - Voices.bsa ,\r\n";
+        assert_eq!(
+            registered_archives(text),
+            names(&["Skyrim - Misc.bsa", "Skyrim - Shaders.bsa", "Skyrim - Voices.bsa"])
+        );
+        // Oblivion/FO3/FNV key, and Morrowind's numbered block, both understood.
+        let old = registered_archives("[Archive]\nSArchiveList=Oblivion - Meshes.bsa\n");
+        assert_eq!(old, names(&["Oblivion - Meshes.bsa"]));
+        assert_eq!(
+            registered_archives("[Archives]\nArchive 0=Morrowind.bsa\nArchive 1=Tribunal.bsa\n"),
+            names(&["Morrowind.bsa", "Tribunal.bsa"])
+        );
+        // Duplicates across keys collapse; a truncated file yields nothing.
+        let dup = registered_archives("[Archive]\nSArchiveList=a.bsa\nsResourceArchiveList=A.BSA\n");
+        assert_eq!(dup, names(&["a.bsa"]));
+        assert!(registered_archives("[Archive").is_empty());
+    }
+
+    #[test]
+    fn registered_archives_in_unions_the_profile_inis() {
+        let dir = tmp_dir();
+        // Skyrim SE reads Skyrim.ini and SkyrimCustom.ini; a mod may be listed in
+        // either, and the missing SkyrimPrefs.ini must not abort the union.
+        fs::write(dir.join("Skyrim.ini"), "[Archive]\r\nsResourceArchiveList=Skyrim - Misc.bsa\r\n").unwrap();
+        fs::write(dir.join("SkyrimCustom.ini"), "[Archive]\r\nsResourceArchiveList=Standalone.bsa\r\n").unwrap();
+        let got = registered_archives_in(&dir, "skyrimse");
+        assert_eq!(got, names(&["Skyrim - Misc.bsa", "Standalone.bsa"]));
+        assert!(registered_archives_in(&dir, "nope").is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn dummy_bsa_has_a_valid_header() {
         let b = dummy_bsa_bytes(0x67);
         assert_eq!(b.len(), 83);
@@ -456,6 +779,68 @@ mod tests {
 
         let _ = fs::remove_dir_all(&docs);
         let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn prepend_keeps_a_windows_1252_vanilla_list() {
+        let docs = tmp_dir();
+        let data = tmp_dir();
+        // A localized Oblivion.ini (0xE9 = e-acute) is not UTF-8: reading it as
+        // UTF-8 and falling back to "" would silently drop the vanilla archives.
+        let original = b"[Archive]\r\nSArchiveList=Oblivion - Voices Fran\xE7ais.bsa\r\n".to_vec();
+        fs::write(docs.join("Oblivion.ini"), &original).unwrap();
+        enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
+        let after: String = fs::read(docs.join("Oblivion.ini")).unwrap().iter().map(|&b| b as char).collect();
+        assert!(after.contains("Oblivion - Invalidation.bsa, Oblivion - Voices Fran\u{e7}ais.bsa"));
+        let _ = fs::remove_dir_all(&docs);
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn long_skyrim_archive_list_overflows_into_list2() {
+        let docs = tmp_dir();
+        let data = tmp_dir();
+        // A list already near the engine's 255-char INI value cut, plus the List2
+        // continuation Skyrim LE ships. Prepending the dummy pushes past the cut.
+        let vanilla: Vec<String> = (0..11).map(|i| format!("Skyrim - Filler{i:02}.bsa")).collect();
+        let joined = vanilla.join(", ");
+        assert!((200..=INI_VALUE_MAX).contains(&joined.len()), "fixture must start under the cut");
+        fs::write(
+            docs.join("Skyrim.ini"),
+            format!("[Archive]\r\nsResourceArchiveList={joined}\r\nsResourceArchiveList2=Skyrim - Voices.bsa\r\n"),
+        )
+        .unwrap();
+        enable_bsa_invalidation(&docs, &data, "skyrim").unwrap();
+
+        let text = fs::read_to_string(docs.join("Skyrim.ini")).unwrap();
+        let read = |k: &str| eidos_ini::get_key(&text, "Archive", k).unwrap().trim().to_string();
+        let (l1, l2) = (read("sResourceArchiveList"), read("sResourceArchiveList2"));
+        assert!(l1.len() <= INI_VALUE_MAX, "head must survive the engine's truncation: {}", l1.len());
+        assert!(l1.len() > INI_VALUE_MAX - 30, "head must not be split earlier than it has to");
+        assert!(!l1.ends_with(','));
+        // Nothing lost, and the order across the two keys is unchanged (the engine
+        // reads List then List2), so archive precedence is preserved.
+        let mut expected = vec!["Skyrim - Invalidation.bsa".to_string()];
+        expected.extend(vanilla.iter().cloned());
+        expected.push("Skyrim - Voices.bsa".to_string());
+        let got: Vec<String> =
+            format!("{l1}, {l2}").split(',').map(|s| s.trim().to_string()).collect();
+        assert_eq!(got, expected);
+
+        // Idempotent even though the dummy now sits in a different key than it would
+        // have without the split.
+        enable_bsa_invalidation(&docs, &data, "skyrim").unwrap();
+        let text2 = fs::read_to_string(docs.join("Skyrim.ini")).unwrap();
+        assert_eq!(text2.matches("Skyrim - Invalidation.bsa").count(), 1);
+        let _ = fs::remove_dir_all(&docs);
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn archive_value_split_has_no_split_point() {
+        // One entry longer than the limit: returned whole rather than dropped.
+        let huge = format!("{}.bsa", "x".repeat(300));
+        assert_eq!(split_archive_value(&huge), (huge.as_str(), ""));
     }
 
     #[test]
