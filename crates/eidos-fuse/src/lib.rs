@@ -73,19 +73,54 @@ const TTL_SECS: u64 = 3600;
 const NEG_TTL_SECS: u64 = 60;
 const ROOT_INO: u64 = 1;
 
-/// Caching is off when `EIDOS_FUSE_NO_CACHE` is set to anything but `0`. The
-/// escape hatch ships WITH the caching so that "the game sees stale data" can be
-/// tested against caching as the suspect in one run, instead of being chased
-/// through the code.
-fn caching_disabled() -> bool {
-    std::env::var("EIDOS_FUSE_NO_CACHE").is_ok_and(|v| v != "0")
+/// One kernel-side cache, individually switchable.
+///
+/// `EIDOS_FUSE_NO_CACHE=1` turns all four off together, which answers "is it the
+/// caching?" but not "which one". `EIDOS_FUSE_NO_CACHE=attr,keep` names them, so
+/// a stale-data bug can be bisected in four runs instead of by rebuilding with
+/// lines commented out. The names are the kernel's own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cache {
+    /// Positive attribute/entry TTL.
+    Attr,
+    /// Negative-dentry TTL.
+    Neg,
+    /// `FOPEN_KEEP_CACHE`: keep the page cache across opens of a file.
+    Keep,
+    /// `FOPEN_CACHE_DIR`: let the kernel cache directory listings.
+    Dir,
+}
+
+impl Cache {
+    fn name(self) -> &'static str {
+        match self {
+            Cache::Attr => "attr",
+            Cache::Neg => "neg",
+            Cache::Keep => "keep",
+            Cache::Dir => "dir",
+        }
+    }
+
+    /// Whether this particular cache is switched off.
+    fn is_off(self) -> bool {
+        let Ok(v) = std::env::var("EIDOS_FUSE_NO_CACHE") else { return false };
+        let v = v.trim();
+        if v.is_empty() || v == "0" {
+            return false;
+        }
+        // A bare truthy value means all of them; a list names the ones to drop.
+        if !v.contains(',') && !["attr", "neg", "keep", "dir"].contains(&v) {
+            return true;
+        }
+        v.split(',').any(|part| part.trim().eq_ignore_ascii_case(self.name()))
+    }
 }
 
 static TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
-    Duration::from_secs(if caching_disabled() { 0 } else { TTL_SECS })
+    Duration::from_secs(if Cache::Attr.is_off() { 0 } else { TTL_SECS })
 });
 static NEG_TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
-    Duration::from_secs(if caching_disabled() { 0 } else { NEG_TTL_SECS })
+    Duration::from_secs(if Cache::Neg.is_off() { 0 } else { NEG_TTL_SECS })
 });
 
 /// A directory entry in an `opendir` snapshot: `(inode, kind, name)`.
@@ -289,17 +324,46 @@ impl Inodes {
 /// Flags for a FILE open reply.
 ///
 /// `FOPEN_KEEP_CACHE` tells the kernel to keep the page cache it already holds
-/// for this inode instead of dropping it on every open. Mod files do not change
-/// behind the mount for the life of a session - the layers are immutable and
-/// every write goes through this daemon - so re-reading an asset the game opens
-/// repeatedly (BSAs, meshes, INIs) can be served from cache. Near-free with
-/// kernel passthrough, and a real saving in the rootless fallback where the
-/// daemon would otherwise serve every byte itself.
+/// for this inode instead of dropping it on every open. That is a large win for
+/// the read-only bulk of a load order - BSAs, meshes, textures the game opens
+/// over and over - and it is why it is here.
+///
+/// It is only sound for a file whose BYTES CANNOT CHANGE UNDER THE INODE, which
+/// is why `immutable` is a parameter rather than assumed. An earlier version set
+/// it unconditionally, reasoning that "the layers are immutable and every write
+/// goes through this daemon". Both halves are true and the conclusion is still
+/// wrong, twice over:
+///
+///   * The overwrite layer is not immutable. The game writes its shader cache,
+///     its INIs and its saves there and reads them back within the session.
+///   * A lower-layer file does not keep its identity. The first write COPIES IT
+///     UP, so the same virtual path - and the same FUSE inode - is suddenly
+///     backed by a different file on disk, while the kernel still holds pages it
+///     read from the old one. With `FUSE_PASSTHROUGH` the kernel serves those
+///     reads without ever asking the daemon, so nothing downstream can notice.
+///
+/// SO IT IS OFF BY DEFAULT, and stays off until someone can explain the crash
+/// below rather than argue it away.
+///
+/// Measured on Skyrim SE 1.6.1170 under proton-cachyos 11.0, with ZERO mods
+/// installed: the game reaches its main menu and then dies on a null dereference
+/// (`0xc0000005`, address `0x48`) on a worker thread, deterministically, at the
+/// same instruction every run. Turning this one flag off fixes it while
+/// `FOPEN_CACHE_DIR`, the 1-hour attribute TTL and the negative-dentry cache all
+/// stay on - each was bisected out individually and only this one mattered.
+///
+/// Restricting it to files outside the overwrite layer was tried and did NOT
+/// help, which rules out the obvious copy-up explanation: the game crashes while
+/// reading files that were never written to. The interaction with
+/// `FUSE_PASSTHROUGH` - where the kernel serves reads from the backing file
+/// without consulting this daemon at all - is the open question.
+///
+/// `EIDOS_FUSE_KEEP_CACHE=1` turns it back on for whoever picks that up.
 fn file_open_flags() -> FopenFlags {
-    if caching_disabled() {
-        FopenFlags::empty()
-    } else {
+    if std::env::var("EIDOS_FUSE_KEEP_CACHE").is_ok_and(|v| v != "0") && !Cache::Keep.is_off() {
         FopenFlags::FOPEN_KEEP_CACHE
+    } else {
+        FopenFlags::empty()
     }
 }
 
@@ -552,6 +616,24 @@ impl Eidos {
     /// Drop any negative dentry the kernel holds for a name that case-folds to
     /// `name` in `parent`. Called whenever an entry is created, so a probe for
     /// `Foo.esp` cannot keep hiding a freshly created `foo.esp`.
+    /// Drop the kernel's cached pages for one inode.
+    ///
+    /// Needed when a copy-up swaps the file backing a virtual path: the inode
+    /// number is stable by design (it is keyed on the path), so the kernel has no
+    /// way to notice that the bytes behind it now come from somewhere else. With
+    /// `FOPEN_KEEP_CACHE` it would go on serving the old ones, and under
+    /// `FUSE_PASSTHROUGH` it would do so without the daemon ever being asked.
+    ///
+    /// `(0, 0)` means the whole inode.
+    fn invalidate_page_cache(&self, ino: u64) {
+        let Some(notifier) = self.notifier.lock_recover().clone() else { return };
+        // Detached, for the same reason as `invalidate_folded_negatives`: a
+        // notification sent from inside a request handler can deadlock the mount.
+        std::thread::spawn(move || {
+            let _ = notifier.inval_inode(INodeNo(ino), 0, 0);
+        });
+    }
+
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
@@ -764,6 +846,13 @@ impl Filesystem for Eidos {
             }
         };
 
+        // A write may have just copied this path up from a read-only layer. The
+        // inode is unchanged but its backing file is now a different file on disk,
+        // and the kernel can still be holding pages it read from the old one.
+        if want_write {
+            self.invalidate_page_cache(ino.0);
+        }
+
         // Cache the open fd under a fresh handle; try to register it for kernel
         // passthrough (no-op fallback when rootless, where it returns EPERM).
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
@@ -773,9 +862,10 @@ impl Filesystem for Eidos {
             fh,
             OpenFile { _real: real, file: Arc::new(file), _backing: backing },
         );
+        let flags = file_open_flags();
         match files.get(&fh).unwrap()._backing.as_ref() {
-            Some(b) => reply.opened_passthrough(FileHandle(fh), file_open_flags(), b),
-            None => reply.opened(FileHandle(fh), file_open_flags()),
+            Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
+            None => reply.opened(FileHandle(fh), flags),
         }
     }
 
@@ -910,11 +1000,13 @@ impl Filesystem for Eidos {
         // for the same reason the long entry TTL is: mod layers are immutable for
         // the life of the mount, and anything written through the mount goes
         // through our own handlers.
-        let flags = if caching_disabled() {
-            FopenFlags::empty()
-        } else {
-            FopenFlags::FOPEN_CACHE_DIR | FopenFlags::FOPEN_KEEP_CACHE
-        };
+        // FOPEN_CACHE_DIR only: see `file_open_flags` for why FOPEN_KEEP_CACHE is
+        // not paired with it here any more.
+        let mut flags = FopenFlags::empty();
+        if !Cache::Dir.is_off() {
+            flags |= FopenFlags::FOPEN_CACHE_DIR;
+        }
+        flags |= file_open_flags();
         reply.opened(FileHandle(fh), flags);
     }
 

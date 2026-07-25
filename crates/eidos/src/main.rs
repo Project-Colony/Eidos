@@ -424,6 +424,16 @@ fn run_through_view(
     // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
     // existing UTF-8 locale is left untouched.
     env.extend(eidos_launch::utf8_locale_env_from_process());
+    // Xalia is Proton's accessibility/gamepad overlay for Wine dialogs. A modded
+    // Bethesda game has no use for it, and the build shipped with several current
+    // Proton forks throws a fatal Mono MissingMethodException the moment it starts
+    // - which lands a stack trace in every run log and buries whatever the game
+    // actually said. Eidos already disables it for the unattended prereq and
+    // registry runs; there is no reason the game launch should differ.
+    // Not forced if the user set it deliberately.
+    if std::env::var_os("PROTON_USE_XALIA").is_none() {
+        env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
+    }
 
     let root_layers = inst.root_layers();
     if !root_layers.is_empty() {

@@ -1184,6 +1184,25 @@ fn launch_targets(game_id: &str) -> Option<(&'static str, Vec<&'static str>)> {
 /// its exit status, and the poll subscription refreshes on exit. When `lock_gui`
 /// is set the lock overlay also comes up; otherwise the run is tracked without
 /// blocking the window.
+/// A command as a single copy-pasteable line, quoting only the arguments that
+/// need it. Written into the run log so a failing launch can be reproduced by
+/// hand in a terminal, where the error the GUI swallows is visible.
+fn render_command(cmd: &std::process::Command) -> String {
+    let quote = |s: &str| {
+        if s.is_empty() || s.contains([' ', '"', '\'', '\\', '$', '`']) {
+            format!("'{}'", s.replace('\'', r"'\''"))
+        } else {
+            s.to_string()
+        }
+    };
+    let mut out = quote(&cmd.get_program().to_string_lossy());
+    for a in cmd.get_args() {
+        out.push(' ');
+        out.push_str(&quote(&a.to_string_lossy()));
+    }
+    out
+}
+
 fn start_run(app: &mut App, title: String, mut cmd: std::process::Command) {
     use std::sync::atomic::Ordering;
     let log = app.created.as_ref().and_then(|inst| {
@@ -1196,7 +1215,15 @@ fn start_run(app: &mut App, title: String, mut cmd: std::process::Command) {
         Some(dir.join(format!("run-{stamp}.log")))
     });
     if let Some(p) = &log {
-        if let Ok(f) = std::fs::File::create(p) {
+        if let Ok(mut f) = std::fs::File::create(p) {
+            use std::io::Write;
+            // The command itself, before a byte of its output. Without it a log is
+            // only evidence that SOMETHING ran: which executable Eidos picked after
+            // the launcher swap is exactly the question these logs get read to
+            // answer, and it was the one thing they never recorded.
+            let _ = writeln!(f, "# eidos: running {title}");
+            let _ = writeln!(f, "# command: {}", render_command(&cmd));
+            let _ = writeln!(f, "#");
             if let Ok(out) = f.try_clone() {
                 cmd.stdout(std::process::Stdio::from(out));
             }
@@ -1260,13 +1287,26 @@ fn finish_run(app: &mut App) {
         app.status = Some("Application exited. Refreshed plugins and load order.".to_string());
         return;
     };
-    let failed = run
-        .outcome
-        .lock()
-        .ok()
-        .and_then(|s| *s)
-        .map(|st| !st.success())
-        .unwrap_or(false);
+    let status = run.outcome.lock().ok().and_then(|s| *s);
+    let failed = status.map(|st| !st.success()).unwrap_or(false);
+    // Record how it ended in the log itself. The status bar says it too, but the
+    // status bar is gone by the time anyone reads the log - and "exited with 0
+    // after one second" versus "killed by SIGSEGV" are completely different
+    // problems that looked identical in these files.
+    if let Some(p) = &run.log {
+        use std::io::Write;
+        if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(p) {
+            let _ = match status {
+                Some(st) => match st.code() {
+                    Some(c) => writeln!(f, "\n# eidos: {} exited with code {c}", run.title),
+                    // No code means a signal killed it; on Unix that is the
+                    // interesting case and `ExitStatus` prints which one.
+                    None => writeln!(f, "\n# eidos: {} was killed ({st})", run.title),
+                },
+                None => writeln!(f, "\n# eidos: {} - could not read the exit status", run.title),
+            };
+        }
+    }
     app.status = Some(if failed {
         match &run.log {
             Some(p) => format!(

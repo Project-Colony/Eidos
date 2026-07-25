@@ -38,9 +38,16 @@ pub const HIDDEN_SUFFIX: &str = ".mohidden";
 /// Whether a single path component names something the user hid. Case-insensitive:
 /// the rest of the stack folds case, and a mod folder copied off a Windows box can
 /// come back as `.MOHIDDEN`.
+/// Compared as BYTES, not as a string slice. `&name[name.len() - 9..]` panics
+/// whenever that offset lands inside a multi-byte character - which a Chinese or
+/// accented mod file name does reach - and this runs on every single path
+/// resolution, so the panic would take the mount down mid-read. Byte comparison
+/// is also exactly right rather than merely safe: the suffix is pure ASCII, and a
+/// UTF-8 continuation byte can never equal an ASCII one, so there is nothing to
+/// mis-match.
 pub fn is_hidden_name(name: &str) -> bool {
-    name.len() > HIDDEN_SUFFIX.len()
-        && name[name.len() - HIDDEN_SUFFIX.len()..].eq_ignore_ascii_case(HIDDEN_SUFFIX)
+    let (name, suffix) = (name.as_bytes(), HIDDEN_SUFFIX.as_bytes());
+    name.len() > suffix.len() && name[name.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
 }
 
 /// Whether any component of a virtual path was hidden - a hidden DIRECTORY takes
@@ -904,6 +911,21 @@ mod tests {
         assert_eq!(names, vec!["meshes"]);
         assert!(stack.resolve_read("meshes.MOHIDDEN/actors/body.nif").is_none());
         assert!(stack.resolve_read("meshes/actors/head.nif").is_some());
+    }
+
+    #[test]
+    fn a_multibyte_name_does_not_panic_the_resolver() {
+        // Byte 9-from-the-end lands INSIDE the first CJK character here, which is
+        // what a `&name[len - 9..]` slice panics on. Real mod folders look like
+        // this: the pool this was found in had `至真女性皮肤4K-Zhizhen's female
+        // skin 4K`. A panic here kills the mount in the middle of a read.
+        for n in ["abcdefg日日日h", "至真女性皮肤4K.bsa", "Épées Légendaires.esp", "日本語"] {
+            assert!(!is_hidden_name(n), "{n}");
+            assert!(!under_hidden(&format!("meshes/{n}/x.nif")));
+        }
+        // And the suffix is still recognised when it is there, multi-byte stem or not.
+        assert!(is_hidden_name("至真女性皮肤4K.bsa.mohidden"));
+        assert!(under_hidden("meshes/至真.mohidden/body.nif"));
     }
 
     #[test]
