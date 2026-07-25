@@ -398,9 +398,23 @@ impl LayerStack {
     ///
     /// Used by the FUSE daemon to answer `readdir`.
     pub fn list_dir(&self, vpath: &str) -> Vec<(String, PathBuf)> {
+        self.list_dir_typed(vpath).into_iter().map(|(name, real, _)| (name, real)).collect()
+    }
+
+    /// [`LayerStack::list_dir`] plus each entry's file type AS THE DIRECTORY
+    /// ENTRY REPORTED IT.
+    ///
+    /// The type comes from `readdir`'s own `d_type` field, which costs nothing -
+    /// it is already in the bytes the kernel handed back. `DirEntry::file_type`
+    /// only falls back to an `lstat` on the filesystems that answer `DT_UNKNOWN`,
+    /// and it does not follow symlinks, so the result is identical to calling
+    /// `symlink_metadata` on every entry and enormously cheaper. `None` means
+    /// even the fallback failed: the entry is being removed under us, and the
+    /// caller must decide, because there is no honest type to report.
+    pub fn list_dir_typed(&self, vpath: &str) -> Vec<(String, PathBuf, Option<fs::FileType>)> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut whiteouts: HashSet<String> = HashSet::new();
-        let mut out: Vec<(String, PathBuf)> = Vec::new();
+        let mut out: Vec<(String, PathBuf, Option<fs::FileType>)> = Vec::new();
 
         // Overwrite layer first: collect whiteouts (and hide the markers).
         let mut opaque = false;
@@ -420,7 +434,7 @@ impl LayerStack {
                         continue;
                     }
                     if seen.insert(name.to_ascii_lowercase()) {
-                        out.push((name, entry.path()));
+                        out.push((name, entry.path(), entry.file_type().ok()));
                     }
                 }
             }
@@ -450,7 +464,7 @@ impl LayerStack {
                     continue;
                 }
                 if seen.insert(key) {
-                    out.push((name, entry.path()));
+                    out.push((name, entry.path(), entry.file_type().ok()));
                 }
             }
         }
@@ -466,7 +480,7 @@ impl LayerStack {
         // ASCII-lowercase sort orders names that mix letters with `_ { } ~` (all
         // between `Z` and `a` in ASCII) differently, which the indexer can notice.
         // Same fix CIOPFS / ntfs-emu apply so non-NTFS filesystems work with Wine.
-        out.sort_by_cached_key(|(name, _)| ntfs_order_key(name));
+        out.sort_by_cached_key(|(name, _, _)| ntfs_order_key(name));
         out
     }
 }
@@ -936,6 +950,42 @@ mod tests {
         assert!(is_hidden_name("a.mohidden"));
         assert!(!is_hidden_name("mohidden"));
         assert!(!is_hidden_name("foo.mohidden.bak"));
+    }
+
+    #[test]
+    fn list_dir_typed_reports_the_real_kind_of_every_entry() {
+        // The FUSE readdir reply is built from these types. A directory reported
+        // as a regular file is a lie the caller acts on: it will not descend into
+        // it, and the Creation Engine answers that by restarting its enumeration
+        // forever. So the type must come from the directory entry, per layer, and
+        // survive the merge.
+        let t = TempTree::new();
+        let (game, modd, over) = (t.sub("game"), t.sub("mod"), t.sub("over"));
+        put(&game, "Scripts/a.pex", "x"); // a DIRECTORY in the game layer
+        put(&game, "plain.esm", "x");
+        put(&modd, "meshes/b.nif", "y"); // a DIRECTORY in a mod layer
+        std::os::unix::fs::symlink(game.join("plain.esm"), modd.join("link.esm")).unwrap();
+
+        let stack = LayerStack::new(vec![modd, game], over);
+        let got: Vec<(String, bool, bool)> = stack
+            .list_dir_typed("")
+            .into_iter()
+            .map(|(n, _, ft)| {
+                let ft = ft.expect("every entry here exists, so its type is knowable");
+                (n, ft.is_dir(), ft.is_symlink())
+            })
+            .collect();
+
+        let kind = |name: &str| got.iter().find(|(n, _, _)| n == name).map(|(_, d, l)| (*d, *l));
+        assert_eq!(kind("Scripts"), Some((true, false)), "{got:?}");
+        assert_eq!(kind("meshes"), Some((true, false)), "{got:?}");
+        assert_eq!(kind("plain.esm"), Some((false, false)), "{got:?}");
+        // Not followed: a symlink is reported as a symlink, matching the
+        // `symlink_metadata` semantics this replaced.
+        assert_eq!(kind("link.esm"), Some((false, true)), "{got:?}");
+        // And the plain listing still agrees, entry for entry.
+        let plain: Vec<String> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
+        assert_eq!(plain, got.iter().map(|(n, _, _)| n.clone()).collect::<Vec<_>>());
     }
 
     #[test]

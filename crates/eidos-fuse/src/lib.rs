@@ -73,6 +73,14 @@ const TTL_SECS: u64 = 3600;
 const NEG_TTL_SECS: u64 = 60;
 const ROOT_INO: u64 = 1;
 
+/// The marker CIOPFS leaves in every directory it serves, and the only way Wine
+/// can tell that a filesystem folds case (`get_dir_case_sensitivity` in
+/// `dlls/ntdll/unix/file.c` stats it). Eidos answers it in `lookup` so Wine skips
+/// its brute-force directory rescan on every mis-cased path - see the comment
+/// there for what that rescan costs.
+const CIOPFS_MARKER: &[u8] = b".ciopfs";
+
+
 /// One kernel-side cache, individually switchable.
 ///
 /// `EIDOS_FUSE_NO_CACHE=1` turns all four off together, which answers "is it the
@@ -125,6 +133,13 @@ static NEG_TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
 
 /// A directory entry in an `opendir` snapshot: `(inode, kind, name)`.
 type DirEntry = (u64, FileType, String);
+
+/// One open directory handle. `entries` is filled by the first `readdir`.
+struct OpenDir {
+    ino: u64,
+    vpath: String,
+    entries: Option<Vec<DirEntry>>,
+}
 
 /// Per-mount operation counters, for answering "where did the time go" with data
 /// instead of a guess.
@@ -367,6 +382,16 @@ fn file_open_flags() -> FopenFlags {
     }
 }
 
+/// Whether `EIDOS_FUSE_TRACE` names this trace channel (comma-separated, or `1`
+/// for all of them). Diagnostic only, and off unless asked for: the op counters
+/// say HOW MANY, this says WHICH, which is the difference between knowing a
+/// directory is enumerated 50000 times and knowing which directory it is.
+fn trace_enabled(channel: &str) -> bool {
+    let Ok(v) = std::env::var("EIDOS_FUSE_TRACE") else { return false };
+    let v = v.trim();
+    !v.is_empty() && (v == "1" || v.split(',').any(|c| c.trim().eq_ignore_ascii_case(channel)))
+}
+
 /// Raise this process's open-file soft limit to its hard limit. Best-effort:
 /// every failure path leaves us exactly where we started.
 fn raise_fd_limit() {
@@ -406,8 +431,11 @@ pub struct Eidos {
     uid: u32,
     gid: u32,
     open_files: Mutex<HashMap<u64, OpenFile>>,
-    /// Per-handle directory snapshots taken at `opendir`, for stable `readdir`.
-    open_dirs: Mutex<HashMap<u64, Vec<DirEntry>>>,
+    /// Per-handle directory state. The snapshot is `None` until the first
+    /// `readdir` asks for it - see `opendir` for why building it eagerly was a
+    /// disaster - and once taken it stays fixed for the handle's life so offsets
+    /// remain valid even if the directory changes underneath.
+    open_dirs: Mutex<HashMap<u64, OpenDir>>,
     next_fh: AtomicU64,
     stats: Stats,
     /// Negative dentries handed to the kernel, as `(parent_ino, exact name)`.
@@ -440,7 +468,13 @@ fn join(parent: &str, name: &str) -> String {
 }
 
 fn kind_of(meta: &Metadata) -> FileType {
-    let ft = meta.file_type();
+    kind_of_type(&meta.file_type())
+}
+
+/// Map a `std::fs::FileType` to the FUSE one. Symlink-aware, so it must be fed a
+/// type obtained WITHOUT following links (`symlink_metadata`, or a `DirEntry`'s
+/// own `file_type`, which is `lstat`-shaped too).
+fn kind_of_type(ft: &std::fs::FileType) -> FileType {
     if ft.is_dir() {
         FileType::Directory
     } else if ft.is_symlink() {
@@ -685,6 +719,29 @@ impl Eidos {
         }
     }
 
+    /// Attributes for the synthetic `.ciopfs` marker: an empty, read-only regular
+    /// file that exists nowhere on disk. Its only job is to be `stat`-able, which
+    /// is all Wine's case-sensitivity probe does with it.
+    fn marker_attr(&self, ino: u64) -> FileAttr {
+        FileAttr {
+            ino: INodeNo(ino),
+            size: 0,
+            blocks: 0,
+            atime: UNIX_EPOCH,
+            mtime: UNIX_EPOCH,
+            ctime: UNIX_EPOCH,
+            crtime: UNIX_EPOCH,
+            kind: FileType::RegularFile,
+            perm: 0o444,
+            nlink: 1,
+            uid: self.uid,
+            gid: self.gid,
+            rdev: 0,
+            blksize: 4096,
+            flags: 0,
+        }
+    }
+
     /// Snapshot a directory's merged listing into the `(ino, kind, name)` form
     /// `readdir` serves, including `.` and `..`. Disk I/O (the layer merge and
     /// the per-entry stat) runs without the inode lock held.
@@ -696,15 +753,27 @@ impl Eidos {
             self.inodes.lock_recover().intern(&parent_vpath)
         };
 
-        // Merge + stat each child before taking the inode lock.
+        // Merge the layers, taking each child's type from the directory entry the
+        // kernel already handed us, before taking the inode lock.
+        //
+        // This used to `symlink_metadata` every child - one `statx` syscall per
+        // entry, per enumeration - and then, when that failed, ANNOUNCE THE ENTRY
+        // AS A REGULAR FILE. Both halves were wrong. The syscalls are pure waste:
+        // `readdir` already carries the type in `d_type`. And a directory reported
+        // as a regular file is a lie the caller cannot recover from - it will not
+        // descend into it, and the Creation Engine's loose-file indexer answers
+        // that by restarting its enumeration, which is an endless loop with us
+        // burning a core to serve it.
+        //
+        // An entry whose type cannot be determined even by the `lstat` fallback is
+        // one being deleted underneath us. It is dropped rather than guessed at:
+        // omitting a file that is going away is a transient inaccuracy, while
+        // naming a directory a file is a wrong answer the caller will act on.
         let children: Vec<(String, FileType)> = self
             .stack
-            .list_dir(vpath)
+            .list_dir_typed(vpath)
             .into_iter()
-            .map(|(name, real)| {
-                let kind = fs::symlink_metadata(&real).map_or(FileType::RegularFile, |m| kind_of(&m));
-                (name, kind)
-            })
+            .filter_map(|(name, _real, ft)| Some((name, kind_of_type(&ft?))))
             .collect();
 
         let mut entries = Vec::with_capacity(children.len() + 2);
@@ -890,6 +959,32 @@ impl Filesystem for Eidos {
             return;
         };
         let vpath = join(&parent_vpath, &name.to_string_lossy());
+
+        // Tell Wine this directory is case-insensitive, so it stops proving it the
+        // hard way.
+        //
+        // Wine has no way to ask a filesystem whether it folds case, so
+        // `get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in every
+        // directory it serves. Without it Wine assumes case-SENSITIVE, and every
+        // lookup whose spelling does not match byte-for-byte falls back to reading
+        // the WHOLE directory to search for a case-insensitive match. Bethesda
+        // games ask for `data/ccbgssse001-fish.bsa` while the file is
+        // `ccBGSSSE001-Fish.bsa`, so that fallback fires on nearly every asset.
+        //
+        // Measured on Skyrim SE through this mount: 4471 `.ciopfs` probes and 2236
+        // full directory re-reads in EIGHT SECONDS, 195796 `opendir`s of Data in
+        // ninety - the daemon pinned at 92% of a core and the game never reaching
+        // its main menu. Eidos folds case in `resolve_read` already; the whole cost
+        // was Wine not being told.
+        //
+        // Answered on lookup only, and deliberately absent from `readdir`: it is a
+        // signal to Wine, not a file the game should ever enumerate or open.
+        if name.as_bytes() == CIOPFS_MARKER {
+            let ino = self.inodes.lock_recover().lookup(&vpath);
+            reply.entry(&TTL, &self.marker_attr(ino), Generation(0));
+            return;
+        }
+
         // Resolve + stat without the inode lock held.
         let Some(real) = self.stack.resolve_read(&vpath) else {
             Stats::bump(&self.stats.lookup_miss);
@@ -984,15 +1079,27 @@ impl Filesystem for Eidos {
 
     fn opendir(&self, _req: &Request, ino: INodeNo, _flags: OpenFlags, reply: ReplyOpen) {
         Stats::bump(&self.stats.readdir);
-        // Snapshot the listing now so offsets stay valid even if the directory
-        // changes before releasedir (the conformant readdir pattern).
+        // `EIDOS_FUSE_TRACE=opendir` names every directory the caller enumerates.
+        // A game that re-walks one directory without end is invisible in the op
+        // counters (they only total) and obvious here.
+        if trace_enabled("opendir") {
+            let p = self.inodes.lock_recover().path(ino.0).unwrap_or_default();
+            eprintln!("eidos-fuse: opendir /{p}");
+        }
+        // Record the handle and do NOTHING else. The snapshot is built by the
+        // first `readdir`, because an `opendir` is not a promise to enumerate:
+        // Wine opens a directory just to `stat` the `.ciopfs` marker inside it,
+        // on essentially every path lookup. Building the merged listing here
+        // meant a full multi-layer scan plus an NTFS-collation sort per probe -
+        // measured at 220000 of them in ninety seconds of Skyrim startup, for
+        // listings nobody ever read. Offsets stay stable because the snapshot is
+        // still taken exactly once per handle, just later.
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
-        let entries = self.dir_snapshot(ino.0, &vpath);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        self.open_dirs.lock_recover().insert(fh, entries);
+        self.open_dirs.lock_recover().insert(fh, OpenDir { ino: ino.0, vpath, entries: None });
         // CACHE_DIR lets the kernel keep the directory listing and serve repeat
         // enumerations itself. The Creation Engine's loose-file indexer and Wine's
         // directory probing re-walk the same directories relentlessly, and each
@@ -1018,11 +1125,28 @@ impl Filesystem for Eidos {
         offset: u64,
         mut reply: ReplyDirectory,
     ) {
-        // Serve from the opendir snapshot; stop the moment the kernel buffer is
-        // full (the offset we pass is the resume point: index of the next entry).
-        {
+        // Take the snapshot on the first readdir of this handle, then serve every
+        // later call from it; stop the moment the kernel buffer is full (the
+        // offset we pass is the resume point: index of the next entry).
+        //
+        // The listing is built WITHOUT the map locked - it does real disk I/O -
+        // and only then stored, so a slow enumeration of one directory cannot
+        // block every other handle in the daemon.
+        let known = {
             let dirs = self.open_dirs.lock_recover();
-            if let Some(entries) = dirs.get(&fh.0) {
+            dirs.get(&fh.0).map(|d| (d.ino, d.vpath.clone(), d.entries.is_some()))
+        };
+        if let Some((d_ino, d_vpath, ready)) = known {
+            if !ready {
+                let built = self.dir_snapshot(d_ino, &d_vpath);
+                if let Some(d) = self.open_dirs.lock_recover().get_mut(&fh.0) {
+                    // Another thread may have won the race; keep whichever
+                    // snapshot landed first so offsets stay consistent.
+                    d.entries.get_or_insert(built);
+                }
+            }
+            let dirs = self.open_dirs.lock_recover();
+            if let Some(entries) = dirs.get(&fh.0).and_then(|d| d.entries.as_ref()) {
                 for (i, (e_ino, kind, name)) in entries.iter().enumerate().skip(offset as usize) {
                     if reply.add(INodeNo(*e_ino), (i + 1) as u64, *kind, name) {
                         break;
