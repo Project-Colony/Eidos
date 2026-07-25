@@ -940,7 +940,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         if inst.exists() {
             let _ = inst.ensure_manifest(app.games[i].def.id, InstanceKind::Global);
             let _ = inst.ensure_profiles();
-            app.mods = inst.modlist();
+            app.mods = modlist_with_unmanaged(&inst, app.games.get(i));
             app.created = Some(inst);
             app.screen = Screen::Main;
             app.status =
@@ -955,7 +955,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
                 let _ = inst.ensure_manifest(g.def.id, InstanceKind::Global);
                 let _ = inst.ensure_profiles();
                 app.selected = Some(i);
-                app.mods = inst.modlist();
+                app.mods = modlist_with_unmanaged(&inst, Some(g));
                 app.created = Some(inst);
                 app.screen = Screen::Main;
                 break;
@@ -1096,6 +1096,36 @@ fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
     None
 }
 
+
+
+/// The mod list as the user should see it: the profile's managed mods with the
+/// game's own unmanaged content (DLCs, Creation Club) prepended.
+///
+/// Prepended, because the display runs lowest-priority-first and the engine loads
+/// this content before anything anyone installed. Without it the list shows four
+/// mods while eighty plugins load, which is how you end up asking whether your
+/// DLC is even there.
+fn modlist_with_unmanaged(inst: &Instance, game: Option<&DetectedGame>) -> Vec<ModEntry> {
+    let managed = inst.modlist();
+    let Some(game) = game else { return managed };
+    let Some(spec) = GameSpec::for_id(game.def.id) else { return managed };
+    // The order the engine imposes on its own content: the primary masters, then
+    // whatever the `.ccc` lists. Anything else falls in after, alphabetically.
+    let mut engine_order: Vec<String> = spec.primary_plugins.clone();
+    engine_order.extend(eidos_plugins::implicit_plugins(&game.install_path));
+    let mut out = inst.unmanaged_mods(&game.data_path, &engine_order, &managed);
+    out.extend(managed);
+    out
+}
+
+
+/// Refresh `app.mods` from disk, unmanaged content included. Clones the instance
+/// and the game first so the immutable borrows end before `app.mods` is assigned.
+fn reload_mods(app: &mut App) {
+    let Some(inst) = app.created.clone() else { return };
+    let game = selected_game(app).cloned();
+    app.mods = modlist_with_unmanaged(&inst, game.as_ref());
+}
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
 /// multi-threaded, so it cannot enter a user namespace itself; the single-process
@@ -1264,8 +1294,8 @@ fn start_run(app: &mut App, title: String, mut cmd: std::process::Command) {
 /// A non-zero exit is reported with the run log's path so failures are diagnosable.
 fn finish_run(app: &mut App) {
     let run = app.running.take();
-    if let Some(inst) = &app.created {
-        app.mods = inst.modlist();
+    reload_mods(app);
+    if app.created.is_some() {
         // The session wrote into the Overwrite (and tools may have edited mods).
         drop_files_cache(app, None);
         invalidate_plugins(app);
@@ -1457,8 +1487,8 @@ fn after_hidden_change(app: &mut App, mod_name: &str, rel: &str) {
 fn switch_to_profile(app: &mut App, name: &str) {
     if let Some(inst) = &app.created {
         let _ = inst.set_active_profile(name);
-        app.mods = inst.profile(name).modlist();
     }
+    reload_mods(app);
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
     app.meta_cache = build_meta_cache(app);
@@ -1576,8 +1606,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         if let Some(id) = &game_id {
                             let _ = inst.ensure_manifest(id, kind);
                         }
-                        app.mods = inst.modlist();
                         app.created = Some(inst);
+                        reload_mods(app);
                         app.tab = Tab::Data;
                         app.error = None;
                         app.screen = Screen::Main;
@@ -2301,7 +2331,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             let Some(inst) = app.created.as_ref() else { return Task::none() };
             match inst.import_mo2_profile(&dir) {
                 Ok(r) => {
-                    app.mods = inst.modlist();
+                    reload_mods(app);
                     drop_files_cache(app, None);
                     invalidate_plugins(app);
                     app.conflicts = compute_conflicts(app);
@@ -2335,7 +2365,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     // Highest priority (the end of the display order), which is where
                     // the Overwrite's content effectively sat.
                     if !app.mods.iter().any(|m| m.name == name) {
-                        app.mods.push(ModEntry { name: name.clone(), enabled: true, path: dest });
+                        app.mods.push(ModEntry { name: name.clone(), enabled: true, path: dest, unmanaged: false });
                     }
                     drop_files_cache(app, None);
                     mods_changed(app);
@@ -2353,8 +2383,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::Refresh => {
-            if let Some(inst) = &app.created {
-                app.mods = inst.modlist();
+            if app.created.is_some() {
+                reload_mods(app);
                 // F5 = full re-scan: every cached file walk may be stale.
                 drop_files_cache(app, None);
                 invalidate_plugins(app);
@@ -2637,7 +2667,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         // Minimal meta.ini, mirroring MO2's createMod.
                         let _ = fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\n");
                         let idx = i.min(app.mods.len());
-                        app.mods.insert(idx, ModEntry { name: folder, enabled: true, path: dest });
+                        app.mods.insert(idx, ModEntry { name: folder, enabled: true, path: dest, unmanaged: false });
                         // Indices at/after the insertion point shifted.
                         app.selected_mods.clear();
                         mods_changed(app);
@@ -4271,10 +4301,24 @@ fn mod_row<'a>(
     flag_icon: Option<&'static [u8]>,
     hidden_icon: Option<&'static [u8]>,
 ) -> Element<'a, Message> {
-    let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
-    let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
-    // MO2's left-hand checkbox: a real square box, checked when the mod is enabled.
-    let toggle = checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16);
+    // Unmanaged content - the game's own DLCs and Creation Club plugins - is
+    // listed so the mod list matches what will actually load, but none of it is
+    // ours to move, disable or remove. MO2 renders these the same way: present,
+    // greyed, inert. A checkbox with no `on_toggle` and an arrow with no message
+    // both draw disabled, which is exactly the look.
+    let (up, dn, toggle) = if m.unmanaged {
+        (
+            icon_btn(IC_UP, 14.0, None),
+            icon_btn(IC_DOWN, 14.0, None),
+            checkbox("", true).size(16),
+        )
+    } else {
+        (
+            icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i))),
+            icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i))),
+            checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16),
+        )
+    };
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
     let mut flags = Row::new().spacing(2);
@@ -4302,7 +4346,11 @@ fn mod_row<'a>(
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(text(m.name.clone()).size(13.0).width(Length::Fill))
-        .push(text(category).size(11.0).width(C_CATEGORY))
+        .push(
+            text(if m.unmanaged { "Game content".to_string() } else { category })
+                .size(11.0)
+                .width(C_CATEGORY),
+        )
         .push(text(content).size(10.0).width(C_CONTENT))
         .push(text(version).size(11.0).width(C_VERSION))
         .push(flag_cell)
@@ -4311,6 +4359,11 @@ fn mod_row<'a>(
     // Left-press selects + arms a drag, entering during a drag retargets the drop,
     // release commits it; right-click opens the action menu (MO2's context menu).
     // Inner buttons still get their own clicks; the mouse_area catches the rest.
+    if m.unmanaged {
+        // No drag, no context menu: there is no action on this row that would do
+        // anything, and offering one only invites the question of why it failed.
+        return container(row).into();
+    }
     mouse_area(row)
         .on_press(Message::DragStart(i))
         .on_enter(Message::DragOver(i))
@@ -6853,10 +6906,10 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive:
     if let Some(inst) = &app.created {
         let mut ml = inst.modlist();
         ml.retain(|m| m.name != name);
-        ml.push(ModEntry { name: name.to_string(), enabled: true, path: dest });
+        ml.push(ModEntry { name: name.to_string(), enabled: true, path: dest, unmanaged: false });
         let _ = inst.save_modlist(&ml);
-        app.mods = inst.modlist();
     }
+    reload_mods(app);
     // Flip the source archive's `.meta` status to installed (MO2 marks the
     // download), so the Downloads manager shows it as installed. Best-effort: a
     // manually dropped archive with no sidecar is a no-op.
@@ -7873,7 +7926,7 @@ mod tests {
     fn mods(names: &[&str]) -> Vec<ModEntry> {
         names
             .iter()
-            .map(|n| ModEntry { name: n.to_string(), enabled: true, path: PathBuf::new() })
+            .map(|n| ModEntry { name: n.to_string(), enabled: true, path: PathBuf::new(), unmanaged: false })
             .collect()
     }
     fn names(v: &[ModEntry]) -> Vec<&str> {

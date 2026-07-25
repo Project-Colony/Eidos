@@ -148,6 +148,58 @@ impl Plugin {
 #[derive(Debug, Clone, Default)]
 pub struct PluginList {
     pub plugins: Vec<Plugin>,
+    /// Plugins the ENGINE loads by itself, read from the game's `.ccc` file -
+    /// lowercased. Populated by [`PluginList::discover`]; see [`implicit_plugins`].
+    pub implicit: std::collections::HashSet<String>,
+}
+
+
+/// The plugins the ENGINE loads on its own, read from the game root's `.ccc` file
+/// (`Skyrim.ccc`, `Fallout4.ccc`). Names are lowercased.
+///
+/// Creation Club content is loaded implicitly, exactly like `Skyrim.esm` and the
+/// other primary masters, and the game therefore does NOT list it in
+/// `plugins.txt` - a stock Anniversary install with no mods has an EMPTY
+/// `plugins.txt`, header only. Writing those names in anyway makes the engine see
+/// every Creation twice, and its answer is to blank the whole file the moment it
+/// finishes loading. Everything that re-reads the list afterwards then believes
+/// nothing is active: the save-game Creation check ("downloaded, but not
+/// currently activated"), and any mod script that asks whether its own plugin is
+/// present.
+///
+/// Measured on a 74-Creation install: Eidos wrote 77 active plugins, 75 of them
+/// named in `Skyrim.ccc`, and the game blanked the file at `DataLoaded` - eleven
+/// seconds before the session even ended. The correct file for that setup has
+/// TWO lines, the two real mods.
+///
+/// Discovered by glob rather than a per-game constant: the file is named after
+/// the game's master and sits beside the executable, so any title adopting the
+/// convention works without a new table entry. A missing file yields an empty
+/// list, which is right for every game that has no Creation Club.
+///
+/// Returned IN FILE ORDER, because that order is the engine's load order for this
+/// content and the mod list wants to show it that way. Callers that only need
+/// membership collect it into a set.
+pub fn implicit_plugins(game_root: &Path) -> Vec<String> {
+    let Ok(rd) = std::fs::read_dir(game_root) else { return Vec::new() };
+    let mut files: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("ccc"))
+        })
+        .collect();
+    files.sort();
+    let mut out = Vec::new();
+    for f in files {
+        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        out.extend(
+            text.lines()
+                .map(|l| l.trim().to_ascii_lowercase())
+                .filter(|l| !l.is_empty() && !l.starts_with('#')),
+        );
+    }
+    out
 }
 
 impl PluginList {
@@ -159,6 +211,13 @@ impl PluginList {
     pub fn discover(sources: &[(String, PathBuf)], spec: &GameSpec) -> PluginList {
         let mut plugins: Vec<Plugin> = Vec::new();
         let mut idx: HashMap<String, usize> = HashMap::new();
+        // The first source is the game's own Data dir by contract, so the game
+        // root - where the `.ccc` lives - is its parent.
+        let implicit = sources
+            .first()
+            .and_then(|(_, data)| data.parent())
+            .map(|root| implicit_plugins(root).into_iter().collect())
+            .unwrap_or_default();
 
         for (origin, dir) in sources {
             let Ok(rd) = std::fs::read_dir(dir) else { continue };
@@ -218,7 +277,7 @@ impl PluginList {
                 }
             }
         }
-        PluginList { plugins }
+        PluginList { plugins, implicit }
     }
 
     /// Re-sort to satisfy the ordering invariants, then assign mod indexes. Call
@@ -459,6 +518,7 @@ mod tests {
     fn primaries_pinned_first_in_canonical_order() {
         let mut list = PluginList {
             plugins: vec![p("ZMod.esp", &[]), p("Update.esm", &["Skyrim.esm"]), p("Skyrim.esm", &[])],
+            implicit: Default::default(),
         };
         list.sort(&se());
         assert_eq!(names(&list), vec!["Skyrim.esm", "Update.esm", "ZMod.esp"]);
@@ -468,6 +528,7 @@ mod tests {
     fn masters_sort_above_normals_keeping_input_order() {
         let mut list = PluginList {
             plugins: vec![p("aaa.esp", &[]), p("zzz.esm", &[]), p("bbb.esp", &[]), p("mmm.esm", &[])],
+            implicit: Default::default(),
         };
         list.sort(&se());
         // masters first (input order zzz, mmm), then normals (aaa, bbb).
@@ -483,6 +544,7 @@ mod tests {
                 p("MidMaster.esm", &["BaseMaster.esm"]),
                 p("BaseMaster.esm", &[]),
             ],
+            implicit: Default::default(),
         };
         list.sort(&se());
         let order = names(&list);
@@ -570,6 +632,7 @@ mod tests {
                 },
                 p("Base.esm", &[]),
             ],
+            implicit: Default::default(),
         };
         list.refresh(&se());
         let order = names(&list);
@@ -602,6 +665,7 @@ mod tests {
                     x
                 },
             ],
+            implicit: Default::default(),
         };
         list.refresh(&se());
         let by = |n: &str| list.plugins.iter().find(|p| p.name == n).unwrap().index.clone();
@@ -615,6 +679,7 @@ mod tests {
     fn missing_masters_are_flagged() {
         let mut list = PluginList {
             plugins: vec![p("Skyrim.esm", &[]), p("Patch.esp", &["Skyrim.esm", "Ghost.esm"])],
+            implicit: Default::default(),
         };
         list.refresh(&se());
         let missing = list.missing_masters();

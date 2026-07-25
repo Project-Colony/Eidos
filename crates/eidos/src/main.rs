@@ -1226,7 +1226,7 @@ fn cmd_install(args: &[String]) {
             // like MO2. modlist() is lowest-priority-first, so highest = the END.
             let mut ml = inst.modlist();
             ml.retain(|m| m.name != r.name);
-            ml.push(ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone() });
+            ml.push(ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone(), unmanaged: false });
             let _ = inst.save_modlist(&ml);
 
             // If this archive came from a Nexus download, flag its .meta installed
@@ -1678,8 +1678,7 @@ mod tests {
         let enabled = vec![ModEntry {
             name: "AwesomeMod".to_string(),
             enabled: true,
-            path: mod_dir.clone(),
-        }];
+            path: mod_dir.clone(), unmanaged: false }];
 
         let sources = plugin_sources(&game_data, &enabled, &overwrite);
         // Overwrite must be the final, highest-priority source.

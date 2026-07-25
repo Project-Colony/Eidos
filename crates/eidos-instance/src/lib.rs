@@ -50,6 +50,17 @@ pub struct ModEntry {
     pub name: String,
     pub enabled: bool,
     pub path: PathBuf,
+    /// Content the GAME owns and Eidos did not install: the DLCs and Creation
+    /// Club plugins that live in the game's own `Data`, which MO2 calls
+    /// *unmanaged* (`ModInfoForeign`) and shows anyway.
+    ///
+    /// Showing them is not decoration. A mod list that lists four mods while the
+    /// game will load eighty plugins invites exactly the question "is my DLC
+    /// even there?", and answering it costs an evening. They are always enabled,
+    /// never reordered (their priority is the engine's, not ours), never written
+    /// to `modlist.txt`, and never mounted as layers - the files are already in
+    /// the directory we mount over.
+    pub unmanaged: bool,
 }
 
 /// Whether a mod folder name marks a SEPARATOR - MO2's `.*_separator` convention
@@ -72,6 +83,22 @@ impl ModEntry {
     pub fn display_name(&self) -> &str {
         self.name.strip_suffix("_separator").unwrap_or(&self.name)
     }
+
+    /// Whether this entry is content the game owns rather than a mod Eidos
+    /// installed. Unmanaged entries are shown, never reordered, never saved and
+    /// never mounted.
+    pub fn is_unmanaged(&self) -> bool {
+        self.unmanaged
+    }
+}
+
+
+/// Whether a file name is a Bethesda plugin. Kept here rather than reaching for
+/// `eidos-plugins`, which depends on this crate's sibling and would make the
+/// dependency circular.
+fn is_plugin_name(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl")
 }
 
 /// `$XDG_DATA_HOME`, or `$HOME/.local/share`.
@@ -132,6 +159,82 @@ impl Instance {
                 }
             }
         }
+        out
+    }
+
+    /// The content the GAME owns that Eidos did not install: the DLCs and
+    /// Creation Club plugins sitting in its own `Data`. MO2's `ModInfoForeign`,
+    /// discovered the same way `GamebryoUnmangedMods::mods` does it.
+    ///
+    /// One entry per `.esp`/`.esl`/`.esm` in the game's data directory, named
+    /// after the file WITHOUT its extension (MO2 chops it), minus the primary
+    /// masters - those are the base game, not add-ons, and MO2 excludes them by
+    /// the same rule. Anything a managed mod already provides is skipped too: a
+    /// mod that replaces a DLC plugin owns that row.
+    ///
+    /// Returned lowest-priority-first, matching the display order the mod list
+    /// uses, because that is where they belong: the engine loads them before
+    /// anything a user installed.
+    /// The content the GAME owns that Eidos did not install: the base masters,
+    /// the DLCs and the Creation Club plugins sitting in its own `Data`. MO2's
+    /// `ModInfoForeign`, discovered the way `GamebryoUnmangedMods::mods` does it -
+    /// one entry per `.esp`/`.esl`/`.esm` in the data directory, named after the
+    /// file WITHOUT its extension.
+    ///
+    /// Everything is listed, base game included. MO2 hides the primary masters
+    /// from this list because they also appear in its plugin list, but a mod list
+    /// showing four rows beside eighty loading plugins is what makes a user ask
+    /// whether their DLC is even installed - and answering that took an evening.
+    ///
+    /// `engine_order` is the order the ENGINE imposes on this content: the primary
+    /// masters followed by the `.ccc` entries. Names it lists come first, in its
+    /// order; anything else follows alphabetically. Sorting these by name instead
+    /// would put `_ResourcePack` above `Skyrim.esm`, which is exactly backwards.
+    ///
+    /// Anything a managed mod already provides is skipped: that mod shadows the
+    /// game's copy through the mount, so listing both would be a lie.
+    pub fn unmanaged_mods(
+        &self,
+        game_data: &Path,
+        engine_order: &[String],
+        managed: &[ModEntry],
+    ) -> Vec<ModEntry> {
+        // A managed mod providing the same plugin owns the row.
+        let provided: HashSet<String> = managed
+            .iter()
+            .filter(|m| !m.is_separator())
+            .flat_map(|m| fs::read_dir(&m.path).into_iter().flatten().flatten())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| is_plugin_name(n))
+            .map(|n| n.to_ascii_lowercase())
+            .collect();
+
+        // Ranked by STEM, because that is what the display name already is - the
+        // alternative is rebuilding each file name to look the rank up, for no
+        // gain. It also means a `.ccc` naming an extension the shipped file does
+        // not use still matches.
+        let stem = |n: &str| n.trim().rsplit_once('.').map_or(n.trim(), |(s, _)| s).to_ascii_lowercase();
+        let rank: HashMap<String, usize> =
+            engine_order.iter().enumerate().map(|(i, n)| (stem(n), i)).collect();
+
+        let Ok(rd) = fs::read_dir(game_data) else { return Vec::new() };
+        let mut out: Vec<ModEntry> = rd
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| is_plugin_name(n))
+            .filter(|n| !provided.contains(&n.to_ascii_lowercase()))
+            .map(|n| {
+                let path = game_data.join(&n);
+                let name = n.rsplit_once('.').map_or(n.clone(), |(stem, _)| stem.to_string());
+                ModEntry { name, enabled: true, path, unmanaged: true }
+            })
+            .collect();
+        // Engine order first, then the rest by name. `usize::MAX` parks unknown
+        // names after everything the engine named, without a second pass.
+        out.sort_by_key(|m| {
+            let r = rank.get(&m.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX);
+            (r, m.name.to_lowercase())
+        });
         out
     }
 
@@ -435,7 +538,7 @@ impl Instance {
         fs::create_dir_all(&dest)?;
         // A minimal meta.ini, mirroring MO2's createMod.
         fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n")?;
-        Ok(ModEntry { name: name.to_string(), enabled: true, path: dest })
+        Ok(ModEntry { name: name.to_string(), enabled: true, path: dest, unmanaged: false })
     }
 
     /// Import an existing Mod Organizer 2 profile into this instance's ACTIVE
@@ -692,12 +795,11 @@ mod tests {
         let sep = ModEntry {
             name: "Gameplay_separator".into(),
             enabled: true,
-            path: PathBuf::new(),
-        };
+            path: PathBuf::new(), unmanaged: false };
         assert!(sep.is_separator());
         assert_eq!(sep.display_name(), "Gameplay");
 
-        let modd = ModEntry { name: "SkyUI".into(), enabled: true, path: PathBuf::new() };
+        let modd = ModEntry { name: "SkyUI".into(), enabled: true, path: PathBuf::new(), unmanaged: false };
         assert!(!modd.is_separator());
         assert_eq!(modd.display_name(), "SkyUI");
 
@@ -756,10 +858,10 @@ mod tests {
         fs::create_dir_all(inst.mods_dir().join("Disabled/Root")).unwrap();
         // Display order is lowest priority first.
         inst.save_modlist(&[
-            ModEntry { name: "SKSE".into(), enabled: true, path: inst.mods_dir().join("SKSE") },
-            ModEntry { name: "PlainMod".into(), enabled: true, path: inst.mods_dir().join("PlainMod") },
-            ModEntry { name: "Disabled".into(), enabled: false, path: inst.mods_dir().join("Disabled") },
-            ModEntry { name: "ENB".into(), enabled: true, path: inst.mods_dir().join("ENB") },
+            ModEntry { name: "SKSE".into(), enabled: true, path: inst.mods_dir().join("SKSE"), unmanaged: false },
+            ModEntry { name: "PlainMod".into(), enabled: true, path: inst.mods_dir().join("PlainMod"), unmanaged: false },
+            ModEntry { name: "Disabled".into(), enabled: false, path: inst.mods_dir().join("Disabled"), unmanaged: false },
+            ModEntry { name: "ENB".into(), enabled: true, path: inst.mods_dir().join("ENB"), unmanaged: false },
         ])
         .unwrap();
 
@@ -779,8 +881,7 @@ mod tests {
         inst.save_modlist(&[ModEntry {
             name: "JustTextures".into(),
             enabled: true,
-            path: inst.mods_dir().join("JustTextures"),
-        }])
+            path: inst.mods_dir().join("JustTextures"), unmanaged: false }])
         .unwrap();
         // Empty means the launcher skips the second mount entirely, so existing
         // setups behave exactly as before.

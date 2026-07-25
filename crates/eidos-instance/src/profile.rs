@@ -432,7 +432,7 @@ impl Profile {
                 };
                 listed += 1;
                 if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
-                    out.push(ModEntry { name: name.to_string(), enabled, path: mods_dir.join(name) });
+                    out.push(ModEntry { name: name.to_string(), enabled, path: mods_dir.join(name), unmanaged: false });
                 }
             }
         }
@@ -442,7 +442,7 @@ impl Profile {
         // the load order's files on the next launch.
         for name in present {
             if seen.insert(name.clone()) {
-                out.push(ModEntry { path: mods_dir.join(&name), name, enabled: false });
+                out.push(ModEntry { path: mods_dir.join(&name), name, enabled: false, unmanaged: false });
             }
         }
         let trust = ListTrust::judge(readable, listed, out.len());
@@ -472,7 +472,13 @@ impl Profile {
         let mut s = String::new();
         // `mods` is in MO2 DISPLAY order (lowest priority first); the file stores
         // highest priority first (MO2's on-disk convention), so write it reversed.
-        for m in mods.iter().rev() {
+        //
+        // Unmanaged entries are dropped: they are the game's own DLCs and
+        // Creation Club content, discovered from its data directory on every
+        // refresh. Writing them would make `modlist.txt` claim ownership of files
+        // Eidos never installed, and the next reconciliation would then see them
+        // as mods whose folder is missing.
+        for m in mods.iter().rev().filter(|m| !m.unmanaged) {
             s.push(if m.enabled { '+' } else { '-' });
             s.push_str(&m.name);
             s.push('\n');
@@ -505,7 +511,11 @@ impl Profile {
         let mut v: Vec<PathBuf> = self
             .modlist()
             .into_iter()
-            .filter(|m| m.enabled && !m.is_separator())
+            // Unmanaged content is already IN the directory we mount over, so
+            // mounting it again as a layer would stack the game's own Data on
+            // top of itself. `modlist()` never yields one, but the filter states
+            // the invariant where it matters rather than relying on that.
+            .filter(|m| m.enabled && !m.is_separator() && !m.unmanaged)
             .map(|m| m.path)
             .collect();
         v.reverse();
@@ -900,13 +910,43 @@ mod tests {
     }
 
     #[test]
+    fn unmanaged_content_is_shown_but_never_saved_or_mounted() {
+        // The game's own DLCs and Creation Club plugins belong in the list - a
+        // list of four mods beside eighty loading plugins is what makes a user
+        // ask whether their DLC is there at all. But they are not ours: writing
+        // them to modlist.txt would claim files Eidos never installed, and
+        // mounting them would stack the game's Data on top of itself.
+        let root = inst_with_mods(&["Real"]);
+        let p = prof(&root, "Default");
+        let e = |n: &str, un: bool| ModEntry {
+            name: n.into(),
+            enabled: true,
+            path: if un { root.join("gamedata").join(n) } else { root.join("mods").join(n) },
+            unmanaged: un,
+        };
+        p.save_modlist(&[e("Dawnguard", true), e("Real", false)]).unwrap();
+
+        let written = fs::read_to_string(p.modlist_path()).unwrap();
+        assert!(written.contains("Real"), "{written}");
+        assert!(!written.contains("Dawnguard"), "unmanaged content must not be saved: {written}");
+
+        // And it is never a mount layer, whatever a caller hands us.
+        let mounted = p.load_order();
+        assert!(
+            !mounted.iter().any(|m| m.to_string_lossy().contains("Dawnguard")),
+            "{mounted:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn modlist_round_trips_per_profile() {
         let root = inst_with_mods(&["A", "B", "C"]);
         let p = prof(&root, "Default");
         let mods = vec![
-            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
-            ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A") },
-            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C") },
+            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
+            ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false },
+            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
         ];
         p.save_modlist(&mods).unwrap();
         let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
@@ -931,18 +971,18 @@ mod tests {
         let root = inst_with_mods(&["A", "B", "C"]);
         let p = prof(&root, "Default");
         let v1 = vec![
-            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C") },
-            ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B") },
-            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
+            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
+            ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B"), unmanaged: false },
+            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
         ];
         p.save_modlist(&v1).unwrap();
 
         // A second save (a toggle/move) over an existing list: backs the old one
         // up and swaps atomically.
         let v2 = vec![
-            ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A") },
-            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C") },
-            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
+            ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false },
+            ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
+            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
         ];
         p.save_modlist(&v2).unwrap();
 
@@ -971,7 +1011,7 @@ mod tests {
         let saves = src.dir().join("saves");
         fs::create_dir_all(&saves).unwrap();
         fs::write(saves.join("Save1.ess"), b"x").unwrap();
-        src.save_modlist(&[ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A") }])
+        src.save_modlist(&[ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false }])
             .unwrap();
 
         let dst = prof(&root, "Copy");
@@ -1001,14 +1041,14 @@ mod tests {
         let root = inst_with_mods(&["A", "B"]);
         prof(&root, "Default")
             .save_modlist(&[
-                ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
-                ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B") },
+                ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
+                ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B"), unmanaged: false },
             ])
             .unwrap();
         prof(&root, "Test")
             .save_modlist(&[
-                ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
-                ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
+                ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
+                ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
             ])
             .unwrap();
         let d: Vec<_> = prof(&root, "Default").modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
@@ -1034,7 +1074,7 @@ mod tests {
     fn a_folder_nobody_listed_appears_disabled() {
         let root = inst_with_mods(&["A", "New"]);
         let p = prof(&root, "Default");
-        p.save_modlist(&[ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") }]).unwrap();
+        p.save_modlist(&[ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false }]).unwrap();
         // "New" exists on disk but not in the saved list. It appears, but DISABLED
         // (MO2 parity): nothing knows where in the conflict order it belongs, and
         // silently enabling it could overwrite half the load order's files on the
@@ -1049,7 +1089,7 @@ mod tests {
     fn a_mod_whose_folder_is_gone_leaves_the_list_but_not_the_file() {
         let root = inst_with_mods(&["A", "B"]);
         let p = prof(&root, "Default");
-        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
         p.save_modlist(&[e("A"), e("B")]).unwrap();
 
         fs::remove_dir_all(root.join("mods/B")).unwrap();
@@ -1069,7 +1109,7 @@ mod tests {
         // every guard that only checks for existence sails straight through.
         let root = inst_with_mods(&["A", "B", "C"]);
         let p = prof(&root, "Default");
-        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
         p.save_modlist(&[e("A"), e("B"), e("C")]).unwrap();
         let before = fs::read_to_string(p.modlist_path()).unwrap();
 
@@ -1092,7 +1132,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let root = inst_with_mods(&["A", "B"]);
         let p = prof(&root, "Default");
-        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n) };
+        let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
         p.save_modlist(&[e("A"), e("B")]).unwrap();
 
         let mods = root.join("mods");
@@ -1221,8 +1261,8 @@ mod tests {
         let p = prof(&root, "Default");
         // Display order: Low at the top (lowest priority), High at the bottom (highest).
         p.save_modlist(&[
-            ModEntry { name: "Low".into(), enabled: true, path: root.join("mods/Low") },
-            ModEntry { name: "High".into(), enabled: true, path: root.join("mods/High") },
+            ModEntry { name: "Low".into(), enabled: true, path: root.join("mods/Low"), unmanaged: false },
+            ModEntry { name: "High".into(), enabled: true, path: root.join("mods/High"), unmanaged: false },
         ])
         .unwrap();
         // The file is highest-priority first (MO2 on-disk convention).
@@ -1242,9 +1282,9 @@ mod tests {
         let root = inst_with_mods(&["A", "Sec_separator", "B"]);
         let p = prof(&root, "Default");
         let mods = vec![
-            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A") },
-            ModEntry { name: "Sec_separator".into(), enabled: false, path: root.join("mods/Sec_separator") },
-            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B") },
+            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
+            ModEntry { name: "Sec_separator".into(), enabled: false, path: root.join("mods/Sec_separator"), unmanaged: false },
+            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
         ];
         p.save_modlist(&mods).unwrap();
 
@@ -1275,8 +1315,7 @@ mod tests {
         p2.save_modlist(&[ModEntry {
             name: "Solo_separator".into(),
             enabled: true,
-            path: root2.join("mods/Solo_separator"),
-        }])
+            path: root2.join("mods/Solo_separator"), unmanaged: false }])
         .unwrap();
         assert!(p2.load_order().is_empty());
         let _ = fs::remove_dir_all(&root2);

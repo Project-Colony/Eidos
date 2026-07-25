@@ -910,6 +910,13 @@ impl Filesystem for Eidos {
         let file = match opts.open(&real) {
             Ok(f) => f,
             Err(e) => {
+                if trace_enabled("open") {
+                    eprintln!(
+                        "eidos-fuse: open FAILED /{vpath} -> {} : {e} (errno {:?})",
+                        real.display(),
+                        e.raw_os_error()
+                    );
+                }
                 reply.error(e.into());
                 return;
             }
@@ -925,7 +932,19 @@ impl Filesystem for Eidos {
         // Cache the open fd under a fresh handle; try to register it for kernel
         // passthrough (no-op fallback when rootless, where it returns EPERM).
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = reply.open_backing(file.as_fd()).ok();
+        let backing = match reply.open_backing(file.as_fd()) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                // Passthrough is an optimisation, never a requirement: the daemon
+                // serves the reads itself when the kernel will not take a backing
+                // file. Worth SAYING, though - a silent fallback here turned into
+                // hours of looking elsewhere.
+                if trace_enabled("open") {
+                    eprintln!("eidos-fuse: passthrough refused for /{vpath}: {e}");
+                }
+                None
+            }
+        };
         let mut files = self.open_files.lock_recover();
         files.insert(
             fh,

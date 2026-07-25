@@ -48,8 +48,12 @@ impl PluginList {
         }
         fs::create_dir_all(dir)?;
 
-        let primaries: std::collections::HashSet<String> =
+        // Plugins the engine loads by itself must not appear in plugins.txt: the
+        // primary masters, and the Creation Club content named in the game's
+        // `.ccc` (see `implicit_plugins` for what listing those anyway costs).
+        let mut primaries: std::collections::HashSet<String> =
             spec.primary_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+        primaries.extend(self.implicit.iter().cloned());
 
         // MO2 writes both files CRLF; plugins.txt in the Windows ANSI codepage
         // (Encoding::System -> CP1252 on Western locales), loadorder.txt UTF-8.
@@ -313,6 +317,43 @@ mod tests {
     }
 
     #[test]
+    fn creation_club_plugins_are_never_written_to_plugins_txt() {
+        // The engine loads everything named in `Skyrim.ccc` by itself, exactly
+        // like the primary masters, and a stock Anniversary install therefore has
+        // an EMPTY plugins.txt. Listing them anyway makes the game see each
+        // Creation twice and blank the whole file the moment it finishes loading,
+        // after which the save-game Creation check and any mod script that asks
+        // whether its plugin is present both read an empty list.
+        let dir = tmp_dir();
+        let spec = se();
+        let mut list = PluginList {
+            plugins: vec![
+                pl("Skyrim.esm", true),
+                pl("ccBGSSSE001-Fish.esm", true),
+                pl("ccQDRSSE001-SurvivalMode.esl", true),
+                pl("SkyUI_SE.esp", true),
+            ],
+            implicit: ["ccbgssse001-fish.esm", "ccqdrsse001-survivalmode.esl"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+        };
+        list.refresh(&spec);
+        list.write_load_order(&dir, &spec).unwrap();
+
+        let txt = fs::read_to_string(dir.join("plugins.txt")).unwrap();
+        let lines: Vec<&str> = txt.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).collect();
+        // Only the real mod. Skyrim.esm is primary, the two cc* are implicit.
+        assert_eq!(lines, vec!["*SkyUI_SE.esp"], "{txt}");
+
+        // loadorder.txt still records everything - it is the full order, not the
+        // active set, and MO2 writes it the same way.
+        let order = fs::read_to_string(dir.join("loadorder.txt")).unwrap();
+        assert!(order.contains("ccBGSSSE001-Fish.esm"), "{order}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn resolver_paths() {
         let spec = se();
         let prefix = Path::new("/steam/compatdata/489830/pfx");
@@ -333,6 +374,7 @@ mod tests {
                 pl("ActiveMod.esp", true),
                 pl("OffMod.esp", false),
             ],
+            implicit: Default::default(),
         };
         list.write_load_order(&dir, &se()).unwrap();
 
@@ -355,6 +397,7 @@ mod tests {
         let dir = tmp_dir();
         let list = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("A.esp", true), pl("B.esp", false)],
+            implicit: Default::default(),
         };
         list.write_load_order(&dir, &se()).unwrap();
 
@@ -368,6 +411,7 @@ mod tests {
     fn apply_active_sets_state_and_order() {
         let mut list = PluginList {
             plugins: vec![pl("B.esp", true), pl("A.esp", true), pl("C.esp", true)],
+            implicit: Default::default(),
         };
         list.apply_active(&[("A.esp".into(), true), ("B.esp".into(), false)]);
         // Order follows the applied list (A, B), then the rest (C); B now off.
@@ -384,7 +428,7 @@ mod tests {
         // active (it would otherwise consume an index slot it can't legally have).
         let mut esl = pl("Light.esl", false);
         esl.force_disabled = true;
-        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)] };
+        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)], implicit: Default::default() };
         list.apply_active(&[("Light.esl".into(), true), ("Normal.esp".into(), true)]);
         let light = list.plugins.iter().find(|p| p.name == "Light.esl").unwrap();
         let normal = list.plugins.iter().find(|p| p.name == "Normal.esp").unwrap();
@@ -398,6 +442,7 @@ mod tests {
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
         let list = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("On.esp", true), pl("Off.esp", false)],
+            implicit: Default::default(),
         };
         list.write_load_order(&dir, &spec).unwrap();
         let plugins = fs::read_to_string(dir.join("plugins.txt")).unwrap();
@@ -412,7 +457,9 @@ mod tests {
     #[test]
     fn plugins_txt_round_trips_a_cp1252_name() {
         let dir = tmp_dir();
-        let list = PluginList { plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)] };
+        let list = PluginList { plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)],
+            implicit: Default::default(),
+        };
         list.write_load_order(&dir, &se()).unwrap();
         // The on-disk bytes are CP1252 (é = 0xE9), not UTF-8.
         let raw = fs::read(dir.join("plugins.txt")).unwrap();
@@ -442,7 +489,7 @@ mod tests {
 
         // Writing keeps the spelling the game chose rather than adding a second
         // file the game might read instead.
-        let mut list = PluginList { plugins: vec![] };
+        let mut list = PluginList { plugins: vec![], implicit: Default::default() };
         list.plugins.push(crate::Plugin {
             name: "Written.esp".into(),
             origin_mod: String::new(),
@@ -502,6 +549,7 @@ mod tests {
                 priority: 0,
                 index: None,
             }],
+            implicit: Default::default(),
         };
         list.write_load_order(&dir, &spec).unwrap();
         let n = fs::read_dir(&dir)
@@ -517,7 +565,7 @@ mod tests {
     fn empty_list_does_not_overwrite_plugins_txt() {
         let dir = tmp_dir();
         fs::write(dir.join("plugins.txt"), b"# precious\n*KeepMe.esp\n").unwrap();
-        PluginList { plugins: vec![] }.write_load_order(&dir, &se()).unwrap();
+        PluginList { plugins: vec![], implicit: Default::default() }.write_load_order(&dir, &se()).unwrap();
         // MO2 refuses to write an empty list; the good file is untouched.
         assert_eq!(fs::read_to_string(dir.join("plugins.txt")).unwrap(), "# precious\n*KeepMe.esp\n");
         let _ = fs::remove_dir_all(&dir);
@@ -528,13 +576,13 @@ mod tests {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
         // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
-        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)] }
+        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)], implicit: Default::default() }
             .write_load_order(&dir, &spec)
             .unwrap();
 
         // A fresh list in arbitrary order; prefix state decides enabled/disabled.
         let mut fresh =
-            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)] };
+            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)], implicit: Default::default() };
         fresh.apply_prefix_state(&dir, &spec);
         let state: Vec<_> = fresh.plugins.iter().map(|p| (p.name.clone(), p.enabled)).collect();
         // Order follows loadorder.txt (A,B,C); B stays DISABLED (in loadorder.txt
