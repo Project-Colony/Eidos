@@ -607,6 +607,11 @@ impl Filesystem for Eidos {
         // Rootless perf levers that always apply: large readahead and write
         // buffers cut the number of round-trips on big asset files. (Metadata is
         // already cached kernel-side via our entry/attr TTL.)
+        // Without this the kernel takes a per-directory-inode lock around LOOKUP
+        // and READDIR (fuse_lock_inode), which serialises exactly the metadata
+        // traffic the extra event loops were added to absorb - measured: the
+        // threads buy nothing until this is negotiated.
+        let _ = config.add_capabilities(InitFlags::FUSE_PARALLEL_DIROPS);
         let _ = config.set_max_readahead(1 << 20);
         let _ = config.set_max_write(1 << 20);
 

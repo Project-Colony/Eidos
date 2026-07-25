@@ -190,18 +190,14 @@ pub fn proton_command(
                 .filter(|s| !s.is_empty())
         })
         .or_else(|| config_info_name(compatdata))?;
-    let proton = find_proton_binary(&root, home, &name)
-        .or_else(|| proton_from_config_info(compatdata))
-        .or_else(|| {
-        let fallback = any_installed_proton(&root, home);
-        if let Some(p) = &fallback {
-            eprintln!(
-                "eidos: compat tool '{name}' not found; falling back to {}",
-                p.display()
-            );
-        }
-        fallback
-    })?;
+    // config_info is the prefix's own record of the build that last ran against
+    // it, so it is the right answer when the name lookup fails. There is
+    // deliberately NO "any installed Proton" fallback beyond it: running a prefix
+    // under a build the user never chose lets wineboot upgrade - or silently
+    // DOWNGRADE - it, and a loud "could not resolve the Proton" beats quietly
+    // rewriting the prefix with the wrong wineserver.
+    let proton =
+        find_proton_binary(&root, home, &name).or_else(|| proton_from_config_info(compatdata))?;
 
     let app = app_id.to_string();
     let mut env = vec![
@@ -268,49 +264,6 @@ fn proton_from_config_info(compatdata: &Path) -> Option<PathBuf> {
 /// keeps the mount, rather than trading a loud failure for a silent one.
 pub fn is_flatpak_steam(path: &Path) -> bool {
     path.components().any(|c| c.as_os_str() == STEAM_FLATPAK_ID)
-}
-
-/// Any Proton installed on this machine, best first, when the configured tool
-/// cannot be resolved.
-///
-/// Without this a fresh prefix, a renamed compat tool or a `config.vdf` Eidos
-/// failed to parse means "no Proton" and the launch simply does not happen.
-/// Running the newest available build is far more useful than refusing, and the
-/// preference order matches what a modded Bethesda setup wants: GE builds first
-/// (they carry the media foundation and DLL fixes those games need), then the
-/// highest version number.
-fn any_installed_proton(steam_root: &Path, home: &Path) -> Option<PathBuf> {
-    let mut found: Vec<(bool, Vec<u32>, PathBuf)> = Vec::new();
-    let mut consider = |dir: &Path| {
-        let proton = dir.join("proton");
-        if !proton.is_file() {
-            return;
-        }
-        let name = dir.file_name().unwrap_or_default().to_string_lossy().to_ascii_lowercase();
-        let is_ge = name.contains("ge-proton") || name.contains("proton-ge");
-        // Version digits in order, so GE-Proton10-34 sorts above GE-Proton9-20.
-        let version: Vec<u32> = name
-            .split(|c: char| !c.is_ascii_digit())
-            .filter(|s| !s.is_empty())
-            .filter_map(|s| s.parse().ok())
-            .collect();
-        found.push((is_ge, version, proton));
-    };
-    if let Ok(rd) = fs::read_dir(steam_root.join("compatibilitytools.d")) {
-        for e in rd.flatten() {
-            consider(&e.path());
-        }
-    }
-    for lib in steam_libraries(home) {
-        let Ok(rd) = fs::read_dir(lib.join("steamapps/common")) else { continue };
-        for e in rd.flatten() {
-            if e.file_name().to_string_lossy().to_ascii_lowercase().starts_with("proton") {
-                consider(&e.path());
-            }
-        }
-    }
-    found.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
-    found.into_iter().next().map(|(_, _, p)| p)
 }
 
 #[cfg(test)]
@@ -478,21 +431,6 @@ mod tests {
         // ...but the path lines still find the real binary.
         assert_eq!(proton_from_config_info(&compat).as_deref(), Some(tool.join("proton").as_path()));
         let _ = fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn any_installed_proton_prefers_ge_then_highest_version() {
-        let root = tmp_root();
-        for name in ["GE-Proton9-20", "GE-Proton10-34", "Proton 9.0"] {
-            let d = root.join("compatibilitytools.d").join(name);
-            fs::create_dir_all(&d).unwrap();
-            fs::write(d.join("proton"), "#!/bin/sh\n").unwrap();
-        }
-        let home = tmp_root();
-        let best = any_installed_proton(&root, &home).unwrap();
-        assert!(best.to_string_lossy().contains("GE-Proton10-34"), "got {}", best.display());
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(&home);
     }
 
     /// Minimal recursive copy for the test fixture.

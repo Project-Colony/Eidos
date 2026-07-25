@@ -39,13 +39,41 @@ const OPAQUE_MARKER: &str = ".eidoswh_opaque";
 pub struct LayerStack {
     layers: Vec<PathBuf>,
     overwrite: PathBuf,
+    /// Per-path mutation locks, sharded. The FUSE daemon answers requests from
+    /// several threads at once, so two of them can reach the same not-yet-copied
+    /// -up file together; without this both would see it absent and both run the
+    /// copy, interleaving their writes into one destination. A fixed shard array
+    /// keeps this to one small allocation instead of a growing per-path map.
+    /// `Arc`, so cloning a stack SHARES the locks: two clones describing the
+    /// same overwrite layer must serialise against each other, not each hold
+    /// their own set.
+    path_locks: std::sync::Arc<[std::sync::Mutex<()>]>,
 }
+
+/// Number of mutation-lock shards. Small: contention only matters when two
+/// threads touch the SAME path, which is rare, and false sharing between
+/// unrelated paths costs only a brief wait.
+const PATH_LOCK_SHARDS: usize = 64;
 
 impl LayerStack {
     /// Build a stack from mod layers (highest priority first) and the writable
     /// overwrite layer.
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
-        Self { layers, overwrite }
+        let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> =
+            (0..PATH_LOCK_SHARDS).map(|_| std::sync::Mutex::new(())).collect();
+        Self { layers, overwrite, path_locks }
+    }
+
+    /// Take the mutation lock for `vpath`. Folded, so the two spellings of one
+    /// file share a shard and cannot race each other.
+    fn path_lock(&self, vpath: &str) -> std::sync::MutexGuard<'_, ()> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        vpath.to_ascii_lowercase().hash(&mut h);
+        let shard = (h.finish() as usize) % PATH_LOCK_SHARDS;
+        // Recover from a poisoned lock: it guards no data, only ordering, so a
+        // panicking holder must not take the whole mount down.
+        self.path_locks[shard].lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// The overwrite-layer path where a whiteout marker for `vpath` is written.
@@ -183,6 +211,12 @@ impl LayerStack {
     /// layer as needed. Lower layers are never touched, so the game install and
     /// every mod source stay pristine.
     pub fn open_for_write(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        // Serialise mutations of THIS path. The FUSE daemon serves requests from
+        // several threads, and two of them arriving on the same not-yet-copied-up
+        // file would both see `!dest.exists()` and both run `fs::copy` into the
+        // same destination - interleaving the two writes. Sharded so unrelated
+        // paths never contend.
+        let _guard = self.path_lock(vpath);
         let dest = self.resolve_write(vpath);
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)?;
@@ -193,6 +227,15 @@ impl LayerStack {
             if let Some(src) = self.layers.iter().find_map(|l| ci_lookup(l, vpath)) {
                 if src.is_file() {
                     fs::copy(&src, &dest)?;
+                    // The point of a copy-up is that the result is WRITABLE, and
+                    // `fs::copy` clones the source's mode - so a read-only lower
+                    // file (a Steam depot restored 0444, a mod extracted from a
+                    // Windows archive carrying the DOS read-only attribute) yields
+                    // a read-only copy whose very next read-write open fails
+                    // EACCES. Do it BEFORE clone_metadata: `lsetxattr` of a
+                    // `user.*` attribute onto a 0444 file is refused even for the
+                    // owner, so the xattrs would be silently dropped otherwise.
+                    ensure_owner_writable(&dest);
                     // Re-apply the lower file's mtime/atime + user.* xattrs so the
                     // copied-up file looks unchanged to tools comparing mtimes
                     // (FileTime load order, xEdit, Wrye Bash) or reading DOS
@@ -200,15 +243,14 @@ impl LayerStack {
                     clone_metadata(&src, &dest);
                 }
             }
+        } else if self.layers.iter().any(|l| ci_lookup(l, vpath).is_some()) {
+            // A destination that already exists AND is shadowing a lower layer is
+            // an orphaned copy-up from an earlier run, which may carry that run's
+            // 0444. Heal it - but only in that case: a file living solely in the
+            // Overwrite is the user's own, and a read-only mode they set on it
+            // (the classic "stop the launcher rewriting my INI") must survive.
+            ensure_owner_writable(&dest);
         }
-        // The whole point of a copy-up is that the result is WRITABLE. `fs::copy`
-        // clones the source's mode, so a read-only lower file (a Steam depot
-        // restored 0444, a mod extracted from a Windows archive carrying the DOS
-        // read-only attribute) yields a read-only copy and the caller's very next
-        // read-write open fails EACCES. Applied unconditionally, not just to the
-        // copy we just made, so a 0444 copy left behind by an earlier run is
-        // healed too.
-        ensure_owner_writable(&dest);
         Ok(dest)
     }
 
@@ -237,6 +279,7 @@ impl LayerStack {
     /// the caller is replacing the entry, not editing it; the new overwrite entry
     /// shadows any lower-layer copy.
     pub fn prepare_overwrite(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        let _guard = self.path_lock(vpath);
         let dest = self.resolve_write(vpath);
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)?;
@@ -244,8 +287,12 @@ impl LayerStack {
         self.clear_whiteout(vpath);
         // A read-only copy left in the overwrite layer by an earlier run (copied up
         // from a 0444 lower file) would make the caller's truncating open fail
-        // EACCES even though we are about to replace the contents wholesale.
-        ensure_owner_writable(&dest);
+        // EACCES even though we are about to replace the contents wholesale. Only
+        // for a path a lower layer also provides, so a user-set read-only mode on
+        // their own Overwrite file is not silently undone.
+        if dest.exists() && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some()) {
+            ensure_owner_writable(&dest);
+        }
         Ok(dest)
     }
 
@@ -449,13 +496,20 @@ fn eq_ignore_case(a: &OsStr, b: &OsStr) -> bool {
 /// from, and the caller's open will report the real error.
 fn ensure_owner_writable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
-    if let Ok(meta) = fs::metadata(path) {
-        let mode = meta.permissions().mode();
-        if mode & 0o200 == 0 {
-            let mut perms = meta.permissions();
-            perms.set_mode(mode | 0o200);
-            let _ = fs::set_permissions(path, perms);
-        }
+    // `symlink_metadata`, not `metadata`: both `metadata` and `set_permissions`
+    // FOLLOW symlinks, so chmod-ing an overwrite entry that happens to be a
+    // symlink would land on its TARGET - which can be a pristine game or mod
+    // file, breaking the one guarantee this whole filesystem exists to make.
+    // A symlink's own mode is meaningless on Linux, so there is nothing to do.
+    let Ok(meta) = fs::symlink_metadata(path) else { return };
+    if meta.file_type().is_symlink() {
+        return;
+    }
+    let mode = meta.permissions().mode();
+    if mode & 0o200 == 0 {
+        let mut perms = meta.permissions();
+        perms.set_mode(mode | 0o200);
+        let _ = fs::set_permissions(path, perms);
     }
 }
 
@@ -606,6 +660,42 @@ mod tests {
             .expect("a copied-up file must be writable by its owner");
         // The lower layer is untouched, read-only mode included.
         assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o200, 0o200);
+    }
+
+    #[test]
+    fn copy_up_never_chmods_through_a_symlink_into_a_lower_layer() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "pristine.esp", "vanilla");
+        // The game file is read-only, as a restored Steam depot would be.
+        fs::set_permissions(game.join("pristine.esp"), fs::Permissions::from_mode(0o444)).unwrap();
+        // An overwrite entry that is a SYMLINK pointing back at it.
+        std::os::unix::fs::symlink(game.join("pristine.esp"), over.join("link.esp")).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        // Any write-preparation on the link must not reach through it.
+        let _ = stack.open_for_write("link.esp");
+        let _ = stack.prepare_overwrite("link.esp");
+
+        let mode = fs::symlink_metadata(game.join("pristine.esp")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o444, "the game file's mode was changed through a symlink");
+    }
+
+    #[test]
+    fn a_read_only_file_of_our_own_keeps_its_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        // Lives ONLY in the overwrite layer: the user's own file, which they set
+        // read-only on purpose (the classic "stop the launcher rewriting my INI").
+        put(&over, "SkyrimPrefs.ini", "mine");
+        fs::set_permissions(over.join("SkyrimPrefs.ini"), fs::Permissions::from_mode(0o444)).unwrap();
+        let stack = LayerStack::new(vec![game], over.clone());
+
+        let _ = stack.open_for_write("SkyrimPrefs.ini");
+        let mode = fs::metadata(over.join("SkyrimPrefs.ini")).unwrap().permissions().mode();
+        assert_eq!(mode & 0o200, 0, "a user-set read-only mode must not be silently undone");
     }
 
     #[test]
