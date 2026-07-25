@@ -19,7 +19,9 @@ pub use native_dll::{
 };
 
 mod prereqs;
-pub use prereqs::{cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb};
+pub use prereqs::{
+    cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,
+};
 
 /// The game INI that holds the `[Archive]` section: the first of the per-profile
 /// INIs (see `ini_files_for`).

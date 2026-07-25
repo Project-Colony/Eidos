@@ -792,9 +792,22 @@ fn cmd_prereqs(args: &[String]) {
         eprintln!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
     let prefix = compat.join("pfx");
+    // Refuse rather than corrupt. A game, Steam or a stale wineserver still
+    // attached to this prefix holds registry and filesystem locks that a
+    // winetricks run waits on forever - and the prefix may belong to a session
+    // the user is deliberately keeping open, so naming the processes and stopping
+    // is the right move. We do not kill anything on the user's behalf.
+    let busy = eidos_gamefeatures::prefix_busy(&prefix, compat);
+    if !busy.is_empty() {
+        eprintln!("This prefix is still in use by {} process(es):", busy.len());
+        for (pid, cmd) in busy.iter().take(10) {
+            eprintln!("  pid {pid}: {}", cmd.chars().take(100).collect::<String>());
+        }
+        eprintln!("Close the game, its tools and Steam, then run this again.");
+        exit(1);
+    }
     println!(
-        "Installing {} via winetricks (downloads from Microsoft). Close the game and all \
-         tools first - installing while a session is open can corrupt the prefix.",
+        "Installing {} via winetricks (downloads from Microsoft).",
         pending2.join(", ")
     );
     // One verb at a time, recording each success, so a later failure does not lose

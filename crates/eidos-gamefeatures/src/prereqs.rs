@@ -9,6 +9,7 @@
 //! so this is only ever run on an explicit, user-consented action (`eidos prereqs
 //! --install`), never silently at launch.
 
+use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -105,23 +106,184 @@ pub fn install_tier2_verb(
         // Suppress only the Gecko/MSHTML download prompt for an unattended run; let
         // winetricks manage mono/mscoree itself (forcing mscoree=d breaks dotnet48).
         .env("WINEDLLOVERRIDES", "mshtml=d")
-        .env("WINEDEBUG", "-all");
+        .env("WINEDEBUG", "-all")
+        // Xalia draws an accessibility overlay over Proton windows. It has nothing
+        // to do here and gets in the way of an unattended install.
+        .env("PROTON_USE_XALIA", "0");
+    // Large Microsoft installers (the .NET runtimes above all) unpack into TMPDIR,
+    // and on most systems /tmp and XDG_RUNTIME_DIR are small tmpfs mounts - which
+    // makes them report ERROR_DISK_FULL while the prefix itself has plenty of
+    // room. Point them at a directory on the same real filesystem as the prefix,
+    // which Eidos owns and can clean up.
+    if let Some(tmp) = installer_tmpdir(prefix) {
+        cmd.env("TMPDIR", &tmp).env("TMP", &tmp).env("TEMP", &tmp);
+    }
     // Parity with a real Proton launch: the STEAM_COMPAT_* vars Proton sets.
     for (k, v) in steam_env {
         cmd.env(k, v);
     }
 
     let status = cmd.status()?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!("winetricks {verb} exited with {status}")))
+    match status.code() {
+        Some(c) if installer_success(c) => Ok(()),
+        Some(c) => Err(io::Error::other(format!(
+            "winetricks {verb} exited with {c}{}",
+            describe_installer_exit(c).map(|d| format!(" ({d})")).unwrap_or_default()
+        ))),
+        None => Err(io::Error::other(format!("winetricks {verb} was killed by a signal"))),
     }
+}
+
+/// A scratch directory for installers, beside the prefix so it is on the same
+/// real filesystem (never a small tmpfs). Created on demand; `None` if it cannot
+/// be, in which case the caller simply leaves TMPDIR alone.
+fn installer_tmpdir(prefix: &Path) -> Option<PathBuf> {
+    let dir = prefix.parent()?.join("eidos-installer-tmp");
+    fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+/// Whether a Microsoft installer exit code means success.
+///
+/// These installers do not follow the "0 means OK" convention: they report
+/// "success, restart required" and "a newer version is already installed" as
+/// distinct non-zero codes, and treating those as failures aborts a prefix setup
+/// that in fact completed.
+fn installer_success(code: i32) -> bool {
+    matches!(code, 0 | 105 | 194 | 236 | 1638 | 3010)
+}
+
+/// A human explanation for an installer exit code, when there is one worth
+/// putting in front of the user.
+fn describe_installer_exit(code: i32) -> Option<&'static str> {
+    Some(match code {
+        5 => "access denied - is the game or Steam still running against this prefix?",
+        105 => "installed, restart required",
+        112 => "not enough disk space",
+        194 => "installed, restart scheduled",
+        236 => "a newer version is already installed",
+        1638 => "another version of this product is already installed",
+        3010 => "installed, reboot required",
+        _ => return None,
+    })
+}
+
+/// Processes currently holding this Wine prefix, as `(pid, cmdline)`.
+///
+/// Running a prefix operation while the game, Steam or a stale `wineserver` is
+/// still attached deadlocks: those processes hold registry and filesystem locks
+/// that a new `wineboot` waits on forever. Eidos DETECTS and refuses rather than
+/// killing anything - the prefix may well belong to a session the user is using.
+///
+/// Ownership is confirmed from `/proc/<pid>/environ`, not from the command line:
+/// Wine processes carry Windows-style argv that never mentions the Linux prefix
+/// path, so a cmdline match alone misses exactly the processes that matter.
+pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
+    const MARKERS: [&str; 5] =
+        ["wineboot", "wineserver", "pv-adverb", "wine-preloader", "steam.exe"];
+    let want_prefix = fs::canonicalize(prefix).unwrap_or_else(|_| prefix.to_path_buf());
+    let want_compat = fs::canonicalize(compatdata).unwrap_or_else(|_| compatdata.to_path_buf());
+    let me = std::process::id();
+
+    let mut busy = Vec::new();
+    let Ok(entries) = fs::read_dir("/proc") else { return busy };
+    for e in entries.flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+            continue;
+        };
+        if pid == me {
+            continue;
+        }
+        // Cheap filter first: only a handful of processes are ever candidates.
+        let Ok(raw_cmd) = fs::read(e.path().join("cmdline")) else { continue };
+        let cmdline = String::from_utf8_lossy(&raw_cmd).replace('\0', " ").trim().to_string();
+        if !MARKERS.iter().any(|m| cmdline.contains(m)) {
+            continue;
+        }
+        // Then confirm the process actually belongs to THIS prefix. Unreadable
+        // environ means another user's process, which is not ours to worry about.
+        let Ok(raw_env) = fs::read(e.path().join("environ")) else { continue };
+        if environ_owns_prefix(&raw_env, &want_prefix, &want_compat) {
+            busy.push((pid, cmdline));
+        }
+    }
+    busy
+}
+
+/// Whether a `/proc/<pid>/environ` buffer (NUL-separated `KEY=VALUE` entries)
+/// names this prefix. Split out from the `/proc` walk so it can be tested against
+/// a synthetic buffer without needing real Wine processes.
+fn environ_owns_prefix(raw: &[u8], prefix: &Path, compatdata: &Path) -> bool {
+    String::from_utf8_lossy(raw).split('\0').any(|kv| match kv.split_once('=') {
+        // Compare canonically where possible so a symlinked or trailing-slash
+        // spelling still matches, and fall back to a literal compare when the
+        // path no longer resolves.
+        Some(("WINEPREFIX", v)) => same_path(v, prefix),
+        Some(("STEAM_COMPAT_DATA_PATH", v)) => same_path(v, compatdata),
+        _ => false,
+    })
+}
+
+fn same_path(value: &str, want: &Path) -> bool {
+    let v = Path::new(value);
+    fs::canonicalize(v).map(|p| p == want).unwrap_or(false) || v == want
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn environ_identifies_the_owning_prefix() {
+        // A real /proc/<pid>/environ: NUL-separated KEY=VALUE, no trailing sep
+        // guarantees, and plenty of unrelated entries.
+        let prefix = Path::new("/tmp/eidos-x/compatdata/489830/pfx");
+        let compat = Path::new("/tmp/eidos-x/compatdata/489830");
+        let env = |s: &str| s.replace('|', "\0").into_bytes();
+
+        assert!(environ_owns_prefix(
+            &env("LANG=C|WINEPREFIX=/tmp/eidos-x/compatdata/489830/pfx|PATH=/usr/bin"),
+            prefix,
+            compat
+        ));
+        // Wine processes carry Windows-style argv, so STEAM_COMPAT_DATA_PATH is
+        // often the only Linux path in their environment.
+        assert!(environ_owns_prefix(
+            &env("STEAM_COMPAT_DATA_PATH=/tmp/eidos-x/compatdata/489830|X=1"),
+            prefix,
+            compat
+        ));
+        // A DIFFERENT game's prefix must not match.
+        assert!(!environ_owns_prefix(
+            &env("WINEPREFIX=/tmp/eidos-x/compatdata/22380/pfx"),
+            prefix,
+            compat
+        ));
+        // A mention of the path in an unrelated variable is not ownership.
+        assert!(!environ_owns_prefix(
+            &env("SOMETHING=/tmp/eidos-x/compatdata/489830/pfx"),
+            prefix,
+            compat
+        ));
+        assert!(!environ_owns_prefix(b"", prefix, compat));
+    }
+
+    #[test]
+    fn microsoft_installer_exit_codes_are_not_all_failures() {
+        // These installers report "done, restart required" and "already newer"
+        // as distinct non-zero codes; treating them as failures aborts a prefix
+        // setup that in fact completed.
+        for ok in [0, 105, 194, 236, 1638, 3010] {
+            assert!(installer_success(ok), "{ok} should be success");
+        }
+        for bad in [1, 5, 112, 1603] {
+            assert!(!installer_success(bad), "{bad} should be failure");
+        }
+        // The codes a user is most likely to hit get an explanation.
+        assert!(describe_installer_exit(5).unwrap().contains("still running"));
+        assert!(describe_installer_exit(112).unwrap().contains("disk space"));
+        assert!(describe_installer_exit(1603).is_none());
+    }
 
     #[test]
     fn classifies_tier2_verbs() {
