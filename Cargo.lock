@@ -1119,6 +1119,7 @@ version = "0.0.0"
 dependencies = [
  "eidos-gamedef",
  "eidos-ini",
+ "flate2",
  "object",
 ]
 
@@ -1134,6 +1135,7 @@ name = "eidos-gui"
 version = "0.0.0"
 dependencies = [
  "eidos-conflicts",
+ "eidos-core",
  "eidos-fomod",
  "eidos-gamefeatures",
  "eidos-games",
@@ -1164,6 +1166,7 @@ name = "eidos-instance"
 version = "0.0.0"
 dependencies = [
  "eidos-ini",
+ "eidos-plugins",
 ]
 
 [[package]]

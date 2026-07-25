@@ -10,6 +10,9 @@ edition.workspace = true
 # `smol` enables iced's timer subscriptions (`iced::time::every`), used to poll a
 # launched game for exit while the GUI is locked.
 iced = { version = "0.13", features = ["image", "smol"] }
+# For the hidden-file convention only: the GUI performs the hide/unhide rename,
+# eidos-core decides what the mount shows, and both must agree on the suffix.
+eidos-core = { path = "../eidos-core" }
 eidos-games = { path = "../eidos-games" }
 eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }

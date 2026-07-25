@@ -156,12 +156,26 @@ enum Message {
     PluginsSorted(Result<(Vec<String>, Result<eidos_loot::LootReport, String>), String>),
     /// Dismiss the LOOT report modal.
     CloseLootReport,
+    /// Open (or close, if it is already open) the details pane for a save row.
+    SelectSave(usize),
+    /// Enable every mod that supplies one of the selected save's missing plugins.
+    FixSaveMods,
     // ---- per-mod information dialog (MO2 modinfodialog) ----
     ShowModInfo(usize),
     CloseInfo,
     InfoSelectTab(InfoTab),
     NotesChanged(String),
     NotesSave,
+    // ---- hidden files (MO2 filetree.cpp HIDE/UNHIDE) ----
+    /// Expand or collapse a directory in the Data tree, by its path relative to
+    /// `Data` (`""` is the root, which is always expanded).
+    DataToggleDir(String),
+    /// Hide or unhide one path inside a mod: `(mod index, path relative to the mod
+    /// root)`. Hiding renames it to `<name>.mohidden`, which drops it out of the
+    /// virtual view without deleting anything; unhiding strips the suffix back off.
+    ToggleFileHidden(usize, String),
+    /// Unhide everything in a mod at once (MO2's `restoreHiddenFiles`).
+    RestoreHiddenFiles(usize),
     // ---- toolbar ----
     /// Re-open the game picker to switch the managed game (MO2 switch-instance).
     ChangeGame,
@@ -172,6 +186,20 @@ enum Message {
     /// Install the modding tools' runtime prerequisites into the prefix
     /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
     SetupPrereqs,
+    // ---- manual / BAIN install picker (MO2 InstallDialog, BainComplexInstallerDialog) ----
+    /// Tick or untick one BAIN sub-package.
+    PickerBainToggle(usize),
+    /// Answer MO2's "may be a BAIN installer" question: install as BAIN, or fall
+    /// through to the manual picker with the same extracted tree.
+    PickerBainConfirm(bool),
+    /// Choose the folder that is the archive's data root (manual mode).
+    PickerSetRoot(String),
+    /// Edit the mod name the picker will install under.
+    PickerNameChanged(String),
+    /// Run the install with the current picks.
+    PickerInstall,
+    /// Close the picker, discarding the extraction.
+    PickerCancel,
     // ---- install-collision chooser (MO2 QueryOverwriteDialog) ----
     /// Install over the existing mod's files.
     CollisionMerge,
@@ -472,6 +500,52 @@ struct CollisionPrompt {
     /// The archive already extracted, kept alive so resolving the collision costs
     /// no second 7-Zip pass. `None` only for a prompt raised without one.
     tree: Option<eidos_install::ExtractedTree>,
+    /// The BAIN / manual picks that produced this install, if any. A picker
+    /// install cannot be replayed from the tree alone - re-running it without the
+    /// selection would install the wrong sub-packages.
+    pick: Option<PickerChoice>,
+}
+
+/// MO2's manual / BAIN install dialogs, which is where an archive lands when the
+/// simple and FOMOD heuristics both decline it. Holds the extracted tree so
+/// nothing is unpacked twice, whatever the user picks.
+struct InstallPicker {
+    archive: PathBuf,
+    /// The mod name to install under, editable (MO2 lets you rename here).
+    name: String,
+    game_id: String,
+    tree: eidos_install::ExtractedTree,
+    /// The archive's contents as flat depth-first rows, computed once - the tree
+    /// does not change while the dialog is open.
+    rows: Vec<eidos_install::TreeRow>,
+    mode: PickerMode,
+}
+
+/// Which of the two dialogs is showing.
+enum PickerMode {
+    /// Wrye Bash complex package: tick the sub-packages to merge, in order.
+    Bain {
+        subpackages: Vec<String>,
+        /// Parallel to `subpackages`.
+        picked: Vec<bool>,
+        /// Some top-level folders did not look like sub-packages, so MO2 asks
+        /// "may be a BAIN installer - install as one?" before showing the ticks.
+        /// `true` while that question is unanswered.
+        asking: bool,
+    },
+    /// Nothing recognised the layout: point at the folder that IS the Data root.
+    /// `""` means the archive root already is one.
+    Manual { root: String },
+}
+
+/// What a picker install did, so a name collision can be retried without asking
+/// the user to make their picks again.
+#[derive(Debug, Clone)]
+enum PickerChoice {
+    /// The ticked sub-package names, in merge order.
+    Bain(Vec<String>),
+    /// The chosen data root, relative to the archive.
+    Manual(String),
 }
 
 /// The install status of a downloaded archive, derived from its `.meta` sidecar
@@ -550,6 +624,8 @@ struct App {
     fomod: Option<FomodWizard>,
     /// An open install-collision prompt (target mod name already exists).
     collision: Option<CollisionPrompt>,
+    /// An open manual / BAIN install picker.
+    picker: Option<InstallPicker>,
     /// Tools runnable through the merged view (user tools.ini + per-game
     /// defaults), shown in the run-target picker next to Run.
     tools: Vec<eidos_instance::Tool>,
@@ -612,11 +688,20 @@ struct App {
     view_menu_open: bool,
     /// The About box is open.
     about_open: bool,
-    // ---- Saves tab ----
+    // ---- Saves tab (the details pane is the reason for the parse) ----
     /// The active profile's save files (newest first), lazily loaded.
     saves: Vec<SaveEntry>,
     /// Two-click guard for a save deletion (the save's index in `saves`).
     confirm_delete_save: Option<usize>,
+    /// The save whose details pane is open, an index into `saves`.
+    selected_save: Option<usize>,
+    /// The parsed header of `selected_save`, keyed by its path so a stale parse is
+    /// never shown against a different file. `Err` = unreadable, which degrades the
+    /// pane to a message rather than hiding the save.
+    save_info: Option<(PathBuf, Result<eidos_gamefeatures::SaveInfo, String>)>,
+    /// The selected save's plugins that are no longer active, with the mods that
+    /// could supply them. Recomputed with `save_info`.
+    save_missing: Vec<eidos_gamefeatures::MissingPlugin>,
     // ---- Downloads manager ----
     /// The completed downloads (cached so the panel does not re-scan on redraw).
     downloads: Vec<DownloadRow>,
@@ -662,8 +747,14 @@ struct App {
     /// Bumped whenever the mod list or anything on disk changes; the memoised
     /// listings below rebuild only when it moves.
     view_generation: std::cell::Cell<u64>,
-    /// Memoised Data-tab merged listing, with the generation it was built at.
-    data_listing: std::cell::RefCell<Option<(u64, Vec<DataRow>)>>,
+    /// Memoised Data-tab merged listings, one per directory (keyed by its path
+    /// relative to `Data`, `""` for the root), each with the generation it was
+    /// built at. The tree merges a level at a time, so only the directories the
+    /// user actually opened are ever read.
+    data_listing: std::cell::RefCell<HashMap<String, (u64, Vec<DataRow>)>>,
+    /// Directories the user expanded in the Data tree, same keys as above. The
+    /// root is implicitly expanded and never in here.
+    data_expanded: HashSet<String>,
     /// Memoised recursive file listings per directory (the Overwrite tab and the
     /// mod-info file tree), each with the generation it was built at.
     listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, Vec<String>)>>,
@@ -782,6 +873,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         launch_command,
         fomod: None,
         collision: None,
+        picker: None,
         tools: Vec::new(),
         tool_choice: None,
         search: String::new(),
@@ -815,6 +907,9 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         about_open: false,
         saves: Vec::new(),
         confirm_delete_save: None,
+        selected_save: None,
+        save_info: None,
+        save_missing: Vec::new(),
         downloads: Vec::new(),
         confirm_delete_download: None,
         selected_mods: HashSet::new(),
@@ -829,7 +924,8 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary()),
         files_cache: std::cell::RefCell::new(HashMap::new()),
         view_generation: std::cell::Cell::new(0),
-        data_listing: std::cell::RefCell::new(None),
+        data_listing: std::cell::RefCell::new(HashMap::new()),
+        data_expanded: HashSet::new(),
         listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
     };
@@ -1226,7 +1322,7 @@ fn save_mods(app: &App) -> Option<String> {
 /// left to accumulate one stale copy per directory ever viewed.
 fn bump_views(app: &App) {
     app.view_generation.set(app.view_generation.get().wrapping_add(1));
-    app.data_listing.borrow_mut().take();
+    app.data_listing.borrow_mut().clear();
     app.listing_cache.borrow_mut().clear();
 }
 
@@ -1270,6 +1366,19 @@ fn mods_changed(app: &mut App) {
     recompute_counts(app);
 }
 
+/// Refresh everything that a hide or unhide inside `mod_name` invalidates: the
+/// mod's cached file walk (and with it the Data tree and the hidden-files glyph),
+/// the conflict map, and - when a plugin came or went - the load order, since a
+/// hidden `.esp` is one the game no longer sees.
+fn after_hidden_change(app: &mut App, mod_name: &str, rel: &str) {
+    drop_files_cache(app, Some(mod_name));
+    app.conflicts = compute_conflicts(app);
+    let lower = rel.to_ascii_lowercase();
+    if [".esp", ".esm", ".esl"].iter().any(|e| lower.trim_end_matches(".mohidden").ends_with(e)) {
+        invalidate_plugins(app);
+    }
+}
+
 /// Make `name` the active profile and reload all per-profile view state (mod list,
 /// plugin/conflict caches, collapsed groups, saves), clearing any transient
 /// selection / menu / drag. Shared by the profile switch, copy, rename, and delete
@@ -1291,6 +1400,7 @@ fn switch_to_profile(app: &mut App, name: &str) {
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
     app.confirm_delete_save = None;
+    clear_save_selection(app);
 }
 
 /// Recompute the profile-row Endorsed / Updated counts (MO2 surfaces these). Only
@@ -1681,14 +1791,89 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                                 rename_to,
                                 fomod: false,
                                 tree: Some(tree),
+                                pick: None,
                             });
                             app.status = Some(format!("'{name}' already exists - choose how to install."));
                         }
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
                 }
+                // Wrye Bash complex package: let the user tick sub-packages. MO2
+                // pre-ticks the `00`-prefixed ones plus whatever the last install
+                // of this mod used, which its meta.ini remembers.
+                Ok(eidos_install::Opened::Bain { tree, subpackages, invalid }) => {
+                    let previous = app
+                        .created
+                        .as_ref()
+                        .map(|i| i.mod_meta(&name).bain_options().to_vec())
+                        .unwrap_or_default();
+                    let picked = eidos_install::bain_default_selection(&subpackages, &previous);
+                    app.status = Some(if invalid > 0 {
+                        format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
+                    } else {
+                        format!("BAIN installer: choose the sub-packages to install for '{name}'.")
+                    });
+                    app.picker = Some(InstallPicker {
+                        rows: tree_rows(&tree),
+                        archive: path,
+                        name,
+                        game_id: gid,
+                        tree,
+                        // `invalid` folders are MO2's cue to ASK rather than assume.
+                        mode: PickerMode::Bain { subpackages, picked, asking: invalid > 0 },
+                    });
+                }
+                // No heuristic recognised the layout. Rather than refuse the
+                // archive, show its tree and let the user point at the data root.
+                Ok(eidos_install::Opened::Manual(tree)) => {
+                    app.status =
+                        Some(format!("'{name}': pick the folder that holds the game data."));
+                    app.picker = Some(InstallPicker {
+                        rows: tree_rows(&tree),
+                        archive: path,
+                        name,
+                        game_id: gid,
+                        tree,
+                        mode: PickerMode::Manual { root: String::new() },
+                    });
+                }
                 Err(e) => app.status = Some(format!("Install failed: {e}")),
             }
+        }
+        Message::PickerBainToggle(i) => {
+            if let Some(PickerMode::Bain { picked, .. }) = app.picker.as_mut().map(|p| &mut p.mode) {
+                if let Some(b) = picked.get_mut(i) {
+                    *b = !*b;
+                }
+            }
+        }
+        Message::PickerBainConfirm(yes) => {
+            let Some(p) = app.picker.as_mut() else { return Task::none() };
+            match (&mut p.mode, yes) {
+                (PickerMode::Bain { asking, .. }, true) => *asking = false,
+                // "No, it is not a BAIN package": same extraction, manual picker.
+                (PickerMode::Bain { .. }, false) => {
+                    p.mode = PickerMode::Manual { root: String::new() };
+                    app.status = Some("Pick the folder that holds the game data.".to_string());
+                }
+                _ => {}
+            }
+        }
+        Message::PickerSetRoot(r) => {
+            if let Some(PickerMode::Manual { root }) = app.picker.as_mut().map(|p| &mut p.mode) {
+                *root = r;
+            }
+        }
+        Message::PickerNameChanged(s) => {
+            if let Some(p) = app.picker.as_mut() {
+                p.name = s;
+            }
+        }
+        Message::PickerInstall => run_picker_install(app),
+        Message::PickerCancel => {
+            // Dropping the picker drops the ExtractedTree, which removes the temp.
+            app.picker = None;
+            app.status = Some("Install cancelled.".to_string());
         }
         Message::FomodToggle(gi, pi) => {
             if let Some(w) = &mut app.fomod {
@@ -1774,6 +1959,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         fomod: true,
                         // The wizard (still open) owns the extracted tree.
                         tree: None,
+                        pick: None,
                     });
                     app.status = Some(format!("'{name}' already exists - choose how to install."));
                     return Task::none();
@@ -2666,6 +2852,48 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 });
             }
         }
+        // ---- hidden files (MO2 filetree.cpp HIDE/UNHIDE) ----------------------
+        Message::DataToggleDir(rel) => {
+            if !app.data_expanded.remove(&rel) {
+                app.data_expanded.insert(rel);
+            }
+        }
+        Message::ToggleFileHidden(i, rel) => {
+            let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
+            let target = m.path.join(&rel);
+            // The path came from a listing that may be a redraw old; a stale row
+            // must report a miss, not act on whatever now sits at that path.
+            if target.symlink_metadata().is_err() {
+                app.status = Some(format!("'{rel}' is no longer there."));
+                return Task::none();
+            }
+            let hide = !path_is_hidden(&rel);
+            match set_hidden(&target, hide) {
+                Ok(_) => {
+                    let verb = if hide { "Hid" } else { "Unhid" };
+                    app.status = Some(format!("{verb} '{rel}' in '{}'.", m.name));
+                    after_hidden_change(app, &m.name, &rel);
+                }
+                Err(e) => {
+                    let verb = if hide { "hide" } else { "unhide" };
+                    app.status = Some(format!("Could not {verb} '{rel}': {e}"));
+                }
+            }
+        }
+        Message::RestoreHiddenFiles(i) => {
+            app.menu_mod = None;
+            let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
+            match restore_hidden_files(&m.path) {
+                Ok(0) => app.status = Some(format!("'{}' has no hidden files.", m.name)),
+                Ok(n) => {
+                    app.status = Some(format!("Unhid {n} file(s) in '{}'.", m.name));
+                    // No single path to key the plugin refresh on, so assume the
+                    // worst: a restored .esp changes the load order.
+                    after_hidden_change(app, &m.name, "restored.esp");
+                }
+                Err(e) => app.status = Some(format!("Could not unhide files: {e}")),
+            }
+        }
         // ---- Settings / Preferences ------------------------------------------
         Message::OpenSettings => {
             app.menu_mod = None;
@@ -3131,6 +3359,43 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::DeleteSave(i) => {
             // First click arms the confirm; clicking a different row re-arms it.
             app.confirm_delete_save = Some(i);
+        }
+        Message::SelectSave(i) => {
+            // Clicking the open row closes the pane, so the list can go full width.
+            if app.selected_save == Some(i) {
+                clear_save_selection(app);
+            } else {
+                app.selected_save = Some(i);
+                load_save_details(app);
+            }
+        }
+        Message::FixSaveMods => {
+            // Enable every mod that supplies one of the save's missing plugins.
+            // MO2 stops at naming them; doing it is the whole point of knowing.
+            let wanted: HashSet<String> =
+                app.save_missing.iter().flat_map(|m| m.providers.iter().cloned()).collect();
+            let mut enabled = 0usize;
+            for m in app.mods.iter_mut() {
+                if !m.enabled && wanted.contains(&m.name) {
+                    m.enabled = true;
+                    enabled += 1;
+                }
+            }
+            if enabled == 0 {
+                app.status =
+                    Some("Those mods are already enabled - the plugins still need turning on in the Plugins tab.".to_string());
+                return Task::none();
+            }
+            mods_changed(app);
+            // The plugin list changed shape, so the save's diff has to be redone
+            // against it rather than left showing the old answer.
+            load_save_details(app);
+            let left = app.save_missing.len();
+            app.status = Some(if left == 0 {
+                format!("Enabled {enabled} mod(s); this save's plugins are all available now.")
+            } else {
+                format!("Enabled {enabled} mod(s); {left} plugin(s) still need enabling in the Plugins tab.")
+            });
         }
         Message::ConfirmDeleteSave(i) => {
             // Only act on the armed row, and re-check the index (the list may have
@@ -3678,63 +3943,168 @@ fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// [`merged_listing`] memoised against the view generation - it read every
-/// enabled mod's directory on each redraw of the Data tab.
-fn cached_merged_listing(app: &App) -> Vec<DataRow> {
+/// [`merged_listing`] memoised per directory against the view generation - it
+/// read every enabled mod's directory on each redraw of the Data tab.
+fn cached_merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     let gen = app.view_generation.get();
-    if let Some((at, entries)) = app.data_listing.borrow().as_ref() {
+    if let Some((at, entries)) = app.data_listing.borrow().get(dir) {
         if *at == gen {
             return entries.clone();
         }
     }
-    let entries = merged_listing(app);
-    *app.data_listing.borrow_mut() = Some((gen, entries.clone()));
+    let entries = merged_listing(app, dir);
+    app.data_listing.borrow_mut().insert(dir.to_string(), (gen, entries.clone()));
     entries
 }
 
-/// Top-level entries of the merged view: each name, the source providing it
-/// (highest-priority enabled mod, or the game data), and whether it's a folder.
-/// Winner attribution matches what the FUSE layer actually serves: Overwrite
-/// first, then mods from HIGHEST display priority down, then the game data.
-fn merged_listing(app: &App) -> Vec<DataRow> {
+/// The entries of ONE directory of the merged view (`dir` relative to `Data`,
+/// `""` for the root): each name, the source providing it (highest-priority
+/// enabled mod, or the game data), and whether it's a folder. Winner attribution
+/// matches what the FUSE layer actually serves: Overwrite first, then mods from
+/// HIGHEST display priority down, then the game data.
+///
+/// One level at a time, so expanding a node costs one directory read per layer
+/// that has it rather than a full recursive walk of every enabled mod.
+fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     let mut seen = HashSet::new();
     let mut out: Vec<DataRow> = Vec::new();
-    if let Some(inst) = app.created.as_ref() {
-        if let Ok(rd) = fs::read_dir(inst.overwrite_dir()) {
-            for e in rd.flatten() {
-                if let Ok(name) = e.file_name().into_string() {
-                    if seen.insert(name.clone()) {
-                        out.push((name, "[Overwrite]".to_string(), e.path().is_dir()));
-                    }
-                }
+    let take = |root: &Path, source: &str, seen: &mut HashSet<String>, out: &mut Vec<DataRow>| {
+        let base = if dir.is_empty() { root.to_path_buf() } else { root.join(dir) };
+        let Ok(rd) = fs::read_dir(base) else { return };
+        for e in rd.flatten() {
+            let Ok(name) = e.file_name().into_string() else { continue };
+            // Hidden entries are out of the virtual view (eidos-core drops them
+            // from the mount too), so the Data tree must not show them as winners
+            // - the point of hiding is that the layer below wins instead.
+            if eidos_core::is_hidden_name(&name) {
+                continue;
+            }
+            if seen.insert(name.to_lowercase()) {
+                out.push((name, source.to_string(), e.path().is_dir()));
             }
         }
+    };
+    if let Some(inst) = app.created.as_ref() {
+        take(&inst.overwrite_dir(), "[Overwrite]", &mut seen, &mut out);
     }
     // `app.mods` is display order = lowest priority first; the merged view's
     // winner is the highest, so walk it in reverse.
     for m in app.mods.iter().rev().filter(|m| m.enabled && !m.is_separator()) {
-        if let Ok(rd) = fs::read_dir(&m.path) {
-            for e in rd.flatten() {
-                if let Ok(name) = e.file_name().into_string() {
-                    if seen.insert(name.clone()) {
-                        out.push((name, m.name.clone(), e.path().is_dir()));
-                    }
-                }
-            }
-        }
+        take(&m.path, &m.name, &mut seen, &mut out);
     }
     if let Some(g) = selected_game(app) {
-        if let Ok(rd) = fs::read_dir(&g.data_path) {
-            for e in rd.flatten() {
-                if let Ok(name) = e.file_name().into_string() {
-                    if seen.insert(name.clone()) {
-                        out.push((name, format!("[{}]", g.def.id), e.path().is_dir()));
-                    }
-                }
+        let label = format!("[{}]", g.def.id);
+        take(&g.data_path, &label, &mut seen, &mut out);
+    }
+    // Folders first, then files, each alphabetically - the ordering every file
+    // browser uses, and the one that makes a deep tree navigable.
+    out.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    out
+}
+
+/// MO2's hide/unhide, which is a rename and never a delete (`filetree.cpp:375-391`
+/// drives exactly this through a `FileRenamer` constructed with HIDE / UNHIDE):
+/// hiding appends `.mohidden`, unhiding strips it. Refuses to hide something
+/// already hidden or unhide something that is not, so a stale row cannot
+/// double-suffix a file into `foo.dds.mohidden.mohidden`.
+///
+/// Works on directories too - hiding `meshes/` suppresses the whole subtree.
+fn set_hidden(path: &Path, hide: bool) -> std::io::Result<PathBuf> {
+    use std::io::{Error, ErrorKind};
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "unusable file name"))?;
+    let already = eidos_core::is_hidden_name(name);
+    if already == hide {
+        let what = if hide { "already hidden" } else { "not hidden" };
+        return Err(Error::new(ErrorKind::AlreadyExists, what));
+    }
+    let target = if hide {
+        path.with_file_name(format!("{name}{}", eidos_core::HIDDEN_SUFFIX))
+    } else {
+        path.with_file_name(&name[..name.len() - eidos_core::HIDDEN_SUFFIX.len()])
+    };
+    // Never let a hide silently swallow an existing file: unhiding onto a name the
+    // mod already carries would destroy the live copy.
+    if target.symlink_metadata().is_ok() {
+        return Err(Error::new(
+            ErrorKind::AlreadyExists,
+            format!("{} already exists", target.display()),
+        ));
+    }
+    fs::rename(path, &target)?;
+    Ok(target)
+}
+
+/// Unhide everything under `root`, MO2's `restoreHiddenFiles`. Returns how many
+/// entries were restored.
+///
+/// Deepest first, so renaming a hidden directory never invalidates the paths of
+/// the hidden files collected inside it.
+fn restore_hidden_files(root: &Path) -> std::io::Result<usize> {
+    fn collect(dir: &Path, depth: usize, out: &mut Vec<(usize, PathBuf)>) {
+        if depth > 32 {
+            return;
+        }
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                collect(&p, depth + 1, out);
+            }
+            if p.file_name().and_then(|n| n.to_str()).is_some_and(eidos_core::is_hidden_name) {
+                out.push((depth, p));
             }
         }
     }
-    out.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    let mut found = Vec::new();
+    collect(root, 0, &mut found);
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut done = 0;
+    for (_, p) in found {
+        if set_hidden(&p, false).is_ok() {
+            done += 1;
+        }
+    }
+    Ok(done)
+}
+
+/// One rendered line of the Data tree: how deep it sits, its full path relative
+/// to `Data` (the expansion key and what a hide acts on), and the merged-listing
+/// entry itself.
+struct TreeRow {
+    depth: usize,
+    rel: String,
+    name: String,
+    source: String,
+    is_dir: bool,
+}
+
+/// Flatten the expanded parts of the merged tree into the rows to draw, depth
+/// first. Bounded by `limit`: a fully-expanded Skyrim Data tree is six figures of
+/// files, and the whole point of expanding a level at a time is not to build them.
+fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
+    fn walk(app: &App, dir: &str, depth: usize, limit: usize, out: &mut Vec<TreeRow>) {
+        // Guard against a pathological tree as well as the row budget: a symlink
+        // loop inside a mod would otherwise recurse until the stack gives out.
+        if out.len() >= limit || depth > 32 {
+            return;
+        }
+        for (name, source, is_dir) in cached_merged_listing(app, dir) {
+            if out.len() >= limit {
+                return;
+            }
+            let rel = if dir.is_empty() { name.clone() } else { format!("{dir}/{name}") };
+            let expanded = is_dir && app.data_expanded.contains(&rel);
+            out.push(TreeRow { depth, rel: rel.clone(), name, source, is_dir });
+            if expanded {
+                walk(app, &rel, depth + 1, limit, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(app, "", 0, limit, &mut out);
     out
 }
 
@@ -4247,6 +4617,18 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let ignore_label = if ignored { "Check for updates" } else { "Ignore updates" };
     col = col.push(menu_item(ignore_label, Message::ModIgnoreUpdate(i)));
 
+    // Bulk unhide, offered only when the mod actually has hidden files - the
+    // conflict scan already tracks that (it is what drives the hidden glyph on the
+    // row), so this costs no extra walk.
+    let has_hidden = app
+        .conflicts
+        .as_ref()
+        .and_then(|c| c.mods.get(&((i + 1) as u32)))
+        .is_some_and(|mc| mc.has_hidden);
+    if has_hidden {
+        col = col.push(menu_item("Unhide all files", Message::RestoreHiddenFiles(i)));
+    }
+
     col = col
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
@@ -4458,14 +4840,43 @@ fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
     col.into()
 }
 
-/// Filetree tab: every file the mod ships, relative to its root.
-fn info_filetree<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
+/// Filetree tab: every file the mod ships, relative to its root, each with a
+/// Hide / Unhide toggle. Unlike the Data tab this is the mod's REAL contents, so
+/// hidden files are listed (with their suffix) and are the only place to unhide
+/// one individually.
+fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a, Message> {
     let entries = cached_entries(app, &m.path);
-    let mut col = Column::new().spacing(1).push(text(format!("{} file(s):", entries.len())).size(12.0));
+    let hidden = entries.iter().filter(|e| path_is_hidden(e)).count();
+    let summary = if hidden == 0 {
+        format!("{} file(s):", entries.len())
+    } else {
+        format!("{} file(s), {hidden} hidden:", entries.len())
+    };
+    let mut col = Column::new().spacing(1).push(text(summary).size(12.0));
+    if hidden > 0 {
+        col = col.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
+    }
     for e in entries.into_iter().take(2000) {
-        col = col.push(text(e).size(11.0));
+        let is_hidden = path_is_hidden(&e);
+        let label = if is_hidden { "Unhide" } else { "Hide" };
+        let row = Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(text(e.clone()).size(11.0).width(Length::Fill))
+            .push(
+                button(text(label).size(10.0))
+                    .padding([1, 5])
+                    .on_press(Message::ToggleFileHidden(i, e))
+                    .style(if is_hidden { button::primary } else { button::secondary }),
+            );
+        col = col.push(row);
     }
     col.into()
+}
+
+/// Whether a `/`-joined relative path names a hidden entry, or lies under one.
+fn path_is_hidden(rel: &str) -> bool {
+    rel.split('/').any(eidos_core::is_hidden_name)
 }
 
 /// Notes tab: an editable note persisted to the mod's meta.ini.
@@ -4511,7 +4922,7 @@ fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
         InfoTab::Conflicts => info_conflicts(app, i),
-        InfoTab::Filetree => info_filetree(app, m),
+        InfoTab::Filetree => info_filetree(app, i, m),
         InfoTab::Notes => info_notes(app),
     };
 
@@ -4537,25 +4948,74 @@ fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .into()
 }
 
+/// How many tree rows the Data tab will draw. Generous for browsing, but finite:
+/// expanding `meshes/` in a heavy setup is six figures of files and iced builds a
+/// widget per row.
+const DATA_TREE_ROWS: usize = 3000;
+
+/// Data tab: the merged view as a real tree, each node labelled with the layer
+/// that actually provides it. This is the virtual filesystem the game will see,
+/// so a hidden file is absent here by construction - unhiding is done from the
+/// owning mod's Filetree tab, which shows the mod's real contents.
 fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
         .push(text("Name").size(11.0).width(Length::FillPortion(3)))
-        .push(text("Mod").size(11.0).width(Length::FillPortion(2)))
-        .push(text("Type").size(11.0).width(Length::Fixed(70.0)));
+        .push(text("Provided by").size(11.0).width(Length::FillPortion(2)))
+        .push(text("").size(11.0).width(Length::Fixed(56.0)));
 
     let mut list = Column::new().spacing(1);
-    let entries = cached_merged_listing(app);
-    if entries.is_empty() {
+    let rows = data_tree_rows(app, DATA_TREE_ROWS);
+    if rows.is_empty() {
         list = list.push(text("(empty)").size(12.0));
     }
-    for (idx, (name, source, is_dir)) in entries.into_iter().take(500).enumerate() {
+    let truncated = rows.len() >= DATA_TREE_ROWS;
+    for (idx, r) in rows.into_iter().enumerate() {
+        // A folder gets a clickable disclosure triangle; a file gets a spacer of
+        // the same width so names stay in one column.
+        let lead: Element<'a, Message> = if r.is_dir {
+            let glyph = if app.data_expanded.contains(&r.rel) { "\u{25BE}" } else { "\u{25B8}" };
+            button(text(glyph).size(11.0))
+                .padding([0, 4])
+                .on_press(Message::DataToggleDir(r.rel.clone()))
+                .style(button::text)
+                .into()
+        } else {
+            Space::with_width(Length::Fixed(18.0)).into()
+        };
+        let name = Row::new()
+            .spacing(2)
+            .align_y(iced::Alignment::Center)
+            .push(Space::with_width(Length::Fixed(r.depth as f32 * 14.0)))
+            .push(lead)
+            .push(text(r.name).size(12.0));
+
+        // Hiding is only offered on rows a mod owns: the Overwrite is regenerated
+        // by the game (it would just come back) and the game layer is the pristine
+        // install, which Eidos never writes to.
+        let owner = app.mods.iter().position(|m| !m.is_separator() && m.name == r.source);
+        let action: Element<'a, Message> = match owner {
+            Some(i) => button(text("Hide").size(10.0))
+                .padding([1, 5])
+                .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
+                .style(button::secondary)
+                .into(),
+            None => Space::with_width(Length::Fixed(56.0)).into(),
+        };
+
         let row = Row::new()
             .spacing(6)
-            .push(text(name).size(12.0).width(Length::FillPortion(3)))
-            .push(text(source).size(12.0).width(Length::FillPortion(2)))
-            .push(text(if is_dir { "Folder" } else { "File" }).size(12.0).width(Length::Fixed(70.0)));
+            .align_y(iced::Alignment::Center)
+            .push(container(name).width(Length::FillPortion(3)))
+            .push(text(r.source).size(12.0).width(Length::FillPortion(2)))
+            .push(container(action).width(Length::Fixed(56.0)));
         list = list.push(striped(row.into(), idx % 2 == 0));
+    }
+    if truncated {
+        list = list.push(
+            text(format!("Showing the first {DATA_TREE_ROWS} entries - collapse a folder to see more."))
+                .size(11.0),
+        );
     }
     Column::new().spacing(4).push(header).push(scrollable(list).height(Length::Fill)).into()
 }
@@ -4705,23 +5165,123 @@ fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             .padding(4)
             .on_press(if armed { Message::ConfirmDeleteSave(i) } else { Message::DeleteSave(i) })
             .style(if armed { button::danger } else { button::secondary });
+        // The name is the click target for the details pane; the row's other
+        // controls keep working (a Delete click must not also select).
+        let name = button(text(save.filename.clone()).size(12.0))
+            .padding(0)
+            .width(Length::Fill)
+            .on_press(Message::SelectSave(i))
+            .style(button::text);
         let row = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(save.filename.clone()).size(12.0).width(Length::Fill))
+            .push(name)
             .push(text(format_mtime(save.mtime)).size(11.0).width(Length::Fixed(130.0)))
             .push(text(format_size(save.size)).size(11.0).width(Length::Fixed(80.0)))
             .push(container(del).width(Length::Fixed(80.0)));
-        rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+        rows = rows.push(list_row(
+            container(row).padding(3).into(),
+            i % 2 == 0,
+            app.selected_save == Some(i),
+            false,
+        ));
     }
 
-    Column::new()
+    let list = Column::new()
         .spacing(6)
         .push(header)
         .push(text(dir.display().to_string()).size(10.0))
         .push(col_header)
-        .push(scrollable(rows).height(Length::Fill))
-        .into()
+        .push(scrollable(rows).height(Length::Fill));
+
+    match app.selected_save.and_then(|i| app.saves.get(i)) {
+        Some(save) => Row::new()
+            .spacing(8)
+            .push(container(list).width(Length::FillPortion(3)))
+            .push(container(save_details(app, save)).width(Length::FillPortion(2)))
+            .into(),
+        None => list.into(),
+    }
+}
+
+/// The details pane for the selected save: who and where, and - the reason this
+/// exists - which of the plugins baked into the save are no longer active.
+///
+/// MO2 shows this before you load: a save carries the plugin list it was written
+/// with, and loading it without those plugins is how a playthrough loses its
+/// contents (or crashes on the way in).
+fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> Element<'a, Message> {
+    let mut col = Column::new().spacing(4).push(text(save.filename.clone()).size(13.0));
+
+    let info = match app.save_info.as_ref().filter(|(p, _)| *p == save.path) {
+        Some((_, Ok(info))) => info,
+        Some((_, Err(e))) => {
+            return col
+                .push(text(format!("Cannot read this save: {e}")).size(11.0))
+                .push(text("The list below is unavailable; the file itself is untouched.").size(10.0))
+                .into();
+        }
+        // Parsed on selection, so this only shows for the frame in between.
+        None => return col.push(text("Reading...").size(11.0)).into(),
+    };
+
+    let mut facts: Vec<(&'static str, String)> = vec![
+        ("Character", format!("{} (level {})", info.player_name, info.level)),
+        ("Location", info.location.clone()),
+        ("In-game date", info.game_date.clone()),
+    ];
+    if let Some((d, h, m)) = info.playtime() {
+        facts.push(("Played", format!("{d}d {h}h {m}m")));
+    }
+    facts.push(("Save", format!("#{}", info.save_number)));
+    facts.push(("Plugins", format!("{} + {} light", info.plugins.len(), info.light_plugins.len())));
+    for (k, v) in facts {
+        col = col.push(info_kv(k, v));
+    }
+
+    let missing = &app.save_missing;
+    col = col.push(Space::with_height(Length::Fixed(6.0)));
+    if missing.is_empty() {
+        return col
+            .push(text("Every plugin this save uses is active.").size(11.0))
+            .push(
+                text(if info.truncated {
+                    "(the save's plugin list was truncated, so this is advisory)"
+                } else {
+                    ""
+                })
+                .size(10.0),
+            )
+            .into();
+    }
+
+    col = col.push(text(format!("{} plugin(s) missing:", missing.len())).size(12.0));
+    for m in missing.iter().take(40) {
+        let what = match m.state {
+            eidos_gamefeatures::SavePluginState::Inactive => "inactive",
+            eidos_gamefeatures::SavePluginState::Absent => "not installed",
+        };
+        let who = if m.providers.is_empty() {
+            "  no mod here provides it".to_string()
+        } else {
+            format!("  in: {}", m.providers.join(", "))
+        };
+        col = col.push(text(format!("{} ({what})", m.name)).size(11.0)).push(text(who).size(10.0));
+    }
+    // Only offer the fix when something on disk can actually supply the plugins;
+    // otherwise the button would enable nothing and look broken.
+    let fixable = missing.iter().any(|m| !m.providers.is_empty());
+    if fixable {
+        col = col
+            .push(Space::with_height(Length::Fixed(4.0)))
+            .push(tool_btn("Enable the mods this save needs", Message::FixSaveMods));
+    }
+    if info.truncated {
+        col = col.push(
+            text("The save's plugin list was truncated, so treat this as advisory.").size(10.0),
+        );
+    }
+    col.into()
 }
 
 /// A short status label for a download row (MO2's downloads state column).
@@ -4971,9 +5531,58 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 detail: "Launch the game once through Steam so its prefix exists; until then the load order and INIs cannot be deployed.".to_string(),
             });
         }
+        out.extend(orphan_archive_diagnostics(app, game.def.id));
     }
 
     out
+}
+
+/// Archives (BSA/BA2) an enabled mod ships that nothing will load: the engine
+/// only reads an archive whose name matches an ACTIVE plugin, or that the INI
+/// registers by hand. An orphan is silent - the mod looks installed and simply
+/// has no effect - which is exactly the class of problem a diagnostic is for.
+///
+/// Advice, never a problem: a mod can ship an archive deliberately for a plugin
+/// the user has not enabled yet.
+fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
+    let Some(inst) = app.created.as_ref() else { return Vec::new() };
+    let mods: Vec<(String, PathBuf)> = app
+        .mods
+        .iter()
+        .filter(|m| m.enabled && !m.is_separator())
+        .map(|m| (m.name.clone(), m.path.clone()))
+        .collect();
+    let archives = eidos_gamefeatures::mod_archives(&mods);
+    if archives.is_empty() {
+        return Vec::new();
+    }
+    let active: Vec<String> = app
+        .plugins
+        .as_ref()
+        .map(|l| l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect())
+        .unwrap_or_default();
+    // The profile's own INI copy is the one that gets deployed, so it is what the
+    // next launch will actually register.
+    let registered =
+        eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
+
+    let orphans = eidos_gamefeatures::orphan_archives(&archives, &active, &registered);
+    if orphans.is_empty() {
+        return Vec::new();
+    }
+    let listed: Vec<String> = orphans.iter().take(8).map(|(m, a)| format!("{a} ({m})")).collect();
+    let more = orphans.len().saturating_sub(listed.len());
+    let tail = if more > 0 { format!(", and {more} more") } else { String::new() };
+    vec![Diagnostic {
+        level: DiagLevel::Advice,
+        title: format!("{} archive(s) no active plugin loads", orphans.len()),
+        detail: format!(
+            "{}{tail}. An engine only loads an archive named after an ACTIVE plugin \
+             (<plugin>.bsa or \"<plugin> - Textures.bsa\"), or one the INI registers. \
+             Enable the matching plugin, or the mod's assets will not appear.",
+            listed.join(", ")
+        ),
+    }]
 }
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
@@ -5445,6 +6054,15 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         }
     }
 
+    // The manual / BAIN picker (MO2's InstallDialog and BainComplexInstallerDialog).
+    // Below the collision chooser in the stack: a collision raised BY the picker
+    // has to be the thing you can click.
+    if let Some(p) = &app.picker {
+        let scrim =
+            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::PickerCancel);
+        layers = layers.push(scrim).push(container(install_picker_dialog(p)).center(Length::Fill));
+    }
+
     // The install-collision chooser is a centered modal (MO2's QueryOverwriteDialog).
     if let Some(c) = &app.collision {
         let scrim =
@@ -5685,6 +6303,113 @@ fn suggest_free_name(mods_dir: &std::path::Path, name: &str) -> String {
 /// Retry the pending collision install under `policy`. Reuses the same discovery as
 /// a normal install (rebuilds the FOMOD context in case the archive turns out to be
 /// a FOMOD). A Rename that collides again re-opens the prompt.
+/// The extracted archive as flat rows for the picker's tree view. Built once when
+/// the picker opens: the extraction does not change while it is on screen, and
+/// re-walking it on every redraw would stutter a large pack.
+fn tree_rows(tree: &eidos_install::ExtractedTree) -> Vec<eidos_install::TreeRow> {
+    eidos_install::ArchiveTree::from_dir(tree.path()).map(|t| t.flatten()).unwrap_or_default()
+}
+
+/// Install what the manual / BAIN picker currently has selected.
+///
+/// A name collision hands off to the existing Merge / Replace / Rename prompt,
+/// carrying the picks so resolving it does not re-ask them. On any other failure
+/// the picker stays open with the reason, so a bad data root can just be
+/// re-picked instead of re-extracting the archive.
+fn run_picker_install(app: &mut App) {
+    let Some(p) = app.picker.as_ref() else { return };
+    let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
+        app.status = Some("Open a game instance first.".to_string());
+        return;
+    };
+    let name = p.name.trim().to_string();
+    if name.is_empty() {
+        app.status = Some("Give the mod a name first.".to_string());
+        return;
+    }
+    let choice = match &p.mode {
+        PickerMode::Bain { subpackages, picked, .. } => {
+            let chosen: Vec<String> = subpackages
+                .iter()
+                .zip(picked)
+                .filter(|(_, &on)| on)
+                .map(|(s, _)| s.clone())
+                .collect();
+            if chosen.is_empty() {
+                app.status = Some("Tick at least one sub-package.".to_string());
+                return;
+            }
+            PickerChoice::Bain(chosen)
+        }
+        PickerMode::Manual { root } => PickerChoice::Manual(root.clone()),
+    };
+    let result = install_with_choice(
+        &p.tree,
+        &choice,
+        &p.archive,
+        &mods_dir,
+        &name,
+        &p.game_id,
+        eidos_install::OverwritePolicy::Fail,
+    );
+    match result {
+        Ok(r) => {
+            let archive = p.archive.clone();
+            // A successful install may have consumed the tree (a lone source is
+            // moved, not copied), so the picker must go before anything else.
+            app.picker = None;
+            remember_bain_options(app, &r.name, &choice);
+            after_install(app, &r.name, r.dest, r.fomod, Some(&archive));
+        }
+        Err(eidos_install::InstallError::Exists(_)) => {
+            let Some(p) = app.picker.take() else { return };
+            let rename_to = suggest_free_name(&mods_dir, &name);
+            app.collision = Some(CollisionPrompt {
+                archive: p.archive,
+                name: name.clone(),
+                game_id: p.game_id,
+                rename_to,
+                fomod: false,
+                tree: Some(p.tree),
+                pick: Some(choice),
+            });
+            app.status = Some(format!("'{name}' already exists - choose how to install."));
+        }
+        Err(e) => app.status = Some(format!("Install failed: {e}")),
+    }
+}
+
+/// Dispatch one picker choice to the matching installer.
+fn install_with_choice(
+    tree: &eidos_install::ExtractedTree,
+    choice: &PickerChoice,
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    policy: eidos_install::OverwritePolicy,
+) -> Result<eidos_install::InstallReport, eidos_install::InstallError> {
+    match choice {
+        PickerChoice::Bain(subs) => {
+            eidos_install::install_bain(tree, subs, archive, mods_dir, name, game_id, policy)
+        }
+        PickerChoice::Manual(root) => {
+            eidos_install::install_manual(tree, root, archive, mods_dir, name, game_id, policy)
+        }
+    }
+}
+
+/// Record a BAIN selection in the installed mod's `meta.ini`, so reinstalling it
+/// later opens the picker with the same sub-packages already ticked (MO2's
+/// `onInstallationEnd`). Best-effort: failing to remember a preference must not
+/// look like a failed install.
+fn remember_bain_options(app: &App, mod_name: &str, choice: &PickerChoice) {
+    let (PickerChoice::Bain(subs), Some(inst)) = (choice, app.created.as_ref()) else { return };
+    let mut meta = inst.mod_meta(mod_name);
+    meta.set_bain_options(subs);
+    let _ = meta.write(&inst.meta_path(mod_name));
+}
+
 fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
     let Some(c) = app.collision.take() else { return };
     // A FOMOD reinstall: the wizard (with the user's choices) is still open in
@@ -5721,6 +6446,31 @@ fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) 
         app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     let archive = c.archive.clone();
+    // A collision raised by the manual / BAIN picker: replay the SAME picks. The
+    // tree alone does not say which sub-packages were ticked, so re-running the
+    // plain installer here would quietly install something else.
+    if let (Some(choice), Some(tree)) = (c.pick.as_ref(), c.tree.as_ref()) {
+        match install_with_choice(
+            tree,
+            choice,
+            &c.archive,
+            &mods_dir,
+            &c.name,
+            &c.game_id,
+            policy,
+        ) {
+            Ok(r) => {
+                remember_bain_options(app, &r.name, choice);
+                after_install(app, &r.name, r.dest, r.fomod, Some(&archive));
+            }
+            Err(eidos_install::InstallError::Exists(_)) => {
+                app.status = Some("That name also exists - pick another.".to_string());
+                app.collision = Some(c);
+            }
+            Err(e) => app.status = Some(format!("Install failed: {e}")),
+        }
+        return;
+    }
     // Reuse the tree extracted when the collision was raised; only fall back to a
     // fresh extraction if it is gone.
     let result = match c.tree.as_ref() {
@@ -5764,6 +6514,61 @@ fn load_saves(app: &mut App) {
         None => Vec::new(),
     };
     app.confirm_delete_save = None;
+    // Indices just moved; a selection kept across the reload could point at a
+    // different save (or past the end).
+    clear_save_selection(app);
+}
+
+/// Close the save details pane and drop what it derived.
+fn clear_save_selection(app: &mut App) {
+    app.selected_save = None;
+    app.save_info = None;
+    app.save_missing = Vec::new();
+}
+
+/// Parse the selected save's header and diff its plugin list against the profile's
+/// current one. Runs on selection only - a save header means decompressing part of
+/// the file, which is not something to do per redraw.
+fn load_save_details(app: &mut App) {
+    let Some(save) = app.selected_save.and_then(|i| app.saves.get(i)) else {
+        clear_save_selection(app);
+        return;
+    };
+    let path = save.path.clone();
+    let parsed = eidos_gamefeatures::parse_sse_save(&path).map_err(|e| e.to_string());
+    app.save_missing = match (&parsed, app.plugins.as_ref()) {
+        (Ok(info), Some(list)) => {
+            let known: Vec<eidos_gamefeatures::KnownPlugin> = list
+                .plugins
+                .iter()
+                .map(|p| eidos_gamefeatures::KnownPlugin {
+                    name: &p.name,
+                    enabled: p.enabled,
+                    origin_mod: &p.origin_mod,
+                })
+                .collect();
+            // Every mod, disabled ones included: a disabled mod holding the plugin
+            // is precisely the case the "enable what this save needs" fix exists
+            // for. Overwrite counts as a provider too (a cleaned .esp lands there).
+            let overwrite = app.created.as_ref().map(|i| i.overwrite_dir());
+            let mut mods: Vec<eidos_gamefeatures::ModFolder> = app
+                .mods
+                .iter()
+                .filter(|m| !m.is_separator())
+                .map(|m| eidos_gamefeatures::ModFolder { name: &m.name, path: &m.path })
+                .collect();
+            if let Some(o) = overwrite.as_deref() {
+                mods.push(eidos_gamefeatures::ModFolder { name: "Overwrite", path: o });
+            }
+            let data = selected_game(app).map(|g| g.data_path.clone());
+            if let Some(d) = data.as_deref() {
+                mods.push(eidos_gamefeatures::ModFolder { name: "(game data)", path: d });
+            }
+            eidos_gamefeatures::missing_plugins(info, &known, &mods, data.as_deref())
+        }
+        _ => Vec::new(),
+    };
+    app.save_info = Some((path, parsed));
 }
 
 /// Re-scan the downloads directory into `app.downloads`, reading each archive's
@@ -5923,6 +6728,159 @@ fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> {
                 .style(button::text),
         );
     container(card).max_width(460.0).padding(16).style(card_style).into()
+}
+
+/// How many tree rows the manual picker draws. An archive with more entries than
+/// this is one whose data root is a top-level folder anyway.
+const PICKER_TREE_ROWS: usize = 1500;
+
+/// The manual / BAIN install picker: MO2's `InstallDialog` (point at the data
+/// root) and `BainComplexInstallerDialog` (tick sub-packages), which share an
+/// archive tree and a name field.
+fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Message> {
+    let name_row = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Install as:").size(12.0))
+        .push(
+            text_input("mod name", &p.name)
+                .on_input(Message::PickerNameChanged)
+                .on_submit(Message::PickerInstall)
+                .padding(5)
+                .size(12.0)
+                .width(Length::Fill),
+        );
+
+    let (title, body): (String, Element<'a, Message>) = match &p.mode {
+        // MO2 asks before assuming: an archive whose top level mixes sub-packages
+        // with other folders is as likely to be a plain mod with extras.
+        PickerMode::Bain { asking: true, subpackages, .. } => (
+            "May be a BAIN installer".to_string(),
+            Column::new()
+                .spacing(10)
+                .push(
+                    text(format!(
+                        "This archive has {} folder(s) that look like Wrye Bash sub-packages, \
+                         and others that do not. Install it as a BAIN package?",
+                        subpackages.len()
+                    ))
+                    .size(12.0),
+                )
+                .push(
+                    Row::new()
+                        .spacing(8)
+                        .push(
+                            button(text("Yes, pick sub-packages").size(12.0))
+                                .padding([4, 10])
+                                .on_press(Message::PickerBainConfirm(true))
+                                .style(button::primary),
+                        )
+                        .push(
+                            button(text("No, choose the data folder").size(12.0))
+                                .padding([4, 10])
+                                .on_press(Message::PickerBainConfirm(false))
+                                .style(button::secondary),
+                        ),
+                )
+                .into(),
+        ),
+        PickerMode::Bain { subpackages, picked, .. } => {
+            let mut list = Column::new().spacing(1);
+            for (i, (name, &on)) in subpackages.iter().zip(picked).enumerate() {
+                list = list.push(
+                    checkbox(name.clone(), on)
+                        .on_toggle(move |_| Message::PickerBainToggle(i))
+                        .size(13.0)
+                        .text_size(12.0),
+                );
+            }
+            (
+                "Choose sub-packages".to_string(),
+                Column::new()
+                    .spacing(8)
+                    .push(
+                        text("Ticked sub-packages are merged top to bottom, so a later one wins.")
+                            .size(11.0),
+                    )
+                    .push(scrollable(list).height(Length::Fixed(240.0)))
+                    .into(),
+            )
+        }
+        PickerMode::Manual { root } => {
+            // Re-derived on every pick, like MO2's live green/red label.
+            let tree = eidos_install::ArchiveTree::from_dir(p.tree.path()).ok();
+            let valid = tree.as_ref().is_some_and(|t| t.root_looks_valid(root));
+            let chosen = if root.is_empty() { "<archive root>" } else { root.as_str() };
+
+            let mut list = Column::new().spacing(1).push(
+                button(text("<archive root>").size(12.0))
+                    .padding([1, 4])
+                    .on_press(Message::PickerSetRoot(String::new()))
+                    .style(if root.is_empty() { button::primary } else { button::text }),
+            );
+            for r in p.rows.iter().filter(|r| r.is_dir).take(PICKER_TREE_ROWS) {
+                let selected = *root == r.path;
+                let label = format!("{}{}", "    ".repeat(r.depth + 1), r.name);
+                list = list.push(
+                    button(text(label).size(12.0))
+                        .padding([1, 4])
+                        .on_press(Message::PickerSetRoot(r.path.clone()))
+                        .style(if selected { button::primary } else { button::text }),
+                );
+            }
+            (
+                "Choose the data folder".to_string(),
+                Column::new()
+                    .spacing(6)
+                    .push(scrollable(list).height(Length::Fixed(220.0)))
+                    .push(
+                        text(if valid {
+                            format!("The content of {chosen} looks valid.")
+                        } else {
+                            format!("The content of {chosen} does NOT look valid.")
+                        })
+                        .size(11.0)
+                        .color(if valid {
+                            Color::from_rgb8(0x2E, 0x6E, 0x31)
+                        } else {
+                            Color::from_rgb8(0x8E, 0x2A, 0x2A)
+                        }),
+                    )
+                    // MO2 warns but still lets you through: the checker only knows
+                    // the game's own folder names, and plenty of valid mods (SKSE
+                    // plugins, tool configs) match none of them.
+                    .push(
+                        text("You can install anyway - the check only recognises the game's own folder names.")
+                            .size(10.0),
+                    )
+                    .into(),
+            )
+        }
+    };
+
+    let mut card = Column::new().spacing(10).push(text(title).size(15.0)).push(name_row).push(body);
+
+    // No Install button while the BAIN question is open: the answer decides which
+    // installer would even run.
+    if !matches!(p.mode, PickerMode::Bain { asking: true, .. }) {
+        card = card.push(
+            Row::new()
+                .spacing(8)
+                .push(
+                    button(text("Install").size(12.0))
+                        .padding([4, 10])
+                        .on_press(Message::PickerInstall)
+                        .style(button::primary),
+                )
+                .push(
+                    button(text("Cancel").size(12.0))
+                        .padding([4, 10])
+                        .on_press(Message::PickerCancel)
+                        .style(button::text),
+                ),
+        );
+    }
+    container(card).max_width(520.0).padding(16).style(card_style).into()
 }
 
 // ---- Preferences modal (MO2's Settings dialog) -----------------------------
