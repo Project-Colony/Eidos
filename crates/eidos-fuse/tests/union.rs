@@ -76,6 +76,18 @@ impl Drop for Tmp {
     }
 }
 
+/// Poll `f` until it yields a value, for up to a second. Used where the daemon
+/// answers a request and only then pushes a cache invalidation to the kernel.
+fn settle<T>(mut f: impl FnMut() -> Option<T>) -> Option<T> {
+    for _ in 0..100 {
+        if let Some(v) = f() {
+            return Some(v);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    None
+}
+
 fn put(dir: &Path, rel: &str, contents: &[u8]) {
     let p = dir.join(rel);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -260,6 +272,36 @@ fn a_negative_lookup_does_not_mint_an_inode() {
     assert_eq!(fs::read(mnt.join("real.esp")).unwrap(), b"x");
 }
 
+fn a_create_clears_a_differently_cased_negative_lookup() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let _s = mounted!(vec![game], over, &mnt);
+
+    // The kernel caches negative dentries on the EXACT name bytes, while Eidos
+    // resolves case-insensitively. Probe one spelling, create another: without an
+    // explicit invalidation the game is told a file it can plainly see is absent.
+    // The Creation Engine mixes casing constantly, so this is normal traffic.
+    //
+    // The invalidation is necessarily ASYNCHRONOUS: a notification is a message
+    // to the kernel, and sending one from inside a request handler deadlocks the
+    // mount, so it is handed to a thread. That leaves a sub-millisecond window,
+    // hence the short retry rather than a bare assert.
+    assert!(!mnt.join("MISSING.ESP").exists());
+    fs::write(mnt.join("missing.esp"), b"here").unwrap();
+    assert_eq!(
+        settle(|| fs::read(mnt.join("MISSING.ESP")).ok()).expect("a cached negative outlived the create"),
+        b"here"
+    );
+
+    // Same for a directory, which arrives through mkdir rather than create.
+    assert!(!mnt.join("SCRIPTS").exists());
+    fs::create_dir(mnt.join("scripts")).unwrap();
+    assert!(
+        settle(|| mnt.join("SCRIPTS").is_dir().then_some(())).is_some(),
+        "mkdir must clear the folded negative too"
+    );
+}
+
 fn rename_moves_file_through_mount() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -405,6 +447,7 @@ fn main() {
         ("xattr_on_a_deleted_file_does_not_resurrect_it", xattr_on_a_deleted_file_does_not_resurrect_it, true),
         ("creating_a_file_after_a_negative_lookup_is_visible", creating_a_file_after_a_negative_lookup_is_visible, false),
         ("a_negative_lookup_does_not_mint_an_inode", a_negative_lookup_does_not_mint_an_inode, false),
+        ("a_create_clears_a_differently_cased_negative_lookup", a_create_clears_a_differently_cased_negative_lookup, false),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),

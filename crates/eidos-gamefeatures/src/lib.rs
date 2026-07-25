@@ -18,6 +18,9 @@ pub use native_dll::{
     ensure_native_dll, imported_dlls, is_tier1_dll, scan_imports_provisionable, NativeDllError,
 };
 
+mod prefix_registry;
+pub use prefix_registry::{ensure_registry, registry_blob};
+
 mod prereqs;
 pub use prereqs::{
     cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,

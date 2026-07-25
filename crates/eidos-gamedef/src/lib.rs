@@ -86,6 +86,11 @@ pub struct GameDef {
     /// the file is present, mirroring MO2's game-plugin `executables()`. Empty if
     /// unknown.
     pub game_binary: &'static str,
+    /// The game's own key under `HKLM\\Software\\Bethesda Softworks\\` in the Wine
+    /// registry. Bethesda's spelling, which is NOT always `short_name` (e.g.
+    /// `FalloutNV`, `Fallout 4 VR`). Empty when the game has no such key, which
+    /// makes the registry writer a no-op.
+    pub registry_name: &'static str,
     /// The script-extender launch swap, if known - the vanilla launcher and the
     /// loader (SKSE/F4SE/...) to run instead. `None` where the launcher is not
     /// known with confidence (add a row to enable it for a game).
@@ -110,6 +115,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         game_binary: "SkyrimSE.exe",
+        registry_name: "Skyrim Special Edition",
         script_extender: Some(ScriptExtender {
             launcher: "SkyrimSELauncher.exe",
             loader: "skse64_loader.exe",
@@ -127,6 +133,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         game_binary: "SkyrimVR.exe",
+        registry_name: "Skyrim VR",
         script_extender: Some(ScriptExtender {
             launcher: "SkyrimVRLauncher.exe",
             loader: "sksevr_loader.exe",
@@ -146,6 +153,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Skyrim.esm", "Update.esm"],
         game_binary: "TESV.exe",
+        registry_name: "Skyrim",
         script_extender: Some(ScriptExtender {
             launcher: "SkyrimLauncher.exe",
             loader: "skse_loader.exe",
@@ -163,6 +171,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: SKYRIM_SE_MASTERS,
         game_binary: "SkyrimSE.exe",
+        registry_name: "",
         // Enderal SE ships as a Skyrim SE reskin and uses SKSE64 unchanged.
         script_extender: Some(ScriptExtender {
             launcher: "Enderal Launcher.exe",
@@ -181,6 +190,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
         game_binary: "Fallout4.exe",
+        registry_name: "Fallout4",
         script_extender: Some(ScriptExtender {
             launcher: "Fallout4Launcher.exe",
             loader: "f4se_loader.exe",
@@ -198,6 +208,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Fallout4.esm"],
         game_binary: "Fallout4VR.exe",
+        registry_name: "Fallout 4 VR",
         script_extender: Some(ScriptExtender {
             launcher: "Fallout4VRLauncher.exe",
             loader: "f4sevr_loader.exe",
@@ -215,6 +226,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::PlainList,
         primary_plugins: &["FalloutNV.esm"],
         game_binary: "FalloutNV.exe",
+        registry_name: "FalloutNV",
         script_extender: Some(ScriptExtender {
             launcher: "FalloutNVLauncher.exe",
             loader: "nvse_loader.exe",
@@ -232,6 +244,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::PlainList,
         primary_plugins: &["Fallout3.esm"],
         game_binary: "Fallout3.exe",
+        registry_name: "Fallout3",
         script_extender: Some(ScriptExtender {
             launcher: "FalloutLauncher.exe",
             loader: "fose_loader.exe",
@@ -249,6 +262,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Oblivion.esm"],
         game_binary: "Oblivion.exe",
+        registry_name: "Oblivion",
         script_extender: Some(ScriptExtender {
             launcher: "OblivionLauncher.exe",
             loader: "obse_loader.exe",
@@ -268,6 +282,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::FileTime,
         primary_plugins: &["Morrowind.esm"],
         game_binary: "Morrowind.exe",
+        registry_name: "Morrowind",
         script_extender: None,
     },
     GameDef {
@@ -282,6 +297,7 @@ pub static GAMES: &[GameDef] = &[
         load_order: LoadOrder::Asterisk,
         primary_plugins: &["Starfield.esm", "Constellation.esm", "OldMars.esm"],
         game_binary: "Starfield.exe",
+        registry_name: "Starfield",
         script_extender: Some(ScriptExtender {
             launcher: "Starfield.exe",
             loader: "sfse_loader.exe",
@@ -370,6 +386,8 @@ struct RawGameDef {
     #[serde(default)]
     game_binary: String,
     #[serde(default)]
+    registry_name: String,
+    #[serde(default)]
     script_extender: Option<RawScriptExtender>,
 }
 
@@ -397,6 +415,7 @@ impl RawGameDef {
             load_order: parse_load_order(&self.load_order),
             primary_plugins: leak_vec(self.primary_plugins),
             game_binary: leak(self.game_binary),
+            registry_name: leak(self.registry_name),
             script_extender: self.script_extender.map(|s| ScriptExtender {
                 launcher: leak(s.launcher),
                 loader: leak(s.loader),

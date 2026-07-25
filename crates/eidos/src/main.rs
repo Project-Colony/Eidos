@@ -651,6 +651,36 @@ fn cmd_tool(args: &[String]) {
             };
 
             warn_if_flatpak_proton(&run);
+            // Windows tools find their game by reading HKLM\Software\Bethesda
+            // Softworks\<game> "installed path", which the game's own installer
+            // writes - and which Steam under Proton never runs. Without it xEdit,
+            // Wrye Bash and DynDOLOD open on an empty path. Idempotent, additive,
+            // and skipped entirely if the prefix is uninitialised or in use.
+            if let Some(reg) = eidos_games::GameDef::for_id(id).map(|g| g.registry_name) {
+                let proton = run.proton.clone();
+                let env = run.env.clone();
+                match eidos_gamefeatures::ensure_registry(
+                    compat,
+                    &game.install_path,
+                    reg,
+                    |reg_file| {
+                        vec![
+                            proton.to_string_lossy().into_owned(),
+                            // `runinprefix`, not the game verb: this must not run
+                            // Proton's game-drive setup, only a program in the
+                            // existing prefix.
+                            "runinprefix".to_string(),
+                            "regedit".to_string(),
+                            reg_file.to_string_lossy().into_owned(),
+                        ]
+                    },
+                    &env,
+                ) {
+                    Ok(true) => eprintln!("eidos: registered the game path in the Wine prefix"),
+                    Ok(false) => {}
+                    Err(e) => eprintln!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
+                }
+            }
             let mut command = run.command(&exe, &tool.args);
             command.extend(extra);
             // MO2's default working directory for a tool is its own folder.
