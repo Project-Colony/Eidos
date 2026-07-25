@@ -534,34 +534,38 @@ which is the one thing standing between a working mount and a working playthroug
 
 ## Known issues
 
-**Skyrim SE clears `plugins.txt` when launched through the mount.** Open, and the
-one that matters.
+**Wine could not tell that the mount folds case.** Fixed, and it was the one that
+mattered.
 
-Eidos deploys a correct `plugins.txt` before launch - verified, with the mod
-plugins marked active. Roughly 26 seconds later, as the game itself starts, the
-file comes back rewritten with Bethesda's own header and *no active plugins at
-all*, including the Creation Club entries that live in the real `Data` and have
-nothing to do with any mod. Launch the same game with the same file and no Eidos
-and it is untouched, so the mount is the difference.
+There is no API for "is this filesystem case-insensitive", so Wine's
+`get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in the directories
+it serves. Absent, Wine assumes case-SENSITIVE, and every lookup whose spelling
+does not match byte-for-byte falls back to reading the WHOLE directory to find a
+case-insensitive match. Bethesda games ask for `data/ccbgssse001-fish.bsa` while
+the file is `ccBGSSSE001-Fish.bsa`, so it fired on nearly every asset: 4471 marker
+probes and 2236 full directory re-reads in eight seconds, and 195796 enumerations
+of `Data` in ninety. Skyrim SE never reached its main menu - it sat at 240 MB
+resident while the daemon burned 92% of a core.
 
-What has been ruled out, each by measurement rather than argument:
+Eidos had folded case in `resolve_read` from the start. The whole cost was never
+saying so. `lookup` now answers `.ciopfs`; `readdir` still does not list it.
 
-- the game IS in Eidos's mount namespace, and the union IS mounted over `Data`
-  (`/proc/<pid>/mounts` from inside it)
-- from that namespace, under the game's own uid, `Data` lists all twelve plugins
-  including the mods' - so it is not "the game cannot see them"
-- it is not the save bind, not the INIs (`bEnableFileSelection=1` is set), and
-  not the FUSE caching (that was a separate crash, fixed below)
+Two things made it fatal rather than merely slow. The cost scales with directory
+size, so installing the Anniversary content (`Data` from 37 files to 177) tipped
+it over. And `opendir` eagerly built the merged listing, which is pure waste when
+Wine opens a directory only to `stat` that marker inside it - the snapshot is
+taken on the first `readdir` now.
 
-Since the wipe takes the Creation Club plugins with it, the working theory is
-that the *whole* `Data` enumeration fails on the game's side while `ls` succeeds -
-something about how the Creation Engine walks the directory (attributes, inode
-numbers, `FindFirstFileEx` semantics) that the daemon's `readdir`/`getattr` does
-not satisfy. Not yet demonstrated.
+After: the main menu, 2.1 GB resident, daemon at 0% CPU.
 
-Mitigated but not fixed: the capture guard means the empty file is no longer
-copied back into the profile, so the load order stops degrading between launches
-and Eidos redeploys a correct one every time.
+`EIDOS_FUSE_TRACE=opendir` is what found it, and ships. The op counters say how
+many; 195796 enumerations of one directory is invisible in a total.
+
+**The game rewriting `plugins.txt` empty** was very likely the same thing - a
+`Data` it could not enumerate in any reasonable time, so it concluded there was
+nothing there and saved that. Not proven, and worth re-checking. Either way the
+capture guard (a capture that clears the active set entirely is refused at any
+size) means it can no longer damage the profile.
 
 **`FOPEN_KEEP_CACHE` is off.** Fixed, and worth knowing why. It crashed Skyrim SE
 on a null dereference seconds after the main menu, deterministically, with zero

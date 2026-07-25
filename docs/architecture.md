@@ -188,19 +188,24 @@ that does **not** yet close:
   documented limitation to close later.
 - **Steam churn.** Proton updates and the launch-option dance are an ongoing
   integration surface.
-- **The game clears `plugins.txt` when launched through the mount.** Open, and
-  the most important thing on this list. Eidos deploys a correct file; ~26
-  seconds later, as the game starts, it comes back with Bethesda's header and no
-  active plugins - including the Creation Club entries that live in the real
-  `Data` and involve no mod at all. The same launch without Eidos leaves the file
-  alone. Measured and ruled out: the game IS in our mount namespace, the union IS
-  mounted over `Data`, and from inside that namespace under the game's own uid
-  every plugin is listed. Since the wipe takes the unmodded Creation Club entries
-  with it, the working theory is that the game's whole `Data` enumeration fails
-  while `ls` succeeds - some property of `readdir`/`getattr` the Creation Engine
-  expects and the daemon does not provide. The capture guard keeps it from
-  degrading the profile, so this costs a playthrough's mods rather than the
-  user's curated order, but it is not fixed.
+- **Telling Wine the mount folds case** (fixed). Wine has no API for the
+  question, so `get_dir_case_sensitivity` sniffs for the marker CIOPFS leaves in
+  each directory. Without it Wine assumes case-sensitive and answers every
+  mis-cased lookup by reading the entire directory to search for a match - which,
+  for a Bethesda game asking for `data/ccbgssse001-fish.bsa` against
+  `ccBGSSSE001-Fish.bsa`, is nearly every asset. Measured before the fix: 4471
+  marker probes and 2236 full directory re-reads in eight seconds, 195796
+  enumerations of `Data` in ninety, the game frozen at 240 MB resident and the
+  daemon at 92% of a core. Eidos had folded case in `resolve_read` since the
+  first commit; the entire cost was never saying so. The lesson generalises past
+  this bug: a VFS has to advertise its semantics, not merely implement them,
+  because the layer above will otherwise pay to discover them empirically.
+- **`opendir` is not a promise to enumerate** (fixed). It built the merged
+  listing eagerly, and Wine opens a directory purely to `stat` that marker inside
+  it - so the daemon paid a full multi-layer merge plus an NTFS-collation sort
+  220000 times in ninety seconds for listings nobody read. The snapshot is taken
+  by the first `readdir` now; offsets stay stable because it still happens
+  exactly once per handle.
 
 ### Caching, and one flag that had to go
 
