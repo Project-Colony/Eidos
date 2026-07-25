@@ -100,14 +100,21 @@ impl Inodes {
     }
 
     /// Get or mint the inode for `vpath` without touching its lookup count.
+    ///
+    /// `by_path` is keyed case-INSENSITIVELY (see [`ikey`]) because the layer
+    /// resolver folds case at every data-layer decision: `Skyrim.esm` and
+    /// `skyrim.esm` are one file, so they must be one inode. `by_ino` keeps the
+    /// caller's original casing, which is what `resolve_read`'s exact-path fast
+    /// path wants - folding it there would degrade every resolution into a
+    /// directory scan per component.
     fn intern(&mut self, vpath: &str) -> u64 {
-        if let Some(&ino) = self.by_path.get(vpath) {
+        if let Some(&ino) = self.by_path.get(&ikey(vpath)) {
             return ino;
         }
         let ino = self.next;
         self.next += 1;
         self.by_ino.insert(ino, vpath.to_string());
-        self.by_path.insert(vpath.to_string(), ino);
+        self.by_path.insert(ikey(vpath), ino);
         ino
     }
 
@@ -134,7 +141,14 @@ impl Inodes {
             if *count == 0 {
                 self.counts.remove(&ino);
                 if let Some(path) = self.by_ino.remove(&ino) {
-                    self.by_path.remove(&path);
+                    // Only drop the reverse entry if it still points at US. After a
+                    // rename clobbered a destination, the surviving inode owns that
+                    // key; removing it blindly would unmap a live inode and let a
+                    // later lookup mint a second one for the same path.
+                    let key = ikey(&path);
+                    if self.by_path.get(&key) == Some(&ino) {
+                        self.by_path.remove(&key);
+                    }
                 }
             }
         }
@@ -143,13 +157,69 @@ impl Inodes {
     /// Rebind the inode for `from` onto `to` after a rename, so the kernel's
     /// reuse of the source inode for the destination keeps resolving correctly.
     /// The inode number (and its lookup count) is preserved.
+    ///
+    /// Also rebinds every DESCENDANT: `LayerStack::rename` supports directory
+    /// renames, and the kernel keeps dentries for children it has already looked
+    /// up. Leaving those mapped under the old prefix would make the next
+    /// `getattr`/`read` on a kernel-held child resolve to a path that the rename
+    /// just whited out, i.e. a spurious ENOENT on a file that is right there.
     fn rename(&mut self, from: &str, to: &str) {
-        if let Some(ino) = self.by_path.remove(from) {
-            self.by_path.remove(to); // drop any stale destination mapping
+        let (from_key, to_key) = (ikey(from), ikey(to));
+
+        // Drop an inode that the rename has made unreachable, so a later `forget`
+        // on it cannot unmap whoever owns its path now.
+        fn discard(this: &mut Inodes, ino: u64, survivor: u64) {
+            if ino != survivor {
+                this.by_ino.remove(&ino);
+                this.counts.remove(&ino);
+            }
+        }
+
+        // Rebind the entry itself, if the kernel ever looked it up. A directory
+        // rename can arrive with the directory un-interned (only its children were
+        // resolved), so this is not a precondition for the subtree pass below.
+        if let Some(ino) = self.by_path.remove(&from_key) {
+            // The destination may already be interned - renaming over an existing
+            // file is the standard atomic-replace pattern for INIs and saves.
+            if let Some(clobbered) = self.by_path.remove(&to_key) {
+                discard(self, clobbered, ino);
+            }
             self.by_ino.insert(ino, to.to_string());
-            self.by_path.insert(to.to_string(), ino);
+            self.by_path.insert(to_key, ino);
+        }
+
+        // Re-key the subtree. Collect first: mutating `by_path` while iterating it
+        // is not allowed, and a child may itself clobber an existing destination.
+        let prefix = format!("{from_key}/");
+        let moved: Vec<(String, u64)> = self
+            .by_path
+            .iter()
+            .filter(|(k, _)| k.starts_with(&prefix))
+            .map(|(k, &i)| (k.clone(), i))
+            .collect();
+        for (old_key, child_ino) in moved {
+            self.by_path.remove(&old_key);
+            let new_key = format!("{}/{}", ikey(to), &old_key[prefix.len()..]);
+            if let Some(clobbered) = self.by_path.insert(new_key, child_ino) {
+                discard(self, clobbered, child_ino);
+            }
+            // Keep the display path in step, preserving the child's own casing.
+            if let Some(old_display) = self.by_ino.get(&child_ino).cloned() {
+                if old_display.len() >= from.len() {
+                    self.by_ino.insert(child_ino, format!("{to}{}", &old_display[from.len()..]));
+                }
+            }
         }
     }
+}
+
+/// The case-folded key under which a virtual path is interned. Eidos resolves
+/// paths case-insensitively (Windows games mix casing freely between the plugin
+/// header, the loose-file indexer and BSA lookups), so one real file must map to
+/// exactly one inode however the caller spelled it. ASCII-only, matching the
+/// documented fold in `eidos-core`.
+fn ikey(vpath: &str) -> String {
+    vpath.to_ascii_lowercase()
 }
 
 /// An open file: its resolved backing path plus the real fd, kept open so
@@ -774,12 +844,17 @@ impl Filesystem for Eidos {
         if mode.is_some() || size.is_some() || atime.is_some() || mtime.is_some() {
             let r = (|| -> std::io::Result<()> {
                 let dest = self.stack.open_for_write(&vpath)?;
-                let f = OpenOptions::new().create(true).write(true).truncate(false).open(&dest)?;
-                if let Some(sz) = size {
-                    f.set_len(sz)?;
-                }
+                // Only a size change needs the file open, and the open must come
+                // AFTER any mode change: Wine clearing FILE_ATTRIBUTE_READONLY
+                // arrives as a mode-only setattr, and opening read-write first
+                // would fail EACCES on the very file we are about to make writable.
                 if let Some(m) = mode {
                     fs::set_permissions(&dest, Permissions::from_mode(m & 0o7777))?;
+                }
+                if let Some(sz) = size {
+                    let f =
+                        OpenOptions::new().create(true).write(true).truncate(false).open(&dest)?;
+                    f.set_len(sz)?;
                 }
                 if atime.is_some() || mtime.is_some() {
                     set_times(&dest, atime, mtime)?;
@@ -920,6 +995,14 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
+        // Same guard as setattr: `open_for_write` clears the whiteout and copies
+        // the lower file up, so an xattr write against a path that no longer
+        // resolves would RESURRECT a deleted file. Wine issues these constantly,
+        // so this is expected traffic, not an edge case.
+        if self.stack.resolve_read(&vpath).is_none() {
+            reply.error(Errno::ENOENT);
+            return;
+        }
         let r = (|| -> std::io::Result<()> {
             let dest = self.stack.open_for_write(&vpath)?;
             xattr_set(&dest, name, value, flags)
@@ -952,6 +1035,12 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
+        // See `setxattr`: without this, removing an attribute from a deleted path
+        // copies the lower file back up and un-deletes it.
+        if self.stack.resolve_read(&vpath).is_none() {
+            reply.error(Errno::ENOENT);
+            return;
+        }
         let r = (|| -> std::io::Result<()> {
             let dest = self.stack.open_for_write(&vpath)?;
             xattr_remove(&dest, name)
@@ -1145,6 +1234,46 @@ fn statvfs_of(path: &Path) -> std::io::Result<libc::statvfs> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_file_gets_one_inode_whatever_the_casing() {
+        // Windows games mix casing freely; the resolver folds it, so the inode
+        // table must too or stat() reports two different files.
+        let mut inodes = Inodes::new();
+        let a = inodes.intern("Textures/Armor.DDS");
+        let b = inodes.intern("textures/armor.dds");
+        assert_eq!(a, b, "casing must not split inode identity");
+        // The display path keeps the casing it was first interned with.
+        assert_eq!(inodes.path(a).as_deref(), Some("Textures/Armor.DDS"));
+    }
+
+    #[test]
+    fn rename_over_an_interned_destination_keeps_the_survivor_mapped() {
+        // The atomic INI/save replacement pattern: write tmp, rename over target.
+        let mut inodes = Inodes::new();
+        let victim = inodes.lookup("Skyrim.ini");
+        let src = inodes.lookup("Skyrim.ini.tmp");
+        inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
+
+        assert_eq!(inodes.intern("Skyrim.ini"), src, "the renamed inode owns the path");
+        // Forgetting the clobbered inode must not unmap the survivor.
+        inodes.forget(victim, 1);
+        assert_eq!(inodes.intern("Skyrim.ini"), src, "forget() unmapped a live inode");
+    }
+
+    #[test]
+    fn renaming_a_directory_rebinds_its_children() {
+        let mut inodes = Inodes::new();
+        let child = inodes.lookup("tools/xedit.exe");
+        let grandchild = inodes.lookup("tools/sub/deep.txt");
+        inodes.rename("tools", "tools_bak");
+
+        assert_eq!(inodes.path(child).as_deref(), Some("tools_bak/xedit.exe"));
+        assert_eq!(inodes.path(grandchild).as_deref(), Some("tools_bak/sub/deep.txt"));
+        // And they resolve from the new path without minting fresh inodes.
+        assert_eq!(inodes.intern("tools_bak/xedit.exe"), child);
+        assert_eq!(inodes.intern("tools_bak/sub/deep.txt"), grandchild);
+    }
 
     #[test]
     fn intern_is_stable_and_uncounted() {

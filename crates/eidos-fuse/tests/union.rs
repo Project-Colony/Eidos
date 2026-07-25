@@ -12,6 +12,8 @@
 //! affected tests are skipped so the suite stays green.
 
 use std::fs;
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -185,6 +187,46 @@ fn recreate_after_delete_starts_empty() {
     assert_eq!(fs::read(over.join("gen.json")).unwrap(), b"new"); // overwrite holds only the new bytes
 }
 
+fn same_file_has_one_inode_whatever_the_casing() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Textures/Armor.DDS", b"tex");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    // The Creation Engine and Wine mix casing between the plugin header, the
+    // loose-file indexer and BSA lookups. NTFS reports one identity; so must we.
+    let a = fs::metadata(mnt.join("Textures/Armor.DDS")).unwrap();
+    let b = fs::metadata(mnt.join("textures/armor.dds")).unwrap();
+    assert_eq!(a.ino(), b.ino(), "one real file must have one inode");
+}
+
+fn xattr_on_a_deleted_file_does_not_resurrect_it() {
+    use std::os::fd::AsRawFd;
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "gone.esp", b"vanilla");
+    let s = mounted!(vec![game.clone()], over.clone(), &mnt);
+
+    // Hold the file open, THEN delete it. The kernel keeps the inode alive for
+    // the open fd, so an fsetxattr still reaches our handler - unlike a
+    // path-based setxattr, which the kernel rejects against a negative dentry.
+    // Wine holds handles open across attribute writes, so this is the real shape.
+    let f = fs::File::open(mnt.join("gone.esp")).unwrap();
+    fs::remove_file(mnt.join("gone.esp")).unwrap();
+
+    // SAFETY: valid fd and NUL-terminated strings.
+    let rc = unsafe {
+        libc::fsetxattr(f.as_raw_fd(), c"user.DOSATTRIB".as_ptr(), c"x".as_ptr().cast(), 1, 0)
+    };
+    assert_eq!(rc, -1, "an xattr write against a deleted path must fail, not copy it up");
+    assert!(!mnt.join("gone.esp").exists(), "the file must stay deleted");
+
+    drop(f);
+    drop(s);
+    assert!(!over.join("gone.esp").exists(), "no copy-up may have happened");
+    assert_eq!(fs::read(game.join("gone.esp")).unwrap(), b"vanilla"); // game pristine
+}
+
 fn rename_moves_file_through_mount() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -326,6 +368,8 @@ fn main() {
         ("create_new_file_and_dir_land_in_overwrite", create_new_file_and_dir_land_in_overwrite, false),
         ("delete_hides_file_and_keeps_game_pristine", delete_hides_file_and_keeps_game_pristine, true),
         ("recreate_after_delete_starts_empty", recreate_after_delete_starts_empty, true),
+        ("same_file_has_one_inode_whatever_the_casing", same_file_has_one_inode_whatever_the_casing, false),
+        ("xattr_on_a_deleted_file_does_not_resurrect_it", xattr_on_a_deleted_file_does_not_resurrect_it, true),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),

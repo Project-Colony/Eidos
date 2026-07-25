@@ -201,6 +201,14 @@ impl LayerStack {
                 }
             }
         }
+        // The whole point of a copy-up is that the result is WRITABLE. `fs::copy`
+        // clones the source's mode, so a read-only lower file (a Steam depot
+        // restored 0444, a mod extracted from a Windows archive carrying the DOS
+        // read-only attribute) yields a read-only copy and the caller's very next
+        // read-write open fails EACCES. Applied unconditionally, not just to the
+        // copy we just made, so a 0444 copy left behind by an earlier run is
+        // healed too.
+        ensure_owner_writable(&dest);
         Ok(dest)
     }
 
@@ -234,6 +242,10 @@ impl LayerStack {
             fs::create_dir_all(parent)?;
         }
         self.clear_whiteout(vpath);
+        // A read-only copy left in the overwrite layer by an earlier run (copied up
+        // from a 0444 lower file) would make the caller's truncating open fail
+        // EACCES even though we are about to replace the contents wholesale.
+        ensure_owner_writable(&dest);
         Ok(dest)
     }
 
@@ -432,6 +444,21 @@ fn eq_ignore_case(a: &OsStr, b: &OsStr) -> bool {
 
 /// Re-apply `src`'s modification/access times and `user.*` xattrs onto `dst` after
 /// a copy-up. Best-effort: failures are ignored (the copy already succeeded).
+/// Ensure the owner can write `path`, preserving every other permission bit.
+/// Best-effort: a failure here is never worse than the read-only mode we started
+/// from, and the caller's open will report the real error.
+fn ensure_owner_writable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = fs::metadata(path) {
+        let mode = meta.permissions().mode();
+        if mode & 0o200 == 0 {
+            let mut perms = meta.permissions();
+            perms.set_mode(mode | 0o200);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
 fn clone_metadata(src: &Path, dst: &Path) {
     if let Ok(meta) = fs::metadata(src) {
         if let (Ok(atime), Ok(mtime)) = (meta.accessed(), meta.modified()) {
@@ -558,6 +585,46 @@ mod tests {
             .unwrap()
             .as_secs();
         assert_eq!(secs, 1_400_000_000, "copy-up must keep the lower file's mtime, not stamp 'now'");
+    }
+
+    #[test]
+    fn copy_up_of_a_read_only_file_is_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "readonly.ini", "vanilla");
+        // A Steam depot restored 0444, or a mod extracted from a Windows archive
+        // carrying the DOS read-only attribute.
+        fs::set_permissions(game.join("readonly.ini"), fs::Permissions::from_mode(0o444)).unwrap();
+        let stack = LayerStack::new(vec![game], over);
+
+        let dest = stack.open_for_write("readonly.ini").unwrap();
+        // The point of a copy-up is that the caller can now write to it.
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&dest)
+            .expect("a copied-up file must be writable by its owner");
+        // The lower layer is untouched, read-only mode included.
+        assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o200, 0o200);
+    }
+
+    #[test]
+    fn prepare_overwrite_heals_a_read_only_copy_from_an_earlier_run() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "gen.txt", "vanilla");
+        // Simulate the overwrite copy an older Eidos left behind at 0444.
+        put(&over, "gen.txt", "stale");
+        fs::set_permissions(over.join("gen.txt"), fs::Permissions::from_mode(0o444)).unwrap();
+        let stack = LayerStack::new(vec![game], over);
+
+        let dest = stack.prepare_overwrite("gen.txt").unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(&dest)
+            .expect("a truncating open must not fail on a stale read-only copy");
     }
 
     #[test]
