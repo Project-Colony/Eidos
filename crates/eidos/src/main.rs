@@ -280,6 +280,20 @@ fn cmd_play(args: &[String]) {
         return;
     }
 
+    // The play path gets its Proton from Steam's own %command%, so there is no
+    // ProtonRun to inspect - check the prefix's provenance directly. A flatpak
+    // Steam cannot use this launch option at all: `eidos play` runs on the host
+    // and the game would start inside the sandbox, blind to our mount.
+    if let Some(cd) = game.compatdata.as_ref() {
+        if eidos_games::is_flatpak_steam(cd) {
+            eprintln!(
+                "eidos: WARNING - this game's prefix belongs to the Flatpak Steam install.\n\
+                 eidos: the `eidos play` launch option cannot work from inside the Steam sandbox:\n\
+                 eidos: the game would run there and never see the mods mounted in our namespace.\n\
+                 eidos: use a native Steam for a modded setup."
+            );
+        }
+    }
     let mut command = command;
     swap_script_extender(id, &mut command);
     run_through_view(id, &game, &inst, command, Vec::new(), None, &[]);
@@ -297,8 +311,14 @@ fn warn_if_flatpak_proton(run: &eidos_games::ProtonRun) {
         eprintln!(
             "eidos: WARNING - this Proton belongs to the Flatpak Steam install ({}).\n\
              eidos: it ships its runtime and steamclient libraries inside the sandbox, so running\n\
-             eidos: it from the host may fail to resolve them. If the launch misbehaves, install a\n\
-             eidos: Proton in ~/.steam/root/compatibilitytools.d/ and select it for the game.",
+             eidos: it from the host may fail to resolve them. Eidos will NOT relaunch through\n\
+             eidos: `flatpak run`: the game would start in Flatpak's sandbox, which cannot see the\n\
+             eidos: mods mounted in our namespace, and would silently play vanilla.\n\
+             eidos: The `eidos play` Steam launch option cannot work from inside the Steam sandbox\n\
+             eidos: at all. The durable fix is a NATIVE Steam (the flatpak's compat-tool list is\n\
+             eidos: read from its own root, so dropping a Proton in ~/.steam/ will not appear there;\n\
+             eidos: to add one to the flatpak, put it in\n\
+             eidos:   ~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/",
             run.proton.display()
         );
     }

@@ -233,7 +233,8 @@ impl Inodes {
     /// up. Leaving those mapped under the old prefix would make the next
     /// `getattr`/`read` on a kernel-held child resolve to a path that the rename
     /// just whited out, i.e. a spurious ENOENT on a file that is right there.
-    fn rename(&mut self, from: &str, to: &str) {
+    /// Returns the inode that was moved, if the kernel had one for `from`.
+    fn rename(&mut self, from: &str, to: &str) -> Option<u64> {
         let (from_key, to_key) = (ikey(from), ikey(to));
 
         // Drop an inode that the rename has made unreachable, so a later `forget`
@@ -248,7 +249,8 @@ impl Inodes {
         // Rebind the entry itself, if the kernel ever looked it up. A directory
         // rename can arrive with the directory un-interned (only its children were
         // resolved), so this is not a precondition for the subtree pass below.
-        if let Some(ino) = self.by_path.remove(&from_key) {
+        let moved_ino = self.by_path.remove(&from_key);
+        if let Some(ino) = moved_ino {
             // The destination may already be interned - renaming over an existing
             // file is the standard atomic-replace pattern for INIs and saves.
             if let Some(clobbered) = self.by_path.remove(&to_key) {
@@ -280,6 +282,24 @@ impl Inodes {
                 }
             }
         }
+        moved_ino
+    }
+}
+
+/// Flags for a FILE open reply.
+///
+/// `FOPEN_KEEP_CACHE` tells the kernel to keep the page cache it already holds
+/// for this inode instead of dropping it on every open. Mod files do not change
+/// behind the mount for the life of a session - the layers are immutable and
+/// every write goes through this daemon - so re-reading an asset the game opens
+/// repeatedly (BSAs, meshes, INIs) can be served from cache. Near-free with
+/// kernel passthrough, and a real saving in the rootless fallback where the
+/// daemon would otherwise serve every byte itself.
+fn file_open_flags() -> FopenFlags {
+    if caching_disabled() {
+        FopenFlags::empty()
+    } else {
+        FopenFlags::FOPEN_KEEP_CACHE
     }
 }
 
@@ -334,6 +354,14 @@ pub struct Eidos {
     /// can plainly see does not exist. We remember what we denied so that a
     /// create can invalidate precisely those spellings.
     negatives: Mutex<HashMap<u64, Vec<String>>>,
+    /// Positive dentries handed to the kernel, keyed by inode: the
+    /// `(parent_ino, exact name)` spellings it now caches for that file.
+    ///
+    /// The case fold means one inode is reachable through several kernel
+    /// dentries. A rename moves only the spelling it was given, so every OTHER
+    /// recorded spelling would keep resolving to the moved file for the whole
+    /// entry TTL and serve its contents under a name that no longer exists.
+    aliases: Mutex<HashMap<u64, Vec<(u64, String)>>>,
     /// Set once the session is mounted; used to push those invalidations.
     notifier: Arc<Mutex<Option<fuser::Notifier>>>,
 }
@@ -405,6 +433,7 @@ impl Eidos {
             next_fh: AtomicU64::new(1),
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
+            aliases: Mutex::new(HashMap::new()),
             notifier: Arc::new(Mutex::new(None)),
         }
     }
@@ -481,6 +510,43 @@ impl Eidos {
             flags: 0,
         };
         reply.entry(&NEG_TTL, &blank, Generation(0));
+    }
+
+    /// Remember a spelling the kernel now caches for `ino`, so a later rename can
+    /// drop the ones it did not move. Capped per inode: a file is normally
+    /// reached through one or two spellings, and the cap bounds a pathological
+    /// case rather than a real one.
+    fn record_alias(&self, ino: u64, parent: u64, name: &str) {
+        let mut aliases = self.aliases.lock_recover();
+        let entry = aliases.entry(ino).or_default();
+        if entry.len() < 16 && !entry.iter().any(|(p, n)| *p == parent && n == name) {
+            entry.push((parent, name.to_string()));
+        }
+    }
+
+    /// After a rename, drop every kernel dentry that still points at the moved
+    /// inode under its OLD name. The kernel moves the one dentry it was given;
+    /// the case-variant spellings we handed out earlier are now lies.
+    fn invalidate_stale_aliases(&self, ino: u64, kept_parent: u64, kept_name: &str) {
+        let stale: Vec<(u64, String)> = {
+            let mut aliases = self.aliases.lock_recover();
+            let Some(entry) = aliases.get_mut(&ino) else { return };
+            let (stale, keep): (Vec<_>, Vec<_>) =
+                entry.drain(..).partition(|(p, n)| !(*p == kept_parent && n == kept_name));
+            *entry = keep;
+            stale
+        };
+        if stale.is_empty() {
+            return;
+        }
+        // Off the handler thread: see `invalidate_folded_negatives` - notifying
+        // the kernel from inside a request deadlocks the mount.
+        let Some(notifier) = self.notifier.lock_recover().clone() else { return };
+        std::thread::spawn(move || {
+            for (parent, name) in stale {
+                let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&name));
+            }
+        });
     }
 
     /// Drop any negative dentry the kernel holds for a name that case-folds to
@@ -708,8 +774,8 @@ impl Filesystem for Eidos {
             OpenFile { _real: real, file: Arc::new(file), _backing: backing },
         );
         match files.get(&fh).unwrap()._backing.as_ref() {
-            Some(b) => reply.opened_passthrough(FileHandle(fh), FopenFlags::empty(), b),
-            None => reply.opened(FileHandle(fh), FopenFlags::empty()),
+            Some(b) => reply.opened_passthrough(FileHandle(fh), file_open_flags(), b),
+            None => reply.opened(FileHandle(fh), file_open_flags()),
         }
     }
 
@@ -744,6 +810,7 @@ impl Filesystem for Eidos {
             Ok(meta) => {
                 Stats::bump(&self.stats.lookup_hit);
                 let ino = self.inodes.lock_recover().lookup(&vpath);
+                self.record_alias(ino, parent.0, &name.to_string_lossy());
                 reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
             }
             Err(_) => {
@@ -1208,7 +1275,13 @@ impl Filesystem for Eidos {
         }
         match self.stack.rename(&from, &to) {
             Ok(()) => {
-                self.inodes.lock_recover().rename(&from, &to);
+                let moved = self.inodes.lock_recover().rename(&from, &to);
+                if let Some(ino) = moved {
+                    self.invalidate_stale_aliases(ino, newparent.0, &newname.to_string_lossy());
+                    self.record_alias(ino, newparent.0, &newname.to_string_lossy());
+                }
+                // The destination name may have been probed and cached absent.
+                self.invalidate_folded_negatives(newparent.0, &newname.to_string_lossy());
                 reply.ok();
             }
             Err(e) => reply.error(e.into()),

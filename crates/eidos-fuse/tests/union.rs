@@ -313,6 +313,27 @@ fn rename_moves_file_through_mount() {
     assert_eq!(fs::read(mnt.join("save.ess")).unwrap(), b"data");
 }
 
+fn renaming_a_file_drops_its_other_cached_spellings() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "Save.ess", b"first");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    // Warm the kernel's dentry cache under BOTH spellings: the case fold makes
+    // one inode reachable through several dentries.
+    assert_eq!(fs::read(mnt.join("Save.ess")).unwrap(), b"first");
+    assert_eq!(fs::read(mnt.join("save.ess")).unwrap(), b"first");
+
+    // Rename through one spelling. The kernel moves that dentry; the other one
+    // must not keep serving the moved file under a name that no longer exists.
+    fs::rename(mnt.join("Save.ess"), mnt.join("Save.bak")).unwrap();
+    assert_eq!(fs::read(mnt.join("Save.bak")).unwrap(), b"first");
+    assert!(
+        settle(|| fs::read(mnt.join("save.ess")).is_err().then_some(())).is_some(),
+        "a stale case-variant dentry kept resolving to the renamed file"
+    );
+}
+
 fn readdir_lists_merged_deduped_entries() {
     let t = Tmp::new();
     let (game, modd, over, mnt) = (t.sub("game"), t.sub("mod"), t.sub("over"), t.sub("mnt"));
@@ -448,6 +469,7 @@ fn main() {
         ("creating_a_file_after_a_negative_lookup_is_visible", creating_a_file_after_a_negative_lookup_is_visible, false),
         ("a_negative_lookup_does_not_mint_an_inode", a_negative_lookup_does_not_mint_an_inode, false),
         ("a_create_clears_a_differently_cased_negative_lookup", a_create_clears_a_differently_cased_negative_lookup, false),
+        ("renaming_a_file_drops_its_other_cached_spellings", renaming_a_file_drops_its_other_cached_spellings, true),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
