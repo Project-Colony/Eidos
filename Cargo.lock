@@ -1175,6 +1175,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-log"
+version = "0.0.0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "eidos-loot"
 version = "0.0.0"
 dependencies = [

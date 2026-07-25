@@ -1,0 +1,145 @@
+name: CI
+
+# Build, lint and test the whole workspace on every push and pull request.
+#
+# Everything that needs a compiled dependency graph lives in ONE job on purpose:
+# a cold build of the iced/wgpu tree dominates the wall clock here, and splitting
+# build / clippy / test across jobs would pay that cost once per job instead of
+# sharing a single warm `target/`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same ref makes the in-flight run pointless - cancel it
+# rather than queue behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# CI only reads the tree. Nothing here needs a token that can write to the repo.
+permissions:
+  contents: read
+
+env:
+  # Pinned instead of `stable` deliberately. Clippy ships new lints every six
+  # weeks, and with `-D warnings` a floating toolchain turns an untouched main
+  # red overnight for reasons nobody in the PR caused. Bumping this line is then
+  # a normal, reviewable change that lands with whatever fixes it requires.
+  # This is the version the project is developed against.
+  RUST_VERSION: "1.94.1"
+  CARGO_TERM_COLOR: always
+  # A backtrace costs nothing on a green run and saves a whole re-run on a red one.
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build-test:
+    name: build, clippy, test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only first-party `actions/*` are used in this repo's workflows, so the
+      # set of third parties with a foothold in CI stays empty.
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component clippy
+          rustup default "$RUST_VERSION"
+          rustc -vV
+          cargo -vV
+
+      # `actions/cache` rather than a third-party rust-cache action: the paths
+      # below are exactly what cargo reuses, and keeping it explicit means the
+      # cache key is auditable. Keyed on the lockfile so a dependency bump gets a
+      # cold cache instead of a stale one; the toolchain is in the key too since
+      # `target/` artifacts are not portable across rustc versions.
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ env.RUST_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ env.RUST_VERSION }}-
+
+      # crates/eidos-fuse/tests/union.rs mounts a REAL union and drives it
+      # through the kernel - the only coverage that exercises the FUSE daemon
+      # itself. It needs /dev/fuse plus a user+mount namespace, and by design it
+      # SKIPS (still exiting 0) when either is missing. That graceful skip is
+      # exactly why this step exists: without it CI would stay green while
+      # silently testing nothing. So make the environment available, then print
+      # what we actually got - the run log then says whether the union tests ran
+      # for real or skipped, instead of leaving it to guesswork.
+      - name: Make FUSE and user namespaces available, and report what we got
+        run: |
+          set -x
+          # /dev/fuse is a devnode of the fuse module; on a fresh runner the
+          # module may not be loaded yet, in which case the node is absent.
+          sudo modprobe fuse || true
+          # fuser mounts /dev/fuse directly when it holds CAP_SYS_ADMIN in the
+          # namespace, and shells out to fusermount3 otherwise. Install the
+          # helper so the fallback path exists. Tolerated if it fails: a flaky
+          # apt mirror must not fail a PR, and the probe below reports the truth
+          # either way.
+          sudo apt-get update -qq && sudo apt-get install -y -qq fuse3 || true
+          # Ubuntu 24.04 gates unprivileged CLONE_NEWUSER behind AppArmor. The
+          # runner is ephemeral and single-tenant, so lifting the restriction is
+          # safe here and buys back the union tests that need an isolated
+          # namespace to be deterministic (they skip otherwise).
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          fi
+          set +x
+          echo "--- FUSE test environment ---"
+          test -e /dev/fuse && echo "/dev/fuse: present" || echo "/dev/fuse: MISSING (union tests will skip)"
+          command -v fusermount3 || echo "fusermount3: MISSING"
+          # A namespace we can enter unprivileged is the second precondition.
+          unshare --map-root-user --mount true \
+            && echo "user+mount namespace: available" \
+            || echo "user+mount namespace: UNAVAILABLE (isolation-sensitive union tests will skip)"
+
+      # `--locked` on every invocation: the committed Cargo.lock is what the
+      # release build resolves too, so CI must fail loudly if a manifest change
+      # landed without regenerating it, rather than quietly resolving something
+      # else than what ships.
+      - name: Build
+        run: cargo build --workspace --locked
+
+      # Deliberately NOT `--all-targets`. Library and binary targets are clean
+      # under `-D warnings` today; the test targets are not yet, and turning
+      # those into hard failures here would block unrelated PRs. Add
+      # `--all-targets` in the same change that cleans the test code up.
+      - name: Clippy
+        run: cargo clippy --workspace --locked -- -D warnings
+
+      # Runs the union integration test too. It prints its own
+      # "N passed, M failed, K skipped" summary line - read K when a FUSE
+      # regression suspiciously fails to show up.
+      - name: Test
+        run: cargo test --workspace --locked
+
+  fmt:
+    name: rustfmt (advisory)
+    runs-on: ubuntu-24.04
+    # The tree is NOT rustfmt-clean today: it is written to a wider column budget
+    # than rustfmt's default, so `cargo fmt --check` reports a diff in most files
+    # (hundreds of hunks at any max_width). Making that a hard gate now would
+    # redden every PR for something no PR author did, and the alternative - a
+    # one-shot `cargo fmt --all` - rewrites nearly every source file and buries
+    # the history of a young codebase. So this job REPORTS the diff without
+    # blocking. Flip `continue-on-error` to false in the same commit that lands
+    # the mass reformat and pins the width in a rustfmt.toml.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt
+          rustup default "$RUST_VERSION"
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check

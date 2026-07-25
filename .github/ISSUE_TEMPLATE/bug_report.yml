@@ -1,0 +1,187 @@
+name: Bug report
+description: Something does not work - mods not loading, a crash, a launch failure
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Three answers settle most Eidos reports before anyone reads the code: the
+        **launch capability**, the **distro and Steam packaging**, and **how the
+        game was launched**. They are the required fields below. Everything else
+        is optional.
+
+        The GUI can answer most of this for you: open the **Diagnostics** tab
+        (it counts problems in the tab label) and press **F5** to re-run the
+        checks.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+      placeholder: |
+        Enabled 40 mods, launched from Steam. The game starts but SKSE reports no
+        plugins loaded and none of the mods are visible in-game.
+    validations:
+      required: true
+
+  # The single most common cause of "my mods do not load". CAP_SYS_ADMIN on the
+  # eidos binary is what enables FUSE kernel passthrough; without it Eidos still
+  # runs (rootless fallback) but script-extender DLLs may fail to image-map, and
+  # the only symptom in-game is mods mysteriously missing. Every rebuild or
+  # reinstall wipes it, so it goes stale silently. Ask first, always.
+  - type: textarea
+    id: getcap
+    attributes:
+      label: Output of getcap on your eidos binary
+      description: |
+        Run this and paste the whole output, including empty output:
+
+        ```sh
+        which eidos && getcap "$(command -v eidos)"
+        ```
+
+        A healthy install prints something ending in `cap_sys_admin=ep`. **Empty
+        output means the capability is missing** - that alone explains mods not
+        loading and script-extender plugins failing. Fix it with:
+
+        ```sh
+        sudo setcap cap_sys_admin+ep "$(command -v eidos)"
+        ```
+
+        then press F5 in the GUI and re-test before filing. If `getcap` is not
+        installed: `libcap` on Arch/Fedora, `libcap2-bin` on Debian/Ubuntu,
+        `libcap-progs` on openSUSE.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: cap-state
+    attributes:
+      label: Does the GUI report the capability as missing?
+      description: The Diagnostics tab shows either "FUSE passthrough available" or "FUSE passthrough is off (launch capability missing)". A banner across the top says the same thing.
+      options:
+        - "Diagnostics says FUSE passthrough is available"
+        - "Diagnostics says the launch capability is missing"
+        - "I only use the CLI, no GUI"
+        - "I could not tell"
+    validations:
+      required: true
+
+  # Distro, kernel and Steam packaging together decide whether the mount can even
+  # work: user namespaces are gated differently per distro, FUSE support varies by
+  # kernel config, and a Flatpak Steam gives Proton a sandboxed runtime that Eidos
+  # deliberately refuses to re-enter (running the game inside Flatpak's sandbox
+  # would make it blind to the union mount and it would silently play vanilla).
+  - type: textarea
+    id: system
+    attributes:
+      label: Distro and kernel
+      description: |
+        ```sh
+        (. /etc/os-release && echo "$PRETTY_NAME"); uname -r; ls -l /dev/fuse; command -v fusermount3
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: steam-packaging
+    attributes:
+      label: How is Steam installed?
+      description: A Flatpak Steam ships Proton and its steamclient libraries inside the sandbox, so a host-side launch can fail to resolve them. Eidos flags this in Diagnostics and will not re-launch through `flatpak run`.
+      options:
+        - "Native package (pacman / apt / dnf / zypper)"
+        - "Flatpak (com.valvesoftware.Steam)"
+        - "Snap"
+        - "Steam Deck / SteamOS"
+        - "Not using Steam"
+        - "Not sure"
+    validations:
+      required: true
+
+  # The game and the launch path determine which code ran at all: `eidos play`
+  # from a Steam launch option, the GUI's Run button, or a bare CLI invocation
+  # take different routes into the same mount, and the script-extender swap only
+  # happens on some of them.
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - "Skyrim Special Edition (skyrimse)"
+        - "Skyrim VR (skyrimvr)"
+        - "Skyrim - Legendary Edition (skyrim)"
+        - "Enderal: Special Edition (enderalse)"
+        - "Fallout 4 (fallout4)"
+        - "Fallout 4 VR (fallout4vr)"
+        - "Fallout: New Vegas (falloutnv)"
+        - "Fallout 3 GOTY (fallout3)"
+        - "Oblivion (oblivion)"
+        - "Morrowind (morrowind)"
+        - "Starfield (starfield)"
+        - "Other / not listed"
+    validations:
+      required: true
+
+  - type: textarea
+    id: launch
+    attributes:
+      label: How did you launch it?
+      description: |
+        Paste the exact Steam launch options if you use them, or the exact command
+        line. Include the Proton version if you know it (Steam > game > Properties
+        > Compatibility).
+      placeholder: |
+        Steam launch options: eidos play skyrimse -- %command%
+        Proton: GE-Proton11-1
+        or: eidos play skyrimse -- ./SkyrimSE.exe
+        or: clicked Run in eidos-gui
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Launch log
+      description: |
+        Runs started from the GUI write the game's stdout and stderr to
+        `~/.local/share/eidos/<game-id>/logs/run-<timestamp>.log` (or
+        `<instance>/logs/` for a portable instance). Paste the tail of the newest
+        one - Eidos's own warnings about the capability, failed binds and the
+        mount all appear there. From a terminal launch, paste what `eidos play`
+        printed.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Eidos version
+      description: The release tag you installed, or `git rev-parse --short HEAD` if you built from source. The GUI shows it under About.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install Eidos?
+      description: Building from source rewrites the binary, which wipes the capability every single time - a very common cause of "it worked yesterday".
+      options:
+        - "Release tarball + install.sh"
+        - "Built from source (cargo build)"
+        - "Distro package"
+        - "Other"
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mod list size, which mods, whether vanilla works, screenshots of the Diagnostics tab.
+    validations:
+      required: false

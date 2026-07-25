@@ -1,0 +1,353 @@
+name: Release
+
+# Builds the release tarball, and publishes it when (and only when) the run was
+# triggered by a version tag.
+#
+# The shape is deliberate: ONE build job, three ways in. A tag push releases; a
+# manual dispatch rehearses the exact same packaging without publishing; another
+# workflow can call this one and get the tarball as a run artifact. The failure
+# mode this avoids is the classic one where the release script is only ever
+# exercised by a tag, so it is discovered to be broken at the worst moment - the
+# packaging path you can run on demand is the packaging path that works.
+on:
+  push:
+    # Matches v1.2.3 and v1.2.3-rc1; the publish job below re-checks the ref, so
+    # a stray tag can never fall through into a release.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Same pin as CI: the artifact users download is built by a known compiler, not
+  # by whatever stable happened to be current that morning.
+  RUST_VERSION: "1.94.1"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build tarball
+    # Pinned, not `ubuntu-latest`: the binaries link against the runner's glibc,
+    # so the runner image IS part of the compatibility contract. 24.04 means the
+    # tarball needs glibc >= 2.39. Moving to a newer image silently raises that
+    # floor and breaks users on older distros, so it must be a deliberate edit.
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      name: ${{ steps.meta.outputs.name }}
+      tarball: ${{ steps.meta.outputs.tarball }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal
+          rustup default "$RUST_VERSION"
+          rustc -vV
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-release-${{ env.RUST_VERSION }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-release-${{ env.RUST_VERSION }}-
+
+      - name: Work out the version and artifact names
+        id: meta
+        run: |
+          set -eu
+          # A tag names the release. A dispatch or a call is a rehearsal, so it
+          # gets a version that can never be mistaken for a shipped one.
+          case "${GITHUB_REF}" in
+            refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)            version="0.0.0-dev.$(git rev-parse --short HEAD)" ;;
+          esac
+          name="eidos-${version}-x86_64-linux"
+          {
+            echo "version=${version}"
+            echo "name=${name}"
+            echo "tarball=${name}.tar.gz"
+          } >> "$GITHUB_OUTPUT"
+          echo "building ${name}"
+
+      - name: Build
+        run: cargo build --workspace --release --locked
+
+      # The release profile is already compiled, so this reuses those artifacts
+      # instead of building the whole tree a second time in dev. A tag that fails
+      # its own test suite must not become a download.
+      - name: Test the release build
+        run: cargo test --workspace --release --locked
+
+      - name: Stage the package
+        run: |
+          set -eu
+          name='${{ steps.meta.outputs.name }}'
+          mkdir -p "dist/${name}"
+          # Both binaries sit side by side at the top level, and that placement is
+          # load-bearing, not cosmetic: eidos-gui locates the launcher by looking
+          # for an `eidos` sibling of its own executable first. Keeping them
+          # together means the extracted directory works when run in place, before
+          # anything is installed.
+          cp target/release/eidos target/release/eidos-gui "dist/${name}/"
+          cp README.md LICENSE SECURITY.md "dist/${name}/"
+          # Not stripped on purpose. Cargo's release profile emits no DWARF
+          # anyway, so `--strip-all` would only remove the symbol table - which is
+          # precisely what turns a user's panic backtrace into something we can
+          # act on. A few MB is a good trade for readable crash reports.
+          ls -l "dist/${name}"
+
+      # The installer is generated here rather than tracked in the repo because
+      # the tarball is the only place it is ever used, and it must stay in step
+      # with the layout staged just above. If a second consumer ever appears
+      # (a distro package, say), promote it to a tracked file under packaging/.
+      - name: Write the install script
+        run: |
+          set -eu
+          name='${{ steps.meta.outputs.name }}'
+          cat > "dist/${name}/install.sh" <<'INSTALLER'
+          #!/bin/sh
+          # Eidos installer.
+          #
+          # Copies the two binaries into a prefix and grants the launcher the one
+          # file capability it needs. Read it before running it; it uses sudo for
+          # exactly one command (setcap) and tells you before it does.
+          set -eu
+
+          PREFIX="${PREFIX:-$HOME/.local/bin}"
+          SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+          echo "Eidos installer"
+          echo "  source: $SRC"
+          echo "  prefix: $PREFIX   (override with PREFIX=/usr/local/bin ./install.sh)"
+          echo
+
+          for b in eidos eidos-gui; do
+            [ -f "$SRC/$b" ] || { echo "error: $b missing from $SRC" >&2; exit 1; }
+          done
+
+          mkdir -p "$PREFIX"
+          # Both binaries land in the SAME directory on purpose: eidos-gui finds
+          # the launcher by looking for an `eidos` sibling of its own executable.
+          install -m 0755 "$SRC/eidos" "$SRC/eidos-gui" "$PREFIX/"
+          echo "installed eidos and eidos-gui in $PREFIX"
+
+          # --- the capability -------------------------------------------------
+          # Eidos mounts a FUSE union in a private mount namespace. With
+          # CAP_SYS_ADMIN it can unshare a plain mount namespace and turn on FUSE
+          # kernel passthrough, so reads and DLL image-mapping go straight to the
+          # backing files. Without it, eidos still runs - it falls back to a
+          # rootless user+mount namespace - but passthrough is off, and
+          # relocation-heavy script-extender plugin DLLs (SKSE and friends) can
+          # fail to load with no in-game symptom beyond "my mods do not work".
+          target="$PREFIX/eidos"
+
+          # A capability is ignored by the kernel on a nosuid mount, so catch that
+          # before setcap reports success on a binary that will never use it.
+          if command -v findmnt >/dev/null 2>&1; then
+            opts=$(findmnt -no OPTIONS -T "$target" 2>/dev/null || echo "")
+            case ",$opts," in
+              *,nosuid,*)
+                echo "WARNING: $PREFIX is on a nosuid mount; the kernel ignores file" >&2
+                echo "         capabilities there. Install somewhere else, or expect" >&2
+                echo "         FUSE passthrough to stay off." >&2
+                ;;
+            esac
+          fi
+
+          if ! command -v setcap >/dev/null 2>&1; then
+            echo "setcap not found - install it, then run:" >&2
+            echo "    Arch:          sudo pacman -S libcap" >&2
+            echo "    Debian/Ubuntu: sudo apt install libcap2-bin" >&2
+            echo "    Fedora:        sudo dnf install libcap" >&2
+            echo "    openSUSE:      sudo zypper install libcap-progs" >&2
+            echo "  sudo setcap cap_sys_admin+ep $target" >&2
+            exit 1
+          fi
+
+          echo
+          echo "Granting CAP_SYS_ADMIN to $target (this is the sudo step):"
+          echo "  sudo setcap cap_sys_admin+ep $target"
+          if [ "$(id -u)" -eq 0 ]; then
+            setcap cap_sys_admin+ep "$target"
+          else
+            sudo setcap cap_sys_admin+ep "$target"
+          fi
+
+          # Do not take setcap's word for it - a filesystem without security
+          # xattrs (exfat, ntfs, some network mounts) fails here, and that is the
+          # exact failure worth catching at install time.
+          if command -v getcap >/dev/null 2>&1; then
+            got=$(getcap "$target" || true)
+            if [ -z "$got" ]; then
+              echo "WARNING: the capability did not stick. Is $PREFIX on a filesystem" >&2
+              echo "         without security xattrs? Move the install to one that has" >&2
+              echo "         them (any normal ext4/btrfs/xfs path)." >&2
+            else
+              echo "verified: $got"
+            fi
+          fi
+
+          case ":$PATH:" in
+            *":$PREFIX:"*) ;;
+            *) echo; echo "NOTE: $PREFIX is not on your PATH - add it to your shell profile." ;;
+          esac
+
+          cat <<'NOTES'
+
+          Done.
+
+            eidos games                 list the supported games found here
+            eidos init <game-id>        create an instance
+            eidos-gui                   the GUI
+
+          To play with mods, set the game's Steam launch option to:
+
+            eidos play <game-id> -- %command%
+
+          Remember: the capability lives on the FILE. Replacing that binary -
+          reinstalling, or rebuilding from source - wipes it, and Eidos then runs
+          without FUSE passthrough. The GUI's Diagnostics tab tells you when that
+          has happened, and `getcap $(command -v eidos)` is the one-line check.
+          NOTES
+          INSTALLER
+          chmod +x "dist/${name}/install.sh"
+          sh -n "dist/${name}/install.sh"
+
+      # A plain .tar.gz, and deliberately NOT a Flatpak or an AppImage. This is
+      # not a style preference - both formats are structurally incompatible with
+      # the file capability Eidos needs, and each claim below was checked rather
+      # than assumed:
+      #
+      #  * Setting security.capability requires CAP_SETFCAP. An unprivileged
+      #    build (`flatpak-builder` as your user, `mksquashfs` as your user)
+      #    cannot bake the capability into the image at all - setcap fails with
+      #    "unable to set CAP_SETFCAP effective capability: Operation not
+      #    permitted".
+      #  * Flatpak runs every app under bubblewrap, and bubblewrap sets
+      #    PR_SET_NO_NEW_PRIVS (verified: NoNewPrivs is 1 inside a bwrap shell,
+      #    0 outside). execve ignores file capabilities under no_new_privs, so
+      #    even a capability that somehow survived packaging would be dropped on
+      #    exec. On top of that, a user-mode Flatpak install is an OSTree
+      #    bare-user checkout, which cannot store security.* xattrs.
+      #  * An AppImage mounts its payload as a FUSE filesystem, and every FUSE
+      #    mount is nosuid (verified in /proc/self/mountinfo: nosuid on every
+      #    fuse line, including Eidos's own union mount). The kernel ignores file
+      #    capabilities on a nosuid mount, so the binary inside an AppImage can
+      #    never carry one. Extracting the AppImage does not help either: the
+      #    extraction path changes every run, so setcap would have to be redone
+      #    every launch.
+      #
+      # A tarball plus `setcap` is honest about that, and native distro packages
+      # (AUR, .deb, .rpm) are the other viable route since their formats do carry
+      # file capabilities through a privileged install.
+      - name: Pack
+        run: |
+          set -eu
+          name='${{ steps.meta.outputs.name }}'
+          tarball='${{ steps.meta.outputs.tarball }}'
+          # Deterministic archive: fixed order, no uid/gid or mtime from the
+          # runner, gzip without its timestamp header. Two builds of the same
+          # commit then produce the same bytes, which is what makes the published
+          # checksum worth anything.
+          stamp=$(git log -1 --format=%cI)
+          tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="$stamp" \
+              -C dist -cf - "$name" | gzip -9n > "dist/$tarball"
+          (cd dist && sha256sum "$tarball" > "$tarball.sha256")
+          cat "dist/$tarball.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: |
+            dist/${{ steps.meta.outputs.tarball }}
+            dist/${{ steps.meta.outputs.tarball }}.sha256
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: build
+    # The single gate between "we built a tarball" and "we shipped one". A manual
+    # dispatch or a workflow_call runs everything above and stops here.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      # The only write permission in this repo's workflows, scoped to the one job
+      # that needs it, to create the release and attach the two files.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.name }}
+          path: dist
+
+      - name: Create the release
+        env:
+          # `gh` is preinstalled on the runner, so publishing needs no third-party
+          # action holding a write token.
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          TARBALL: ${{ needs.build.outputs.tarball }}
+        run: |
+          set -eu
+          cat > notes.md <<NOTES
+          ## Install
+
+          \`\`\`sh
+          tar xzf ${TARBALL}
+          cd eidos-${VERSION}-x86_64-linux
+          ./install.sh
+          \`\`\`
+
+          The installer copies \`eidos\` and \`eidos-gui\` into \`~/.local/bin\`
+          (override with \`PREFIX=\`) and runs one privileged command:
+
+          \`\`\`sh
+          sudo setcap cap_sys_admin+ep ~/.local/bin/eidos
+          \`\`\`
+
+          That capability is what lets Eidos enable FUSE kernel passthrough.
+          Without it Eidos still runs, but script-extender plugin DLLs (SKSE and
+          friends) may fail to load. It lives on the file, so it is wiped by any
+          reinstall or rebuild - \`getcap \$(command -v eidos)\` is the check, and
+          the GUI's Diagnostics tab flags it.
+
+          There is no Flatpak or AppImage build, and there cannot be one: a
+          sandboxed or FUSE-mounted binary cannot carry a file capability. See the
+          comment in \`.github/workflows/release.yml\` for the mechanism.
+
+          ## Requirements
+
+          - x86_64 Linux, glibc 2.39 or newer (built on Ubuntu 24.04)
+          - A kernel with FUSE, and \`fusermount3\` available
+
+          ## Verify
+
+          \`\`\`sh
+          sha256sum -c ${TARBALL}.sha256
+          \`\`\`
+          NOTES
+          # A hyphen in the version is a pre-release (v1.2.3-rc1), and GitHub
+          # should label it as one rather than serve it as the latest download.
+          prerelease=""
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          # shellcheck disable=SC2086
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Eidos $VERSION" \
+            --notes-file notes.md \
+            $prerelease \
+            "dist/${TARBALL}" \
+            "dist/${TARBALL}.sha256"

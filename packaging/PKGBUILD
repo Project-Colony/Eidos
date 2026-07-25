@@ -1,0 +1,172 @@
+# Maintainer: Project Colony <https://github.com/Project-Colony/Eidos>
+#
+# Arch package for Eidos.
+#
+# The interesting part of this file is the setcap in package(). Eidos needs the
+# file capability CAP_SYS_ADMIN on /usr/bin/eidos for kernel FUSE passthrough;
+# without it the mount silently degrades to rootless and script-extender DLLs
+# may not load. The usual assumption is that a package cannot apply a file
+# capability and that the user has to run setcap by hand afterwards. That
+# assumption is wrong on Arch, and the mechanism below is the one that works.
+#
+# Why it works, end to end:
+#
+#   1. makepkg runs package() under fakeroot. fakeroot intercepts the *xattr
+#      syscalls and records security.capability in its own bookkeeping, so
+#      `setcap` succeeds even though we are not root.
+#   2. makepkg then archives $pkgdir with bsdtar, in the same fakeroot session.
+#      bsdtar reads back the emulated xattr and stores it in the payload as
+#      SCHILY.xattr.security.capability / LIBARCHIVE.xattr.security.capability.
+#      This needs no extra flag: makepkg's plain `bsdtar --no-fflags -cnf -`
+#      already captures it.
+#   3. pacman restores xattrs when it extracts the package as root, so the
+#      capability lands on the installed binary.
+#
+# You can verify all three steps on any Arch machine without building anything:
+#
+#   getcap /usr/bin/btop            -> cap_dac_read_search,cap_perfmon=ep
+#   ls /var/lib/pacman/local/btop-*/install   -> does not exist
+#
+# btop carries a file capability that no .install scriptlet ever set, because it
+# came out of the package payload. Dumping the payload confirms it:
+#
+#   bsdtar -xOf /var/cache/pacman/pkg/btop-*.pkg.tar.zst   (pax header shows
+#   LIBARCHIVE.xattr.security.capability on usr/bin/btop)
+#
+# So no .install file is needed, and a post_install hook calling setcap would be
+# strictly worse: it would fire on every upgrade, need the binary to already be
+# in place, and hide the capability from `pacman -Qkk` verification.
+#
+# Two caveats worth knowing, because they are how this fails in the field:
+#
+#   * The capability is ignored on a nosuid mount. If /usr lives on one (rare,
+#     but it happens on locked-down or container-ish installs), no packaging
+#     trick helps; nothing can grant a capability there.
+#   * The filesystem must carry security.* xattrs. ext4/btrfs/xfs/f2fs do.
+#
+# If you are building this by hand rather than through an AUR helper:
+#   cd packaging && makepkg -si
+
+_pkgname=eidos
+pkgname=eidos-git
+pkgver=r151
+pkgrel=1
+pkgdesc="Native Linux mod manager: a FUSE union filesystem that merges mods over a game for Proton, MO2/usvfs-style"
+arch=('x86_64')
+url="https://github.com/Project-Colony/Eidos"
+license=('GPL-3.0-only')
+# fuse3 is what actually mounts (fusermount3 for the rootless path); 7zip backs
+# the mod installer's extraction; xdg-utils is the nxm:// handler registration
+# and "open in explorer".
+depends=('fuse3' '7zip' 'xdg-utils' 'gcc-libs' 'glibc')
+# libcap for setcap in package(); git for the VCS source.
+makedepends=('cargo' 'git' 'libcap')
+optdepends=(
+	'steam: game and Proton detection'
+	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
+	'xdg-desktop-portal: native file dialogs in the GUI'
+	'vulkan-icd-loader: GPU rendering for the GUI'
+)
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+# ring (pulled in through ureq/rustls) does not survive makepkg's LTO: the C and
+# assembly halves get -flto, and rust-lld then fails the final link with
+# undefined ring_core_* symbols. Cargo's own release profile is where
+# optimisation belongs here anyway.
+options=('!lto')
+source=("$_pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+	cd "$srcdir/$_pkgname"
+	# No tags yet, so the revision-count form is the one that actually runs. The
+	# describe branch takes over automatically once a release is tagged.
+	git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
+		printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+	cd "$srcdir/$_pkgname"
+	export RUSTUP_TOOLCHAIN=stable
+	cargo fetch --locked --target "$(rustc -vV | sed -n 's/^host: //p')"
+}
+
+build() {
+	cd "$srcdir/$_pkgname"
+	export RUSTUP_TOOLCHAIN=stable
+	export CARGO_TARGET_DIR=target
+	cargo build --frozen --release --workspace
+}
+
+check() {
+	cd "$srcdir/$_pkgname"
+	export RUSTUP_TOOLCHAIN=stable
+	export CARGO_TARGET_DIR=target
+	# The FUSE integration test mounts a real union in a private user+mount
+	# namespace and skips itself when it cannot (no /dev/fuse, user namespaces
+	# disabled, restricted build chroot), so this stays green off a build host
+	# that has no FUSE - it just tests less there.
+	cargo test --frozen --workspace
+}
+
+package() {
+	cd "$srcdir/$_pkgname"
+
+	install -Dm755 target/release/eidos "$pkgdir/usr/bin/eidos"
+	# The GUI finds the privileged CLI as its own sibling before falling back to
+	# PATH, so the two binaries must land in the same directory.
+	install -Dm755 target/release/eidos-gui "$pkgdir/usr/bin/eidos-gui"
+	# The two lower-level CLIs the README documents: mount a union by hand, or
+	# run one command through a union in a private namespace. They stay
+	# uncapped - see the setcap note at the end of this function.
+	install -Dm755 target/release/eidos-fuse "$pkgdir/usr/bin/eidos-fuse"
+	install -Dm755 target/release/eidos-launch "$pkgdir/usr/bin/eidos-launch"
+
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+	install -Dm644 docs/packaging.md "$pkgdir/usr/share/doc/$pkgname/packaging.md"
+
+	# System-wide nxm:// handler, so the Nexus "Mod Manager Download" button
+	# works straight after install. `eidos nxm --register` writes the same entry
+	# into ~/.local/share/applications for non-packaged installs; a user who runs
+	# it simply overrides this one, which is the correct precedence.
+	install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/eidos-nxm.desktop" <<-'EOF'
+		[Desktop Entry]
+		Type=Application
+		Name=Eidos (Nexus nxm handler)
+		Exec=/usr/bin/eidos nxm %u
+		MimeType=x-scheme-handler/nxm;
+		NoDisplay=true
+		Terminal=false
+	EOF
+
+	# The tree ships no application icon yet, so point at a stock freedesktop
+	# name rather than leaving a dangling Icon= key that renders as a blank tile.
+	install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/eidos.desktop" <<-'EOF'
+		[Desktop Entry]
+		Type=Application
+		Name=Eidos
+		Comment=Mod manager for games running under Proton
+		Exec=/usr/bin/eidos-gui
+		Icon=applications-games
+		Categories=Game;Utility;
+		Terminal=false
+		StartupNotify=true
+	EOF
+
+	# The whole point of this file. See the header for why this survives into the
+	# installed package instead of needing a post_install scriptlet.
+	#
+	# Only this one binary gets it. Capabilities are per-file, and `eidos` is the
+	# one the product actually launches games through (the GUI shells out to it).
+	# Anyone driving eidos-launch or eidos-fuse directly can setcap their own
+	# copy; those tools already print the exact command when they fall back to a
+	# rootless mount.
+	#
+	# One ordering note: makepkg strips binaries in tidy_install(), which runs
+	# *after* package(). That is fine - strip rewrites the file in place and the
+	# fakeroot-tracked capability comes through unharmed - but it is the reason
+	# to double-check with `getcap /usr/bin/eidos` after installing, not with
+	# `getcap` on the pkgdir copy mid-build.
+	setcap cap_sys_admin+ep "$pkgdir/usr/bin/eidos"
+}

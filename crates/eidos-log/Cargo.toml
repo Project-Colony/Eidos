@@ -1,0 +1,14 @@
+[package]
+name = "eidos-log"
+version = "0.0.0"
+description = "Session log files for Eidos: levels, rotation, and home-path redaction"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Only for `localtime_r`/`tzset`, to stamp lines in the user's LOCAL time: a mod
+# manager's log is read next to "I clicked Play at 14:32", so UTC would make the
+# reader do arithmetic. libc is already in the workspace (eidos-core, eidos-fuse,
+# eidos-launch) so this pulls in nothing new, and everything else here is std.
+libc = "0.2"

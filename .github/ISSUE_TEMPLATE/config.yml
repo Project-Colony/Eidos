@@ -1,0 +1,17 @@
+# Blank issues stay ON. The only form here is the bug report, and forcing a
+# feature request or a question through a form that opens by demanding `getcap`
+# output would just produce noise in the fields that matter for real bugs.
+blank_issues_enabled: true
+
+contact_links:
+  # Security reports must never land in the public tracker. This link opens a
+  # private advisory draft; SECURITY.md explains scope.
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Project-Colony/Eidos/security/advisories/new
+    about: Do not open a public issue for a vulnerability - use a private advisory. See SECURITY.md for what is in scope.
+
+  # The one check that resolves most "my mods do not load" reports, so it is
+  # offered before the bug form rather than inside it.
+  - name: "Mods not loading? Check the launch capability first"
+    url: https://github.com/Project-Colony/Eidos#one-privileged-step-the-launch-capability
+    about: "Run: getcap \"$(command -v eidos)\" - if it prints nothing, that is your bug. Every rebuild or reinstall wipes the capability."
