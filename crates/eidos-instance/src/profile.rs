@@ -203,6 +203,42 @@ impl Profile {
         Ok(n)
     }
 
+    /// The profile's own INI tweak file, applied after every mod's fragments so
+    /// the user always has the last word (MO2's `getProfileTweaks`). Optional: a
+    /// profile without one simply contributes nothing.
+    pub fn tweaks_path(&self) -> PathBuf {
+        self.dir().join("initweaks.ini")
+    }
+
+    /// Merge INI-tweak fragments into a deployed game INI, in the order given
+    /// (later wins), and return what each write displaced so [`untweak_ini`] can
+    /// put it back after the run.
+    ///
+    /// `fragments` are the enabled `INI Tweaks/*.ini` files in mod priority order,
+    /// lowest first; the profile's own tweak file, if any, is applied last.
+    /// A fragment that cannot be read is skipped rather than failing the launch -
+    /// a missing tweak must not stop the game from starting.
+    pub fn apply_ini_tweaks(
+        &self,
+        deployed_ini: &Path,
+        fragments: &[PathBuf],
+    ) -> io::Result<Vec<TweakedKey>> {
+        let mut record: Vec<TweakedKey> = Vec::new();
+        let mut text = fs::read_to_string(deployed_ini).unwrap_or_default();
+        let mut any = false;
+        for frag in fragments.iter().chain(std::iter::once(&self.tweaks_path())) {
+            let Ok(body) = fs::read_to_string(frag) else { continue };
+            any |= merge_tweak(&mut text, &body, &mut record);
+        }
+        if any {
+            if let Some(parent) = deployed_ini.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(deployed_ini, &text)?;
+        }
+        Ok(record)
+    }
+
     /// This profile's own save-games directory (`profil/saves`), MO2's
     /// `savePath()`. At launch it is bind-mounted over the prefix's save dir so
     /// the game reads and writes this profile's saves.
@@ -481,6 +517,99 @@ fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// One key an INI tweak overwrote, kept so the post-run capture can restore the
+/// profile's own value instead of adopting the tweak permanently.
+///
+/// Without this, tweaks are a one-way door: the launch writes them into the
+/// deployed INI, `capture_inis` copies that file back into the profile, and by
+/// the second launch the tweak is indistinguishable from a setting the user
+/// chose. Disabling the fragment would then change nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TweakedKey {
+    pub section: String,
+    pub key: String,
+    /// The value before any tweak touched it; `None` if the key was absent.
+    pub before: Option<String>,
+    /// What the last fragment wrote, so the capture can tell a value that is
+    /// still ours from one the game or the user changed while running.
+    pub after: String,
+}
+
+/// Apply one INI fragment to `text`, recording what it displaced. Returns whether
+/// anything was written.
+///
+/// A deliberately dumb line parser, matching MO2's `mergeTweak` (profile.cpp:778):
+/// blanks and `;` / `#` comments are skipped, `[Section]` sets the current
+/// section, and a line is split on its FIRST `=` with both sides trimmed. Values
+/// therefore may contain `=` and nothing a fragment says can corrupt the target -
+/// the worst a malformed fragment can do is set nothing.
+///
+/// Keys outside any section are dropped: an INI's leading keys belong to no
+/// section, and guessing one would write the tweak somewhere the engine never
+/// reads.
+fn merge_tweak(text: &mut String, fragment: &str, record: &mut Vec<TweakedKey>) -> bool {
+    let mut section = String::new();
+    let mut wrote = false;
+    for line in fragment.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if let Some(s) = eidos_ini::section_header(line) {
+            section = s.to_string();
+            continue;
+        }
+        if section.is_empty() {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue };
+        let (key, value) = (key.trim(), value.trim());
+        if key.is_empty() {
+            continue;
+        }
+        let current = eidos_ini::get_key(text, &section, key).map(|v| v.trim().to_string());
+        // Only the FIRST fragment to touch a key records the original value; a
+        // later one overwriting it must not record the earlier tweak as "before".
+        match record
+            .iter_mut()
+            .find(|r| r.section.eq_ignore_ascii_case(&section) && r.key.eq_ignore_ascii_case(key))
+        {
+            Some(existing) => existing.after = value.to_string(),
+            None => record.push(TweakedKey {
+                section: section.clone(),
+                key: key.to_string(),
+                before: current,
+                after: value.to_string(),
+            }),
+        }
+        *text = eidos_ini::set_key(text, &section, key, value);
+        wrote = true;
+    }
+    wrote
+}
+
+/// Undo what [`Profile::apply_ini_tweaks`] wrote, for the INI text captured back
+/// from the prefix after a run.
+///
+/// A key is restored only if it still holds exactly what the tweak wrote. If the
+/// game or the user changed it in-flight that is a real preference change and it
+/// is kept - the tweak lost, which is the same rule MO2's "the user always wins"
+/// ordering encodes at merge time.
+pub fn untweak_ini(text: &str, record: &[TweakedKey]) -> String {
+    let mut out = text.to_string();
+    for r in record {
+        let current = eidos_ini::get_key(&out, &r.section, &r.key).map(|v| v.trim().to_string());
+        if current.as_deref() != Some(r.after.as_str()) {
+            continue;
+        }
+        out = match &r.before {
+            Some(v) => eidos_ini::set_key(&out, &r.section, &r.key, v),
+            None => eidos_ini::delete_key(&out, &r.section, &r.key),
+        };
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -499,6 +628,92 @@ mod tests {
 
     fn prof(root: &Path, name: &str) -> Profile {
         Profile { instance_root: root.to_path_buf(), name: name.to_string() }
+    }
+
+    #[test]
+    fn later_fragments_win_and_the_original_value_is_what_gets_restored() {
+        let mut ini = "[Display]\nfDefaultFOV=75.0\niSize W=1920\n".to_string();
+        let mut rec = Vec::new();
+
+        assert!(merge_tweak(&mut ini, "[Display]\nfDefaultFOV=90.0\n", &mut rec));
+        // A second fragment overwrites the first; `before` must still be vanilla,
+        // or disabling both would leave the user on the first tweak's value.
+        assert!(merge_tweak(&mut ini, "[Display]\nfDefaultFOV = 110.0\n", &mut rec));
+        assert_eq!(eidos_ini::get_key(&ini, "Display", "fDefaultFOV"), Some("110.0"));
+        assert_eq!(rec.len(), 1);
+        assert_eq!(rec[0].before.as_deref(), Some("75.0"));
+        assert_eq!(rec[0].after, "110.0");
+
+        let restored = untweak_ini(&ini, &rec);
+        assert_eq!(eidos_ini::get_key(&restored, "Display", "fDefaultFOV"), Some("75.0"));
+        assert_eq!(eidos_ini::get_key(&restored, "Display", "iSize W"), Some("1920"));
+    }
+
+    #[test]
+    fn a_key_the_game_changed_in_flight_keeps_its_new_value() {
+        let mut ini = "[Display]\nfDefaultFOV=75.0\n".to_string();
+        let mut rec = Vec::new();
+        merge_tweak(&mut ini, "[Display]\nfDefaultFOV=90.0\n", &mut rec);
+        // The user moved the FOV slider in-game, so the captured INI no longer
+        // holds what the tweak wrote. Their choice wins over the restore.
+        let captured = eidos_ini::set_key(&ini, "Display", "fDefaultFOV", "100.0");
+        let restored = untweak_ini(&captured, &rec);
+        assert_eq!(eidos_ini::get_key(&restored, "Display", "fDefaultFOV"), Some("100.0"));
+    }
+
+    #[test]
+    fn a_key_the_tweak_invented_is_deleted_again_not_blanked() {
+        let mut ini = "[Display]\niSize W=1920\n".to_string();
+        let mut rec = Vec::new();
+        merge_tweak(&mut ini, "[Papyrus]\nbEnableLogging=1\n", &mut rec);
+        assert_eq!(rec[0].before, None);
+        let restored = untweak_ini(&ini, &rec);
+        // Absent, not `bEnableLogging=`: the engines read those differently.
+        assert_eq!(eidos_ini::get_key(&restored, "Papyrus", "bEnableLogging"), None);
+        assert!(restored.contains("[Papyrus]"));
+    }
+
+    #[test]
+    fn a_fragment_cannot_corrupt_the_target() {
+        let mut ini = "[Display]\niSize W=1920\n".to_string();
+        let mut rec = Vec::new();
+        let junk = concat!(
+            "; a comment\n",
+            "# another\n",
+            "\n",
+            "strayKey=1\n",             // outside any section: dropped
+            "[[not a header\n",         // not a section either
+            "[General]\n",
+            "sTestFile1 = a=b=c\n",     // value keeps its own '='
+            "=novalue\n",               // empty key: dropped
+            "no equals sign at all\n",
+        );
+        merge_tweak(&mut ini, junk, &mut rec);
+        assert_eq!(eidos_ini::get_key(&ini, "General", "sTestFile1"), Some("a=b=c"));
+        assert_eq!(rec.len(), 1);
+        // The pre-existing key survived untouched.
+        assert_eq!(eidos_ini::get_key(&ini, "Display", "iSize W"), Some("1920"));
+    }
+
+    #[test]
+    fn the_profile_tweak_file_is_applied_after_every_mod() {
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        fs::write(p.tweaks_path(), "[Display]\nfDefaultFOV=100.0\n").unwrap();
+
+        let frag = root.join("frag.ini");
+        fs::write(&frag, "[Display]\nfDefaultFOV=90.0\n").unwrap();
+        let deployed = root.join("Skyrim.ini");
+        fs::write(&deployed, "[Display]\nfDefaultFOV=75.0\n").unwrap();
+
+        let rec = p.apply_ini_tweaks(&deployed, &[frag]).unwrap();
+        let text = fs::read_to_string(&deployed).unwrap();
+        // The profile's own file is last, so the user beats the mod.
+        assert_eq!(eidos_ini::get_key(&text, "Display", "fDefaultFOV"), Some("100.0"));
+        assert_eq!(rec[0].before.as_deref(), Some("75.0"));
+        assert_eq!(rec[0].after, "100.0");
+        fs::remove_dir_all(&root).ok();
     }
 
     #[test]

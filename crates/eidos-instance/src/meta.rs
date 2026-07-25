@@ -28,6 +28,12 @@ pub struct ModMeta {
     /// Everything from the first non-key line in `[General]` to EOF, verbatim
     /// (blank line(s) + later sections like `[installedFiles]`).
     tail: String,
+    /// Enabled INI-tweak fragment names, in the order MO2 applies them, parsed
+    /// out of the `[INI Tweaks]` array that lives inside `tail`.
+    ini_tweaks: Vec<String>,
+    /// The BAIN sub-packages the last install ticked, so a reinstall pre-selects
+    /// them (MO2's `m_PreviousOptions`). Parsed out of `[Plugins]` in `tail`.
+    bain_options: Vec<String>,
     /// The source used CRLF line endings (MO2's real files do).
     crlf: bool,
     dirty: bool,
@@ -72,7 +78,92 @@ impl ModMeta {
             tail = text[pos..].to_string();
             break;
         }
-        ModMeta { general, tail, crlf, dirty: false }
+        let ini_tweaks = parse_ini_tweaks(&tail);
+        let bain_options = parse_bain_options(&tail);
+        ModMeta { general, tail, ini_tweaks, bain_options, crlf, dirty: false }
+    }
+
+    /// The INI-tweak fragments the user enabled for this mod, in application
+    /// order (file names relative to the mod's `INI Tweaks/` directory).
+    pub fn ini_tweaks(&self) -> &[String] {
+        &self.ini_tweaks
+    }
+
+    /// Replace the enabled fragment list. Empty clears the section entirely.
+    pub fn set_ini_tweaks(&mut self, names: &[String]) {
+        if self.ini_tweaks == names {
+            return;
+        }
+        self.ini_tweaks = names.to_vec();
+        // MO2 writes the QSettings array form: `<n>\name=<file>` one-based, plus
+        // the `size=` key its `beginReadArray` keys off. Without `size` MO2 reads
+        // the section back as empty.
+        // An empty list drops the section rather than writing `size=0`, which MO2
+        // would read back as an empty array anyway.
+        let body: Vec<String> = if self.ini_tweaks.is_empty() {
+            Vec::new()
+        } else {
+            self.ini_tweaks
+                .iter()
+                .enumerate()
+                .map(|(n, name)| format!("{}\\name={name}", n + 1))
+                .chain(std::iter::once(format!("size={}", self.ini_tweaks.len())))
+                .collect()
+        };
+        self.replace_section("INI Tweaks", &body);
+        self.dirty = true;
+    }
+
+    /// The BAIN sub-packages the last install of this mod ticked, in install
+    /// order, so a reinstall can pre-select them.
+    pub fn bain_options(&self) -> &[String] {
+        &self.bain_options
+    }
+
+    /// Record the ticked BAIN sub-packages. Empty clears the section.
+    pub fn set_bain_options(&mut self, options: &[String]) {
+        if self.bain_options == options {
+            return;
+        }
+        self.bain_options = options.to_vec();
+        let body: Vec<String> = self
+            .bain_options
+            .iter()
+            .enumerate()
+            .map(|(n, name)| format!("{BAIN_KEY_PREFIX}option{n}={name}"))
+            .collect();
+        self.replace_section("Plugins", &body);
+        self.dirty = true;
+    }
+
+    /// Replace one named section of `tail` with `body` (the lines under its
+    /// header), leaving every other byte verbatim. An empty `body` removes the
+    /// section; a section that was not there is appended.
+    ///
+    /// The span is recomputed on each call rather than cached, so rewriting one
+    /// section cannot leave another's offsets pointing at the wrong bytes.
+    fn replace_section(&mut self, name: &str, body: &[String]) {
+        let eol = if self.crlf { "\r\n" } else { "\n" };
+        let mut section = String::new();
+        if !body.is_empty() {
+            section.push_str(&format!("[{name}]{eol}"));
+            for line in body {
+                section.push_str(line);
+                section.push_str(eol);
+            }
+        }
+        match section_span(&self.tail, name) {
+            Some((start, end)) => self.tail.replace_range(start..end, &section),
+            None if section.is_empty() => {}
+            None => {
+                // A tail that does not end in a newline would swallow our header
+                // into its last line.
+                if !self.tail.is_empty() && !self.tail.ends_with('\n') {
+                    self.tail.push_str(eol);
+                }
+                self.tail.push_str(&section);
+            }
+        }
     }
 
     /// Raw value (everything after `=`) for a `[General]` key, case-insensitive.
@@ -295,6 +386,78 @@ impl ModMeta {
     }
 }
 
+/// The byte range a named section occupies in `text`, from its header line to
+/// the byte before the next header (or EOF). `None` if the section is absent.
+fn section_span(text: &str, name: &str) -> Option<(usize, usize)> {
+    let mut start = None;
+    let mut pos = 0usize;
+    for seg in text.split_inclusive('\n') {
+        let body = seg.trim_end_matches('\n').trim_end_matches('\r');
+        if let Some(header) = eidos_ini::section_header(body) {
+            if start.is_some() {
+                return start.map(|s| (s, pos));
+            }
+            if header.eq_ignore_ascii_case(name) {
+                start = Some(pos);
+            }
+        }
+        pos += seg.len();
+    }
+    start.map(|s| (s, text.len()))
+}
+
+/// The `key=value` lines of a named section, in file order.
+fn section_entries<'a>(text: &'a str, name: &str) -> Vec<(&'a str, &'a str)> {
+    let Some((start, end)) = section_span(text, name) else { return Vec::new() };
+    text[start..end]
+        .lines()
+        .skip(1) // the header itself
+        .filter_map(eidos_ini::key_value)
+        .collect()
+}
+
+/// Pull the `[INI Tweaks]` array out of a `meta.ini` tail: the enabled fragment
+/// names in array order.
+///
+/// The on-disk shape is Qt's `QSettings` array: `1\name=foo.ini`, `2\name=bar.ini`,
+/// `size=2`. Entries are ordered by their index, not by the order they appear,
+/// and a gap in the numbering is simply skipped rather than treated as an error -
+/// a hand-edited file should still load.
+fn parse_ini_tweaks(tail: &str) -> Vec<String> {
+    let mut entries: Vec<(u32, &str)> = section_entries(tail, "INI Tweaks")
+        .into_iter()
+        .filter_map(|(k, v)| {
+            let idx = k.strip_suffix("\\name")?.trim().parse::<u32>().ok()?;
+            Some((idx, v.trim())).filter(|(_, v)| !v.is_empty())
+        })
+        .collect();
+    entries.sort_by_key(|(i, _)| *i);
+    entries.into_iter().map(|(_, n)| n.to_string()).collect()
+}
+
+/// How MO2 names the BAIN installer's per-mod settings inside `[Plugins]`: Qt's
+/// `QSettings` writes the nested group as a `\`-joined key and percent-escapes the
+/// space, giving `BAIN%20Installer\option0`. Reading accepts the unescaped
+/// spelling too, so a hand-edited file still loads.
+const BAIN_KEY_PREFIX: &str = "BAIN%20Installer\\";
+
+/// The BAIN sub-package selection recorded by the last install, in index order
+/// (MO2's `optionN` keys under `[Plugins]`).
+fn parse_bain_options(tail: &str) -> Vec<String> {
+    let mut entries: Vec<(u32, &str)> = section_entries(tail, "Plugins")
+        .into_iter()
+        .filter_map(|(k, v)| {
+            let rest = k
+                .strip_prefix(BAIN_KEY_PREFIX)
+                .or_else(|| k.strip_prefix("BAIN Installer\\"))?;
+            let idx = rest.strip_prefix("option")?.trim().parse::<u32>().ok()?;
+            Some((idx, v.trim())).filter(|(_, v)| !v.is_empty())
+        })
+        .collect();
+    entries.sort_by_key(|(i, _)| *i);
+    entries.into_iter().map(|(_, n)| n.to_string()).collect()
+}
+
 /// Whether two version strings denote the same version, compared by numeric
 /// segments: a leading `v`/`V` is ignored, `.`/`-`/`_` split segments, and
 /// trailing zero segments are insignificant ("1.5" == "1.5.0" == "v1.5"). If
@@ -484,6 +647,85 @@ mod tests {
         "[installedFiles]\r\n",
         "size=0\r\n",
     );
+
+    #[test]
+    fn ini_tweaks_round_trip_in_mo2s_array_form() {
+        // MO2 writes the QSettings array with `size` last and the entries in the
+        // order it applies them. Note the deliberately out-of-order indices: the
+        // index is what orders them, not the line position.
+        let p = tmp_ini(concat!(
+            "[General]\r\n",
+            "modid=1\r\n",
+            "\r\n",
+            "[INI Tweaks]\r\n",
+            "2\\name=fov.ini\r\n",
+            "1\\name=shadows.ini\r\n",
+            "size=2\r\n",
+            "\r\n",
+            "[installedFiles]\r\n",
+            "size=0\r\n",
+        ));
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.ini_tweaks(), ["shadows.ini", "fov.ini"]);
+
+        m.set_ini_tweaks(&["shadows.ini".into()]);
+        m.write(&p).unwrap();
+        let text = fs::read_to_string(&p).unwrap();
+        assert!(text.contains("1\\name=shadows.ini\r\n"), "{text}");
+        assert!(!text.contains("fov.ini"), "{text}");
+        assert!(text.contains("size=1\r\n"), "{text}");
+        // The sections around it are untouched, CRLF included.
+        assert!(text.contains("[installedFiles]\r\nsize=0\r\n"), "{text}");
+        assert_eq!(ModMeta::read(&p).ini_tweaks(), ["shadows.ini"]);
+        fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn enabling_a_tweak_on_a_file_that_has_no_such_section_appends_one() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert!(m.ini_tweaks().is_empty());
+        m.set_ini_tweaks(&["a.ini".into(), "b.ini".into()]);
+        m.write(&p).unwrap();
+        let reread = ModMeta::read(&p);
+        assert_eq!(reread.ini_tweaks(), ["a.ini", "b.ini"]);
+        // And everything that was already there survived.
+        assert_eq!(reread.mod_id(), Some(32117));
+        assert!(fs::read_to_string(&p).unwrap().contains("[installedFiles]"));
+
+        // Clearing the list removes the section rather than leaving `size=0`,
+        // which MO2 would read back as an empty array anyway.
+        let mut m = ModMeta::read(&p);
+        m.set_ini_tweaks(&[]);
+        m.write(&p).unwrap();
+        assert!(!fs::read_to_string(&p).unwrap().contains("[INI Tweaks]"));
+        fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn bain_options_round_trip_and_do_not_disturb_the_tweaks_section() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        m.set_ini_tweaks(&["a.ini".into()]);
+        m.set_bain_options(&["00 Core".into(), "03 Alt textures".into()]);
+        m.write(&p).unwrap();
+
+        // Two sections were spliced into the same tail; rewriting one must not
+        // have shifted the other's bytes out from under it.
+        let reread = ModMeta::read(&p);
+        assert_eq!(reread.ini_tweaks(), ["a.ini"]);
+        assert_eq!(reread.bain_options(), ["00 Core", "03 Alt textures"]);
+        assert_eq!(reread.mod_id(), Some(32117));
+        assert!(fs::read_to_string(&p).unwrap().contains("[installedFiles]"));
+        fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn a_hand_written_unescaped_bain_key_still_reads() {
+        let p = tmp_ini("[General]\nmodid=1\n\n[Plugins]\nBAIN Installer\\option0=00 Core\n");
+        assert_eq!(ModMeta::read(&p).bain_options(), ["00 Core"]);
+        fs::remove_file(&p).ok();
+    }
 
     #[test]
     fn reads_known_fields() {

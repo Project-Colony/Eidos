@@ -27,7 +27,7 @@ mod tools;
 pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
-pub use profile::{Profile, SaveEntry};
+pub use profile::{untweak_ini, Profile, SaveEntry, TweakedKey};
 pub use settings::{Settings, Theme};
 pub use tools::{
     default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, write_tools,
@@ -114,6 +114,25 @@ impl Instance {
     /// MO2-compatible metadata for a mod (`mods/<name>/meta.ini`); empty if none.
     pub fn mod_meta(&self, name: &str) -> ModMeta {
         ModMeta::read(&self.meta_path(name))
+    }
+
+    /// The enabled INI-tweak fragments across a mod list, in application order
+    /// (lowest priority first, so a higher-priority mod's fragment wins).
+    ///
+    /// Only fragments that exist on disk are returned: a mod's `meta.ini` can name
+    /// one that a later reinstall dropped, and a launch must not fail over that.
+    pub fn enabled_ini_tweaks(&self, mods: &[ModEntry]) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for m in mods.iter().filter(|m| m.enabled && !m.is_separator()) {
+            let dir = ini_tweaks_dir(&m.path);
+            for name in self.mod_meta(&m.name).ini_tweaks() {
+                let p = dir.join(name);
+                if p.is_file() {
+                    out.push(p);
+                }
+            }
+        }
+        out
     }
 
     /// The category catalog: the instance's `categories.dat` if present (MO2
@@ -511,6 +530,36 @@ pub struct Mo2Import {
 /// A mod's `Root/` directory, matched case-insensitively (archives ship `Root`,
 /// `root` and `ROOT` alike). `None` when the mod has none, which is the common
 /// case.
+/// A mod's `INI Tweaks/` directory, matched case-insensitively - archives ship it
+/// as `INI Tweaks`, `ini tweaks` and `INI tweaks` about equally often, and the
+/// name only ever has to survive a Linux filesystem, which MO2 never had to.
+/// Returns the conventional casing when the mod has no such directory, so callers
+/// can join a name onto it unconditionally.
+pub fn ini_tweaks_dir(mod_path: &Path) -> PathBuf {
+    let found = fs::read_dir(mod_path).ok().and_then(|rd| {
+        rd.flatten()
+            .find(|e| {
+                e.file_name().to_string_lossy().eq_ignore_ascii_case("INI Tweaks")
+                    && e.path().is_dir()
+            })
+            .map(|e| e.path())
+    });
+    found.unwrap_or_else(|| mod_path.join("INI Tweaks"))
+}
+
+/// The INI-tweak fragments a mod ships, sorted by name. MO2 flags a mod as having
+/// tweaks exactly when this is non-empty (`hasIniTweaks`).
+pub fn available_ini_tweaks(mod_path: &Path) -> Vec<String> {
+    let Ok(rd) = fs::read_dir(ini_tweaks_dir(mod_path)) else { return Vec::new() };
+    let mut out: Vec<String> = rd
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    out.sort_by_key(|n| n.to_lowercase());
+    out
+}
+
 fn find_root_dir(mod_dir: &Path) -> Option<PathBuf> {
     fs::read_dir(mod_dir)
         .ok()?
