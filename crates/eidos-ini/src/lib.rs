@@ -33,6 +33,34 @@ pub fn key_value(line: &str) -> Option<(&str, &str)> {
     line.split_once('=').map(|(k, v)| (k.trim(), v))
 }
 
+/// Read `[section] key` out of INI `text`, or `None` when the section or the key
+/// is absent. Section and key match case-insensitively, and the first occurrence
+/// wins - Bethesda INIs in the wild do carry a duplicated key, and the engine's
+/// own parser keeps the first one it sees.
+///
+/// The value is returned RAW (everything after the first `=`, see [`key_value`]),
+/// so callers that must round-trip MO2's quoting keep it and callers wanting a
+/// clean value trim it. This is the read counterpart of [`set_key`].
+pub fn get_key<'a>(text: &'a str, section: &str, key: &str) -> Option<&'a str> {
+    let mut in_section = false;
+    // No trimming of the line itself: `section_header` and `key_value` already trim
+    // what they must, so the value comes back exactly as written.
+    for line in text.lines() {
+        if let Some(s) = section_header(line) {
+            in_section = s.eq_ignore_ascii_case(section);
+            continue;
+        }
+        if in_section {
+            if let Some((k, v)) = key_value(line) {
+                if k.eq_ignore_ascii_case(key) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Set `[section] key=value` in INI `text`: update the key in place if present,
 /// else add it to the section (creating the section, or the whole document, if
 /// needed). Everything else is preserved, including the newline style. Section
@@ -77,9 +105,70 @@ pub fn set_key(text: &str, section: &str, key: &str, value: &str) -> String {
     out
 }
 
+/// Remove `[section] key` from INI `text`, leaving everything else - including
+/// the now-possibly-empty section header - untouched. Absent key, absent section
+/// and empty text are all no-ops.
+///
+/// The counterpart of [`set_key`] for undoing a write: restoring a key that was
+/// ABSENT before means deleting it, not setting it empty, because `key=` and no
+/// key at all are different to the engines (an empty `sResourceDataDirsFinal` is
+/// the whole point of that tweak, for instance).
+pub fn delete_key(text: &str, section: &str, key: &str) -> String {
+    let nl = newline_style(text);
+    let header = format!("[{section}]");
+    let mut in_section = false;
+    let mut out: Vec<&str> = Vec::new();
+    let mut removed = false;
+
+    for line in text.lines() {
+        if section_header(line).is_some() {
+            in_section = line.trim().eq_ignore_ascii_case(&header);
+            out.push(line);
+            continue;
+        }
+        // Only the FIRST match goes: a duplicate key later in the section was
+        // already dead to the parser, and dropping it too would change more than
+        // this call was asked to.
+        if in_section && !removed {
+            if let Some((k, _)) = key_value(line) {
+                if k.eq_ignore_ascii_case(key) {
+                    removed = true;
+                    continue;
+                }
+            }
+        }
+        out.push(line);
+    }
+    if !removed {
+        return text.to_string();
+    }
+    let mut joined = out.join(nl);
+    if !joined.is_empty() {
+        joined.push_str(nl);
+    }
+    joined
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_key_removes_only_the_named_key_in_the_named_section() {
+        let text = "[Display]\niSize W=1920\niSize H=1080\n\n[Archive]\niSize W=1\n";
+        let out = delete_key(text, "Display", "isize w");
+        assert_eq!(out, "[Display]\niSize H=1080\n\n[Archive]\niSize W=1\n");
+        // Absent key, absent section: unchanged, and cheaply so.
+        assert_eq!(delete_key(text, "Display", "nope"), text);
+        assert_eq!(delete_key(text, "Nope", "iSize W"), text);
+        assert_eq!(delete_key("", "A", "b"), "");
+    }
+
+    #[test]
+    fn delete_key_keeps_crlf() {
+        let out = delete_key("[A]\r\nx=1\r\ny=2\r\n", "A", "x");
+        assert_eq!(out, "[A]\r\ny=2\r\n");
+    }
 
     #[test]
     fn newline_detection() {
@@ -95,6 +184,28 @@ mod tests {
         // The key is trimmed; the value is raw (spaces and all).
         assert_eq!(key_value("  k = 1 "), Some(("k", " 1 ")));
         assert_eq!(key_value("noequals"), None);
+    }
+
+    #[test]
+    fn get_key_reads_the_right_section() {
+        let src = "[Display]\r\nsResourceArchiveList=wrong.bsa\r\n\r\n[Archive]\r\n\
+                   sResourceArchiveList= a.bsa, b.bsa \r\nsResourceArchiveList2=c.bsa\r\n";
+        // Section-scoped: the same key in another section is not picked up.
+        assert_eq!(get_key(src, "Archive", "sResourceArchiveList"), Some(" a.bsa, b.bsa "));
+        assert_eq!(get_key(src, "archive", "SRESOURCEARCHIVELIST2"), Some("c.bsa")); // case-insensitive
+        assert_eq!(get_key(src, "Archive", "missing"), None);
+        assert_eq!(get_key(src, "Missing", "sResourceArchiveList"), None);
+        assert_eq!(get_key("", "Archive", "k"), None);
+    }
+
+    #[test]
+    fn get_key_survives_malformed_input() {
+        // Truncated mid-write: an unterminated header, a bare key, a stray value.
+        let src = "[Archive\nnoequals\n=orphanvalue\n[Archive]\nk=v";
+        assert_eq!(get_key(src, "Archive", "k"), Some("v")); // last line, no trailing newline
+        assert_eq!(get_key(src, "Archive", ""), None); // the `=orphanvalue` line is in no section
+        // A duplicated key keeps the first, like the engine's parser.
+        assert_eq!(get_key("[A]\nk=1\nk=2\n", "A", "k"), Some("1"));
     }
 
     #[test]
