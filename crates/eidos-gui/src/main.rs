@@ -340,6 +340,21 @@ enum Message {
     ForceUnlock,
     /// Dismiss the transient status-bar message (the small x next to it).
     ClearStatus,
+    // ---- MO2's targeted "Send to" actions (the day-to-day way load orders get
+    // fixed, beyond blunt top/bottom) ----
+    /// Move the selection just ABOVE the first mod it currently overrides.
+    SendToFirstConflict(usize),
+    /// Move the selection just BELOW the last mod that currently overrides it.
+    SendToLastConflict(usize),
+    /// Open the inline numeric-priority editor for this row.
+    SendToPriorityStart(usize),
+    SendToPriorityChanged(String),
+    SendToPriorityCommit,
+    /// Open the separator chooser for this row.
+    SendToSeparatorStart(usize),
+    /// Move the selection just past the chosen separator (by mod-list index).
+    SendToSeparatorPick(usize),
+    SendToTargetCancel,
     // ---- Overwrite -> mod (MO2's "Create mod from Overwrite") ----
     /// Open the name prompt for turning the Overwrite into a mod.
     OverwriteToModStart,
@@ -524,6 +539,10 @@ struct App {
     confirm_clear: bool,
     /// The in-progress "create mod from Overwrite" name, if that prompt is open.
     overwrite_to_mod: Option<String>,
+    /// An open "send to priority" editor: `(row, typed text)`.
+    send_priority: Option<(usize, String)>,
+    /// An open "send to separator" chooser, for this row.
+    send_separator: Option<usize>,
     /// The Proton command Steam passed via `%command%` (empty if launched
     /// standalone). The Run button launches the game through this.
     launch_command: Vec<String>,
@@ -758,6 +777,8 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         status: None,
         confirm_clear: false,
         overwrite_to_mod: None,
+        send_priority: None,
+        send_separator: None,
         launch_command,
         fomod: None,
         collision: None,
@@ -1150,6 +1171,46 @@ fn planned_instance(app: &App) -> Option<Instance> {
             Instance::portable(root)
         }
     })
+}
+
+/// The rows a row-targeted action should act on: the whole multi-selection when
+/// the clicked row belongs to it, otherwise just that row. Separators are never
+/// moved by these actions - they define the groups.
+fn selection_or(app: &App, row: usize) -> Vec<usize> {
+    let mut v: Vec<usize> = if app.selected_mods.contains(&row) && app.selected_mods.len() > 1 {
+        app.selected_mods.iter().copied().collect()
+    } else {
+        vec![row]
+    };
+    v.retain(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator()));
+    v.sort_unstable();
+    v
+}
+
+/// Move `targets` (indices into `mods`) so the block lands at `dest`, preserving
+/// their relative order. Returns the destination index of the first moved row.
+///
+/// Removing the sources shifts everything after them down, so a downward move has
+/// to compensate; getting this wrong is the classic off-by-one that lands a
+/// dragged mod one slot short. Every reorder - drag-drop, send to top/bottom, and
+/// the targeted sends - goes through here so the correction exists in one place.
+fn move_block(mods: &mut Vec<ModEntry>, targets: &[usize], dest: usize) -> usize {
+    let mut idx: Vec<usize> = targets.iter().copied().filter(|&i| i < mods.len()).collect();
+    idx.sort_unstable();
+    idx.dedup();
+    if idx.is_empty() {
+        return dest.min(mods.len());
+    }
+    // How many of the moved rows sat before the destination: the block lands that
+    // much earlier once they are lifted out.
+    let before = idx.iter().filter(|&&i| i < dest).count();
+    let block: Vec<ModEntry> = idx.iter().rev().map(|&i| mods.remove(i)).collect();
+    let at = dest.saturating_sub(before).min(mods.len());
+    // `block` came out highest-index-first, so re-insert in reverse to restore order.
+    for m in block {
+        mods.insert(at, m);
+    }
+    at
 }
 
 /// Persist the mod list, surfacing a failure instead of losing it silently (a
@@ -1824,6 +1885,93 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         Message::CloseLootReport => {
             app.loot_report = None;
         }
+        Message::SendToFirstConflict(i) | Message::SendToLastConflict(i) => {
+            let first = matches!(message, Message::SendToFirstConflict(_));
+            app.menu_mod = None;
+            let targets = selection_or(app, i);
+            // The conflict sets are already computed for the emblems; reuse them.
+            // Origins are `index + 1`, so BASE_ORIGIN (0, the game data) and the
+            // Overwrite pseudo-layer (u32::MAX) are not rows and must be dropped.
+            let mut related: Vec<usize> = Vec::new();
+            if let Some(map) = app.conflicts.as_ref() {
+                for &t in &targets {
+                    let origin = (t + 1) as u32;
+                    if let Some(mc) = map.mods.get(&origin) {
+                        let set = if first { &mc.overwrites } else { &mc.overwritten_by };
+                        related.extend(
+                            set.iter()
+                                .filter(|&&o| o != 0 && o != u32::MAX)
+                                .map(|&o| (o - 1) as usize),
+                        );
+                    }
+                }
+            }
+            let dest = if first { related.iter().min() } else { related.iter().max() };
+            let Some(&dest) = dest else {
+                app.status = Some(
+                    if first { "This mod overrides nothing." } else { "Nothing overrides this mod." }
+                        .to_string(),
+                );
+                return Task::none();
+            };
+            // "Just below the last mod that overrides it" is one slot past it.
+            let dest = if first { dest } else { (dest + 1).min(app.mods.len()) };
+            let at = move_block(&mut app.mods, &targets, dest);
+            app.selected_mod = Some(at);
+            app.selected_mods.clear();
+            mods_changed(app);
+        }
+        Message::SendToPriorityStart(i) => {
+            app.menu_mod = None;
+            app.send_separator = None;
+            app.send_priority = Some((i, i.to_string()));
+        }
+        Message::SendToPriorityChanged(text) => {
+            if let Some((_, t)) = app.send_priority.as_mut() {
+                *t = text;
+            }
+        }
+        Message::SendToPriorityCommit => {
+            let Some((i, text)) = app.send_priority.take() else { return Task::none() };
+            let Ok(dest) = text.trim().parse::<usize>() else {
+                app.status = Some("Enter a priority number.".to_string());
+                return Task::none();
+            };
+            let targets = selection_or(app, i);
+            let dest = dest.min(app.mods.len());
+            let at = move_block(&mut app.mods, &targets, dest);
+            app.selected_mod = Some(at);
+            app.selected_mods.clear();
+            mods_changed(app);
+            app.status = Some(format!("Moved to priority {at}."));
+        }
+        Message::SendToSeparatorStart(i) => {
+            app.menu_mod = None;
+            app.send_priority = None;
+            app.send_separator = Some(i);
+        }
+        Message::SendToSeparatorPick(sep) => {
+            let Some(i) = app.send_separator.take() else { return Task::none() };
+            let targets = selection_or(app, i);
+            // Land in the chosen separator's GROUP: the slot just before the next
+            // separator, or the end of the list when it is the last group.
+            let dest = app
+                .mods
+                .iter()
+                .enumerate()
+                .skip(sep + 1)
+                .find(|(_, m)| m.is_separator())
+                .map(|(idx, _)| idx)
+                .unwrap_or(app.mods.len());
+            let at = move_block(&mut app.mods, &targets, dest);
+            app.selected_mod = Some(at);
+            app.selected_mods.clear();
+            mods_changed(app);
+        }
+        Message::SendToTargetCancel => {
+            app.send_priority = None;
+            app.send_separator = None;
+        }
         Message::ClearStatus => {
             app.status = None;
         }
@@ -2080,9 +2228,8 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ModSendTop(i) => {
             if i < app.mods.len() {
-                let m = app.mods.remove(i);
-                app.mods.insert(0, m);
-                app.selected_mod = Some(0);
+                let at = move_block(&mut app.mods, &[i], 0);
+                app.selected_mod = Some(at);
                 // Every other row's index shifted: a stale multi-selection here
                 // could feed the wrong rows into a batch remove.
                 app.selected_mods.clear();
@@ -2092,9 +2239,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ModSendBottom(i) => {
             if i < app.mods.len() {
-                let m = app.mods.remove(i);
-                app.selected_mod = Some(app.mods.len());
-                app.mods.push(m);
+                let end = app.mods.len();
+                let at = move_block(&mut app.mods, &[i], end);
+                app.selected_mod = Some(at);
                 app.selected_mods.clear();
                 mods_changed(app);
             }
@@ -3101,13 +3248,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             targets.sort_unstable();
-            let moved: Vec<ModEntry> = targets.iter().rev().map(|&i| app.mods.remove(i)).collect();
-            for m in moved.into_iter() {
-                app.mods.insert(0, m);
-            }
-            // The selection is now the leading block.
-            app.selected_mods = (0..targets.len()).collect();
-            app.selected_mod = Some(0);
+            let at = move_block(&mut app.mods, &targets, 0);
+            // The selection is now a contiguous block at the destination.
+            app.selected_mods = (at..at + targets.len()).collect();
+            app.selected_mod = Some(at);
             mods_changed(app);
             app.menu_mod = None;
         }
@@ -3117,14 +3261,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             targets.sort_unstable();
-            let moved: Vec<ModEntry> = targets.iter().rev().map(|&i| app.mods.remove(i)).collect();
-            let base = app.mods.len();
-            // `moved` is in reverse order; push them so the block keeps its order.
-            for m in moved.into_iter().rev() {
-                app.mods.push(m);
-            }
-            app.selected_mods = (base..base + targets.len()).collect();
-            app.selected_mod = Some(base);
+            let end = app.mods.len();
+            let at = move_block(&mut app.mods, &targets, end);
+            app.selected_mods = (at..at + targets.len()).collect();
+            app.selected_mod = Some(at);
             mods_changed(app);
             app.menu_mod = None;
         }
@@ -3158,13 +3298,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             if let Some(d) = app.drag_state.take() {
                 if d.from != d.hover_over && d.from < app.mods.len() && d.hover_over < app.mods.len()
                 {
-                    let m = app.mods.remove(d.from);
-                    // Land the dragged row at the drop target's slot. Removing the
-                    // source shifts everything after it down by one, so a downward
-                    // drop targets `hover_over - 1`; an upward drop targets it as-is.
-                    let to = if d.hover_over > d.from { d.hover_over - 1 } else { d.hover_over };
-                    let to = to.min(app.mods.len());
-                    app.mods.insert(to, m);
+                    let to = move_block(&mut app.mods, &[d.from], d.hover_over);
                     app.selected_mod = Some(to);
                     app.selected_mods.clear();
                     mods_changed(app);
@@ -3978,6 +4112,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 }
 
 /// A single left-aligned action in the mod context menu.
+/// A menu row whose label is owned, so the resulting element borrows nothing.
+fn menu_item_owned<'a>(label: String, msg: Message) -> Element<'a, Message> {
+    button(text(label).size(12.0))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .on_press(msg)
+        .style(button::text)
+        .into()
+}
+
 fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .width(Length::Fill)
@@ -4081,6 +4225,7 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .push(menu_sep())
         .push(menu_item("Send to Top", Message::ModSendTop(i)))
         .push(menu_item("Send to Bottom", Message::ModSendBottom(i)))
+        .push(send_to_targets(app, i))
         .push(menu_sep())
         .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)));
 
@@ -5394,6 +5539,61 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     layers.into()
 }
 
+/// MO2's targeted "Send to" actions, below the blunt top/bottom pair.
+///
+/// The two conflict-relative moves are the ones people actually reach for -
+/// "put this just above the mod it is overriding" - and both are gated on the
+/// relevant set being non-empty, so the menu never offers a move that would do
+/// nothing. Priority and separator open an inline editor rather than a modal,
+/// matching how rename already works in this menu.
+fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    // Same origin convention as the emblems: index + 1, with the game (0) and the
+    // Overwrite pseudo-layer (u32::MAX) excluded because they are not rows.
+    let real = |set: &std::collections::BTreeSet<u32>| {
+        set.iter().any(|&o| o != 0 && o != u32::MAX)
+    };
+    let mc = app.conflicts.as_ref().and_then(|m| m.mods.get(&((i + 1) as u32)));
+    let mut col = Column::new().spacing(1);
+
+    if let Some((row, text)) = app.send_priority.as_ref().filter(|(r, _)| *r == i) {
+        let _ = row;
+        col = col.push(
+            text_input("Priority", text)
+                .on_input(Message::SendToPriorityChanged)
+                .on_submit(Message::SendToPriorityCommit)
+                .padding(5)
+                .size(12.0),
+        );
+        return col.into();
+    }
+    if app.send_separator == Some(i) {
+        // An inline chooser of the separators, scrollable because a big load
+        // order has plenty of them.
+        let mut list = Column::new().spacing(1);
+        for (idx, sep) in app.mods.iter().enumerate().filter(|(_, m)| m.is_separator()) {
+            // Owned, so the Element does not borrow from `app`.
+            let label = sep.display_name().to_string();
+            list = list.push(menu_item_owned(label, Message::SendToSeparatorPick(idx)));
+        }
+        col = col
+            .push(text("Move into group:").size(11.0))
+            .push(scrollable(list).height(Length::Fixed(160.0)))
+            .push(menu_item("Cancel", Message::SendToTargetCancel));
+        return col.into();
+    }
+
+    if mc.is_some_and(|m| real(&m.overwrites)) {
+        col = col.push(menu_item("Send above first conflict", Message::SendToFirstConflict(i)));
+    }
+    if mc.is_some_and(|m| real(&m.overwritten_by)) {
+        col = col.push(menu_item("Send below last conflict", Message::SendToLastConflict(i)));
+    }
+    col = col
+        .push(menu_item("Send to priority...", Message::SendToPriorityStart(i)))
+        .push(menu_item("Send to separator...", Message::SendToSeparatorStart(i)));
+    col.into()
+}
+
 /// The per-profile context menu (MO2's profile manager actions), opened by
 /// right-clicking a profile chip: rename, copy-to-new, delete (two-click confirm).
 fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Message> {
@@ -6507,6 +6707,69 @@ fn main() -> iced::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mods(names: &[&str]) -> Vec<ModEntry> {
+        names
+            .iter()
+            .map(|n| ModEntry { name: n.to_string(), enabled: true, path: PathBuf::new() })
+            .collect()
+    }
+    fn names(v: &[ModEntry]) -> Vec<&str> {
+        v.iter().map(|m| m.name.as_str()).collect()
+    }
+
+    #[test]
+    fn move_block_compensates_for_the_lifted_rows() {
+        // Moving DOWN: removing the source shifts everything after it, which is
+        // the classic off-by-one that lands a dragged row one slot short.
+        let mut v = mods(&["a", "b", "c", "d"]);
+        let at = move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a", "d"]);
+        assert_eq!(at, 2);
+
+        // Moving UP needs no compensation.
+        let mut v = mods(&["a", "b", "c", "d"]);
+        let at = move_block(&mut v, &[3], 1);
+        assert_eq!(names(&v), ["a", "d", "b", "c"]);
+        assert_eq!(at, 1);
+
+        // To the very end.
+        let mut v = mods(&["a", "b", "c"]);
+        let at = move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a"]);
+        assert_eq!(at, 2);
+    }
+
+    #[test]
+    fn move_block_keeps_a_multi_selection_together_and_ordered() {
+        // A non-contiguous selection lands as one contiguous block, in its
+        // original relative order.
+        let mut v = mods(&["a", "b", "c", "d", "e"]);
+        let at = move_block(&mut v, &[0, 2], 4);
+        assert_eq!(names(&v), ["b", "d", "a", "c", "e"]);
+        assert_eq!(at, 2);
+
+        // Moving up, same rule.
+        let mut v = mods(&["a", "b", "c", "d", "e"]);
+        let at = move_block(&mut v, &[3, 4], 1);
+        assert_eq!(names(&v), ["a", "d", "e", "b", "c"]);
+        assert_eq!(at, 1);
+    }
+
+    #[test]
+    fn move_block_is_safe_on_junk_input() {
+        let mut v = mods(&["a", "b"]);
+        // Out-of-range indices are dropped, duplicates collapse, empty is a no-op.
+        assert_eq!(move_block(&mut v, &[], 1), 1);
+        assert_eq!(names(&v), ["a", "b"]);
+        move_block(&mut v, &[9, 9], 0);
+        assert_eq!(names(&v), ["a", "b"]);
+        move_block(&mut v, &[1, 1], 0);
+        assert_eq!(names(&v), ["b", "a"]);
+        // A destination past the end clamps instead of panicking.
+        move_block(&mut v, &[0], 99);
+        assert_eq!(names(&v), ["a", "b"]);
+    }
 
     #[test]
     fn markdown_links_are_split_from_surrounding_text() {
