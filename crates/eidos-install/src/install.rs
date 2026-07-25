@@ -13,7 +13,10 @@ use std::time::SystemTime;
 
 use eidos_instance::ModMeta;
 
-use crate::{fix_directory_name, guess_mod_name, guess_mod_name_and_id, ArchiveEntry, ArchiveTree};
+use crate::{
+    bain_default_selection, fix_directory_name, guess_mod_name, guess_mod_name_and_id, ArchiveEntry,
+    ArchiveTree, BAIN_MIN_SUBPACKAGES,
+};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -34,6 +37,9 @@ pub enum InstallError {
     UnmetDependency(String),
     /// The target `mods/<name>/` already exists and is not empty.
     Exists(PathBuf),
+    /// A BAIN sub-package set or a manual data root the archive does not actually
+    /// contain (the front end's pick went stale, or was never valid).
+    BadSelection(String),
     Io(io::Error),
 }
 
@@ -53,6 +59,7 @@ impl fmt::Display for InstallError {
                 write!(f, "this mod's requirements are not met: {d}")
             }
             InstallError::Exists(p) => write!(f, "target already exists: {}", p.display()),
+            InstallError::BadSelection(s) => write!(f, "invalid selection: {s}"),
             InstallError::Io(e) => write!(f, "{e}"),
         }
     }
@@ -272,6 +279,41 @@ pub fn install_extracted(
                         missing,
                         dest: dest.clone(),
                     });
+                }
+                // A Wrye Bash complex package. This entry point is non-interactive,
+                // so there is no picker: install MO2's default tick set (the `00`
+                // core sub-packages), exactly as the FOMOD branch above installs the
+                // default selections. A front end that wants the checkbox list goes
+                // through `open_archive` -> `Opened::Bain` -> `install_bain`.
+                let (subpackages, _invalid) = layout.bain_subpackages();
+                if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
+                    let picks = bain_default_selection(&subpackages, &[]);
+                    let chosen: Vec<String> = subpackages
+                        .iter()
+                        .zip(&picks)
+                        .filter(|(_, on)| **on)
+                        .map(|(s, _)| s.clone())
+                        .collect();
+                    // Nothing ticked by default means we would be guessing which
+                    // sub-packages the mod needs: refuse instead, and let the
+                    // interactive path ask.
+                    if !chosen.is_empty() {
+                        // Resolve first, wipe second (the whole point of the ordering).
+                        let sources = resolve_bain_sources(tmp, &chosen)?;
+                        if replacing {
+                            fs::remove_dir_all(&dest)?;
+                        }
+                        fs::create_dir_all(&dest)?;
+                        place_sources(&sources, &dest, merging)?;
+                        write_meta(archive, &dest, game_name, guessed_id)?;
+                        return Ok(InstallReport {
+                            name: name.clone(),
+                            stripped: String::new(),
+                            fomod: false,
+                            missing: Vec::new(),
+                            dest: dest.clone(),
+                        });
+                    }
                 }
                 return Err(InstallError::NotSimple);
             }
@@ -528,6 +570,232 @@ fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Copy every entry of `src` over `dst`, later-wins. Unlike [`copy_dir_all`] this
+/// tolerates a TYPE conflict between two overlays - a file landing where an earlier
+/// sub-package left a directory, or the reverse - by dropping the loser, because
+/// BAIN's contract is that the later sub-package wins outright. Without it,
+/// `fs::copy` onto a directory fails EISDIR and aborts an otherwise fine install.
+///
+/// Symlinks are treated as opaque entries (never recursed into), so a symlink loop
+/// inside a crafted archive cannot make this recurse forever.
+fn overlay_dir(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for e in fs::read_dir(src)?.flatten() {
+        let from = e.path();
+        let to = dst.join(e.file_name());
+        // Whatever occupies the name loses, unless both sides are directories (which
+        // merge). `symlink_metadata` deliberately does not follow: a DANGLING symlink
+        // still occupies the name, and - the reason this matters - removing the link
+        // before writing is what stops the copy below from being redirected THROUGH a
+        // symlink an earlier sub-package planted, which would write outside the mod.
+        let occupant = fs::symlink_metadata(&to).map(|m| m.file_type()).ok();
+        let both_dirs = is_real_dir(&from) && occupant.is_some_and(|t| t.is_dir());
+        if !both_dirs {
+            match occupant {
+                Some(t) if t.is_dir() => fs::remove_dir_all(&to)?,
+                Some(_) => fs::remove_file(&to)?,
+                None => {}
+            }
+        }
+        if is_real_dir(&from) {
+            overlay_dir(&from, &to)?;
+            continue;
+        }
+        // `read_link` succeeds only for a symlink (EINVAL otherwise), so this is the
+        // discriminator. Recreate the link instead of copying through it: the link is
+        // the content, and copying a DANGLING one would fail the whole install over an
+        // entry the simple path (a plain rename) would have installed fine.
+        match fs::read_link(&from) {
+            Ok(target) => std::os::unix::fs::symlink(target, &to)?,
+            Err(_) => {
+                fs::copy(&from, &to)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Put `sources` (existing directories inside the extraction temp) into `dest`, in
+/// order. One source into a destination we own is a top-level rename - instant on
+/// the same filesystem, which matters for a multi-GB texture pack. Anything else has
+/// to overlay so a later sub-package's files win over an earlier one's.
+fn place_sources(sources: &[PathBuf], dest: &Path, merging: bool) -> io::Result<()> {
+    if sources.len() == 1 && !merging {
+        return move_dir_contents(&sources[0], dest);
+    }
+    for src in sources {
+        overlay_dir(src, dest)?;
+    }
+    Ok(())
+}
+
+/// Resolve chosen BAIN sub-package names to directories inside the extraction temp,
+/// in the order given. Every fallible check lives here so a caller can run it BEFORE
+/// the destructive step and never wipe a mod over a stale pick.
+fn resolve_bain_sources(tmp: &Path, chosen: &[String]) -> Result<Vec<PathBuf>, InstallError> {
+    if chosen.is_empty() {
+        return Err(InstallError::BadSelection("no sub-package selected".to_string()));
+    }
+    let mut out = Vec::with_capacity(chosen.len());
+    for name in chosen {
+        // A sub-package is one top-level folder name. Anything with a separator or a
+        // relative segment is not one and must never be joined blindly: the list
+        // comes from a front end, not necessarily from `bain_subpackages`.
+        if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            return Err(InstallError::BadSelection(format!("not a sub-package name: '{name}'")));
+        }
+        let exact = tmp.join(name);
+        let dir = if is_real_dir(&exact) {
+            exact
+        } else {
+            // The extraction may have case-folded a colliding name (see
+            // `normalize_case_collisions`), so fall back to a case-insensitive match.
+            find_ci(tmp, &name.to_ascii_lowercase())
+                .filter(|p| is_real_dir(p))
+                .ok_or_else(|| InstallError::BadSelection(format!("no such sub-package: '{name}'")))?
+        };
+        out.push(dir);
+    }
+    Ok(out)
+}
+
+/// Resolve a user-chosen data root (a `/`-joined prefix inside the archive, `""` for
+/// the archive root) to a directory inside the extraction temp. `resolve_ci` already
+/// refuses a `..` segment, so a hand-typed root cannot escape the temp.
+fn resolve_manual_root(tmp: &Path, root: &str) -> Result<PathBuf, InstallError> {
+    let trimmed = root.trim_matches(['/', '\\'].as_slice());
+    if trimmed.is_empty() {
+        return Ok(tmp.to_path_buf());
+    }
+    resolve_ci(tmp, trimmed)
+        .filter(|p| is_real_dir(p))
+        .ok_or_else(|| InstallError::BadSelection(format!("no such directory in the archive: '{root}'")))
+}
+
+/// The shared tail of the non-FOMOD install paths: resolve the destination per
+/// `policy`, put the already-resolved `sources` into it, write the `meta.ini`.
+///
+/// `sources` must be resolved by the caller BEFORE this runs, because the Replace
+/// wipe happens in here: like MO2 (and like [`install_extracted`]), the destructive
+/// step comes last, so a stale selection can never cost the user their old mod. A
+/// FRESH install that fails cleans its own debris, so the mod list never shows a
+/// half-copied mod as installed.
+fn install_sources(
+    sources: &[PathBuf],
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_name: &str,
+    policy: OverwritePolicy,
+    stripped: String,
+) -> Result<InstallReport, InstallError> {
+    let mut name = fix_directory_name(name).unwrap_or_else(|| "Mod".to_string());
+    let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
+    let mut dest = mods_dir.join(&name);
+    let mut preserved: Option<ModMeta> = None;
+    let mut replacing = false;
+    if dest.exists() && is_nonempty_dir(&dest) {
+        match &policy {
+            OverwritePolicy::Fail => return Err(InstallError::Exists(dest)),
+            OverwritePolicy::Merge => {} // install over the existing files
+            OverwritePolicy::Replace => {
+                preserved = Some(ModMeta::read(&dest.join("meta.ini")));
+                replacing = true;
+            }
+            OverwritePolicy::Rename(new) => {
+                name = fix_directory_name(new).unwrap_or_else(|| "Mod".to_string());
+                dest = mods_dir.join(&name);
+                if dest.exists() && is_nonempty_dir(&dest) {
+                    return Err(InstallError::Exists(dest));
+                }
+            }
+        }
+    }
+    let merging = policy == OverwritePolicy::Merge;
+    // Whether `dest` is ours to clean up on failure (a fresh install, not a
+    // merge/replace over a pre-existing mod folder).
+    let fresh = !dest.exists();
+
+    let result: Result<InstallReport, InstallError> = (|| {
+        if replacing {
+            fs::remove_dir_all(&dest)?;
+        }
+        fs::create_dir_all(&dest)?;
+        place_sources(sources, &dest, merging)?;
+        write_meta(archive, &dest, game_name, guessed_id)?;
+        Ok(InstallReport {
+            name: name.clone(),
+            stripped,
+            fomod: false,
+            missing: Vec::new(),
+            dest: dest.clone(),
+        })
+    })();
+
+    if result.is_err() && fresh {
+        let _ = fs::remove_dir_all(&dest);
+    }
+    let report = result?;
+    if let Some(old) = preserved {
+        reapply_user_meta(&old, &report.dest.join("meta.ini"));
+    }
+    Ok(report)
+}
+
+/// Install the chosen sub-packages of a BAIN (Wrye Bash complex) package, merged
+/// **in the order given**: a later sub-package overwrites an earlier one's files,
+/// which is BAIN's contract (`10 Optional Textures` is meant to win over `00 Core`).
+/// Pass the names in the order [`bain_subpackages`](crate::ArchiveTree::bain_subpackages)
+/// listed them, minus whatever the user unticked.
+///
+/// `tree` is the extraction from [`open_archive`], so nothing is unpacked twice.
+/// Unknown or malformed names are refused with [`InstallError::BadSelection`] before
+/// anything is written. A SUCCESSFUL install may consume the extraction (a lone
+/// source is moved, not copied - it matters for a multi-GB texture pack), so treat
+/// `tree` as spent afterwards; a failed one leaves it usable for a retry under
+/// another policy, which is what the overwrite prompt needs.
+pub fn install_bain(
+    tree: &ExtractedTree,
+    subpackages: &[String],
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_name: &str,
+    policy: OverwritePolicy,
+) -> Result<InstallReport, InstallError> {
+    let sources = resolve_bain_sources(tree.path(), subpackages)?;
+    install_sources(&sources, archive, mods_dir, name, game_name, policy, String::new())
+}
+
+/// Install from an explicit, user-chosen data root inside the archive - MO2's manual
+/// installer, the escape hatch for a layout no detector recognises. `data_root` is a
+/// `/`-joined prefix (`""` = the archive root, as returned in
+/// [`TreeRow::path`](crate::TreeRow)); everything under it becomes the mod, everything
+/// beside it is dropped.
+///
+/// The root is NOT required to look valid: MO2 warns and installs anyway if the user
+/// insists, so a front end should call
+/// [`ArchiveTree::root_looks_valid`](crate::ArchiveTree::root_looks_valid) to show the
+/// warning and leave the decision to the user. Like [`install_bain`], a successful
+/// install may consume `tree`.
+pub fn install_manual(
+    tree: &ExtractedTree,
+    data_root: &str,
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_name: &str,
+    policy: OverwritePolicy,
+) -> Result<InstallReport, InstallError> {
+    let src = resolve_manual_root(tree.path(), data_root)?;
+    let stripped = if data_root.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", data_root.trim_matches(['/', '\\'].as_slice()))
+    };
+    install_sources(&[src], archive, mods_dir, name, game_name, policy, stripped)
+}
+
 /// Parse the `fomod/ModuleConfig.xml` under `root`.
 fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, InstallError> {
     let fomod_dir =
@@ -617,11 +885,31 @@ impl Drop for ExtractedTree {
 }
 
 /// What an archive turned out to be once extracted (see [`open_archive`]).
+///
+/// The order the classifier tries these in is MO2's installer priority: FOMOD (90)
+/// beats Simple (50) beats BAIN (40) beats Manual (0). It matters - a combined
+/// FOMOD/BAIN package must run its scripted installer, and an archive whose option
+/// folders happen to look like sub-packages must not be hijacked from the wizard.
 pub enum Opened {
     /// A FOMOD scripted installer: drive the wizard, then [`finish_fomod`].
     Fomod(Box<FomodSession>),
     /// A plain archive, already extracted: install it with [`install_extracted`].
     Simple(ExtractedTree),
+    /// A Wrye Bash complex (BAIN) package: let the user tick sub-packages, then
+    /// [`install_bain`].
+    Bain {
+        tree: ExtractedTree,
+        /// Sub-package folder names in archive order, which is also the merge order
+        /// (later wins). Always at least [`BAIN_MIN_SUBPACKAGES`] long.
+        subpackages: Vec<String>,
+        /// Top-level folders that were candidates but did not look like mod roots.
+        /// Non-zero means "probably BAIN, but ask" - MO2 prompts here rather than
+        /// classify, because `Data/` beside `Extras/` looks the same from outside.
+        invalid: usize,
+    },
+    /// Nothing recognised the layout. The escape hatch: show the tree, let the user
+    /// point at the data root, then [`install_manual`]. No archive is un-installable.
+    Manual(ExtractedTree),
 }
 
 /// A FOMOD extracted and parsed, awaiting the user's choices (the GUI wizard). The
@@ -678,25 +966,36 @@ pub fn extract_to_temp(archive: &Path, mods_dir: &Path) -> Result<ExtractedTree,
 }
 
 /// Extract `archive` once and classify it: a FOMOD (whose `config` drives the
-/// wizard) or a plain archive whose extracted tree is handed back so installing
-/// it costs no second extraction.
+/// wizard), a simple archive, a BAIN package (whose sub-packages the user ticks) or
+/// an unrecognised layout the user must resolve by hand. The extracted tree rides
+/// along in every case, so installing it costs no second extraction.
 pub fn open_archive(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
 ) -> Result<Opened, InstallError> {
     let tree = extract_to_temp(archive, mods_dir)?;
-    let Some(root) = find_fomod_root(&tree.tmp) else {
+    if let Some(root) = find_fomod_root(&tree.tmp) {
+        let config = parse_fomod_at(&root)?;
+        return Ok(Opened::Fomod(Box::new(FomodSession {
+            config,
+            root,
+            tree,
+            name: name.to_string(),
+            archive: archive.to_path_buf(),
+        })));
+    }
+    // MO2's priority order, see `Opened`. Reading the extracted layout costs one
+    // directory walk against an extraction that already paid for the whole archive.
+    let layout = ArchiveTree::from_dir(&tree.tmp)?;
+    if layout.simple_archive_base().is_some() {
         return Ok(Opened::Simple(tree));
-    };
-    let config = parse_fomod_at(&root)?;
-    Ok(Opened::Fomod(Box::new(FomodSession {
-        config,
-        root,
-        tree,
-        name: name.to_string(),
-        archive: archive.to_path_buf(),
-    })))
+    }
+    let (subpackages, invalid) = layout.bain_subpackages();
+    if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
+        return Ok(Opened::Bain { tree, subpackages, invalid });
+    }
+    Ok(Opened::Manual(tree))
 }
 
 /// The sanitized destination folder name for `raw`, if installing it into
@@ -1414,6 +1713,302 @@ mod tests {
         )
         .unwrap();
         assert_eq!(mod_name_for(&archive), "Beyond Skyrim Bruma");
+    }
+
+    // ---- BAIN sub-packages + manual data root --------------------------------
+
+    /// An [`ExtractedTree`] over a directory laid out by hand: the tests need the
+    /// post-extraction state without paying for a real 7-Zip run. Dropping it removes
+    /// the directory, exactly as a real extraction's would.
+    fn extracted(dir: &Path) -> ExtractedTree {
+        ExtractedTree { tmp: dir.to_path_buf() }
+    }
+
+    /// A `mods/` dir plus an extraction temp inside it (where a real install puts it).
+    fn bain_layout(tag: &str) -> (TempDir, PathBuf, PathBuf) {
+        let t = TempDir::new(tag);
+        let mods = t.path().join("mods");
+        let tmp = mods.join(".extract");
+        fs::create_dir_all(&tmp).unwrap();
+        (t, mods, tmp)
+    }
+
+    /// A three-sub-package BAIN pack whose `00 Core` and `01 Optional` both ship
+    /// `textures/shared.dds`, so the merge order is observable.
+    fn bain_pack(tag: &str) -> (TempDir, PathBuf, PathBuf, PathBuf) {
+        let (t, mods, tmp) = bain_layout(tag);
+        write_at(&tmp, "00 Core/MyMod.esp", b"core");
+        write_at(&tmp, "00 Core/textures/shared.dds", b"CORE");
+        write_at(&tmp, "01 Optional/textures/shared.dds", b"OPTIONAL");
+        write_at(&tmp, "01 Optional/textures/extra.dds", b"extra");
+        write_at(&tmp, "02 Unwanted/meshes/no.nif", b"no");
+        let archive = t.path().join("Pack-1234-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        (t, mods, tmp, archive)
+    }
+
+    #[test]
+    fn bain_merges_chosen_subpackages_later_wins() {
+        let (_t, mods, tmp, archive) = bain_pack("bainmerge");
+        let tree = extracted(&tmp);
+        let picks = vec!["00 Core".to_string(), "01 Optional".to_string()];
+        let r = install_bain(&tree, &picks, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail)
+            .expect("bain install");
+
+        // Both chosen sub-packages are merged; the unticked one is not installed.
+        assert!(r.dest.join("MyMod.esp").is_file());
+        assert!(r.dest.join("textures/extra.dds").is_file());
+        assert!(!r.dest.join("meshes").exists());
+        // The BAIN contract: a later sub-package overwrites an earlier one's file.
+        assert_eq!(fs::read(r.dest.join("textures/shared.dds")).unwrap(), b"OPTIONAL");
+        assert!(r.dest.join("meta.ini").is_file(), "a BAIN install writes meta.ini like any other");
+        assert!(!r.fomod);
+    }
+
+    #[test]
+    fn bain_merge_order_is_the_callers_not_the_archives() {
+        // Same pack, reversed ticks: now the core file survives. This is why the API
+        // takes an ordered list instead of a set.
+        let (_t, mods, tmp, archive) = bain_pack("bainorder");
+        let tree = extracted(&tmp);
+        let picks = vec!["01 Optional".to_string(), "00 Core".to_string()];
+        let r = install_bain(&tree, &picks, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail)
+            .expect("bain install (reversed)");
+        assert_eq!(fs::read(r.dest.join("textures/shared.dds")).unwrap(), b"CORE");
+    }
+
+    #[test]
+    fn bain_matches_subpackage_names_case_insensitively() {
+        // The extraction may have case-folded a colliding folder name, so a pick that
+        // no longer matches byte-for-byte must still resolve.
+        let (t, mods, tmp) = bain_layout("bainci");
+        write_at(&tmp, "00 core/MyMod.esp", b"x");
+        let archive = t.path().join("Pack.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+        let r = install_bain(
+            &tree,
+            &["00 Core".to_string()],
+            &archive,
+            &mods,
+            "Pack",
+            "skyrimse",
+            OverwritePolicy::Fail,
+        )
+        .expect("bain install");
+        assert!(r.dest.join("MyMod.esp").is_file());
+    }
+
+    #[test]
+    fn bain_refuses_a_stale_or_malformed_selection() {
+        let (t, mods, tmp) = bain_layout("bainbad");
+        write_at(&tmp, "00 Core/MyMod.esp", b"x");
+        let archive = t.path().join("Pack.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        for bad in [
+            vec![],                                  // nothing ticked
+            vec!["99 Nope".to_string()],             // not in the archive
+            vec!["../outside".to_string()],          // traversal
+            vec!["00 Core/textures".to_string()],    // not a top-level sub-package
+        ] {
+            let r = install_bain(&tree, &bad, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail);
+            assert!(matches!(r, Err(InstallError::BadSelection(_))), "must refuse {bad:?}");
+        }
+        // A refused selection must not leave a half-made mod folder behind.
+        assert!(!mods.join("Pack").exists());
+    }
+
+    #[test]
+    fn bain_replace_keeps_the_old_mod_when_the_selection_is_stale() {
+        // Destructive-step-last, the discipline the crate already keeps: a selection
+        // that no longer resolves must be caught BEFORE the Replace wipe.
+        let (t, mods, tmp) = bain_layout("bainrepl");
+        write_at(&mods, "Pack/textures/a.dds", b"precious");
+        write_at(&mods, "Pack/meta.ini", b"[General]\nendorsed=1\n");
+        write_at(&tmp, "00 Core/MyMod.esp", b"x");
+        write_at(&tmp, "01 Extras/meshes/a.nif", b"y");
+        let archive = t.path().join("Pack.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let r = install_bain(
+            &tree,
+            &["00 Core".to_string(), "99 Gone".to_string()],
+            &archive,
+            &mods,
+            "Pack",
+            "skyrimse",
+            OverwritePolicy::Replace,
+        );
+        assert!(matches!(r, Err(InstallError::BadSelection(_))));
+        assert_eq!(fs::read(mods.join("Pack/textures/a.dds")).unwrap(), b"precious");
+        assert_eq!(fs::read(mods.join("Pack/meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
+    }
+
+    #[test]
+    fn failed_bain_install_cleans_up_its_fresh_destination() {
+        // A late failure (here: a sub-package shipping a DIRECTORY named meta.ini, so
+        // writing the real one fails) must not leave debris the mod list would show as
+        // an installed mod.
+        let (t, mods, tmp) = bain_layout("bainclean");
+        write_at(&tmp, "00 Core/MyMod.esp", b"x");
+        write_at(&tmp, "01 Extras/meta.ini/oops.txt", b"a directory where a file goes");
+        write_at(&tmp, "01 Extras/meshes/a.nif", b"y");
+        let archive = t.path().join("Pack.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let r = install_bain(
+            &tree,
+            &["00 Core".to_string(), "01 Extras".to_string()],
+            &archive,
+            &mods,
+            "Pack",
+            "skyrimse",
+            OverwritePolicy::Fail,
+        );
+        assert!(r.is_err(), "writing meta.ini over a directory must fail");
+        assert!(!mods.join("Pack").exists(), "the fresh destination must be cleaned up");
+    }
+
+    #[test]
+    fn manual_installs_from_the_chosen_root() {
+        let (t, mods, tmp) = bain_layout("manualroot");
+        write_at(&tmp, "Package/Data/meshes/a.nif", b"mesh");
+        write_at(&tmp, "Package/Data/MyMod.esp", b"esp");
+        write_at(&tmp, "Package/src/build.sh", b"tool");
+        write_at(&tmp, "readme.txt", b"docs");
+        let archive = t.path().join("Odd-1234-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let r =
+            install_manual(&tree, "Package/Data", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
+                .expect("manual install");
+        // Everything under the chosen root becomes the mod; everything beside it is
+        // dropped, exactly like the wrapper strip on the simple path.
+        assert!(r.dest.join("meshes/a.nif").is_file());
+        assert!(r.dest.join("MyMod.esp").is_file());
+        assert!(!r.dest.join("src").exists());
+        assert!(!r.dest.join("readme.txt").exists());
+        assert_eq!(r.stripped, "Package/Data/");
+        assert!(r.dest.join("meta.ini").is_file());
+    }
+
+    #[test]
+    fn manual_root_is_matched_case_insensitively() {
+        let (t, mods, tmp) = bain_layout("manualci");
+        write_at(&tmp, "Package/Data/MyMod.esp", b"esp");
+        let archive = t.path().join("Odd.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+        let r =
+            install_manual(&tree, "package/data", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
+                .expect("manual install");
+        assert!(r.dest.join("MyMod.esp").is_file());
+    }
+
+    #[test]
+    fn manual_empty_root_installs_the_archive_as_is() {
+        // The user's "this IS already the data dir" - nothing is stripped.
+        let (t, mods, tmp) = bain_layout("manualasis");
+        write_at(&tmp, "Package/Data/MyMod.esp", b"esp");
+        let archive = t.path().join("Odd.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+        let r = install_manual(&tree, "", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
+            .expect("manual install at root");
+        assert!(r.dest.join("Package/Data/MyMod.esp").is_file());
+        assert_eq!(r.stripped, "");
+    }
+
+    #[test]
+    fn manual_refuses_a_root_outside_the_archive() {
+        let (t, mods, tmp) = bain_layout("manualesc");
+        write_at(&tmp, "Package/MyMod.esp", b"esp");
+        let archive = t.path().join("Odd.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+        for bad in ["../..", "Package/../../mods", "/etc", "nope"] {
+            let r =
+                install_manual(&tree, bad, &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail);
+            assert!(matches!(r, Err(InstallError::BadSelection(_))), "must refuse root '{bad}'");
+        }
+        assert!(!mods.join("Odd").exists());
+    }
+
+    #[test]
+    fn overlay_replaces_a_conflicting_entry_type() {
+        // Two sub-packages disagreeing on whether a name is a file or a directory: the
+        // later one wins outright, rather than aborting the install with EISDIR.
+        let t = TempDir::new("overlaytype");
+        write_at(t.path(), "a/conflict/inner.txt", b"dir");
+        write_at(t.path(), "b/conflict", b"file");
+        write_at(t.path(), "b/other/x.txt", b"x");
+        let dest = t.path().join("dest");
+        overlay_dir(&t.path().join("a"), &dest).unwrap();
+        overlay_dir(&t.path().join("b"), &dest).unwrap();
+        assert_eq!(fs::read(dest.join("conflict")).unwrap(), b"file");
+        assert!(dest.join("other/x.txt").is_file());
+        // ...and the reverse, a directory landing on a file.
+        let dest2 = t.path().join("dest2");
+        overlay_dir(&t.path().join("b"), &dest2).unwrap();
+        overlay_dir(&t.path().join("a"), &dest2).unwrap();
+        assert!(dest2.join("conflict/inner.txt").is_file());
+    }
+
+    #[test]
+    fn overlay_never_writes_through_a_planted_symlink() {
+        // Security: an earlier sub-package ships `victim -> <outside>`, a later one
+        // ships a real file of the same name. The copy must replace the LINK, never
+        // follow it and write outside the mod folder.
+        use std::os::unix::fs::symlink;
+        let t = TempDir::new("overlayescape");
+        let outside = t.path().join("outside.txt");
+        fs::write(&outside, b"untouched").unwrap();
+        fs::create_dir_all(t.path().join("a")).unwrap();
+        symlink(&outside, t.path().join("a/victim")).unwrap();
+        write_at(t.path(), "b/victim", b"payload");
+
+        let dest = t.path().join("dest");
+        overlay_dir(&t.path().join("a"), &dest).unwrap();
+        overlay_dir(&t.path().join("b"), &dest).unwrap();
+        assert_eq!(fs::read(&outside).unwrap(), b"untouched", "must not write through the link");
+        assert_eq!(fs::read(dest.join("victim")).unwrap(), b"payload");
+        assert!(!fs::symlink_metadata(dest.join("victim")).unwrap().file_type().is_symlink());
+    }
+
+    #[test]
+    fn overlay_preserves_a_dangling_symlink() {
+        // 7-Zip does extract symlinks; copying THROUGH a dangling one would fail the
+        // whole install over an entry the simple (rename) path installs fine.
+        use std::os::unix::fs::symlink;
+        let t = TempDir::new("overlaysym");
+        fs::create_dir_all(t.path().join("a")).unwrap();
+        symlink("nowhere", t.path().join("a/link")).unwrap();
+        let dest = t.path().join("dest");
+        overlay_dir(&t.path().join("a"), &dest).unwrap();
+        let meta = fs::symlink_metadata(dest.join("link")).unwrap();
+        assert!(meta.file_type().is_symlink());
+        assert_eq!(fs::read_link(dest.join("link")).unwrap().to_str(), Some("nowhere"));
+    }
+
+    #[test]
+    fn from_dir_feeds_bain_detection_with_real_names() {
+        // End-to-end over an actual directory: the disk layout an extraction leaves
+        // must classify as BAIN, with the folder names as they exist on disk.
+        let (_t, _mods, tmp) = bain_layout("bainfromdir");
+        write_at(&tmp, "00 Core/MyMod.esp", b"x");
+        write_at(&tmp, "01 Optional Textures/textures/a.dds", b"y");
+        write_at(&tmp, "--03 Disabled/meshes/a.nif", b"z");
+        write_at(&tmp, "Docs/readme.txt", b"d");
+        let layout = ArchiveTree::from_dir(&tmp).unwrap();
+        assert_eq!(layout.simple_archive_base(), None, "not a simple archive");
+        let (subs, invalid) = layout.bain_subpackages();
+        assert_eq!(subs, vec!["00 Core", "01 Optional Textures"]);
+        assert_eq!(invalid, 0);
     }
 
     #[test]

@@ -185,6 +185,91 @@ impl ArchiveTree {
         }
     }
 
+    /// MO2's `InstallerBAIN::findSubpackages`: the top-level directories of a Wrye
+    /// Bash complex package that each INDEPENDENTLY look like a mod root (`00 Core`,
+    /// `01 Optional Textures`, ...), in the tree's case-insensitive order, plus how
+    /// many candidate directories did not.
+    ///
+    /// Detection is structural, never a numeric-prefix guess: a folder qualifies only
+    /// when [`data_looks_valid`](Self::data_looks_valid) accepts its own contents, so
+    /// `00 Core` counts for exactly the same reason `Core` would and a numbered folder
+    /// of screenshots does not. Skipped: files, MO2's IGNORED_FOLDERS (a combined
+    /// FOMOD/BAIN package keeps its `fomod` dir), and any name starting with `--`,
+    /// Wrye Bash's marker for a sub-package the author disabled.
+    ///
+    /// A non-zero invalid count is deliberately NOT a verdict. MO2 asks the user,
+    /// because `Data/` beside `OptionalStuff/` is indistinguishable from a two-package
+    /// BAIN by structure alone; the caller decides (see [`BAIN_MIN_SUBPACKAGES`]).
+    pub fn bain_subpackages(&self) -> (Vec<String>, usize) {
+        let mut valid = Vec::new();
+        let mut invalid = 0usize;
+        for (key, node) in &self.entries {
+            // Only directories are candidates; a top-level `package.txt` or readme is
+            // BAIN metadata, not a sub-package.
+            let TreeNode::Dir { name, tree } = node else { continue };
+            if BAIN_IGNORED_FOLDERS.contains(&key.as_str()) || key.starts_with("--") {
+                continue;
+            }
+            if tree.data_looks_valid() == CheckReturn::Valid {
+                valid.push(name.clone());
+            } else {
+                invalid += 1;
+            }
+        }
+        (valid, invalid)
+    }
+
+    /// The subtree at a `/`-joined path, each component matched case-insensitively
+    /// (`""` is this tree). `None` if the path does not exist or names a file - which
+    /// is what a manual-install picker needs to reject a bad "set as Data directory".
+    pub fn subtree(&self, path: &str) -> Option<&ArchiveTree> {
+        let mut cur = self;
+        for part in path.split(['/', '\\']).filter(|s| !s.is_empty()) {
+            match cur.entries.get(&part.to_ascii_lowercase()) {
+                Some(TreeNode::Dir { tree, .. }) => cur = tree,
+                _ => return None,
+            }
+        }
+        Some(cur)
+    }
+
+    /// Whether the level at `path` looks like a valid mod root - MO2's live
+    /// "The content of &lt;Data&gt; looks valid." / "does not look valid." feedback in
+    /// the manual installer, so the user learns their pick is wrong BEFORE committing.
+    /// A path that does not resolve is not valid.
+    pub fn root_looks_valid(&self, path: &str) -> bool {
+        self.subtree(path).is_some_and(|t| t.data_looks_valid() == CheckReturn::Valid)
+    }
+
+    /// Flatten the tree to display rows for a picker UI, depth-first in
+    /// case-insensitive order, directories and files interleaved as stored.
+    ///
+    /// Depth is capped (see `MAX_TREE_DEPTH`): an archive is untrusted input, and a
+    /// front end walking a pathological nesting must degrade - rows below the cap are
+    /// simply not listed - rather than blow the stack while the user watches.
+    pub fn flatten(&self) -> Vec<TreeRow> {
+        fn walk(tree: &ArchiveTree, prefix: &str, depth: usize, out: &mut Vec<TreeRow>) {
+            if depth >= MAX_TREE_DEPTH {
+                return;
+            }
+            for node in tree.entries.values() {
+                let (name, sub) = match node {
+                    TreeNode::Dir { name, tree } => (name, Some(tree)),
+                    TreeNode::File { name } => (name, None),
+                };
+                let path =
+                    if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
+                out.push(TreeRow { depth, name: name.clone(), path: path.clone(), is_dir: sub.is_some() });
+                if let Some(sub) = sub {
+                    walk(sub, &path, depth + 1, out);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(self, "", 0, &mut out);
+        out
+    }
+
     /// Whether the archive contains a `fomod` directory anywhere - a scripted
     /// FOMOD installer (Tier 2, not handled by the Simple installer).
     pub fn has_fomod(&self) -> bool {
@@ -196,12 +281,56 @@ impl ArchiveTree {
     }
 }
 
+/// One row of a flattened [`ArchiveTree`], for a picker UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeRow {
+    /// Nesting level, 0 for a top-level entry.
+    pub depth: usize,
+    /// The entry's own name, in its original archive casing.
+    pub name: String,
+    /// The `/`-joined path from the archive root - what to hand back as the chosen
+    /// data root (see [`install_manual`]).
+    pub path: String,
+    pub is_dir: bool,
+}
+
+/// How deep [`ArchiveTree::flatten`] will descend. Deliberately generous for real
+/// mods and finite for hostile ones.
+const MAX_TREE_DEPTH: usize = 64;
+
+/// Top-level folders a Wrye Bash package may ship that are never sub-packages
+/// (lowercased, to match [`ArchiveTree::entries`] keys) - MO2's
+/// `InstallerBAIN::findSubpackages` IGNORED_FOLDERS.
+const BAIN_IGNORED_FOLDERS: &[&str] =
+    &["fomod", "omod conversion data", "images", "screenshots", "docs"];
+
+/// How many independently-valid sub-packages a tree needs before it is offered as a
+/// BAIN install. MO2's rule: with fewer than two there is nothing to choose between,
+/// so the archive is better served by the simple or the manual path.
+pub const BAIN_MIN_SUBPACKAGES: usize = 2;
+
+/// MO2's default ticks for a BAIN package (`BainComplexInstallerDialog`): every
+/// sub-package whose name starts with `00` - Wrye Bash's convention for the mandatory
+/// core - plus anything the user picked last time, matched case-insensitively.
+///
+/// `previous` is the `option0..N` list a front end persisted on the mod after the
+/// last install, so a reinstall comes back pre-selected. Pass `&[]` when there is
+/// none. The returned vector is parallel to `subpackages`.
+pub fn bain_default_selection(subpackages: &[String], previous: &[String]) -> Vec<bool> {
+    subpackages
+        .iter()
+        .map(|s| {
+            s.starts_with("00") || previous.iter().any(|p| p.eq_ignore_ascii_case(s))
+        })
+        .collect()
+}
+
 mod install;
 pub use install::{
     collision_name, finish_fomod, fomod_context, install_archive, install_archive_with_policy,
     mod_name_for,
-    extract_to_temp, install_extracted, open_archive, ExtractedTree, FomodSession, InstallError,
-    InstallReport, Opened, OverwritePolicy,
+    extract_to_temp, install_bain, install_extracted, install_manual, open_archive, ExtractedTree,
+    FomodSession, InstallError, InstallReport, Opened, OverwritePolicy,
 };
 
 /// Known top-level Data folder names (lowercased), from MO2's
@@ -483,6 +612,162 @@ mod tests {
         // A non-doc, non-mod sibling beside Data is NOT the DataText pattern.
         let u = tree(&["Data/MyMod.esp", "loose.dll"]);
         assert_eq!(u.simple_archive_base(), None);
+    }
+
+    #[test]
+    fn bain_detects_numbered_subpackages() {
+        // The canonical Wrye Bash complex package: numbered top-level folders, each
+        // Data-relative on its own.
+        let t = tree(&[
+            "00 Core/meshes/a.nif",
+            "00 Core/MyMod.esp",
+            "01 Optional Textures/textures/b.dds",
+            "10 Alternate/MyMod.esp",
+        ]);
+        let (subs, invalid) = t.bain_subpackages();
+        assert_eq!(subs, vec!["00 Core", "01 Optional Textures", "10 Alternate"]);
+        assert_eq!(invalid, 0);
+        // Original casing is preserved (the folder must be findable on disk), and the
+        // order is the archive's, which is the merge order (later wins).
+        assert!(subs.len() >= BAIN_MIN_SUBPACKAGES);
+        // A BAIN package is NOT a simple archive - that is why the fallback exists.
+        assert_eq!(t.simple_archive_base(), None);
+    }
+
+    #[test]
+    fn bain_skips_ignored_and_disabled_folders() {
+        // fomod/images/screenshots/docs/omod conversion data are packaging cruft, and
+        // `--` marks a sub-package the author disabled: none may be offered or counted
+        // as invalid. `package.txt` is a file, so it is not a candidate at all.
+        let t = tree(&[
+            "00 Core/meshes/a.nif",
+            "01 Extras/MyMod.esp",
+            "--02 Disabled/textures/x.dds",
+            "Docs/readme.txt",
+            "Images/preview.png",
+            "Screenshots/shot.png",
+            "OMOD Conversion Data/script.txt",
+            "fomod/info.xml",
+            "package.txt",
+        ]);
+        let (subs, invalid) = t.bain_subpackages();
+        assert_eq!(subs, vec!["00 Core", "01 Extras"]);
+        assert_eq!(invalid, 0, "skipped folders must not count as invalid either");
+    }
+
+    #[test]
+    fn bain_counts_invalid_candidates_without_deciding() {
+        // Two valid sub-packages beside a folder that is not one: MO2 does not
+        // classify here, it asks. We report the count and let the caller prompt.
+        let t = tree(&[
+            "00 Core/MyMod.esp",
+            "01 Optional/textures/b.dds",
+            "Utilities/BuildScript/thing.exe",
+        ]);
+        let (subs, invalid) = t.bain_subpackages();
+        assert_eq!(subs, vec!["00 Core", "01 Optional"]);
+        assert_eq!(invalid, 1);
+    }
+
+    #[test]
+    fn bain_is_structural_not_a_numeric_prefix_guess() {
+        // Numbered folders that hold no mod data are NOT sub-packages...
+        let t = tree(&["00 Screens/a.png", "01 More Screens/b.png"]);
+        let (subs, invalid) = t.bain_subpackages();
+        assert!(subs.is_empty());
+        assert_eq!(invalid, 2);
+        // ...and unnumbered folders that DO hold mod data are.
+        let u = tree(&["Core/MyMod.esp", "Optional/meshes/a.nif"]);
+        assert_eq!(u.bain_subpackages().0, vec!["Core", "Optional"]);
+    }
+
+    #[test]
+    fn bain_does_not_claim_a_fomod() {
+        // A scripted installer's own layout: the fomod dir plus Data-relative folders
+        // that are not independently valid. Nothing here is a sub-package, so the
+        // FOMOD keeps its (higher-priority) installer.
+        let t = tree(&[
+            "fomod/ModuleConfig.xml",
+            "fomod/info.xml",
+            "textures/x.dds",
+            "meshes/y.nif",
+            "MyMod.esp",
+        ]);
+        let (subs, _) = t.bain_subpackages();
+        assert!(subs.is_empty(), "a FOMOD must not be offered as BAIN");
+        // Note a COMBINED fomod/bain package does have valid sub-packages; MO2 (and
+        // `open_archive`) resolve that by priority - FOMOD is checked first.
+    }
+
+    #[test]
+    fn bain_does_not_claim_a_simple_archive() {
+        // A plain Data-relative mod: `meshes`/`textures` are content, not
+        // sub-packages, and the archive is simple anyway.
+        let t = tree(&["meshes/a.nif", "textures/b.dds", "MyMod.esp"]);
+        assert_eq!(t.simple_archive_base().as_deref(), Some(""));
+        let (subs, _) = t.bain_subpackages();
+        assert!(subs.len() < BAIN_MIN_SUBPACKAGES);
+        // The classic wrapped archive is not BAIN either (one candidate at most).
+        let u = tree(&["MyMod-1234/meshes/a.nif"]);
+        assert_eq!(u.bain_subpackages().0.len(), 1);
+    }
+
+    #[test]
+    fn bain_default_selection_ticks_00_and_previous() {
+        let subs = vec!["00 Core".to_string(), "01 Extras".to_string(), "02 Alt".to_string()];
+        assert_eq!(bain_default_selection(&subs, &[]), vec![true, false, false]);
+        // A remembered choice comes back ticked, matched case-insensitively.
+        assert_eq!(
+            bain_default_selection(&subs, &["02 alt".to_string()]),
+            vec![true, false, true]
+        );
+    }
+
+    #[test]
+    fn subtree_and_root_validity_drive_the_manual_picker() {
+        // NB "Utilities", not "Tools": `tools` is itself a recognised Data folder, so a
+        // top-level one would make the archive root look valid.
+        let t = tree(&["Utilities/thing.exe", "Package/Data/meshes/a.nif", "Package/Data/MyMod.esp"]);
+        // The archive root is not a mod root, nor is a random folder...
+        assert!(!t.root_looks_valid(""));
+        assert!(!t.root_looks_valid("Utilities"));
+        // ...but the nested Data the user would point at is (case-insensitively).
+        assert!(t.root_looks_valid("Package/Data"));
+        assert!(t.root_looks_valid("package/data"));
+        // A file or a missing path never resolves.
+        assert!(t.subtree("Utilities/thing.exe").is_none());
+        assert!(t.subtree("nope").is_none());
+        assert!(!t.root_looks_valid("nope"));
+    }
+
+    #[test]
+    fn flatten_yields_depth_paths_for_a_tree_view() {
+        let rows = tree(&["Data/meshes/a.nif", "readme.txt"]).flatten();
+        let got: Vec<(usize, &str, &str, bool)> =
+            rows.iter().map(|r| (r.depth, r.name.as_str(), r.path.as_str(), r.is_dir)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, "Data", "Data", true),
+                (1, "meshes", "Data/meshes", true),
+                (2, "a.nif", "Data/meshes/a.nif", false),
+                (0, "readme.txt", "readme.txt", false),
+            ]
+        );
+        // Every listed directory path must round-trip through `subtree` - that is the
+        // contract the picker relies on when the user right-clicks a row.
+        for r in rows.iter().filter(|r| r.is_dir) {
+            assert!(tree(&["Data/meshes/a.nif", "readme.txt"]).subtree(&r.path).is_some());
+        }
+    }
+
+    #[test]
+    fn flatten_is_bounded_on_a_pathological_nesting() {
+        // A hostile archive must degrade (rows past the cap are dropped), never
+        // recurse without end.
+        let deep = (0..MAX_TREE_DEPTH + 20).map(|i| format!("d{i}")).collect::<Vec<_>>().join("/");
+        let t = tree(&[&format!("{deep}/file.txt")]);
+        assert_eq!(t.flatten().len(), MAX_TREE_DEPTH);
     }
 
     #[test]
