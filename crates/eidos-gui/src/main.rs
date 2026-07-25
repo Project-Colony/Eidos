@@ -74,6 +74,8 @@ enum InfoTab {
     General,
     Conflicts,
     Filetree,
+    /// The mod's `INI Tweaks/` fragments, individually enabled.
+    IniTweaks,
     Notes,
 }
 
@@ -176,6 +178,9 @@ enum Message {
     ToggleFileHidden(usize, String),
     /// Unhide everything in a mod at once (MO2's `restoreHiddenFiles`).
     RestoreHiddenFiles(usize),
+    /// Enable or disable one of a mod's `INI Tweaks/` fragments:
+    /// `(mod index, fragment file name)`.
+    ToggleIniTweak(usize, String),
     // ---- toolbar ----
     /// Re-open the game picker to switch the managed game (MO2 switch-instance).
     ChangeGame,
@@ -2880,6 +2885,29 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::ToggleIniTweak(i, name) => {
+            let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
+                return Task::none();
+            };
+            let mut meta = inst.mod_meta(&m.name);
+            let mut list: Vec<String> = meta.ini_tweaks().to_vec();
+            let was_on = list.iter().any(|e| e.eq_ignore_ascii_case(&name));
+            // Order is application order, so enabling appends rather than inserting:
+            // the fragment a user just ticked should win over the ones already on.
+            if was_on {
+                list.retain(|e| !e.eq_ignore_ascii_case(&name));
+            } else {
+                list.push(name.clone());
+            }
+            meta.set_ini_tweaks(&list);
+            match meta.write(&inst.meta_path(&m.name)) {
+                Ok(()) => {
+                    let verb = if was_on { "Disabled" } else { "Enabled" };
+                    app.status = Some(format!("{verb} INI tweak '{name}' for '{}'.", m.name));
+                }
+                Err(e) => app.status = Some(format!("Could not save the tweak list: {e}")),
+            }
+        }
         Message::RestoreHiddenFiles(i) => {
             app.menu_mod = None;
             let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
@@ -4879,6 +4907,41 @@ fn path_is_hidden(rel: &str) -> bool {
     rel.split('/').any(eidos_core::is_hidden_name)
 }
 
+/// INI Tweaks tab: the fragments this mod ships in its `INI Tweaks/` folder, each
+/// individually enabled. Enabled fragments are merged into the profile's game INI
+/// at launch, in mod priority order, and undone again when the run's INIs are
+/// captured back - so a tweak stays a tweak instead of quietly becoming a setting.
+fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a, Message> {
+    let available = eidos_instance::available_ini_tweaks(&m.path);
+    if available.is_empty() {
+        return Column::new()
+            .spacing(6)
+            .push(text("This mod ships no INI tweaks.").size(12.0))
+            .push(
+                text("A mod with tweaks has an 'INI Tweaks' folder of small INI fragments.")
+                    .size(10.0),
+            )
+            .into();
+    }
+    let enabled: Vec<String> =
+        app.created.as_ref().map(|inst| inst.mod_meta(&m.name).ini_tweaks().to_vec()).unwrap_or_default();
+
+    let mut col = Column::new().spacing(3).push(
+        text("Enabled fragments are merged into this profile's game INI at launch.").size(11.0),
+    );
+    for name in available {
+        let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
+        let label = name.clone();
+        col = col.push(
+            checkbox(label, on)
+                .on_toggle(move |_| Message::ToggleIniTweak(i, name.clone()))
+                .size(13.0)
+                .text_size(12.0),
+        );
+    }
+    col.into()
+}
+
 /// Notes tab: an editable note persisted to the mod's meta.ini.
 fn info_notes<'a>(app: &App) -> Element<'a, Message> {
     Column::new()
@@ -4917,12 +4980,14 @@ fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .push(info_tab_btn("General", InfoTab::General, app.info_tab == InfoTab::General))
         .push(info_tab_btn("Conflicts", InfoTab::Conflicts, app.info_tab == InfoTab::Conflicts))
         .push(info_tab_btn("Filetree", InfoTab::Filetree, app.info_tab == InfoTab::Filetree))
+        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, app.info_tab == InfoTab::IniTweaks))
         .push(info_tab_btn("Notes", InfoTab::Notes, app.info_tab == InfoTab::Notes));
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
         InfoTab::Conflicts => info_conflicts(app, i),
         InfoTab::Filetree => info_filetree(app, i, m),
+        InfoTab::IniTweaks => info_ini_tweaks(app, i, m),
         InfoTab::Notes => info_notes(app),
     };
 
@@ -5532,9 +5597,67 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
             });
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
+        out.extend(script_extender_diagnostic(game));
     }
 
     out
+}
+
+/// What the script extender itself recorded about each of its plugin DLLs on the
+/// last run.
+///
+/// The passthrough check above says whether DLL loading is *likely* to work. This
+/// says what happened. The distinction matters because the two failure modes look
+/// identical from outside: a plugin refused for an incompatible runtime version
+/// and one the manager failed to expose both end with the feature simply absent
+/// in game.
+fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
+    let spec = GameSpec::for_id(game.def.id)?;
+    let prefix = game.compatdata.as_ref()?.join("pfx");
+    let docs = eidos_plugins::documents_my_games_dir(&prefix, &spec);
+    let path = eidos_gamefeatures::se_log_path(game.def.id, &docs, &game.install_path)?;
+
+    let Ok(raw) = fs::read(&path) else {
+        return Some(Diagnostic {
+            level: DiagLevel::Advice,
+            title: "No script-extender log yet".to_string(),
+            detail: format!(
+                "Launch the game once through Eidos and this will report whether each SKSE-style plugin DLL loaded. Expected at {}.",
+                path.display()
+            ),
+        });
+    };
+    // The extender writes cp1252, so a plugin name with an accent is not valid
+    // UTF-8; lossy keeps the rest of the line readable rather than dropping it.
+    let plugins = eidos_gamefeatures::parse_se_log(&String::from_utf8_lossy(&raw));
+    if plugins.is_empty() {
+        return None;
+    }
+    // The log is from the LAST run, which may predate the current load order, so
+    // stamp it - an old log claiming success is the confusing case.
+    let when = fs::metadata(&path).and_then(|m| m.modified()).map(format_mtime).unwrap_or_default();
+    let failed: Vec<&eidos_gamefeatures::SePluginLoad> =
+        plugins.iter().filter(|p| !p.loaded).collect();
+    if failed.is_empty() {
+        return Some(Diagnostic {
+            level: DiagLevel::Ok,
+            title: format!("All {} script-extender plugins loaded", plugins.len()),
+            detail: format!("From the extender's own log, last written {when}."),
+        });
+    }
+    let lines: Vec<String> =
+        failed.iter().take(10).map(|p| format!("{}: {}", p.dll, p.status)).collect();
+    let more = failed.len().saturating_sub(lines.len());
+    let tail = if more > 0 { format!("  (and {more} more)") } else { String::new() };
+    Some(Diagnostic {
+        level: DiagLevel::Problem,
+        title: format!(
+            "{} of {} script-extender plugins did not load",
+            failed.len(),
+            plugins.len()
+        ),
+        detail: format!("{}{tail}  -  from the extender's own log, last written {when}.", lines.join("   ")),
+    })
 }
 
 /// Archives (BSA/BA2) an enabled mod ships that nothing will load: the engine

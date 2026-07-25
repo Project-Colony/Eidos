@@ -29,6 +29,9 @@ pub use native_dll::{
 mod prefix_registry;
 pub use prefix_registry::{ensure_registry, registry_blob};
 
+mod se_log;
+pub use se_log::{parse_se_log, se_log_path, SePluginLoad};
+
 mod prereqs;
 pub use prereqs::{
     cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,

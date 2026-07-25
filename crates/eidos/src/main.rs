@@ -105,11 +105,7 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) -> Option<Pat
 /// nothing), deploy the profile's INIs into the prefix Documents, then enable BSA
 /// invalidation on the deployed copy. Returns the prefix Documents dir + the
 /// game's INI set, so the caller can capture in-game changes back afterwards.
-fn prepare_inis(
-    id: &str,
-    game: &DetectedGame,
-    inst: &Instance,
-) -> Option<(std::path::PathBuf, &'static [&'static str])> {
+fn prepare_inis(id: &str, game: &DetectedGame, inst: &Instance) -> Option<PreparedInis> {
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let compatdata = game.compatdata.as_ref()?;
     let ini_files = eidos_gamefeatures::ini_files_for(id);
@@ -150,6 +146,29 @@ fn prepare_inis(
             false
         }
     };
+    // Mod-shipped INI Tweaks, merged into the DEPLOYED copies in priority order
+    // (lowest first, so a higher-priority mod's fragment wins), with the profile's
+    // own tweak file last. What each write displaced comes back so the capture can
+    // undo it - otherwise a tweak becomes indistinguishable from a setting the
+    // user chose, and disabling the fragment would change nothing.
+    let mut tweaked: Vec<(String, Vec<eidos_instance::TweakedKey>)> = Vec::new();
+    if deploy_ok {
+        let fragments = inst.enabled_ini_tweaks(&inst.modlist());
+        // The profile's own file counts even when no mod contributes one.
+        if !fragments.is_empty() || prof.tweaks_path().is_file() {
+            for f in ini_files {
+                match prof.apply_ini_tweaks(&docs.join(f), &fragments) {
+                    Ok(rec) if !rec.is_empty() => {
+                        eprintln!("eidos play: applied {} INI tweak(s) to {f}", rec.len());
+                        tweaked.push((f.to_string(), rec));
+                    }
+                    Ok(_) => {}
+                    Err(e) => eprintln!("eidos play: WARNING - could not apply INI tweaks to {f}: {e}"),
+                }
+            }
+        }
+    }
+
     // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
     // reset the plugin selection (both written into the deployed profile INIs).
     match eidos_gamefeatures::enable_bsa_invalidation(&docs, &inst.overwrite_dir(), id) {
@@ -183,7 +202,17 @@ fn prepare_inis(
     }
     // No capture cycle when the deploy failed: the prefix INIs are not this
     // profile's state and must not overwrite it after the run.
-    deploy_ok.then_some((docs, ini_files))
+    deploy_ok.then_some(PreparedInis { docs, ini_files, tweaked })
+}
+
+/// What `prepare_inis` leaves for the post-run capture.
+struct PreparedInis {
+    /// The prefix directory the INIs were deployed into.
+    docs: std::path::PathBuf,
+    ini_files: &'static [&'static str],
+    /// Per INI file, the keys an INI tweak overwrote, so the capture can put the
+    /// profile's own values back.
+    tweaked: Vec<(String, Vec<eidos_instance::TweakedKey>)>,
 }
 
 /// Before launch: give the active profile its own saves. Seed the profile from
@@ -421,10 +450,25 @@ fn run_through_view(
     let result = launch(spec);
 
     // The command has exited: capture any INI changes back into the profile.
-    if let Some((docs, ini_files)) = inis {
-        if let Ok(n) = inst.active().capture_inis(&docs, ini_files) {
+    if let Some(prepared) = inis {
+        if let Ok(n) = inst.active().capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
                 eprintln!("eidos: captured {n} INI(s) back into profile '{}'", inst.active_profile());
+            }
+        }
+        // Undo the INI tweaks in the CAPTURED copy, so the profile keeps the values
+        // it had rather than adopting the tweaks as its own. A key the game or the
+        // user changed while running is left alone - that is a real preference
+        // change, and it beats the tweak the same way the profile's own tweak file
+        // beats a mod's.
+        for (file, record) in &prepared.tweaked {
+            let path = inst.active().ini_path(file);
+            let Ok(text) = std::fs::read_to_string(&path) else { continue };
+            let restored = eidos_instance::untweak_ini(&text, record);
+            if restored != text {
+                if let Err(e) = std::fs::write(&path, restored) {
+                    eprintln!("eidos: WARNING - could not un-apply INI tweaks in {file}: {e}");
+                }
             }
         }
     }
