@@ -369,6 +369,12 @@ fn run_through_view(
     if let Some(kv) = forced_dll_overrides(game, inst, prereqs) {
         env.push(kv);
     }
+    // Wine derives its Unix codepage from the locale; a C/POSIX one collapses to
+    // CP1252 and MSVC's std::filesystem then rejects any mod path with an
+    // accented, Cyrillic or CJK character. Steam's pressure-vessel can strip the
+    // locale on the way in, so this covers both `eidos play` and `eidos tool`. An
+    // existing UTF-8 locale is left untouched.
+    env.extend(eidos_launch::utf8_locale_env_from_process());
 
     let spec = LaunchSpec {
         layers: inst.load_order(),

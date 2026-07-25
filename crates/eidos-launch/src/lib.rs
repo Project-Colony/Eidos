@@ -213,6 +213,44 @@ pub fn wine_dll_overrides(stems: &[String], inherited: Option<&str>) -> String {
     parts.join(";")
 }
 
+/// Force a UTF-8 locale for the launched process when the inherited one is not
+/// already UTF-8, as `[(key, value)]` to add to the child's environment.
+///
+/// Wine picks its Unix codepage from `nl_langinfo(CODESET)`. Under a C/POSIX
+/// locale that collapses to CP1252, and MSVC's `std::filesystem` then throws
+/// "Invalid name" on any mod file with a CJK, Cyrillic or accented character in
+/// its path - a failure that looks like a broken mod rather than a broken locale.
+/// Steam's pressure-vessel can strip the user's locale on the way in, so this
+/// cannot be assumed to be inherited correctly.
+///
+/// An existing UTF-8 locale is left completely alone: `fr_FR.UTF-8` carries the
+/// user's collation and date formats and there is no reason to override it.
+/// Precedence follows POSIX: `LC_ALL` beats `LC_CTYPE` beats `LANG`.
+pub fn utf8_locale_env(
+    lc_all: Option<&str>,
+    lc_ctype: Option<&str>,
+    lang: Option<&str>,
+) -> Vec<(String, String)> {
+    let effective = [lc_all, lc_ctype, lang].into_iter().flatten().find(|v| !v.is_empty());
+    let is_utf8 = effective.is_some_and(|v| {
+        let v = v.to_ascii_lowercase();
+        v.contains("utf-8") || v.contains("utf8")
+    });
+    if is_utf8 {
+        return Vec::new();
+    }
+    vec![
+        ("LC_ALL".to_string(), "C.UTF-8".to_string()),
+        ("LANG".to_string(), "C.UTF-8".to_string()),
+    ]
+}
+
+/// [`utf8_locale_env`] applied to this process's own environment.
+pub fn utf8_locale_env_from_process() -> Vec<(String, String)> {
+    let get = |k: &str| std::env::var(k).ok();
+    utf8_locale_env(get("LC_ALL").as_deref(), get("LC_CTYPE").as_deref(), get("LANG").as_deref())
+}
+
 /// Whether `binary` carries CAP_SYS_ADMIN in its file capabilities (the
 /// `setcap cap_sys_admin+ep` state FUSE passthrough needs). Reads the
 /// `security.capability` xattr directly, so it works without the libcap tools.
@@ -250,6 +288,31 @@ mod tests {
         std::fs::write(&p, b"x").unwrap();
         assert!(!binary_has_cap_sys_admin(&p));
         let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn utf8_locale_is_forced_only_when_needed() {
+        // Nothing inherited (pressure-vessel can strip it) -> force.
+        assert_eq!(
+            utf8_locale_env(None, None, None),
+            vec![
+                ("LC_ALL".to_string(), "C.UTF-8".to_string()),
+                ("LANG".to_string(), "C.UTF-8".to_string())
+            ]
+        );
+        // A C/POSIX locale is the actual bug: it collapses Wine to CP1252.
+        assert!(!utf8_locale_env(None, None, Some("C")).is_empty());
+        assert!(!utf8_locale_env(None, None, Some("POSIX")).is_empty());
+        // The user's own UTF-8 locale carries their collation and formats: leave it.
+        assert!(utf8_locale_env(None, None, Some("en_US.UTF-8")).is_empty());
+        assert!(utf8_locale_env(None, None, Some("fr_FR.utf8")).is_empty());
+        assert!(utf8_locale_env(None, Some("ja_JP.UTF-8"), None).is_empty());
+        // POSIX precedence: LC_ALL wins, so a C there beats a UTF-8 LC_CTYPE.
+        assert!(!utf8_locale_env(Some("C"), Some("en_US.UTF-8"), Some("en_US.UTF-8")).is_empty());
+        // ...and a UTF-8 LC_ALL wins over a C LANG.
+        assert!(utf8_locale_env(Some("en_US.UTF-8"), None, Some("C")).is_empty());
+        // An empty variable is not set: fall through to the next one.
+        assert!(utf8_locale_env(Some(""), None, Some("en_US.UTF-8")).is_empty());
     }
 
     #[test]
