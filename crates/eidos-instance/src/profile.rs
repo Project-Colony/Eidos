@@ -533,7 +533,21 @@ const MAX_RELATIVE_DROP: f64 = 0.30;
 fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
     let before = count_actives(profile)?;
     let after = count_actives(candidate)?;
-    if before <= MIN_ACTIVES || after >= before {
+    if after >= before {
+        return None;
+    }
+    // Losing EVERY active plugin is never an edit, at any size. The proportional
+    // rule below has a floor so that dropping two of five is not second-guessed,
+    // and a load order under that floor was therefore unprotected - which is not a
+    // rare case but the normal one for someone adding mods a few at a time.
+    // Observed: Skyrim rewrote plugins.txt with nothing but its own header, the
+    // 7-plugin profile went to zero unchallenged, and the next launch silently
+    // re-enabled everything discovery could find - including plugins the user had
+    // deliberately turned off. Same rule as the mod list's `ListTrust::judge`.
+    if after == 0 {
+        return Some(format!("it clears the active set entirely ({before} plugin(s) lost)"));
+    }
+    if before <= MIN_ACTIVES {
         return None;
     }
     let dropped = before - after;
@@ -1318,6 +1332,42 @@ mod tests {
 
         p.capture_plugin_state(&prefix).unwrap();
         assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), "*a\n*b\nc\nd\ne\nf\n");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_small_load_order_cleared_to_nothing_is_still_refused() {
+        // The case that actually bit: Skyrim rewrote plugins.txt with nothing but
+        // its own header while a 7-plugin order was live. That is below the floor
+        // the proportional rule uses, so it went through unchallenged and the
+        // profile lost every active plugin - which is exactly the state a user
+        // adding mods a few at a time is in.
+        let root = inst_with_mods(&["A"]);
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        let good = "*a.esp\n*b.esp\n*c.esp\n*d.esp\n*e.esp\n*f.esp\n*g.esp\n";
+        fs::write(p.plugins_txt_path(), good).unwrap();
+        fs::write(
+            prefix.join("plugins.txt"),
+            "# This file is used by Skyrim to keep track of your downloaded content.\n",
+        )
+        .unwrap();
+
+        p.capture_plugin_state(&prefix).unwrap();
+        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), good);
+
+        // Turning the last one off BY HAND still works - the names stay listed, so
+        // this is a deliberate edit and not a wipe.
+        let all_off = "a.esp\nb.esp\nc.esp\nd.esp\ne.esp\nf.esp\ng.esp\n";
+        fs::write(prefix.join("plugins.txt"), all_off).unwrap();
+        p.capture_plugin_state(&prefix).unwrap();
+        assert_eq!(
+            fs::read_to_string(p.plugins_txt_path()).unwrap(),
+            good,
+            "clearing every active plugin is refused at any size"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
