@@ -61,12 +61,82 @@ impl<T> LockExt<T> for Mutex<T> {
     }
 }
 
-/// Attribute/entry cache lifetime handed to the kernel. Conservative for now.
-const TTL: Duration = Duration::from_secs(1);
+/// Attribute/entry cache lifetime handed to the kernel for entries that EXIST.
+/// A mod's files are immutable for the lifetime of a mount, and every mutation
+/// goes through this daemon's own handlers, so the kernel can hold on to them.
+/// Set `EIDOS_FUSE_NO_CACHE=1` to zero this (and [`NEG_TTL`]) when a stale-data
+/// bug is the suspect.
+const TTL_SECS: u64 = 3600;
+/// Lifetime of a NEGATIVE dentry - see [`Eidos::reply_negative`]. Much shorter
+/// than the positive TTL because the kernel matches negative entries on exact
+/// name bytes while Eidos resolves case-insensitively.
+const NEG_TTL_SECS: u64 = 60;
 const ROOT_INO: u64 = 1;
+
+/// Caching is off when `EIDOS_FUSE_NO_CACHE` is set to anything but `0`. The
+/// escape hatch ships WITH the caching so that "the game sees stale data" can be
+/// tested against caching as the suspect in one run, instead of being chased
+/// through the code.
+fn caching_disabled() -> bool {
+    std::env::var("EIDOS_FUSE_NO_CACHE").is_ok_and(|v| v != "0")
+}
+
+static TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
+    Duration::from_secs(if caching_disabled() { 0 } else { TTL_SECS })
+});
+static NEG_TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
+    Duration::from_secs(if caching_disabled() { 0 } else { NEG_TTL_SECS })
+});
 
 /// A directory entry in an `opendir` snapshot: `(inode, kind, name)`.
 type DirEntry = (u64, FileType, String);
+
+/// Per-mount operation counters, for answering "where did the time go" with data
+/// instead of a guess.
+///
+/// A metadata storm is invisible from outside: the process looks idle (almost no
+/// bytes read) while the kernel and the game trade millions of `lookup`/`getattr`
+/// round-trips. These counters make the shape of a run legible - in particular
+/// the ratio of misses to hits, which is what the negative-dentry cache exists to
+/// collapse. Relaxed atomics on a handful of counters cost nothing next to the
+/// syscalls each op already performs. Dumped at unmount when `EIDOS_FUSE_STATS`
+/// is set.
+#[derive(Default)]
+struct Stats {
+    lookup_hit: AtomicU64,
+    lookup_miss: AtomicU64,
+    getattr: AtomicU64,
+    readdir: AtomicU64,
+    open: AtomicU64,
+    read: AtomicU64,
+    write: AtomicU64,
+}
+
+impl Stats {
+    fn bump(c: &AtomicU64) {
+        c.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn enabled() -> bool {
+        std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0")
+    }
+
+    fn report(&self) -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let (hit, miss) = (g(&self.lookup_hit), g(&self.lookup_miss));
+        let total = hit + miss;
+        let miss_pct = if total == 0 { 0.0 } else { miss as f64 * 100.0 / total as f64 };
+        format!(
+            "eidos-fuse stats: lookup {total} ({miss} missing, {miss_pct:.1}%), \
+             getattr {}, readdir {}, open {}, read {}, write {}",
+            g(&self.getattr),
+            g(&self.readdir),
+            g(&self.open),
+            g(&self.read),
+            g(&self.write),
+        )
+    }
+}
 
 /// Maps inode numbers to virtual paths (relative, no leading slash; "" = root)
 /// and back, minting a stable inode the first time a path is seen.
@@ -213,6 +283,20 @@ impl Inodes {
     }
 }
 
+/// Raise this process's open-file soft limit to its hard limit. Best-effort:
+/// every failure path leaves us exactly where we started.
+fn raise_fd_limit() {
+    // SAFETY: getrlimit/setrlimit with a valid, fully-initialised rlimit struct.
+    unsafe {
+        let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 || lim.rlim_cur >= lim.rlim_max {
+            return;
+        }
+        lim.rlim_cur = lim.rlim_max;
+        let _ = libc::setrlimit(libc::RLIMIT_NOFILE, &lim);
+    }
+}
+
 /// The case-folded key under which a virtual path is interned. Eidos resolves
 /// paths case-insensitively (Windows games mix casing freely between the plugin
 /// header, the loose-file indexer and BSA lookups), so one real file must map to
@@ -241,6 +325,7 @@ pub struct Eidos {
     /// Per-handle directory snapshots taken at `opendir`, for stable `readdir`.
     open_dirs: Mutex<HashMap<u64, Vec<DirEntry>>>,
     next_fh: AtomicU64,
+    stats: Stats,
 }
 
 /// Join a parent virtual path and a child name into a virtual path.
@@ -284,6 +369,7 @@ impl Eidos {
             open_files: Mutex::new(HashMap::new()),
             open_dirs: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
+            stats: Stats::default(),
         }
     }
 
@@ -303,6 +389,47 @@ impl Eidos {
         let inodes = self.inodes.lock_recover();
         let parent_vpath = inodes.path(parent.0)?;
         Some(join(&parent_vpath, &name.to_string_lossy()))
+    }
+
+    /// Answer a failed lookup with a NEGATIVE DENTRY (`ino = 0`) rather than
+    /// ENOENT, so the kernel caches the absence and stops asking.
+    ///
+    /// This is the single biggest metadata lever. Wine probes enormous numbers of
+    /// paths that do not exist - every DLL search-order walk, every `.ini`/`.txt`
+    /// sidecar the engine looks for beside a resource, every script-extender
+    /// plugin's config probe - and a bare ENOENT is not cached by the kernel, so
+    /// each repeat costs a full `resolve_read`: a case-folding directory scan per
+    /// layer, plus a whiteout check per ancestor. With 200 mod layers that is
+    /// hundreds of `read_dir` calls for one absent file, and it is exactly the
+    /// metadata storm that stalls a Bethesda game's startup for minutes.
+    ///
+    /// The TTL is deliberately short. The kernel keys its negative dentries on the
+    /// exact name bytes while Eidos folds case, so a negative cached for `Foo.esp`
+    /// would survive a create of `foo.esp` through the mount until it expires.
+    /// Creation through this mount is safe regardless (the kernel re-issues a real
+    /// lookup for O_CREAT and for every LOOKUP_EXCL path), so the window only
+    /// concerns a differently-cased create, which self-heals in seconds.
+    fn reply_negative(&self, reply: ReplyEntry) {
+        // ino = 0 IS the negative dentry; no inode is minted or refcounted for a
+        // path that does not exist.
+        let blank = FileAttr {
+            ino: INodeNo(0),
+            size: 0,
+            blocks: 0,
+            atime: UNIX_EPOCH,
+            mtime: UNIX_EPOCH,
+            ctime: UNIX_EPOCH,
+            crtime: UNIX_EPOCH,
+            kind: FileType::RegularFile,
+            perm: 0,
+            nlink: 0,
+            uid: self.uid,
+            gid: self.gid,
+            rdev: 0,
+            blksize: 4096,
+            flags: 0,
+        };
+        reply.entry(&NEG_TTL, &blank, Generation(0));
     }
 
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
@@ -364,6 +491,14 @@ impl Eidos {
 }
 
 impl Filesystem for Eidos {
+    fn destroy(&mut self) {
+        // Unmount is the natural place to report: the run is over and the numbers
+        // are final. Silent unless EIDOS_FUSE_STATS is set.
+        if Stats::enabled() {
+            eprintln!("{}", self.stats.report());
+        }
+    }
+
     fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
         // FUSE passthrough: negotiate the capability and a non-zero stack depth so
         // the kernel routes reads/writes/mmap straight to the real backing file.
@@ -393,6 +528,15 @@ impl Filesystem for Eidos {
         // already cached kernel-side via our entry/attr TTL.)
         let _ = config.set_max_readahead(1 << 20);
         let _ = config.set_max_write(1 << 20);
+
+        // A modded load order streams hundreds of BSA/BA2 archives plus loose
+        // assets, and Wine opens files it never reads (metadata probes). Each
+        // `open` retains a real fd (plus a passthrough registration), so the
+        // default 1024 soft limit is reachable - and EMFILE surfaces in-game as an
+        // asset that simply is not there, with no error text anywhere. Raise the
+        // soft limit to the hard limit; best-effort, since a failure here only
+        // returns us to the status quo.
+        raise_fd_limit();
         Ok(())
     }
 
@@ -402,6 +546,7 @@ impl Filesystem for Eidos {
     }
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
+        Stats::bump(&self.stats.open);
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -505,19 +650,25 @@ impl Filesystem for Eidos {
         let vpath = join(&parent_vpath, &name.to_string_lossy());
         // Resolve + stat without the inode lock held.
         let Some(real) = self.stack.resolve_read(&vpath) else {
-            reply.error(Errno::ENOENT);
+            Stats::bump(&self.stats.lookup_miss);
+            self.reply_negative(reply);
             return;
         };
         match fs::symlink_metadata(&real) {
             Ok(meta) => {
+                Stats::bump(&self.stats.lookup_hit);
                 let ino = self.inodes.lock_recover().lookup(&vpath);
                 reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
             }
-            Err(_) => reply.error(Errno::ENOENT),
+            Err(_) => {
+                Stats::bump(&self.stats.lookup_miss);
+                self.reply_negative(reply);
+            }
         }
     }
 
     fn getattr(&self, _req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
+        Stats::bump(&self.stats.getattr);
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -558,6 +709,7 @@ impl Filesystem for Eidos {
         _lock_owner: Option<LockOwner>,
         reply: ReplyData,
     ) {
+        Stats::bump(&self.stats.read);
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
@@ -588,6 +740,7 @@ impl Filesystem for Eidos {
     }
 
     fn opendir(&self, _req: &Request, ino: INodeNo, _flags: OpenFlags, reply: ReplyOpen) {
+        Stats::bump(&self.stats.readdir);
         // Snapshot the listing now so offsets stay valid even if the directory
         // changes before releasedir (the conformant readdir pattern).
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
@@ -597,7 +750,19 @@ impl Filesystem for Eidos {
         let entries = self.dir_snapshot(ino.0, &vpath);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
         self.open_dirs.lock_recover().insert(fh, entries);
-        reply.opened(FileHandle(fh), FopenFlags::empty());
+        // CACHE_DIR lets the kernel keep the directory listing and serve repeat
+        // enumerations itself. The Creation Engine's loose-file indexer and Wine's
+        // directory probing re-walk the same directories relentlessly, and each
+        // uncached readdir costs a merged multi-layer scan in `dir_snapshot`. Safe
+        // for the same reason the long entry TTL is: mod layers are immutable for
+        // the life of the mount, and anything written through the mount goes
+        // through our own handlers.
+        let flags = if caching_disabled() {
+            FopenFlags::empty()
+        } else {
+            FopenFlags::FOPEN_CACHE_DIR | FopenFlags::FOPEN_KEEP_CACHE
+        };
+        reply.opened(FileHandle(fh), flags);
     }
 
     fn readdir(
@@ -721,6 +886,7 @@ impl Filesystem for Eidos {
         _lock_owner: Option<LockOwner>,
         reply: ReplyWrite,
     ) {
+        Stats::bump(&self.stats.write);
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
         if let Some(file) = cached {

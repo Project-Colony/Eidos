@@ -227,6 +227,39 @@ fn xattr_on_a_deleted_file_does_not_resurrect_it() {
     assert_eq!(fs::read(game.join("gone.esp")).unwrap(), b"vanilla"); // game pristine
 }
 
+fn creating_a_file_after_a_negative_lookup_is_visible() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let _s = mounted!(vec![game], over, &mnt);
+
+    // Probe an absent path first: this is what seeds the kernel's negative
+    // dentry. Creating it afterwards must be immediately visible - the kernel
+    // re-issues a real lookup for O_CREAT, so the cache cannot hide it.
+    assert!(!mnt.join("later.esp").exists());
+    fs::write(mnt.join("later.esp"), b"now here").unwrap();
+    assert_eq!(fs::read(mnt.join("later.esp")).unwrap(), b"now here");
+
+    // Same for a directory, which takes the LOOKUP_EXCL path.
+    assert!(!mnt.join("newdir").exists());
+    fs::create_dir(mnt.join("newdir")).unwrap();
+    assert!(mnt.join("newdir").is_dir());
+}
+
+fn a_negative_lookup_does_not_mint_an_inode() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "real.esp", b"x");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    // Probing a pile of absent names must not grow the inode table; a negative
+    // dentry carries ino = 0 and is never interned.
+    for i in 0..64 {
+        assert!(!mnt.join(format!("missing{i}.dll")).exists());
+    }
+    // The real file still resolves normally afterwards.
+    assert_eq!(fs::read(mnt.join("real.esp")).unwrap(), b"x");
+}
+
 fn rename_moves_file_through_mount() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -370,6 +403,8 @@ fn main() {
         ("recreate_after_delete_starts_empty", recreate_after_delete_starts_empty, true),
         ("same_file_has_one_inode_whatever_the_casing", same_file_has_one_inode_whatever_the_casing, false),
         ("xattr_on_a_deleted_file_does_not_resurrect_it", xattr_on_a_deleted_file_does_not_resurrect_it, true),
+        ("creating_a_file_after_a_negative_lookup_is_visible", creating_a_file_after_a_negative_lookup_is_visible, false),
+        ("a_negative_lookup_does_not_mint_an_inode", a_negative_lookup_does_not_mint_an_inode, false),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
