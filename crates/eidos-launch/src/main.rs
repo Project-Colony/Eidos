@@ -62,6 +62,8 @@ fn main() {
         base_bind: None,
         binds: Vec::new(),
         cwd: None,
+        root_layers: Vec::new(),
+        root_base_bind: None,
     };
     match launch(spec) {
         // Propagate the child's real status. `code()` is `None` when the child was

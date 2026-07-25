@@ -143,8 +143,8 @@ pub struct GameExecutables<'a> {
 
 /// Add a default tool for `exe` only if its file is present in `install` (detection
 /// is by file existence, like MO2's game plugins).
-fn push_tool_if_present(v: &mut Vec<Tool>, install: &Path, title: String, exe: &str) {
-    if !exe.is_empty() && install.join(exe).is_file() {
+fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, exe: &str) {
+    if !exe.is_empty() && search.iter().any(|d| d.join(exe).is_file()) {
         v.push(Tool {
             prereqs: default_prereqs(&title),
             title,
@@ -162,6 +162,24 @@ fn push_tool_if_present(v: &mut Vec<Tool>, install: &Path, title: String, exe: &
 /// tool installed later (e.g. SKSE after the instance was created) appears on the
 /// next load with no user action, exactly like MO2.
 pub fn default_tools(execs: GameExecutables, install: &Path) -> Vec<Tool> {
+    default_tools_in(execs, install, &[])
+}
+
+/// [`default_tools`], but also looking in `root_layers` - the `Root/` directories
+/// of enabled mods, which is where a script extender installed AS A MOD lives.
+///
+/// The stored path stays relative to the game root: detection runs outside the
+/// mount, but at launch the root union projects those same files onto the game
+/// directory, so `skse64_loader.exe` resolves there for real. Without this a
+/// Root-provided script extender would never appear as a tool at all.
+pub fn default_tools_in(
+    execs: GameExecutables,
+    install: &Path,
+    root_layers: &[PathBuf],
+) -> Vec<Tool> {
+    let search: Vec<PathBuf> =
+        std::iter::once(install.to_path_buf()).chain(root_layers.iter().cloned()).collect();
+    let install = &search;
     let mut v = Vec::new();
     if let Some(loader) = execs.script_extender.filter(|s| !s.is_empty()) {
         push_tool_if_present(&mut v, install, loader.trim_end_matches(".exe").to_string(), loader);

@@ -88,6 +88,19 @@ fn settle<T>(mut f: impl FnMut() -> Option<T>) -> Option<T> {
     None
 }
 
+/// Recursively bind-mount `src` onto `dst`, as the launcher does to capture the
+/// pristine files before a union covers that same path. Safe here because the
+/// test binary already entered a private mount namespace.
+fn bind(src: &Path, dst: &Path) -> bool {
+    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
+    let (s, d) = (c(src), c(dst));
+    // SAFETY: standard mount(2) bind with valid C strings.
+    unsafe {
+        libc::mount(s.as_ptr(), d.as_ptr(), std::ptr::null(), libc::MS_BIND | libc::MS_REC, std::ptr::null())
+            == 0
+    }
+}
+
 fn put(dir: &Path, rel: &str, contents: &[u8]) {
     let p = dir.join(rel);
     fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -334,6 +347,43 @@ fn renaming_a_file_drops_its_other_cached_spellings() {
     );
 }
 
+fn a_root_union_can_carry_a_data_union_inside_it() {
+    // MO2's Root Builder shape: one union over the GAME ROOT (where the exe and
+    // a script extender's DLLs live) with a second union over its Data/. This is
+    // what lets SKSE and ENB be mods instead of files copied into the install.
+    let t = Tmp::new();
+    let (game, root_mod, over_root) = (t.sub("game"), t.sub("rootmod"), t.sub("over_root"));
+    let (data_mod, over_data) = (t.sub("datamod"), t.sub("over_data"));
+    let stash = t.sub("stash");
+
+    // A pristine game root with its exe and a vanilla Data file.
+    put(&game, "SkyrimSE.exe", b"vanilla exe");
+    put(&game, "Data/Skyrim.esm", b"vanilla master");
+    // A mod shipping root-level content, as SKSE does.
+    put(&root_mod, "skse64_loader.exe", b"skse");
+    put(&root_mod, "Data/SKSE/Plugins/x.dll", b"plugin");
+    // And an ordinary Data mod.
+    put(&data_mod, "Interface/thing.swf", b"ui");
+
+    // Capture the pristine root at the stash, exactly as launch does: the union
+    // is about to cover `game` itself, so the daemon needs another way to read it.
+    if !bind(&game, &stash) {
+        eprintln!("  (cannot bind-mount, skipping)");
+        return;
+    }
+    let Some(_root) = mount(vec![root_mod, stash.clone()], over_root, &game) else { return };
+    // Everything the game root should show: vanilla exe, mod-provided loader.
+    assert_eq!(fs::read(game.join("SkyrimSE.exe")).unwrap(), b"vanilla exe");
+    assert_eq!(fs::read(game.join("skse64_loader.exe")).unwrap(), b"skse");
+
+    // The Data union mounts INSIDE the root union.
+    let data_mnt = game.join("Data");
+    let Some(_data) = mount(vec![data_mod], over_data, &data_mnt) else { return };
+    assert_eq!(fs::read(data_mnt.join("Interface/thing.swf")).unwrap(), b"ui");
+    // The root union is still readable underneath.
+    assert_eq!(fs::read(game.join("skse64_loader.exe")).unwrap(), b"skse");
+}
+
 fn readdir_lists_merged_deduped_entries() {
     let t = Tmp::new();
     let (game, modd, over, mnt) = (t.sub("game"), t.sub("mod"), t.sub("over"), t.sub("mnt"));
@@ -470,6 +520,7 @@ fn main() {
         ("a_negative_lookup_does_not_mint_an_inode", a_negative_lookup_does_not_mint_an_inode, false),
         ("a_create_clears_a_differently_cased_negative_lookup", a_create_clears_a_differently_cased_negative_lookup, false),
         ("renaming_a_file_drops_its_other_cached_spellings", renaming_a_file_drops_its_other_cached_spellings, true),
+        ("a_root_union_can_carry_a_data_union_inside_it", a_root_union_can_carry_a_data_union_inside_it, true),
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),

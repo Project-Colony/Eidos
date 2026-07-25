@@ -30,7 +30,8 @@ pub use meta::ModMeta;
 pub use profile::{Profile, SaveEntry};
 pub use settings::{Settings, Theme};
 pub use tools::{
-    default_prereqs, default_tools, merge_tools, read_tools, write_tools, GameExecutables, Tool,
+    default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, write_tools,
+    GameExecutables, Tool,
 };
 
 /// Where an instance is stored.
@@ -191,6 +192,31 @@ impl Instance {
     /// Bind-stash mountpoint for the pristine game files (used at launch).
     pub fn base_dir(&self) -> PathBuf {
         self.root.join(".base")
+    }
+
+    /// Bind-stash mountpoint for the pristine GAME ROOT, used when mods provide
+    /// root-level files (MO2's Root Builder) and a second union covers the game
+    /// install directory. Separate from [`Self::base_dir`], which stashes Data.
+    pub fn base_root_dir(&self) -> PathBuf {
+        self.root.join(".base-root")
+    }
+
+    /// The `Root/` directories of the enabled mods, highest priority FIRST.
+    ///
+    /// A mod ships its game-root content (a script extender, ENB, ReShade, an
+    /// `.asi` loader, Engine Fixes' `.toml`) in a `Root/` subdirectory, matched
+    /// case-insensitively because archives spell it every way. Mods without one
+    /// contribute nothing, so an ordinary load order returns an empty vec and no
+    /// second mount happens at all.
+    pub fn root_layers(&self) -> Vec<PathBuf> {
+        // `modlist()` is display order (lowest priority first); the union wants
+        // highest first, so walk it in reverse.
+        self.modlist()
+            .into_iter()
+            .rev()
+            .filter(|m| m.enabled && !m.is_separator())
+            .filter_map(|m| find_root_dir(&m.path))
+            .collect()
     }
 
     /// Downloaded mod archives land here (`<root>/downloads/`), each with its
@@ -482,6 +508,20 @@ pub struct Mo2Import {
     pub plugin_files: usize,
 }
 
+/// A mod's `Root/` directory, matched case-insensitively (archives ship `Root`,
+/// `root` and `ROOT` alike). `None` when the mod has none, which is the common
+/// case.
+fn find_root_dir(mod_dir: &Path) -> Option<PathBuf> {
+    fs::read_dir(mod_dir)
+        .ok()?
+        .flatten()
+        .find(|e| {
+            e.file_name().to_str().is_some_and(|n| n.eq_ignore_ascii_case("root"))
+                && e.path().is_dir()
+        })
+        .map(|e| e.path())
+}
+
 /// Move every entry of `from` into `to`, merging into existing directories and
 /// leaving `from` empty. Both sides live under the instance root (one
 /// filesystem), so entries move by rename; a rename that fails because the
@@ -646,6 +686,48 @@ mod tests {
         let empty = inst.root.join("not-a-profile");
         fs::create_dir_all(&empty).unwrap();
         assert!(inst.import_mo2_profile(&empty).is_err());
+    }
+
+    #[test]
+    fn root_layers_finds_root_dirs_highest_priority_first() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        // Archives spell it every way, so the match is case-insensitive.
+        fs::create_dir_all(inst.mods_dir().join("SKSE/Root")).unwrap();
+        fs::create_dir_all(inst.mods_dir().join("ENB/root")).unwrap();
+        fs::create_dir_all(inst.mods_dir().join("PlainMod/textures")).unwrap();
+        fs::create_dir_all(inst.mods_dir().join("Disabled/Root")).unwrap();
+        // Display order is lowest priority first.
+        inst.save_modlist(&[
+            ModEntry { name: "SKSE".into(), enabled: true, path: inst.mods_dir().join("SKSE") },
+            ModEntry { name: "PlainMod".into(), enabled: true, path: inst.mods_dir().join("PlainMod") },
+            ModEntry { name: "Disabled".into(), enabled: false, path: inst.mods_dir().join("Disabled") },
+            ModEntry { name: "ENB".into(), enabled: true, path: inst.mods_dir().join("ENB") },
+        ])
+        .unwrap();
+
+        let layers = inst.root_layers();
+        // Highest priority first (ENB is last in display order), disabled skipped,
+        // and a mod without a Root/ contributes nothing.
+        assert_eq!(layers.len(), 2, "got {layers:?}");
+        assert!(layers[0].ends_with("ENB/root"));
+        assert!(layers[1].ends_with("SKSE/Root"));
+    }
+
+    #[test]
+    fn an_ordinary_load_order_asks_for_no_root_mount() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("JustTextures/textures")).unwrap();
+        inst.save_modlist(&[ModEntry {
+            name: "JustTextures".into(),
+            enabled: true,
+            path: inst.mods_dir().join("JustTextures"),
+        }])
+        .unwrap();
+        // Empty means the launcher skips the second mount entirely, so existing
+        // setups behave exactly as before.
+        assert!(inst.root_layers().is_empty());
     }
 
     #[test]

@@ -396,6 +396,11 @@ fn run_through_view(
     // existing UTF-8 locale is left untouched.
     env.extend(eidos_launch::utf8_locale_env_from_process());
 
+    let root_layers = inst.root_layers();
+    if !root_layers.is_empty() {
+        eprintln!("eidos: {} mod(s) provide root-level files", root_layers.len());
+    }
+
     let spec = LaunchSpec {
         layers: inst.load_order(),
         overwrite: inst.overwrite_dir(),
@@ -405,6 +410,13 @@ fn run_through_view(
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
         binds: save_bind.into_iter().collect(),
         cwd,
+        // MO2's Root Builder: a mod's `Root/` is projected onto the GAME INSTALL
+        // ROOT rather than into Data/, which is how a script extender, ENB,
+        // ReShade or Engine Fixes becomes a real, orderable, per-profile mod
+        // instead of files copied into the game by hand. Empty for a load order
+        // that uses none, in which case no second mount happens.
+        root_layers,
+        root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
     };
     let result = launch(spec);
 
@@ -527,8 +539,13 @@ fn forced_dll_overrides(
 
 /// Per-game default tools auto-detected in the game dir: the script extender, the
 /// vanilla launcher, and the game binary - whichever are present.
-fn default_tools(game: &DetectedGame) -> Vec<eidos_instance::Tool> {
-    eidos_instance::default_tools(game_executables(game), &game.install_path)
+///
+/// `inst` widens the search to enabled mods' `Root/` directories, so a script
+/// extender installed AS A MOD is detected too; at launch the root union puts it
+/// on the game root for real.
+fn default_tools_for(game: &DetectedGame, inst: Option<&Instance>) -> Vec<eidos_instance::Tool> {
+    let roots = inst.map(|i| i.root_layers()).unwrap_or_default();
+    eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots)
 }
 
 /// The auto-detectable executables for a game, from its `GameDef`.
@@ -565,7 +582,7 @@ fn cmd_tool(args: &[String]) {
 
     match args.get(1).map(String::as_str) {
         None | Some("list") => {
-            let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+            let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
             if tools.is_empty() {
                 println!("No tools. Add one: eidos tool {id} add <title> <exe> [args...]");
                 return;
@@ -638,7 +655,7 @@ fn cmd_tool(args: &[String]) {
                 None => Vec::new(),
             };
 
-            let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+            let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
             let Some(tool) = tools.iter().find(|t| t.title.eq_ignore_ascii_case(title)) else {
                 eprintln!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
@@ -768,7 +785,7 @@ fn cmd_prereqs(args: &[String]) {
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
 
     // Union of every tool's declared prereqs, split by tier.
-    let tools = eidos_instance::merge_tools(inst.tools(), default_tools(&game));
+    let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
     let mut verbs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for t in &tools {
         verbs.extend(t.prereqs.iter().cloned());

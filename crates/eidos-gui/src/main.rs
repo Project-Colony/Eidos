@@ -879,7 +879,11 @@ fn load_tools(app: &mut App) {
     let merged = match (selected_game(app), &app.created) {
         (Some(g), Some(inst)) => eidos_instance::merge_tools(
             inst.tools(),
-            eidos_instance::default_tools(game_executables(g), &g.install_path),
+            eidos_instance::default_tools_in(
+                game_executables(g),
+                &g.install_path,
+                &app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default(),
+            ),
         ),
         _ => Vec::new(),
     };
@@ -905,7 +909,11 @@ fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
     let (game, inst) = (selected_game(app)?, app.created.as_ref()?);
     let user = inst.tools();
     let user_len = user.len();
-    let defaults = eidos_instance::default_tools(game_executables(game), &game.install_path);
+    // Widened to enabled mods' Root/ dirs, so a script extender installed as a
+    // mod is detected; the root union puts it on the game root at launch.
+    let roots = app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default();
+    let defaults =
+        eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots);
     let merged = eidos_instance::merge_tools(user, defaults);
     let mut state = ExecutablesDialogState {
         merged,

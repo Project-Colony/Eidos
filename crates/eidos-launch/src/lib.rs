@@ -43,6 +43,24 @@ pub struct LaunchSpec {
     /// resolves its address library CWD-relative). Tools override it (MO2's
     /// default for a tool is the executable's own directory).
     pub cwd: Option<PathBuf>,
+    /// ROOT-LEVEL mod layers, highest priority first: each enabled mod's `Root/`
+    /// directory, projected onto the GAME INSTALL ROOT rather than into `Data/`.
+    ///
+    /// This is MO2's Root Builder, and it is what makes a script extender, ENB,
+    /// ReShade, `.asi` loaders and Engine Fixes manageable as mods instead of
+    /// files the user copies into their game by hand. Empty (the default) means
+    /// no second mount happens at all and behaviour is exactly as before.
+    ///
+    /// Other managers deploy these by copying into the real game directory and
+    /// restoring afterwards, with a journal so a crash can be cleaned up. Eidos
+    /// does not have to: it already owns a private mount namespace, so a second
+    /// union over the game root gives the same result with nothing written to
+    /// disk and no residue possible - the namespace dies with the process.
+    pub root_layers: Vec<PathBuf>,
+    /// `(game_root, stash)` for the root union, mirroring [`Self::base_bind`]:
+    /// the bind captures the pristine game root so the daemon can still read it
+    /// once the union covers that same path.
+    pub root_base_bind: Option<(PathBuf, PathBuf)>,
 }
 
 fn check(rc: i32) -> std::io::Result<()> {
@@ -145,6 +163,37 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
             );
         }
     }
+
+    // ROOT UNION FIRST, if any mod ships a `Root/`. Order matters: this union
+    // covers the game install root, and the Data union below then mounts INSIDE
+    // it. Mounting Data first would leave it shadowed by the root mount.
+    //
+    // `_root_session` is bound before `session` so that reverse drop order at the
+    // end of this function unmounts Data before the root beneath it.
+    let _root_session = if spec.root_layers.is_empty() {
+        None
+    } else {
+        let Some((root_src, root_stash)) = spec.root_base_bind.as_ref() else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "root_layers given without root_base_bind",
+            ));
+        };
+        std::fs::create_dir_all(root_stash)?;
+        bind_mount(root_src, root_stash)?;
+        let mut root_layers = spec.root_layers.clone();
+        // Lowest priority: the pristine game files, read through the stash.
+        root_layers.push(root_stash.clone());
+        // The root union gets its own overwrite area, so a game writing beside its
+        // own exe (crash logs, ReShade caches) still never touches the install.
+        let root_overwrite = root_stash.with_extension("root-overwrite");
+        std::fs::create_dir_all(&root_overwrite)?;
+        eprintln!(
+            "eidos: {} mod(s) provide root-level files; mounting a union over the game root",
+            spec.root_layers.len()
+        );
+        Some(Eidos::new(root_layers, root_overwrite).spawn(root_src)?)
+    };
 
     std::fs::create_dir_all(&spec.mountpoint)?;
     let session = Eidos::new(layers, spec.overwrite).spawn(&spec.mountpoint)?;
