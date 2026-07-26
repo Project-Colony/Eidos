@@ -130,10 +130,27 @@ The escape hatches ship with the caching, because "the game sees stale data" has
 to be testable against caching as the suspect in a single run:
 `EIDOS_FUSE_NO_CACHE=1` turns all of it off and `EIDOS_FUSE_NO_CACHE=attr,neg,keep,dir`
 names them one at a time, which is what let the crash above be bisected to a
-single flag in four launches. `EIDOS_FUSE_STATS=1` dumps per-op counters (lookup
-hit/miss ratio, getattr, readdir, open, read, write) at unmount, and
-`EIDOS_FUSE_THREADS=1` restores single-threaded serving when diagnosing a
-concurrency bug.
+single flag in four launches. `EIDOS_FUSE_STATS=1` dumps per-op counters at
+unmount, and `EIDOS_FUSE_THREADS=1` restores single-threaded serving when
+diagnosing a concurrency bug.
+
+The counters are worth reading closely, because their shape is the whole argument
+for where the time goes. A measured 9.5-minute session, 7 mods, passthrough off:
+
+```
+lookup 10702 (846 missing, 7.9%), getattr 18019, opendir 516301, readdir <low>,
+open 8298, read 26999, write 69
+```
+
+Directory OPENS dominate by two orders of magnitude over reads, and almost none of
+them enumerate anything: Wine opens a directory, asks whether it folds case, and
+closes it again on every failed path resolution. The `.ciopfs` marker answers the
+question, but nothing can make the open itself cacheable - the kernel has no cache
+for opening a directory inode, while it does cache the `lookup` that follows, which
+is why `lookup` is 50x smaller and hid this for so long. `probe` counts the handles
+closed without a single `readdir`, so the split between probing and enumerating is
+measured rather than inferred. At roughly 10 us per open it costs about 1% of a
+session, which is why it is instrumented and not fixed with a protocol change.
 
 ## Repo layout
 

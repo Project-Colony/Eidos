@@ -225,6 +225,24 @@ that does **not** yet close:
   220000 times in ninety seconds for listings nobody read. The snapshot is taken
   by the first `readdir` now; offsets stay stable because it still happens
   exactly once per handle.
+- **The merged listing is memoised by path**, not only per handle, so a directory
+  enumerated repeatedly pays for one multi-layer walk and one NTFS-collation sort
+  instead of one per enumeration. Justified by the same immutability as the long
+  entry TTL: mod layers do not change for the life of the mount, and anything
+  written through the mount goes through a handler that drops the affected parent
+  (`dir_changed`; `grep` for it is the audit that no mutating handler is missing
+  one). Inodes are deliberately NOT cached with the listing - `forget` drops an
+  inode when the kernel releases its last reference and a later `intern` of the
+  same path mints a fresh number, so cached entries would hand out inodes the
+  daemon no longer knows. Interning is a hashmap hit against real disk I/O, so it
+  is redone per enumeration and is always correct.
+- **The op counters distinguish opening a directory from listing one.** They did
+  not: the counter printed as `readdir` was incremented in `opendir`, which made a
+  measured 516301 read as half a million enumerations when almost none of them
+  enumerated. Directory opens, enumerations, merges, cache hits and `.ciopfs`
+  marker lookups are now separate, plus `probe` for handles closed without a single
+  `readdir` - the only honest measure of Wine's case-sensitivity probing, since the
+  negative-dentry cache absorbs the lookups while every open still reaches us.
 
 ### Caching, and one flag that had to go
 

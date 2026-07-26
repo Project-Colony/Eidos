@@ -405,6 +405,86 @@ fn readdir_lists_merged_deduped_entries() {
     assert_eq!(names, vec!["a.dat", "b.dat", "shared.dat", "_under.dat"]); // shared once; `_` last
 }
 
+/// The merged listing is memoised by path, so every mutation must drop it. Each
+/// case here ENUMERATES FIRST - that is what fills the cache - then mutates, then
+/// enumerates again. Without the drop the second listing is the first one, and the
+/// game spends the rest of the mount looking at a directory that no longer exists
+/// in that shape.
+fn a_cached_listing_is_dropped_by_every_mutation() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "keep.dat", b"k");
+    put(&game, "doomed.dat", b"d");
+    put(&game, "sub/inner.dat", b"i");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let names = |p: &std::path::Path| -> Vec<String> {
+        let mut v: Vec<String> = fs::read_dir(p)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    };
+
+    // Prime the cache.
+    assert_eq!(names(&mnt), vec!["doomed.dat", "keep.dat", "sub"]);
+
+    // create
+    fs::write(mnt.join("fresh.dat"), b"f").unwrap();
+    assert!(names(&mnt).contains(&"fresh.dat".to_string()), "create must invalidate");
+
+    // unlink
+    fs::remove_file(mnt.join("doomed.dat")).unwrap();
+    assert!(!names(&mnt).contains(&"doomed.dat".to_string()), "unlink must invalidate");
+
+    // mkdir
+    fs::create_dir(mnt.join("made")).unwrap();
+    assert!(names(&mnt).contains(&"made".to_string()), "mkdir must invalidate");
+
+    // rmdir - and the removed directory's OWN cached listing must go too, or a
+    // recreated directory of the same name would come back with the old contents.
+    let _ = names(&mnt.join("made")); // cache the empty listing
+    fs::remove_dir(mnt.join("made")).unwrap();
+    assert!(!names(&mnt).contains(&"made".to_string()), "rmdir must invalidate the parent");
+
+    // symlink
+    std::os::unix::fs::symlink("keep.dat", mnt.join("alias.dat")).unwrap();
+    assert!(names(&mnt).contains(&"alias.dat".to_string()), "symlink must invalidate");
+
+    // rename, which changes BOTH parents
+    let _ = names(&mnt.join("sub"));
+    fs::rename(mnt.join("keep.dat"), mnt.join("sub/moved.dat")).unwrap();
+    let top = names(&mnt);
+    assert!(!top.contains(&"keep.dat".to_string()), "rename must invalidate the source dir");
+    assert!(
+        names(&mnt.join("sub")).contains(&"moved.dat".to_string()),
+        "rename must invalidate the destination dir"
+    );
+}
+
+/// A directory recreated after being removed must not inherit the listing cached
+/// for its previous incarnation.
+fn a_recreated_directory_does_not_inherit_the_old_listing() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "d/old.dat", b"o");
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let names = |p: &std::path::Path| -> Vec<String> {
+        fs::read_dir(p)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+
+    assert_eq!(names(&mnt.join("d")), vec!["old.dat"]); // prime
+    fs::remove_file(mnt.join("d/old.dat")).unwrap();
+    fs::remove_dir(mnt.join("d")).unwrap();
+    fs::create_dir(mnt.join("d")).unwrap();
+    assert!(names(&mnt.join("d")).is_empty(), "a recreated directory starts empty");
+}
+
 fn rmdir_refuses_non_empty_directory() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -524,6 +604,8 @@ fn main() {
         ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
+        ("a_cached_listing_is_dropped_by_every_mutation", a_cached_listing_is_dropped_by_every_mutation, true),
+        ("a_recreated_directory_does_not_inherit_the_old_listing", a_recreated_directory_does_not_inherit_the_old_listing, true),
         ("large_file_round_trips_through_cached_handle", large_file_round_trips_through_cached_handle, false),
         ("symlink_in_a_layer_is_readable", symlink_in_a_layer_is_readable, false),
         ("creating_a_symlink_lands_in_overwrite", creating_a_symlink_lands_in_overwrite, false),

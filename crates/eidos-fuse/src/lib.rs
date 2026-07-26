@@ -134,6 +134,10 @@ static NEG_TTL: std::sync::LazyLock<Duration> = std::sync::LazyLock::new(|| {
 /// A directory entry in an `opendir` snapshot: `(inode, kind, name)`.
 type DirEntry = (u64, FileType, String);
 
+/// A merged directory listing without inodes: the layers collapsed and NTFS-collated.
+/// Shared, because it is cached by path and handed to every enumeration of it.
+type Listing = Arc<Vec<(String, FileType)>>;
+
 /// One open directory handle. `entries` is filled by the first `readdir`.
 struct OpenDir {
     ino: u64,
@@ -156,7 +160,31 @@ struct Stats {
     lookup_hit: AtomicU64,
     lookup_miss: AtomicU64,
     getattr: AtomicU64,
+    /// Directory OPENS. Counted separately from `readdir` since a measured session
+    /// reported 516301 of these against 26999 reads - and the counter used to live
+    /// in `opendir` while being NAMED `readdir`, which made the number unreadable:
+    /// it was taken for half a million enumerations when almost none of them
+    /// enumerated anything. See `probe`.
+    opendir: AtomicU64,
+    releasedir: AtomicU64,
+    /// Directory handles closed without a single `readdir` - opened purely to look
+    /// at the directory inode, never to list it. Wine does this on every failed
+    /// path resolution to ask whether the directory folds case. This counter is the
+    /// only honest measure of how much of `opendir` is probing rather than
+    /// enumerating; ratios against `lookup` cannot tell them apart, because the
+    /// negative-dentry cache absorbs the lookups while every directory open still
+    /// reaches us (the kernel has no cache for those).
+    probe: AtomicU64,
+    /// Enumeration requests, at last counted in `readdir` itself.
     readdir: AtomicU64,
+    /// Merged listings actually built - a multi-layer walk plus an NTFS-collation
+    /// sort. Against `dir_hit` this gives the by-path cache's hit rate.
+    snapshot: AtomicU64,
+    dir_hit: AtomicU64,
+    /// `.ciopfs` marker lookups: how often Wine asks whether a directory folds
+    /// case. Expected to sit orders of magnitude BELOW `opendir`, because the
+    /// answer is dentry-cached while the open that precedes it is not.
+    marker: AtomicU64,
     open: AtomicU64,
     read: AtomicU64,
     write: AtomicU64,
@@ -176,11 +204,20 @@ impl Stats {
         let (hit, miss) = (g(&self.lookup_hit), g(&self.lookup_miss));
         let total = hit + miss;
         let miss_pct = if total == 0 { 0.0 } else { miss as f64 * 100.0 / total as f64 };
+        let (od, probe) = (g(&self.opendir), g(&self.probe));
+        let probe_pct = if od == 0 { 0.0 } else { probe as f64 * 100.0 / od as f64 };
+        let (snap, dhit) = (g(&self.snapshot), g(&self.dir_hit));
+        let builds = snap + dhit;
+        let hit_pct = if builds == 0 { 0.0 } else { dhit as f64 * 100.0 / builds as f64 };
         format!(
             "eidos-fuse stats: lookup {total} ({miss} missing, {miss_pct:.1}%), \
-             getattr {}, readdir {}, open {}, read {}, write {}",
+             getattr {}, opendir {od} ({probe} probe-only, {probe_pct:.1}%), releasedir {}, \
+             readdir {}, listing {builds} ({dhit} cached, {hit_pct:.1}%), marker {}, \
+             open {}, read {}, write {}",
             g(&self.getattr),
+            g(&self.releasedir),
             g(&self.readdir),
+            g(&self.marker),
             g(&self.open),
             g(&self.read),
             g(&self.write),
@@ -482,6 +519,19 @@ pub struct Eidos {
     /// disaster - and once taken it stays fixed for the handle's life so offsets
     /// remain valid even if the directory changes underneath.
     open_dirs: Mutex<HashMap<u64, OpenDir>>,
+    /// Merged directory listings by vpath: the child `(name, kind)` pairs after the
+    /// layers are collapsed and NTFS-collated. That merge is the expensive half of
+    /// an enumeration - a `read_dir` per layer plus a sort - and mod layers are
+    /// immutable for the life of the mount, so repeat enumerations of the same
+    /// directory can reuse it. Anything written through the mount goes through our
+    /// own handlers, which drop the affected parent below.
+    ///
+    /// Inode numbers are deliberately NOT cached with it. `forget` drops an inode
+    /// when the kernel releases its last reference, and a later `intern` of the same
+    /// path mints a FRESH number - so a cached entry list would hand out inodes the
+    /// daemon no longer knows. Interning is a hashmap hit against real disk I/O, so
+    /// re-interning per enumeration costs almost nothing and is always correct.
+    dir_cache: Mutex<HashMap<String, Listing>>,
     next_fh: AtomicU64,
     stats: Stats,
     /// Negative dentries handed to the kernel, as `(parent_ino, exact name)`.
@@ -574,6 +624,7 @@ impl Eidos {
             gid,
             open_files: Mutex::new(HashMap::new()),
             open_dirs: Mutex::new(HashMap::new()),
+            dir_cache: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
@@ -714,6 +765,21 @@ impl Eidos {
         });
     }
 
+    /// A name just appeared in or vanished from `parent`. Drop that directory's
+    /// cached listing, and nudge the kernel about any differently-cased negative
+    /// dentry it may still hold for the name.
+    ///
+    /// One call per mutating handler, so `grep dir_changed` is the audit: a handler
+    /// that adds or removes a name without it leaves a stale listing behind, and
+    /// the game would enumerate a directory that no longer looks like that. The two
+    /// halves are deliberately NOT folded into `invalidate_folded_negatives` - that
+    /// one returns early when the parent has no negatives recorded, which is the
+    /// common case, so the cache drop would be skipped exactly when it matters.
+    fn dir_changed(&self, parent: u64, name: &str) {
+        self.invalidate_dir_of(parent);
+        self.invalidate_folded_negatives(parent, name);
+    }
+
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
@@ -815,22 +881,56 @@ impl Eidos {
         // one being deleted underneath us. It is dropped rather than guessed at:
         // omitting a file that is going away is a transient inaccuracy, while
         // naming a directory a file is a wrong answer the caller will act on.
-        let children: Vec<(String, FileType)> = self
-            .stack
-            .list_dir_typed(vpath)
-            .into_iter()
-            .filter_map(|(name, _real, ft)| Some((name, kind_of_type(&ft?))))
-            .collect();
+        let children = self.merged_children(vpath);
 
         let mut entries = Vec::with_capacity(children.len() + 2);
         entries.push((ino, FileType::Directory, ".".to_string()));
         entries.push((parent_ino, FileType::Directory, "..".to_string()));
         let mut inodes = self.inodes.lock_recover();
-        for (name, kind) in children {
-            let child_ino = inodes.intern(&join(vpath, &name));
-            entries.push((child_ino, kind, name));
+        for (name, kind) in children.iter() {
+            let child_ino = inodes.intern(&join(vpath, name));
+            entries.push((child_ino, *kind, name.clone()));
         }
         entries
+    }
+
+    /// The merged child list for `vpath`, from [`Self::dir_cache`] when it is
+    /// already there.
+    ///
+    /// The merge itself runs WITHOUT the cache locked: it does real disk I/O across
+    /// every layer, and holding the lock across it would serialise every other
+    /// directory in the daemon. Two threads racing the same path both do the work
+    /// and the first one to finish wins - wasteful once, never wrong.
+    fn merged_children(&self, vpath: &str) -> Listing {
+        if let Some(hit) = self.dir_cache.lock_recover().get(vpath) {
+            Stats::bump(&self.stats.dir_hit);
+            return Arc::clone(hit);
+        }
+        Stats::bump(&self.stats.snapshot);
+        let children: Listing = Arc::new(
+            self.stack
+                .list_dir_typed(vpath)
+                .into_iter()
+                .filter_map(|(name, _real, ft)| Some((name, kind_of_type(&ft?))))
+                .collect(),
+        );
+        let mut cache = self.dir_cache.lock_recover();
+        Arc::clone(cache.entry(vpath.to_string()).or_insert(children))
+    }
+
+    /// Drop the cached listing for a directory, by vpath. Called from every handler
+    /// that adds or removes a name.
+    fn invalidate_dir_cache(&self, vpath: &str) {
+        self.dir_cache.lock_recover().remove(vpath);
+    }
+
+    /// Drop the cached listing of `parent_ino`'s directory: the form the mutating
+    /// handlers have their parent in.
+    fn invalidate_dir_of(&self, parent_ino: u64) {
+        let vpath = self.inodes.lock_recover().path(parent_ino);
+        if let Some(v) = vpath {
+            self.invalidate_dir_cache(&v);
+        }
     }
 }
 
@@ -1048,6 +1148,7 @@ impl Filesystem for Eidos {
         // Answered on lookup only, and deliberately absent from `readdir`: it is a
         // signal to Wine, not a file the game should ever enumerate or open.
         if name.as_bytes() == CIOPFS_MARKER {
+            Stats::bump(&self.stats.marker);
             let ino = self.inodes.lock_recover().lookup(&vpath);
             reply.entry(&TTL, &self.marker_attr(ino), Generation(0));
             return;
@@ -1146,7 +1247,7 @@ impl Filesystem for Eidos {
     }
 
     fn opendir(&self, _req: &Request, ino: INodeNo, _flags: OpenFlags, reply: ReplyOpen) {
-        Stats::bump(&self.stats.readdir);
+        Stats::bump(&self.stats.opendir);
         // `EIDOS_FUSE_TRACE=opendir` names every directory the caller enumerates.
         // A game that re-walks one directory without end is invisible in the op
         // counters (they only total) and obvious here.
@@ -1193,6 +1294,7 @@ impl Filesystem for Eidos {
         offset: u64,
         mut reply: ReplyDirectory,
     ) {
+        Stats::bump(&self.stats.readdir);
         // Take the snapshot on the first readdir of this handle, then serve every
         // later call from it; stop the moment the kernel buffer is full (the
         // offset we pass is the resume point: index of the next entry).
@@ -1248,7 +1350,15 @@ impl Filesystem for Eidos {
         _flags: OpenFlags,
         reply: ReplyEmpty,
     ) {
-        self.open_dirs.lock_recover().remove(&fh.0);
+        Stats::bump(&self.stats.releasedir);
+        // A handle whose snapshot was never taken was never enumerated: the caller
+        // opened the directory to look at the inode, not to list it. That is what
+        // `probe` counts, by construction and without reference to any caller.
+        if let Some(d) = self.open_dirs.lock_recover().remove(&fh.0) {
+            if d.entries.is_none() {
+                Stats::bump(&self.stats.probe);
+            }
+        }
         reply.ok();
     }
 
@@ -1289,7 +1399,7 @@ impl Filesystem for Eidos {
             }
         };
 
-        self.invalidate_folded_negatives(parent.0, &name.to_string_lossy());
+        self.dir_changed(parent.0, &name.to_string_lossy());
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
@@ -1376,7 +1486,7 @@ impl Filesystem for Eidos {
                 return;
             }
         };
-        self.invalidate_folded_negatives(parent.0, &name.to_string_lossy());
+        self.dir_changed(parent.0, &name.to_string_lossy());
         let ino = self.inodes.lock_recover().lookup(&vpath);
         reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
     }
@@ -1403,6 +1513,7 @@ impl Filesystem for Eidos {
         })();
         match made {
             Ok(meta) => {
+                self.dir_changed(parent.0, &link_name.to_string_lossy());
                 let ino = self.inodes.lock_recover().lookup(&vpath);
                 reply.entry(&TTL, &self.attr(ino, &meta), Generation(0));
             }
@@ -1504,7 +1615,10 @@ impl Filesystem for Eidos {
             return;
         }
         match self.stack.remove(&vpath) {
-            Ok(()) => reply.ok(),
+            Ok(()) => {
+                self.dir_changed(parent.0, &name.to_string_lossy());
+                reply.ok()
+            }
             Err(e) => reply.error(e.into()),
         }
     }
@@ -1524,7 +1638,13 @@ impl Filesystem for Eidos {
             return;
         }
         match self.stack.remove(&vpath) {
-            Ok(()) => reply.ok(),
+            Ok(()) => {
+                // The directory itself is gone, so its own cached listing must go
+                // too, not just its parent's.
+                self.invalidate_dir_cache(&vpath);
+                self.dir_changed(parent.0, &name.to_string_lossy());
+                reply.ok()
+            }
             Err(e) => reply.error(e.into()),
         }
     }
@@ -1566,7 +1686,18 @@ impl Filesystem for Eidos {
                     self.record_alias(ino, newparent.0, &newname.to_string_lossy());
                 }
                 // The destination name may have been probed and cached absent.
-                self.invalidate_folded_negatives(newparent.0, &newname.to_string_lossy());
+                self.dir_changed(newparent.0, &newname.to_string_lossy());
+                // The SOURCE directory lost a name too, and it is a different
+                // directory whenever the rename crosses parents.
+                self.dir_changed(parent.0, &name.to_string_lossy());
+                // A renamed DIRECTORY rebinds every path beneath it, so every
+                // cached listing keyed on an old descendant path is now wrong.
+                // Cheap and correct beats clever here: renames are rare, a rebuilt
+                // listing costs one merge, and a stale one is a directory the game
+                // sees wrongly for the life of the mount.
+                if self.stack.resolve_read(&to).is_some_and(|p| p.is_dir()) {
+                    self.dir_cache.lock_recover().clear();
+                }
                 reply.ok();
             }
             Err(e) => reply.error(e.into()),
