@@ -508,13 +508,38 @@ fn run_through_view(
     }
 }
 
+/// Which of `shadows` are shipped as a top-level `.dll` in any of `dirs`.
+///
+/// One listing per directory, no recursion: a wrapper DLL only works where the
+/// loader looks for it, so it is never buried. Unreadable directories are skipped -
+/// `dirs` includes `Root/` paths that most mods do not have.
+fn shipped_shadow_stems(
+    dirs: &[PathBuf],
+    shadows: &[&str],
+) -> std::collections::BTreeSet<String> {
+    let mut stems = std::collections::BTreeSet::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(dir) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if let Some(stem) = name.strip_suffix(".dll") {
+                if shadows.contains(&stem) {
+                    stems.insert(stem.to_string());
+                }
+            }
+        }
+    }
+    stems
+}
+
 /// Compose the `WINEDLLOVERRIDES` that forces the right DLLs native-then-builtin
-/// (`n,b`) so mod graphics DLLs actually load under Wine. Two cases, mirroring
+/// (`n,b`) so mod graphics DLLs actually load under Wine. Three cases, mirroring
 /// MO2's forced libraries:
 ///
-/// 1. A mod SHIPS a top-level DLL that shadows a Wine builtin (ENB `d3d11`,
-///    ReShade `dxgi`, `.asi` loaders) - force the mod's own native so the builtin
-///    doesn't win.
+/// 1. A mod SHIPS a wrapper DLL that shadows a Wine builtin (ENB `d3d11`, ReShade
+///    `dxgi`, `.asi` loaders, Engine Fixes' `d3dx9_42` preloader) - force the mod's
+///    own native so the builtin doesn't win. Looked for at the mod's top level and
+///    in its `Root/`, since a game-root wrapper lives in the latter.
 /// 2. A mod (often a nested SKSE plugin) IMPORTS `d3dcompiler_47.dll` - Community
 ///    Shaders / ENB / ReShade need Microsoft's native HLSL compiler, which no
 ///    Proton flavour ships (they all link the Wine builtin, which those mods
@@ -530,26 +555,30 @@ fn forced_dll_overrides(
 ) -> Option<(String, String)> {
     // Wrapper DLLs a mod ships at its root (d3dcompiler_47 is handled by import
     // detection below, not by the ship check - mods import it, they don't ship it).
+    // `d3dx9_42` is the SKSE64 plugin preloader (SSE Engine Fixes' second half): a
+    // proxy DLL the Windows loader picks up from the game root, which then preloads
+    // the SKSE plugins that need to run before SKSE itself. Wine implements
+    // d3dx9_42, so without the override the builtin wins and the preloader never
+    // runs - silently, which is the whole problem with this class of mod.
     const SHIPPED_SHADOWS: &[&str] = &[
         "d3d8", "d3d9", "d3d10", "d3d11", "d3d12", "dxgi", "dinput", "dinput8", "winmm",
-        "xinput1_3", "x3daudio1_7", "opengl32",
+        "xinput1_3", "x3daudio1_7", "opengl32", "d3dx9_42",
     ];
     let mut roots: Vec<PathBuf> =
         inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
     roots.push(inst.overwrite_dir());
 
-    let mut stems: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for root in &roots {
-        let Ok(rd) = std::fs::read_dir(root) else { continue };
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
-            if let Some(stem) = name.strip_suffix(".dll") {
-                if SHIPPED_SHADOWS.contains(&stem) {
-                    stems.insert(stem.to_string());
-                }
-            }
-        }
-    }
+    // A wrapper DLL sits at the mod's top level when the mod is Data-relative, and
+    // in its `Root/` when the mod targets the game install root - which is where
+    // this whole class of DLL belongs, since the Windows loader only looks beside
+    // the executable. Scan both, one directory listing each: these are wrappers,
+    // never buried. The Root dirs come from `root_layers()`, the same list the
+    // launcher mounts over the game root, so the override and the mount cannot
+    // disagree about which mods ship root content (it also matches `Root`
+    // case-insensitively, which a hand-rolled join would not).
+    let mut scan: Vec<PathBuf> = roots.clone();
+    scan.extend(inst.root_layers());
+    let mut stems = shipped_shadow_stems(&scan, SHIPPED_SHADOWS);
 
     // The prefix's windows dir, where bundled native DLLs get deployed.
     let win = game.compatdata.as_ref().map(|cd| cd.join("pfx").join("drive_c").join("windows"));
@@ -1654,6 +1683,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// A wrapper DLL that belongs at the GAME ROOT lives in the mod's `Root/`, not
+    /// at its top level, so scanning only the top level misses exactly the mods this
+    /// override exists for. The concrete case: SSE Engine Fixes' preloader ships as
+    /// `Root/d3dx9_42.dll`, Wine implements d3dx9_42, and without the override the
+    /// builtin wins and the preloader never runs - with no error anywhere.
+    #[test]
+    fn a_wrapper_dll_is_found_in_a_mods_root_folder() {
+        let t = Tmp::new("shadow");
+        t.touch("mods/EngineFixesPreloader/Root/d3dx9_42.dll");
+        t.touch("mods/ENB/d3d11.dll");
+        // Not a wrapper, and buried: must not be picked up.
+        t.touch("mods/SomeMod/SKSE/Plugins/whatever.dll");
+
+        let shadows = ["d3d11", "d3dx9_42"];
+        let dirs = vec![
+            t.0.join("mods/EngineFixesPreloader"),
+            t.0.join("mods/EngineFixesPreloader/Root"),
+            t.0.join("mods/ENB"),
+            t.0.join("mods/SomeMod"),
+        ];
+        let stems = shipped_shadow_stems(&dirs, &shadows);
+
+        assert!(stems.contains("d3dx9_42"), "the Root/ preloader must be found");
+        assert!(stems.contains("d3d11"), "a top-level wrapper is still found");
+        assert_eq!(stems.len(), 2, "nothing else, and nothing from a nested dir");
     }
 
     // Guards FIX C1: the Overwrite layer must be the LAST (highest-priority) plugin

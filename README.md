@@ -148,7 +148,7 @@ crates/eidos-instance   instance model: global/portable, profiles, per-mod meta.
 crates/eidos-plugins    ESP/ESM/ESL plugin load order (via esplugin) + plugins.txt
 crates/eidos-loot       LOOT graph sorting (libloot) + masterlist fetch/cache
 crates/eidos-conflicts  per-file conflict analysis (winners / losers, per-mod state)
-crates/eidos-install    mod installer: 7-Zip extract + Simple wrapper-strip + meta.ini
+crates/eidos-install    mod installer: 7-Zip extract + Simple wrapper-strip + Root split + meta.ini
 crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
 crates/eidos-gamefeatures  BSA/archive invalidation + per-profile INIs/saves at launch
 crates/eidos-gamedef    declarative per-game descriptor (one row per game; MO2 schema)
@@ -414,6 +414,20 @@ layers themselves stay pristine even here.
       scripted installer (UTF-16 `ModuleConfig.xml` parse + condition/flag engine),
       driven from a CLI (`eidos install`) and the GUI Install button + an
       interactive FOMOD wizard; writes a MO2-compatible `meta.ini`
+- [x] **Root mods, natively** - a mod's `Root/` folder is projected onto the game
+      install directory by a second union mounted over the game root, with the Data
+      union nested inside it. This is what a script-extender preloader, an ENB, a
+      ReShade or an `.asi` loader needs, since the Windows loader only looks beside
+      the executable. MO2 cannot do it at all without the third-party Root Builder
+      plugin - not a usvfs limitation (usvfs redirects arbitrary absolute paths, and
+      MO2 already maps saves outside Data) but a policy choice in
+      `IPluginGame::getModMappings`, which maps every mod to `Data` and nothing
+      else. Eidos also recognises the archive shapes: `Data/` beside loose
+      executables, an explicit `Root/`, or a bare wrapper DLL with no Data half at
+      all, each laid out automatically. And a wrapper in `Root/` is picked up by the
+      `WINEDLLOVERRIDES` forcing, so the Wine builtin cannot silently win. Nothing
+      is ever copied into the real game folder - unlike Root Builder's copy mode,
+      which has to restore backups afterwards and leaves debris if it dies
 - [x] Nexus Mods integration (`eidos-nexus`) - connect with a personal API key
       (`eidos nexus key`), register the `nxm://` handler (`eidos nxm --register`)
       so the site's "Mod Manager Download" button downloads straight into the

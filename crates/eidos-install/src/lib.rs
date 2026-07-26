@@ -35,6 +35,24 @@ pub struct ArchiveTree {
     pub entries: BTreeMap<String, TreeNode>,
 }
 
+/// How a Root Builder archive splits into the two places a mod can put files: the
+/// game's `Data` directory, and the game install root. See
+/// [`ArchiveTree::root_builder_split`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootSplit {
+    /// `/`-joined prefix of the subtree that becomes the mod root (Data-relative),
+    /// e.g. `Data/` - or `Data/inner/` when the Data half needed its own descent.
+    /// `None` when the archive is root content only, with no `Data` half at all:
+    /// a bare preloader or wrapper DLL, which is how the second half of SSE Engine
+    /// Fixes ships on its own.
+    pub data_prefix: Option<String>,
+    /// The archive's own `Root` directory, when it shipped one. Its CONTENTS are
+    /// placed into the mod's `Root/`.
+    pub root_dir: Option<String>,
+    /// Top-level entries placed into the mod's `Root/`, in tree order.
+    pub root_entries: Vec<String>,
+}
+
 /// The verdict of a [`ModDataChecker`]-style check on an archive level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckReturn {
@@ -130,6 +148,98 @@ impl ArchiveTree {
             }
         }
         data
+    }
+
+    /// The Root Builder shape: ONE archive carrying both `Data`-relative content
+    /// and content for the game INSTALL ROOT, next to the game executable.
+    ///
+    /// This is how a script-extender preloader, an ENB, a ReShade or an `.asi`
+    /// loader ships. MO2 cannot install these at all without the third-party Root
+    /// Builder plugin, because it maps every mod's contents into `Data` and
+    /// discards what sits beside it. Eidos already mounts a mod's `Root/` over the
+    /// game install root natively (`Instance::root_layers`), so the only missing
+    /// piece is recognising the archive and laying it out.
+    ///
+    /// Matched when there is exactly one top-level directory named `Data`
+    /// (case-insensitive) whose own contents resolve as a mod root, plus at least
+    /// one sibling that is not a documentation file. The siblings become the mod's
+    /// `Root/`. An explicit `Root/` directory is honoured as itself: its CONTENTS
+    /// are what lands in `Root/`, not the folder nested inside itself.
+    ///
+    /// **Any other top-level DIRECTORY disqualifies the archive**, in both branches.
+    /// Loose executables beside `Data/` are unambiguous - nothing else explains a
+    /// `.dll` there - but a folder is not: `2K Textures/`, `Optional Textures/` and
+    /// `Documentation/` are all ordinary archive structure, and filing them at the
+    /// game root produces a mod that installs without error and does nothing, which
+    /// is the worst outcome available here. Those go back to BAIN or the manual
+    /// picker, where the user chooses.
+    ///
+    /// Docs are dropped, exactly as [`data_text_subdir`](Self::data_text_subdir)
+    /// drops them. Anything else is kept: a stray file at the game root is inert,
+    /// while a dropped `.dll` is a mod that silently does nothing - the failure
+    /// this whole path exists to prevent.
+    pub fn root_builder_split(&self) -> Option<RootSplit> {
+        let mut data: Option<&str> = None;
+        let mut root_dir: Option<String> = None;
+        let mut root_entries: Vec<String> = Vec::new();
+        let mut has_image = false;
+        for node in self.entries.values() {
+            match node {
+                TreeNode::Dir { name, .. } if name.eq_ignore_ascii_case("data") => {
+                    if data.is_some() {
+                        return None; // two Data dirs: not a shape we can reason about
+                    }
+                    data = Some(name.as_str());
+                }
+                TreeNode::Dir { name, .. } if name.eq_ignore_ascii_case("root") => {
+                    if root_dir.is_some() {
+                        return None;
+                    }
+                    root_dir = Some(name.clone());
+                }
+                // Structure we are not modelling: a BAIN sub-package, a texture
+                // variant folder, a docs folder. Refuse rather than sweep it to the
+                // game root.
+                TreeNode::Dir { .. } => return None,
+                TreeNode::File { name } => {
+                    let ext =
+                        name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+                    if IMAGE_EXTS.contains(&ext.as_str()) {
+                        has_image = true;
+                    }
+                    if !DOC_EXTS.contains(&ext.as_str()) {
+                        root_entries.push(name.clone());
+                    }
+                }
+            }
+        }
+        let Some(data) = data else {
+            // No Data half at all. This is the pure root mod - a preloader or wrapper
+            // DLL shipped on its own - and it is only safe to claim when nothing here
+            // could have been Data content: the stray-directory rule above already
+            // applies, so all that is left is to require either an explicit `Root/`
+            // or an actual executable image to project. Otherwise leave it to the
+            // manual picker rather than guess a mod into the game root, where it
+            // would do nothing.
+            if self.simple_archive_base().is_some() || (root_dir.is_none() && !has_image) {
+                return None;
+            }
+            return Some(RootSplit { data_prefix: None, root_dir, root_entries });
+        };
+        // No root half: a plain `Data/ + docs` archive, which is data_text_subdir's
+        // job and already installs. Claiming it here would only add an empty Root/.
+        if root_dir.is_none() && root_entries.is_empty() {
+            return None;
+        }
+        // The Data half has to hold up on its own, or the folder is a coincidence
+        // (a mod shipping a literal `data` folder of its own) and this is not the
+        // Root Builder shape at all.
+        let sub = match self.entries.get(&data.to_ascii_lowercase()) {
+            Some(TreeNode::Dir { tree, .. }) => tree,
+            _ => return None,
+        };
+        let inner = sub.simple_archive_base()?;
+        Some(RootSplit { data_prefix: Some(format!("{data}/{inner}")), root_dir, root_entries })
     }
 
     /// MO2's `ModDataChecker::dataLooksValid` for Gamebryo games: this level is a
@@ -511,6 +621,10 @@ fn is_version_like(s: &str) -> bool {
 /// DataText layer (lowercased).
 const DOC_EXTS: &[&str] = &["txt", "pdf", "md", "jpg", "jpeg", "png", "bmp"];
 
+/// Executable images: what the Windows loader maps from the game install root, and
+/// therefore what makes a Data-less archive a root mod rather than an unknown one.
+const IMAGE_EXTS: &[&str] = &["dll", "exe", "asi"];
+
 /// MO2's `fixDirectoryName`: make a mod folder name filesystem-safe - drop the
 /// Windows-illegal set `<>:"/\|?*` and control chars, collapse internal whitespace,
 /// strip trailing dots/spaces. Returns `None` if nothing usable remains. Needed
@@ -538,6 +652,112 @@ mod tests {
     #[test]
     fn valid_when_top_level_is_a_data_folder() {
         assert_eq!(tree(&["meshes/armor/a.nif"]).data_looks_valid(), CheckReturn::Valid);
+    }
+
+    /// SSE Engine Fixes' All-In-One, the archive that motivated this: a `data/` half
+    /// for the mod plus a loose preloader DLL for the game root. It is NOT a simple
+    /// archive - which is precisely why the root half used to be discarded.
+    #[test]
+    fn engine_fixes_all_in_one_splits_into_both_halves() {
+        let t = tree(&[
+            "data/skse/plugins/EngineFixes.dll",
+            "data/skse/plugins/EngineFixes.toml",
+            "d3dx9_42.dll",
+            "SSE Engine Fixes - Install Instructions.txt",
+            "vortex_override_instructions.json",
+        ]);
+        assert_eq!(t.simple_archive_base(), None, "must not already resolve as simple");
+        let split = t.root_builder_split().expect("root builder split");
+        assert_eq!(split.data_prefix.as_deref(), Some("data/"));
+        assert_eq!(split.root_dir, None);
+        // The DLL is kept, the .txt is dropped as documentation. The .json is not a
+        // known doc extension, so it is kept rather than silently binned.
+        assert!(split.root_entries.contains(&"d3dx9_42.dll".to_string()));
+        assert!(split.root_entries.contains(&"vortex_override_instructions.json".to_string()));
+        assert!(!split.root_entries.iter().any(|e| e.ends_with(".txt")));
+    }
+
+    /// An archive already using MO2's Root Builder convention. Its `Root/` is taken
+    /// as itself, so the contents land one level deep, not two.
+    #[test]
+    fn an_explicit_root_folder_is_taken_as_itself() {
+        let t = tree(&["Data/MyMod.esp", "Root/binkw64.dll", "Root/tools/patch.exe"]);
+        let split = t.root_builder_split().expect("root builder split");
+        assert_eq!(split.data_prefix.as_deref(), Some("Data/"));
+        assert_eq!(split.root_dir.as_deref(), Some("Root"));
+        assert!(split.root_entries.is_empty(), "Root/ contents are not also loose entries");
+    }
+
+    /// Engine Fixes' second half downloaded on its own: a bare preloader DLL, no
+    /// `Data` anywhere. The purest root mod there is, and the shape MO2 cannot take.
+    #[test]
+    fn a_bare_preloader_dll_is_a_pure_root_mod() {
+        let t = tree(&["d3dx9_42.dll", "vortex_override_instructions.json"]);
+        assert_eq!(t.simple_archive_base(), None);
+        let split = t.root_builder_split().expect("pure root mod");
+        assert_eq!(split.data_prefix, None, "there is no Data half to place");
+        assert!(split.root_entries.contains(&"d3dx9_42.dll".to_string()));
+    }
+
+    /// The guard on that: with no Data half AND no executable, we cannot tell root
+    /// content from an archive whose layout we simply do not understand. Guessing
+    /// would file it at the game root, where it would silently do nothing - so this
+    /// goes to the manual picker instead.
+    #[test]
+    fn a_dataless_archive_without_an_executable_is_left_to_the_picker() {
+        assert_eq!(tree(&["config.json", "notes.md"]).root_builder_split(), None);
+    }
+
+    /// And a stray directory means the archive has structure we are not modelling,
+    /// so the pure-root shortcut must not fire.
+    #[test]
+    fn a_dataless_archive_with_a_stray_directory_is_not_a_pure_root_mod() {
+        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(), None);
+    }
+
+    /// A plain `Data/ + readme` archive is the DataText case and already installs.
+    /// Claiming it here would bolt an empty `Root/` onto every ordinary mod.
+    #[test]
+    fn a_data_folder_beside_only_docs_is_not_a_root_split() {
+        let t = tree(&["Data/MyMod.esp", "readme.txt", "preview.png"]);
+        assert!(t.simple_archive_base().is_some(), "still the simple/DataText path");
+        assert_eq!(t.root_builder_split(), None);
+    }
+
+    /// A mod shipping its own folder called `data` (config, not the game's Data) must
+    /// not be torn in half: the Data candidate has to look like a mod root first.
+    #[test]
+    fn a_coincidental_data_folder_is_not_a_root_split() {
+        assert_eq!(tree(&["data/settings.cfg", "loader.dll"]).root_builder_split(), None);
+    }
+
+    /// A folder beside `Data/` is ordinary archive structure - a texture variant, a
+    /// BAIN sub-package, a docs folder - and NOT game-root content. Sweeping it into
+    /// `Root/` installs it next to the game exe, where nothing reads it: a mod that
+    /// reports success and does nothing. These three all used to be claimed.
+    #[test]
+    fn a_directory_beside_data_disqualifies_the_split() {
+        for files in [
+            // A texture pack with resolution variants.
+            &["Data/meshes/a.nif", "2K Textures/textures/a.dds"][..],
+            // A BAIN-shaped pack whose sub-packages are not `00`-prefixed.
+            &["Data/Core.esp", "Optional Textures/textures/a.dds"][..],
+            // A documentation folder.
+            &["Data/meshes/a.nif", "Documentation/manual.pdf"][..],
+        ] {
+            assert_eq!(
+                tree(files).root_builder_split(),
+                None,
+                "must not claim {files:?} - it belongs to BAIN or the manual picker"
+            );
+        }
+    }
+
+    /// The same rule on the Data-less side, which already had it: structure we do not
+    /// model means we do not guess.
+    #[test]
+    fn a_directory_beside_a_loose_dll_disqualifies_the_split() {
+        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(), None);
     }
 
     #[test]

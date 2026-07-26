@@ -15,7 +15,7 @@ use eidos_instance::ModMeta;
 
 use crate::{
     bain_default_selection, fix_directory_name, guess_mod_name, guess_mod_name_and_id, ArchiveEntry,
-    ArchiveTree, BAIN_MIN_SUBPACKAGES,
+    ArchiveTree, RootSplit, BAIN_MIN_SUBPACKAGES,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -314,6 +314,28 @@ pub fn install_extracted(
                             dest: dest.clone(),
                         });
                     }
+                }
+                // A Root Builder archive: `Data/` for the mod plus content for the
+                // game install root beside it. Unambiguous and non-interactive, so
+                // it installs directly rather than falling to the manual picker -
+                // which would drop the root half and leave a mod that looks
+                // installed and does nothing.
+                if let Some(split) = layout.root_builder_split() {
+                    // Resolve first, wipe second (the whole point of the ordering).
+                    let sources = resolve_root_split(tmp, &split)?;
+                    if replacing {
+                        fs::remove_dir_all(&dest)?;
+                    }
+                    fs::create_dir_all(&dest)?;
+                    place_root_split(&sources, &dest, merging)?;
+                    write_meta(archive, &dest, game_name, guessed_id)?;
+                    return Ok(InstallReport {
+                        name: name.clone(),
+                        stripped: split.data_prefix.unwrap_or_default(),
+                        fomod: false,
+                        missing: Vec::new(),
+                        dest: dest.clone(),
+                    });
                 }
                 return Err(InstallError::NotSimple);
             }
@@ -625,6 +647,173 @@ fn place_sources(sources: &[PathBuf], dest: &Path, merging: bool) -> io::Result<
     }
     for src in sources {
         overlay_dir(src, dest)?;
+    }
+    Ok(())
+}
+
+/// The mod-folder name Eidos projects onto the game install root at launch. Matched
+/// case-insensitively by `Instance::root_layers`, so the casing here is cosmetic -
+/// but it is MO2's Root Builder spelling, which is what a user coming from MO2 (or
+/// reading a mod's install instructions) expects to see in the mod folder.
+const ROOT_DIR_NAME: &str = "Root";
+
+/// The two halves of a Root Builder archive, resolved to real paths inside the
+/// extraction temp. Resolved BEFORE the destructive step, like every other install
+/// path here: nothing is wiped until we know both halves are on disk.
+struct RootSources {
+    /// The subtree that becomes the mod root (its contents are `Data`-relative).
+    /// `None` for a pure root mod, which has no Data half to place.
+    data: Option<PathBuf>,
+    /// Directories whose contents are overlaid onto the mod root ON TOP of `data`.
+    /// This is where an archive's `Root/Data/` goes - see [`resolve_root_split`].
+    data_extra: Vec<PathBuf>,
+    /// What lands in the mod's `Root/`. An archive's own `Root` directory
+    /// contributes its CONTENTS; every other entry contributes itself.
+    root: Vec<PathBuf>,
+}
+
+/// Resolve a [`RootSplit`] against the extraction temp.
+///
+/// Fallible on purpose, and every check here runs BEFORE the caller's destructive
+/// step - the same contract as [`resolve_bain_sources`] and [`resolve_manual_root`].
+/// An earlier version could not fail: it fell back to the whole extraction temp when
+/// the Data half did not resolve, which made a Replace wipe the old mod and then die
+/// half-way through with the mod gone and the message saying only `ENOENT`.
+///
+/// The Data half can genuinely fail to resolve even though the tree says it is a
+/// directory: [`ArchiveTree::from_dir`] classifies with `Path::is_dir`, which follows
+/// symlinks, while [`is_real_dir`] does not - so an archive shipping `Data` as a
+/// symlink is a Dir in the tree and not a directory on disk.
+fn resolve_root_split(tmp: &Path, split: &RootSplit) -> Result<RootSources, InstallError> {
+    let refuse = |what: &str| {
+        InstallError::BadSelection(format!("cannot lay out this archive: {what}"))
+    };
+
+    let data = match split.data_prefix.as_deref() {
+        Some(p) => Some(
+            resolve_ci(tmp, p.trim_matches(['/', '\\'].as_slice()))
+                .filter(|p| is_real_dir(p))
+                .ok_or_else(|| refuse(&format!("'{p}' is not a real directory")))?,
+        ),
+        None => None,
+    };
+
+    let mut root = Vec::new();
+    let mut data_extra = Vec::new();
+    if let Some(dir) = &split.root_dir {
+        // The archive already used the convention: take what is INSIDE it, so the
+        // result is `<mod>/Root/x.dll`, not `<mod>/Root/Root/x.dll`.
+        let p = resolve_ci(tmp, dir)
+            .filter(|p| is_real_dir(p))
+            .ok_or_else(|| refuse(&format!("'{dir}' is not a real directory")))?;
+        let rd = fs::read_dir(&p).map_err(|e| refuse(&format!("'{dir}': {e}")))?;
+        for e in rd.flatten() {
+            let path = e.path();
+            // `Root/Data/` is a legitimate Root Builder layout - Root Builder maps
+            // `Root/` onto the game folder, and the game folder's child IS `Data` -
+            // and it is how a repackaged script extender ships. Left in `Root/` it
+            // would be INVISIBLE here: the root union puts it at `<game>/Data`, and
+            // the Data union is mounted over exactly that path, shadowing it. So it
+            // joins the Data half, which is the layer that actually serves it.
+            let is_data = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.eq_ignore_ascii_case("data"));
+            if is_data && is_real_dir(&path) {
+                data_extra.push(path);
+            } else {
+                root.push(path);
+            }
+        }
+    }
+    for n in &split.root_entries {
+        // Never skip: dropping an entry here is the exact bug this whole path was
+        // written to fix, so a miss is a refusal, not a silent loss.
+        root.push(resolve_ci(tmp, n).ok_or_else(|| refuse(&format!("'{n}' is missing")))?);
+    }
+
+    // Two sources landing on the same name in `Root/` - a loose `notes` file beside
+    // the archive's own `Root/notes/` - would have one clobber the other, or abort
+    // the install mid-way on a type mismatch. Neither is ours to choose.
+    let mut seen = std::collections::BTreeSet::new();
+    for p in &root {
+        let key = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase());
+        let Some(key) = key else {
+            return Err(refuse("an entry has no file name"));
+        };
+        if !seen.insert(key.clone()) {
+            return Err(refuse(&format!("two entries would both become Root/{key}")));
+        }
+    }
+
+    // An archive that resolves to nothing at all must not reach the wipe: a Replace
+    // would delete the old mod and install an empty folder, reporting success.
+    if data.is_none() && root.is_empty() && data_extra.is_empty() {
+        return Err(refuse("it contains no installable content"));
+    }
+    Ok(RootSources { data, data_extra, root })
+}
+
+/// Clear whatever occupies `p` when it is not a directory, so a directory can be
+/// created or overlaid there.
+///
+/// `overlay_dir` clears occupants of its children but NOT of its own destination -
+/// its first statement is `create_dir_all(dst)`, which is `EEXIST` on a regular
+/// file. Every pre-existing caller passes a freshly created mod directory, so the
+/// gap never mattered; the root split is the first to pass an archive-named path.
+/// `symlink_metadata` does not follow, so a dangling link counts as an occupant.
+fn clear_non_dir(p: &Path) -> io::Result<()> {
+    match fs::symlink_metadata(p).map(|m| m.file_type()) {
+        Ok(t) if !t.is_dir() => fs::remove_file(p),
+        _ => Ok(()),
+    }
+}
+
+/// Lay a resolved Root Builder split into `dest`: the Data half becomes the mod
+/// folder, the root half becomes `<mod>/Root/`.
+fn place_root_split(src: &RootSources, dest: &Path, merging: bool) -> io::Result<()> {
+    if let Some(data) = &src.data {
+        if merging {
+            copy_dir_all(data, dest)?;
+        } else {
+            move_dir_contents(data, dest)?;
+        }
+    }
+    // On top of the Data half, never under it: an archive that ships both is saying
+    // the `Root/Data` copy is the one to use.
+    for extra in &src.data_extra {
+        overlay_dir(extra, dest)?;
+    }
+    if src.root.is_empty() {
+        return Ok(());
+    }
+    let root_dest = dest.join(ROOT_DIR_NAME);
+    // The Data half may have just planted a FILE named `Root` here, and this runs
+    // after the Replace wipe, so an EEXIST would take the old mod down with it.
+    clear_non_dir(&root_dest)?;
+    fs::create_dir_all(&root_dest)?;
+    for from in &src.root {
+        let Some(name) = from.file_name() else { continue };
+        let to = root_dest.join(name);
+        if is_real_dir(from) {
+            clear_non_dir(&to)?;
+            overlay_dir(from, &to)?;
+            continue;
+        }
+        // Whatever occupies the name loses, whichever type it is - `remove_file` on
+        // a directory is EISDIR, which used to abort the install after the wipe.
+        // `symlink_metadata` does not follow, so a dangling link still counts as an
+        // occupant and is removed rather than written through.
+        match fs::symlink_metadata(&to).map(|m| m.file_type()) {
+            Ok(t) if t.is_dir() => fs::remove_dir_all(&to)?,
+            Ok(_) => fs::remove_file(&to)?,
+            Err(_) => {}
+        }
+        if merging {
+            fs::copy(from, &to)?;
+        } else {
+            fs::rename(from, &to)?;
+        }
     }
     Ok(())
 }
@@ -994,6 +1183,13 @@ pub fn open_archive(
     let (subpackages, invalid) = layout.bain_subpackages();
     if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
         return Ok(Opened::Bain { tree, subpackages, invalid });
+    }
+    // A Root Builder archive needs no question asked - the split is structural -
+    // so it takes the Simple path, which `install_extracted` then lays out. Left to
+    // fall through, it would reach the manual picker, whose contract is to drop
+    // everything beside the chosen root: exactly the root half.
+    if layout.root_builder_split().is_some() {
+        return Ok(Opened::Simple(tree));
     }
     Ok(Opened::Manual(tree))
 }
@@ -1871,6 +2067,287 @@ mod tests {
         );
         assert!(r.is_err(), "writing meta.ini over a directory must fail");
         assert!(!mods.join("Pack").exists(), "the fresh destination must be cleaned up");
+    }
+
+    #[test]
+    fn a_root_builder_archive_installs_both_halves() {
+        let (t, mods, tmp) = bain_layout("rootbuilder");
+        // SSE Engine Fixes' All-In-One shape.
+        write_at(&tmp, "data/skse/plugins/EngineFixes.dll", b"plugin");
+        write_at(&tmp, "data/skse/plugins/EngineFixes.toml", b"cfg");
+        write_at(&tmp, "d3dx9_42.dll", b"preloader");
+        write_at(&tmp, "SSE Engine Fixes - Install Instructions.txt", b"docs");
+        let archive = t.path().join("Engine Fixes-17230-7-0-19.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &tree,
+            &archive,
+            &mods,
+            "Engine Fixes",
+            "skyrimse",
+            OverwritePolicy::Fail,
+            &ctx,
+        )
+        .expect("root builder install");
+
+        // The Data half is the mod itself, Data-relative.
+        assert!(r.dest.join("skse/plugins/EngineFixes.dll").is_file());
+        assert!(r.dest.join("skse/plugins/EngineFixes.toml").is_file());
+        // The root half lands where the launcher projects it onto the game root.
+        assert!(r.dest.join("Root/d3dx9_42.dll").is_file());
+        // The Data folder itself is not nested inside the mod, and docs are dropped.
+        assert!(!r.dest.join("data").exists());
+        assert!(!r.dest.join("Root/data").exists());
+        assert!(!r.dest.join("Root").join("SSE Engine Fixes - Install Instructions.txt").exists());
+        assert_eq!(r.stripped, "data/");
+        assert!(r.dest.join("meta.ini").is_file());
+    }
+
+    /// The invariant this file is built on, for the root-split path: a layout that
+    /// cannot be resolved must be refused BEFORE the Replace wipe, leaving the
+    /// existing mod exactly as it was.
+    ///
+    /// `Data` shipped as a symlink is the concrete way to get there: `from_dir`
+    /// classifies with `Path::is_dir`, which follows the link, so the tree says
+    /// directory while `is_real_dir` says otherwise. This used to fall back to the
+    /// whole extraction temp, wipe the mod, and then die on ENOENT part-way through.
+    #[test]
+    fn an_unresolvable_data_half_is_refused_before_the_wipe() {
+        let (t, mods, tmp) = bain_layout("rootsym");
+        write_at(&tmp, "payload/meshes/a.nif", b"mesh");
+        write_at(&tmp, "d3dx9_42.dll", b"preloader");
+        std::os::unix::fs::symlink("payload", tmp.join("Data")).unwrap();
+
+        // An existing mod that must survive the refusal untouched.
+        let dest = mods.join("MyMod");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("PRECIOUS.esp"), b"irreplaceable").unwrap();
+
+        let archive = t.path().join("Sym-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "MyMod",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            &ctx,
+        );
+
+        assert!(r.is_err(), "an unresolvable layout must not install");
+        assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    }
+
+    /// Same invariant, the empty case: an archive that resolves to nothing must not
+    /// wipe a mod and then report success over the crater.
+    #[test]
+    fn an_archive_with_nothing_to_install_is_refused_before_the_wipe() {
+        let (t, mods, tmp) = bain_layout("rootempty");
+        fs::create_dir_all(tmp.join("Root")).unwrap();
+
+        let dest = mods.join("MyMod");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("PRECIOUS.esp"), b"irreplaceable").unwrap();
+
+        let archive = t.path().join("Empty-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "MyMod",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            &ctx,
+        );
+
+        assert!(r.is_err(), "an empty archive must not report success");
+        assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    }
+
+    /// Two sources claiming the same name in `Root/`: a loose `notes` file beside the
+    /// archive's own `Root/notes/`. One would clobber the other, or the type mismatch
+    /// would abort the install after the wipe. Refuse instead, before the wipe.
+    #[test]
+    fn two_sources_claiming_one_root_name_are_refused() {
+        let (t, mods, tmp) = bain_layout("rootdup");
+        write_at(&tmp, "Data/MyMod.esp", b"esp");
+        write_at(&tmp, "Root/notes/thing.cfg", b"cfg");
+        write_at(&tmp, "notes", b"a loose file with the same name");
+
+        let dest = mods.join("MyMod");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("PRECIOUS.esp"), b"irreplaceable").unwrap();
+
+        let archive = t.path().join("Dup-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "MyMod",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            &ctx,
+        );
+
+        assert!(r.is_err(), "an ambiguous Root/ layout must not install");
+        assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    }
+
+    /// `Root/Data/` is a legitimate Root Builder layout - Root Builder maps `Root/`
+    /// onto the game folder, whose child IS `Data` - and it is how a repackaged
+    /// script extender ships. Left inside `Root/` it would be served at
+    /// `<game>/Data`, which the Data union is mounted over, so it would be visible
+    /// to nobody: not the game, not the plugin list. It has to join the Data half.
+    #[test]
+    fn root_data_joins_the_data_half_instead_of_being_shadowed() {
+        let (t, mods, tmp) = bain_layout("rootdata");
+        write_at(&tmp, "Root/skse64_loader.exe", b"loader");
+        write_at(&tmp, "Root/Data/foo.esp", b"esp");
+        write_at(&tmp, "Root/Data/SKSE/Plugins/x.dll", b"plugin");
+        let archive = t.path().join("SKSE-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+
+        let ctx = eidos_fomod::Context::default();
+        let r =
+            install_extracted(&extracted(&tmp), &archive, &mods, "SKSE", "skyrimse", OverwritePolicy::Fail, &ctx)
+                .expect("root/data install");
+
+        // Served by the Data union, where the game and the plugin list can see it.
+        assert!(r.dest.join("foo.esp").is_file());
+        assert!(r.dest.join("SKSE/Plugins/x.dll").is_file());
+        // Served by the root union, next to the game exe.
+        assert!(r.dest.join("Root/skse64_loader.exe").is_file());
+        // And NOT left where nothing would ever read it.
+        assert!(!r.dest.join("Root/Data").exists());
+    }
+
+    /// The last fallible step after the wipe: creating `<mod>/Root` when the Data
+    /// half just planted a FILE of that name. `create_dir_all` is EEXIST there, and
+    /// the mod is already gone by then.
+    #[test]
+    fn a_file_named_root_in_the_data_half_does_not_abort_the_install() {
+        let (t, mods, tmp) = bain_layout("rootfile");
+        write_at(&tmp, "Data/meshes/a.nif", b"mesh");
+        write_at(&tmp, "Data/Root", b"a plain file called Root");
+        write_at(&tmp, "d3dx9_42.dll", b"preloader");
+
+        let dest = mods.join("MyMod");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("PRECIOUS.esp"), b"irreplaceable").unwrap();
+
+        let archive = t.path().join("Odd-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "MyMod",
+            "skyrimse",
+            OverwritePolicy::Replace,
+            &ctx,
+        )
+        .expect("must not abort half-way through a Replace");
+
+        assert!(r.dest.join("meshes/a.nif").is_file());
+        assert!(r.dest.join("Root/d3dx9_42.dll").is_file());
+        assert!(r.dest.join("meta.ini").is_file(), "a completed install always has its meta");
+    }
+
+    /// Same shape one level down: a directory from the archive's `Root/` landing on
+    /// a name already occupied by a file. `overlay_dir` cannot clear its OWN
+    /// destination - its first act is `create_dir_all` - so the caller must.
+    #[test]
+    fn a_root_entry_can_land_on_a_file_of_the_same_name() {
+        let (t, mods, tmp) = bain_layout("rootocc");
+        write_at(&tmp, "Data/MyMod.esp", b"esp");
+        write_at(&tmp, "Root/tools/patch.exe", b"tool");
+
+        // A previous install left `Root/tools` as a FILE.
+        let dest = mods.join("MyMod");
+        fs::create_dir_all(dest.join("Root")).unwrap();
+        fs::write(dest.join("Root/tools"), b"stale file").unwrap();
+
+        let archive = t.path().join("Occ-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "MyMod",
+            "skyrimse",
+            OverwritePolicy::Merge,
+            &ctx,
+        )
+        .expect("the stale file must lose, not abort the install");
+
+        assert!(r.dest.join("Root/tools/patch.exe").is_file());
+    }
+
+    /// Engine Fixes' second half on its own: no Data at all, just the preloader.
+    /// It has to become a mod whose whole content is `Root/`, or it installs as a
+    /// mod that looks fine and never loads.
+    #[test]
+    fn a_bare_preloader_installs_entirely_into_root() {
+        let (t, mods, tmp) = bain_layout("pureroot");
+        write_at(&tmp, "d3dx9_42.dll", b"preloader");
+        write_at(&tmp, "vortex_override_instructions.json", b"{}");
+        let archive = t.path().join("Preloader-17230-7.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let ctx = eidos_fomod::Context::default();
+        let r = install_extracted(
+            &tree,
+            &archive,
+            &mods,
+            "Preloader",
+            "skyrimse",
+            OverwritePolicy::Fail,
+            &ctx,
+        )
+        .expect("pure root install");
+
+        assert!(r.dest.join("Root/d3dx9_42.dll").is_file());
+        // Nothing leaks into the Data-relative half.
+        assert!(!r.dest.join("d3dx9_42.dll").exists());
+        assert_eq!(r.stripped, "");
+        assert!(r.dest.join("meta.ini").is_file());
+    }
+
+    /// The same install seen from the launcher's side: what it will mount over the
+    /// game root is exactly the preloader, and nothing of the Data half.
+    #[test]
+    fn an_installed_root_mod_is_what_the_launcher_projects() {
+        let (t, mods, tmp) = bain_layout("rootproject");
+        write_at(&tmp, "Data/MyMod.esp", b"esp");
+        write_at(&tmp, "Root/d3dx9_42.dll", b"preloader");
+        write_at(&tmp, "Root/tools/patch.exe", b"tool");
+        let archive = t.path().join("Mod-1-0.7z");
+        fs::write(&archive, b"x").unwrap();
+        let tree = extracted(&tmp);
+
+        let ctx = eidos_fomod::Context::default();
+        let r =
+            install_extracted(&tree, &archive, &mods, "Mod", "skyrimse", OverwritePolicy::Fail, &ctx)
+                .expect("root builder install");
+
+        assert!(r.dest.join("MyMod.esp").is_file());
+        // One level, not two: `Root/Root/` would put the DLL a directory away from
+        // where the Windows loader looks, which is the whole point of this path.
+        assert!(r.dest.join("Root/d3dx9_42.dll").is_file());
+        assert!(r.dest.join("Root/tools/patch.exe").is_file());
+        assert!(!r.dest.join("Root/Root").exists());
     }
 
     #[test]
