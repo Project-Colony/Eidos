@@ -738,9 +738,11 @@ struct App {
     /// is set, the window is blocked behind the lock overlay until it exits (or the
     /// user clicks Unlock). `None` = nothing running / not locked.
     running: Option<RunningState>,
-    /// The `eidos` binary lacks CAP_SYS_ADMIN (setcap wiped by a rebuild): FUSE
-    /// passthrough will be off and SKSE plugin DLLs may fail to load. Drives the
-    /// persistent warning banner; rechecked on Refresh and after every run.
+    /// The `eidos` binary lacks CAP_SYS_ADMIN (setcap wiped by a rebuild), so FUSE
+    /// passthrough cannot engage even if asked for. Harmless by itself - the
+    /// capability is optional and passthrough is off by default - so this only
+    /// drives a banner when `passthrough_requested()`. Rechecked on Refresh and
+    /// after every run.
     cap_missing: bool,
     /// Cached per-layer file walks for the conflict analysis, keyed by layer name
     /// (mod folder / "Overwrite" / "[game]"). RefCell so the read-path
@@ -5583,20 +5585,32 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
         });
     }
 
-    if app.cap_missing {
-        out.push(Diagnostic {
-            level: DiagLevel::Problem,
-            title: "FUSE passthrough is off (launch capability missing)".to_string(),
-            detail: format!(
-                "Script-extender plugin DLLs may fail to load in-game. Run:  sudo setcap cap_sys_admin+ep {}  then press F5. Every rebuild of that binary wipes it.",
-                find_eidos_binary().display()
-            ),
+    // The launch capability is optional: it only gates FUSE passthrough, which is
+    // off by default because it stops the game opening its own archives and
+    // plugins. So this is only worth a Problem when passthrough was asked for.
+    if passthrough_requested() {
+        out.push(if app.cap_missing {
+            Diagnostic {
+                level: DiagLevel::Problem,
+                title: "Passthrough requested but unavailable (launch capability missing)"
+                    .to_string(),
+                detail: format!(
+                    "EIDOS_FUSE_PASSTHROUGH is set, but the launch binary has no CAP_SYS_ADMIN, so reads go through the daemon anyway. Run:  sudo setcap cap_sys_admin+ep {}  then press F5. Every rebuild of that binary wipes it.",
+                    find_eidos_binary().display()
+                ),
+            }
+        } else {
+            Diagnostic {
+                level: DiagLevel::Advice,
+                title: "FUSE passthrough is ON (opt-in)".to_string(),
+                detail: "Reads go straight to the backing file. Measured on Skyrim SE, this makes the game fail to open its archives and plugins, so mods do not load. Unset EIDOS_FUSE_PASSTHROUGH if content goes missing in-game.".to_string(),
+            }
         });
     } else {
         out.push(Diagnostic {
             level: DiagLevel::Ok,
-            title: "FUSE passthrough available".to_string(),
-            detail: "The launch binary carries CAP_SYS_ADMIN, so reads and DLL mapping go through the kernel.".to_string(),
+            title: "FUSE passthrough is off".to_string(),
+            detail: "The daemon serves reads itself, which is what lets the game open its archives and plugins. The launch capability is not needed for this.".to_string(),
         });
     }
 
@@ -6275,7 +6289,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // still work but FUSE passthrough is off and SKSE plugin DLLs may fail to
     // load. Every rebuild wipes the capability, so this fires often enough that
     // silence cost real debugging time.
-    if app.cap_missing {
+    if app.cap_missing && passthrough_requested() {
         base = base.push(cap_warning_banner());
     }
     base = base.push(body);
@@ -7481,10 +7495,24 @@ fn about_dialog<'a>() -> Element<'a, Message> {
     container(card).max_width(440.0).padding(16).style(card_style).into()
 }
 
-/// The persistent CAP_SYS_ADMIN warning banner: the launch binary lost its file
-/// capability (every rebuild wipes it), so FUSE passthrough is off and
-/// script-extender DLLs may fail to image-map in-game. Shows the exact fix
-/// command; F5 rechecks after running it.
+/// Whether the user opted into FUSE passthrough. Read from this process's own
+/// environment because the launch environment is inherited from it (Steam launch
+/// options land here first, then on the `eidos` child).
+///
+/// It is off by default: passthrough stops the game opening its own archives and
+/// plugins (see `passthrough_enabled` in eidos-fuse for the measurement). This
+/// gates the capability warnings, which are only meaningful to someone who
+/// actually wants passthrough.
+fn passthrough_requested() -> bool {
+    std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| {
+        let v = v.trim();
+        !v.is_empty() && v != "0"
+    })
+}
+
+/// The CAP_SYS_ADMIN warning banner, shown only when the user asked for
+/// passthrough and the launch binary cannot deliver it (every rebuild wipes the
+/// file capability). Shows the exact fix command; F5 rechecks after running it.
 fn cap_warning_banner<'a>() -> Element<'a, Message> {
     let cmd = format!(
         "sudo setcap cap_sys_admin+ep {}",
@@ -7493,7 +7521,7 @@ fn cap_warning_banner<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(10)
         .align_y(iced::Alignment::Center)
-        .push(text("FUSE passthrough is OFF (capability lost after a rebuild): SKSE plugin DLLs may fail to load. Fix, then press F5:").size(11.0))
+        .push(text("Passthrough was requested but the launch binary has no CAP_SYS_ADMIN (a rebuild wipes it), so reads go through the daemon. Fix, then press F5:").size(11.0))
         .push(
             container(text(cmd).size(11.0))
                 .padding([2, 8])

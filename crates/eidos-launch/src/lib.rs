@@ -110,28 +110,32 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
 
-    // Prefer a privileged mount namespace: if this binary carries CAP_SYS_ADMIN
-    // (e.g. `setcap cap_sys_admin+ep`), a bare CLONE_NEWNS succeeds and the FUSE
-    // daemon can enable kernel passthrough, so reads/mmap hit the real backing
-    // files and Windows DLLs (SKSE plugins) image-map natively. Without the
+    // Prefer a plain mount namespace: if this binary carries CAP_SYS_ADMIN (e.g.
+    // `setcap cap_sys_admin+ep`), a bare CLONE_NEWNS succeeds. Without the
     // capability that unshare fails, so we fall back to the fully rootless
-    // user+mount namespace (the `unshare --map-root-user --mount` idiom), where
-    // passthrough is unavailable and executable DLLs may fail to load. Either way
-    // the mount stays invisible to the rest of the system.
+    // user+mount namespace (the `unshare --map-root-user --mount` idiom). Either
+    // way the mount stays invisible to the rest of the system and mods deploy
+    // identically - the capability is OPTIONAL, and the rootless path is the one
+    // most installs take.
+    //
+    // The one thing it still gates is FUSE passthrough, which is off by default
+    // because it stops the game opening its own archives and plugins (see
+    // `passthrough_enabled` in eidos-fuse). So only say something when the user
+    // asked for passthrough and cannot have it - warning unconditionally sent
+    // people chasing a capability that buys them nothing.
     // SAFETY: unshare with namespace flags has no memory-safety preconditions.
     let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
     if !privileged {
-        // Degrading silently here cost real debugging time: without passthrough,
-        // relocation-heavy SKSE plugin DLLs fail to image-map and the only in-game
-        // symptom is plugins mysteriously missing. Say it loudly, with the fix.
-        let exe = std::env::current_exe()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "<this eidos binary>".to_string());
-        eprintln!(
-            "eidos: no CAP_SYS_ADMIN (setcap is wiped by every rebuild) - running rootless, \
-             FUSE passthrough OFF; script-extender plugin DLLs may fail to load.\n\
-             eidos: fix with:  sudo setcap cap_sys_admin+ep {exe}"
-        );
+        if std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| !v.trim().is_empty() && v != "0") {
+            let exe = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "<this eidos binary>".to_string());
+            eprintln!(
+                "eidos: EIDOS_FUSE_PASSTHROUGH is set but this binary has no CAP_SYS_ADMIN \
+                 (setcap is wiped by every rebuild) - running rootless, passthrough stays OFF.\n\
+                 eidos: grant it with:  sudo setcap cap_sys_admin+ep {exe}"
+            );
+        }
         check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) })?;
         std::fs::write("/proc/self/setgroups", "deny")?;
         std::fs::write("/proc/self/uid_map", format!("0 {uid} 1"))?;

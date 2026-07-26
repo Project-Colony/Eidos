@@ -371,7 +371,9 @@ impl Inodes {
 /// help, which rules out the obvious copy-up explanation: the game crashes while
 /// reading files that were never written to. The interaction with
 /// `FUSE_PASSTHROUGH` - where the kernel serves reads from the backing file
-/// without consulting this daemon at all - is the open question.
+/// without consulting this daemon at all - was the open question; passthrough is
+/// now off by default too (see [`passthrough_enabled`]), so the two are no longer
+/// entangled and this one can be re-tested on its own.
 ///
 /// `EIDOS_FUSE_KEEP_CACHE=1` turns it back on for whoever picks that up.
 fn file_open_flags() -> FopenFlags {
@@ -380,6 +382,50 @@ fn file_open_flags() -> FopenFlags {
     } else {
         FopenFlags::empty()
     }
+}
+
+/// Whether to hand the kernel a backing file so it can serve reads without us.
+///
+/// OFF BY DEFAULT, because with it on Skyrim SE cannot open its own content.
+///
+/// Measured A/B on Skyrim SE 1.6.1170 under proton-cachyos 11.0, same 82-plugin
+/// load order, `WINEDEBUG=+file` both runs, the only variable being whether the
+/// binary carried `cap_sys_admin` (without it `open_backing` returns EPERM and
+/// the daemon serves reads itself):
+///
+/// | passthrough | `NtCreateFile` failures with `STATUS_ACCESS_VIOLATION` |
+/// |-------------|--------------------------------------------------------|
+/// | on          | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
+/// | off         | 0                                                      |
+///
+/// With it on, the game loads no mod content at all: every plugin and archive it
+/// wants for the whole session fails to open, which surfaces in-game as mods that
+/// are simply not there. With it off the same load order reaches gameplay with
+/// its plugins, archives and Papyrus scripts live.
+///
+/// The failure is INVISIBLE from here, which is why it took so long to find: our
+/// own `open` succeeds every time and `open_backing` is never refused (verified
+/// with `EIDOS_FUSE_TRACE=open` - zero `open FAILED`, zero `passthrough refused`
+/// across a full failing session). The kernel produces the error after we reply
+/// `opened_passthrough`, so no amount of daemon-side logging shows it. Whatever
+/// the mechanism, it is not extension-specific: it hits archives and plugins
+/// alike, i.e. exactly the files the game holds open for its whole run.
+///
+/// The cost of leaving it off is throughput, not correctness: reads take a
+/// userspace round-trip instead of going straight to the backing file. That is
+/// already what every rootless install does, since registering a backing fd needs
+/// CAP_SYS_ADMIN in the initial user namespace.
+///
+/// `EIDOS_FUSE_PASSTHROUGH=1` turns it back on, for measuring the throughput it
+/// buys or for re-testing once someone can explain the failure above.
+fn passthrough_enabled() -> bool {
+    static ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+        std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| {
+            let v = v.trim();
+            !v.is_empty() && v != "0"
+        })
+    });
+    *ON
 }
 
 /// Whether `EIDOS_FUSE_TRACE` names this trace channel (comma-separated, or `1`
@@ -800,15 +846,14 @@ impl Filesystem for Eidos {
     fn init(&mut self, _req: &Request, config: &mut KernelConfig) -> std::io::Result<()> {
         // FUSE passthrough: negotiate the capability and a non-zero stack depth so
         // the kernel routes reads/writes/mmap straight to the real backing file.
-        // This is what lets Windows DLLs (SKSE plugins) image-map natively, which a
-        // userspace daemon cannot serve reliably (demand-paged image pages get
-        // corrupted, so relocation-heavy plugins crash on load). Registering a
-        // backing fd needs CAP_SYS_ADMIN in the *initial* user namespace, so it
-        // engages only when Eidos runs privileged (`setcap cap_sys_admin+ep` plus a
-        // plain mount namespace, no userns). Rootless, `open_backing` returns EPERM
-        // and we fall back to serving reads/writes ourselves (DLLs may then fail).
-        let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
-        let _ = config.set_max_stack_depth(1);
+        // OFF unless asked for - see `passthrough_enabled` for the measurement that
+        // put it there: with it on, Skyrim SE fails to open every archive and plugin
+        // it needs. Don't negotiate what we won't use, so a run with it off is a
+        // clean baseline rather than the capability sitting there unused.
+        if passthrough_enabled() {
+            let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
+            let _ = config.set_max_stack_depth(1);
+        }
 
         // FUSE_WRITEBACK_CACHE is deliberately NOT enabled. It makes writable
         // shared mmap work, but it breaks loading Windows DLLs from the mount
@@ -932,17 +977,21 @@ impl Filesystem for Eidos {
         // Cache the open fd under a fresh handle; try to register it for kernel
         // passthrough (no-op fallback when rootless, where it returns EPERM).
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = match reply.open_backing(file.as_fd()) {
-            Ok(b) => Some(b),
-            Err(e) => {
-                // Passthrough is an optimisation, never a requirement: the daemon
-                // serves the reads itself when the kernel will not take a backing
-                // file. Worth SAYING, though - a silent fallback here turned into
-                // hours of looking elsewhere.
-                if trace_enabled("open") {
-                    eprintln!("eidos-fuse: passthrough refused for /{vpath}: {e}");
+        let backing = if !passthrough_enabled() {
+            None
+        } else {
+            match reply.open_backing(file.as_fd()) {
+                Ok(b) => Some(b),
+                Err(e) => {
+                    // Passthrough is an optimisation, never a requirement: the
+                    // daemon serves the reads itself when the kernel will not take
+                    // a backing file. Worth SAYING, though - a silent fallback here
+                    // turned into hours of looking elsewhere.
+                    if trace_enabled("open") {
+                        eprintln!("eidos-fuse: passthrough refused for /{vpath}: {e}");
+                    }
+                    None
                 }
-                None
             }
         };
         let mut files = self.open_files.lock_recover();
@@ -1244,7 +1293,8 @@ impl Filesystem for Eidos {
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = reply.open_backing(file.as_fd()).ok();
+        let backing =
+            if passthrough_enabled() { reply.open_backing(file.as_fd()).ok() } else { None };
         let mut files = self.open_files.lock_recover();
         files.insert(
             fh,

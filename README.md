@@ -38,7 +38,7 @@ project to reach for one. The honest landscape as of mid-2026:
 | [RadTux](https://www.nexusmods.com/fallout4/mods/105285) | native daemon + DLL shim, symlinks on launch | still leans on MO2-under-Wine; symlink write-back caveats |
 | [Fluorine-Manager](https://github.com/SulfurNitride/Fluorine-Manager) | the real MO2 C++/Qt codebase with usvfs swapped for a libfuse3 low-level daemon | a genuine VFS, and the most complete Linux MO2 today. The mount is **global** (its README has you enable `user_allow_other` in `/etc/fuse.conf`), so a daemon crash leaves the real game directory stale-mounted and the project has to carry a cleanup path and a crash hook. No kernel passthrough |
 | LMO (Codeberg) | native Rust on `fuse-overlayfs` | young; inherits overlay semantics rather than usvfs semantics |
-| **Eidos** | native Rust FUSE union, mounted in a **private user+mount namespace**, with **kernel passthrough** | new; one game family proven in-game so far |
+| **Eidos** | native Rust FUSE union, mounted in a **private user+mount namespace**, with kernel-side metadata caching (optional passthrough) | new; one game family proven in-game so far |
 
 ### What is actually exclusive here
 
@@ -61,12 +61,15 @@ lives**, and what the kernel does underneath it:
    directory is exactly what it always was. A globally mounted VFS has to survive
    its own crash and un-stale the real game directory afterwards. A private one
    has nothing to survive.
-2. **Kernel FUSE passthrough** (Linux 6.9+). When the launch binary carries
-   `CAP_SYS_ADMIN`, Eidos negotiates `FUSE_PASSTHROUGH` and registers a backing
-   fd per open file, so reads and `mmap` are served by the kernel straight from
-   the real file with the daemon out of the loop. That is what lets Windows
-   script-extender DLLs image-map natively through the mount, and it is why
-   resolved reads run at near-native speed instead of at FUSE round-trip speed.
+2. **Kernel-side metadata caching.** What actually stalls a Bethesda game's
+   startup is not read throughput, it is the enormous number of paths Wine probes
+   that do not exist. Eidos answers that in the kernel rather than in the daemon:
+   negative dentries for failed lookups, long entry/attr TTLs (mod layers are
+   immutable for the life of a mount), `FOPEN_CACHE_DIR` on `opendir`, and a
+   `.ciopfs` marker so Wine trusts the mount to fold case instead of brute-force
+   rescanning every directory. Kernel `FUSE_PASSTHROUGH` (Linux 6.9+) is
+   implemented as well but ships **off**, because it stops the game opening its
+   own archives and plugins - see [Known issues](#known-issues).
 
 ## The Eidos approach
 
@@ -92,23 +95,23 @@ Eidos reproduces the four properties that make `usvfs` valuable:
   Steam  -->  |   eidos launch wrapper   (`eidos %command%`)            |
               |        |                                                |
               |        v                                                |
-  Proton   <--|   merged view  <--  Eidos FUSE union (passthrough)      |
+  Proton   <--|   merged view  <--  Eidos FUSE union                    |
   sees ONE    |                         ^          ^           ^        |
   directory   |                    overwrite    mod N..1    game data   |
               +---------------------------------------------------------+
        (the rest of the system sees only the pristine game directory)
 ```
 
-Engine choice: a **FUSE union filesystem in Rust**, built around kernel
-**passthrough** (Linux 6.9+) so resolved reads bypass userspace and run at
-near-native speed, while we keep full control of the semantics OverlayFS cannot
-express (exact Windows-style case-insensitivity, precise write redirection, no
-lowerdir scaling wall). See [docs/architecture.md](docs/architecture.md) for the
-full rationale, including why FUSE over OverlayFS for completeness and long-term
-stability.
+Engine choice: a **FUSE union filesystem in Rust**, which keeps full control of
+the semantics OverlayFS cannot express (exact Windows-style case-insensitivity,
+precise write redirection, no lowerdir scaling wall). Kernel **passthrough**
+(Linux 6.9+) is implemented for the data path but off by default, so resolved
+reads are served by the daemon from a cached backing fd. See
+[docs/architecture.md](docs/architecture.md) for the full rationale, including
+why FUSE over OverlayFS for completeness and long-term stability.
 
-Passthrough only accelerates the *data* path. Metadata (`lookup`, `getattr`,
-`readdir`) still crosses into the daemon, and that traffic is what stalls a
+The data path was never the bottleneck anyway. Metadata (`lookup`, `getattr`,
+`readdir`) crosses into the daemon, and that traffic is what stalls a
 Bethesda game's startup, because Wine probes enormous numbers of paths that do
 not exist (DLL search-order walks, `.ini` sidecars, script-extender config
 probes). Eidos answers that kernel-side: failed lookups reply as **negative
@@ -118,9 +121,10 @@ sets `FOPEN_CACHE_DIR` so the kernel serves repeat enumerations itself. Requests
 are served from several event loops over `clone_fd`.
 
 `FOPEN_KEEP_CACHE` is deliberately **not** among them: it crashed Skyrim SE
-outright (see [Known issues](#known-issues)), and the counters show why giving it
-up costs nothing - with passthrough active the daemon serves *zero* reads, so the
-kernel was already caching those pages against the backing file.
+outright (see [Known issues](#known-issues)), which settles it on its own. The
+old argument that dropping it was free no longer holds, though - it rested on
+passthrough serving every read, and passthrough is now off, so repeat reads do
+cross into the daemon. Worth re-measuring, not worth re-enabling blind.
 
 The escape hatches ship with the caching, because "the game sees stale data" has
 to be testable against caching as the suspect in a single run:
@@ -177,22 +181,44 @@ namespace, then runs the command through that view. Writes (saves, regenerated
 configs) land in the instance's `overwrite/` layer; the game install and every
 mod source stay byte-for-byte pristine.
 
-### One privileged step: the launch capability
+### No privileged step required
 
-Kernel FUSE passthrough needs `CAP_SYS_ADMIN` in the initial user namespace, so
-the `eidos` binary (the one that mounts, including when the GUI drives it) has to
-carry the file capability:
+Eidos runs fully rootless. It mounts in a private user + mount namespace, so no
+setuid helper, no daemon, and nothing to grant.
 
-```sh
-sudo setcap cap_sys_admin+ep "$(command -v eidos)"
-```
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` is **optional** and gates
+exactly one thing: kernel FUSE passthrough, which is off by default because it
+breaks the game (below). With the capability Eidos takes a plain mount namespace
+instead of a user namespace; mods deploy identically either way.
 
-**Every rebuild of that binary wipes it.** Without it Eidos still runs, falling
-back to the rootless user+mount namespace, but passthrough is off and
-relocation-heavy script-extender plugin DLLs may fail to image-map, whose only
-in-game symptom is plugins mysteriously not being there. Both the launcher and
-the GUI's Diagnostics tab say so loudly, with the exact command, rather than
-degrading in silence.
+#### Why passthrough is off by default
+
+Passthrough hands the kernel the real backing file so reads skip this daemon
+entirely. It is a throughput win that costs correctness here. Measured A/B on
+Skyrim SE 1.6.1170, proton-cachyos 11.0, kernel 7.1.4, the same 82-plugin load
+order, the only variable being whether the binary carried the capability:
+
+| passthrough | `NtCreateFile` failures with `STATUS_ACCESS_VIOLATION` |
+|-------------|--------------------------------------------------------|
+| on          | 152 - 75 `.bsa`, 65 `.esl`, 10 `.esm`, 2 `.esp`        |
+| off         | 0                                                      |
+
+With it on the game opens none of its own archives or plugins, which surfaces
+in-game as mods that simply are not there - no error, no log line. With it off
+the same load order reaches gameplay with its plugins, archives and Papyrus
+scripts live.
+
+The failure is invisible from inside the daemon, which is what made it expensive
+to find: our own `open` succeeds every time and the kernel never refuses a
+backing file (verified across a full failing session with
+`EIDOS_FUSE_TRACE=open`: zero `open FAILED`, zero `passthrough refused`). The
+error is produced after the daemon replies `opened_passthrough`, so no
+daemon-side logging can see it. It is not extension-specific either - it hits
+archives and plugins alike, i.e. the files the game holds open for its whole run.
+
+`EIDOS_FUSE_PASSTHROUGH=1` turns it back on, for measuring what it buys or for
+re-testing the mechanism. The capability warnings in the launcher and the
+Diagnostics tab only appear when you have asked for it.
 
 To launch the game itself through Eidos, set its Steam launch option to:
 
@@ -414,13 +440,12 @@ layers themselves stay pristine even here.
       save mapping, no prefix changes). The INI writing shares one `eidos-ini`
       primitive (MO2's single-`QSettings` idea), keeping MO2 `meta.ini`
       round-trips byte-for-byte
-- [x] FUSE passthrough + rootless perf tuning (1 MiB readahead / max_write).
-      Passthrough negotiates `FUSE_PASSTHROUGH` and engages when the daemon runs
-      privileged (`setcap cap_sys_admin+ep`, taken via a bare mount namespace):
-      the kernel then serves reads/mmap straight from the real backing file,
-      which is what lets Windows SKSE-plugin DLLs image-map natively. Rootless it
-      falls back to the daemon's own reads (correct, but DLLs may not load -
-      kernel passthrough needs CAP_SYS_ADMIN in the initial user namespace)
+- [x] Rootless perf tuning (1 MiB readahead / max_write, parallel dirops) and an
+      opt-in `FUSE_PASSTHROUGH` path. Passthrough is **off by default**: measured
+      on Skyrim SE it stops the game opening its own archives and plugins (152
+      `STATUS_ACCESS_VIOLATION` opens vs 0 without it), so the daemon serves
+      reads itself. `EIDOS_FUSE_PASSTHROUGH=1` re-enables it, and then the
+      `CAP_SYS_ADMIN` it needs in the initial user namespace becomes relevant
 - [x] Harden the daemon for real use - inode reference-counting + `forget`,
       offset-stable `readdir` (snapshot per directory handle), per-handle
       `pread`/`pwrite` (no re-resolve per syscall, lock released before I/O),
@@ -431,13 +456,17 @@ layers themselves stay pristine even here.
       namespace, including a writable `MAP_SHARED` mmap round-trip, with
       `setattr` guarded so the kernel's post-unlink attribute flush cannot
       resurrect a deleted file. (`writeback_cache` is off - it broke loading
-      Windows DLLs from the mount; passthrough serves DLL image-mapping instead.)
+      Windows DLLs from the mount.)
 - [x] **Runs a real heavily-modded Skyrim SE (110 mods) end-to-end under Proton**
       - all ~50 SKSE plugin DLLs (CommonLibSSE-NG included) load and run via the
       mount, each writing its config into the Overwrite layer. Needed two
       MO2/usvfs parity fixes: launch with **CWD = game root** (CommonLibSSE-NG
       opens its address library by a CWD-relative path) and **NTFS-like sorted
-      `readdir`** (the Creation Engine's loose-file indexer assumes it)
+      `readdir`** (the Creation Engine's loose-file indexer assumes it). That run
+      predates the passthrough default flip and was made with passthrough **on**,
+      so it proves DLL image-mapping, not a playable load order; rootless, a small
+      load order has since reached gameplay with plugins, archives and Papyrus
+      scripts live, but the ~50-DLL case is not re-validated without passthrough
 - [x] Native DLL provisioning for Proton (`eidos-gamefeatures::native_dll`) - no
       Proton flavour ships Microsoft's native `d3dcompiler_47.dll` (they symlink
       Wine's builtin HLSL stub, which Community Shaders / ENB / ReShade reject), so
@@ -508,14 +537,18 @@ layers themselves stay pristine even here.
       size, because the names are still listed so nothing was uninstalled, and no
       edit produces that
 - [ ] Casing normalization at mod-import time
-- [ ] Packaging and distribution. The launch capability constrains this: a file
-      capability lives in the `security.capability` xattr of the executable and
-      the kernel ignores it on a `nosuid` mount, which is exactly what an
-      unprivileged FUSE mount is forced to be (check any FUSE mount on your own
-      machine: `findmnt -t fuse -o TARGET,OPTIONS` shows `nosuid,nodev`). A
-      self-mounting bundle therefore cannot carry it, and a sandbox that sets
-      no-new-privs cannot gain it either. Packaging has to land the binary on a
-      real filesystem where `setcap` reaches it
+- [ ] Packaging and distribution. Now unconstrained, since the launch capability
+      became optional: Eidos runs rootless and only the opt-in passthrough path
+      wants `CAP_SYS_ADMIN`. That matters because a file capability lives in the
+      `security.capability` xattr of the executable and the kernel ignores it on a
+      `nosuid` mount, which is exactly what an unprivileged FUSE mount is forced
+      to be (check any FUSE mount on your own machine:
+      `findmnt -t fuse -o TARGET,OPTIONS` shows `nosuid,nodev`) - so a
+      self-mounting bundle can never carry it, and a sandbox that sets
+      no-new-privs cannot gain it either. Self-contained formats (AppImage, and a
+      Flatpak modulo its own namespace nesting) are therefore back on the table;
+      only someone opting into passthrough needs the binary on a real filesystem
+      where `setcap` reaches it
 
 The manager layer above the VFS is complete per the MO2 + usvfs study that drove
 this work ([docs/master-pieces.md](docs/master-pieces.md), all 6 master pieces
@@ -570,11 +603,26 @@ size) means it can no longer damage the profile.
 **`FOPEN_KEEP_CACHE` is off.** Fixed, and worth knowing why. It crashed Skyrim SE
 on a null dereference seconds after the main menu, deterministically, with zero
 mods installed; the other three kernel-side caches were bisected out individually
-and only this one mattered. The measured cost of losing it is nothing: with
-`FUSE_PASSTHROUGH` active the daemon serves *zero* reads (`EIDOS_FUSE_STATS`
-reports `read 0` for a full load), so the kernel was already caching those pages
-against the backing file. Re-enable with `EIDOS_FUSE_KEEP_CACHE=1` if you want to
-investigate the passthrough interaction.
+and only this one mattered. Losing it was measured as free at the time, but that
+measurement was taken with `FUSE_PASSTHROUGH` active, where the daemon serves
+*zero* reads (`EIDOS_FUSE_STATS` reported `read 0` for a full load) and the
+kernel was already caching those pages against the backing file. Passthrough is
+now off by default (below), so that argument no longer applies and the real cost
+is unmeasured - the crash is reason enough to leave it off regardless. Re-enable
+with `EIDOS_FUSE_KEEP_CACHE=1` to investigate; the two flags are no longer
+entangled, so it can now be tested on its own.
+
+### FUSE passthrough stops the game loading any mod content
+
+Fixed by turning it off; `EIDOS_FUSE_PASSTHROUGH=1` brings it back. With
+passthrough on, Skyrim SE fails to open 152 of its own files (75 `.bsa`, 65
+`.esl`, 10 `.esm`, 2 `.esp`) with `STATUS_ACCESS_VIOLATION`, against 0 with it
+off, on kernel 7.1.4 - so no mod content loads, silently. The kernel raises the
+error after the daemon has replied `opened_passthrough`, so the daemon's own logs
+show a clean run (zero failed opens, zero refused backing files). Root cause in
+the kernel path is not established; the switch is kept so it can be re-tested,
+and so passthrough could be narrowed to DLLs only if image-mapping turns out to
+need it.
 
 ## Prior art and references
 
