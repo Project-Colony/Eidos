@@ -158,12 +158,22 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // their saves weeks after the cause. A refused launch with a reason is
     // recoverable; a forked save history is not. (This warned-and-continued
     // once; the audit found the orphaned sessions it produced.)
+    let mut mounted_binds: Vec<&PathBuf> = Vec::new();
     for (src, dst) in &spec.binds {
-        std::fs::create_dir_all(src)
+        let result = std::fs::create_dir_all(src)
             .and_then(|()| std::fs::create_dir_all(dst))
-            .and_then(|()| bind_mount(src, dst))
-            .map_err(|e| {
-                std::io::Error::new(
+            .and_then(|()| bind_mount(src, dst));
+        match result {
+            Ok(()) => mounted_binds.push(dst),
+            Err(e) => {
+                // Refusing the launch must not strand the EARLIER binds: the
+                // caller's post-run steps still run after this error, and a
+                // leftover bind makes them read the profile through the mount
+                // while believing they read the prefix.
+                for d in mounted_binds {
+                    let _ = unmount_detach(d);
+                }
+                return Err(std::io::Error::new(
                     e.kind(),
                     format!(
                         "refusing to launch: bind of {} over {} failed ({e}); running without \
@@ -171,8 +181,9 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
                         src.display(),
                         dst.display()
                     ),
-                )
-            })?;
+                ));
+            }
+        }
     }
 
     // ROOT UNION FIRST, if any mod ships a `Root/`. Order matters: this union

@@ -115,6 +115,15 @@ impl Profile {
             let dst = dst_dir.join(name);
             if eidos_plugins::newest_variant(&dst_dir, name).is_none() {
                 copy_atomic(&src, &dst)?;
+                // Preserve the source mtimes: which of the two files is newer is
+                // a real signal (the freshness tiebreak in apply_prefix_state),
+                // and a copy that stamps both to "now" erases it - adopting a
+                // divergent pair with the stale half promoted to authority.
+                if let Ok(mtime) = fs::metadata(&src).and_then(|m| m.modified()) {
+                    if let Ok(f) = fs::File::options().write(true).open(&dst) {
+                        let _ = f.set_modified(mtime);
+                    }
+                }
                 n += 1;
             }
         }
@@ -636,7 +645,7 @@ fn count_actives(path: &Path) -> Option<usize> {
 /// plain `fs::copy` truncates the destination first, so a reader (or a crash)
 /// mid-copy sees a torn file - and for the files this module moves around, a
 /// torn `plugins.txt` is a wiped load order and a torn INI is a lost config.
-fn copy_atomic(src: &Path, dst: &Path) -> io::Result<()> {
+pub(crate) fn copy_atomic(src: &Path, dst: &Path) -> io::Result<()> {
     let tmp = dst.with_extension("eidos-tmp");
     fs::copy(src, &tmp)?;
     match fs::rename(&tmp, dst) {

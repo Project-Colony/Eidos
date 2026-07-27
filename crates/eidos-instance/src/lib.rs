@@ -666,7 +666,9 @@ impl Instance {
         for f in ["plugins.txt", "loadorder.txt"] {
             let src = mo2_profile_dir.join(f);
             if src.is_file() {
-                fs::copy(&src, eidos_plugins::canonical_path(&state_dir, f))?;
+                // Atomic: this dir may be all that stands between the user and a
+                // lost load order, and fs::copy truncates in place.
+                profile::copy_atomic(&src, &eidos_plugins::canonical_path(&state_dir, f))?;
                 plugins += 1;
             }
         }

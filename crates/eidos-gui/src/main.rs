@@ -1504,17 +1504,21 @@ fn after_hidden_change(app: &mut App, mod_name: &str, rel: &str) {
 /// plugin/conflict caches, collapsed groups, saves), clearing any transient
 /// selection / menu / drag. Shared by the profile switch, copy, rename, and delete
 /// flows so they can never drift apart.
-fn switch_to_profile(app: &mut App, name: &str) {
+/// Returns whether the switch actually happened - callers gate their success
+/// toasts on it, or a refused switch got its refusal message overwritten by
+/// "Created ..." a millisecond later.
+fn switch_to_profile(app: &mut App, name: &str) -> bool {
     if let Some(inst) = &app.created {
         // Same lock as every other mutation: a switch during a run would point
-        // the run's post-exit steps at the wrong profile.
+        // the run's post-exit steps at the wrong profile. The flock also covers
+        // sessions this window did not start (CLI, Steam direct).
         match inst.try_lock("the Eidos window") {
             Ok(_lock) => {
                 let _ = inst.set_active_profile(name);
             }
             Err(e) => {
                 app.status = Some(format!("Cannot switch profiles: {e}."));
-                return;
+                return false;
             }
         }
     }
@@ -1531,7 +1535,7 @@ fn switch_to_profile(app: &mut App, name: &str) {
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
     app.confirm_delete_save = None;
-    clear_save_selection(app);
+    clear_save_selection(app);    true
 }
 
 /// Recompute the profile-row Endorsed / Updated counts (MO2 surfaces these). Only
@@ -1734,8 +1738,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
             // One shared path (switch_to_profile) so the reload steps - incl.
             // recompute_counts, which this handler used to skip - never drift.
-            if app.created.is_some() {
-                switch_to_profile(app, &name);
+            if app.created.is_some() && switch_to_profile(app, &name) {
                 app.status = Some(format!("Switched to profile '{name}'."));
             }
         }
@@ -1753,8 +1756,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 (name, src.name, ok)
             });
             if let Some((name, src_name, true)) = created {
-                switch_to_profile(app, &name);
-                app.status = Some(format!("Created '{name}' (copy of '{src_name}')."));
+                if switch_to_profile(app, &name) {
+                    app.status = Some(format!("Created '{name}' (copy of '{src_name}')."));
+                }
             }
         }
         // ---- profile management (rename / delete / named copy) --------------
@@ -1794,6 +1798,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     // under the session's post-exit steps (and the bound dirs).
                     app.status =
                         Some("Cannot rename a profile while the game is running.".to_string());
+                } else if let Err(e) = inst.try_lock("the Eidos window") {
+                    // app.running only sees runs THIS window started; the flock
+                    // also covers a session launched from the CLI or Steam.
+                    app.status = Some(format!("Cannot rename: {e}."));
                 } else {
                     let was_active = inst.active_profile() == old;
                     match inst.rename_profile(&old, &new) {
@@ -1802,10 +1810,9 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                             app.profile_menu = None;
                             // rename_profile already followed the active pointer; reload
                             // the view when the renamed profile was the active one.
-                            if was_active {
-                                switch_to_profile(app, &new);
+                            if !was_active || switch_to_profile(app, &new) {
+                                app.status = Some(format!("Renamed profile to '{new}'."));
                             }
-                            app.status = Some(format!("Renamed profile to '{new}'."));
                         }
                         // Keep the editor open on a collision so the user can retype.
                         Err(e) => app.status = Some(format!("Rename failed: {e}")),
@@ -1843,8 +1850,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => {
                             app.profile_copy = None;
                             app.profile_menu = None;
-                            switch_to_profile(app, &new);
-                            app.status = Some(format!("Created '{new}' (copy of '{src_name}')."));
+                            if switch_to_profile(app, &new) {
+                                app.status =
+                                    Some(format!("Created '{new}' (copy of '{src_name}')."));
+                            }
                         }
                         Err(e) => app.status = Some(format!("Copy failed: {e}")),
                     }
@@ -2355,6 +2364,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
             if let Err(e) = written {
                 app.status = Some(format!("Could not write the load order: {e}"));
+                // The write was refused: the in-memory reorder never reached disk,
+                // and a LATER successful write would commit this stale list over
+                // whatever the session wrote meanwhile. Disk is the truth.
+                app.plugins = compute_plugins(app);
             }
         }
         Message::ImportMo2Pick => {
@@ -2372,9 +2385,30 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ImportMo2Picked(picked) => {
             let Some(dir) = picked else { return Task::none() };
+            // Same gates as every other mutation: the import rewrites the modlist
+            // AND the plugin state dir, which is bind-mounted into a running
+            // session - importing under the game's feet mixed the two states and
+            // half-undid the import at the next launch.
+            if app.running.is_some() {
+                app.status =
+                    Some("Cannot import while the game is running.".to_string());
+                return Task::none();
+            }
             let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot import: {e}."));
+                    return Task::none();
+                }
+            };
             match inst.import_mo2_profile(&dir) {
                 Ok(r) => {
+                    // The import is the user speaking, exactly like a GUI edit:
+                    // the snapshot follows it, or the damage card would flame on
+                    // the imported (smaller) list and its Restore button would
+                    // one-click undo the import.
+                    let _ = inst.active().snapshot_plugin_state();
                     reload_mods(app);
                     drop_files_cache(app, None);
                     invalidate_plugins(app);
@@ -2780,7 +2814,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         .transpose();
                     app.status = Some(match written {
                         Ok(_) => format!("{} {name}.", if now { "Disabled" } else { "Enabled" }),
-                        Err(e) => format!("Could not write the load order: {e}"),
+                        Err(e) => {
+                            // Refused write: drop the phantom toggle, resync to disk.
+                            app.plugins = compute_plugins(app);
+                            format!("Could not write the load order: {e}")
+                        }
                     });
                 }
             }
@@ -2888,7 +2926,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
             app.status = Some(match written {
                 Ok(_) => format!("LOOT sorted {} plugins.", sorted.len()),
-                Err(e) => format!("Sorted, but writing the load order failed: {e}"),
+                Err(e) => {
+                    // Refused write: drop the phantom sort, resync to disk.
+                    app.plugins = compute_plugins(app);
+                    format!("Sorted, but writing the load order failed: {e}")
+                }
             });
             // Show the LOOT report (MO2 always pops its dialog after a sort), so the
             // user sees missing masters / warnings / cleaning advice - or a clean bill.
@@ -7080,10 +7122,29 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// caches. modlist() is lowest-priority-first, so highest = the END of the list.
 fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive: Option<&Path>) {
     if let Some(inst) = &app.created {
-        let mut ml = inst.modlist();
-        ml.retain(|m| m.name != name);
-        ml.push(ModEntry { name: name.to_string(), enabled: true, path: dest, unmanaged: false });
-        let _ = inst.save_modlist(&ml);
+        // Same lock as save_mods: the modlist must not be rewritten under a
+        // running session. A refusal is not a lost install - the files are on
+        // disk, reconciliation lists the folder on the next reload, and only the
+        // auto-enable is skipped.
+        match inst.try_lock("the Eidos window") {
+            Ok(_lock) => {
+                let mut ml = inst.modlist();
+                ml.retain(|m| m.name != name);
+                ml.push(ModEntry {
+                    name: name.to_string(),
+                    enabled: true,
+                    path: dest,
+                    unmanaged: false,
+                });
+                let _ = inst.save_modlist(&ml);
+            }
+            Err(e) => {
+                app.status = Some(format!(
+                    "Installed '{name}', but could not enable it now: {e}. Enable it once the \
+                     game closes."
+                ));
+            }
+        }
     }
     reload_mods(app);
     // Flip the source archive's `.meta` status to installed (MO2 marks the

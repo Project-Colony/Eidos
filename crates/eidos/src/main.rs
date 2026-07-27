@@ -81,13 +81,20 @@ fn prepare_plugins(
             // files the seed just failed to adopt. Plugin management sits out this
             // run; the game reads its own prefix files, untouched.
             eprintln!(
-                "eidos play: WARNING - could not adopt the plugin state into profile '{}' ({e});                  plugin management is OFF for this run and the prefix files are left alone",
+                "eidos play: WARNING - could not adopt the plugin state into profile '{}' ({e}); \
+                 plugin management is OFF for this run, the prefix files are left alone, and \
+                 plugin changes made in-game this session will NOT persist to the profile",
                 prof.name
             );
             return None;
         }
     }
     let state_dir = prof.plugins_state_dir();
+
+    // Judge the state the LAST session left, BEFORE this launch rewrites
+    // anything - the snapshot-keeping decision below depends on it, and taking
+    // the measurement after our own write poisoned it in both directions.
+    let session_damage = prof.plugin_loss_since_snapshot();
 
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
@@ -137,12 +144,17 @@ fn prepare_plugins(
 
     // Pre-session snapshot: with the game writing the profile file directly,
     // this is the reference the post-run loss check compares against. KEPT, not
-    // overwritten, while the current state still looks damaged relative to it -
-    // otherwise one unnoticed launch after a crash canonised the wreck and
-    // destroyed the only copy that could restore it.
-    if prof.plugin_loss_since_snapshot().is_some() {
+    // overwritten, while the LAST session's damage is still unresolved - judged
+    // BEFORE our own write above, because judging after broke it both ways: a
+    // header-only crash artifact was replaced by discovery defaults and then
+    // judged healthy (laundering the wipe and destroying the pinned restore
+    // copy), while our own legitimate prune after a Mods-tab disable was judged
+    // as damage and flamed a false alarm on every launch.
+    if session_damage.is_some() {
         eprintln!(
-            "eidos play: keeping the previous pre-session plugins.txt snapshot - the current              active set still looks damaged relative to it (the GUI Diagnostics tab offers the              restore, or accept the current set there)"
+            "eidos play: keeping the previous pre-session plugins.txt snapshot - the last \
+             session's damage is unresolved (the GUI Diagnostics tab offers the restore, or \
+             accept the current set there)"
         );
     } else if let Err(e) = prof.snapshot_plugin_state() {
         eprintln!("eidos play: WARNING - could not snapshot plugins.txt: {e}");
@@ -302,6 +314,16 @@ fn sync_saves_for_cloud(
     files.sort_by(|a, b| b.1.cmp(&a.1));
     files.truncate(MAX_FILES);
 
+    // What THIS sync has written to the prefix over its lifetime, so a later run
+    // can tell its own copies from saves some session wrote there directly.
+    // Lives on the profile side: the prefix belongs to the game and to Steam.
+    let manifest_path = prof_saves.join(".cloud-sync-manifest");
+    let mut manifest: std::collections::HashSet<String> =
+        std::fs::read_to_string(&manifest_path)
+            .map(|t| t.lines().map(String::from).collect())
+            .unwrap_or_default();
+    let mut new_entries: Vec<String> = Vec::new();
+
     let mut n = 0;
     for (src, src_mtime) in files {
         let Some(name) = src.file_name() else { continue };
@@ -313,15 +335,48 @@ fn sync_saves_for_cloud(
                 // NEVER seen: a failed-bind session once wrote saves straight
                 // into the prefix, and Skyrim reuses fixed names (quicksave.ess)
                 // - overwriting would destroy the only copy of that session.
-                // Adopt it into the profile first, then overwrite.
-                preserve_diverged_save(&dst, d, prof_saves);
+                // UNLESS this sync put it there itself: without the provenance
+                // check, every quicksave rotation "rescued" our own previous
+                // copy, minting an orphan file per session, forever.
+                if !manifest.contains(&manifest_key(name, meta_of(&dst))) {
+                    preserve_diverged_save(&dst, d, prof_saves);
+                }
             }
             Ok(_) => continue, // prefix copy is newer: leave it alone
         }
         std::fs::copy(&src, &dst)?;
+        // Stamp the copy with the SOURCE mtime, then record it: that pair is how
+        // the next sync recognises its own work.
+        if let Ok(f) = std::fs::File::options().write(true).open(&dst) {
+            let _ = f.set_modified(src_mtime);
+        }
+        new_entries.push(manifest_key(name, meta_of(&dst)));
         n += 1;
     }
+    if !new_entries.is_empty() {
+        manifest.extend(new_entries);
+        let body: String = manifest.iter().map(|e| format!("{e}\n")).collect();
+        let _ = std::fs::write(&manifest_path, body);
+    }
     Ok(n)
+}
+
+/// The provenance line for a synced file: name, size and mtime seconds - enough
+/// to recognise our own copy later, cheap enough to record for every sync.
+fn manifest_key(name: &std::ffi::OsStr, meta: Option<(u64, u64)>) -> String {
+    let (len, secs) = meta.unwrap_or((0, 0));
+    format!("{}\t{len}\t{secs}", name.to_string_lossy())
+}
+
+fn meta_of(p: &std::path::Path) -> Option<(u64, u64)> {
+    let m = std::fs::metadata(p).ok()?;
+    let secs = m
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((m.len(), secs))
 }
 
 /// Rescue a prefix save the profile has no copy of, before the cloud sync
@@ -341,7 +396,10 @@ fn preserve_diverged_save(
     // second test, the first sync after adoption "rescued" duplicates of saves
     // the profile already owned.
     let same_name_same_size = std::fs::metadata(prof_saves.join(name))
-        .is_ok_and(|m| m.len() == meta.len());
+        .is_ok_and(|m| m.len() == meta.len())
+        // Same length is a hint, not proof: settle it on the bytes. Saves are a
+        // few MB and this runs once per divergence, not per session.
+        && std::fs::read(dst).ok() == std::fs::read(prof_saves.join(name)).ok();
     let known = same_name_same_size
         || std::fs::read_dir(prof_saves).into_iter().flatten().flatten().any(|e| {
             e.metadata()
@@ -679,9 +737,9 @@ fn run_through_view(
     if plugin_bind.is_some() {
         if let Some(reason) = prof.plugin_loss_since_snapshot() {
             eprintln!(
-                "eidos: WARNING - this session's plugins.txt {reason}. The pre-session copy is \
-                 kept at {}; restore it from the GUI Diagnostics tab if this was a crash, or \
-                 ignore this if you disabled those plugins on purpose.",
+                "eidos: WARNING - plugins.txt now {reason} relative to the pre-session snapshot \
+                 kept at {}. Restore it from the GUI Diagnostics tab if this was a crash, or \
+                 accept the current set there if it was deliberate.",
                 prof.plugins_snapshot_path().display()
             );
         }
@@ -1997,6 +2055,27 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains("Save 12"))
             .count();
         assert_eq!(orphans, 1, "the adopted twin must not spawn an orphan duplicate");
+
+        // Quicksave rotation: the game rewrites quicksave.ess in the profile,
+        // and the sync overwrites the prefix copy IT WROTE last session. Without
+        // the provenance manifest that copy looked like an unknown diverged save
+        // and one orphan-* file was minted per session, forever.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(prof.join("quicksave.ess"), b"rotated - a newer, longer playthrough").unwrap();
+        sync_saves_for_cloud(&prof, &prefix).unwrap();
+        let orphan_count = fs::read_dir(&prof)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("orphan-"))
+            .count();
+        assert_eq!(
+            orphan_count, 1,
+            "rotating a fixed-name save must not mint orphans of our own sync copies"
+        );
+        assert_eq!(
+            fs::read(prefix.join("quicksave.ess")).unwrap(),
+            b"rotated - a newer, longer playthrough"
+        );
     }
 
     // Guards FIX C1: the Overwrite layer must be the LAST (highest-priority) plugin
