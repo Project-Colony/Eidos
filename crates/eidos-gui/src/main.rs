@@ -13,15 +13,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{
-    button, checkbox, container, image, mouse_area, pick_list, scrollable, text, text_input, Column,
-    Row, Space, Stack,
+    button, checkbox, container, image, mouse_area, pick_list, scrollable, text, text_input, tooltip,
+    Column, Row, Space, Stack,
 };
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::settings::{Settings, Theme as PrefTheme};
 use eidos_instance::{Instance, InstanceKind, ModEntry, SaveEntry, Tool};
-use eidos_plugins::{plugins_txt_dir, GameSpec, PluginList};
+use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
@@ -624,6 +624,19 @@ struct DragState {
     gap: usize,
 }
 
+/// An in-flight plugin drag. Unlike the mod list, where any order is legal, a
+/// plugin's position is constrained by the engine, so the drag carries the range
+/// it is allowed to land in - computed ONCE when the row is grabbed, not per
+/// frame - and the strips outside it are not offered at all.
+#[derive(Debug, Clone)]
+struct PluginDrag {
+    from: usize,
+    /// Insertion index, same meaning as `DragState::gap`.
+    gap: usize,
+    /// Where this plugin may legally go, and which plugins bound it.
+    range: MovableRange,
+}
+
 /// One Data-tab row: entry name, the layer providing it, and whether it is a
 /// folder (the merged view as the FUSE union would serve it).
 type DataRow = (String, String, bool);
@@ -771,8 +784,9 @@ struct App {
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
     /// The same, for the plugin list. Kept separate so a drag in one panel can
-    /// never be committed against the other's indices.
-    plugin_drag: Option<DragState>,
+    /// never be committed against the other's indices, and carrying the legal
+    /// range so the illegal strips can simply refuse to be targets.
+    plugin_drag: Option<PluginDrag>,
     // ---- profile management (MO2 profiles dialog) ----
     /// The profile whose right-click action menu is open (None = closed).
     profile_menu: Option<String>,
@@ -2512,7 +2526,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             let mut moved = false;
             if let Some(list) = app.plugins.as_mut() {
-                moved = list.move_plugin(i, up);
+                moved = list.move_plugin(i, up, &spec);
                 if moved {
                     // refresh() re-applies masters-before-dependents, so an illegal
                     // move is corrected rather than written out.
@@ -3087,6 +3101,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.plugins.is_none() {
                 app.plugins = compute_plugins(app);
             }
+            let before: Vec<String> = app
+                .plugins
+                .as_ref()
+                .map(|l| l.plugins.iter().map(|p| p.name.clone()).collect())
+                .unwrap_or_default();
             if let Some(list) = app.plugins.as_mut() {
                 list.apply_sorted_order(&sorted);
                 // NOT repin_to_current: refresh() puts the pinned plugins back
@@ -3094,6 +3113,21 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // against the sorter is the entire purpose of a pin.
                 list.refresh(&spec);
             }
+            // How much actually moved. Without this the status reads the same
+            // whether the sort rearranged forty plugins or had nothing to do,
+            // and a correct no-op on an already-sorted list is indistinguishable
+            // from a broken button - which is exactly how it was reported.
+            let changed = app
+                .plugins
+                .as_ref()
+                .map(|l| {
+                    l.plugins
+                        .iter()
+                        .zip(before.iter())
+                        .filter(|(p, was)| &p.name != *was)
+                        .count()
+                })
+                .unwrap_or(0);
             // Say when the sort was partly overruled, rather than reporting a
             // clean LOOT sort the list does not actually match.
             let pinned = app.plugins.as_ref().map(|l| l.locked.len()).unwrap_or(0);
@@ -3101,7 +3135,16 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let written =
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
             app.status = Some(match written {
-                Ok(_) => format!("LOOT sorted {} plugins.{held}", sorted.len()),
+                Ok(_) => {
+                    if changed == 0 {
+                        format!(
+                            "LOOT checked {} plugins - the load order was already correct, nothing moved.{held}",
+                            sorted.len()
+                        )
+                    } else {
+                        format!("LOOT sorted {} plugins - {changed} moved.{held}", sorted.len())
+                    }
+                }
                 Err(e) => {
                     // Refused write: drop the phantom sort, resync to disk.
                     app.plugins = compute_plugins(app);
@@ -4049,12 +4092,27 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.drag_state = None;
         }
         Message::PluginDragStart(i) => {
-            app.plugin_drag = Some(DragState { from: i, gap: i });
+            // The legal range is resolved once, here, and not per frame: it can
+            // only change when the list itself changes, which a drag cannot do.
+            let range = selected_game(app)
+                .and_then(|g| GameSpec::for_id(g.def.id))
+                .zip(app.plugins.as_ref())
+                .and_then(|(spec, list)| list.movable_range(i, &spec));
+            app.plugin_drag = range.map(|range| PluginDrag { from: i, gap: i, range });
         }
         Message::PluginDragOverGap(gap) => {
             if let Some(d) = &mut app.plugin_drag {
-                let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
-                d.gap = gap.min(len);
+                // Clamped rather than rejected, so the indicator parks on the
+                // nearest legal slot instead of vanishing when the pointer
+                // wanders past the boundary. MO2 clamps illegal drops the same
+                // way (pluginlist.cpp:1940-2016). A slot a pinned plugin owns is
+                // skipped over, not clamped to: it is a hole in the middle of
+                // the range, and resting the line there would promise a landing
+                // the pin is going to take back.
+                let want = gap.clamp(d.range.lo, d.range.hi);
+                if !d.range.blocked.contains(&want) {
+                    d.gap = want;
+                }
             }
         }
         Message::PluginDragCancel => {
@@ -4070,12 +4128,19 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // move_plugins_to carries the pin of what it moved across with
                 // it, so a pinned plugin the user dragged keeps its NEW slot
                 // instead of being snapped back by its own lock.
-                moved = list.move_plugins_to(&[d.from], d.gap);
+                moved = list.move_plugins_to(&[d.from], d.gap, &spec);
                 if moved {
                     list.refresh(&spec);
                 }
             }
             if !moved {
+                // The gesture did nothing. If the plugin was boxed in by the
+                // engine, say which plugins boxed it in rather than leaving the
+                // row to snap back in silence - that silence is what made a
+                // correct refusal read as a broken feature.
+                if d.range.is_stuck(d.from) {
+                    app.status = Some(pinned_by(&d.range));
+                }
                 return Task::none();
             }
             commit_plugin_order(app, &spec);
@@ -6470,6 +6535,29 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
 /// Persist the plugin load order: into the active profile's plugins dir (the
 /// single source of truth, bind-mounted over the prefix at launch) AND a shadow
 /// copy into the prefix for external tools reading it outside Eidos.
+/// Why a plugin will not move, in the terms a modder already thinks in.
+///
+/// A plugin must load after every one of its masters and before anything that
+/// declares IT as a master, so a plugin caught between the two has exactly one
+/// legal slot. Naming both sides is the difference between "the drag is broken"
+/// and "of course, EX2 needs EX1".
+fn pinned_by(range: &MovableRange) -> String {
+    match (&range.after, &range.before) {
+        (Some(a), Some(b)) => format!(
+            "Held in place: it must load after {a} (one of its masters) and before {b}, which lists it as a master."
+        ),
+        (Some(a), None) => {
+            format!("Held in place: it must load after {a}, which is one of its masters.")
+        }
+        (None, Some(b)) => {
+            format!("Held in place: it must load before {b}, which lists it as a master.")
+        }
+        (None, None) => {
+            "Held in place: the game loads this plugin itself, at a fixed position.".to_string()
+        }
+    }
+}
+
 /// Persist the load order after a user-driven change, and say so if disk refused.
 ///
 /// A refused write means the in-memory order never landed. Keeping it would let a
@@ -6572,11 +6660,35 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // list, so the layout does not shift the instant a drag begins.
     let mut rows = Column::new();
     let total = list.plugins.len();
-    let live_gap = app
-        .plugin_drag
-        .filter(|d| d.gap != d.from && d.gap != d.from + 1)
-        .map(|d| d.gap);
-    let dragging = app.plugin_drag.is_some();
+    let drag = app.plugin_drag.as_ref();
+    let live_gap =
+        drag.filter(|d| d.gap != d.from && d.gap != d.from + 1).map(|d| d.gap);
+    // A strip is a target only inside the range the engine allows this plugin,
+    // so an illegal slot cannot be aimed at in the first place. That is strictly
+    // better than MO2, which accepts the drop and clamps it afterwards
+    // (pluginlist.cpp:1940-2016) - the user there has no way to know why the row
+    // did not go where they put it.
+    let legal = |gap: usize| {
+        drag.is_some_and(|d| {
+            gap >= d.range.lo && gap <= d.range.hi && !d.range.blocked.contains(&gap)
+        })
+    };
+    // Said once, above the list, while the drag is live: the boundary is visible
+    // as a place the line stops, and this explains what is stopping it.
+    if let Some(d) = drag {
+        let msg = if d.range.is_stuck(d.from) {
+            pinned_by(&d.range)
+        } else {
+            match (&d.range.after, &d.range.before) {
+                (Some(a), Some(b)) => format!("Can move between {a} and {b} - both are master ties."),
+                (Some(a), None) => format!("Must stay after {a}, one of its masters."),
+                (None, Some(b)) => format!("Must stay before {b}, which lists it as a master."),
+                (None, None) => "Free to move anywhere in its section.".to_string(),
+            }
+        };
+        head = head.push(text(msg).size(11.0));
+    }
+    let dragging = drag.is_some();
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
         let kind = if p.is_light {
@@ -6604,12 +6716,15 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // Manual reorder (MO2 lets the load order be moved by hand, not only
         // LOOT-sorted). refresh() re-applies the invariants after each move, so an
         // illegal position is corrected rather than persisted.
+        // A button with no `on_press` renders greyed, which is the whole point:
+        // a plugin boxed in by its masters SHOWS as immovable instead of
+        // accepting the click and snapping back.
         let mut up = button(text("^").size(10.0)).padding([0, 5]).style(button::text);
-        if i > 0 {
+        if i > 0 && spec.as_ref().is_some_and(|s| list.can_move(i, true, s)) {
             up = up.on_press(Message::PluginMoveUp(i));
         }
         let mut down = button(text("v").size(10.0)).padding([0, 5]).style(button::text);
-        if i + 1 < total {
+        if i + 1 < total && spec.as_ref().is_some_and(|s| list.can_move(i, false, s)) {
             down = down.on_press(Message::PluginMoveDown(i));
         }
         // The pin (MO2's locked order). A primary master is already nailed to the
@@ -6624,12 +6739,56 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::TogglePluginLock(i))
                 .into()
         };
+        // MO2 puts exactly this behind a hover (pluginlist.cpp tooltipData:
+        // Origin, Masters, Missing Masters). It is the information that explains
+        // why a plugin will not move, and it is far too wide to be a column -
+        // these plugins carry five to nine masters each.
+        let mut tip = if p.origin_mod.is_empty() {
+            "Origin: the game's own Data".to_string()
+        } else {
+            format!("Origin: {}", p.origin_mod)
+        };
+        if is_primary {
+            tip.push_str("\nThe game loads this plugin itself: it cannot be moved or disabled.");
+        }
+        if !p.masters.is_empty() {
+            let present: Vec<&str> = p
+                .masters
+                .iter()
+                .filter(|m| list.plugins.iter().any(|q| q.name.eq_ignore_ascii_case(m)))
+                .map(|m| m.as_str())
+                .collect();
+            let absent: Vec<&str> = p
+                .masters
+                .iter()
+                .filter(|m| !list.plugins.iter().any(|q| q.name.eq_ignore_ascii_case(m)))
+                .map(|m| m.as_str())
+                .collect();
+            if !present.is_empty() {
+                tip.push_str(&format!("\nMasters: {}", present.join(", ")));
+            }
+            if !absent.is_empty() {
+                tip.push_str(&format!("\nMISSING masters: {}", absent.join(", ")));
+            }
+            tip.push_str("\nThis plugin must load after all of them.");
+        }
+        let name_cell = tooltip(
+            text(p.name.clone()).size(12.0).width(Length::Fill),
+            container(text(tip).size(11.0))
+                .padding(6)
+                .style(|t: &Theme| container::Style {
+                    background: Some(Background::Color(t.extended_palette().background.weak.color)),
+                    ..Default::default()
+                }),
+            tooltip::Position::FollowCursor,
+        )
+        .gap(4);
         let row = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
             .push(text(idx).size(11.0).width(Length::Fixed(52.0)))
             .push(container(toggle).width(Length::Fixed(28.0)))
-            .push(text(p.name.clone()).size(12.0).width(Length::Fill))
+            .push(container(name_cell).width(Length::Fill))
             .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
             .push(container(pin).width(Length::Fixed(26.0)))
             .push(up)
@@ -6643,7 +6802,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         rows = rows.push(drop_gap(
             i,
             live_gap == Some(i),
-            dragging,
+            dragging && legal(i),
             Message::PluginDragOverGap,
             Message::PluginDragDrop,
         ));
@@ -6655,7 +6814,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         rows = rows.push(drop_gap(
             total,
             live_gap == Some(total),
-            dragging,
+            dragging && legal(total),
             Message::PluginDragOverGap,
             Message::PluginDragDrop,
         ));

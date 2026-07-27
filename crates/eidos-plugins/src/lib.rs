@@ -146,6 +146,48 @@ impl Plugin {
     }
 }
 
+/// Where a plugin is allowed to sit in the load order, and what bounds it.
+///
+/// `lo`/`hi` are INSERTION points (gaps), inclusive, in the same numbering the
+/// drop strips use. `after` and `before` name the plugins doing the bounding, so
+/// the UI can say *why* rather than merely refusing.
+///
+/// Do NOT read `lo == hi` as "cannot move": a plugin's own two edges are both
+/// legal and both no-ops, so a completely boxed-in plugin at index `i` reports
+/// `lo == i, hi == i + 1`. Ask [`MovableRange::is_stuck`] instead - reading the
+/// degenerate case for the stuck case is a real bug this comment used to cause.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovableRange {
+    pub lo: usize,
+    pub hi: usize,
+    /// The last of its own masters that is present: it must load after this.
+    pub after: Option<String>,
+    /// The first plugin declaring it as a master: it must load before this.
+    pub before: Option<String>,
+    /// Insertion points inside `lo..=hi` that are nonetheless refused, because a
+    /// PINNED plugin owns the slot they would land on.
+    ///
+    /// A pin is a hole, not a bound: a plugin may be dragged straight past a
+    /// pinned neighbour - the pinned one is put back afterwards and everything
+    /// flows around it - but it may not come to rest ON the pinned slot, because
+    /// there the pin wins and the drop silently lands one row off.
+    pub blocked: Vec<usize>,
+}
+
+impl MovableRange {
+    /// Whether the plugin grabbed at row `from` has nowhere to go: every gap the
+    /// range allows is one of its own two edges, which both leave it exactly
+    /// where it is.
+    ///
+    /// This is the honest immovability test. `lo == hi` is NOT: it holds only
+    /// for a primary game master or a contradictory rule set, so a plugin
+    /// wedged between its master and its dependent - the common case, and the
+    /// one users hit - slipped through it and got told it was free to move.
+    pub fn is_stuck(&self, from: usize) -> bool {
+        self.lo >= from && self.hi <= from + 1
+    }
+}
+
 /// The ordered plugin list.
 #[derive(Debug, Clone, Default)]
 pub struct PluginList {
@@ -332,23 +374,8 @@ impl PluginList {
 
         // Primaries first and masters above plugins are engine rules, not
         // preferences, so re-impose them over the pins.
-        let n = self.plugins.len();
-        let primary_pos =
-            |name: &str| spec.primary_plugins.iter().position(|p| p.eq_ignore_ascii_case(name));
-        let mut base: Vec<usize> = (0..n).collect();
-        base.sort_by_key(|&i| {
-            let p = &self.plugins[i];
-            let prim = primary_pos(&p.name);
-            let tier: u8 = if prim.is_some() {
-                0
-            } else if p.loads_as_master() {
-                1
-            } else {
-                2
-            };
-            (tier, prim.unwrap_or(usize::MAX), i)
-        });
-        let order = topo_stable(&self.plugins, &base);
+        let (base, tier) = tier_order(&self.plugins, spec);
+        let order = topo_stable(&self.plugins, &base, &tier);
         let mut settled: Vec<Plugin> = order.iter().map(|&i| self.plugins[i].clone()).collect();
         for (pos, p) in settled.iter_mut().enumerate() {
             p.priority = pos as i32;
@@ -360,11 +387,18 @@ impl PluginList {
     /// locked to. Returns `(name, wanted, actual)` so the UI can say which pin
     /// could not be honoured and where the plugin had to go instead.
     pub fn violated_locks(&self) -> Vec<(String, usize, usize)> {
+        // A pin past the end of a list that merely got shorter - the mod
+        // providing the plugins below it was disabled - is still honoured: the
+        // plugin is as late as it can be. Comparing against the raw index would
+        // report every such pin as overruled by the engine, which is simply
+        // false, and the banner blames masters that had nothing to do with it.
+        let last = self.plugins.len().saturating_sub(1);
         self.locked
             .iter()
             .filter_map(|(name, &want)| {
                 let at = self.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(name))?;
-                (at != want).then(|| (name.clone(), want, at))
+                let reachable = want.min(last);
+                (at != reachable).then(|| (name.clone(), want, at))
             })
             .collect()
     }
@@ -422,27 +456,9 @@ impl PluginList {
     /// 3. within that, the input (mod-priority) order is preserved;
     /// 4. every plugin after all of its own masters.
     pub fn sort(&mut self, spec: &GameSpec) {
-        let n = self.plugins.len();
-
-        // Tier + primary sub-order key; `i` (input position) is the stable tiebreak.
-        let primary_pos = |name: &str| {
-            spec.primary_plugins.iter().position(|p| p.eq_ignore_ascii_case(name))
-        };
-        let mut base: Vec<usize> = (0..n).collect();
-        base.sort_by_key(|&i| {
-            let p = &self.plugins[i];
-            let prim = primary_pos(&p.name);
-            let tier: u8 = if prim.is_some() {
-                0
-            } else if p.loads_as_master() {
-                1
-            } else {
-                2
-            };
-            (tier, prim.unwrap_or(usize::MAX), i)
-        });
-
-        let order = topo_stable(&self.plugins, &base);
+        // Tier + primary sub-order key; input position is the stable tiebreak.
+        let (base, tier) = tier_order(&self.plugins, spec);
+        let order = topo_stable(&self.plugins, &base, &tier);
         let mut sorted: Vec<Plugin> = order.iter().map(|&i| self.plugins[i].clone()).collect();
         for (pos, p) in sorted.iter_mut().enumerate() {
             p.priority = pos as i32;
@@ -522,11 +538,70 @@ impl PluginList {
             .sort_by_key(|p| rank.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(tail));
     }
 
+    /// Whether a ONE-SLOT move is legal, checked against the immediate neighbour
+    /// only - which is all a single step can violate, and costs O(masters)
+    /// instead of the O(n) [`movable_range`] needs. The arrow buttons ask this
+    /// per row on every frame, so the difference matters.
+    pub fn can_move(&self, index: usize, up: bool, spec: &GameSpec) -> bool {
+        let Some(me) = self.plugins.get(index) else { return false };
+        let is_primary =
+            |n: &str| spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n));
+        if is_primary(&me.name) {
+            return false;
+        }
+        let Some(other) = (if up {
+            index.checked_sub(1).and_then(|i| self.plugins.get(i))
+        } else {
+            self.plugins.get(index + 1)
+        }) else {
+            return false;
+        };
+        // A pinned neighbour owns its slot; stepping onto it would be undone by
+        // apply_locks on the very next refresh.
+        if self.locked.contains_key(&other.name.to_ascii_lowercase()) {
+            return false;
+        }
+        if up {
+            // Cannot climb over one of my own masters, over the primary block,
+            // or - if I am a normal plugin - into the master block at all.
+            if is_primary(&other.name) {
+                return false;
+            }
+            if me.masters.iter().any(|m| m.eq_ignore_ascii_case(&other.name)) {
+                return false;
+            }
+            if !me.loads_as_master() && other.loads_as_master() {
+                return false;
+            }
+        } else {
+            // Cannot sink below something that declares me as its master, and a
+            // master cannot sink into the normal block.
+            if other.masters.iter().any(|m| m.eq_ignore_ascii_case(&me.name)) {
+                return false;
+            }
+            if me.loads_as_master() && !other.loads_as_master() {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Move the plugin at `index` one slot towards the start (`up`) or the end of
-    /// the load order, MO2's manual reorder. Returns whether anything moved -
-    /// `refresh` afterwards re-applies the ordering invariants, which may pull the
-    /// plugin back if the move would break masters-before-dependents.
-    pub fn move_plugin(&mut self, index: usize, up: bool) -> bool {
+    /// the load order, MO2's manual reorder. Returns whether anything moved.
+    ///
+    /// An illegal step is refused HERE rather than being made and then undone by
+    /// the next `refresh`. The difference is not cosmetic: the move carries the
+    /// plugin's pin with it, so a move that is silently reverted would leave the
+    /// pin recording a slot the plugin cannot occupy - permanently violated, and
+    /// re-applied on every later refresh.
+    pub fn move_plugin(&mut self, index: usize, up: bool, spec: &GameSpec) -> bool {
+        if !self.can_move(index, up, spec) {
+            return false;
+        }
+        self.move_plugin_unchecked(index, up)
+    }
+
+    fn move_plugin_unchecked(&mut self, index: usize, up: bool) -> bool {
         let target = if up {
             match index.checked_sub(1) {
                 Some(t) => t,
@@ -548,6 +623,126 @@ impl PluginList {
         true
     }
 
+    /// The insertion points the plugin at `index` may legally be dropped on, as an
+    /// inclusive gap range `(lo, hi)`, plus the two plugins that bound it.
+    ///
+    /// Every ordering rule the engine imposes is an index constraint, and each one
+    /// cuts the same range from one side, so the legal region is always ONE
+    /// contiguous interval - which is what makes this worth computing: the UI can
+    /// simply refuse to offer a strip outside it, instead of accepting a drop and
+    /// silently undoing it afterwards. That silence is what made a correct refusal
+    /// read as a broken feature.
+    ///
+    /// The bounds, in the order they bind:
+    /// - after the last of its own masters that is present (a plugin loaded before
+    ///   its master resolves every FormID it borrows against the wrong record);
+    /// - before the first plugin that declares IT as a master, symmetrically;
+    /// - inside its tier, since masters all load above normal plugins;
+    /// - and a primary game master does not move at all.
+    ///
+    /// Assumes the list is already sorted (tiers contiguous), which is true after
+    /// any `refresh`. Use [`MovableRange::is_stuck`] to ask whether the result
+    /// leaves the plugin anywhere to go.
+    pub fn movable_range(&self, index: usize, spec: &GameSpec) -> Option<MovableRange> {
+        self.range_excluding(index, spec, &[index])
+    }
+
+    /// [`movable_range`](Self::movable_range) for a plugin moving as part of a
+    /// BLOCK: ties to the other rows in `block` are ignored, because they travel
+    /// with it and their relative order is preserved.
+    ///
+    /// Without this, a master and its own dependent selected together could
+    /// never be moved down past anything - the master's "must load before its
+    /// dependent" bound would point at a row that is moving too, and a perfectly
+    /// legal move would be refused.
+    fn range_excluding(
+        &self,
+        index: usize,
+        spec: &GameSpec,
+        block: &[usize],
+    ) -> Option<MovableRange> {
+        let me = self.plugins.get(index)?;
+        let len = self.plugins.len();
+        let is_primary =
+            |n: &str| spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n));
+        if is_primary(&me.name) {
+            return Some(MovableRange {
+                lo: index,
+                hi: index,
+                blocked: Vec::new(),
+                after: None,
+                before: None,
+            });
+        }
+        // Tier boundaries. The list is sorted, so both blocks are contiguous.
+        let primaries_end = self.plugins.iter().position(|p| !is_primary(&p.name)).unwrap_or(len);
+        let normals_start = self
+            .plugins
+            .iter()
+            .position(|p| !is_primary(&p.name) && !p.loads_as_master())
+            .unwrap_or(len);
+
+        // The last master of mine that is actually present: I must land after it.
+        let mut after: Option<(usize, String)> = None;
+        for (i, p) in self.plugins.iter().enumerate() {
+            if !block.contains(&i) && me.masters.iter().any(|m| m.eq_ignore_ascii_case(&p.name)) {
+                after = Some((i, p.name.clone()));
+            }
+        }
+        // The first plugin that declares me as ITS master: I must land before it.
+        let before = self
+            .plugins
+            .iter()
+            .enumerate()
+            .find(|(i, p)| {
+                !block.contains(i) && p.masters.iter().any(|m| m.eq_ignore_ascii_case(&me.name))
+            })
+            .map(|(i, p)| (i, p.name.clone()));
+
+        let (mut lo, mut hi) = (0usize, len);
+        if let Some((i, _)) = &after {
+            lo = i + 1;
+        }
+        if let Some((i, _)) = &before {
+            hi = *i;
+        }
+        // Where a pin would steal the landing. Lifting the row out shifts
+        // everything after it down by one, so the gap that lands ON slot `k` is
+        // `k` when the pin sits above the grabbed row and `k + 1` when it sits
+        // below. The plugin's own pin is not an obstacle to itself - a
+        // deliberate move re-points it.
+        let mut blocked: Vec<usize> = Vec::new();
+        for (i, p) in self.plugins.iter().enumerate() {
+            if block.contains(&i) || !self.locked.contains_key(&p.name.to_ascii_lowercase()) {
+                continue;
+            }
+            blocked.push(if i < index { i } else { i + 1 });
+        }
+        blocked.retain(|g| *g >= lo && *g <= hi);
+        blocked.sort_unstable();
+        blocked.dedup();
+        if me.loads_as_master() {
+            lo = lo.max(primaries_end);
+            hi = hi.min(normals_start);
+        } else {
+            lo = lo.max(normals_start);
+        }
+        // A contradictory set of rules must not produce an inverted range; pin the
+        // plugin where it is rather than handing the UI something nonsensical.
+        if lo > hi {
+            lo = index;
+            hi = index;
+            blocked.clear();
+        }
+        Some(MovableRange {
+            lo,
+            hi,
+            blocked,
+            after: after.map(|(_, n)| n),
+            before: before.map(|(_, n)| n),
+        })
+    }
+
     /// Move the plugins at `rows` so the block lands at the insertion point `gap`,
     /// keeping their relative order. `gap` counts BETWEEN rows: 0 is above the
     /// first plugin, `len()` is below the last - the same index the mod list's
@@ -558,17 +753,31 @@ impl PluginList {
     /// whether anything moved; `refresh` afterwards re-applies the engine
     /// ordering, which may pull the block back if the drop would load a plugin
     /// before one of its masters.
-    pub fn move_plugins_to(&mut self, rows: &[usize], gap: usize) -> bool {
+    pub fn move_plugins_to(&mut self, rows: &[usize], gap: usize, spec: &GameSpec) -> bool {
         let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
         idx.sort_unstable();
         idx.dedup();
         if idx.is_empty() {
             return false;
         }
-        // A block dropped on either of its own edges has not gone anywhere; say so
-        // rather than rewriting the load order and reporting a change.
+        // Refuse a destination the engine forbids, instead of moving there and
+        // letting the next refresh quietly undo it - which would strand the
+        // plugin's pin on a slot it can never occupy. For a block, every row's
+        // range must allow the gap: a move that would be half-undone is refused
+        // whole rather than landing somewhere nobody asked for.
+        for &i in &idx {
+            match self.range_excluding(i, spec, &idx) {
+                Some(r) if gap >= r.lo && gap <= r.hi && !r.blocked.contains(&gap) => {}
+                _ => return false,
+            }
+        }
+        // A contiguous block dropped anywhere between its own first row and just
+        // past its last has not gone anywhere - the interior gaps are inside the
+        // block being lifted, so they all resolve to the position it already
+        // holds. Reporting a move there would rewrite the load order and raise a
+        // status message for a gesture that changed nothing.
         let contiguous = idx.last().unwrap() - idx.first().unwrap() + 1 == idx.len();
-        if contiguous && (gap == idx[0] || gap == idx[idx.len() - 1] + 1) {
+        if contiguous && gap >= idx[0] && gap <= idx[idx.len() - 1] + 1 {
             return false;
         }
         let before = idx.iter().filter(|&&i| i < gap).count();
@@ -600,7 +809,36 @@ fn parse_header(path: &Path, game_id: GameId) -> Option<(bool, bool, bool, Vec<S
 /// but never place a plugin before one of its present masters. O(n^2), fine for
 /// realistic plugin counts. A dependency cycle (should not occur) falls back to
 /// `base` order for the offending nodes.
-fn topo_stable(plugins: &[Plugin], base: &[usize]) -> Vec<usize> {
+/// The engine's tier for each plugin - 0 a primary game master, 1 anything that
+/// loads as a master, 2 a normal plugin - together with the indices sorted into
+/// that order: primaries in their canonical sequence, and the input order
+/// preserved inside each tier.
+///
+/// The two are returned together because they have to agree. `topo_stable` reads
+/// the tiers to decide which rows it may emit next, and deriving them a second
+/// time from a second copy of the same closure is exactly how the sort and the
+/// pin pass would drift apart.
+fn tier_order(plugins: &[Plugin], spec: &GameSpec) -> (Vec<usize>, Vec<u8>) {
+    let primary_pos =
+        |name: &str| spec.primary_plugins.iter().position(|p| p.eq_ignore_ascii_case(name));
+    let tier: Vec<u8> = plugins
+        .iter()
+        .map(|p| {
+            if primary_pos(&p.name).is_some() {
+                0
+            } else if p.loads_as_master() {
+                1
+            } else {
+                2
+            }
+        })
+        .collect();
+    let mut base: Vec<usize> = (0..plugins.len()).collect();
+    base.sort_by_key(|&i| (tier[i], primary_pos(&plugins[i].name).unwrap_or(usize::MAX), i));
+    (base, tier)
+}
+
+fn topo_stable(plugins: &[Plugin], base: &[usize], tier: &[u8]) -> Vec<usize> {
     let n = plugins.len();
     let by_name: HashMap<String, usize> = plugins
         .iter()
@@ -629,21 +867,37 @@ fn topo_stable(plugins: &[Plugin], base: &[usize]) -> Vec<usize> {
     let mut placed = vec![false; n];
     let mut result = Vec::with_capacity(n);
     for _ in 0..n {
-        // The available (in-degree 0) node earliest in `base`.
+        // Only the earliest tier still holding rows may be emitted. `base` is
+        // tier-sorted, so the head of the unplaced remainder identifies it - and
+        // restricting candidates to it is what makes the tier rule (all masters
+        // above all normal plugins) survive a dependency graph that cannot be
+        // satisfied. Without the restriction, a normal plugin that happened to
+        // be unblocked was emitted while two mutually-mastering .esm files were
+        // stuck, and both masters ended up BELOW it: a load order the engine
+        // cannot honour, produced in silence.
+        let Some(head) = base.iter().copied().find(|&i| !placed[i]) else { break };
+        let tier_end = base
+            .iter()
+            .position(|&i| !placed[i] && tier[i] != tier[head])
+            .unwrap_or(base.len());
         let mut best: Option<usize> = None;
-        for i in 0..n {
+        for &i in &base[..tier_end] {
             if !placed[i] && indeg[i] == 0 && best.is_none_or(|b| base_pos[i] < base_pos[b]) {
                 best = Some(i);
             }
         }
-        let Some(i) = best else { break };
+        // Nothing available inside the tier means a cycle within it (A masters
+        // B, B masters A - malformed, but hand-edited plugins do it). Break it
+        // at the earliest row rather than stalling: only the cyclic edge is
+        // given up, and the ordering everything else depends on is kept.
+        let Some(i) = best.or(Some(head)) else { break };
         placed[i] = true;
         result.push(i);
         for &d in &dependents[i] {
             indeg[d] = indeg[d].saturating_sub(1);
         }
     }
-    // Any cycle leftovers, in base order.
+    // Nothing should be left now, but stay total rather than dropping rows.
     for &i in base {
         if !placed[i] {
             result.push(i);
@@ -894,17 +1148,17 @@ mod tests {
         // Downward: lifting the source shifts everything after it, so the gap
         // index has to be compensated or the plugin lands one slot short.
         let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
-        assert!(l.move_plugins_to(&[0], 3));
+        assert!(l.move_plugins_to(&[0], 3, &se()));
         assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp", "d.esp"]);
 
         // Upward needs no compensation.
         let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
-        assert!(l.move_plugins_to(&[3], 1));
+        assert!(l.move_plugins_to(&[3], 1, &se()));
         assert_eq!(names(&l), ["a.esp", "d.esp", "b.esp", "c.esp"]);
 
         // The gap past the last row is the only way to aim at the end.
         let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
-        assert!(l.move_plugins_to(&[0], 3));
+        assert!(l.move_plugins_to(&[0], 3, &se()));
         assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp"]);
     }
 
@@ -913,12 +1167,12 @@ mod tests {
         // Both strips touching a row mean "leave it here". Reporting a move
         // would rewrite plugins.txt for a gesture that did nothing.
         let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
-        assert!(!l.move_plugins_to(&[1], 1));
-        assert!(!l.move_plugins_to(&[1], 2));
+        assert!(!l.move_plugins_to(&[1], 1, &se()));
+        assert!(!l.move_plugins_to(&[1], 2, &se()));
         assert_eq!(names(&l), ["a.esp", "b.esp", "c.esp"]);
         // Out of range and empty are no-ops too, not panics.
-        assert!(!l.move_plugins_to(&[], 0));
-        assert!(!l.move_plugins_to(&[99], 0));
+        assert!(!l.move_plugins_to(&[], 0, &se()));
+        assert!(!l.move_plugins_to(&[99], 0, &se()));
         assert_eq!(names(&l), ["a.esp", "b.esp", "c.esp"]);
     }
 
@@ -931,11 +1185,18 @@ mod tests {
         assert_eq!(names(&l), ["d.esp", "a.esp", "b.esp", "c.esp"]);
         assert!(l.violated_locks().is_empty());
 
-        // And it resists a move that would displace it: dragging a.esp to the
-        // top pushes it into slot 1, because slot 0 is spoken for.
-        assert!(l.move_plugins_to(&[1], 0));
-        l.refresh(&se());
+        // And slot 0 is spoken for: dropping a.esp there is refused outright,
+        // rather than accepted and then quietly undone by d.esp's own pin - the
+        // range reports that gap as blocked, so it is never offered either.
+        assert!(l.movable_range(1, &se()).unwrap().blocked.contains(&0));
+        assert!(!l.move_plugins_to(&[1], 0, &se()));
         assert_eq!(names(&l), ["d.esp", "a.esp", "b.esp", "c.esp"]);
+
+        // Crossing a pin is still allowed, though - only landing ON it is not.
+        // c.esp travels from the bottom to slot 1 and d.esp stays pinned at 0.
+        assert!(l.move_plugins_to(&[3], 1, &se()));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["d.esp", "c.esp", "a.esp", "b.esp"]);
     }
 
     #[test]
@@ -995,17 +1256,309 @@ mod tests {
         // would snap it back on the next refresh and the drag would look broken.
         let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
         l.set_locked(0, true);
-        assert!(l.move_plugins_to(&[0], 3));
+        assert!(l.move_plugins_to(&[0], 3, &se()));
         l.refresh(&se());
         assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp"]);
         assert_eq!(l.locked.get("a.esp"), Some(&2));
 
         // The arrow buttons are a deliberate move too, and must not be defeated
         // by the plugin's own pin.
-        assert!(l.move_plugin(2, true));
+        assert!(l.move_plugin(2, true, &se()));
         l.refresh(&se());
         assert_eq!(names(&l), ["b.esp", "a.esp", "c.esp"]);
         assert_eq!(l.locked.get("a.esp"), Some(&1));
+    }
+
+    #[test]
+    fn a_chain_of_masters_cannot_be_reordered_and_that_is_correct() {
+        // Reported as "I cannot move these four, the drag is broken". It is not:
+        // Kurone Soul Tomb ships five plugins in a strict master chain, each
+        // declaring the previous one in its MAST records (read off the real
+        // files). A plugin loaded before its own master resolves every FormID it
+        // borrows against the wrong record, so the engine forbids it and so does
+        // Eidos. The move is refused, correctly - what is missing is saying so.
+        let mut l = PluginList {
+            plugins: vec![
+                p("KuroneSoulTomb.esp", &[]),
+                p("KuroneSoulTomb_EX1.esp", &["KuroneSoulTomb.esp"]),
+                p("KuroneSoulTomb_EX2.esp", &["KuroneSoulTomb.esp", "KuroneSoulTomb_EX1.esp"]),
+                p(
+                    "KuroneSoulTomb_EX3.esp",
+                    &["KuroneSoulTomb.esp", "KuroneSoulTomb_EX1.esp", "KuroneSoulTomb_EX2.esp"],
+                ),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        let before = names(&l);
+
+        // Drag EX2 above EX1: refused outright, because EX1 is one of EX2's
+        // masters. Refused rather than made-and-reverted, so nothing downstream
+        // (the pin, the disk write) ever sees an order the engine forbids.
+        assert!(!l.move_plugins_to(&[2], 1, &se()));
+        assert_eq!(names(&l), before);
+
+        // Same through the arrow button, same answer, and cheaply: can_move only
+        // has to look at the one neighbour a single step can cross.
+        assert!(!l.can_move(2, true, &se()));
+        assert!(!l.move_plugin(2, true, &se()));
+        assert_eq!(names(&l), before);
+
+        // Downward is refused too, from the other side of the tie: EX3 declares
+        // EX2 as ITS master, so EX2 cannot sink past it.
+        assert!(!l.can_move(2, false, &se()));
+
+        // A plugin with no such tie moves freely, so the refusal is the master
+        // rule and not a broken reorder.
+        l.plugins.push(p("Free.esp", &[]));
+        l.refresh(&se());
+        assert!(l.move_plugins_to(&[4], 0, &se()));
+        l.refresh(&se());
+        assert_eq!(names(&l)[0], "Free.esp");
+    }
+
+    #[test]
+    fn the_legal_range_names_the_plugins_that_bound_it() {
+        // The same Kurone chain. Every link in it has exactly one legal slot, so
+        // the range collapses - and it can say WHICH plugin closed it from each
+        // side, which is the whole point: a refusal the user can read.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("KuroneSoulTomb.esp", &["Skyrim.esm"]),
+                p("KuroneSoulTomb_EX1.esp", &["KuroneSoulTomb.esp"]),
+                p("KuroneSoulTomb_EX2.esp", &["KuroneSoulTomb_EX1.esp"]),
+                p("Free.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        assert_eq!(
+            names(&l),
+            [
+                "Skyrim.esm",
+                "KuroneSoulTomb.esp",
+                "KuroneSoulTomb_EX1.esp",
+                "KuroneSoulTomb_EX2.esp",
+                "Free.esp"
+            ]
+        );
+
+        // EX1 is boxed in on both sides: after KuroneSoulTomb.esp, before EX2.
+        let r = l.movable_range(2, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (2, 3));
+        assert_eq!(r.after.as_deref(), Some("KuroneSoulTomb.esp"));
+        assert_eq!(r.before.as_deref(), Some("KuroneSoulTomb_EX2.esp"));
+
+        // EX2 has nothing depending on it, so it is free below its master.
+        let r = l.movable_range(3, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (3, 5));
+        assert_eq!(r.after.as_deref(), Some("KuroneSoulTomb_EX1.esp"));
+        assert_eq!(r.before, None);
+
+        // A plugin with no ties may go anywhere below the master block.
+        let r = l.movable_range(4, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (1, 5));
+        assert_eq!(r.after, None);
+
+        // And a primary game master does not move at all.
+        let r = l.movable_range(0, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (0, 0));
+    }
+
+    #[test]
+    fn a_normal_plugin_may_not_climb_into_the_master_block() {
+        // Not a dependency rule - the engine loads every master above every
+        // normal plugin, so the tier boundary bounds the range too.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("Big.esm", &[]),
+                p("One.esp", &[]),
+                p("Two.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        // Two.esp cannot go above index 2, where the normal plugins start.
+        let r = l.movable_range(3, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (2, 4));
+        assert_eq!(r.after, None);
+        // Big.esm is stuck between the primary block and the normal block.
+        let r = l.movable_range(1, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (1, 2));
+    }
+
+    #[test]
+    fn a_shorter_list_is_not_the_engine_overruling_a_pin() {
+        // Pin the last plugin, then disable the mod supplying the three above
+        // it. The pin's recorded index is now past the end - but the plugin is
+        // still last, exactly as pinned. Comparing raw indexes reported it as
+        // overruled, and the banner blamed master ordering that had nothing to
+        // do with it: a false alarm on a completely healthy setup.
+        let mut l = esps(&["a.esp", "b.esp", "x.esp", "y.esp", "z.esp", "c.esp"]);
+        assert!(l.set_locked(5, true));
+        l.refresh(&se());
+        assert!(l.violated_locks().is_empty());
+
+        let mut shorter = esps(&["a.esp", "b.esp", "c.esp"]);
+        shorter.locked = l.locked.clone();
+        shorter.refresh(&se());
+        assert_eq!(names(&shorter), ["a.esp", "b.esp", "c.esp"]);
+        assert!(shorter.violated_locks().is_empty(), "{:?}", shorter.violated_locks());
+    }
+
+    #[test]
+    fn a_block_dropped_inside_itself_reports_no_move() {
+        // Every gap between a contiguous block's first row and just past its
+        // last is INSIDE the block being lifted, so they all resolve to the
+        // position it already holds. Only the two edges were caught, so an
+        // interior gap rewrote plugins.txt and announced a move that never
+        // happened. Not reachable while the UI drags one row, but it will be
+        // the moment plugins get multi-select.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp", "e.esp"]);
+        let before = names(&l);
+        for gap in 1..=4 {
+            assert!(!l.move_plugins_to(&[1, 2, 3], gap, &se()), "gap {gap}");
+            assert_eq!(names(&l), before, "gap {gap}");
+        }
+        // Just outside, it does move.
+        assert!(l.move_plugins_to(&[1, 2, 3], 5, &se()));
+        assert_eq!(names(&l), ["a.esp", "e.esp", "b.esp", "c.esp", "d.esp"]);
+    }
+
+    #[test]
+    fn a_master_and_its_dependent_travel_together() {
+        // Ties INSIDE the moving block are not obstacles: the two rows keep
+        // their relative order, so the master still loads before its dependent
+        // wherever they land. Judging each row against the other refused the
+        // whole move.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Base.esm", &[]),
+                p("Patch.esp", &["Base.esm"]),
+                p("One.esp", &[]),
+                p("Two.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        // Patch.esp and the two free plugins are all normal; move Patch down
+        // past both. Base.esm is a master and stays in the master block.
+        assert!(l.move_plugins_to(&[1], 4, &se()));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["Base.esm", "One.esp", "Two.esp", "Patch.esp"]);
+    }
+
+    #[test]
+    fn a_master_cycle_does_not_sink_the_masters_below_the_plugins() {
+        // Two masters each declaring the other - malformed, but it exists on
+        // hand-edited plugins. The topological pass cannot order them, and it
+        // used to dump both at the END of the list, under every .esp: a load
+        // order the engine cannot honour, produced in silence. The cycle is
+        // broken at the earliest row instead, so the tier invariant survives.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("A.esm", &["Skyrim.esm", "B.esm"]),
+                p("B.esm", &["Skyrim.esm", "A.esm"]),
+                p("Z.esp", &["Skyrim.esm"]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        let pos = |n: &str| names(&l).iter().position(|x| x == n).unwrap();
+        assert!(pos("A.esm") < pos("Z.esp"), "{:?}", names(&l));
+        assert!(pos("B.esm") < pos("Z.esp"), "{:?}", names(&l));
+        // And every plugin is still present exactly once.
+        assert_eq!(l.plugins.len(), 4);
+    }
+
+    #[test]
+    fn a_boxed_in_plugin_reports_itself_as_stuck() {
+        // The bug this pins, found by the audit against the real Kurone chain:
+        // a plugin's own two edges are both legal gaps, so a completely wedged
+        // plugin at index i reports lo == i and hi == i + 1 - NOT lo == hi. The
+        // GUI tested lo == hi, so the wedged case fell into the "can move
+        // between A and B" branch and the panel told the user a plugin was free
+        // to move while offering nowhere to move it. A false statement is worse
+        // than the silence it replaced.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("KuroneSoulTomb.esp", &["Skyrim.esm"]),
+                p("KuroneSoulTomb_EX1.esp", &["KuroneSoulTomb.esp"]),
+                p("KuroneSoulTomb_EX2.esp", &["KuroneSoulTomb_EX1.esp"]),
+                p("KuroneSoulTomb_EX3.esp", &["KuroneSoulTomb_EX2.esp"]),
+                p("Free.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+
+        // EX1 at index 2 is wedged between its master and its dependent.
+        let r = l.movable_range(2, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (2, 3));
+        assert_ne!(r.lo, r.hi, "the degenerate test is exactly what was wrong");
+        assert!(r.is_stuck(2));
+
+        // A primary master is stuck too, through the other path.
+        assert!(l.movable_range(0, &se()).unwrap().is_stuck(0));
+
+        // And the free plugin is NOT stuck - it may go anywhere below the master
+        // block. A test that called everything stuck would be no better than the
+        // one that called nothing stuck.
+        let r = l.movable_range(5, &se()).unwrap();
+        assert!(!r.is_stuck(5), "lo {} hi {}", r.lo, r.hi);
+        // EX2 is wedged the same way as EX1, and reports the same shape.
+        let r = l.movable_range(3, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (3, 4));
+        assert!(r.is_stuck(3));
+
+        // The end of the chain can still sink past the free plugin, so it is
+        // NOT stuck - the range has to distinguish the two.
+        let r = l.movable_range(4, &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (4, 6));
+        assert!(!r.is_stuck(4));
+    }
+
+    #[test]
+    fn a_refused_move_leaves_the_pin_alone() {
+        // The defect this pins: a move used to be made, repinned, and only THEN
+        // undone by refresh's topological pass. The order came out right, so it
+        // looked harmless - but the pin was left recording a slot the plugin can
+        // never occupy, so it counted as violated forever and was re-applied on
+        // every later refresh, shuffling its neighbours each time. Refusing the
+        // move up front is what makes that unreachable.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Base.esp", &[]),
+                p("Patch.esp", &["Base.esp"]),
+                p("Other.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        assert!(l.set_locked(1, true));
+        assert_eq!(l.locked.get("patch.esp"), Some(&1));
+
+        // Try to drag Patch.esp above its own master, and to arrow it up.
+        assert!(!l.move_plugins_to(&[1], 0, &se()));
+        assert!(!l.move_plugin(1, true, &se()));
+
+        // The pin still points at the slot the plugin actually holds, so nothing
+        // is reported as violated and no later refresh will disturb the list.
+        assert_eq!(l.locked.get("patch.esp"), Some(&1));
+        l.refresh(&se());
+        assert!(l.violated_locks().is_empty());
+        assert_eq!(names(&l), ["Base.esp", "Patch.esp", "Other.esp"]);
     }
 
     #[test]
@@ -1019,7 +1572,7 @@ mod tests {
 
         // Drop d.esp above a.esp: c.esp is pushed to 3, but its pin still says 2,
         // so the refresh pulls it back and the pin has done its job.
-        assert!(l.move_plugins_to(&[3], 0));
+        assert!(l.move_plugins_to(&[3], 0, &se()));
         l.refresh(&se());
         assert_eq!(l.locked.get("c.esp"), Some(&2));
         assert_eq!(names(&l), ["d.esp", "a.esp", "c.esp", "b.esp"]);
