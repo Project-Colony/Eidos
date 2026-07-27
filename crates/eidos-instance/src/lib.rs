@@ -118,6 +118,13 @@ pub struct Instance {
     pub root: PathBuf,
 }
 
+/// A held instance lock (see [`Instance::try_lock`]). Dropping the value - or
+/// the process dying, however abruptly - releases it; there is no stale-lock
+/// cleanup because `flock` leaves nothing to clean.
+pub struct InstanceLock {
+    _file: std::fs::File,
+}
+
 impl Instance {
     /// A global instance for a game id: `$XDG_DATA_HOME/eidos/<id>`.
     pub fn global(game_id: &str) -> Self {
@@ -127,6 +134,47 @@ impl Instance {
     /// A portable instance at an explicit folder.
     pub fn portable(root: PathBuf) -> Self {
         Instance { root }
+    }
+
+    /// Take this instance's cross-process exclusive lock, without blocking.
+    ///
+    /// The GUI, the CLI and a running `eidos play` are separate PROCESSES writing
+    /// the same profile files, with nothing between them: two concurrent runs
+    /// interleaved their deploy/capture cycles, and a GUI edit mid-game wrote
+    /// into the live bound plugins dir. `flock(2)` is advisory but every writer
+    /// in this codebase goes through here, it dies with the process (a crashed
+    /// holder cannot wedge the instance), and it is shared across mount
+    /// namespaces so the launched game's wrapper cannot dodge it.
+    ///
+    /// Held for the whole run by `eidos play`; taken briefly around GUI and CLI
+    /// mutations. `WouldBlock` means someone else has it - report WHO from the
+    /// lockfile contents rather than a bare errno.
+    pub fn try_lock(&self, holder: &str) -> std::io::Result<InstanceLock> {
+        fs::create_dir_all(&self.root)?;
+        let path = self.root.join(".eidos.lock");
+        let file = fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path)?;
+        // SAFETY: flock on an owned, open fd; no memory preconditions.
+        let rc = unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&file), libc::LOCK_EX | libc::LOCK_NB) };
+        if rc != 0 {
+            let err = std::io::Error::last_os_error();
+            let who = fs::read_to_string(&path).unwrap_or_default();
+            let who = who.trim();
+            return Err(std::io::Error::new(
+                err.kind(),
+                if who.is_empty() {
+                    "another Eidos process is using this instance".to_string()
+                } else {
+                    format!("this instance is in use by {who}")
+                },
+            ));
+        }
+        // Best-effort breadcrumb for the refusal message above. Truncate AFTER
+        // locking, so a failed attempt cannot blank the holder's note.
+        let _ = file.set_len(0);
+        use std::io::Write;
+        let mut f = &file;
+        let _ = write!(f, "{holder} (pid {})", std::process::id());
+        Ok(InstanceLock { _file: file })
     }
 
     pub fn mods_dir(&self) -> PathBuf {
@@ -609,14 +657,16 @@ impl Instance {
         final_list.extend(ordered);
         self.save_modlist(&final_list)?;
 
-        // The plugin state transfers verbatim - the formats are identical.
+        // The plugin state transfers verbatim - the formats are identical. Into
+        // the plugins STATE dir: the legacy top-level location is dead, and a
+        // file written there would be silently ignored by everything.
         let prof = self.active();
+        let state_dir = prof.plugins_state_dir();
         let mut plugins = 0usize;
         for f in ["plugins.txt", "loadorder.txt"] {
             let src = mo2_profile_dir.join(f);
             if src.is_file() {
-                fs::create_dir_all(prof.dir())?;
-                fs::copy(&src, prof.dir().join(f))?;
+                fs::copy(&src, eidos_plugins::canonical_path(&state_dir, f))?;
                 plugins += 1;
             }
         }

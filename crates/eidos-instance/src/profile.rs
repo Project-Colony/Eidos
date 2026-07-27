@@ -48,97 +48,147 @@ impl Profile {
         self.dir().join("modlist.txt")
     }
 
-    /// Reserved per-profile plugin-order files (written at launch by
-    /// eidos-plugins; kept here so each profile remembers its own order).
+    /// This profile's plugin-state directory: `profiles/<name>/plugins/`, owning
+    /// `plugins.txt` + `loadorder.txt` plus the sidecar files the game keeps next
+    /// to them (`ContentCatalog.txt`, tool settings).
+    ///
+    /// A DIRECTORY, not two loose files, because at launch it is bind-mounted
+    /// over the game's AppData plugin dir - MO2's usvfs virtualization, done the
+    /// way the saves already are. One copy of the truth: the GUI, the CLI sort
+    /// and the game itself all write the same files, so there is no post-run
+    /// capture to revert anything and no deploy for a crash to skip. A directory
+    /// bind is mandatory, not a preference: the game replaces `Plugins.txt` with
+    /// a fresh inode (measured), and a FILE bind dies on that with EBUSY.
+    ///
+    /// Accessing it migrates the legacy layout (the two files at the profile
+    /// top level) in, best-effort: every reader and writer goes through here, so
+    /// this is the one place the move can be guaranteed to precede any use.
+    /// This profile's `plugins.txt`, inside [`Self::plugins_state_dir`]. Note the
+    /// game may write a case variant next to it - readers that must see the
+    /// game's own writes go through `newest_variant`, not this exact path.
     pub fn plugins_txt_path(&self) -> PathBuf {
-        self.dir().join("plugins.txt")
+        self.plugins_state_dir().join("plugins.txt")
     }
 
     /// This profile's stored load order (`loadorder.txt`), the companion to
-    /// [`Self::plugins_txt_path`] that records where INACTIVE plugins sit.
+    /// [`Self::plugins_txt_path`] that records the FULL order - including the
+    /// primaries and Creations that plugins.txt deliberately omits.
     pub fn loadorder_txt_path(&self) -> PathBuf {
-        self.dir().join("loadorder.txt")
+        self.plugins_state_dir().join("loadorder.txt")
     }
 
-    /// The two files that make up this profile's plugin state.
-    fn plugin_state_files(&self) -> [(PathBuf, &'static str); 2] {
-        [
-            (self.plugins_txt_path(), "plugins.txt"),
-            (self.loadorder_txt_path(), "loadorder.txt"),
-        ]
+    pub fn plugins_state_dir(&self) -> PathBuf {
+        let dir = self.dir().join("plugins");
+        let _ = fs::create_dir_all(&dir);
+        for name in ["plugins.txt", "loadorder.txt"] {
+            let legacy = self.dir().join(name);
+            let new = dir.join(name);
+            if legacy.is_file() && !new.exists() {
+                let _ = fs::rename(&legacy, &new);
+            }
+        }
+        dir
     }
 
     /// Whether this profile already owns a plugin state (so it should drive the
-    /// load order rather than the prefix's copy).
+    /// load order rather than the prefix's copy). Reads through the case-variant
+    /// resolver: the game may have written `Plugins.txt` into the bound dir.
     pub fn has_plugin_state(&self) -> bool {
-        self.plugins_txt_path().is_file()
+        eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt").is_some()
     }
 
     /// One-time migration, mirroring [`Self::seed_inis`]: adopt the prefix's
-    /// existing `plugins.txt`/`loadorder.txt` (`src_dir` = where the game reads
-    /// them) into this profile, without overwriting a state the profile already
-    /// owns. Returns how many files were seeded.
+    /// existing plugin dir (`src_dir` = the game's AppData dir) into this
+    /// profile, without overwriting anything the profile already owns.
+    ///
+    /// `plugins.txt`/`loadorder.txt` are adopted via the case-variant resolver.
+    /// Every OTHER regular file is adopted too - `ContentCatalog.txt`,
+    /// `Plugins.sseviewsettings` and whatever else the game or a tool keeps
+    /// there - because the whole directory is bind-mounted at launch, and a
+    /// profile dir missing those would present the game an emptier directory
+    /// than the one it wrote them into. Returns how many files were seeded.
     pub fn seed_plugin_state(&self, src_dir: &Path) -> io::Result<u32> {
-        fs::create_dir_all(self.dir())?;
+        let dst_dir = self.plugins_state_dir();
         let mut n = 0;
-        for (dst, name) in self.plugin_state_files() {
+        for name in ["plugins.txt", "loadorder.txt"] {
             let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
+            let dst = dst_dir.join(name);
+            if eidos_plugins::newest_variant(&dst_dir, name).is_none() {
+                copy_atomic(&src, &dst)?;
+                n += 1;
+            }
+        }
+        let Ok(rd) = fs::read_dir(src_dir) else { return Ok(n) };
+        for e in rd.flatten() {
+            let name = e.file_name();
+            let lower = name.to_string_lossy().to_ascii_lowercase();
+            // The two state files are handled above (case-variant aware); a
+            // leftover `.tmp` is a crashed write, not content.
+            if lower.eq_ignore_ascii_case("plugins.txt")
+                || lower.eq_ignore_ascii_case("loadorder.txt")
+                || lower.ends_with(".tmp")
+                || !e.path().is_file()
+            {
+                continue;
+            }
+            let dst = dst_dir.join(&name);
             if !dst.exists() {
-                fs::copy(&src, &dst)?;
+                copy_atomic(&e.path(), &dst)?;
                 n += 1;
             }
         }
         Ok(n)
     }
 
-    /// Deploy this profile's plugin state into `dst_dir` before launch, so the
-    /// game (and Eidos's own pre-launch pass) sees THIS profile's load order.
-    /// Returns how many files were deployed.
-    pub fn deploy_plugin_state(&self, dst_dir: &Path) -> io::Result<u32> {
-        fs::create_dir_all(dst_dir)?;
-        let mut n = 0;
-        for (src, name) in self.plugin_state_files() {
-            if src.is_file() {
-                // Write to the casing the prefix already uses, collapsing any
-                // variants: the game is on a case-sensitive filesystem but came
-                // from a case-insensitive one, and would happily read a
-                // `Plugins.txt` we did not write.
-                fs::copy(&src, eidos_plugins::canonical_path(dst_dir, name))?;
-                n += 1;
-            }
-        }
-        Ok(n)
+    /// Where the pre-session copy of `plugins.txt` lives: NEXT TO the plugins
+    /// dir, never inside it - the game must not see it through the bind.
+    pub fn plugins_snapshot_path(&self) -> PathBuf {
+        self.dir().join("plugins.txt.pre-session")
     }
 
-    /// Capture the plugin state back from `src_dir` after the game exits: Skyrim
-    /// rewrites `plugins.txt` itself, and those changes belong to the profile that
-    /// was played. Returns how many files were captured.
-    pub fn capture_plugin_state(&self, src_dir: &Path) -> io::Result<u32> {
-        fs::create_dir_all(self.dir())?;
-        let mut n = 0;
-        for (dst, name) in self.plugin_state_files() {
-            // Read whichever spelling the game actually wrote last.
-            let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
-            // A game that crashed during shutdown rewrites plugins.txt with the
-            // active set partially cleared. Copying that back permanently
-            // destroys a load order the user may have spent hours on, so a
-            // capture that loses most of the actives is refused rather than
-            // trusted. Same spirit as the "never write an empty list" guard on
-            // the write side.
-            if name == "plugins.txt" {
-                if let Some(reason) = active_loss(&dst, &src) {
-                    eprintln!(
-                        "eidos: NOT capturing plugins.txt back into profile '{}': {reason}. \
-                         The profile keeps its own copy; the prefix file is left alone.",
-                        self.name
-                    );
-                    continue;
-                }
+    /// Record the pre-session state of `plugins.txt`, so
+    /// [`Self::plugin_loss_since_snapshot`] can tell a session that legitimately
+    /// edited the active set from one that wrecked it.
+    ///
+    /// This replaces the old capture-time guard: with the plugins dir
+    /// bind-mounted, the game writes the profile file DIRECTLY and there is no
+    /// copy moment left to refuse. The snapshot restores the choke point as a
+    /// warn-and-offer-restore, without resurrecting the two-copy design.
+    pub fn snapshot_plugin_state(&self) -> io::Result<()> {
+        let snap = self.plugins_snapshot_path();
+        match eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt") {
+            Some(src) => copy_atomic(&src, &snap),
+            None => {
+                // No state yet: a stale snapshot would compare a future session
+                // against some other session's list.
+                let _ = fs::remove_file(&snap);
+                Ok(())
             }
-            fs::copy(&src, &dst)?;
-            n += 1;
         }
-        Ok(n)
+    }
+
+    /// Whether the current `plugins.txt` lost too much of the pre-session active
+    /// set to look like an edit (see [`active_loss`]) - the post-session half of
+    /// the backstop. `None` means healthy, no snapshot, or no state.
+    pub fn plugin_loss_since_snapshot(&self) -> Option<String> {
+        let snap = self.plugins_snapshot_path();
+        if !snap.is_file() {
+            return None;
+        }
+        let current = eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt")?;
+        active_loss(&snap, &current)
+    }
+
+    /// Put the pre-session `plugins.txt` back - the restore half of the backstop,
+    /// wired to a GUI button so recovering from a wrecked session is one click
+    /// and not a file-manager expedition.
+    pub fn restore_plugin_snapshot(&self) -> io::Result<()> {
+        let snap = self.plugins_snapshot_path();
+        if !snap.is_file() {
+            return Err(io::Error::new(io::ErrorKind::NotFound, "no pre-session copy exists"));
+        }
+        let dir = self.plugins_state_dir();
+        copy_atomic(&snap, &eidos_plugins::canonical_path(&dir, "plugins.txt"))
     }
 
     /// This profile's stored copy of a game INI (e.g. `Skyrim.ini`). The profile
@@ -164,7 +214,7 @@ impl Profile {
             let dst = self.ini_path(f);
             let src = src_dir.join(f);
             if !dst.exists() && src.is_file() {
-                fs::copy(&src, &dst)?;
+                copy_atomic(&src, &dst)?;
                 n += 1;
             }
         }
@@ -180,7 +230,7 @@ impl Profile {
         for f in ini_files {
             let src = self.ini_path(f);
             if src.is_file() {
-                fs::copy(&src, dst_dir.join(f))?;
+                copy_atomic(&src, &dst_dir.join(f))?;
                 n += 1;
             }
         }
@@ -196,7 +246,10 @@ impl Profile {
         for f in ini_files {
             let src = src_dir.join(f);
             if src.is_file() {
-                fs::copy(&src, self.ini_path(f))?;
+                // Atomic, because this runs right after the game exits and the
+                // profile copy is the only durable one: a torn capture is a lost
+                // config, not a transient.
+                copy_atomic(&src, &self.ini_path(f))?;
                 n += 1;
             }
         }
@@ -264,7 +317,7 @@ impl Profile {
         let mut n = 0;
         for e in rd.flatten() {
             if e.path().is_file() {
-                fs::copy(e.path(), dst.join(e.file_name()))?;
+                copy_atomic(&e.path(), &dst.join(e.file_name()))?;
                 n += 1;
             }
         }
@@ -568,9 +621,31 @@ fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
 }
 
 /// Active (`*`-prefixed) entries in a plugins.txt, or `None` if unreadable.
+///
+/// MUST go through `read_decoded`: plugins.txt is CP1252 on disk (the encoding
+/// Eidos itself writes), and reading it as strict UTF-8 made this return `None`
+/// for any list containing one accented plugin name - which made `active_loss`
+/// return `None` too, silently disarming the only guard between a crash artifact
+/// and the profile. A French load order is one translated mod away from that.
 fn count_actives(path: &Path) -> Option<usize> {
-    let text = fs::read_to_string(path).ok()?;
+    let text = eidos_plugins::read_decoded(path)?;
     Some(text.lines().filter(|l| l.trim_start().starts_with('*')).count())
+}
+
+/// Copy `src` to `dst` atomically: write a sibling `.tmp`, then rename over. A
+/// plain `fs::copy` truncates the destination first, so a reader (or a crash)
+/// mid-copy sees a torn file - and for the files this module moves around, a
+/// torn `plugins.txt` is a wiped load order and a torn INI is a lost config.
+fn copy_atomic(src: &Path, dst: &Path) -> io::Result<()> {
+    let tmp = dst.with_extension("eidos-tmp");
+    fs::copy(src, &tmp)?;
+    match fs::rename(&tmp, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 /// Recursively copy a directory tree, skipping symlinks (matching MO2's `copyDir`
@@ -1322,37 +1397,40 @@ mod tests {
     }
 
     #[test]
-    fn a_crash_mangled_plugins_txt_is_not_captured_back() {
+    fn a_crash_mangled_session_is_flagged_and_restorable() {
+        // Under the bind-mount design the game writes the profile's plugins.txt
+        // DIRECTLY, so there is no capture moment to refuse. The pre-session
+        // snapshot restores the choke point: a session that wrecked the active
+        // set is flagged, and one call puts the pre-session state back.
         let root = inst_with_mods(&["A"]);
-        let prefix = root.join("prefix");
-        fs::create_dir_all(&prefix).unwrap();
         let p = prof(&root, "Default");
         fs::create_dir_all(p.dir()).unwrap();
 
-        // A real 200-plugin order in the profile.
+        // A real 200-plugin order, snapshotted at launch.
         let full: String = (0..200).map(|i| format!("*Mod{i}.esp\n")).collect();
         fs::write(p.plugins_txt_path(), &full).unwrap();
-        // What a game that died during shutdown leaves behind: the active set
-        // mostly cleared, the names still listed.
+        p.snapshot_plugin_state().unwrap();
+
+        // The game dies during shutdown and leaves the active set mostly cleared.
         let mangled: String = (0..200)
             .map(|i| if i < 5 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
             .collect();
-        fs::write(prefix.join("plugins.txt"), &mangled).unwrap();
-
-        p.capture_plugin_state(&prefix).unwrap();
-        assert_eq!(
-            fs::read_to_string(p.plugins_txt_path()).unwrap(),
-            full,
-            "a crash artefact must not be allowed to destroy the load order"
+        fs::write(p.plugins_txt_path(), &mangled).unwrap();
+        assert!(
+            p.plugin_loss_since_snapshot().is_some(),
+            "a crash artefact must be flagged, or the user never learns their order died"
         );
+        p.restore_plugin_snapshot().unwrap();
+        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), full);
+        assert!(p.plugin_loss_since_snapshot().is_none(), "restored = healthy");
 
-        // A legitimate edit - the user turning a handful of mods off - goes through.
+        // A legitimate edit - the user turning a handful of mods off - is not
+        // flagged; sessions that edit must not cry wolf.
         let edited: String = (0..200)
             .map(|i| if i < 195 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
             .collect();
-        fs::write(prefix.join("plugins.txt"), &edited).unwrap();
-        p.capture_plugin_state(&prefix).unwrap();
-        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), edited);
+        fs::write(p.plugins_txt_path(), &edited).unwrap();
+        assert!(p.plugin_loss_since_snapshot().is_none());
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -1360,18 +1438,47 @@ mod tests {
     #[test]
     fn small_load_orders_are_never_second_guessed() {
         // Turning off 4 of 6 plugins is a big RELATIVE drop but an obviously
-        // deliberate one; the guard must not fire on lists this size.
+        // deliberate one; the backstop must not fire on lists this size.
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\n*e\n*f\n").unwrap();
+        p.snapshot_plugin_state().unwrap();
+        fs::write(p.plugins_txt_path(), "*a\n*b\nc\nd\ne\nf\n").unwrap();
+        assert!(p.plugin_loss_since_snapshot().is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_accented_plugin_name_does_not_disarm_the_wipe_guard() {
+        // plugins.txt is CP1252 on disk - the encoding Eidos itself writes - so a
+        // guard that reads it as strict UTF-8 returns None on the first accented
+        // name and silently stops guarding. One translated mod ("Épées de
+        // Bordeciel.esp") was enough to reopen the wipe this guard exists for.
         let root = inst_with_mods(&["A"]);
         let prefix = root.join("prefix");
         fs::create_dir_all(&prefix).unwrap();
         let p = prof(&root, "Default");
         fs::create_dir_all(p.dir()).unwrap();
-        fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\n*e\n*f\n").unwrap();
-        fs::write(prefix.join("plugins.txt"), "*a\n*b\nc\nd\ne\nf\n").unwrap();
 
-        p.capture_plugin_state(&prefix).unwrap();
-        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), "*a\n*b\nc\nd\ne\nf\n");
-        let _ = fs::remove_dir_all(&root);
+        // The profile's list holds an accented name, CP1252-encoded (0xC9 = 'É').
+        let mut good = b"*\xC9p\xE9es de Bordeciel.esp\r\n".to_vec();
+        good.extend_from_slice(b"*a.esp\r\n*b.esp\r\n*c.esp\r\n*d.esp\r\n*e.esp\r\n*f.esp\r\n");
+        fs::write(p.plugins_txt_path(), &good).unwrap();
+        assert!(
+            std::str::from_utf8(&good).is_err(),
+            "the fixture must be real CP1252, not accidentally-valid UTF-8"
+        );
+        p.snapshot_plugin_state().unwrap();
+
+        // The game crashes and leaves a header-only artifact.
+        fs::write(p.plugins_txt_path(), b"# ruined\r\n").unwrap();
+        assert!(
+            p.plugin_loss_since_snapshot().is_some(),
+            "the wipe must be flagged even when the list has accented names"
+        );
+        p.restore_plugin_snapshot().unwrap();
+        assert_eq!(fs::read(p.plugins_txt_path()).unwrap(), good);
     }
 
     #[test]
@@ -1388,64 +1495,80 @@ mod tests {
         fs::create_dir_all(p.dir()).unwrap();
         let good = "*a.esp\n*b.esp\n*c.esp\n*d.esp\n*e.esp\n*f.esp\n*g.esp\n";
         fs::write(p.plugins_txt_path(), good).unwrap();
+        p.snapshot_plugin_state().unwrap();
         fs::write(
-            prefix.join("plugins.txt"),
+            p.plugins_txt_path(),
             "# This file is used by Skyrim to keep track of your downloaded content.\n",
         )
         .unwrap();
-
-        p.capture_plugin_state(&prefix).unwrap();
+        assert!(p.plugin_loss_since_snapshot().is_some());
+        p.restore_plugin_snapshot().unwrap();
         assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), good);
 
-        // Turning the last one off BY HAND still works - the names stay listed, so
-        // this is a deliberate edit and not a wipe.
+        // Turning every plugin off BY HAND still flags - the backstop cannot read
+        // minds - but the names stay listed, so nothing is lost and the user just
+        // dismisses the warning instead of losing their order.
         let all_off = "a.esp\nb.esp\nc.esp\nd.esp\ne.esp\nf.esp\ng.esp\n";
-        fs::write(prefix.join("plugins.txt"), all_off).unwrap();
-        p.capture_plugin_state(&prefix).unwrap();
-        assert_eq!(
-            fs::read_to_string(p.plugins_txt_path()).unwrap(),
-            good,
-            "clearing every active plugin is refused at any size"
+        fs::write(p.plugins_txt_path(), all_off).unwrap();
+        assert!(
+            p.plugin_loss_since_snapshot().is_some(),
+            "clearing every active plugin is flagged at any size"
         );
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn plugin_state_seeds_deploys_and_captures_per_profile() {
+    fn plugin_state_is_seeded_and_stays_per_profile() {
         let root = inst_with_mods(&["A"]);
         let prefix = root.join("prefix");
         fs::create_dir_all(&prefix).unwrap();
         fs::write(prefix.join("plugins.txt"), b"*Alpha.esp\nBeta.esp\n").unwrap();
         fs::write(prefix.join("loadorder.txt"), b"Alpha.esp\nBeta.esp\n").unwrap();
+        // The game keeps sidecar files next to them; the bind must carry those
+        // too, or the bound dir shows the game less than the dir it wrote.
+        fs::write(prefix.join("ContentCatalog.txt"), b"{}").unwrap();
+        // A crashed write's leftover must NOT be adopted.
+        fs::write(prefix.join("plugins.tmp"), b"junk").unwrap();
 
-        // Seed: the profile adopts the prefix's existing order once.
+        // Seed: the profile adopts the prefix's existing state once.
         let a = prof(&root, "Default");
         assert!(!a.has_plugin_state());
-        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 2);
+        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 3);
         assert!(a.has_plugin_state());
+        assert!(a.plugins_state_dir().join("ContentCatalog.txt").is_file());
+        assert!(!a.plugins_state_dir().join("plugins.tmp").exists());
         // Seeding again must not clobber the profile's own copy.
         fs::write(a.plugins_txt_path(), b"*Alpha.esp\n").unwrap();
         assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 0);
         assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n");
 
-        // A second profile has its own, independent state.
+        // A second profile has its own, independent state - the bound dir swaps
+        // with the profile, so nothing leaks between them.
         let b = prof(&root, "Testing");
         assert!(!b.has_plugin_state());
-        fs::create_dir_all(b.dir()).unwrap();
         fs::write(b.plugins_txt_path(), b"*Beta.esp\n").unwrap();
-
-        // Deploy: whichever profile is active drives what the game reads.
-        assert_eq!(b.deploy_plugin_state(&prefix).unwrap(), 1);
-        assert_eq!(fs::read(prefix.join("plugins.txt")).unwrap(), b"*Beta.esp\n");
-        a.deploy_plugin_state(&prefix).unwrap();
-        assert_eq!(fs::read(prefix.join("plugins.txt")).unwrap(), b"*Alpha.esp\n");
-
-        // Capture: the game's own rewrite comes back into the played profile only.
-        fs::write(prefix.join("plugins.txt"), b"*Alpha.esp\n*Beta.esp\n").unwrap();
-        assert_eq!(a.capture_plugin_state(&prefix).unwrap(), 2);
-        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n*Beta.esp\n");
+        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n");
         assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), b"*Beta.esp\n");
 
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_legacy_top_level_plugin_files_migrate_into_the_plugins_dir() {
+        // Profiles created before the bind-mount design kept plugins.txt and
+        // loadorder.txt at the profile top level. First access must move them in,
+        // or every existing user starts from an empty load order.
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        fs::write(p.dir().join("plugins.txt"), b"*Old.esp\n").unwrap();
+        fs::write(p.dir().join("loadorder.txt"), b"Old.esp\n").unwrap();
+
+        let dir = p.plugins_state_dir();
+        assert_eq!(fs::read(dir.join("plugins.txt")).unwrap(), b"*Old.esp\n");
+        assert_eq!(fs::read(dir.join("loadorder.txt")).unwrap(), b"Old.esp\n");
+        assert!(!p.dir().join("plugins.txt").exists(), "the legacy copy must MOVE, not fork");
+        assert!(p.has_plugin_state());
         let _ = fs::remove_dir_all(&root);
     }
 }

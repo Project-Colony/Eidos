@@ -41,19 +41,53 @@ fn plugin_sources(
     sources
 }
 
-/// Before launch: deploy the active profile's load order, discover this
-/// instance's plugins, re-validate the invariants, and write
-/// `plugins.txt`/`loadorder.txt` where the game reads them. Returns that
-/// directory so the caller can capture the game's own rewrite back into the
-/// profile. Best-effort - a game with no plugin system or no Proton prefix is
-/// simply skipped (`None`).
-fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) -> Option<PathBuf> {
+/// Before launch: give the active profile its own plugin state and hand back the
+/// `(profile_plugins_dir, prefix_appdata_dir)` bind pair, exactly like
+/// [`prepare_saves`]. The profile's `plugins/` dir is bind-mounted over the
+/// game's AppData plugin dir for the run, so the game's own `plugins.txt`
+/// rewrite lands IN the profile - one copy of the truth, no post-run capture to
+/// revert it, no deploy for a crash to skip. This is MO2's usvfs virtualization
+/// of the plugin files, done with the mount namespace the saves already use.
+///
+/// Best-effort - a game with no plugin system or no Proton prefix is simply
+/// skipped (`None`).
+fn prepare_plugins(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+) -> Option<(PathBuf, PathBuf)> {
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let Some(compatdata) = game.compatdata.as_ref() else {
         eprintln!("eidos play: no Proton prefix found, skipping plugins.txt");
         return None;
     };
     let prefix = compatdata.join("pfx");
+    let prefix_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+
+    // First run: adopt the prefix's existing state (plugins.txt, loadorder.txt,
+    // and the sidecars the game keeps next to them) into the profile, so the
+    // bound dir never shows the game less than the dir it wrote.
+    match prof.seed_plugin_state(&prefix_dir) {
+        Ok(n) if n > 0 => {
+            eprintln!("eidos play: adopted {n} plugin-state file(s) into profile '{}'", prof.name)
+        }
+        Ok(_) => {}
+        Err(e) => {
+            // FAIL CLOSED. Proceeding with a half-seeded (or unwritable) profile
+            // dir meant the pass below saw an empty state, fell back to discovery
+            // defaults, and the prefix shadow write then OVERWROTE the user's only
+            // good copies with an alphabetical everything-enabled list - the exact
+            // files the seed just failed to adopt. Plugin management sits out this
+            // run; the game reads its own prefix files, untouched.
+            eprintln!(
+                "eidos play: WARNING - could not adopt the plugin state into profile '{}' ({e});                  plugin management is OFF for this run and the prefix files are left alone",
+                prof.name
+            );
+            return None;
+        }
+    }
+    let state_dir = prof.plugins_state_dir();
 
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
@@ -63,41 +97,57 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) -> Option<Pat
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
 
-    let dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
-    // Per-profile load order: adopt whatever is already in the prefix the first
-    // time this profile runs, then deploy the PROFILE's copy so the state below
-    // (and the game) is this profile's, not the last-played one's.
-    let prof = inst.active();
-    match prof.seed_plugin_state(&dir) {
-        Ok(n) if n > 0 => {
-            eprintln!("eidos play: adopted the existing load order into profile '{}'", prof.name)
-        }
-        Ok(_) => {}
-        Err(e) => eprintln!("eidos play: WARNING - could not seed the profile load order: {e}"),
-    }
-    if let Err(e) = prof.deploy_plugin_state(&dir) {
-        eprintln!("eidos play: WARNING - could not deploy the profile load order: {e}");
-    }
-
-    // Preserve the user's existing order + enabled state (their MO2 or prior-run
-    // plugins.txt / loadorder.txt). For PlainList games this also keeps disabled
-    // plugins disabled (recorded only in loadorder.txt), not just the actives.
-    list.apply_prefix_state(&dir, &spec);
+    // Preserve the user's saved order + enabled state, FROM THE PROFILE - the
+    // single source of truth. loadorder.txt is the order authority; plugins.txt
+    // supplies the flags (it deliberately omits the primaries and Creations, so
+    // it cannot order them).
+    list.apply_prefix_state(&state_dir, &spec);
     list.refresh(&spec);
 
     for (p, m) in list.missing_masters() {
         eprintln!("eidos play: WARNING - {p} is missing master {m} (likely a crash)");
     }
     let active = list.plugins.iter().filter(|p| p.enabled).count();
-    match list.write_load_order(&dir, &spec) {
-        Ok(()) => {
-            eprintln!("eidos play: wrote {active} active plugins to plugins.txt");
-            // Keep the profile's own copy in step with what the game will read.
-            let _ = prof.capture_plugin_state(&dir);
+    match list.write_load_order(&state_dir, &spec) {
+        Ok(listed) => {
+            // `listed` is what plugins.txt actually holds; `active` includes the
+            // primaries and Creations the engine loads by itself, which are
+            // deliberately NOT in the file. Reporting `active` as "written" once
+            // pointed a whole investigation at a file that was never wrong.
+            eprintln!(
+                "eidos play: wrote plugins.txt ({listed} listed, {active} active incl. implicit)"
+            );
         }
-        Err(e) => eprintln!("eidos play: could not write plugins.txt: {e}"),
+        Err(e) => {
+            // Same fail-closed rule as the seed: if the PROFILE copy could not be
+            // written, the shadow below must not run - it would push a state that
+            // exists nowhere else onto the prefix, destroying the real files.
+            eprintln!(
+                "eidos play: WARNING - could not write the profile plugins.txt ({e});                  plugin management is OFF for this run and the prefix files are left alone"
+            );
+            return None;
+        }
     }
-    Some(dir)
+    // Shadow copy into the real prefix dir - only after the profile write above
+    // succeeded, so the shadow is always a copy of durable state, never the sole
+    // copy of anything. External tools (LOOT, xEdit run outside Eidos) read the
+    // prefix, and if the bind ever fails the game reads exactly what a pre-bind
+    // session would have. Never fatal.
+    let _ = list.write_load_order(&prefix_dir, &spec);
+
+    // Pre-session snapshot: with the game writing the profile file directly,
+    // this is the reference the post-run loss check compares against. KEPT, not
+    // overwritten, while the current state still looks damaged relative to it -
+    // otherwise one unnoticed launch after a crash canonised the wreck and
+    // destroyed the only copy that could restore it.
+    if prof.plugin_loss_since_snapshot().is_some() {
+        eprintln!(
+            "eidos play: keeping the previous pre-session plugins.txt snapshot - the current              active set still looks damaged relative to it (the GUI Diagnostics tab offers the              restore, or accept the current set there)"
+        );
+    } else if let Err(e) = prof.snapshot_plugin_state() {
+        eprintln!("eidos play: WARNING - could not snapshot plugins.txt: {e}");
+    }
+    Some((state_dir, prefix_dir))
 }
 
 /// Before launch: give the active profile its own INIs in the prefix. Seed the
@@ -105,7 +155,12 @@ fn prepare_plugins(id: &str, game: &DetectedGame, inst: &Instance) -> Option<Pat
 /// nothing), deploy the profile's INIs into the prefix Documents, then enable BSA
 /// invalidation on the deployed copy. Returns the prefix Documents dir + the
 /// game's INI set, so the caller can capture in-game changes back afterwards.
-fn prepare_inis(id: &str, game: &DetectedGame, inst: &Instance) -> Option<PreparedInis> {
+fn prepare_inis(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+) -> Option<PreparedInis> {
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let compatdata = game.compatdata.as_ref()?;
     let ini_files = eidos_gamefeatures::ini_files_for(id);
@@ -119,7 +174,6 @@ fn prepare_inis(id: &str, game: &DetectedGame, inst: &Instance) -> Option<Prepar
     } else {
         eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec)
     };
-    let prof = inst.active();
 
     match prof.seed_inis(&docs, ini_files) {
         Ok(n) if n > 0 => {
@@ -205,6 +259,110 @@ fn prepare_inis(id: &str, game: &DetectedGame, inst: &Instance) -> Option<Prepar
     deploy_ok.then_some(PreparedInis { docs, ini_files, tweaked })
 }
 
+/// One-way sync of the profile's save files into the REAL prefix Saves dir,
+/// after the run (the bind is gone; the prefix dir is reachable again).
+///
+/// Steam Cloud only ever reads the prefix path - it knows nothing of the bind -
+/// so without this the cloud backs up whatever the prefix held before Eidos
+/// existed, forever (observed: two saves from 2024 while the profile carried the
+/// whole 2026 playthrough). Copies `.ess`/`.skse` files that are missing or
+/// newer; never deletes, and never touches anything else - the prefix is a
+/// backup target here, not an authority. Returns how many files were copied.
+fn sync_saves_for_cloud(
+    prof_saves: &std::path::Path,
+    prefix_saves: &std::path::Path,
+) -> std::io::Result<u32> {
+    // The cloud is a recent-history backup, not an archive: cap what one sync
+    // pushes, or the first run after adopting a long playthrough shoves the
+    // entire save history at Steam's per-game quota in one go. Newest first;
+    // the factor of 2 leaves room for each save's .skse co-save.
+    const MAX_FILES: usize = 60;
+    let Ok(rd) = std::fs::read_dir(prof_saves) else {
+        return Ok(0); // no profile saves yet: nothing to back up
+    };
+    std::fs::create_dir_all(prefix_saves)?;
+    // Real save data only: the .ess save and its .skse co-save. The junk a
+    // Saves dir accumulates (steam_autocloud.vdf, .bak files) must not bounce
+    // between the two dirs forever.
+    let mut files: Vec<(std::path::PathBuf, std::time::SystemTime)> = rd
+        .flatten()
+        .filter_map(|e| {
+            let path = e.path();
+            let lower = e.file_name().to_string_lossy().to_ascii_lowercase();
+            if !(lower.ends_with(".ess") || lower.ends_with(".skse")) || !path.is_file() {
+                return None;
+            }
+            // An unreadable mtime sorts oldest rather than being skipped: an
+            // extra copy is cheap, a hole in the backup is not.
+            let mtime =
+                e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+            Some((path, mtime))
+        })
+        .collect();
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.truncate(MAX_FILES);
+
+    let mut n = 0;
+    for (src, src_mtime) in files {
+        let Some(name) = src.file_name() else { continue };
+        let dst = prefix_saves.join(name);
+        match std::fs::metadata(&dst).and_then(|m| m.modified()) {
+            Err(_) => {} // missing: plain copy below
+            Ok(d) if src_mtime > d => {
+                // The prefix copy is older, but it may be a save the profile has
+                // NEVER seen: a failed-bind session once wrote saves straight
+                // into the prefix, and Skyrim reuses fixed names (quicksave.ess)
+                // - overwriting would destroy the only copy of that session.
+                // Adopt it into the profile first, then overwrite.
+                preserve_diverged_save(&dst, d, prof_saves);
+            }
+            Ok(_) => continue, // prefix copy is newer: leave it alone
+        }
+        std::fs::copy(&src, &dst)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
+/// Rescue a prefix save the profile has no copy of, before the cloud sync
+/// overwrites it (see the caller). "No copy" = no profile file with the same
+/// size and mtime; the rescue keeps the `.ess` extension so the game (and the
+/// Saves tab) can still load it.
+fn preserve_diverged_save(
+    dst: &std::path::Path,
+    dst_mtime: std::time::SystemTime,
+    prof_saves: &std::path::Path,
+) {
+    let (Ok(meta), Some(name)) = (std::fs::metadata(dst), dst.file_name()) else { return };
+    // "Known" comes in two shapes: an exact (size, mtime) twin anywhere in the
+    // profile, or the profile's SAME-NAME file with the same size - the latter
+    // because the original seeding used a copy that did not preserve mtimes, so
+    // an adopted save's profile twin carries a fresher timestamp. Without the
+    // second test, the first sync after adoption "rescued" duplicates of saves
+    // the profile already owned.
+    let same_name_same_size = std::fs::metadata(prof_saves.join(name))
+        .is_ok_and(|m| m.len() == meta.len());
+    let known = same_name_same_size
+        || std::fs::read_dir(prof_saves).into_iter().flatten().flatten().any(|e| {
+            e.metadata()
+                .is_ok_and(|m| m.len() == meta.len() && m.modified().ok() == Some(dst_mtime))
+        });
+    if known {
+        return;
+    }
+    let secs = dst_mtime
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let orphan = prof_saves.join(format!("orphan-{secs}-{}", name.to_string_lossy()));
+    if !orphan.exists() && std::fs::copy(dst, &orphan).is_ok() {
+        eprintln!(
+            "eidos: rescued a save the profile had never seen into {}",
+            orphan.display()
+        );
+    }
+}
+
 /// What `prepare_inis` leaves for the post-run capture.
 struct PreparedInis {
     /// The prefix directory the INIs were deployed into.
@@ -222,13 +380,12 @@ struct PreparedInis {
 fn prepare_saves(
     id: &str,
     game: &DetectedGame,
-    inst: &Instance,
+    prof: &eidos_instance::Profile,
 ) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let compatdata = game.compatdata.as_ref()?;
     let docs = eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec);
     let prefix_saves = docs.join("Saves");
-    let prof = inst.active();
     if let Ok(n) = prof.seed_saves(&prefix_saves) {
         if n > 0 {
             eprintln!("eidos play: adopted {n} existing save(s) into profile '{}'", prof.name);
@@ -392,9 +549,37 @@ fn run_through_view(
     cwd: Option<std::path::PathBuf>,
     prereqs: &[String],
 ) -> ! {
-    let inis = prepare_inis(id, game, inst);
-    let plugins_dir = prepare_plugins(id, game, inst);
-    let save_bind = prepare_saves(id, game, inst);
+    // The instance lock, held for the WHOLE run: the GUI and a second `eidos`
+    // are separate processes, and without this two concurrent runs interleaved
+    // their prepare/capture cycles into torn profiles. Dropped (with the
+    // process) at exit; flock leaves nothing stale behind on a crash.
+    let _lock = {
+        // A GUI write holds the lock for milliseconds; a launch colliding with
+        // one should wait it out, not die. A HELD lock (another session) still
+        // refuses quickly.
+        let mut attempt = 0;
+        loop {
+            match inst.try_lock("a running game session") {
+                Ok(l) => break l,
+                Err(_) if attempt < 20 => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => {
+                    eprintln!("eidos: refusing to launch: {e}");
+                    exit(1);
+                }
+            }
+        }
+    };
+    // The profile is resolved ONCE and threaded through every prepare and every
+    // post-run step. Re-reading `inst.active()` after the game exits re-reads the
+    // manifest - and a profile switched in the GUI mid-game then received the
+    // PLAYED profile's captures, corrupting a profile that was never run.
+    let prof = inst.active();
+    let inis = prepare_inis(id, game, inst, &prof);
+    let plugin_bind = prepare_plugins(id, game, inst, &prof);
+    let save_bind = prepare_saves(id, game, &prof);
 
     // Soft advisory: an ENB (game root, outside the Data mount) and Community
     // Shaders (an enabled SKSE-plugin mod) both inject into the D3D11 pipeline.
@@ -447,7 +632,9 @@ fn run_through_view(
         command,
         env,
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
-        binds: save_bind.into_iter().collect(),
+        // The saves bind and the plugins bind ride the same mechanism: the
+        // profile's dir over the prefix's, for the life of the run only.
+        binds: save_bind.clone().into_iter().chain(plugin_bind.clone()).collect(),
         cwd,
         // MO2's Root Builder: a mod's `Root/` is projected onto the GAME INSTALL
         // ROOT rather than into Data/, which is how a script extender, ENB,
@@ -460,10 +647,12 @@ fn run_through_view(
     let result = launch(spec);
 
     // The command has exited: capture any INI changes back into the profile.
+    // (`prof`, not a fresh `inst.active()`: the captures belong to the profile
+    // that was PLAYED, whatever the GUI switched to since.)
     if let Some(prepared) = inis {
-        if let Ok(n) = inst.active().capture_inis(&prepared.docs, prepared.ini_files) {
+        if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
-                eprintln!("eidos: captured {n} INI(s) back into profile '{}'", inst.active_profile());
+                eprintln!("eidos: captured {n} INI(s) back into profile '{}'", prof.name);
             }
         }
         // Undo the INI tweaks in the CAPTURED copy, so the profile keeps the values
@@ -472,7 +661,7 @@ fn run_through_view(
         // change, and it beats the tweak the same way the profile's own tweak file
         // beats a mod's.
         for (file, record) in &prepared.tweaked {
-            let path = inst.active().ini_path(file);
+            let path = prof.ini_path(file);
             let Ok(text) = std::fs::read_to_string(&path) else { continue };
             let restored = eidos_instance::untweak_ini(&text, record);
             if restored != text {
@@ -482,16 +671,32 @@ fn run_through_view(
             }
         }
     }
-    // Skyrim rewrites plugins.txt itself (activating a plugin in-game, or the
-    // launcher's own pass): that belongs to the profile that was just played.
-    if let Some(dir) = plugins_dir {
-        if let Ok(n) = inst.active().capture_plugin_state(&dir) {
-            if n > 0 {
-                eprintln!(
-                    "eidos: captured the load order back into profile '{}'",
-                    inst.active_profile()
-                );
+    // The plugins dir was BOUND, so the game's own plugins.txt rewrite already
+    // landed in the profile - there is nothing to capture and nothing to revert.
+    // What remains is the backstop: a session that wrecked the active set (a
+    // crash artifact written straight into the profile) is flagged against the
+    // pre-session snapshot, loudly, with the restore one GUI click away.
+    if plugin_bind.is_some() {
+        if let Some(reason) = prof.plugin_loss_since_snapshot() {
+            eprintln!(
+                "eidos: WARNING - this session's plugins.txt {reason}. The pre-session copy is \
+                 kept at {}; restore it from the GUI Diagnostics tab if this was a crash, or \
+                 ignore this if you disabled those plugins on purpose.",
+                prof.plugins_snapshot_path().display()
+            );
+        }
+    }
+    // Steam Cloud reads the REAL prefix Saves dir, which the bind shadowed all
+    // session: without this sync the cloud backs up a save set frozen at the
+    // pre-Eidos era (observed: two saves from 2024, nothing since). One-way,
+    // never deleting - the prefix is a backup target, not an authority.
+    if let Some((prof_saves, prefix_saves)) = &save_bind {
+        match sync_saves_for_cloud(prof_saves, prefix_saves) {
+            Ok(n) if n > 0 => {
+                eprintln!("eidos: synced {n} save file(s) into the prefix for Steam Cloud")
             }
+            Ok(_) => {}
+            Err(e) => eprintln!("eidos: WARNING - could not sync saves for Steam Cloud: {e}"),
         }
     }
 
@@ -1139,13 +1344,29 @@ fn cmd_sort(args: &[String]) {
 
     let inst = Instance::global(id);
     let _ = inst.ensure_profiles();
+    // The PROFILE owns the plugin state; the prefix copy is a shadow for
+    // external tools. This command once wrote only the prefix, and the next
+    // launch's profile-driven pass reverted the entire sort - actives included.
+    let prof = inst.active();
+    let _lock = match inst.try_lock("eidos sort") {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Cannot sort now: {e}.");
+            exit(1);
+        }
+    };
+    if let Err(e) = prof.seed_plugin_state(&local_dir) {
+        eprintln!("Cannot sort: adopting the plugin state into the profile failed ({e}).");
+        exit(1);
+    }
+    let state_dir = prof.plugins_state_dir();
 
-    // Discover exactly what a launch would deploy, preserving the current order.
+    // Discover exactly what a launch would use, preserving the current order.
     let enabled: Vec<ModEntry> =
         inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
-    list.apply_prefix_state(&local_dir, &spec);
+    list.apply_prefix_state(&state_dir, &spec);
     list.refresh(&spec);
 
     if list.plugins.is_empty() {
@@ -1172,7 +1393,9 @@ fn cmd_sort(args: &[String]) {
     let sorted = match eidos_loot::sort(
         id,
         &game.install_path,
-        &local_dir,
+        // The PROFILE dir: it is the load-order authority now; the prefix copy is
+        // a shadow that can be stale.
+        &state_dir,
         &plugins,
         &masterlist,
         &prelude,
@@ -1197,8 +1420,12 @@ fn cmd_sort(args: &[String]) {
     list.apply_sorted_order(&sorted);
     list.refresh(&spec);
     let active = list.plugins.iter().filter(|p| p.enabled).count();
-    match list.write_load_order(&local_dir, &spec) {
-        Ok(()) => println!("Sorted {} plugins ({active} active) and wrote the load order.", sorted.len()),
+    match list.write_load_order(&state_dir, &spec) {
+        Ok(_) => {
+            // Shadow for external tools reading the prefix; never fatal.
+            let _ = list.write_load_order(&local_dir, &spec);
+            println!("Sorted {} plugins ({active} active) and wrote the load order.", sorted.len())
+        }
         Err(e) => {
             eprintln!("Could not write load order: {e}");
             exit(1);
@@ -1710,6 +1937,66 @@ mod tests {
         assert!(stems.contains("d3dx9_42"), "the Root/ preloader must be found");
         assert!(stems.contains("d3d11"), "a top-level wrapper is still found");
         assert_eq!(stems.len(), 2, "nothing else, and nothing from a nested dir");
+    }
+
+    /// The Steam Cloud sync must be idempotent (fs::copy stamps the destination
+    /// with a NEWER mtime, so the second run finds nothing to do), must rescue a
+    /// prefix save the profile never saw before overwriting its fixed name, and
+    /// must ignore junk.
+    #[test]
+    fn cloud_sync_is_idempotent_and_rescues_diverged_saves() {
+        let t = Tmp::new("cloudsync");
+        let prof = t.0.join("prof");
+        let prefix = t.0.join("prefix");
+        fs::create_dir_all(&prof).unwrap();
+        fs::create_dir_all(&prefix).unwrap();
+
+        // A diverged prefix quicksave the profile has no copy of (a failed-bind
+        // session wrote it), OLDER than the profile's own quicksave.
+        fs::write(prefix.join("quicksave.ess"), b"orphan session").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let f = fs::File::options().write(true).open(prefix.join("quicksave.ess")).unwrap();
+        f.set_modified(old).unwrap();
+        drop(f);
+
+        fs::write(prof.join("quicksave.ess"), b"current playthrough").unwrap();
+        fs::write(prof.join("quicksave.skse"), b"cosave").unwrap();
+        fs::write(prof.join("steam_autocloud.vdf"), b"junk").unwrap();
+
+        let n = sync_saves_for_cloud(&prof, &prefix).unwrap();
+        assert_eq!(n, 2, ".ess + .skse synced, junk ignored");
+        assert_eq!(fs::read(prefix.join("quicksave.ess")).unwrap(), b"current playthrough");
+        assert!(!prefix.join("steam_autocloud.vdf").exists());
+
+        // The orphan was rescued into the profile before the overwrite.
+        let rescued: Vec<String> = fs::read_dir(&prof)
+            .unwrap()
+            .flatten()
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.starts_with("orphan-") && n.ends_with("quicksave.ess"))
+            .collect();
+        assert_eq!(rescued.len(), 1, "the only copy of the orphan session must survive");
+
+        // Second run: nothing to do. (The rescued orphan syncs up once, at most.)
+        let again = sync_saves_for_cloud(&prof, &prefix).unwrap();
+        assert!(again <= 1, "the sync must converge, not recopy everything ({again})");
+        assert_eq!(sync_saves_for_cloud(&prof, &prefix).unwrap(), 0, "and then be a no-op");
+
+        // A save the profile ADOPTED at seeding shares name + size with the
+        // prefix original but not its mtime (the seed copy did not preserve
+        // mtimes). It must NOT be "rescued" into a duplicate.
+        fs::write(prefix.join("Save 12 - Old.ess"), b"identical bytes").unwrap();
+        let f = fs::File::options().write(true).open(prefix.join("Save 12 - Old.ess")).unwrap();
+        f.set_modified(old).unwrap();
+        drop(f);
+        fs::write(prof.join("Save 12 - Old.ess"), b"identical bytes").unwrap();
+        sync_saves_for_cloud(&prof, &prefix).unwrap();
+        let orphans = fs::read_dir(&prof)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().contains("Save 12"))
+            .count();
+        assert_eq!(orphans, 1, "the adopted twin must not spawn an orphan duplicate");
     }
 
     // Guards FIX C1: the Overwrite layer must be the LAST (highest-priority) plugin

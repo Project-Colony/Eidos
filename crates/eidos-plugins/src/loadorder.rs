@@ -39,12 +39,18 @@ impl PluginList {
     /// base masters (`Skyrim.esm` ...) are omitted, exactly as MO2 writes them.
     /// Plain games (Skyrim LE, FO3, FNV): `plugins.txt` lists just the active
     /// plugins. `loadorder.txt` always holds the full order, unprefixed.
-    pub fn write_load_order(&self, dir: &Path, spec: &GameSpec) -> io::Result<()> {
+    ///
+    /// Returns how many plugins were LISTED in plugins.txt. On a stock
+    /// Anniversary install that is a handful out of nearly ninety - the engine
+    /// loads the primaries and the `.ccc` Creations by itself - and a launch
+    /// message that reported the in-memory active count as "written" sent a whole
+    /// investigation towards a 7-line file that was never wrong.
+    pub fn write_load_order(&self, dir: &Path, spec: &GameSpec) -> io::Result<usize> {
         // MO2 refuses to commit an empty list (gamebryogameplugins.cpp:136): a
         // momentarily-unreadable Data dir yields no plugins, and overwriting a good
         // plugins.txt with a header-only file would wipe the user's load order.
         if self.plugins.is_empty() {
-            return Ok(());
+            return Ok(0);
         }
         fs::create_dir_all(dir)?;
 
@@ -58,6 +64,7 @@ impl PluginList {
         // MO2 writes both files CRLF; plugins.txt in the Windows ANSI codepage
         // (Encoding::System -> CP1252 on Western locales), loadorder.txt UTF-8.
         let mut plugins = format!("{HEADER}\r\n");
+        let mut listed = 0usize;
         match spec.mechanism {
             LoadOrderMechanism::Asterisk => {
                 for p in &self.plugins {
@@ -69,12 +76,14 @@ impl PluginList {
                     }
                     plugins.push_str(&p.name);
                     plugins.push_str("\r\n");
+                    listed += 1;
                 }
             }
             LoadOrderMechanism::PlainList => {
                 for p in self.plugins.iter().filter(|p| p.enabled) {
                     plugins.push_str(&p.name);
                     plugins.push_str("\r\n");
+                    listed += 1;
                 }
             }
         }
@@ -87,7 +96,7 @@ impl PluginList {
             order.push_str("\r\n");
         }
         write_atomic(&canonical_path(dir, "loadorder.txt"), order.as_bytes())?;
-        Ok(())
+        Ok(listed)
     }
 
     /// Parse `plugins.txt` in `dir`: `(name, enabled)` pairs in file order. For
@@ -129,20 +138,75 @@ impl PluginList {
     }
 
     /// Apply the saved on-disk state from a prefix `dir` onto the discovered list
-    /// (order + enabled). For Asterisk games `plugins.txt` round-trips both active
-    /// (`*`) and inactive lines, so this is just [`apply_active`]. For PlainList
-    /// games `plugins.txt` lists only the actives, so `loadorder.txt` supplies the
-    /// order and a plugin present there but absent from a non-empty `plugins.txt`
-    /// is one the user DISABLED - it must stay disabled (MO2's "unlisted =
-    /// inactive"), not silently re-enable on the next launch. A plugin in neither
-    /// file is genuinely new and keeps its discovered default.
+    /// (order + enabled).
+    ///
+    /// For BOTH mechanisms, `loadorder.txt` is the ORDER authority and
+    /// `plugins.txt` supplies the enabled flags. This split is MO2's
+    /// (`GamebryoGamePlugins`: loadorder.txt = order, plugins.txt = active), and
+    /// on an Asterisk game it is not a stylistic choice: `plugins.txt`
+    /// deliberately omits the primaries and every `.ccc` Creation - the engine
+    /// loads those by itself - which on a stock Anniversary install is ~80 of ~87
+    /// plugins. Treating `plugins.txt` as the order authority therefore rebuilt
+    /// nearly the whole order from discovery (alphabetical), which is what
+    /// silently reverted every LOOT sort before the game even started.
+    ///
+    /// For PlainList games there is a second duty: `plugins.txt` lists only the
+    /// actives, so a plugin present in `loadorder.txt` but absent from a
+    /// non-empty `plugins.txt` is one the user DISABLED - it must stay disabled
+    /// (MO2's "unlisted = inactive"), not silently re-enable on the next launch.
+    /// A plugin in neither file is genuinely new and keeps its discovered default.
     pub fn apply_prefix_state(&mut self, dir: &Path, spec: &GameSpec) {
         use std::collections::{HashMap, HashSet};
         let active = Self::read_active(dir, spec);
         match spec.mechanism {
             LoadOrderMechanism::Asterisk => {
+                // Flags first (also orders the listed subset)...
                 if !active.is_empty() {
                     self.apply_active(&active);
+                }
+                // ...then the FULL order from loadorder.txt overrides. The sort is
+                // stable, so plugins missing from it (installed since the last
+                // write) keep their relative position and land last; `refresh`
+                // then places them within the engine invariants.
+                let order = Self::read_load_order(dir);
+                if !order.is_empty() {
+                    let pos: HashMap<String, usize> = order
+                        .iter()
+                        .enumerate()
+                        .map(|(i, n)| (n.to_ascii_lowercase(), i))
+                        .collect();
+                    self.plugins.sort_by_key(|p| {
+                        pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX)
+                    });
+
+                    // One exception to loadorder.txt's authority: Eidos writes the
+                    // two files together, so when plugins.txt is strictly NEWER
+                    // something else - the game via the bound dir, or xEdit run
+                    // through the view - rewrote it alone, and its relative order
+                    // for the plugins it lists is the fresher truth. Those plugins
+                    // are re-dealt into the SLOTS they already occupy, in
+                    // plugins.txt order; everything else (primaries, Creations)
+                    // keeps its loadorder.txt position.
+                    if !active.is_empty() && plugins_txt_is_newer(dir) {
+                        let listed: HashMap<String, usize> = active
+                            .iter()
+                            .enumerate()
+                            .map(|(i, (n, _))| (n.to_ascii_lowercase(), i))
+                            .collect();
+                        let slots: Vec<usize> = self
+                            .plugins
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, p)| listed.contains_key(&p.name.to_ascii_lowercase()))
+                            .map(|(i, _)| i)
+                            .collect();
+                        let mut members: Vec<crate::Plugin> =
+                            slots.iter().map(|&i| self.plugins[i].clone()).collect();
+                        members.sort_by_key(|p| listed[&p.name.to_ascii_lowercase()]);
+                        for (&slot, m) in slots.iter().zip(members) {
+                            self.plugins[slot] = m;
+                        }
+                    }
                 }
             }
             LoadOrderMechanism::PlainList => {
@@ -240,6 +304,24 @@ pub fn newest_variant(dir: &Path, name: &str) -> Option<PathBuf> {
         .max_by_key(|p| fs::metadata(p).and_then(|m| m.modified()).ok())
 }
 
+/// Whether `plugins.txt` was written strictly after `loadorder.txt`.
+///
+/// Eidos always writes plugins.txt first and loadorder.txt second, so its own
+/// writes answer false; a true answer means someone rewrote plugins.txt ALONE -
+/// the game through the bound dir, or a tool - and its ordering of the plugins
+/// it lists is fresher than loadorder.txt's.
+fn plugins_txt_is_newer(dir: &Path) -> bool {
+    let mtime = |name: &str| {
+        newest_variant(dir, name)
+            .and_then(|p| fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok())
+    };
+    match (mtime("plugins.txt"), mtime("loadorder.txt")) {
+        (Some(p), Some(l)) => p > l,
+        _ => false,
+    }
+}
+
 /// Every entry of `dir` whose name equals `name` ignoring ASCII case.
 fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
     fs::read_dir(dir)
@@ -273,7 +355,12 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 /// `Encoding::System`): try UTF-8 first (our own ASCII output round-trips), then
 /// fall back to CP1252 so a file MO2 or the game wrote with accented names is
 /// decoded instead of discarded - discarding it would wipe the saved active set.
-fn read_decoded(path: &Path) -> Option<String> {
+///
+/// Public because EVERY reader of these files must use it: the capture guard
+/// once read plugins.txt with plain `read_to_string`, and a single accented
+/// plugin name - in the encoding Eidos itself writes - made the read fail and
+/// silently disarmed the guard protecting the profile from a wipe.
+pub fn read_decoded(path: &Path) -> Option<String> {
     let bytes = fs::read(path).ok()?;
     match std::str::from_utf8(&bytes) {
         Ok(s) => Some(s.to_string()),
@@ -568,6 +655,151 @@ mod tests {
         PluginList { plugins: vec![], implicit: Default::default() }.write_load_order(&dir, &se()).unwrap();
         // MO2 refuses to write an empty list; the good file is untouched.
         assert_eq!(fs::read_to_string(dir.join("plugins.txt")).unwrap(), "# precious\n*KeepMe.esp\n");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The reported bug, end to end: a LOOT sort places the Creation Club content
+    /// in `.ccc` file order (NOT alphabetical) and the whole order is written; the
+    /// next state round-trip must come back in that order, not reverted.
+    ///
+    /// The trap: plugins.txt deliberately omits primaries and Creations - on a
+    /// real Anniversary install that is ~80 of ~87 plugins - so the file cannot
+    /// order them. Only loadorder.txt can. Reading plugins.txt as the order
+    /// authority rebuilt those ~80 from discovery order (alphabetical), reverted
+    /// both files pre-launch, and the user re-sorted every single session.
+    #[test]
+    fn a_loot_sorted_order_survives_the_state_round_trip() {
+        let dir = tmp_dir();
+        let spec = se();
+        let implicit: std::collections::HashSet<String> =
+            ["cczeta.esl".to_string(), "ccalpha.esl".to_string()].into_iter().collect();
+
+        // LOOT's verdict: Zeta BEFORE Alpha (`.ccc` file order beats alphabetical).
+        let mut sorted = PluginList {
+            plugins: vec![
+                pl("Skyrim.esm", true),
+                pl("ccZeta.esl", true),
+                pl("ccAlpha.esl", true),
+                pl("MyMod.esp", true),
+            ],
+            implicit: implicit.clone(),
+        };
+        sorted.refresh(&spec);
+        sorted.write_load_order(&dir, &spec).unwrap();
+        // Precondition of the trap: plugins.txt holds ONLY the real mod.
+        let txt = read_decoded(&dir.join("plugins.txt")).unwrap();
+        let listed: Vec<&str> = txt.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).collect();
+        assert_eq!(listed, vec!["*MyMod.esp"], "{txt}");
+
+        // A fresh discovery is alphabetical - the reverted order the bug produced.
+        let mut fresh = PluginList {
+            plugins: vec![
+                pl("ccAlpha.esl", true),
+                pl("ccZeta.esl", true),
+                pl("MyMod.esp", true),
+                pl("Skyrim.esm", true),
+            ],
+            implicit,
+        };
+        fresh.apply_prefix_state(&dir, &spec);
+        fresh.refresh(&spec);
+
+        let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Skyrim.esm", "ccZeta.esl", "ccAlpha.esl", "MyMod.esp"],
+            "the LOOT order must survive; alphabetical here means the revert is back"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// When something rewrote plugins.txt ALONE (the game through the bound dir,
+    /// xEdit through the view), its relative order for the plugins it lists is
+    /// fresher than loadorder.txt's - those plugins follow it, everything else
+    /// keeps its loadorder.txt slot.
+    #[test]
+    fn a_fresher_plugins_txt_wins_the_order_for_the_plugins_it_lists() {
+        let dir = tmp_dir();
+        let spec = se();
+        let saved = PluginList {
+            plugins: vec![
+                pl("Skyrim.esm", true),
+                pl("A.esp", true),
+                pl("B.esp", true),
+                pl("C.esp", true),
+            ],
+            implicit: Default::default(),
+        };
+        saved.write_load_order(&dir, &spec).unwrap();
+
+        // The game/xEdit rewrites plugins.txt alone, reordering: C, A, B.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(dir.join("plugins.txt"), b"*C.esp\r\n*A.esp\r\n*B.esp\r\n").unwrap();
+
+        let mut fresh = PluginList {
+            plugins: vec![
+                pl("A.esp", true),
+                pl("B.esp", true),
+                pl("C.esp", true),
+                pl("Skyrim.esm", true),
+            ],
+            implicit: Default::default(),
+        };
+        fresh.apply_prefix_state(&dir, &spec);
+        let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
+        // Skyrim.esm keeps its loadorder slot (first); the listed three follow
+        // the fresher plugins.txt order in the slots they occupied.
+        assert_eq!(names, vec!["Skyrim.esm", "C.esp", "A.esp", "B.esp"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The normal case - Eidos wrote both files together - must NOT trip the
+    /// freshness exception: loadorder.txt stays the authority.
+    #[test]
+    fn a_joint_write_keeps_loadorder_as_the_authority() {
+        let dir = tmp_dir();
+        let spec = se();
+        let saved = PluginList {
+            plugins: vec![pl("Skyrim.esm", true), pl("B.esp", true), pl("A.esp", true)],
+            implicit: Default::default(),
+        };
+        saved.write_load_order(&dir, &spec).unwrap();
+
+        let mut fresh = PluginList {
+            plugins: vec![pl("A.esp", true), pl("B.esp", true), pl("Skyrim.esm", true)],
+            implicit: Default::default(),
+        };
+        fresh.apply_prefix_state(&dir, &spec);
+        let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Skyrim.esm", "B.esp", "A.esp"]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A plugin installed after the last write is in neither file: it must keep
+    /// its discovered position at the end, not scramble the saved order.
+    #[test]
+    fn a_new_plugin_lands_after_the_saved_order() {
+        let dir = tmp_dir();
+        let spec = se();
+        let saved = PluginList {
+            plugins: vec![pl("Skyrim.esm", true), pl("B.esp", true), pl("A.esp", true)],
+            implicit: Default::default(),
+        };
+        saved.write_load_order(&dir, &spec).unwrap();
+
+        let mut fresh = PluginList {
+            plugins: vec![
+                pl("A.esp", true),
+                pl("B.esp", true),
+                pl("New.esp", true),
+                pl("Skyrim.esm", true),
+            ],
+            implicit: Default::default(),
+        };
+        fresh.apply_prefix_state(&dir, &spec);
+        fresh.refresh(&spec);
+        let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["Skyrim.esm", "B.esp", "A.esp", "New.esp"]);
         let _ = fs::remove_dir_all(&dir);
     }
 

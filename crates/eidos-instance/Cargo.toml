@@ -12,3 +12,6 @@ eidos-ini = { path = "../eidos-ini" }
 # the prefix is case-sensitive while the game came from a case-insensitive
 # filesystem, so both spellings can exist and only one is the truth.
 eidos-plugins = { path = "../eidos-plugins" }
+# flock(2) for the cross-process instance lock: the GUI, the CLI and a running
+# `eidos play` are separate processes writing the same profile files.
+libc = "0.2"

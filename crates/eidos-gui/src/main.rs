@@ -162,6 +162,12 @@ enum Message {
     SelectSave(usize),
     /// Enable every mod that supplies one of the selected save's missing plugins.
     FixSaveMods,
+    /// Put the pre-session `plugins.txt` back after a session damaged the active
+    /// set (the Diagnostics card's one-click restore).
+    RestorePreSessionPlugins,
+    /// The other honest outcome: the change was deliberate - re-snapshot the
+    /// current state so the damage card stops flaming.
+    AcceptPluginState,
     // ---- per-mod information dialog (MO2 modinfodialog) ----
     ShowModInfo(usize),
     CloseInfo,
@@ -1417,6 +1423,13 @@ fn move_block(mods: &mut Vec<ModEntry>, targets: &[usize], dest: usize) -> usize
 /// the next restart with no warning). Returns the error text, if any.
 fn save_mods(app: &App) -> Option<String> {
     let inst = app.created.as_ref()?;
+    // The cross-process lock: a running `eidos play` holds it for the whole
+    // session, so a mid-game edit is refused HERE with a readable reason instead
+    // of writing into files the live session owns.
+    let _lock = match inst.try_lock("the Eidos window") {
+        Ok(l) => l,
+        Err(e) => return Some(format!("Not saved: {e}.")),
+    };
     inst.save_modlist(&app.mods).err().map(|e| format!("Could not save the mod list: {e}"))
 }
 
@@ -1459,6 +1472,11 @@ fn invalidate_plugins(app: &mut App) {
 fn mods_changed(app: &mut App) {
     if let Some(err) = save_mods(app) {
         app.status = Some(err);
+        // The write was refused (another process owns the instance): the
+        // in-memory edit will never reach disk, and leaving it displayed shows
+        // the user a state that silently evaporates when they close the window.
+        // Disk is the truth; resync the view to it.
+        reload_mods(app);
     }
     // The merged view depends on which mods are enabled and in what order, not
     // just on their contents.
@@ -1488,7 +1506,17 @@ fn after_hidden_change(app: &mut App, mod_name: &str, rel: &str) {
 /// flows so they can never drift apart.
 fn switch_to_profile(app: &mut App, name: &str) {
     if let Some(inst) = &app.created {
-        let _ = inst.set_active_profile(name);
+        // Same lock as every other mutation: a switch during a run would point
+        // the run's post-exit steps at the wrong profile.
+        match inst.try_lock("the Eidos window") {
+            Ok(_lock) => {
+                let _ = inst.set_active_profile(name);
+            }
+            Err(e) => {
+                app.status = Some(format!("Cannot switch profiles: {e}."));
+                return;
+            }
+        }
     }
     reload_mods(app);
     invalidate_plugins(app);
@@ -1695,6 +1723,15 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SwitchProfile(name) => {
+            // Refused while the game runs: the run's post-exit steps write into
+            // the profile that was LAUNCHED, and the profile's plugins dir is
+            // bind-mounted into the live session - switching under it corrupted
+            // the profile that was never played.
+            if app.running.is_some() {
+                app.status =
+                    Some("Cannot switch profiles while the game is running.".to_string());
+                return Task::none();
+            }
             // One shared path (switch_to_profile) so the reload steps - incl.
             // recompute_counts, which this handler used to skip - never drift.
             if app.created.is_some() {
@@ -1752,6 +1789,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     // no-op: just close the editor
                     app.profile_rename = None;
                     app.profile_menu = None;
+                } else if app.running.is_some() {
+                    // A rename mid-run would pull the played profile out from
+                    // under the session's post-exit steps (and the bound dirs).
+                    app.status =
+                        Some("Cannot rename a profile while the game is running.".to_string());
                 } else {
                     let was_active = inst.active_profile() == old;
                     match inst.rename_profile(&old, &new) {
@@ -2764,7 +2806,16 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             };
             let id = id.to_string();
             let install = game.install_path.clone();
-            let local_dir = plugins_txt_dir(&cd.join("pfx"), &spec);
+            // The PROFILE is the load-order authority; the prefix copy is a
+            // shadow that can be stale. Fall back to the prefix only before the
+            // profile owns a state (pre-first-launch).
+            let local_dir = app
+                .created
+                .as_ref()
+                .map(|i| i.active())
+                .filter(|p| p.has_plugin_state())
+                .map(|p| p.plugins_state_dir())
+                .unwrap_or_else(|| plugins_txt_dir(&cd.join("pfx"), &spec));
             let cache = app
                 .created
                 .as_ref()
@@ -3521,6 +3572,52 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 format!("Enabled {enabled} mod(s); this save's plugins are all available now.")
             } else {
                 format!("Enabled {enabled} mod(s); {left} plugin(s) still need enabling in the Plugins tab.")
+            });
+        }
+        Message::RestorePreSessionPlugins => {
+            // Same gates as every other mutation: the plugins dir is bind-mounted
+            // into a running session, and restoring under the game's feet races
+            // its own writes.
+            if app.running.is_some() {
+                app.status = Some("Cannot restore while the game is running.".to_string());
+                return Task::none();
+            }
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot restore: {e}."));
+                    return Task::none();
+                }
+            };
+            match inst.active().restore_plugin_snapshot() {
+                Ok(()) => {
+                    // The on-disk state changed under the in-memory list: recompute
+                    // rather than patch, same as every other external change.
+                    app.plugins = compute_plugins(app);
+                    app.status = Some("Restored the pre-session plugin order.".to_string());
+                }
+                Err(e) => {
+                    app.status = Some(format!("Could not restore the pre-session order: {e}"));
+                }
+            }
+        }
+        Message::AcceptPluginState => {
+            if app.running.is_some() {
+                app.status = Some("Cannot do that while the game is running.".to_string());
+                return Task::none();
+            }
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot do that: {e}."));
+                    return Task::none();
+                }
+            };
+            app.status = Some(match inst.active().snapshot_plugin_state() {
+                Ok(()) => "Kept the current plugin set; the warning is cleared.".to_string(),
+                Err(e) => format!("Could not accept the current set: {e}"),
             });
         }
         Message::ConfirmDeleteSave(i) => {
@@ -5562,6 +5659,11 @@ struct Diagnostic {
     level: DiagLevel,
     title: String,
     detail: String,
+    /// One-click remedies, rendered as buttons on the card. Most checks only
+    /// inform; the ones that can FIX what they found carry the fix with them, so
+    /// recovery is not a file-manager expedition. More than one when the finding
+    /// has two honest outcomes (restore vs accept).
+    actions: Vec<(&'static str, Message)>,
 }
 
 /// Run every health check for the current setup - MO2's problems panel, plus the
@@ -5582,6 +5684,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 "{why} Eidos will not save the mod list until this is resolved, so the order and \
                  enabled state on disk are safe. If a drive holds your mods, mount it and press F5."
             ),
+            actions: Vec::new(),
         });
     }
 
@@ -5598,12 +5701,14 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     "EIDOS_FUSE_PASSTHROUGH is set, but the launch binary has no CAP_SYS_ADMIN, so reads go through the daemon anyway. Run:  sudo setcap cap_sys_admin+ep {}  then press F5. Every rebuild of that binary wipes it.",
                     find_eidos_binary().display()
                 ),
+                actions: Vec::new(),
             }
         } else {
             Diagnostic {
                 level: DiagLevel::Advice,
                 title: "FUSE passthrough is ON (opt-in)".to_string(),
                 detail: "Reads go straight to the backing file. Measured on Skyrim SE, this makes the game fail to open its archives and plugins, so mods do not load. Unset EIDOS_FUSE_PASSTHROUGH if content goes missing in-game.".to_string(),
+                actions: Vec::new(),
             }
         });
     } else {
@@ -5611,6 +5716,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
             level: DiagLevel::Ok,
             title: "FUSE passthrough is off".to_string(),
             detail: "The daemon serves reads itself, which is what lets the game open its archives and plugins. The launch capability is not needed for this.".to_string(),
+            actions: Vec::new(),
         });
     }
 
@@ -5623,6 +5729,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     level: DiagLevel::Ok,
                     title: "No missing masters".to_string(),
                     detail: format!("All {} plugins have their masters enabled.", list.plugins.len()),
+                    actions: Vec::new(),
                 });
             } else {
                 let mut detail = missing
@@ -5638,6 +5745,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     level: DiagLevel::Problem,
                     title: format!("{} plugin(s) are missing a master", missing.len()),
                     detail: format!("{detail}. The game will crash on load - enable or install them."),
+                    actions: Vec::new(),
                 });
             }
         }
@@ -5645,6 +5753,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
             level: DiagLevel::Advice,
             title: "Load order not computed yet".to_string(),
             detail: "Open the Plugins tab to analyse the load order.".to_string(),
+            actions: Vec::new(),
         }),
     }
 
@@ -5662,6 +5771,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 title: "ENB and Community Shaders are both active".to_string(),
                 detail: "They can run together, but if visuals look wrong disable one in its INI."
                     .to_string(),
+                actions: Vec::new(),
             });
         }
     }
@@ -5673,6 +5783,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 level: DiagLevel::Advice,
                 title: "The Overwrite holds generated files".to_string(),
                 detail: "Tool output (xEdit, DynDOLOD, Nemesis) is sitting outside any mod. Turn it into one from the Overwrite tab so it can be ordered and disabled.".to_string(),
+                actions: Vec::new(),
             });
         }
         // Debris from an interrupted install.
@@ -5691,6 +5802,30 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     "An install was interrupted. They are ignored by the mod list and safe to delete from {}.",
                     inst.mods_dir().display()
                 ),
+                actions: Vec::new(),
+            });
+        }
+    }
+
+    // The last session wrecked the active set (a crash artifact written straight
+    // into the bound profile dir): the pre-session snapshot noticed, and the fix
+    // is one click. Also fires when the user deliberately disabled most plugins
+    // in-game - they dismiss it by playing on; restoring is never automatic.
+    if let Some(inst) = app.created.as_ref() {
+        let prof = inst.active();
+        if let Some(reason) = prof.plugin_loss_since_snapshot() {
+            out.push(Diagnostic {
+                level: DiagLevel::Problem,
+                title: "The last session damaged the plugin active set".to_string(),
+                detail: format!(
+                    "Compared to launch, plugins.txt now {reason}. If the game crashed, restore \
+                     the pre-session order below; if you disabled those plugins on purpose, \
+                     ignore this."
+                ),
+                actions: vec![
+                    ("Restore the pre-session order", Message::RestorePreSessionPlugins),
+                    ("Keep the current set", Message::AcceptPluginState),
+                ],
             });
         }
     }
@@ -5704,6 +5839,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 level: DiagLevel::Advice,
                 title: format!("Profile '{}' has no load order of its own yet", prof.name),
                 detail: "It will adopt the current one on the next launch, after which switching profiles switches load orders.".to_string(),
+                actions: Vec::new(),
             });
         }
     }
@@ -5715,6 +5851,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 level: DiagLevel::Advice,
                 title: format!("LOOT cannot sort {}", game.def.name),
                 detail: "This game orders plugins by file timestamp; sort it by hand in the Plugins tab.".to_string(),
+                actions: Vec::new(),
             });
         }
         // A Flatpak-Steam Proton runs from the host here, which can fail to resolve
@@ -5734,6 +5871,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     level: DiagLevel::Problem,
                     title: "Proton comes from the Flatpak Steam install".to_string(),
                     detail: "It ships its runtime and steamclient libraries inside the sandbox, so running it from the host may fail. Install a Proton in ~/.steam/root/compatibilitytools.d/ and select it for this game.".to_string(),
+                    actions: Vec::new(),
                 });
             }
         }
@@ -5742,6 +5880,7 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 level: DiagLevel::Problem,
                 title: "No Proton prefix found".to_string(),
                 detail: "Launch the game once through Steam so its prefix exists; until then the load order and INIs cannot be deployed.".to_string(),
+                actions: Vec::new(),
             });
         }
         out.extend(orphan_archive_diagnostics(app, game.def.id));
@@ -5773,6 +5912,7 @@ fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
                 "Launch the game once through Eidos and this will report whether each SKSE-style plugin DLL loaded. Expected at {}.",
                 path.display()
             ),
+            actions: Vec::new(),
         });
     };
     // The extender writes cp1252, so a plugin name with an accent is not valid
@@ -5791,6 +5931,7 @@ fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
             level: DiagLevel::Ok,
             title: format!("All {} script-extender plugins loaded", plugins.len()),
             detail: format!("From the extender's own log, last written {when}."),
+            actions: Vec::new(),
         });
     }
     let lines: Vec<String> =
@@ -5805,6 +5946,7 @@ fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
             plugins.len()
         ),
         detail: format!("{}{tail}  -  from the extender's own log, last written {when}.", lines.join("   ")),
+        actions: Vec::new(),
     })
 }
 
@@ -5853,6 +5995,7 @@ fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
              Enable the matching plugin, or the mod's assets will not appear.",
             listed.join(", ")
         ),
+        actions: Vec::new(),
     }]
 }
 
@@ -5884,7 +6027,7 @@ fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
             DiagLevel::Advice => ("ADVICE", Color::from_rgb8(0xB0, 0x6A, 0x10)),
             DiagLevel::Ok => ("OK", Color::from_rgb8(0x3E, 0x73, 0x50)),
         };
-        let card = Column::new()
+        let mut card = Column::new()
             .spacing(2)
             .push(
                 Row::new()
@@ -5894,6 +6037,13 @@ fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                     .push(text(d.title).size(12.0).width(Length::Fill)),
             )
             .push(text(d.detail).size(10.5).color(Color::from_rgb8(0x6A, 0x5A, 0x40)));
+        if !d.actions.is_empty() {
+            let mut row = Row::new().spacing(6);
+            for (label, msg) in d.actions {
+                row = row.push(tool_btn(label, msg));
+            }
+            card = card.push(row);
+        }
         col = col.push(container(card).padding([4, 6]).width(Length::Fill).style(card_style));
     }
     scrollable(col).height(Length::Fill).into()
@@ -5935,7 +6085,7 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
         .as_ref()
         .map(|i| i.active())
         .filter(|p| p.has_plugin_state())
-        .map(|p| p.dir());
+        .map(|p| p.plugins_state_dir());
     match profile_state {
         Some(dir) => list.apply_prefix_state(&dir, &spec),
         None => {
@@ -5949,12 +6099,24 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
     Some(list)
 }
 
-/// Persist the plugin load order: into the active profile (which owns it) AND
-/// into the prefix the game reads, so a profile switch swaps load orders and the
-/// game still sees the current one without waiting for the next launch.
+/// Persist the plugin load order: into the active profile's plugins dir (the
+/// single source of truth, bind-mounted over the prefix at launch) AND a shadow
+/// copy into the prefix for external tools reading it outside Eidos.
 fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io::Result<()> {
+    // Cross-process lock: a running session owns these files (the plugins dir is
+    // bind-mounted into it); a mid-game reorder must refuse, not corrupt.
+    let _lock = app.created.as_ref().map(|inst| inst.try_lock("the Eidos window")).transpose()?;
     if let Some(inst) = app.created.as_ref() {
-        list.write_load_order(&inst.active().dir(), spec)?;
+        let prof = inst.active();
+        // A deliberate GUI edit is the user speaking: it must not trip the
+        // "session damaged the active set" card, so the snapshot follows it -
+        // EXCEPT while damage is currently flagged, where refreshing would
+        // destroy the only copy that can still restore the pre-damage state.
+        let damage_flagged = prof.plugin_loss_since_snapshot().is_some();
+        list.write_load_order(&prof.plugins_state_dir(), spec)?;
+        if !damage_flagged {
+            let _ = prof.snapshot_plugin_state();
+        }
     }
     if let Some(cd) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
         list.write_load_order(&plugins_txt_dir(&cd.join("pfx"), spec), spec)?;

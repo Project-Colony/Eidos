@@ -150,22 +150,29 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
         layers.push(stash.clone()); // lowest priority: the pristine game files
     }
 
-    // Extra redirects (e.g. the active profile's saves over the prefix save dir).
-    // Both ends must exist for the bind; best-effort so a missing dir or a failed
-    // bind never blocks the game from starting - but a failure is REPORTED, because
-    // a silently missing saves bind means this session's saves land in the prefix
-    // and vanish from the profile with no visible symptom until much later.
+    // Extra redirects: the active profile's saves and plugin state over the
+    // prefix's dirs. FAIL CLOSED: these binds are what makes the session's writes
+    // land in the profile, and a run that continues without one silently forks
+    // the playthrough - the game writes into the prefix, the bind hides those
+    // files on every LATER (successful) run, and the user discovers a hole in
+    // their saves weeks after the cause. A refused launch with a reason is
+    // recoverable; a forked save history is not. (This warned-and-continued
+    // once; the audit found the orphaned sessions it produced.)
     for (src, dst) in &spec.binds {
-        let prep = std::fs::create_dir_all(src).and_then(|()| std::fs::create_dir_all(dst));
-        let result = prep.and_then(|()| bind_mount(src, dst));
-        if let Err(e) = result {
-            eprintln!(
-                "eidos: WARNING - bind of {} over {} failed ({e}); files written there \
-                 this session will land in the target directly, not in the profile",
-                src.display(),
-                dst.display()
-            );
-        }
+        std::fs::create_dir_all(src)
+            .and_then(|()| std::fs::create_dir_all(dst))
+            .and_then(|()| bind_mount(src, dst))
+            .map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "refusing to launch: bind of {} over {} failed ({e}); running without \
+                         it would silently split this session's files away from the profile",
+                        src.display(),
+                        dst.display()
+                    ),
+                )
+            })?;
     }
 
     // ROOT UNION FIRST, if any mod ships a `Root/`. Order matters: this union
@@ -238,8 +245,32 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // child has already been reaped by `Command::status`.
     reap_descendants();
 
+    // Unmount the extra binds NOW, not at process exit: this process stays inside
+    // the namespace, and the caller's post-run steps need the REAL prefix back.
+    // The Steam Cloud save sync read "the prefix Saves dir" through the still-
+    // mounted bind - its own source - and no-op'd on every run while looking like
+    // it worked. Detach-style, loudly on failure: a bind that stays up silently
+    // turns that sync back into a lie.
+    for (_src, dst) in &spec.binds {
+        if let Err(e) = unmount_detach(dst) {
+            eprintln!(
+                "eidos: WARNING - could not unmount {} after the run ({e}); \
+                 post-run steps may read the profile through it instead of the prefix",
+                dst.display()
+            );
+        }
+    }
+
     drop(session); // unmount
     status
+}
+
+/// Lazy-detach unmount of `path` (`MNT_DETACH`: the mount leaves the namespace
+/// now; the kernel finishes when the last user lets go).
+fn unmount_detach(path: &Path) -> std::io::Result<()> {
+    let p = cstring(path)?;
+    // SAFETY: umount2 with a valid NUL-terminated path and no memory preconditions.
+    check(unsafe { libc::umount2(p.as_ptr(), libc::MNT_DETACH) })
 }
 
 /// Reap every remaining reparented descendant; returns once none are left

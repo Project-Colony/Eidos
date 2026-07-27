@@ -17,7 +17,9 @@ use std::path::{Path, PathBuf};
 use esplugin::{GameId, ParseOptions, Plugin as EspPlugin};
 
 mod loadorder;
-pub use loadorder::{canonical_path, documents_my_games_dir, newest_variant, plugins_txt_dir};
+pub use loadorder::{
+    canonical_path, documents_my_games_dir, newest_variant, plugins_txt_dir, read_decoded,
+};
 
 /// Whether `name` is a plugin file by extension (`.esp`/`.esm`/`.esl`),
 /// case-insensitively - MO2's plugin filter (`*.esp *.esm *.esl`).
