@@ -744,6 +744,13 @@ struct App {
     updated_count: usize,
     /// A Nexus mod-update check is in flight (guards the Update button).
     update_in_progress: bool,
+    /// A LOOT sort is in flight. iced runs on smol's single-threaded executor
+    /// here, so a second sort does not race the first - it QUEUES behind it, and
+    /// every queued completion re-opens the report modal and overwrites the
+    /// status with its own (idempotent, so "nothing moved") result. A masterlist
+    /// download is several seconds with no other visible sign of work, which is
+    /// long enough to invite exactly that.
+    sorting: bool,
     // ---- menu-bar UI toggles + About ----
     /// The toolbar / status bar are visible (View menu toggles).
     ui_toolbar_visible: bool,
@@ -1002,6 +1009,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         endorsed_count: 0,
         updated_count: 0,
         update_in_progress: false,
+        sorting: false,
         ui_toolbar_visible: true,
         ui_statusbar_visible: true,
         view_menu_open: false,
@@ -1528,6 +1536,22 @@ fn visible_rows(
     vis
 }
 
+/// Ask whether the instance is free, WITHOUT still holding it afterwards.
+///
+/// `if let Err(e) = inst.try_lock(..)` reads like a test but is not one: the
+/// `InstanceLock` it produces is a temporary that lives to the end of the whole
+/// `if let` statement, the `else` block included. The rename path then called
+/// `switch_to_profile`, which takes the same flock again from a second
+/// descriptor - refused, because `LOCK_NB` does not care that the caller is the
+/// same process. The profile was renamed and the window kept pointing at a name
+/// that no longer existed, saying "Cannot switch profiles".
+///
+/// Dropping the lock before returning narrows the check to what it always
+/// actually was: a courtesy probe, since every write underneath takes its own.
+fn probe_lock(inst: &Instance) -> std::io::Result<()> {
+    inst.try_lock("the Eidos window").map(drop)
+}
+
 /// The rows a row-targeted action should act on: the whole multi-selection when
 /// the clicked row belongs to it, otherwise just that row. Separators are never
 /// moved by these actions - they define the groups.
@@ -1974,7 +1998,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // under the session's post-exit steps (and the bound dirs).
                     app.status =
                         Some("Cannot rename a profile while the game is running.".to_string());
-                } else if let Err(e) = inst.try_lock("the Eidos window") {
+                } else if let Err(e) = probe_lock(inst) {
                     // app.running only sees runs THIS window started; the flock
                     // also covers a session launched from the CLI or Steam.
                     app.status = Some(format!("Cannot rename: {e}."));
@@ -2321,7 +2345,13 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.running.is_some() {
                 // Already waiting on a launched application (MO2 won't launch a
                 // second one while locked); ignore the repeat Run.
-                app.status = Some("An application is already running. Unlock first to launch another.".to_string());
+                // Unlock only drops the overlay - it deliberately KEEPS the run
+                // tracked so the post-exit refresh still happens - so telling the
+                // user to unlock was advice that could not work.
+                let what = app.running.as_ref().map(|r| r.title.clone()).unwrap_or_default();
+                app.status = Some(format!(
+                    "{what} is still running. Eidos re-enables launching and LOOT sorting when it exits."
+                ));
             } else if let Some(title) = app.tool_choice.clone() {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
                 // `id` is Copy, so the immutable `game` borrow ends before `start_run`.
@@ -2964,10 +2994,25 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
             let name = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.name.clone());
             let forced = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.force_disabled).unwrap_or(false);
+            let implicit = app
+                .plugins
+                .as_ref()
+                .and_then(|l| l.plugins.get(i).map(|p| l.implicit.contains(&p.name.to_ascii_lowercase())))
+                .unwrap_or(false);
             if let (Some(spec), Some(name)) = (spec, name) {
                 // Base-game masters are implicit and always loaded; refuse to toggle.
                 if spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name)) {
                     app.status = Some(format!("{name} is a base-game master and is always loaded."));
+                } else if implicit {
+                    // Creation Club content the engine loads from the .ccc file.
+                    // It is deliberately kept out of plugins.txt (writing it in
+                    // makes the game see every Creation twice and blank the
+                    // file), so a toggle here had nothing to write: the checkbox
+                    // came straight back on at the next refresh with no
+                    // explanation, which reads as the click being ignored.
+                    app.status = Some(format!(
+                        "{name} is Creation Club content the engine loads itself - it cannot be turned off here."
+                    ));
                 } else if forced {
                     app.status =
                         Some(format!("{name} is a light plugin this game can't load and stays off."));
@@ -3007,6 +3052,14 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     Some("Cannot sort while the game is running.".to_string());
                 return Task::none();
             }
+            // One at a time. Without this every impatient click during the
+            // masterlist download queued another complete sort, and each one
+            // re-opened the report over a dialog the user had already closed -
+            // minutes later, since they run strictly one after another.
+            if app.sorting {
+                app.status = Some("A LOOT sort is already running.".to_string());
+                return Task::none();
+            }
             // Gather everything the (static) async closure needs, cloned out of
             // `app`, then run the masterlist fetch + LOOT sort off the UI thread.
             let Some(game) = selected_game(app) else { return Task::none() };
@@ -3044,6 +3097,21 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .unwrap_or_else(|| eidos_instance::Instance::global(&id).root.join("loot"));
             let plugins: Vec<(String, PathBuf)> =
                 list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+            // Where LOOT must look besides the vanilla Data dir. Highest priority
+            // first, Overwrite ahead of everything, matching the union's own
+            // precedence - without these every file-conditioned masterlist rule
+            // is evaluated against a directory the mods are not in.
+            let mut mod_dirs: Vec<PathBuf> = Vec::new();
+            if let Some(inst) = app.created.as_ref() {
+                mod_dirs.push(inst.overwrite_dir());
+            }
+            mod_dirs.extend(
+                app.mods
+                    .iter()
+                    .rev()
+                    .filter(|m| m.enabled && !m.is_separator())
+                    .map(|m| m.path.clone()),
+            );
             // The enabled (active) plugin names, lowercased - drives which plugins the
             // LOOT report covers and what counts as a missing master.
             let enabled_lower: std::collections::HashSet<String> = list
@@ -3052,7 +3120,9 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .filter(|p| p.enabled)
                 .map(|p| p.name.to_ascii_lowercase())
                 .collect();
-            app.status = Some("Sorting plugins with LOOT...".to_string());
+            app.sorting = true;
+            app.status =
+                Some("Sorting plugins with LOOT (updating the masterlist)...".to_string());
             return Task::perform(
                 async move {
                     // `is_supported(id)` was checked above and loot_support is a pure
@@ -3067,23 +3137,35 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, true)
                         .map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");
-                    let order = eidos_loot::sort(&id, &install, &local_dir, &plugins, &ml, &pre, Some(&userlist))
-                        .map_err(|e| e.to_string())?;
+                    // One view, used by both calls, so the report can never be
+                    // built from a different picture than the sort.
+                    let view = eidos_loot::GameView {
+                        game_id: &id,
+                        game_path: &install,
+                        local_path: &local_dir,
+                        plugins: &plugins,
+                        mod_dirs: &mod_dirs,
+                        masterlist: &ml,
+                        prelude: &pre,
+                        userlist: Some(&userlist),
+                    };
+                    let order = eidos_loot::sort(&view).map_err(|e| e.to_string())?;
                     // Build the post-sort report (general messages + per-plugin
                     // missing masters / messages / dirty info) for the modal, the
                     // same way MO2 shows its LOOT dialog after a sort. This is
                     // advisory: a report failure must NOT discard the successful
                     // sort, so it is an inner Result the handler tolerates.
-                    let report = eidos_loot::report(
-                        &id, &install, &local_dir, &plugins, &enabled_lower, &ml, &pre, Some(&userlist),
-                    )
-                    .map_err(|e| e.to_string());
+                    let report =
+                        eidos_loot::report(&view, &enabled_lower).map_err(|e| e.to_string());
                     Ok((order, report))
                 },
                 Message::PluginsSorted,
             );
         }
         Message::PluginsSorted(result) => {
+            // Cleared on EVERY path, including the failures below, or a single
+            // bad sort would leave the button dead for the rest of the session.
+            app.sorting = false;
             let (sorted, report_res) = match result {
                 Ok(x) => x,
                 Err(e) => {
@@ -3134,6 +3216,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let held = if pinned > 0 { format!(" ({pinned} pinned position(s) kept)") } else { String::new() };
             let written =
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
+            let landed = written.is_ok();
             app.status = Some(match written {
                 Ok(_) => {
                     if changed == 0 {
@@ -3151,6 +3234,15 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     format!("Sorted, but writing the load order failed: {e}")
                 }
             });
+            // A refused write means the sort was rolled back and the list on
+            // screen is the one from disk. Popping the report here would present
+            // advice about an order that no longer exists, on top of a dialog
+            // whose very appearance reads as success - so the failure would be
+            // announced by a success-shaped modal. The status line already says
+            // what went wrong; leave it standing.
+            if !landed {
+                return Task::none();
+            }
             // Show the LOOT report (MO2 always pops its dialog after a sort), so the
             // user sees missing masters / warnings / cleaning advice - or a clean bill.
             // The order was already applied above; a report failure only costs the
@@ -6614,12 +6706,24 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(12.0));
     if loot_ok {
-        top = top.push(
-            button(text("Sort with LOOT").size(11.0))
-                .padding([3, 8])
-                .on_press(Message::SortPlugins)
-                .style(button::secondary),
-        );
+        // No `on_press` while a sort runs, nor while a run is tracked: the button
+        // greys itself. That is the only sign of work a multi-second masterlist
+        // download otherwise gives, and the only sign that a session still holds
+        // the load-order files - the handler refused both cases already, but a
+        // live-looking button that answers with a status line reads as broken.
+        let busy = app.sorting || app.running.is_some();
+        let label = if app.sorting {
+            "Sorting..."
+        } else if app.running.is_some() {
+            "Sort with LOOT (game running)"
+        } else {
+            "Sort with LOOT"
+        };
+        let mut b = button(text(label).size(11.0)).padding([3, 8]).style(button::secondary);
+        if !busy {
+            b = b.on_press(Message::SortPlugins);
+        }
+        top = top.push(b);
     }
     let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
@@ -6702,9 +6806,13 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .as_ref()
             .map(|s| s.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(&p.name)))
             .unwrap_or(false);
+        // Creation Club content is loaded by the engine from the .ccc file, so
+        // it is as immovable and as un-togglable as a base-game master - and has
+        // to look it, or the row invites clicks that can do nothing.
+        let engine_owned = is_primary || list.implicit.contains(&p.name.to_ascii_lowercase());
         // MO2-style checkbox. A checkbox with no `on_toggle` renders disabled/greyed,
         // which is exactly the look for the non-togglable cases.
-        let toggle: Element<'a, Message> = if is_primary {
+        let toggle: Element<'a, Message> = if engine_owned {
             // A forced game master: always on, never togglable (checked + greyed).
             checkbox("", true).size(15).into()
         } else if p.force_disabled {
@@ -6730,7 +6838,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // The pin (MO2's locked order). A primary master is already nailed to the
         // top by the engine, so offering to pin it would be theatre.
         let locked = list.is_locked(i);
-        let pin: Element<'a, Message> = if is_primary {
+        let pin: Element<'a, Message> = if engine_owned {
             text("").width(Length::Fixed(26.0)).into()
         } else {
             button(text(if locked { "[*]" } else { "[ ]" }).size(10.0))
@@ -6748,7 +6856,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             format!("Origin: {}", p.origin_mod)
         };
-        if is_primary {
+        if engine_owned {
             tip.push_str("\nThe game loads this plugin itself: it cannot be moved or disabled.");
         }
         if !p.masters.is_empty() {

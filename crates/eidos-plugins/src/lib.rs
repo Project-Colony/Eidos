@@ -544,8 +544,10 @@ impl PluginList {
     /// per row on every frame, so the difference matters.
     pub fn can_move(&self, index: usize, up: bool, spec: &GameSpec) -> bool {
         let Some(me) = self.plugins.get(index) else { return false };
-        let is_primary =
-            |n: &str| spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n));
+        let is_primary = |n: &str| {
+            spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n))
+                || self.implicit.contains(&n.to_ascii_lowercase())
+        };
         if is_primary(&me.name) {
             return false;
         }
@@ -663,8 +665,15 @@ impl PluginList {
     ) -> Option<MovableRange> {
         let me = self.plugins.get(index)?;
         let len = self.plugins.len();
-        let is_primary =
-            |n: &str| spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n));
+        // Creation Club content is loaded by the ENGINE from the .ccc file, at a
+        // position Eidos does not choose and never writes. Treating it as
+        // ordinary let the user drag it, accepted the drop, wrote it out, and
+        // then the next discovery put it back where the engine says - a move
+        // that looked like it worked and silently was not.
+        let is_primary = |n: &str| {
+            spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n))
+                || self.implicit.contains(&n.to_ascii_lowercase())
+        };
         if is_primary(&me.name) {
             return Some(MovableRange {
                 lo: index,
@@ -1526,6 +1535,39 @@ mod tests {
         let r = l.movable_range(4, &se()).unwrap();
         assert_eq!((r.lo, r.hi), (4, 6));
         assert!(!r.is_stuck(4));
+    }
+
+    #[test]
+    fn creation_club_content_cannot_be_dragged_anywhere() {
+        // The engine loads these from the .ccc file and Eidos deliberately keeps
+        // them OUT of plugins.txt, so there is no position for a drag to record.
+        // Treating them as ordinary rows accepted the drop, wrote the order out,
+        // and let the next discovery quietly put them back: a move that looked
+        // like it worked and never did.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("ccBGSSSE001-Fish.esm", &[]),
+                p("Mod.esp", &[]),
+                p("Other.esp", &[]),
+            ],
+            implicit: ["ccbgssse001-fish.esm".to_string()].into_iter().collect(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        let r = l.movable_range(1, &se()).unwrap();
+        assert!(r.is_stuck(1));
+        assert!(!l.can_move(1, true, &se()));
+        assert!(!l.can_move(1, false, &se()));
+        assert!(!l.move_plugins_to(&[1], 0, &se()));
+        assert!(!l.move_plugins_to(&[1], 3, &se()));
+        assert_eq!(names(&l), ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Mod.esp", "Other.esp"]);
+
+        // Real mods next to it are still free to move around each other.
+        assert!(l.movable_range(2, &se()).is_some_and(|r| !r.is_stuck(2)));
+        assert!(l.move_plugins_to(&[2], 4, &se()));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Other.esp", "Mod.esp"]);
     }
 
     #[test]

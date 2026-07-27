@@ -110,6 +110,11 @@ fn prepare_plugins(
     // supplies the flags (it deliberately omits the primaries and Creations, so
     // it cannot order them).
     list.apply_prefix_state(&state_dir, &spec);
+    // The pinned positions are part of that saved state. Loading them only in
+    // the GUI made a pin a window decoration: this pass rewrites the order right
+    // before the game starts, so an unpinned launch silently handed the engine a
+    // load order the user had explicitly nailed down.
+    list.locked = prof.read_locked_order();
     list.refresh(&spec);
 
     for (p, m) in list.missing_masters() {
@@ -1464,6 +1469,9 @@ fn cmd_sort(args: &[String]) {
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
     list.apply_prefix_state(&state_dir, &spec);
+    // Pins resist LOOT here exactly as they do in the window, or `eidos sort`
+    // would quietly undo what the GUI promised to hold.
+    list.locked = inst.active().read_locked_order();
     list.refresh(&spec);
 
     if list.plugins.is_empty() {
@@ -1486,18 +1494,26 @@ fn cmd_sort(args: &[String]) {
     // Hand LOOT every discovered plugin by (name, real resolved path).
     let plugins: Vec<(String, PathBuf)> =
         list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+    // And where those plugins actually live: under Eidos the game's own Data dir
+    // holds only vanilla, so without these every file-conditioned masterlist
+    // rule is evaluated against a tree the mods are not in. Highest priority
+    // first, Overwrite ahead of all, as the union resolves.
+    let mut mod_dirs: Vec<PathBuf> = vec![inst.overwrite_dir()];
+    mod_dirs.extend(inst.load_order());
 
-    let sorted = match eidos_loot::sort(
-        id,
-        &game.install_path,
+    let view = eidos_loot::GameView {
+        game_id: id,
+        game_path: &game.install_path,
         // The PROFILE dir: it is the load-order authority now; the prefix copy is
         // a shadow that can be stale.
-        &state_dir,
-        &plugins,
-        &masterlist,
-        &prelude,
-        Some(&userlist),
-    ) {
+        local_path: &state_dir,
+        plugins: &plugins,
+        mod_dirs: &mod_dirs,
+        masterlist: &masterlist,
+        prelude: &prelude,
+        userlist: Some(&userlist),
+    };
+    let sorted = match eidos_loot::sort(&view) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("LOOT sort failed: {e}");

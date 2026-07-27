@@ -112,7 +112,9 @@ pub fn ensure_masterlist(
 
 fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
     // Bounded timeouts: a stalled connection must fail the fetch, not hang the
-    // caller forever (the GUI sorts off-thread but its Sort button stays greyed).
+    // caller forever. It would hang more than the fetch: the GUI sorts on iced's
+    // executor, which is smol's single-threaded one, so a stalled download also
+    // holds up every other Task and every timer subscription behind it.
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(60))
@@ -148,20 +150,15 @@ fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
 /// the game install dir; `game_local_path` is the prefix's AppData/Local game dir
 /// (where `plugins.txt`/`loadorder.txt` live). Conditions in the masterlist are
 /// evaluated against `game_path`.
-pub fn sort(
-    game_id: &str,
-    game_path: &Path,
-    game_local_path: &Path,
-    plugins: &[(String, PathBuf)],
-    masterlist: &Path,
-    prelude: &Path,
-    userlist: Option<&Path>,
-) -> Result<Vec<String>, LootError> {
+pub fn sort(view: &GameView<'_>) -> Result<Vec<String>, LootError> {
+    let (game_id, plugins) = (view.game_id, view.plugins);
+    let (masterlist, prelude, userlist) = (view.masterlist, view.prelude, view.userlist);
     let (game_type, _repo) =
         loot_support(game_id).ok_or_else(|| LootError::Unsupported(game_id.to_string()))?;
 
-    let mut game = Game::with_local_path(game_type, game_path, game_local_path)
+    let mut game = Game::with_local_path(game_type, view.game_path, view.local_path)
         .map_err(|e| LootError::Loot(e.to_string()))?;
+    set_mod_dirs(&mut game, view.mod_dirs)?;
 
     {
         let db = game.database();
@@ -181,6 +178,50 @@ pub fn sort(
 
     let names: Vec<&str> = plugins.iter().map(|(n, _)| n.as_str()).collect();
     game.sort_plugins(&names).map_err(|e| LootError::Loot(e.to_string()))
+}
+
+/// Everything LOOT needs to look at one game: who it is, where it lives, and
+/// which trees count as its data.
+///
+/// A struct rather than nine positional parameters because `sort` and `report`
+/// must be given the SAME view - a report built from a different set of data
+/// paths than the sort would explain a decision that was never made - and
+/// because two adjacent `&Path` arguments are a swap waiting to happen.
+#[derive(Debug, Clone, Copy)]
+pub struct GameView<'a> {
+    pub game_id: &'a str,
+    /// The game install directory.
+    pub game_path: &'a Path,
+    /// Where the load-order files live (the profile's plugins dir).
+    pub local_path: &'a Path,
+    /// Every plugin by `(name, real resolved path)`.
+    pub plugins: &'a [(String, PathBuf)],
+    /// The mod trees, highest priority first. See [`set_mod_dirs`].
+    pub mod_dirs: &'a [PathBuf],
+    pub masterlist: &'a Path,
+    pub prelude: &'a Path,
+    pub userlist: Option<&'a Path>,
+}
+
+/// Tell libloot where the mods live.
+///
+/// Without this, LOOT sees only the game's own `Data` directory - and under
+/// Eidos that directory holds nothing but vanilla, because the mods are separate
+/// folders that only become one tree inside the launch namespace. Every
+/// masterlist rule conditioned on a file (`file("SomeMod.esp")`,
+/// `checksum(...)`, the dirty-plugin and incompatibility conditions) therefore
+/// evaluated FALSE, and LOOT sorted with a fraction of the metadata it has. It
+/// looked like LOOT simply had no opinion about most plugins.
+///
+/// Highest priority first: libloot uses these in the order given, and they take
+/// precedence over the game's main data path - the same direction the union
+/// resolves in.
+fn set_mod_dirs(game: &mut Game, dirs: &[PathBuf]) -> Result<(), LootError> {
+    if dirs.is_empty() {
+        return Ok(());
+    }
+    game.set_additional_data_paths(dirs.to_vec())
+        .map_err(|e| LootError::Loot(e.to_string()))
 }
 
 /// Severity of a LOOT plugin message, mirroring libloot's `MessageType` without
@@ -483,20 +524,19 @@ fn convert_messages(messages: &[libloot::metadata::Message]) -> Vec<LootMessage>
 // enabled set; splitting these into a struct would only obscure the call site.
 #[allow(clippy::too_many_arguments)]
 pub fn report(
-    game_id: &str,
-    game_path: &Path,
-    game_local_path: &Path,
-    plugins: &[(String, PathBuf)],
+    view: &GameView<'_>,
     enabled_lower: &std::collections::HashSet<String>,
-    masterlist: &Path,
-    prelude: &Path,
-    userlist: Option<&Path>,
 ) -> Result<LootReport, LootError> {
+    let (game_id, plugins) = (view.game_id, view.plugins);
+    let (masterlist, prelude, userlist) = (view.masterlist, view.prelude, view.userlist);
     let (game_type, _repo) =
         loot_support(game_id).ok_or_else(|| LootError::Unsupported(game_id.to_string()))?;
 
-    let mut game = Game::with_local_path(game_type, game_path, game_local_path)
+    let mut game = Game::with_local_path(game_type, view.game_path, view.local_path)
         .map_err(|e| LootError::Loot(e.to_string()))?;
+    // The report's conditions need the same view of the world as the sort, or a
+    // plugin could be sorted by a rule the report then says does not apply.
+    set_mod_dirs(&mut game, view.mod_dirs)?;
 
     {
         let db = game.database();
