@@ -2824,6 +2824,15 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SortPlugins => {
+            // Refused up front while the game runs: the sort's async completion
+            // would only be refused by the lock anyway (and resynced), so
+            // starting it just wastes a masterlist download to throw the result
+            // away - and shows a "Sorting..." status for a sort that cannot land.
+            if app.running.is_some() {
+                app.status =
+                    Some("Cannot sort while the game is running.".to_string());
+                return Task::none();
+            }
             // Gather everything the (static) async closure needs, cloned out of
             // `app`, then run the masterlist fetch + LOOT sort off the UI thread.
             let Some(game) = selected_game(app) else { return Task::none() };
@@ -3669,9 +3678,23 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 if let Some(save) = app.saves.get(i) {
                     let name = save.filename.clone();
                     match std::fs::remove_file(&save.path) {
-                        Ok(()) => app.status = Some(format!("Deleted save '{name}'.")),
+                        Ok(()) => {
+                            // The co-save travels with its save: leaving it made
+                            // an orphan the Saves tab cannot show, the user
+                            // cannot delete, and the cloud sync pushed forever.
+                            for co in eidos_instance::cosave_siblings(&save.path) {
+                                let _ = std::fs::remove_file(co);
+                            }
+                            app.status = Some(format!("Deleted save '{name}'."))
+                        }
                         // Already gone is success enough; surface real errors.
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            // The save may be gone while its co-save is not
+                            // (deleted in-game, which knows nothing of co-saves):
+                            // clean those up here too or they orphan invisibly.
+                            for co in eidos_instance::cosave_siblings(&save.path) {
+                                let _ = std::fs::remove_file(co);
+                            }
                             app.status = Some(format!("Save '{name}' was already gone."));
                         }
                         Err(e) => app.status = Some(format!("Could not delete '{name}': {e}")),
@@ -5853,9 +5876,12 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
     // into the bound profile dir): the pre-session snapshot noticed, and the fix
     // is one click. Also fires when the user deliberately disabled most plugins
     // in-game - they dismiss it by playing on; restoring is never automatic.
-    if let Some(inst) = app.created.as_ref() {
+    if let (Some(inst), Some(spec)) = (
+        app.created.as_ref(),
+        selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)),
+    ) {
         let prof = inst.active();
-        if let Some(reason) = prof.plugin_loss_since_snapshot() {
+        if let Some(reason) = prof.plugin_loss_since_snapshot(&spec) {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
                 title: "The last session damaged the plugin active set".to_string(),
@@ -6154,7 +6180,7 @@ fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io:
         // "session damaged the active set" card, so the snapshot follows it -
         // EXCEPT while damage is currently flagged, where refreshing would
         // destroy the only copy that can still restore the pre-damage state.
-        let damage_flagged = prof.plugin_loss_since_snapshot().is_some();
+        let damage_flagged = prof.plugin_loss_since_snapshot(spec).is_some();
         list.write_load_order(&prof.plugins_state_dir(), spec)?;
         if !damage_flagged {
             let _ = prof.snapshot_plugin_state();

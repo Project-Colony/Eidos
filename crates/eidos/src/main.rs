@@ -68,7 +68,7 @@ fn prepare_plugins(
     // First run: adopt the prefix's existing state (plugins.txt, loadorder.txt,
     // and the sidecars the game keeps next to them) into the profile, so the
     // bound dir never shows the game less than the dir it wrote.
-    match prof.seed_plugin_state(&prefix_dir) {
+    match prof.seed_plugin_state(&prefix_dir, &spec) {
         Ok(n) if n > 0 => {
             eprintln!("eidos play: adopted {n} plugin-state file(s) into profile '{}'", prof.name)
         }
@@ -94,7 +94,8 @@ fn prepare_plugins(
     // Judge the state the LAST session left, BEFORE this launch rewrites
     // anything - the snapshot-keeping decision below depends on it, and taking
     // the measurement after our own write poisoned it in both directions.
-    let session_damage = prof.plugin_loss_since_snapshot();
+    let session_damage = eidos_plugins::GameSpec::for_id(id)
+        .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
 
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
@@ -130,7 +131,8 @@ fn prepare_plugins(
             // written, the shadow below must not run - it would push a state that
             // exists nowhere else onto the prefix, destroying the real files.
             eprintln!(
-                "eidos play: WARNING - could not write the profile plugins.txt ({e});                  plugin management is OFF for this run and the prefix files are left alone"
+                "eidos play: WARNING - could not write the profile plugins.txt ({e}); plugin \
+                 management is OFF for this run and the prefix files are left alone"
             );
             return None;
         }
@@ -222,7 +224,25 @@ fn prepare_inis(
         let fragments = inst.enabled_ini_tweaks(&inst.modlist());
         // The profile's own file counts even when no mod contributes one.
         if !fragments.is_empty() || prof.tweaks_path().is_file() {
+            // First run against a fresh prefix: nothing seeded, nothing owned,
+            // so every tweak is skipped below. Self-heals one session later (the
+            // game writes its INIs, the capture adopts them) - but silently
+            // skipping the user's own initweaks.ini deserves a line of honesty.
+            if !ini_files.iter().any(|f| prof.ini_path(f).is_file()) {
+                eprintln!(
+                    "eidos play: INI tweaks skipped this run - profile '{}' owns no INIs yet \
+                     (they are adopted after the first session)",
+                    prof.name
+                );
+            }
             for f in ini_files {
+                // Only files the profile OWNS (and therefore deployed above).
+                // Applying fragments to every name in the game's INI set
+                // materialised files the profile never had - and a later capture
+                // then adopted the invention as the user's own config.
+                if !prof.ini_path(f).is_file() {
+                    continue;
+                }
                 match prof.apply_ini_tweaks(&docs.join(f), &fragments) {
                     Ok(rec) if !rec.is_empty() => {
                         eprintln!("eidos play: applied {} INI tweak(s) to {f}", rec.len());
@@ -300,8 +320,10 @@ fn sync_saves_for_cloud(
         .flatten()
         .filter_map(|e| {
             let path = e.path();
-            let lower = e.file_name().to_string_lossy().to_ascii_lowercase();
-            if !(lower.ends_with(".ess") || lower.ends_with(".skse")) || !path.is_file() {
+            // The shared predicate: hard-coding .ess/.skse here killed the cloud
+            // backup for the Fallout and Starfield families.
+            if !eidos_instance::is_save_data(&e.file_name().to_string_lossy()) || !path.is_file()
+            {
                 return None;
             }
             // An unreadable mtime sorts oldest rather than being skipped: an
@@ -719,12 +741,26 @@ fn run_through_view(
         // change, and it beats the tweak the same way the profile's own tweak file
         // beats a mod's.
         for (file, record) in &prepared.tweaked {
-            let path = prof.ini_path(file);
-            let Ok(text) = std::fs::read_to_string(&path) else { continue };
-            let restored = eidos_instance::untweak_ini(&text, record);
-            if restored != text {
-                if let Err(e) = std::fs::write(&path, restored) {
-                    eprintln!("eidos: WARNING - could not un-apply INI tweaks in {file}: {e}");
+            // Both copies: the captured PROFILE copy (so the profile keeps its
+            // own values), and the deployed PREFIX copy (so the prefix does not
+            // keep mod tweaks baked in - a NEW profile seeds its baseline from
+            // the prefix, and used to inherit every mod tweak as if the user had
+            // chosen those settings).
+            for path in [prof.ini_path(file), prepared.docs.join(file)] {
+                // Encoding-aware, or the pass silently no-ops on any INI holding
+                // one CP1252 byte - leaving the tweaks baked in, the exact
+                // failure this loop exists to prevent.
+                let Some((text, cp1252)) = eidos_instance::read_text_lossy(&path) else {
+                    continue;
+                };
+                let restored = eidos_instance::untweak_ini(&text, record);
+                if restored != text {
+                    if let Err(e) = eidos_instance::write_text(&path, &restored, cp1252) {
+                        eprintln!(
+                            "eidos: WARNING - could not un-apply INI tweaks in {}: {e}",
+                            path.display()
+                        );
+                    }
                 }
             }
         }
@@ -735,12 +771,15 @@ fn run_through_view(
     // crash artifact written straight into the profile) is flagged against the
     // pre-session snapshot, loudly, with the restore one GUI click away.
     if plugin_bind.is_some() {
-        if let Some(reason) = prof.plugin_loss_since_snapshot() {
+        let post_loss = eidos_plugins::GameSpec::for_id(id)
+            .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
+        if let Some(reason) = post_loss {
             eprintln!(
                 "eidos: WARNING - plugins.txt now {reason} relative to the pre-session snapshot \
-                 kept at {}. Restore it from the GUI Diagnostics tab if this was a crash, or \
-                 accept the current set there if it was deliberate.",
-                prof.plugins_snapshot_path().display()
+                 kept at {snap}. Restore it from the GUI Diagnostics tab if this was a crash, or \
+                 accept the current set there - without the GUI, restore by copying that file \
+                 over plugins.txt, or accept by deleting it.",
+                snap = prof.plugins_snapshot_path().display()
             );
         }
     }
@@ -1413,7 +1452,7 @@ fn cmd_sort(args: &[String]) {
             exit(1);
         }
     };
-    if let Err(e) = prof.seed_plugin_state(&local_dir) {
+    if let Err(e) = prof.seed_plugin_state(&local_dir, &spec) {
         eprintln!("Cannot sort: adopting the plugin state into the profile failed ({e}).");
         exit(1);
     }

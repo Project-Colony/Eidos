@@ -27,7 +27,10 @@ mod tools;
 pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
-pub use profile::{untweak_ini, ListTrust, Profile, SaveEntry, TweakedKey};
+pub use profile::{
+    cosave_siblings, is_save_data, is_save_listing, read_text_lossy, untweak_ini, write_text,
+    ListTrust, Profile, SaveEntry, TweakedKey,
+};
 pub use settings::{Settings, Theme};
 pub use tools::{
     default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, write_tools,

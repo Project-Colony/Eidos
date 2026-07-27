@@ -15,3 +15,6 @@ eidos-plugins = { path = "../eidos-plugins" }
 # flock(2) for the cross-process instance lock: the GUI, the CLI and a running
 # `eidos play` are separate processes writing the same profile files.
 libc = "0.2"
+# Game INIs are Windows ANSI (CP1252) as often as UTF-8; reading them as strict
+# UTF-8 turned one accented byte into "the file is empty" in three places.
+encoding_rs = "0.8"

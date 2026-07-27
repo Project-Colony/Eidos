@@ -1167,6 +1167,7 @@ version = "0.0.0"
 dependencies = [
  "eidos-ini",
  "eidos-plugins",
+ "encoding_rs",
  "libc",
 ]
 

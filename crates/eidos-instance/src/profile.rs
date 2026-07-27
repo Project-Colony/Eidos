@@ -107,13 +107,39 @@ impl Profile {
     /// there - because the whole directory is bind-mounted at launch, and a
     /// profile dir missing those would present the game an emptier directory
     /// than the one it wrote them into. Returns how many files were seeded.
-    pub fn seed_plugin_state(&self, src_dir: &Path) -> io::Result<u32> {
+    pub fn seed_plugin_state(
+        &self,
+        src_dir: &Path,
+        spec: &eidos_plugins::GameSpec,
+    ) -> io::Result<u32> {
         let dst_dir = self.plugins_state_dir();
         let mut n = 0;
         for name in ["plugins.txt", "loadorder.txt"] {
             let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
             let dst = dst_dir.join(name);
             if eidos_plugins::newest_variant(&dst_dir, name).is_none() {
+                // Adopt VERBATIM, always. An earlier version refused a file that
+                // looked like a crash artifact - but "refusing" did not leave the
+                // state alone: the same run then derived everything-ENABLED from
+                // discovery and shadow-wrote that over the prefix, destroying a
+                // deliberate all-off state. And the refused signature (names
+                // listed, no `*`) is exactly what every HEALTHY PlainList
+                // plugins.txt looks like, so Fallout and Skyrim LE setups were
+                // being refused wholesale. Adoption is non-destructive in every
+                // case: profile == prefix, prefix bytes untouched, and a wrong
+                // founding state is one GUI re-enable away. So: adopt, and for
+                // Asterisk games - where the signature MEANS something - warn.
+                if name == "plugins.txt"
+                    && spec.mechanism == eidos_plugins::LoadOrderMechanism::Asterisk
+                    && looks_like_crash_artifact(&src)
+                {
+                    eprintln!(
+                        "eidos: the adopted plugins.txt lists plugins but activates none - if \
+                         that is not how you left it, a crash wrote it; re-enable your \
+                         plugins in the Plugins tab of profile '{}'",
+                        self.name
+                    );
+                }
                 copy_atomic(&src, &dst)?;
                 // Preserve the source mtimes: which of the two files is newer is
                 // a real signal (the freshness tiebreak in apply_prefix_state),
@@ -179,13 +205,16 @@ impl Profile {
     /// Whether the current `plugins.txt` lost too much of the pre-session active
     /// set to look like an edit (see [`active_loss`]) - the post-session half of
     /// the backstop. `None` means healthy, no snapshot, or no state.
-    pub fn plugin_loss_since_snapshot(&self) -> Option<String> {
+    pub fn plugin_loss_since_snapshot(
+        &self,
+        spec: &eidos_plugins::GameSpec,
+    ) -> Option<String> {
         let snap = self.plugins_snapshot_path();
         if !snap.is_file() {
             return None;
         }
         let current = eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt")?;
-        active_loss(&snap, &current)
+        active_loss(&snap, &current, spec.mechanism)
     }
 
     /// Put the pre-session `plugins.txt` back - the restore half of the backstop,
@@ -254,13 +283,72 @@ impl Profile {
         let mut n = 0;
         for f in ini_files {
             let src = src_dir.join(f);
-            if src.is_file() {
-                // Atomic, because this runs right after the game exits and the
-                // profile copy is the only durable one: a torn capture is a lost
-                // config, not a transient.
-                copy_atomic(&src, &self.ini_path(f))?;
-                n += 1;
+            if !src.is_file() {
+                continue;
             }
+            // The same skepticism the plugin capture has had all along, at last
+            // applied to the INIs: a game killed mid-write leaves an empty or
+            // truncated file, and committing it silently destroys the profile's
+            // only copy of the user's settings. Empty is never a real INI, and a
+            // capture under half the profile copy's size is a wreck, not an edit
+            // (in-game settings changes move an INI by bytes, not halves).
+            let src_len = fs::metadata(&src).map(|m| m.len()).unwrap_or(0);
+            let dst = self.ini_path(f);
+            let dst_len = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
+            // A crash truncation is random; the engine's own compact rewrite of
+            // a fat INI is STABLE. If the refused size repeats within 10% on the
+            // next run, it is the engine's real format and refusing forever
+            // would mean in-game settings never persist again.
+            let refused_marker = self.dir().join(format!("{f}.refused-len"));
+            let last_refused: Option<u64> =
+                fs::read_to_string(&refused_marker).ok().and_then(|t| t.trim().parse().ok());
+            let stable_repeat = src_len > 0
+                && last_refused.is_some_and(|prev| {
+                    // Relative tolerance only: a floor let "empty then anything
+                    // small" count as a repeat. Empty never records a marker
+                    // (an empty INI is never a real format), so prev > 0 here.
+                    prev > 0 && src_len.abs_diff(prev) <= (prev / 10).max(16)
+                });
+            if src_len == 0 && dst_len == 0 {
+                // Both empty: BethINI-style placeholder Custom INIs. Nothing to
+                // capture, nothing to warn about - the old message called a
+                // 0-vs-0 no-op a crash artifact on every single run, and
+                // promised a repeat-acceptance that (rightly) can never fire
+                // for empty files.
+                continue;
+            }
+            if (src_len == 0 && dst_len > 0)
+                || (dst_len > 0 && src_len < dst_len / 2 && !stable_repeat)
+            {
+                eprintln!(
+                    "eidos: NOT capturing {f} back into profile '{}': the prefix copy is {src_len} \
+                     bytes against the profile's {dst_len} - a crash artifact, not an edit. \
+                     The profile keeps its own copy (a repeat at this size will be accepted).",
+                    self.name
+                );
+                if src_len > 0 {
+                    let _ = fs::write(&refused_marker, src_len.to_string());
+                }
+                continue;
+            }
+            if stable_repeat {
+                // The repeat is being accepted on a heuristic, and the sources
+                // that DEFEAT the heuristic are deterministic wrecks (same-point
+                // exit crashes). Stash what the acceptance displaces, so being
+                // wrong costs a restore instead of the only intact copy.
+                let _ = copy_atomic(&dst, &self.dir().join(format!("{f}.pre-accept")));
+                eprintln!(
+                    "eidos: accepting {f}'s stable compact rewrite into profile '{}'; the \
+                     displaced copy is kept as {f}.pre-accept in the profile folder",
+                    self.name
+                );
+            }
+            let _ = fs::remove_file(&refused_marker);
+            // Atomic, because this runs right after the game exits and the
+            // profile copy is the only durable one: a torn capture is a lost
+            // config, not a transient.
+            copy_atomic(&src, &dst)?;
+            n += 1;
         }
         Ok(n)
     }
@@ -286,17 +374,29 @@ impl Profile {
         fragments: &[PathBuf],
     ) -> io::Result<Vec<TweakedKey>> {
         let mut record: Vec<TweakedKey> = Vec::new();
-        let mut text = fs::read_to_string(deployed_ini).unwrap_or_default();
+        // NEVER "unreadable = empty". That equation deployed the tweak fragment
+        // ALONE as the whole INI whenever the real file held one CP1252 byte -
+        // deterministically, every run, which even defeated the size-based
+        // capture guard downstream (a stable artifact looks like a format).
+        let Some((mut text, cp1252)) = read_text_lossy(deployed_ini) else {
+            eprintln!(
+                "eidos: WARNING - {} is unreadable; INI tweaks skipped for it this run",
+                deployed_ini.display()
+            );
+            return Ok(record);
+        };
         let mut any = false;
         for frag in fragments.iter().chain(std::iter::once(&self.tweaks_path())) {
-            let Ok(body) = fs::read_to_string(frag) else { continue };
+            let Some((body, _)) = read_text_lossy(frag) else { continue };
             any |= merge_tweak(&mut text, &body, &mut record);
         }
         if any {
             if let Some(parent) = deployed_ini.parent() {
                 fs::create_dir_all(parent)?;
             }
-            fs::write(deployed_ini, &text)?;
+            // Same encoding as found: the game reads ANSI, and a silent UTF-8
+            // conversion would mojibake every accented value in-game.
+            write_text(deployed_ini, &text, cp1252)?;
         }
         Ok(record)
     }
@@ -315,21 +415,103 @@ impl Profile {
     /// Returns how many save files were copied (0 if the profile already has any).
     pub fn seed_saves(&self, src_saves: &Path) -> io::Result<u32> {
         let dst = self.saves_dir();
-        let has_saves = fs::read_dir(&dst).map(|mut it| it.next().is_some()).unwrap_or(false);
-        if has_saves {
-            return Ok(0);
-        }
-        let Ok(rd) = fs::read_dir(src_saves) else {
-            return Ok(0);
+        // "Already seeded" is a persistent MARKER, not the directory being
+        // non-empty. The emptiness probe re-armed the seeding whenever the user
+        // emptied the dir from the GUI - resurrecting years-old prefix saves
+        // with fresh mtimes that then sorted above the real playthrough - and a
+        // dir holding only a stray subdirectory blocked adoption forever.
+        let marker = dst.join(".seeded");
+        // Two marker states: "partial" means a previous adoption hit unreadable
+        // files and the missing ones should be retried; anything else (including
+        // the empty marker older binaries wrote) means done. Without the state,
+        // the non-empty-dir shortcut below re-stamped a partial adoption as
+        // complete on the very next run.
+        let mut pending: std::collections::HashSet<String> = Default::default();
+        let resuming = match fs::read_to_string(&marker) {
+            Ok(state) => {
+                let mut lines = state.lines();
+                if lines.next().map(str::trim) != Some("partial") {
+                    return Ok(0);
+                }
+                pending = lines.map(|l| l.trim().to_ascii_lowercase()).collect();
+                true
+            }
+            Err(_) => false,
         };
         fs::create_dir_all(&dst)?;
-        let mut n = 0;
-        for e in rd.flatten() {
-            if e.path().is_file() {
-                copy_atomic(&e.path(), &dst.join(e.file_name()))?;
-                n += 1;
+        if !resuming {
+            let already =
+                fs::read_dir(&dst).map(|it| it.flatten().next().is_some()).unwrap_or(false);
+            if already {
+                // Pre-marker profiles: their saves are the adoption. Record and stop.
+                let _ = fs::write(&marker, b"done");
+                return Ok(0);
             }
         }
+        let Ok(rd) = fs::read_dir(src_saves) else {
+            // NO marker: an absent or unreadable source is a transient (wrong
+            // drive not mounted, prefix not created yet), and stamping "done"
+            // here disarmed adoption forever before anything existed to adopt.
+            return Ok(0);
+        };
+        let mut n = 0;
+        let mut failed: Vec<String> = Vec::new();
+        let mut saw_any = false;
+        for e in rd.flatten() {
+            // Save data only, across every supported family (.ess/.fos/.sfs +
+            // co-saves): steam_autocloud.vdf and .bak files are not saves and
+            // used to show up in the Saves tab as one.
+            if !is_save_data(&e.file_name().to_string_lossy()) || !e.path().is_file() {
+                continue;
+            }
+            saw_any = true;
+            let to = dst.join(e.file_name());
+            if to.exists() {
+                continue; // adopted on a previous (partial) pass
+            }
+            if resuming && !pending.contains(&e.file_name().to_string_lossy().to_ascii_lowercase())
+            {
+                // A resume only fetches what FAILED last time. Re-copying every
+                // file missing from the profile resurrected saves the user had
+                // deliberately deleted since the first pass.
+                continue;
+            }
+            // One unreadable file must not abort the adoption of a whole
+            // playthrough - it used to, silently, mid-loop, and the partial
+            // profile then blocked completion forever via the emptiness probe.
+            if copy_atomic(&e.path(), &to).is_err() {
+                failed.push(e.file_name().to_string_lossy().into_owned());
+                continue;
+            }
+            // Keep the save's real date: the Saves tab sorts by it, and a copy
+            // stamped "now" made ancient saves sort above the live playthrough.
+            if let Ok(mtime) = e.metadata().and_then(|m| m.modified()) {
+                if let Ok(f) = fs::File::options().write(true).open(&to) {
+                    let _ = f.set_modified(mtime);
+                }
+            }
+            n += 1;
+        }
+        if !failed.is_empty() {
+            // The marker records WHICH files failed: the resume fetches exactly
+            // those, and stamping "done" over a partial adoption made the holes
+            // permanent - unfixable even by deleting the marker, since a
+            // non-empty dir also counted as adopted.
+            eprintln!(
+                "eidos: WARNING - {} save file(s) could not be adopted into profile '{}' \
+                 (unreadable); adopted {n}, will retry the rest next launch",
+                failed.len(),
+                self.name
+            );
+            let body = format!("partial\n{}", failed.join("\n"));
+            let _ = fs::write(&marker, body);
+        } else if saw_any {
+            let _ = fs::write(&marker, b"done");
+        }
+        // A readable dir holding NO save data writes no marker at all: Steam
+        // creates the Saves dir (with its autocloud sidecar) before the user
+        // ever saves, and stamping "done" then disarmed adoption forever for
+        // saves that appeared five minutes later.
         Ok(n)
     }
 
@@ -347,7 +529,10 @@ impl Profile {
                     return None;
                 }
                 let filename = e.file_name().into_string().ok()?;
-                if filename.starts_with('.') {
+                // Real saves only, for every supported family: the Saves tab
+                // listed steam_autocloud.vdf as a playthrough entry, and an
+                // .ess-only filter would blank the tab for Fallout/Starfield.
+                if filename.starts_with('.') || !is_save_listing(&filename) {
                     return None;
                 }
                 Some(SaveEntry {
@@ -597,14 +782,19 @@ const MAX_RELATIVE_DROP: f64 = 0.30;
 /// Why a capture would lose too much of the active set to be trusted, or `None`
 /// when it looks like a legitimate edit.
 ///
-/// Only fires on a LARGE loss from an already-large list: dropping a couple of
-/// plugins is exactly what a user does on purpose, while dropping most of a
-/// 200-plugin order is what a half-written crash artefact looks like. Both an
-/// absolute and a relative threshold must be crossed, so small lists are never
-/// second-guessed.
-fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
-    let before = count_actives(profile)?;
-    let after = count_actives(candidate)?;
+/// Fires on a total wipe at any size, on a large loss from a large list, and on
+/// a MAJORITY loss from any list (dropping a couple of plugins is what a user
+/// does on purpose; losing most of the actives is what crash artifacts look
+/// like at every size). Since the check became a warn-with-one-click-dismiss
+/// rather than a silent refusal, a rare false flag on a deliberate mass-disable
+/// costs one click; the old silent acceptance cost the load order.
+fn active_loss(
+    profile: &Path,
+    candidate: &Path,
+    mechanism: eidos_plugins::LoadOrderMechanism,
+) -> Option<String> {
+    let before = count_actives(profile, mechanism)?;
+    let after = count_actives(candidate, mechanism)?;
     if after >= before {
         return None;
     }
@@ -619,14 +809,93 @@ fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
     if after == 0 {
         return Some(format!("it clears the active set entirely ({before} plugin(s) lost)"));
     }
-    if before <= MIN_ACTIVES {
-        return None;
-    }
     let dropped = before - after;
     let relative = dropped as f64 / before as f64;
-    (dropped > MAX_ABSOLUTE_DROP && relative > MAX_RELATIVE_DROP).then(|| {
+    // Two proportional rules. The big-list rule is the original; the majority
+    // rule closes the hole underneath it: a partial crash artifact leaving 1 of
+    // 7 actives slid under the >10-dropped floor and was accepted unchallenged.
+    // Since the check became a warn-with-restore rather than a silent refusal,
+    // a rare false flag on a deliberate mass-disable costs one click on
+    // "Keep the current set" - the old silent acceptance cost the load order.
+    if dropped > MAX_ABSOLUTE_DROP && relative > MAX_RELATIVE_DROP {
+        return Some(format!(
+            "it drops {dropped} of {before} active plugins ({:.0}%)",
+            relative * 100.0
+        ));
+    }
+    (dropped > 2 && relative > 0.50).then(|| {
         format!("it drops {dropped} of {before} active plugins ({:.0}%)", relative * 100.0)
     })
+}
+
+/// The save-file extensions across the supported game families: Bethesda's
+/// `.ess` (Skyrim LE/SE), `.fos` (Fallout 3/NV/4) and `.sfs` (Starfield).
+const SAVE_EXTS: &[&str] = &["ess", "fos", "sfs"];
+/// Script-extender co-saves that travel WITH a save: same stem, own extension.
+const COSAVE_EXTS: &[&str] = &["skse", "f4se", "nvse", "fose", "sfse", "obse"];
+
+fn ext_of(name: &str) -> String {
+    name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default()
+}
+
+/// Save DATA: a save or its co-save - what the seed and the cloud sync move.
+/// An earlier filter hard-coded `.ess`/`.skse` and killed the entire save
+/// pipeline for the Fallout and Starfield families in one line.
+pub fn is_save_data(name: &str) -> bool {
+    let e = ext_of(name);
+    SAVE_EXTS.contains(&e.as_str()) || COSAVE_EXTS.contains(&e.as_str())
+}
+
+/// A save as the user thinks of one - what the Saves tab lists. Co-saves travel
+/// with their `.ess`/`.fos`/`.sfs` and are not shown separately.
+pub fn is_save_listing(name: &str) -> bool {
+    SAVE_EXTS.contains(&ext_of(name).as_str())
+}
+
+/// The co-save paths that belong to `save` (same stem, co-save extensions), for
+/// operations that must treat the pair as one unit - deleting a save while
+/// leaving its co-save made an invisible orphan the cloud sync pushed forever.
+pub fn cosave_siblings(save: &Path) -> Vec<PathBuf> {
+    let Some(stem) = save.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()) else {
+        return Vec::new();
+    };
+    let Some(dir) = save.parent() else { return Vec::new() };
+    // Case-insensitive on BOTH halves, like every other save predicate: the game
+    // wrote these on a filesystem it thought folded case, so `Quicksave.SKSE`
+    // next to `quicksave.ess` is normal - and an exact-case join recreated the
+    // invisible-orphan class this helper exists to close.
+    fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+            let Some((s, ext)) = name.rsplit_once('.') else { return false };
+            s == stem && COSAVE_EXTS.contains(&ext) && e.path().is_file()
+        })
+        .map(|e| e.path())
+        .collect()
+}
+
+/// Whether a plugins.txt has the signature of a crash artifact: several plugins
+/// LISTED, none active. A deliberate everything-off edit also matches - but at
+/// seed time there is no user history to defer to, and deriving from discovery
+/// beats founding a profile on a wreck.
+fn looks_like_crash_artifact(path: &Path) -> bool {
+    let Some(text) = eidos_plugins::read_decoded(path) else { return false };
+    let mut listed = 0usize;
+    let mut active = 0usize;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        listed += 1;
+        if line.starts_with('*') {
+            active += 1;
+        }
+    }
+    listed >= 3 && active == 0
 }
 
 /// Active (`*`-prefixed) entries in a plugins.txt, or `None` if unreadable.
@@ -636,9 +905,48 @@ fn active_loss(profile: &Path, candidate: &Path) -> Option<String> {
 /// for any list containing one accented plugin name - which made `active_loss`
 /// return `None` too, silently disarming the only guard between a crash artifact
 /// and the profile. A French load order is one translated mod away from that.
-fn count_actives(path: &Path) -> Option<usize> {
+fn count_actives(path: &Path, mechanism: eidos_plugins::LoadOrderMechanism) -> Option<usize> {
     let text = eidos_plugins::read_decoded(path)?;
-    Some(text.lines().filter(|l| l.trim_start().starts_with('*')).count())
+    let lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'));
+    Some(match mechanism {
+        // Asterisk: `*` marks active. Counting `*` on a PlainList file - where
+        // NO line ever has one - read every healthy Fallout list as 0 actives
+        // and every wipe as no-change, leaving those games without a backstop.
+        eidos_plugins::LoadOrderMechanism::Asterisk => {
+            lines.filter(|l| l.starts_with('*')).count()
+        }
+        // PlainList: every listed plugin IS active.
+        eidos_plugins::LoadOrderMechanism::PlainList => lines.count(),
+    })
+}
+
+/// Read a text file that may be UTF-8 or Windows ANSI (CP1252): game INIs come
+/// in both. Returns the text plus whether it was CP1252, so a rewrite can keep
+/// the encoding the GAME expects instead of silently converting the file.
+///
+/// Reading these with strict UTF-8 was a disease with three outbreaks: the
+/// plugins wipe-guard went silent, the tweak merge treated the whole INI as
+/// EMPTY (deploying the tweak fragment ALONE as the file), and the untweak pass
+/// no-op'd - each triggered by a single accented byte.
+pub fn read_text_lossy(path: &Path) -> Option<(String, bool)> {
+    let bytes = fs::read(path).ok()?;
+    match std::str::from_utf8(&bytes) {
+        Ok(t) => Some((t.to_string(), false)),
+        Err(_) => Some((encoding_rs::WINDOWS_1252.decode(&bytes).0.into_owned(), true)),
+    }
+}
+
+/// Write `text` back in the encoding [`read_text_lossy`] found it in.
+pub fn write_text(path: &Path, text: &str, cp1252: bool) -> io::Result<()> {
+    if cp1252 {
+        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode(text);
+        fs::write(path, &bytes)
+    } else {
+        fs::write(path, text)
+    }
 }
 
 /// Copy `src` to `dst` atomically: write a sibling `.tmp`, then rename over. A
@@ -876,7 +1184,23 @@ pub fn untweak_ini(text: &str, record: &[TweakedKey]) -> String {
     let mut out = text.to_string();
     for r in record {
         let current = eidos_ini::get_key(&out, &r.section, &r.key).map(|v| v.trim().to_string());
-        if current.as_deref() != Some(r.after.as_str()) {
+        // "Unchanged since the tweak" cannot be an exact-text compare: the engine
+        // re-serialises floats in its own style ("1.5" comes back "1.5000"), and
+        // treating that as a user edit made the tweak permanent - the displaced
+        // original became unrecoverable. Numerically equal = unchanged.
+        let unchanged = match current.as_deref() {
+            None => false,
+            Some(c) if c == r.after => true,
+            Some(c) => matches!(
+                (c.parse::<f64>(), r.after.parse::<f64>()),
+                // Compare at the engine's own serialisation grain (4 decimals):
+                // it both re-formats ("8000" -> "8000.0000") and ROUNDS
+                // ("0.66666667" -> "0.6667"), and exact f64 equality still
+                // called the second case a user edit.
+                (Ok(a), Ok(b)) if (a * 10_000.0).round() == (b * 10_000.0).round()
+            ),
+        };
+        if !unchanged {
             continue;
         }
         out = match &r.before {
@@ -1426,12 +1750,12 @@ mod tests {
             .collect();
         fs::write(p.plugins_txt_path(), &mangled).unwrap();
         assert!(
-            p.plugin_loss_since_snapshot().is_some(),
+            p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
             "a crash artefact must be flagged, or the user never learns their order died"
         );
         p.restore_plugin_snapshot().unwrap();
         assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), full);
-        assert!(p.plugin_loss_since_snapshot().is_none(), "restored = healthy");
+        assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none(), "restored = healthy");
 
         // A legitimate edit - the user turning a handful of mods off - is not
         // flagged; sessions that edit must not cry wolf.
@@ -1439,22 +1763,31 @@ mod tests {
             .map(|i| if i < 195 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
             .collect();
         fs::write(p.plugins_txt_path(), &edited).unwrap();
-        assert!(p.plugin_loss_since_snapshot().is_none());
+        assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none());
 
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
-    fn small_load_orders_are_never_second_guessed() {
-        // Turning off 4 of 6 plugins is a big RELATIVE drop but an obviously
-        // deliberate one; the backstop must not fire on lists this size.
+    fn small_load_order_losses_follow_the_majority_rule() {
+        // The check is a warn-with-one-click-dismiss now, not a silent refusal,
+        // so the trade changed: turning off a couple of plugins must stay
+        // silent, but losing the MAJORITY of a small list flags - that shape is
+        // also what a partial crash artifact looks like, and it used to slide
+        // under the big-list floor unchallenged.
         let root = inst_with_mods(&["A"]);
         let p = prof(&root, "Default");
         fs::create_dir_all(p.dir()).unwrap();
         fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\n*e\n*f\n").unwrap();
         p.snapshot_plugin_state().unwrap();
+
+        // Two of six off: routine, silent.
+        fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\ne\nf\n").unwrap();
+        assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none());
+
+        // Four of six off: majority loss, flagged (dismissable in one click).
         fs::write(p.plugins_txt_path(), "*a\n*b\nc\nd\ne\nf\n").unwrap();
-        assert!(p.plugin_loss_since_snapshot().is_none());
+        assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -1483,7 +1816,7 @@ mod tests {
         // The game crashes and leaves a header-only artifact.
         fs::write(p.plugins_txt_path(), b"# ruined\r\n").unwrap();
         assert!(
-            p.plugin_loss_since_snapshot().is_some(),
+            p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
             "the wipe must be flagged even when the list has accented names"
         );
         p.restore_plugin_snapshot().unwrap();
@@ -1510,7 +1843,7 @@ mod tests {
             "# This file is used by Skyrim to keep track of your downloaded content.\n",
         )
         .unwrap();
-        assert!(p.plugin_loss_since_snapshot().is_some());
+        assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some());
         p.restore_plugin_snapshot().unwrap();
         assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), good);
 
@@ -1520,7 +1853,7 @@ mod tests {
         let all_off = "a.esp\nb.esp\nc.esp\nd.esp\ne.esp\nf.esp\ng.esp\n";
         fs::write(p.plugins_txt_path(), all_off).unwrap();
         assert!(
-            p.plugin_loss_since_snapshot().is_some(),
+            p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
             "clearing every active plugin is flagged at any size"
         );
         let _ = fs::remove_dir_all(&root);
@@ -1542,13 +1875,13 @@ mod tests {
         // Seed: the profile adopts the prefix's existing state once.
         let a = prof(&root, "Default");
         assert!(!a.has_plugin_state());
-        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 3);
+        assert_eq!(a.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).unwrap(), 3);
         assert!(a.has_plugin_state());
         assert!(a.plugins_state_dir().join("ContentCatalog.txt").is_file());
         assert!(!a.plugins_state_dir().join("plugins.tmp").exists());
         // Seeding again must not clobber the profile's own copy.
         fs::write(a.plugins_txt_path(), b"*Alpha.esp\n").unwrap();
-        assert_eq!(a.seed_plugin_state(&prefix).unwrap(), 0);
+        assert_eq!(a.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).unwrap(), 0);
         assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n");
 
         // A second profile has its own, independent state - the bound dir swaps
@@ -1560,6 +1893,147 @@ mod tests {
         assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), b"*Beta.esp\n");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_backstop_sees_a_plainlist_wipe() {
+        // PlainList files have no `*` at all, so counting asterisks read every
+        // healthy Fallout list as "0 active" and every wipe as no-change - the
+        // backstop was stone dead for that whole family.
+        let root = inst_with_mods(&["A"]);
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+        let spec = eidos_plugins::GameSpec::for_id("falloutnv").unwrap();
+
+        fs::write(p.plugins_txt_path(), b"FalloutNV.esm\nModA.esp\nModB.esp\n").unwrap();
+        p.snapshot_plugin_state().unwrap();
+
+        // Healthy rewrite: same actives, no flag.
+        fs::write(p.plugins_txt_path(), b"FalloutNV.esm\nModA.esp\nModB.esp\n").unwrap();
+        assert!(p.plugin_loss_since_snapshot(&spec).is_none());
+
+        // The wipe: header only. Must flag at any size.
+        fs::write(p.plugins_txt_path(), b"# nothing\n").unwrap();
+        assert!(
+            p.plugin_loss_since_snapshot(&spec).is_some(),
+            "a PlainList wipe must be flagged, not read as 0-vs-0"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seeding_adopts_verbatim_for_every_mechanism() {
+        // The founding rule is ADOPT VERBATIM, always. An earlier "refuse the
+        // crash artifact" version was worse than the disease: the same run then
+        // derived everything-ENABLED from discovery and shadow-wrote it over the
+        // prefix - and its signature (names listed, no `*`) is what every
+        // healthy PlainList plugins.txt looks like, so Fallout and Skyrim LE
+        // setups were refused wholesale. The artifact case is a WARNING now.
+        let root = inst_with_mods(&["A"]);
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&prefix).unwrap();
+        // Asterisk game, names listed, zero active: adopted anyway, byte-for-byte.
+        let artifact = b"a.esp\nb.esp\nc.esp\nd.esp\n";
+        fs::write(prefix.join("plugins.txt"), artifact).unwrap();
+        let p = prof(&root, "Default");
+        p.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+            .unwrap();
+        assert!(p.has_plugin_state());
+        assert_eq!(fs::read(p.plugins_txt_path()).unwrap(), artifact, "verbatim, not derived");
+
+        // PlainList game (Fallout NV): a healthy actives-without-asterisks file
+        // is NORMAL and adopts silently.
+        let root2 = inst_with_mods(&["A"]);
+        let prefix2 = root2.join("prefix");
+        fs::create_dir_all(&prefix2).unwrap();
+        let healthy = b"FalloutNV.esm\nSomeMod.esp\nOtherMod.esp\n";
+        fs::write(prefix2.join("plugins.txt"), healthy).unwrap();
+        let p2 = prof(&root2, "Default");
+        p2.seed_plugin_state(&prefix2, &eidos_plugins::GameSpec::for_id("falloutnv").unwrap())
+            .unwrap();
+        assert!(p2.has_plugin_state());
+        assert_eq!(fs::read(p2.plugins_txt_path()).unwrap(), healthy);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn a_truncated_ini_is_not_captured_over_the_profile() {
+        let root = inst_with_mods(&["A"]);
+        let docs = root.join("docs");
+        fs::create_dir_all(&docs).unwrap();
+        let p = prof(&root, "Default");
+        fs::create_dir_all(p.dir()).unwrap();
+
+        let good = "[Display]\n".to_string() + &"iKey=1\n".repeat(50);
+        fs::write(p.ini_path("Skyrim.ini"), &good).unwrap();
+
+        // Empty: never captured.
+        fs::write(docs.join("Skyrim.ini"), b"").unwrap();
+        assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 0);
+        assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), good);
+
+        // Under half the profile's size: a wreck, not an edit.
+        fs::write(docs.join("Skyrim.ini"), b"[Display]\niKey=1\n").unwrap();
+        assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 0);
+        assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), good);
+
+        // A real edit (same order of size) captures.
+        let edited = good.replace("iKey=1", "iKey=2");
+        fs::write(docs.join("Skyrim.ini"), &edited).unwrap();
+        assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 1);
+        assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), edited);
+
+        // The engine's own compact rewrite is STABLE: refused once, but the
+        // same size on the next run is the real format and must be accepted -
+        // refusing forever would mean in-game settings never persist again.
+        let compact = "[Display]\niKey=3\n";
+        fs::write(docs.join("Skyrim.ini"), compact).unwrap();
+        assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 0, "first sight: refused");
+        assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 1, "stable repeat: accepted");
+        assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), compact);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn emptying_the_saves_dir_does_not_resurrect_prefix_saves() {
+        let root = inst_with_mods(&["A"]);
+        let prefix_saves = root.join("prefix_saves");
+        fs::create_dir_all(&prefix_saves).unwrap();
+        fs::write(prefix_saves.join("ancient.ess"), b"2024").unwrap();
+        fs::write(prefix_saves.join("steam_autocloud.vdf"), b"junk").unwrap();
+
+        let p = prof(&root, "Default");
+        assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 1, "junk is not a save");
+        assert!(p.saves_dir().join("ancient.ess").is_file());
+        assert!(!p.saves_dir().join("steam_autocloud.vdf").exists());
+
+        // The user empties the dir on purpose. The old emptiness probe re-seeded
+        // the ancient save with a fresh mtime that sorted above everything.
+        fs::remove_file(p.saves_dir().join("ancient.ess")).unwrap();
+        assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 0, "seeding is once, ever");
+        assert!(!p.saves_dir().join("ancient.ess").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_float_reserialised_by_the_engine_still_untweaks() {
+        // The tweak set fShadowDistance=8000; the engine rewrote it "8000.0000".
+        // Text-compare said "user changed it" and kept the tweak forever.
+        let mut ini = "[Display]\nfShadowDistance=4000\n".to_string();
+        let mut rec = Vec::new();
+        assert!(merge_tweak(&mut ini, "[Display]\nfShadowDistance=8000\n", &mut rec));
+        let engine_rewritten = ini.replace("fShadowDistance=8000", "fShadowDistance=8000.0000");
+        let restored = untweak_ini(&engine_rewritten, &rec);
+        assert!(
+            restored.contains("fShadowDistance=4000"),
+            "numerically-equal means unchanged; the original must come back: {restored}"
+        );
+
+        // A REAL user change (different number) still wins over the restore.
+        let user_changed = ini.replace("fShadowDistance=8000", "fShadowDistance=6500");
+        let kept = untweak_ini(&user_changed, &rec);
+        assert!(kept.contains("fShadowDistance=6500"), "{kept}");
     }
 
     #[test]
