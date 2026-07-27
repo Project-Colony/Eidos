@@ -362,7 +362,9 @@ enum Message {
     /// Begin a potential drag from row `i` (also selects it).
     DragStart(usize),
     /// The pointer entered row `i` during a drag (updates the drop target).
-    DragOver(usize),
+    /// The pointer moved over an insertion point during a drag. The payload is an
+    /// insertion index (see `DragState::gap`), not a row index.
+    DragOverGap(usize),
     /// The drag ended: commit the move if the drop row differs from the source.
     DragDrop,
     /// Abandon an in-flight drag (filter change / Escape).
@@ -597,7 +599,17 @@ struct DownloadRow {
 #[derive(Debug, Clone, Copy)]
 struct DragState {
     from: usize,
-    hover_over: usize,
+    /// Where the block would land, as an INSERTION index, not a row index: `gap`
+    /// means "before the row currently at `gap`", and `mods.len()` means the end.
+    ///
+    /// This distinction is the whole fix. Targeting a ROW is ambiguous - dropping
+    /// "on" a mod could mean above or below it, and the answer used to depend on
+    /// which way you came from, so the drop could not be aimed. An insertion
+    /// index has exactly one meaning, which is also what `move_block` already
+    /// expects, and it is what the indicator line draws between the two rows.
+    /// MO2 makes the same distinction (`DropPosition::AboveItem/BelowItem`,
+    /// modlistview.cpp:1394).
+    gap: usize,
 }
 
 /// One Data-tab row: entry name, the layer providing it, and whether it is a
@@ -618,6 +630,22 @@ struct App {
     plugins: Option<PluginList>,
     /// Cached per-file conflict analysis for the Conflicts tab + mod-row flags.
     conflicts: Option<ConflictMap>,
+    /// The last health-check run, cached.
+    ///
+    /// `diagnostics()` walks the mods directory, reads the script extender's log
+    /// and parses an INI. It used to be called from `view()` - twice when the
+    /// Diagnostics tab was open, since the tab LABEL carries the problem count -
+    /// which means it ran on every single frame: roughly a hundred `read_dir`
+    /// per keystroke in the filter box. That is the cost that made typing feel
+    /// like wading, and it bought a number that only changes when the setup does.
+    diag: Vec<Diagnostic>,
+    /// Set when something might have changed the answer; consumed at the end of
+    /// `update()`. A missed setter shows a stale COUNT until the next real
+    /// change, never wrong data - the panel renders from this same cache, so the
+    /// label and the panel can never disagree either.
+    diag_dirty: bool,
+    /// The `&App`-reachable half of the same flag, so `bump_views` can set it.
+    diag_stale: std::cell::Cell<bool>,
     tab: Tab,
     status: Option<String>,
     /// Two-click guard for the destructive "Clear Overwrite" action.
@@ -831,31 +859,62 @@ impl std::fmt::Display for CategoryChoice {
 }
 
 /// Build the per-mod metadata cache for the open instance's mod list.
-fn build_meta_cache(app: &App) -> HashMap<String, RowMeta> {
-    let mut out = HashMap::new();
-    if let Some(inst) = &app.created {
-        // The category catalog (resolves `category=` ids to names); built once.
-        let cats = inst.category_factory();
-        for m in &app.mods {
-            let meta = inst.mod_meta(&m.name);
-            let category_id = meta.category().as_deref().and_then(eidos_instance::parse_primary);
-            let category_name = category_id.and_then(|id| cats.name_for_id(id)).map(str::to_string);
-            out.insert(
-                m.name.clone(),
-                RowMeta {
-                    version: meta.version(),
-                    mod_id: meta.mod_id(),
-                    category_id,
-                    category_name,
-                    content_tags: eidos_install::classify_content_dir(&m.path).tags(),
-                    update: meta.update_available(),
-                    color: meta.color(),
-                },
-            );
-        }
+/// Bring `app.meta_cache` in step with `app.mods`, computing ONLY the rows it does
+/// not already hold and dropping the ones whose mod is gone.
+///
+/// Each row costs a `meta.ini` read plus `classify_content_dir`, which is a
+/// `read_dir` on the mod plus two more on `meshes/` and `textures/`. Rebuilding
+/// the whole map cost 100 meta reads and 100-300 `read_dir` on a 100-mod setup -
+/// and it ran on EVERY checkbox click and EVERY arrow click, for 150-500 ms of
+/// dead window each time. None of those actions change a single byte on disk.
+///
+/// So the map is only appended to. The three places that genuinely rewrite a
+/// `meta.ini` drop what they changed first (see [`invalidate_meta`]), and Refresh
+/// clears the lot - that is what Refresh is for.
+fn refresh_meta_cache(app: &mut App) {
+    let wanted: HashSet<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+    app.meta_cache.retain(|name, _| wanted.contains(name));
+    let Some(inst) = app.created.clone() else {
+        app.meta_cache.clear();
+        return;
+    };
+    // Only built when there is actually something to compute: the catalog parses
+    // the category files, which is pure waste on the common no-op refresh.
+    let missing: Vec<(String, PathBuf)> = app
+        .mods
+        .iter()
+        .filter(|m| !app.meta_cache.contains_key(&m.name))
+        .map(|m| (m.name.clone(), m.path.clone()))
+        .collect();
+    if missing.is_empty() {
+        return;
     }
-    out
+    let cats = inst.category_factory();
+    for (name, path) in missing {
+        let meta = inst.mod_meta(&name);
+        let category_id = meta.category().as_deref().and_then(eidos_instance::parse_primary);
+        let category_name = category_id.and_then(|id| cats.name_for_id(id)).map(str::to_string);
+        app.meta_cache.insert(
+            name,
+            RowMeta {
+                version: meta.version(),
+                mod_id: meta.mod_id(),
+                category_id,
+                category_name,
+                content_tags: eidos_install::classify_content_dir(&path).tags(),
+                update: meta.update_available(),
+                color: meta.color(),
+            },
+        );
+    }
 }
+
+/// Drop one mod's cached row, for the paths that rewrite its `meta.ini`. The next
+/// [`refresh_meta_cache`] recomputes exactly that row.
+fn invalidate_meta(app: &mut App, name: &str) {
+    app.meta_cache.remove(name);
+}
+
 
 /// The run-target picker entry meaning "the game itself".
 const RUN_GAME: &str = "Game (Steam command)";
@@ -937,6 +996,9 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary()),
         files_cache: std::cell::RefCell::new(HashMap::new()),
         view_generation: std::cell::Cell::new(0),
+        diag: Vec::new(),
+        diag_dirty: true,
+        diag_stale: std::cell::Cell::new(true),
         data_listing: std::cell::RefCell::new(HashMap::new()),
         data_expanded: HashSet::new(),
         listing_cache: std::cell::RefCell::new(HashMap::new()),
@@ -974,7 +1036,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // Conflicts feed the mod-list emblems, so compute them as soon as the
     // instance opens instead of waiting for the Conflicts tab.
     app.conflicts = compute_conflicts(&app);
-    app.meta_cache = build_meta_cache(&app);
+    refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
     recompute_counts(&mut app);
     // A stored key means the user IS connected: validate it in the background so
@@ -1308,10 +1370,13 @@ fn finish_run(app: &mut App) {
         drop_files_cache(app, None);
         invalidate_plugins(app);
         app.conflicts = compute_conflicts(app);
-        app.meta_cache = build_meta_cache(app);
+        refresh_meta_cache(app);
         recompute_counts(app);
         app.selected_mods.clear();
         app.drag_state = None;
+        // The run just wrote the script extender's log, which is one of the
+        // health checks - and reading it is exactly what the cache defers.
+        app.diag_dirty = true;
     }
     if app.created.is_some() {
         // The session may have written new saves; the Saves tab must not go stale
@@ -1378,6 +1443,13 @@ fn planned_instance(app: &App) -> Option<Instance> {
     })
 }
 
+/// The first row a mod may legally occupy: unmanaged rows (the game's own DLC and
+/// Creation Club content) are listed first and are not part of `modlist.txt`, so
+/// nothing can be ordered above them - a drop there would vanish on save.
+fn first_managed(mods: &[ModEntry]) -> usize {
+    mods.iter().position(|m| !m.is_unmanaged()).unwrap_or(mods.len())
+}
+
 /// The rows a row-targeted action should act on: the whole multi-selection when
 /// the clicked row belongs to it, otherwise just that row. Separators are never
 /// moved by these actions - they define the groups.
@@ -1440,6 +1512,19 @@ fn bump_views(app: &App) {
     app.view_generation.set(app.view_generation.get().wrapping_add(1));
     app.data_listing.borrow_mut().clear();
     app.listing_cache.borrow_mut().clear();
+    app.diag_stale.set(true);
+}
+
+/// Recompute the cached health checks if anything flagged them stale. Called once
+/// at the end of `update()`, so a message that changes ten things still pays for
+/// one scan - and a message that changes nothing pays for none.
+fn refresh_diagnostics(app: &mut App) {
+    if !app.diag_stale.get() && !app.diag_dirty {
+        return;
+    }
+    app.diag_stale.set(false);
+    app.diag_dirty = false;
+    app.diag = diagnostics(app);
 }
 
 /// Drop cached per-layer file walks: one layer by name (a mod whose contents
@@ -1483,7 +1568,7 @@ fn mods_changed(app: &mut App) {
     bump_views(app);
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
-    app.meta_cache = build_meta_cache(app);
+    refresh_meta_cache(app);
     recompute_counts(app);
 }
 
@@ -1525,7 +1610,7 @@ fn switch_to_profile(app: &mut App, name: &str) -> bool {
     reload_mods(app);
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
-    app.meta_cache = build_meta_cache(app);
+    refresh_meta_cache(app);
     app.collapsed = load_collapsed(app);
     recompute_counts(app);
     app.selected_mod = None;
@@ -1583,7 +1668,20 @@ fn save_collapsed(app: &App) {
     }
 }
 
+/// The iced entry point: run the handler, then bring the once-per-change caches
+/// back in step.
+///
+/// A wrapper rather than a line at the end of `update_inner`, because that
+/// function has 68 early returns and a refresh reachable from only some of them
+/// is worse than none - the tab count would be right or wrong depending on which
+/// branch ran.
 fn update(app: &mut App, message: Message) -> Task<Message> {
+    let task = update_inner(app, message);
+    refresh_diagnostics(app);
+    task
+}
+
+fn update_inner(app: &mut App, message: Message) -> Task<Message> {
     // Any action other than a second Clear click cancels the clear confirmation.
     if !matches!(message, Message::ClearOverwrite) {
         app.confirm_clear = false;
@@ -1647,7 +1745,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         app.screen = Screen::Main;
                         load_tools(app);
                         app.conflicts = compute_conflicts(app);
-                        app.meta_cache = build_meta_cache(app);
+                        refresh_meta_cache(app);
                         // Everything cached from a previously-open instance is
                         // stale for this one: plugin order, saves, downloads,
                         // selection and counts all belong to the old instance.
@@ -2413,7 +2511,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                     drop_files_cache(app, None);
                     invalidate_plugins(app);
                     app.conflicts = compute_conflicts(app);
-                    app.meta_cache = build_meta_cache(app);
+                    refresh_meta_cache(app);
                     recompute_counts(app);
                     app.selected_mod = None;
                     app.selected_mods.clear();
@@ -2467,7 +2565,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 drop_files_cache(app, None);
                 invalidate_plugins(app);
                 app.conflicts = compute_conflicts(app);
-                app.meta_cache = build_meta_cache(app);
+                // Refresh is the "re-read everything from disk" affordance, and
+                // the only place that pays the full meta scan on purpose.
+                app.meta_cache.clear();
+                refresh_meta_cache(app);
                 recompute_counts(app);
                 // The list was rebuilt; selection / drag indices no longer hold.
                 app.selected_mods.clear();
@@ -2532,7 +2633,7 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
-            app.drag_state = Some(DragState { from: i, hover_over: i });
+            app.drag_state = Some(DragState { from: i, gap: i });
         }
         Message::SelectModToggle(i) => {
             // Ctrl+click: flip this row's membership; the first toggle also seeds the
@@ -2764,14 +2865,17 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                 (Some(m), Some(inst)) if m.is_separator() => {
                     let mut meta = inst.mod_meta(&m.name);
                     meta.set_color(rgb);
-                    Some((m.display_name().to_string(), meta.write(&inst.meta_path(&m.name))))
+                    Some((m.name.clone(), m.display_name().to_string(), meta.write(&inst.meta_path(&m.name))))
                 }
                 _ => None,
             };
-            if let Some((display, r)) = result {
+            if let Some((changed, display, r)) = result {
                 match r {
                     Ok(()) => {
-                        app.meta_cache = build_meta_cache(app); // pick up the new colour
+                        // The colour lives in this mod's meta.ini: drop its row so
+                        // the refresh below recomputes exactly that one.
+                        invalidate_meta(app, &changed);
+                        refresh_meta_cache(app);
                         app.status = Some(format!("Set the colour for '{display}'."));
                     }
                     Err(e) => app.status = Some(format!("Could not set colour: {e}")),
@@ -3436,8 +3540,10 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
                         if now { "Ignoring" } else { "Checking" },
                         m.display_name()
                     ));
-                    // The update markers + count exclude ignored mods, so refresh.
-                    app.meta_cache = build_meta_cache(app);
+                    // The ignore flag lives in this mod's meta.ini.
+                    let changed = m.name.clone();
+                    invalidate_meta(app, &changed);
+                    refresh_meta_cache(app);
                     recompute_counts(app);
                 }
             }
@@ -3533,8 +3639,11 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.update_in_progress = false;
             match result {
                 Ok(r) => {
-                    // Re-read meta so the `^` markers + counts pick up the writes.
-                    app.meta_cache = build_meta_cache(app);
+                    // The check rewrote a version line in an unknown number of
+                    // meta.ini files, so this is the one case that really does
+                    // need the whole map back.
+                    app.meta_cache.clear();
+                    refresh_meta_cache(app);
                     recompute_counts(app);
                     let mut msg = format!(
                         "Update check: {} mods checked, {} update(s) found.",
@@ -3840,22 +3949,37 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
-            app.drag_state = Some(DragState { from: i, hover_over: i });
+            app.drag_state = Some(DragState { from: i, gap: i });
         }
-        Message::DragOver(i) => {
+        Message::DragOverGap(gap) => {
             if let Some(d) = &mut app.drag_state {
-                d.hover_over = i;
+                // Never above the unmanaged block: those rows are the game's own
+                // content, they are not in modlist.txt, and a mod dropped among
+                // them would be silently dropped from the saved order.
+                d.gap = gap.max(first_managed(&app.mods)).min(app.mods.len());
             }
         }
         Message::DragDrop => {
-            if let Some(d) = app.drag_state.take() {
-                if d.from != d.hover_over && d.from < app.mods.len() && d.hover_over < app.mods.len()
-                {
-                    let to = move_block(&mut app.mods, &[d.from], d.hover_over);
-                    app.selected_mod = Some(to);
-                    app.selected_mods.clear();
-                    mods_changed(app);
-                }
+            let Some(d) = app.drag_state.take() else { return Task::none() };
+            if d.from >= app.mods.len() {
+                return Task::none();
+            }
+            // Drag the whole selection when the grabbed row belongs to it (MO2
+            // moves the block); otherwise just the grabbed row. Same helper every
+            // other row-targeted action uses, so a drag and a "send to top" agree
+            // about what "the rows I am acting on" means.
+            let block = selection_or(app, d.from);
+            if block.is_empty() {
+                return Task::none();
+            }
+            // A drop that changes nothing: the gap is already where the block
+            // starts, or immediately after a single grabbed row.
+            let unchanged = block.len() == 1 && (d.gap == block[0] || d.gap == block[0] + 1);
+            if !unchanged {
+                let at = move_block(&mut app.mods, &block, d.gap);
+                app.selected_mod = Some(at);
+                app.selected_mods.clear();
+                mods_changed(app);
             }
         }
         Message::DragCancel => {
@@ -3966,29 +4090,55 @@ const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct fro
 
 /// A mod-list row background that also reflects selection (MO2's blue highlight,
 /// here a parchment-tan so it reads on the burgundy theme).
-fn list_row<'a>(
-    content: Element<'a, Message>,
-    even: bool,
-    selected: bool,
-    drop_target: bool,
-) -> Element<'a, Message> {
+/// The height of the insertion strip between two rows. Rendered ALWAYS, not only
+/// during a drag, so the list does not jump when one starts - on a 100-mod list,
+/// making the strips appear on grab shifted everything below by hundreds of
+/// pixels and the pointer ended up over a completely different row. It replaces
+/// the list's old 1px spacing, so the real cost is 3px per row, and it gives the
+/// dense view the breathing room it needed anyway.
+const GAP_H: f32 = 4.0;
+
+/// An insertion point between two rows: the drop target for index `gap`, drawn as
+/// a burgundy line while it is the live target.
+///
+/// This is what replaced a border around the hovered ROW. A border says "this row
+/// is involved" and leaves the user guessing which side; a line in the gap says
+/// exactly where the block lands, which is the whole point of aiming. MO2 draws
+/// the same indicator, and its geometry is why: the strip IS the destination, so
+/// there is nothing to infer.
+/// `interactive` is false when no drag is in flight, and for the strips above the
+/// game's own content (which nothing may be ordered above). A non-interactive
+/// strip is pure spacing: no `mouse_area`, so idly moving the pointer down a
+/// 100-row list does not fire a hover message per strip and rebuild the view
+/// each time.
+fn drop_gap<'a>(gap: usize, active: bool, interactive: bool) -> Element<'a, Message> {
+    let bar = container(Space::new(Length::Fill, Length::Fixed(if active { 2.0 } else { 0.0 })))
+        .width(Length::Fill)
+        .style(move |_t: &Theme| container::Style {
+            background: active.then(|| Background::Color(Color::from_rgb8(0x6E, 0x24, 0x2E))),
+            ..Default::default()
+        });
+    // `center_y(len)` is `height(len) + align`, so passing Fill here silently
+    // REPLACED the fixed height: every strip then demanded the whole viewport,
+    // the rows were squeezed to nothing and the list rendered blank mid-drag.
+    // The height is fixed once, and the alignment is set without touching it.
+    let strip = container(bar)
+        .width(Length::Fill)
+        .height(Length::Fixed(GAP_H))
+        .align_y(iced::alignment::Vertical::Center);
+    if !interactive {
+        return strip.into();
+    }
+    mouse_area(strip).on_enter(Message::DragOverGap(gap)).on_release(Message::DragDrop).into()
+}
+
+fn list_row<'a>(content: Element<'a, Message>, even: bool, selected: bool) -> Element<'a, Message> {
     let bg = if selected { SEL_BG } else { row_bg(even) };
     container(content)
         .width(Length::Fill)
         .padding(2)
         .style(move |_t: &Theme| container::Style {
             background: Some(Background::Color(bg)),
-            // During a drag, the hovered drop target gets a burgundy accent border
-            // (iced 0.13 has no native drag image, so this is the drop-position cue).
-            border: Border {
-                color: if drop_target {
-                    Color::from_rgb8(0x6E, 0x24, 0x2E)
-                } else {
-                    Color::TRANSPARENT
-                },
-                width: if drop_target { 2.0 } else { 0.0 },
-                radius: 0.0.into(),
-            },
             ..Default::default()
         })
         .into()
@@ -4530,7 +4680,7 @@ fn mod_row<'a>(
     }
     mouse_area(row)
         .on_press(Message::DragStart(i))
-        .on_enter(Message::DragOver(i))
+        .on_enter(Message::DragOverGap(i))
         .on_release(Message::DragDrop)
         .on_right_press(Message::OpenModMenu(i))
         .into()
@@ -4576,7 +4726,7 @@ fn separator_row<'a>(
     container(
         mouse_area(row)
             .on_press(Message::DragStart(i))
-            .on_enter(Message::DragOver(i))
+            .on_enter(Message::DragOverGap(i))
             .on_release(Message::DragDrop)
             .on_right_press(Message::OpenModMenu(i)),
     )
@@ -4679,15 +4829,24 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 
     let len = app.mods.len();
     let query = app.search.trim().to_lowercase();
-    let mut list = Column::new().spacing(1);
+    // No spacing: the insertion strips below provide the separation, and they
+    // must be part of the flow so the layout is identical with and without a drag.
+    let mut list = Column::new();
     let mut shown = 0usize;
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     // Tracks whether the current separator's group is collapsed, so its mods hide.
     let mut in_collapsed = false;
-    // The live drag's drop target, if any, so its row shows a feedback border.
-    let drop_target = app.drag_state.map(|d| d.hover_over);
+    // The live drag's insertion point, if any, so exactly one gap draws the line.
+    // A drag that has not moved off its own row targets nothing visible: a plain
+    // click must never flash an indicator.
+    let live_gap = app
+        .drag_state
+        .filter(|d| d.gap != d.from && d.gap != d.from + 1)
+        .map(|d| d.gap);
+    let dragging = app.drag_state.is_some();
+    let lowest_gap = first_managed(&app.mods);
     for (i, m) in app.mods.iter().enumerate() {
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
@@ -4704,6 +4863,9 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             in_collapsed = collapsed;
             shown += 1;
             let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
+            // Every VISIBLE row gets a strip above it, separators included, or the
+            // slot just before a group header would be unreachable.
+            list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap));
             list = list.push(separator_row(i, m, len, color, collapsed, selected));
             continue;
         }
@@ -4751,16 +4913,21 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             None
         };
         let meta = app.meta_cache.get(&m.name);
-        // Show the drop-target border only while a drag is genuinely in motion (the
-        // hovered row differs from the grabbed one), so a plain click never flashes.
-        let is_drop = drop_target == Some(i)
-            && app.drag_state.is_some_and(|d| d.from != d.hover_over);
+        // The insertion strip ABOVE this row. Always rendered (stable layout),
+        // targetable only during a drag and only from the first managed row down:
+        // nothing may be ordered above the game's own content.
+        list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap));
         list = list.push(list_row(
             mod_row(i, m, len, meta, flag_icon, hidden_icon),
             i % 2 == 0,
             selected,
-            is_drop,
         ));
+    }
+    // The trailing strip: the only way to aim at the end of the list, since
+    // hovering a row always means "above it".
+    if !app.mods.is_empty() {
+        let end = app.mods.len();
+        list = list.push(drop_gap(end, live_gap == Some(end), dragging));
     }
     if !app.mods.is_empty() && shown == 0 {
         list = list.push(text(format!("No mods match \"{}\".", app.search.trim())).size(12.0));
@@ -5312,7 +5479,9 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Provided by").size(11.0).width(Length::FillPortion(2)))
         .push(text("").size(11.0).width(Length::Fixed(56.0)));
 
-    let mut list = Column::new().spacing(1);
+    // No spacing: the insertion strips below provide the separation, and they
+    // must be part of the flow so the layout is identical with and without a drag.
+    let mut list = Column::new();
     let rows = data_tree_rows(app, DATA_TREE_ROWS);
     if rows.is_empty() {
         list = list.push(text("(empty)").size(12.0));
@@ -5531,7 +5700,6 @@ fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             container(row).padding(3).into(),
             i % 2 == 0,
             app.selected_save == Some(i),
-            false,
         ));
     }
 
@@ -5720,6 +5888,7 @@ enum DiagLevel {
 }
 
 /// One health check: what it found, and what to do about it.
+#[derive(Clone)]
 struct Diagnostic {
     level: DiagLevel,
     title: String,
@@ -6069,7 +6238,7 @@ fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
 fn diagnostics_tab_label(app: &App) -> String {
-    let n = diagnostics(app).iter().filter(|d| d.level == DiagLevel::Problem).count();
+    let n = app.diag.iter().filter(|d| d.level == DiagLevel::Problem).count();
     if n > 0 {
         format!("Diagnostics ({n})")
     } else {
@@ -6078,7 +6247,9 @@ fn diagnostics_tab_label(app: &App) -> String {
 }
 
 fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
-    let checks = diagnostics(app);
+    // The same cache the tab label reads, so the count on the tab and the cards
+    // in the panel can never tell two different stories.
+    let checks = app.diag.clone();
     let problems = checks.iter().filter(|d| d.level == DiagLevel::Problem).count();
     let summary = if problems == 0 {
         "No problems found.".to_string()
@@ -6688,7 +6859,9 @@ fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
     if app.send_separator == Some(i) {
         // An inline chooser of the separators, scrollable because a big load
         // order has plenty of them.
-        let mut list = Column::new().spacing(1);
+        // No spacing: the insertion strips below provide the separation, and they
+    // must be part of the flow so the layout is identical with and without a drag.
+    let mut list = Column::new();
         for (idx, sep) in app.mods.iter().enumerate().filter(|(_, m)| m.is_separator()) {
             // Owned, so the Element does not borrow from `app`.
             let label = sep.display_name().to_string();
@@ -7183,7 +7356,7 @@ fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive:
     drop_files_cache(app, Some(name));
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
-    app.meta_cache = build_meta_cache(app);
+    refresh_meta_cache(app);
     // Refresh the cached downloads only if they were already loaded, so the
     // status column reflects the new install without a full re-scan otherwise.
     if !app.downloads.is_empty() {
@@ -7305,7 +7478,9 @@ fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Message> {
                 .into(),
         ),
         PickerMode::Bain { subpackages, picked, .. } => {
-            let mut list = Column::new().spacing(1);
+            // No spacing: the insertion strips below provide the separation, and they
+    // must be part of the flow so the layout is identical with and without a drag.
+    let mut list = Column::new();
             for (i, (name, &on)) in subpackages.iter().zip(picked).enumerate() {
                 list = list.push(
                     checkbox(name.clone(), on)
@@ -7570,7 +7745,9 @@ fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message
 
     // The tool list: user tools first (editable), then a "(defaults)" divider and
     // the read-only per-game defaults.
-    let mut list = Column::new().spacing(1);
+    // No spacing: the insertion strips below provide the separation, and they
+    // must be part of the flow so the layout is identical with and without a drag.
+    let mut list = Column::new();
     for (i, t) in state.merged.iter().enumerate() {
         if i == state.user_len && i < state.merged.len() {
             list = list.push(text("Defaults (read-only)").size(10.0));
@@ -8278,6 +8455,71 @@ mod tests {
         assert!(args[0].ends_with("SkyrimSELauncher.exe"), "{args:?}");
         assert!(warning.is_some());
         fs::remove_dir_all(&d).ok();
+    }
+
+    /// The drop the user described: grab a mod, aim at the strip ABOVE another
+    /// one, and it lands there - whichever direction the drag came from. Under
+    /// the old row-targeted drop this was ambiguous, and the downward case
+    /// landed one slot short of where the pointer was.
+    #[test]
+    fn a_gap_targeted_drop_lands_exactly_where_it_was_aimed() {
+        // Dragging UP: "Terrain Helper" (index 3) onto the strip above
+        // "Terrain Variation" (index 2).
+        let mut v = mods(&["a", "b", "variation", "helper"]);
+        move_block(&mut v, &[3], 2);
+        assert_eq!(names(&v), ["a", "b", "helper", "variation"]);
+
+        // Dragging DOWN to the SAME visual place: grab "helper" from the top and
+        // aim at the strip above "variation" (index 3 now). Same destination,
+        // opposite direction - this is the case the row-targeted version got
+        // wrong by one.
+        let mut v = mods(&["helper", "a", "b", "variation"]);
+        move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["a", "b", "helper", "variation"]);
+
+        // The trailing strip (gap == len) is the only way to reach the end.
+        let mut v = mods(&["a", "b", "c"]);
+        move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a"]);
+    }
+
+    /// The two gaps that touch a grabbed row mean "leave it where it is". The
+    /// drop handler treats them as no-ops so a slightly-wobbly click never
+    /// rewrites modlist.txt (and never fires the save + reload it triggers).
+    #[test]
+    fn the_strips_touching_the_grabbed_row_are_no_ops() {
+        for gap in [1usize, 2] {
+            let mut v = mods(&["a", "b", "c"]);
+            let before: Vec<String> = names(&v).iter().map(|s| s.to_string()).collect();
+            // What the handler computes for a single grabbed row at index 1.
+            let unchanged = gap == 1 || gap == 1 + 1;
+            assert!(unchanged, "gap {gap} next to row 1 must be a no-op");
+            if !unchanged {
+                move_block(&mut v, &[1], gap);
+            }
+            assert_eq!(names(&v), before);
+        }
+    }
+
+    /// Unmanaged rows (the game's DLC and Creation Club content) are listed first
+    /// and never written to modlist.txt, so no strip is offered above them - a
+    /// drop there would vanish on save.
+    #[test]
+    fn no_insertion_point_is_offered_above_the_game_content() {
+        let mut v = mods(&["dlc1", "dlc2", "mod1", "mod2"]);
+        v[0].unmanaged = true;
+        v[1].unmanaged = true;
+        assert_eq!(first_managed(&v), 2);
+
+        // An all-unmanaged list offers nothing at all rather than index 0.
+        let mut all_dlc = mods(&["dlc1", "dlc2"]);
+        for m in all_dlc.iter_mut() {
+            m.unmanaged = true;
+        }
+        assert_eq!(first_managed(&all_dlc), 2);
+
+        // And an all-managed list starts at the top.
+        assert_eq!(first_managed(&mods(&["a", "b"])), 0);
     }
 
     #[test]
