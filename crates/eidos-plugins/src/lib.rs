@@ -153,6 +153,12 @@ pub struct PluginList {
     /// Plugins the ENGINE loads by itself, read from the game's `.ccc` file -
     /// lowercased. Populated by [`PluginList::discover`]; see [`implicit_plugins`].
     pub implicit: std::collections::HashSet<String>,
+    /// Positions the user pinned, lowercased name -> the index it must occupy.
+    /// MO2's `lockedorder.txt`, and keyed by NAME for the same reason: a lock has
+    /// to survive the plugin being disabled, the list being rebuilt from disk, or
+    /// LOOT reordering everything around it. An index-keyed lock would follow
+    /// whatever moved into that slot instead.
+    pub locked: std::collections::BTreeMap<String, usize>,
 }
 
 
@@ -279,14 +285,132 @@ impl PluginList {
                 }
             }
         }
-        PluginList { plugins, implicit }
+        // Discovery reads the game and the mods; the pins live in the profile and
+        // are loaded over the top of this by the caller.
+        PluginList { plugins, implicit, locked: Default::default() }
     }
 
     /// Re-sort to satisfy the ordering invariants, then assign mod indexes. Call
     /// after any change (enable/disable, reorder, discover).
     pub fn refresh(&mut self, spec: &GameSpec) {
         self.sort(spec);
+        self.apply_locks(spec);
         self.generate_indexes(spec);
+    }
+
+    /// Put every pinned plugin back at the index the user pinned it to, then
+    /// re-settle the master ordering around them. MO2's `lockedorder.txt`
+    /// behaviour: a locked plugin holds its slot when LOOT sorts, when another
+    /// plugin is dragged past it, and when the list is rebuilt from disk.
+    ///
+    /// The dependency invariant OUTRANKS the pin, always. A pin that would put a
+    /// plugin above one of its own masters is a load the game cannot make, so
+    /// the topological pass runs again afterwards and is allowed to undo it -
+    /// [`violated_locks`] then reports which pins did not survive, because a lock
+    /// that silently does nothing is worse than one that is refused out loud.
+    pub fn apply_locks(&mut self, spec: &GameSpec) {
+        if self.locked.is_empty() {
+            return;
+        }
+        // Ascending target index, so each insert sees the slots below it already
+        // filled and lands where the user pointed rather than being pushed along
+        // by the pins that come after it.
+        let mut pinned: Vec<(usize, Plugin)> = Vec::new();
+        let mut rest: Vec<Plugin> = Vec::new();
+        for p in std::mem::take(&mut self.plugins) {
+            match self.locked.get(&p.name.to_ascii_lowercase()) {
+                Some(&at) => pinned.push((at, p)),
+                None => rest.push(p),
+            }
+        }
+        pinned.sort_by_key(|(at, _)| *at);
+        for (at, p) in pinned {
+            let at = at.min(rest.len());
+            rest.insert(at, p);
+        }
+        self.plugins = rest;
+
+        // Primaries first and masters above plugins are engine rules, not
+        // preferences, so re-impose them over the pins.
+        let n = self.plugins.len();
+        let primary_pos =
+            |name: &str| spec.primary_plugins.iter().position(|p| p.eq_ignore_ascii_case(name));
+        let mut base: Vec<usize> = (0..n).collect();
+        base.sort_by_key(|&i| {
+            let p = &self.plugins[i];
+            let prim = primary_pos(&p.name);
+            let tier: u8 = if prim.is_some() {
+                0
+            } else if p.loads_as_master() {
+                1
+            } else {
+                2
+            };
+            (tier, prim.unwrap_or(usize::MAX), i)
+        });
+        let order = topo_stable(&self.plugins, &base);
+        let mut settled: Vec<Plugin> = order.iter().map(|&i| self.plugins[i].clone()).collect();
+        for (pos, p) in settled.iter_mut().enumerate() {
+            p.priority = pos as i32;
+        }
+        self.plugins = settled;
+    }
+
+    /// Pins the engine rules overruled: the plugin is not at the index it was
+    /// locked to. Returns `(name, wanted, actual)` so the UI can say which pin
+    /// could not be honoured and where the plugin had to go instead.
+    pub fn violated_locks(&self) -> Vec<(String, usize, usize)> {
+        self.locked
+            .iter()
+            .filter_map(|(name, &want)| {
+                let at = self.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(name))?;
+                (at != want).then(|| (name.clone(), want, at))
+            })
+            .collect()
+    }
+
+    /// Pin the plugin at `index` to where it currently sits, or release it.
+    /// Returns whether anything changed.
+    pub fn set_locked(&mut self, index: usize, locked: bool) -> bool {
+        let Some(p) = self.plugins.get(index) else {
+            return false;
+        };
+        let key = p.name.to_ascii_lowercase();
+        if locked {
+            self.locked.insert(key, index) != Some(index)
+        } else {
+            self.locked.remove(&key).is_some()
+        }
+    }
+
+    /// Whether the plugin at `index` is pinned.
+    pub fn is_locked(&self, index: usize) -> bool {
+        self.plugins
+            .get(index)
+            .is_some_and(|p| self.locked.contains_key(&p.name.to_ascii_lowercase()))
+    }
+
+    /// Re-point the pins of the plugins named in `moved` at wherever they now
+    /// sit, so a deliberate move of a pinned plugin sticks instead of being
+    /// snapped straight back by its own lock on the next refresh.
+    ///
+    /// ONLY the plugins that were actually moved: a pin on a plugin something
+    /// else was dropped past must NOT follow it along, or holding a slot would
+    /// mean nothing the moment a neighbour shifted. And never after a LOOT sort,
+    /// where resisting the sorter is the entire purpose of a pin.
+    fn repin(&mut self, moved: &[String]) {
+        if self.locked.is_empty() {
+            return;
+        }
+        for name in moved {
+            let key = name.to_ascii_lowercase();
+            if !self.locked.contains_key(&key) {
+                continue;
+            }
+            if let Some(i) = self.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(name)) {
+                self.locked.insert(key, i);
+            }
+        }
     }
 
     /// Order the plugins to satisfy MO2's three invariants and assign contiguous
@@ -414,7 +538,48 @@ impl PluginList {
         if index >= self.plugins.len() || target >= self.plugins.len() {
             return false;
         }
+        let name = self.plugins[index].name.clone();
         self.plugins.swap(index, target);
+        // Deliberate move: the pin follows. Done HERE rather than at the call
+        // site because it has to happen between the move and the refresh, and a
+        // caller that got that order wrong would leave a pinned plugin unable to
+        // be moved at all - its own lock would snap it back every time.
+        self.repin(&[name]);
+        true
+    }
+
+    /// Move the plugins at `rows` so the block lands at the insertion point `gap`,
+    /// keeping their relative order. `gap` counts BETWEEN rows: 0 is above the
+    /// first plugin, `len()` is below the last - the same index the mod list's
+    /// drop strips carry, so a drag reads identically in both panels.
+    ///
+    /// Lifting the sources shifts everything after them down, so a downward move
+    /// compensates by however many moved rows sat before the target. Returns
+    /// whether anything moved; `refresh` afterwards re-applies the engine
+    /// ordering, which may pull the block back if the drop would load a plugin
+    /// before one of its masters.
+    pub fn move_plugins_to(&mut self, rows: &[usize], gap: usize) -> bool {
+        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        idx.sort_unstable();
+        idx.dedup();
+        if idx.is_empty() {
+            return false;
+        }
+        // A block dropped on either of its own edges has not gone anywhere; say so
+        // rather than rewriting the load order and reporting a change.
+        let contiguous = idx.last().unwrap() - idx.first().unwrap() + 1 == idx.len();
+        if contiguous && (gap == idx[0] || gap == idx[idx.len() - 1] + 1) {
+            return false;
+        }
+        let before = idx.iter().filter(|&&i| i < gap).count();
+        let moved: Vec<String> = idx.iter().map(|&i| self.plugins[i].name.clone()).collect();
+        let block: Vec<Plugin> = idx.iter().rev().map(|&i| self.plugins.remove(i)).collect();
+        let at = gap.saturating_sub(before).min(self.plugins.len());
+        // `block` came out highest-index-first, so re-insert in reverse to restore order.
+        for p in block {
+            self.plugins.insert(at, p);
+        }
+        self.repin(&moved);
         true
     }
 }
@@ -521,6 +686,7 @@ mod tests {
         let mut list = PluginList {
             plugins: vec![p("ZMod.esp", &[]), p("Update.esm", &["Skyrim.esm"]), p("Skyrim.esm", &[])],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.sort(&se());
         assert_eq!(names(&list), vec!["Skyrim.esm", "Update.esm", "ZMod.esp"]);
@@ -531,6 +697,7 @@ mod tests {
         let mut list = PluginList {
             plugins: vec![p("aaa.esp", &[]), p("zzz.esm", &[]), p("bbb.esp", &[]), p("mmm.esm", &[])],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.sort(&se());
         // masters first (input order zzz, mmm), then normals (aaa, bbb).
@@ -547,6 +714,7 @@ mod tests {
                 p("BaseMaster.esm", &[]),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.sort(&se());
         let order = names(&list);
@@ -635,6 +803,7 @@ mod tests {
                 p("Base.esm", &[]),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.refresh(&se());
         let order = names(&list);
@@ -668,6 +837,7 @@ mod tests {
                 },
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.refresh(&se());
         let by = |n: &str| list.plugins.iter().find(|p| p.name == n).unwrap().index.clone();
@@ -682,6 +852,7 @@ mod tests {
         let mut list = PluginList {
             plugins: vec![p("Skyrim.esm", &[]), p("Patch.esp", &["Skyrim.esm", "Ghost.esm"])],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.refresh(&se());
         let missing = list.missing_masters();
@@ -707,5 +878,150 @@ mod tests {
         assert!(!is_master_ext("Mod.esp"));
         // is_light_ext: only .esl.
         assert!(is_light_ext("Light.esl") && !is_light_ext("Base.esm"));
+    }
+
+    /// A list of normal plugins, in the given order, ready to be moved around.
+    fn esps(names: &[&str]) -> PluginList {
+        PluginList {
+            plugins: names.iter().map(|n| p(n, &[])).collect(),
+            implicit: Default::default(),
+            locked: Default::default(),
+        }
+    }
+
+    #[test]
+    fn a_dragged_plugin_lands_at_the_gap_it_was_dropped_on() {
+        // Downward: lifting the source shifts everything after it, so the gap
+        // index has to be compensated or the plugin lands one slot short.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
+        assert!(l.move_plugins_to(&[0], 3));
+        assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp", "d.esp"]);
+
+        // Upward needs no compensation.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
+        assert!(l.move_plugins_to(&[3], 1));
+        assert_eq!(names(&l), ["a.esp", "d.esp", "b.esp", "c.esp"]);
+
+        // The gap past the last row is the only way to aim at the end.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
+        assert!(l.move_plugins_to(&[0], 3));
+        assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp"]);
+    }
+
+    #[test]
+    fn dropping_a_plugin_back_on_its_own_edges_changes_nothing() {
+        // Both strips touching a row mean "leave it here". Reporting a move
+        // would rewrite plugins.txt for a gesture that did nothing.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
+        assert!(!l.move_plugins_to(&[1], 1));
+        assert!(!l.move_plugins_to(&[1], 2));
+        assert_eq!(names(&l), ["a.esp", "b.esp", "c.esp"]);
+        // Out of range and empty are no-ops too, not panics.
+        assert!(!l.move_plugins_to(&[], 0));
+        assert!(!l.move_plugins_to(&[99], 0));
+        assert_eq!(names(&l), ["a.esp", "b.esp", "c.esp"]);
+    }
+
+    #[test]
+    fn a_pinned_plugin_holds_its_slot_when_the_order_is_resorted() {
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
+        // Pin d.esp to the top and re-settle: it must be there afterwards.
+        l.locked.insert("d.esp".to_string(), 0);
+        l.refresh(&se());
+        assert_eq!(names(&l), ["d.esp", "a.esp", "b.esp", "c.esp"]);
+        assert!(l.violated_locks().is_empty());
+
+        // And it resists a move that would displace it: dragging a.esp to the
+        // top pushes it into slot 1, because slot 0 is spoken for.
+        assert!(l.move_plugins_to(&[1], 0));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["d.esp", "a.esp", "b.esp", "c.esp"]);
+    }
+
+    #[test]
+    fn several_pins_are_placed_low_slot_first() {
+        // Applied in descending order, the later pin would shove the earlier one
+        // along and neither would end up where it was asked for.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
+        l.locked.insert("d.esp".to_string(), 0);
+        l.locked.insert("c.esp".to_string(), 1);
+        l.refresh(&se());
+        assert_eq!(names(&l), ["d.esp", "c.esp", "a.esp", "b.esp"]);
+        assert!(l.violated_locks().is_empty());
+    }
+
+    #[test]
+    fn the_engine_rules_outrank_a_pin_and_say_so() {
+        // Pinning a plugin above its own master is a load the game cannot make.
+        // The pin loses - and is REPORTED, because a lock that silently does
+        // nothing leaves the user believing a position is held when it is not.
+        let mut l = PluginList {
+            plugins: vec![p("Skyrim.esm", &[]), p("Patch.esp", &["Skyrim.esm"])],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.locked.insert("patch.esp".to_string(), 0);
+        l.refresh(&se());
+        assert_eq!(names(&l), ["Skyrim.esm", "Patch.esp"]);
+
+        let bad = l.violated_locks();
+        assert_eq!(bad.len(), 1);
+        assert_eq!(bad[0], ("patch.esp".to_string(), 0, 1));
+    }
+
+    #[test]
+    fn a_pin_survives_the_plugin_being_disabled_and_coming_back() {
+        // Keyed by name, not by index: the whole point is that the slot is held
+        // for THAT plugin across a rebuild of the list from disk.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
+        assert!(l.set_locked(2, true));
+        assert!(l.is_locked(2));
+
+        // The list is rediscovered in a different order; the pin still applies.
+        let mut rebuilt = esps(&["c.esp", "a.esp", "b.esp"]);
+        rebuilt.locked = l.locked.clone();
+        rebuilt.refresh(&se());
+        assert_eq!(names(&rebuilt), ["a.esp", "b.esp", "c.esp"]);
+
+        // Releasing it is idempotent, and reports whether it did anything.
+        assert!(rebuilt.set_locked(2, false));
+        assert!(!rebuilt.set_locked(2, false));
+        assert!(!rebuilt.is_locked(2));
+    }
+
+    #[test]
+    fn deliberately_moving_a_pinned_plugin_repins_it_where_it_landed() {
+        // Otherwise a pinned plugin could never be moved again: its own lock
+        // would snap it back on the next refresh and the drag would look broken.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp"]);
+        l.set_locked(0, true);
+        assert!(l.move_plugins_to(&[0], 3));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["b.esp", "c.esp", "a.esp"]);
+        assert_eq!(l.locked.get("a.esp"), Some(&2));
+
+        // The arrow buttons are a deliberate move too, and must not be defeated
+        // by the plugin's own pin.
+        assert!(l.move_plugin(2, true));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["b.esp", "a.esp", "c.esp"]);
+        assert_eq!(l.locked.get("a.esp"), Some(&1));
+    }
+
+    #[test]
+    fn a_pin_does_not_follow_a_plugin_dropped_past_it() {
+        // The failure this pins: repinning everything after a move meant a pin
+        // slid along whenever a neighbour shifted, so holding a slot held
+        // nothing. Only the plugin that was actually dragged repins.
+        let mut l = esps(&["a.esp", "b.esp", "c.esp", "d.esp"]);
+        l.set_locked(2, true); // c.esp pinned to slot 2
+        assert_eq!(l.locked.get("c.esp"), Some(&2));
+
+        // Drop d.esp above a.esp: c.esp is pushed to 3, but its pin still says 2,
+        // so the refresh pulls it back and the pin has done its job.
+        assert!(l.move_plugins_to(&[3], 0));
+        l.refresh(&se());
+        assert_eq!(l.locked.get("c.esp"), Some(&2));
+        assert_eq!(names(&l), ["d.esp", "a.esp", "c.esp", "b.esp"]);
     }
 }

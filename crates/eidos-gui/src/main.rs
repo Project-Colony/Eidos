@@ -369,6 +369,18 @@ enum Message {
     DragDrop,
     /// Abandon an in-flight drag (filter change / Escape).
     DragCancel,
+    // ---- the same gesture in the plugin list (its own indices and rules) ----
+    /// Begin a potential drag from plugin row `i`.
+    PluginDragStart(usize),
+    /// The pointer moved over an insertion point in the plugin list.
+    PluginDragOverGap(usize),
+    /// The drag ended: commit the load-order move.
+    PluginDragDrop,
+    /// Abandon an in-flight plugin drag (pointer left the list).
+    PluginDragCancel,
+    /// Pin the plugin at `i` to its current load-order slot, or release it
+    /// (MO2's `lockedorder.txt`).
+    TogglePluginLock(usize),
     // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
     /// The held keyboard modifiers changed (from key press/release subscriptions).
     ModifiersChanged(iced::keyboard::Modifiers),
@@ -758,6 +770,9 @@ struct App {
     modifiers: iced::keyboard::Modifiers,
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
+    /// The same, for the plugin list. Kept separate so a drag in one panel can
+    /// never be committed against the other's indices.
+    plugin_drag: Option<DragState>,
     // ---- profile management (MO2 profiles dialog) ----
     /// The profile whose right-click action menu is open (None = closed).
     profile_menu: Option<String>,
@@ -988,6 +1003,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_batch_remove: false,
         modifiers: iced::keyboard::Modifiers::default(),
         drag_state: None,
+        plugin_drag: None,
         profile_menu: None,
         profile_rename: None,
         profile_copy: None,
@@ -1448,6 +1464,54 @@ fn planned_instance(app: &App) -> Option<Instance> {
 /// nothing can be ordered above them - a drop there would vanish on save.
 fn first_managed(mods: &[ModEntry]) -> usize {
     mods.iter().position(|m| !m.is_unmanaged()).unwrap_or(mods.len())
+}
+
+/// Which rows the mod list draws, given the filter and the folded groups.
+///
+/// Filtering SUSPENDS folding. A search is a question - "which of my mods are
+/// called this?" - and a folded group is a display convenience; letting the
+/// second silently amputate the answer to the first means the list can show
+/// nothing, or worse print "no mods match", while the match sits two rows away
+/// inside a group the user folded last week and has forgotten about. That is
+/// not a slow answer, it is a wrong one, so a matching mod shows whatever its
+/// group is doing.
+///
+/// A separator then draws only when a mod under it survived the filter, so
+/// suspending the fold does not leave a wall of empty headers; with no filter
+/// running it always draws, since it is the handle the group folds by.
+///
+/// `matches` is asked only about real mods - a separator carries no version,
+/// no category and no content, and is never a filter subject itself.
+fn visible_rows(
+    mods: &[ModEntry],
+    collapsed: &HashSet<String>,
+    filtering: bool,
+    matches: impl Fn(usize, &ModEntry) -> bool,
+) -> Vec<bool> {
+    let mut vis = vec![false; mods.len()];
+    let mut folded = false;
+    for (i, m) in mods.iter().enumerate() {
+        if m.is_separator() {
+            folded = !filtering && collapsed.contains(m.display_name());
+            vis[i] = !filtering;
+            continue;
+        }
+        vis[i] = !folded && matches(i, m);
+    }
+    if filtering {
+        // Walk back so each separator sees the group it heads, which is every
+        // row after it up to the next separator.
+        let mut group_has_match = false;
+        for i in (0..mods.len()).rev() {
+            if mods[i].is_separator() {
+                vis[i] = group_has_match;
+                group_has_match = false;
+            } else if vis[i] {
+                group_has_match = true;
+            }
+        }
+    }
+    vis
 }
 
 /// The rows a row-targeted action should act on: the whole multi-selection when
@@ -2458,15 +2522,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if !moved {
                 return Task::none();
             }
-            let written =
-                app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
-            if let Err(e) = written {
-                app.status = Some(format!("Could not write the load order: {e}"));
-                // The write was refused: the in-memory reorder never reached disk,
-                // and a LATER successful write would commit this stale list over
-                // whatever the session wrote meanwhile. Disk is the truth.
-                app.plugins = compute_plugins(app);
-            }
+            commit_plugin_order(app, &spec);
         }
         Message::ImportMo2Pick => {
             if app.created.is_none() {
@@ -3033,12 +3089,19 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             if let Some(list) = app.plugins.as_mut() {
                 list.apply_sorted_order(&sorted);
+                // NOT repin_to_current: refresh() puts the pinned plugins back
+                // where the user pinned them, over LOOT's opinion. Holding a slot
+                // against the sorter is the entire purpose of a pin.
                 list.refresh(&spec);
             }
+            // Say when the sort was partly overruled, rather than reporting a
+            // clean LOOT sort the list does not actually match.
+            let pinned = app.plugins.as_ref().map(|l| l.locked.len()).unwrap_or(0);
+            let held = if pinned > 0 { format!(" ({pinned} pinned position(s) kept)") } else { String::new() };
             let written =
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
             app.status = Some(match written {
-                Ok(_) => format!("LOOT sorted {} plugins.", sorted.len()),
+                Ok(_) => format!("LOOT sorted {} plugins.{held}", sorted.len()),
                 Err(e) => {
                     // Refused write: drop the phantom sort, resync to disk.
                     app.plugins = compute_plugins(app);
@@ -3985,6 +4048,52 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragCancel => {
             app.drag_state = None;
         }
+        Message::PluginDragStart(i) => {
+            app.plugin_drag = Some(DragState { from: i, gap: i });
+        }
+        Message::PluginDragOverGap(gap) => {
+            if let Some(d) = &mut app.plugin_drag {
+                let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+                d.gap = gap.min(len);
+            }
+        }
+        Message::PluginDragCancel => {
+            app.plugin_drag = None;
+        }
+        Message::PluginDragDrop => {
+            let Some(d) = app.plugin_drag.take() else { return Task::none() };
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            let mut moved = false;
+            if let Some(list) = app.plugins.as_mut() {
+                // move_plugins_to carries the pin of what it moved across with
+                // it, so a pinned plugin the user dragged keeps its NEW slot
+                // instead of being snapped back by its own lock.
+                moved = list.move_plugins_to(&[d.from], d.gap);
+                if moved {
+                    list.refresh(&spec);
+                }
+            }
+            if !moved {
+                return Task::none();
+            }
+            commit_plugin_order(app, &spec);
+        }
+        Message::TogglePluginLock(i) => {
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            let mut changed = false;
+            if let Some(list) = app.plugins.as_mut() {
+                let now = list.is_locked(i);
+                changed = list.set_locked(i, !now);
+            }
+            if !changed {
+                return Task::none();
+            }
+            commit_plugin_order(app, &spec);
+        }
         Message::ModifiersChanged(mods) => {
             app.modifiers = mods;
         }
@@ -4111,7 +4220,16 @@ const GAP_H: f32 = 4.0;
 /// strip is pure spacing: no `mouse_area`, so idly moving the pointer down a
 /// 100-row list does not fire a hover message per strip and rebuild the view
 /// each time.
-fn drop_gap<'a>(gap: usize, active: bool, interactive: bool) -> Element<'a, Message> {
+///
+/// Both reorderable lists render through this, so a drag reads and aims the same
+/// way in the mod list and the plugin list; only the messages differ.
+fn drop_gap<'a>(
+    gap: usize,
+    active: bool,
+    interactive: bool,
+    over: fn(usize) -> Message,
+    drop: Message,
+) -> Element<'a, Message> {
     let bar = container(Space::new(Length::Fill, Length::Fixed(if active { 2.0 } else { 0.0 })))
         .width(Length::Fill)
         .style(move |_t: &Theme| container::Style {
@@ -4129,7 +4247,7 @@ fn drop_gap<'a>(gap: usize, active: bool, interactive: bool) -> Element<'a, Mess
     if !interactive {
         return strip.into();
     }
-    mouse_area(strip).on_enter(Message::DragOverGap(gap)).on_release(Message::DragDrop).into()
+    mouse_area(strip).on_enter(over(gap)).on_release(drop).into()
 }
 
 fn list_row<'a>(content: Element<'a, Message>, even: bool, selected: bool) -> Element<'a, Message> {
@@ -4836,8 +4954,24 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
-    // Tracks whether the current separator's group is collapsed, so its mods hide.
-    let mut in_collapsed = false;
+    // Decided up front, because whether a separator draws depends on whether any
+    // mod BELOW it survives the filter - which the single downward pass this used
+    // to be could not know when it reached the header.
+    let filtering = !query.is_empty() || app.category_filter.is_some();
+    let vis = visible_rows(&app.mods, &app.collapsed, filtering, |_, m| {
+        if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
+            return false;
+        }
+        match app.category_filter {
+            None => true,
+            Some(fid) => app
+                .meta_cache
+                .get(&m.name)
+                .and_then(|r| r.category_id)
+                .zip(cats.as_ref())
+                .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid)),
+        }
+    });
     // The live drag's insertion point, if any, so exactly one gap draws the line.
     // A drag that has not moved off its own row targets nothing visible: a plain
     // click must never flash an indicator.
@@ -4854,38 +4988,21 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // conflict flags, or content (it never queries the ConflictMap). It always
         // shows (even under a filter, and even when its own group is collapsed).
         if m.is_separator() {
-            // A category filter is about content; hide separators (no category) while
-            // it's active, otherwise they show as group anchors.
-            if app.category_filter.is_some() {
+            if !vis[i] {
                 continue;
             }
-            let collapsed = app.collapsed.contains(m.display_name());
-            in_collapsed = collapsed;
-            shown += 1;
+            // Folding is suspended under a filter, so the header draws unfolded:
+            // the mods it heads ARE on screen, and a [+] next to them would lie.
+            let collapsed = !filtering && app.collapsed.contains(m.display_name());
             let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
-            list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap));
+            list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
             list = list.push(separator_row(i, m, len, color, collapsed, selected));
             continue;
         }
-        // Mods under a collapsed separator are hidden; otherwise filter by name + category.
-        if in_collapsed {
+        if !vis[i] {
             continue;
-        }
-        if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
-            continue;
-        }
-        if let Some(fid) = app.category_filter {
-            let matches = app
-                .meta_cache
-                .get(&m.name)
-                .and_then(|r| r.category_id)
-                .zip(cats.as_ref())
-                .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid));
-            if !matches {
-                continue;
-            }
         }
         shown += 1;
         // MO2's conflict emblems; a disabled mod shows none (the checkbox says it).
@@ -4916,7 +5033,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // The insertion strip ABOVE this row. Always rendered (stable layout),
         // targetable only during a drag and only from the first managed row down:
         // nothing may be ordered above the game's own content.
-        list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap));
+        list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
         list = list.push(list_row(
             mod_row(i, m, len, meta, flag_icon, hidden_icon),
             i % 2 == 0,
@@ -4927,10 +5044,17 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // hovering a row always means "above it".
     if !app.mods.is_empty() {
         let end = app.mods.len();
-        list = list.push(drop_gap(end, live_gap == Some(end), dragging));
+        list = list.push(drop_gap(end, live_gap == Some(end), dragging, Message::DragOverGap, Message::DragDrop));
     }
-    if !app.mods.is_empty() && shown == 0 {
-        list = list.push(text(format!("No mods match \"{}\".", app.search.trim())).size(12.0));
+    // `shown` counts mods only, so this cannot fire on a list that is all folded
+    // groups - and it only speaks when something was actually asked.
+    if !app.mods.is_empty() && shown == 0 && filtering {
+        let by = match (query.is_empty(), app.category_filter.is_some()) {
+            (false, false) => format!("named \"{}\"", app.search.trim()),
+            (true, _) => "in this category".to_string(),
+            (false, true) => format!("named \"{}\" in this category", app.search.trim()),
+        };
+        list = list.push(text(format!("No mods {by}.")).size(12.0));
     }
 
     let overwrite = button(
@@ -6334,6 +6458,11 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
             }
         }
     }
+    // The pins are the user's, so they load from the profile and outlive any
+    // rediscovery of the plugins themselves.
+    if let Some(inst) = app.created.as_ref() {
+        list.locked = inst.active().read_locked_order();
+    }
     list.refresh(&spec);
     Some(list)
 }
@@ -6341,6 +6470,19 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
 /// Persist the plugin load order: into the active profile's plugins dir (the
 /// single source of truth, bind-mounted over the prefix at launch) AND a shadow
 /// copy into the prefix for external tools reading it outside Eidos.
+/// Persist the load order after a user-driven change, and say so if disk refused.
+///
+/// A refused write means the in-memory order never landed. Keeping it would let a
+/// LATER successful write commit this stale list over whatever a running session
+/// wrote meanwhile, so the list is re-read instead: disk is the truth.
+fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
+    let written = app.plugins.as_ref().map(|list| write_plugin_state(app, list, spec)).transpose();
+    if let Err(e) = written {
+        app.status = Some(format!("Could not write the load order: {e}"));
+        app.plugins = compute_plugins(app);
+    }
+}
+
 fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io::Result<()> {
     // Cross-process lock: a running session owns these files (the plugins dir is
     // bind-mounted into it); a mid-game reorder must refuse, not corrupt.
@@ -6353,6 +6495,7 @@ fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io:
         // destroy the only copy that can still restore the pre-damage state.
         let damage_flagged = prof.plugin_loss_since_snapshot(spec).is_some();
         list.write_load_order(&prof.plugins_state_dir(), spec)?;
+        prof.write_locked_order(&list.locked)?;
         if !damage_flagged {
             let _ = prof.snapshot_plugin_state();
         }
@@ -6397,17 +6540,43 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         );
     }
 
+    // A pin the engine had to overrule. Silence here would leave the user
+    // believing a slot is held when it is not, so it is said out loud.
+    let violated = list.violated_locks();
+    if !violated.is_empty() {
+        let names: Vec<&str> = violated.iter().map(|(n, _, _)| n.as_str()).take(3).collect();
+        let more = violated.len().saturating_sub(names.len());
+        let tail = if more > 0 { format!(" (+{more} more)") } else { String::new() };
+        head = head.push(
+            text(format!(
+                "{} pinned position(s) could not be kept - a plugin must load after its masters: {}{tail}",
+                violated.len(),
+                names.join(", ")
+            ))
+            .size(11.0),
+        );
+    }
+
     let header = Row::new()
         .spacing(6)
         .push(text("Index").size(11.0).width(Length::Fixed(52.0)))
         .push(text("On").size(11.0).width(Length::Fixed(28.0)))
         .push(text("Plugin").size(11.0).width(Length::Fill))
-        .push(text("Type").size(11.0).width(Length::Fixed(36.0)));
+        .push(text("Type").size(11.0).width(Length::Fixed(36.0)))
+        .push(text("Pin").size(11.0).width(Length::Fixed(26.0)))
+        .push(text("").width(Length::Fixed(44.0)));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
-    let mut rows = Column::new().spacing(1);
+    // No spacing: the insertion strips are the spacing, exactly as in the mod
+    // list, so the layout does not shift the instant a drag begins.
+    let mut rows = Column::new();
     let total = list.plugins.len();
+    let live_gap = app
+        .plugin_drag
+        .filter(|d| d.gap != d.from && d.gap != d.from + 1)
+        .map(|d| d.gap);
+    let dragging = app.plugin_drag.is_some();
     for (i, p) in list.plugins.iter().enumerate() {
         let idx = p.index.clone().unwrap_or_else(|| "--".to_string());
         let kind = if p.is_light {
@@ -6443,6 +6612,18 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         if i + 1 < total {
             down = down.on_press(Message::PluginMoveDown(i));
         }
+        // The pin (MO2's locked order). A primary master is already nailed to the
+        // top by the engine, so offering to pin it would be theatre.
+        let locked = list.is_locked(i);
+        let pin: Element<'a, Message> = if is_primary {
+            text("").width(Length::Fixed(26.0)).into()
+        } else {
+            button(text(if locked { "[*]" } else { "[ ]" }).size(10.0))
+                .padding([0, 3])
+                .style(button::text)
+                .on_press(Message::TogglePluginLock(i))
+                .into()
+        };
         let row = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
@@ -6450,17 +6631,41 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(toggle).width(Length::Fixed(28.0)))
             .push(text(p.name.clone()).size(12.0).width(Length::Fill))
             .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
+            .push(container(pin).width(Length::Fixed(26.0)))
             .push(up)
             .push(down);
-        rows = rows.push(striped(row.into(), i % 2 == 0));
+        // Grabbing the row arms the drag; hovering it during one means "insert
+        // above me", the same reading as the mod list.
+        let grab = mouse_area(striped(row.into(), i % 2 == 0))
+            .on_press(Message::PluginDragStart(i))
+            .on_enter(Message::PluginDragOverGap(i))
+            .on_release(Message::PluginDragDrop);
+        rows = rows.push(drop_gap(
+            i,
+            live_gap == Some(i),
+            dragging,
+            Message::PluginDragOverGap,
+            Message::PluginDragDrop,
+        ));
+        rows = rows.push(grab);
+    }
+    // The trailing strip: hovering a row always means "above it", so this is the
+    // only way to aim at the end of the load order.
+    if total > 0 {
+        rows = rows.push(drop_gap(
+            total,
+            live_gap == Some(total),
+            dragging,
+            Message::PluginDragOverGap,
+            Message::PluginDragDrop,
+        ));
     }
 
-    Column::new()
-        .spacing(6)
-        .push(head)
-        .push(header)
-        .push(scrollable(rows).height(Length::Fill))
-        .into()
+    // Releasing outside the list drops nothing, as in the mod list.
+    let list_area =
+        mouse_area(scrollable(rows).height(Length::Fill)).on_exit(Message::PluginDragCancel);
+
+    Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }
 
 /// Analyse file conflicts across the enabled mods (+ the game data) for the
@@ -8520,6 +8725,63 @@ mod tests {
 
         // And an all-managed list starts at the top.
         assert_eq!(first_managed(&mods(&["a", "b"])), 0);
+    }
+
+    /// The rows `visible_rows` says to draw, by name, for a readable assertion.
+    fn drawn<'a>(v: &'a [ModEntry], vis: &[bool]) -> Vec<&'a str> {
+        v.iter().zip(vis).filter(|(_, &s)| s).map(|(m, _)| m.name.as_str()).collect()
+    }
+
+    #[test]
+    fn a_search_finds_mods_inside_a_folded_group() {
+        // The bug this pins: the fold was applied before the query, so a match
+        // inside a folded group was dropped and the list said "no mods match" -
+        // a WRONG answer, not a slow one. The user then reasonably concludes the
+        // mod is not installed.
+        let v = mods(&["armour_separator", "iron armour", "steel armour", "misc_separator", "a map"]);
+        let folded: HashSet<String> = ["armour".to_string()].into_iter().collect();
+
+        let vis = visible_rows(&v, &folded, true, |_, m| m.display_name().contains("armour"));
+        assert_eq!(drawn(&v, &vis), ["armour_separator", "iron armour", "steel armour"]);
+
+        // The group that contributed nothing is gone, header included, so the
+        // filter does not leave a wall of empty headers behind.
+        assert!(!vis[3]);
+    }
+
+    #[test]
+    fn folding_still_hides_the_group_when_nothing_is_being_asked() {
+        let v = mods(&["armour_separator", "iron armour", "misc_separator", "a map"]);
+        let folded: HashSet<String> = ["armour".to_string()].into_iter().collect();
+
+        // No filter: the fold is honoured, and both headers stay - a header is
+        // the handle you unfold by, so hiding it would strand the group.
+        let vis = visible_rows(&v, &folded, false, |_, _| true);
+        assert_eq!(drawn(&v, &vis), ["armour_separator", "misc_separator", "a map"]);
+    }
+
+    #[test]
+    fn a_separator_draws_only_for_the_group_it_actually_heads() {
+        // Rows before the FIRST separator belong to no group; a match there must
+        // not resurrect the header that follows it.
+        let v = mods(&["loose mod", "armour_separator", "iron armour"]);
+        let vis = visible_rows(&v, &HashSet::new(), true, |_, m| m.name == "loose mod");
+        assert_eq!(drawn(&v, &vis), ["loose mod"]);
+
+        // And a match inside the group brings back that header and no other.
+        let v2 = mods(&["a_separator", "one", "b_separator", "two"]);
+        let vis2 = visible_rows(&v2, &HashSet::new(), true, |_, m| m.name == "two");
+        assert_eq!(drawn(&v2, &vis2), ["b_separator", "two"]);
+    }
+
+    #[test]
+    fn the_indices_visible_rows_reports_are_the_real_row_indices() {
+        // The drop gaps are keyed by absolute index, so a filtered list must not
+        // renumber anything: gap `i` has to keep meaning "before mods[i]" or a
+        // drop under a filter lands somewhere else entirely.
+        let v = mods(&["a", "b", "c"]);
+        let vis = visible_rows(&v, &HashSet::new(), true, |_, m| m.name == "c");
+        assert_eq!(vis, [false, false, true]);
     }
 
     #[test]

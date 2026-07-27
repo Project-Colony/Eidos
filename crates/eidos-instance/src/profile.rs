@@ -6,7 +6,7 @@
 //! `<instance>/profiles/<name>/`; its `modlist.txt` carries both the enabled set
 //! and the priority order, while the mods themselves stay global.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -75,6 +75,49 @@ impl Profile {
     /// primaries and Creations that plugins.txt deliberately omits.
     pub fn loadorder_txt_path(&self) -> PathBuf {
         self.plugins_state_dir().join("loadorder.txt")
+    }
+
+    /// The load-order positions the user pinned (MO2's `lockedorder.txt`), one
+    /// `name|index` per line.
+    ///
+    /// Deliberately at the profile top level and NOT in [`Self::plugins_state_dir`],
+    /// which is bind-mounted over the game's own AppData at launch: this is
+    /// Eidos's bookkeeping, and the game has no business being shown it.
+    pub fn locked_order_path(&self) -> PathBuf {
+        self.dir().join("lockedorder.txt")
+    }
+
+    /// Read the pinned positions. A malformed or unreadable file yields no pins
+    /// rather than an error: a lost pin is a cosmetic regression, while refusing
+    /// to open the profile over one would not be.
+    pub fn read_locked_order(&self) -> BTreeMap<String, usize> {
+        let Some(body) = fs::read_to_string(self.locked_order_path()).ok() else {
+            return BTreeMap::new();
+        };
+        body.lines()
+            .filter_map(|l| {
+                let (name, idx) = l.trim().split_once('|')?;
+                let name = name.trim();
+                if name.is_empty() {
+                    return None;
+                }
+                Some((name.to_ascii_lowercase(), idx.trim().parse().ok()?))
+            })
+            .collect()
+    }
+
+    /// Persist the pinned positions, removing the file when nothing is pinned so
+    /// an empty profile does not carry a stray artifact.
+    pub fn write_locked_order(&self, locked: &BTreeMap<String, usize>) -> io::Result<()> {
+        let path = self.locked_order_path();
+        if locked.is_empty() {
+            match fs::remove_file(&path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => return Ok(()),
+            }
+        }
+        let body: String = locked.iter().map(|(n, i)| format!("{n}|{i}\n")).collect();
+        copy_atomic_bytes(&path, body.as_bytes())
     }
 
     pub fn plugins_state_dir(&self) -> PathBuf {
@@ -956,6 +999,20 @@ pub fn write_text(path: &Path, text: &str, cp1252: bool) -> io::Result<()> {
 pub(crate) fn copy_atomic(src: &Path, dst: &Path) -> io::Result<()> {
     let tmp = dst.with_extension("eidos-tmp");
     fs::copy(src, &tmp)?;
+    match fs::rename(&tmp, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// Write `bytes` to `dst` through a temp file and a rename, so a reader never
+/// sees a half-written file and a failure leaves the previous contents intact.
+pub(crate) fn copy_atomic_bytes(dst: &Path, bytes: &[u8]) -> io::Result<()> {
+    let tmp = dst.with_extension("eidos-tmp");
+    fs::write(&tmp, bytes)?;
     match fs::rename(&tmp, dst) {
         Ok(()) => Ok(()),
         Err(e) => {

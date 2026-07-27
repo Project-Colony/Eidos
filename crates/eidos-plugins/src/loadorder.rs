@@ -424,6 +424,7 @@ mod tests {
                 .into_iter()
                 .map(String::from)
                 .collect(),
+            locked: Default::default(),
         };
         list.refresh(&spec);
         list.write_load_order(&dir, &spec).unwrap();
@@ -462,6 +463,7 @@ mod tests {
                 pl("OffMod.esp", false),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.write_load_order(&dir, &se()).unwrap();
 
@@ -485,6 +487,7 @@ mod tests {
         let list = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("A.esp", true), pl("B.esp", false)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.write_load_order(&dir, &se()).unwrap();
 
@@ -499,6 +502,7 @@ mod tests {
         let mut list = PluginList {
             plugins: vec![pl("B.esp", true), pl("A.esp", true), pl("C.esp", true)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.apply_active(&[("A.esp".into(), true), ("B.esp".into(), false)]);
         // Order follows the applied list (A, B), then the rest (C); B now off.
@@ -515,7 +519,7 @@ mod tests {
         // active (it would otherwise consume an index slot it can't legally have).
         let mut esl = pl("Light.esl", false);
         esl.force_disabled = true;
-        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)], implicit: Default::default() };
+        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)], implicit: Default::default(), locked: Default::default() };
         list.apply_active(&[("Light.esl".into(), true), ("Normal.esp".into(), true)]);
         let light = list.plugins.iter().find(|p| p.name == "Light.esl").unwrap();
         let normal = list.plugins.iter().find(|p| p.name == "Normal.esp").unwrap();
@@ -530,6 +534,7 @@ mod tests {
         let list = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("On.esp", true), pl("Off.esp", false)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.write_load_order(&dir, &spec).unwrap();
         let plugins = fs::read_to_string(dir.join("plugins.txt")).unwrap();
@@ -546,6 +551,7 @@ mod tests {
         let dir = tmp_dir();
         let list = PluginList { plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.write_load_order(&dir, &se()).unwrap();
         // The on-disk bytes are CP1252 (é = 0xE9), not UTF-8.
@@ -576,7 +582,7 @@ mod tests {
 
         // Writing keeps the spelling the game chose rather than adding a second
         // file the game might read instead.
-        let mut list = PluginList { plugins: vec![], implicit: Default::default() };
+        let mut list = PluginList { plugins: vec![], implicit: Default::default(), locked: Default::default() };
         list.plugins.push(crate::Plugin {
             name: "Written.esp".into(),
             origin_mod: String::new(),
@@ -637,6 +643,7 @@ mod tests {
                 index: None,
             }],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         list.write_load_order(&dir, &spec).unwrap();
         let n = fs::read_dir(&dir)
@@ -652,7 +659,7 @@ mod tests {
     fn empty_list_does_not_overwrite_plugins_txt() {
         let dir = tmp_dir();
         fs::write(dir.join("plugins.txt"), b"# precious\n*KeepMe.esp\n").unwrap();
-        PluginList { plugins: vec![], implicit: Default::default() }.write_load_order(&dir, &se()).unwrap();
+        PluginList { plugins: vec![], implicit: Default::default(), locked: Default::default() }.write_load_order(&dir, &se()).unwrap();
         // MO2 refuses to write an empty list; the good file is untouched.
         assert_eq!(fs::read_to_string(dir.join("plugins.txt")).unwrap(), "# precious\n*KeepMe.esp\n");
         let _ = fs::remove_dir_all(&dir);
@@ -683,6 +690,7 @@ mod tests {
                 pl("MyMod.esp", true),
             ],
             implicit: implicit.clone(),
+            locked: Default::default(),
         };
         sorted.refresh(&spec);
         sorted.write_load_order(&dir, &spec).unwrap();
@@ -700,6 +708,7 @@ mod tests {
                 pl("Skyrim.esm", true),
             ],
             implicit,
+            locked: Default::default(),
         };
         fresh.apply_prefix_state(&dir, &spec);
         fresh.refresh(&spec);
@@ -729,6 +738,7 @@ mod tests {
                 pl("C.esp", true),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         saved.write_load_order(&dir, &spec).unwrap();
 
@@ -744,6 +754,7 @@ mod tests {
                 pl("Skyrim.esm", true),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         fresh.apply_prefix_state(&dir, &spec);
         let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
@@ -762,12 +773,14 @@ mod tests {
         let saved = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("B.esp", true), pl("A.esp", true)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         saved.write_load_order(&dir, &spec).unwrap();
 
         let mut fresh = PluginList {
             plugins: vec![pl("A.esp", true), pl("B.esp", true), pl("Skyrim.esm", true)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         fresh.apply_prefix_state(&dir, &spec);
         let names: Vec<&str> = fresh.plugins.iter().map(|p| p.name.as_str()).collect();
@@ -784,6 +797,7 @@ mod tests {
         let saved = PluginList {
             plugins: vec![pl("Skyrim.esm", true), pl("B.esp", true), pl("A.esp", true)],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         saved.write_load_order(&dir, &spec).unwrap();
 
@@ -795,6 +809,7 @@ mod tests {
                 pl("Skyrim.esm", true),
             ],
             implicit: Default::default(),
+            locked: Default::default(),
         };
         fresh.apply_prefix_state(&dir, &spec);
         fresh.refresh(&spec);
@@ -808,13 +823,13 @@ mod tests {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
         // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
-        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)], implicit: Default::default() }
+        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)], implicit: Default::default(), locked: Default::default() }
             .write_load_order(&dir, &spec)
             .unwrap();
 
         // A fresh list in arbitrary order; prefix state decides enabled/disabled.
         let mut fresh =
-            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)], implicit: Default::default() };
+            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)], implicit: Default::default(), locked: Default::default() };
         fresh.apply_prefix_state(&dir, &spec);
         let state: Vec<_> = fresh.plugins.iter().map(|p| (p.name.clone(), p.enabled)).collect();
         // Order follows loadorder.txt (A,B,C); B stays DISABLED (in loadorder.txt
