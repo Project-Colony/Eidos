@@ -183,6 +183,8 @@ enum Message {
     DataToggleDir(String),
     /// Periodic re-scan of the downloads directory while one is arriving.
     DownloadTick,
+    /// Remove the `mods/.eidos-install*` trees an interrupted install left.
+    CleanInstallDebris,
     /// Open or close a folder of the Overwrite tree.
     OverwriteToggleDir(String),
     /// Hide or unhide one path inside a mod: `(mod index, path relative to the mod
@@ -4702,6 +4704,32 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             load_downloads(app);
             app.status = Some(format!("Found {} download(s).", app.downloads.len()));
         }
+        Message::CleanInstallDebris => {
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let dir = inst.mods_dir();
+            let mut gone = 0usize;
+            let mut failed: Vec<String> = Vec::new();
+            for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let Ok(name) = e.file_name().into_string() else { continue };
+                // The prefix is the whole guard, and it is checked HERE rather
+                // than trusted from the diagnostic: the card the user clicked
+                // may have been built before a refresh, and this loop deletes.
+                if !name.starts_with(".eidos-install") {
+                    continue;
+                }
+                match fs::remove_dir_all(e.path()) {
+                    Ok(()) => gone += 1,
+                    Err(err) => failed.push(format!("{name}: {err}")),
+                }
+            }
+            app.status = Some(if failed.is_empty() {
+                format!("Removed {gone} leftover extraction folder(s).")
+            } else {
+                format!("Removed {gone}; could not remove {}", failed.join(", "))
+            });
+            app.diag_dirty = true;
+            reload_mods(app);
+        }
         Message::DownloadTick => {
             // Cheap and bounded: one read_dir of a directory holding a few dozen
             // files. It is NOT called from view() - that lesson is already paid
@@ -7594,10 +7622,16 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 level: DiagLevel::Advice,
                 title: format!("{} leftover extraction folder(s)", debris.len()),
                 detail: format!(
-                    "An install was interrupted. They are ignored by the mod list and safe to delete from {}.",
+                    "An install was interrupted. Eidos ignores them - they are hidden and are \
+                     never mounted - but they hold whatever had been unpacked before it stopped, \
+                     which for a body or texture mod can be gigabytes. In {}.",
                     inst.mods_dir().display()
                 ),
-                actions: Vec::new(),
+                // A check that knows the answer should not end by naming a
+                // directory and wishing the user luck. This one can only ever
+                // remove `mods/.eidos-install*`, which Eidos created itself and
+                // which nothing else reads.
+                actions: vec![("Delete them", Message::CleanInstallDebris)],
             });
         }
     }
@@ -11849,6 +11883,39 @@ mod tests {
             .unwrap();
         load_downloads(&mut app);
         assert_eq!(app.downloads[0].state, DownloadState::Stalled);
+    }
+
+
+    #[test]
+    fn cleaning_debris_only_touches_eidos_install_folders() {
+        // The handler deletes recursively inside `mods/`, which is where every
+        // mod the user owns also lives. The prefix is the ONLY thing standing
+        // between the two, so it is worth a test of its own.
+        let mut app = nav_app(&[]);
+        let root = std::env::temp_dir().join(format!("eidos-debris-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mods = root.join("mods");
+        for d in [".eidos-install-1-0", ".eidos-install-2-0"] {
+            fs::create_dir_all(mods.join(d).join("00 Core")).unwrap();
+            fs::write(mods.join(d).join("00 Core/a.esp"), b"x").unwrap();
+        }
+        // Everything that must survive: a real mod, a separator, and a dotfile
+        // that is not ours.
+        fs::create_dir_all(mods.join("A Real Mod/meshes")).unwrap();
+        fs::write(mods.join("A Real Mod/meshes/m.nif"), b"keep").unwrap();
+        fs::create_dir_all(mods.join("Group_separator")).unwrap();
+        fs::create_dir_all(mods.join(".git")).unwrap();
+        app.created = Some(eidos_instance::Instance::portable(root.clone()));
+
+        update_inner(&mut app, Message::CleanInstallDebris);
+
+        assert!(!mods.join(".eidos-install-1-0").exists());
+        assert!(!mods.join(".eidos-install-2-0").exists());
+        assert_eq!(fs::read(mods.join("A Real Mod/meshes/m.nif")).unwrap(), b"keep");
+        assert!(mods.join("Group_separator").is_dir());
+        assert!(mods.join(".git").is_dir(), "a dotfile that is not ours is not ours to delete");
+        assert!(app.status.as_deref().unwrap_or("").contains('2'), "{:?}", app.status);
+        let _ = fs::remove_dir_all(&root);
     }
 
 }
