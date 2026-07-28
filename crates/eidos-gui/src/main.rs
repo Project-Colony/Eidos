@@ -907,6 +907,13 @@ struct App {
     selected_plugins: HashSet<usize>,
     /// Which list the arrow keys move in.
     focus: Pane,
+    /// The category catalog, read once instead of per frame.
+    ///
+    /// `Instance::category_factory` opens and parses `categories.dat` on every
+    /// call, and the mod list asked it for one on every view - so tracking the
+    /// pointer for context-menu placement turned that into a file read and a
+    /// parse per mouse MOVE. Rebuilt where the mod list is rebuilt.
+    categories: Option<eidos_instance::CategoryFactory>,
     /// The live pointer position, and the window it moves in.
     ///
     /// iced's `on_right_press` carries no coordinates, so a context menu has no
@@ -1169,6 +1176,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         selected_plugins: HashSet::new(),
         plugin_anchor: None,
         focus: Pane::Mods,
+        categories: None,
         cursor: iced::Point::ORIGIN,
         window: iced::Size::new(1280.0, 800.0),
         menu_at: None,
@@ -1207,6 +1215,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             let _ = inst.ensure_manifest(app.games[i].def.id, InstanceKind::Global);
             let _ = inst.ensure_profiles();
             app.mods = modlist_with_unmanaged(&inst, app.games.get(i));
+            app.categories = Some(inst.category_factory());
             app.created = Some(inst);
             app.screen = Screen::Main;
             app.status =
@@ -1222,6 +1231,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
                 let _ = inst.ensure_profiles();
                 app.selected = Some(i);
                 app.mods = modlist_with_unmanaged(&inst, Some(g));
+                app.categories = Some(inst.category_factory());
                 app.created = Some(inst);
                 app.screen = Screen::Main;
                 break;
@@ -1396,6 +1406,9 @@ fn reload_mods(app: &mut App) {
     let held = hold_mod_selection(app);
     app.mods = modlist_with_unmanaged(&inst, game.as_ref());
     put_mod_selection(app, held);
+    // Same moment the list is rebuilt: a category could have been added by an
+    // install, and this is the only place that would notice.
+    app.categories = Some(inst.category_factory());
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
@@ -1865,8 +1878,7 @@ fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
     // Space toggles something nobody is looking at.
     let rows: Vec<usize> = match pane {
         Pane::Mods => {
-            let cats = app.created.as_ref().map(|i| i.category_factory());
-            let vis = mod_row_visibility(app, cats.as_ref());
+            let vis = mod_row_visibility(app, app.categories.as_ref());
             (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect()
         }
         Pane::Plugins => (0..app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0)).collect(),
@@ -5290,11 +5302,30 @@ fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
     button(text(label).size(13.0)).padding(6).on_press(msg).style(button::text).into()
 }
 
+/// The decoded handle for each icon, made ONCE and handed out by address.
+///
+/// `image::Handle::from_bytes` stamps every handle with `Id::unique()`, so
+/// building one per call meant every icon was a brand-new image to the renderer
+/// on every view rebuild - a fresh texture upload per icon per frame, plus a
+/// `to_vec` copy of the PNG bytes to go with it. That stayed invisible while the
+/// view only rebuilt on a click or a hover transition. Tracking the pointer for
+/// context-menu placement made it rebuild on every mouse MOVE, and the cache
+/// thrashing showed up as icons and text flickering as the pointer travelled.
+///
+/// Keyed by the address of the `&'static [u8]`, which is stable and unique per
+/// icon constant - the bytes themselves are never copied again.
+static ICON_HANDLES: std::sync::LazyLock<std::sync::Mutex<HashMap<usize, image::Handle>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+
 fn icon<'a>(bytes: &'static [u8], size: f32) -> Element<'a, Message> {
-    image(image::Handle::from_bytes(bytes.to_vec()))
-        .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
-        .into()
+    let handle = {
+        let mut cache = ICON_HANDLES.lock().unwrap_or_else(|p| p.into_inner());
+        cache
+            .entry(bytes.as_ptr() as usize)
+            .or_insert_with(|| image::Handle::from_bytes(bytes))
+            .clone()
+    };
+    image(handle).width(Length::Fixed(size)).height(Length::Fixed(size)).into()
 }
 
 /// A flat toolbar button: icon + label (MO2's icons-and-text mode).
@@ -5882,7 +5913,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         );
 
     // The category catalog (resolves ids -> names; drives the filter + the column).
-    let cats = app.created.as_ref().map(|i| i.category_factory());
+    let cats = app.categories.as_ref();
 
     // Category-filter dropdown: "All" + the top-level categories actually in use.
     let mut choices = vec![CategoryChoice { id: None, label: "All categories".to_string() }];
@@ -5948,7 +5979,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // mod BELOW it survives the filter - which the single downward pass this used
     // to be could not know when it reached the header.
     let filtering = !query.is_empty() || app.category_filter.is_some();
-    let vis = mod_row_visibility(app, cats.as_ref());
+    let vis = mod_row_visibility(app, cats);
     // The live drag's insertion point, if any, so exactly one gap draws the line.
     // A drag that has not moved off its own row targets nothing visible: a plain
     // click must never flash an indicator.
