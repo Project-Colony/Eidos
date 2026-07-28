@@ -181,6 +181,8 @@ enum Message {
     /// Expand or collapse a directory in the Data tree, by its path relative to
     /// `Data` (`""` is the root, which is always expanded).
     DataToggleDir(String),
+    /// Open or close a folder of the Overwrite tree.
+    OverwriteToggleDir(String),
     /// Hide or unhide one path inside a mod: `(mod index, path relative to the mod
     /// root)`. Hiding renames it to `<name>.mohidden`, which drops it out of the
     /// virtual view without deleting anything; unhiding strips the suffix back off.
@@ -992,6 +994,8 @@ struct App {
     /// Directories the user expanded in the Data tree, same keys as above. The
     /// root is implicitly expanded and never in here.
     data_expanded: HashSet<String>,
+    /// Folders opened in the Overwrite tree, keyed the same way.
+    overwrite_expanded: HashSet<String>,
     /// Memoised recursive file listings per directory (the Overwrite tab and the
     /// mod-info file tree), each with the generation it was built at.
     listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, Vec<String>)>>,
@@ -1209,6 +1213,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         diag_stale: std::cell::Cell::new(true),
         data_listing: std::cell::RefCell::new(HashMap::new()),
         data_expanded: HashSet::new(),
+        overwrite_expanded: HashSet::new(),
         listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
     };
@@ -3969,6 +3974,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.data_expanded.insert(rel);
             }
         }
+        Message::OverwriteToggleDir(rel) => {
+            if !app.overwrite_expanded.remove(&rel) {
+                app.overwrite_expanded.insert(rel);
+            }
+        }
         Message::ToggleFileHidden(i, rel) => {
             let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
             let target = m.path.join(&rel);
@@ -5546,6 +5556,80 @@ fn cached_entries(app: &App, dir: &Path) -> Vec<String> {
     entries
 }
 
+/// One drawn line of the Overwrite tree.
+struct OwRow {
+    depth: usize,
+    /// `/`-joined path relative to the Overwrite: the expansion key.
+    rel: String,
+    name: String,
+    /// `Some(n)` for a folder holding `n` files (recursively), `None` for a file.
+    files: Option<usize>,
+}
+
+/// The immediate children of `dir` inside a SORTED list of `/`-joined FILE paths.
+///
+/// The list is the one the tab already had and already caches, so the tree costs
+/// no extra disk read - it is derived, not gathered. Sortedness is what makes it
+/// cheap: every descendant of `dir` is one contiguous run, found by binary search,
+/// and only a run belonging to an EXPANDED folder is ever scanned. A collapsed
+/// Overwrite of 4902 files touches a few dozen strings.
+///
+/// Folders first, then files, each alphabetically - the order MO2 uses.
+fn tree_children(entries: &[String], dir: &str) -> Vec<(String, Option<usize>)> {
+    let prefix = if dir.is_empty() { String::new() } else { format!("{dir}/") };
+    let lo = entries.partition_point(|e| e.as_str() < prefix.as_str());
+    let mut dirs: Vec<(String, usize)> = Vec::new();
+    let mut files: Vec<String> = Vec::new();
+    for e in &entries[lo..] {
+        let Some(rest) = e.strip_prefix(prefix.as_str()) else { break };
+        match rest.split_once('/') {
+            // A folder: count every file under it by extending the current run
+            // rather than searching again.
+            Some((head, _)) => match dirs.last_mut() {
+                Some((n, c)) if n == head => *c += 1,
+                _ => dirs.push((head.to_string(), 1)),
+            },
+            None => files.push(rest.to_string()),
+        }
+    }
+    dirs.into_iter()
+        .map(|(n, c)| (n, Some(c)))
+        .chain(files.into_iter().map(|n| (n, None)))
+        .collect()
+}
+
+/// Flatten the expanded parts of the Overwrite into the rows to draw, depth
+/// first. Bounded by `limit` for the same reason the Data tree is: the point of
+/// opening one level at a time is not to build the other 4900 rows.
+fn overwrite_tree_rows(app: &App, entries: &[String], limit: usize) -> Vec<OwRow> {
+    fn walk(
+        app: &App,
+        entries: &[String],
+        dir: &str,
+        depth: usize,
+        limit: usize,
+        out: &mut Vec<OwRow>,
+    ) {
+        if out.len() >= limit || depth > 32 {
+            return;
+        }
+        for (name, files) in tree_children(entries, dir) {
+            if out.len() >= limit {
+                return;
+            }
+            let rel = if dir.is_empty() { name.clone() } else { format!("{dir}/{name}") };
+            let expanded = files.is_some() && app.overwrite_expanded.contains(&rel);
+            out.push(OwRow { depth, rel: rel.clone(), name, files });
+            if expanded {
+                walk(app, entries, &rel, depth + 1, limit, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(app, entries, "", 0, limit, &mut out);
+    out
+}
+
 fn overwrite_entries(dir: &Path) -> Vec<String> {
     fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
         let Ok(rd) = fs::read_dir(dir) else { return };
@@ -6788,6 +6872,8 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             .into()
     });
 
+    // A tree, not 4902 full paths one under the other. Same grammar as the Data
+    // tab - triangle, indent, name - because they are the same gesture.
     let entries = cached_entries(app, &dir);
     let mut c = Column::new().spacing(2);
     if entries.is_empty() {
@@ -6795,8 +6881,39 @@ fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     } else {
         c = c.push(text(format!("{} file(s):", entries.len())).size(11.0));
     }
-    for e in entries.into_iter().take(500) {
-        c = c.push(text(e).size(11.0));
+    let rows = overwrite_tree_rows(app, &entries, DATA_TREE_ROWS);
+    let truncated = rows.len() >= DATA_TREE_ROWS;
+    for r in rows {
+        let lead: Element<'a, Message> = match r.files {
+            Some(_) => {
+                let glyph =
+                    if app.overwrite_expanded.contains(&r.rel) { "\u{25BE}" } else { "\u{25B8}" };
+                button(text(glyph).size(11.0))
+                    .padding([0, 4])
+                    .on_press(Message::OverwriteToggleDir(r.rel.clone()))
+                    .style(button::text)
+                    .into()
+            }
+            // Same width as the triangle, so names stay in one column.
+            None => Space::new().width(Length::Fixed(18.0)).into(),
+        };
+        let mut row = Row::new()
+            .spacing(2)
+            .align_y(iced::Alignment::Center)
+            .push(Space::new().width(Length::Fixed(r.depth as f32 * 14.0)))
+            .push(lead)
+            .push(text(r.name).size(11.5));
+        if let Some(n) = r.files {
+            // How much is under a folder, so a closed one still says something.
+            row = row.push(text(format!("  {n}")).size(10.0).color(FOMOD_INK_FAINT));
+        }
+        c = c.push(row);
+    }
+    if truncated {
+        c = c.push(
+            text(format!("Showing the first {DATA_TREE_ROWS} rows - collapse a folder to see more."))
+                .size(11.0),
+        );
     }
 
     let mut col = Column::new().spacing(8).push(actions);
@@ -11030,4 +11147,89 @@ mod tests {
         assert_eq!(rebuilt, "Réglé - voir le fil déjà");
         assert_eq!(parts[1].1.as_deref(), Some("https://loot.example/é"));
     }
+
+    fn sorted(v: &[&str]) -> Vec<String> {
+        let mut o: Vec<String> = v.iter().map(|s| s.to_string()).collect();
+        o.sort();
+        o
+    }
+
+    #[test]
+    fn the_tree_shows_one_level_and_counts_what_is_below() {
+        // Lin's real Overwrite in miniature: a Root/ subtree beside the tool's own
+        // files. The root level must be four rows, not 4902.
+        let e = sorted(&[
+            "CalienteTools/BodySlide/Config.xml",
+            "CalienteTools/BodySlide/Log_BS.txt",
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "Root/d3dx9_42.log",
+            "note.txt",
+        ]);
+        let top = tree_children(&e, "");
+        assert_eq!(
+            top,
+            vec![
+                ("CalienteTools".to_string(), Some(2)),
+                ("Root".to_string(), Some(3)),
+                ("note.txt".to_string(), None),
+            ],
+            "folders first with their recursive file count, then loose files"
+        );
+        assert_eq!(
+            tree_children(&e, "Root"),
+            vec![("meshes".to_string(), Some(2)), ("d3dx9_42.log".to_string(), None)]
+        );
+        assert_eq!(tree_children(&e, "Root/meshes/actors"), vec![("body.nif".to_string(), None)]);
+    }
+
+    #[test]
+    fn a_prefix_that_is_not_a_path_component_is_not_a_child() {
+        // "Rootless" must not be mistaken for something under "Root", which is
+        // what a bare starts_with would do.
+        let e = sorted(&["Root/a.nif", "Rootless/b.nif", "Roo/c.nif"]);
+        assert_eq!(tree_children(&e, "Root"), vec![("a.nif".to_string(), None)]);
+    }
+
+    #[test]
+    fn nothing_is_expanded_so_only_the_top_level_is_drawn() {
+        let e = sorted(&[
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "CalienteTools/BodySlide/Config.xml",
+        ]);
+        let app = nav_app(&[]);
+        let rows = overwrite_tree_rows(&app, &e, 3000);
+        assert_eq!(rows.len(), 2, "two folders closed, and none of their contents");
+        assert!(rows.iter().all(|r| r.depth == 0));
+    }
+
+    #[test]
+    fn expanding_a_folder_reveals_exactly_its_children() {
+        let e = sorted(&[
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "Root/d3dx9_42.log",
+        ]);
+        let mut app = nav_app(&[]);
+        app.overwrite_expanded.insert("Root".to_string());
+        let rows = overwrite_tree_rows(&app, &e, 3000);
+        let drawn: Vec<&str> = rows.iter().map(|r| r.rel.as_str()).collect();
+        assert_eq!(drawn, vec!["Root", "Root/meshes", "Root/d3dx9_42.log"]);
+        // Still closed one level down: the grandchildren stay out.
+        assert!(!drawn.iter().any(|r| r.starts_with("Root/meshes/")));
+
+        app.overwrite_expanded.insert("Root/meshes".to_string());
+        let deep = overwrite_tree_rows(&app, &e, 3000);
+        assert_eq!(deep.iter().filter(|r| r.depth == 2).count(), 2, "actors and armor");
+    }
+
+    #[test]
+    fn the_row_budget_is_respected() {
+        let many: Vec<String> = (0..500).map(|i| format!("d/f{i:04}.txt")).collect();
+        let mut app = nav_app(&[]);
+        app.overwrite_expanded.insert("d".to_string());
+        assert_eq!(overwrite_tree_rows(&app, &many, 10).len(), 10);
+    }
+
 }
