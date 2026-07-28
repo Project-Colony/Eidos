@@ -188,7 +188,33 @@ struct Stats {
     open: AtomicU64,
     read: AtomicU64,
     write: AtomicU64,
+    /// How many times each directory was opened, by path.
+    ///
+    /// The totals say a session opened directories half a million times. They
+    /// cannot say whether that is five hundred directories opened a thousand
+    /// times each or half a million opened once - and those two shapes call for
+    /// OPPOSITE fixes. A few hot directories means the caller is asking the same
+    /// question over and over and the answer is to stop it asking; a long flat
+    /// tail means the work is real and the answer is to serve each one faster.
+    /// Guessing wrong costs weeks, so this measures it.
+    ///
+    /// Only populated when `EIDOS_FUSE_STATS` is set: on the hot path this is
+    /// one relaxed atomic load, and the map is never touched otherwise.
+    dirs: Mutex<HashMap<String, u64>>,
+    /// Opens whose path did not fit under [`DIR_HISTOGRAM_CAP`], so the top-N
+    /// stays honest about what it is not showing.
+    dirs_overflow: AtomicU64,
 }
+
+/// Distinct directories the histogram will hold before it stops learning new
+/// ones. A pathological session must not turn a diagnostic into an OOM; at this
+/// size the map is a few tens of MB and the shape is already unambiguous.
+const DIR_HISTOGRAM_CAP: usize = 200_000;
+
+/// Whether the per-directory histogram is being collected. Read once, so the
+/// cost on a path taken half a million times a session is an atomic load and
+/// not a `getenv`.
+static STATS_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(Stats::enabled);
 
 impl Stats {
     fn bump(c: &AtomicU64) {
@@ -197,6 +223,74 @@ impl Stats {
 
     fn enabled() -> bool {
         std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0")
+    }
+
+    /// Note one directory open against its path.
+    fn note_dir(&self, path: &str) {
+        if !*STATS_ON {
+            return;
+        }
+        let mut m = match self.dirs.lock() {
+            Ok(m) => m,
+            Err(p) => p.into_inner(),
+        };
+        if let Some(c) = m.get_mut(path) {
+            *c += 1;
+        } else if m.len() < DIR_HISTOGRAM_CAP {
+            m.insert(path.to_string(), 1);
+        } else {
+            Stats::bump(&self.dirs_overflow);
+        }
+    }
+
+    /// The shape of the directory opens: how many distinct directories, how
+    /// concentrated they are, and which ones dominate.
+    fn dir_shape(&self) -> String {
+        if !*STATS_ON {
+            return String::new();
+        }
+        let m = match self.dirs.lock() {
+            Ok(m) => m,
+            Err(p) => p.into_inner(),
+        };
+        if m.is_empty() {
+            return String::new();
+        }
+        let mut v: Vec<(&String, u64)> = m.iter().map(|(k, &c)| (k, c)).collect();
+        v.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        let total: u64 = v.iter().map(|(_, c)| c).sum();
+        // Where the opens actually live. If a handful of directories carry most
+        // of them, the caller is repeating itself and the fix is upstream.
+        let share = |n: usize| -> f64 {
+            let s: u64 = v.iter().take(n).map(|(_, c)| c).sum();
+            if total == 0 {
+                0.0
+            } else {
+                s as f64 * 100.0 / total as f64
+            }
+        };
+        let top: Vec<String> =
+            v.iter().take(15).map(|(p, c)| format!("  {c:>9}  /{p}")).collect();
+        let dropped = self.dirs_overflow.load(Ordering::Relaxed);
+        let note = if dropped > 0 {
+            format!(
+                "\n  (histogram capped at {DIR_HISTOGRAM_CAP} directories; {dropped} opens of \
+                 further directories were counted in the total but not listed)"
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "\neidos-fuse directory opens by path: {} distinct, {total} opens\n  \
+             top 1 = {:.1}%, top 10 = {:.1}%, top 100 = {:.1}%, top 1000 = {:.1}%\n{}{}",
+            v.len(),
+            share(1),
+            share(10),
+            share(100),
+            share(1000),
+            top.join("\n"),
+            note,
+        )
     }
 
     fn report(&self) -> String {
@@ -221,7 +315,7 @@ impl Stats {
             g(&self.open),
             g(&self.read),
             g(&self.write),
-        )
+        ) + &self.dir_shape()
     }
 }
 
@@ -1267,6 +1361,7 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         };
+        self.stats.note_dir(&vpath);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
         self.open_dirs.lock_recover().insert(fh, OpenDir { ino: ino.0, vpath, entries: None });
         // CACHE_DIR lets the kernel keep the directory listing and serve repeat
