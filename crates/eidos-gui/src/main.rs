@@ -1188,6 +1188,16 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
     };
+    // NEVER under test. This opens the REAL instance in the user's home and,
+    // through ensure_manifest/ensure_profiles, writes to it - so any test that
+    // built an App through `new` was one `mods_changed` away from saving its
+    // fixture over a live mod list. That is not hypothetical: a keyboard test
+    // whose list was ["a","b","c","d"] wrote exactly that into a real
+    // modlist.txt, and the only reason it was noticed is that the user restarted
+    // and saw four mods. A test needs an App, not a machine's data.
+    if cfg!(test) {
+        return (app, Task::none());
+    }
     if let Some(i) = auto {
         app.selected = Some(i);
         let inst = Instance::global(app.games[i].def.id);
@@ -9984,8 +9994,16 @@ mod tests {
     }
 
     /// An App with just enough filled in to drive `key_nav`.
+    /// An App with just enough filled in to drive `key_nav`, and NO instance.
+    ///
+    /// `created` is what every save path writes through, so a test that leaves
+    /// it pointing at a real instance can reach the user's files. `new` refuses
+    /// to attach one under `cfg(test)`; this asserts it, because the guard being
+    /// silently lost is exactly the failure that would not be noticed until
+    /// somebody's mod list was four entries long.
     fn nav_app(mod_names: &[&str]) -> App {
         let mut app = new(Vec::new()).0;
+        assert!(app.created.is_none(), "a test App must never hold a real instance");
         app.mods = mods(mod_names);
         app.screen = Screen::Main;
         app
@@ -10139,7 +10157,10 @@ mod tests {
         app.selected_mod = Some(2);
         let _ = key_nav(&mut app, Nav::Remove);
         assert_eq!(app.confirm_remove, Some(2));
-        reload_mods(&mut app);
+        // `reload_mods` needs an instance; the disarm itself lives in
+        // `put_mod_selection`, which is what every rebuild goes through.
+        let held = hold_mod_selection(&app);
+        put_mod_selection(&mut app, held);
         assert_eq!(app.confirm_remove, None, "a rebuild must disarm it");
     }
 
