@@ -5070,6 +5070,9 @@ const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);
 /// A mod that overwrites the focused one: it sits lower and takes those files
 /// away. Red - the focused mod is losing to these.
 const CONFLICT_LOSES_BG: Color = Color::from_rgb(0.921, 0.769, 0.741);
+/// The same two meanings as text, dark enough to read on parchment.
+const CONFLICT_WINS_FG: Color = Color::from_rgb(0.13, 0.42, 0.16);
+const CONFLICT_LOSES_FG: Color = Color::from_rgb(0.60, 0.16, 0.16);
 
 /// Place a floating card with one corner at `at`, growing away from the nearest
 /// window edge.
@@ -7939,6 +7942,71 @@ fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .push(text(format!("Conflicts: {summary}")).size(12.0))
         .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(10.0))
+        .push(scrollable(rows).height(Length::FillPortion(2)))
+        .push(conflicting_files(app, map))
+        .into()
+}
+
+/// The FILES the selected mod is fighting over, and who wins each.
+///
+/// The list above says a mod won "1/2" and stops there, which is where every
+/// real question starts: WHICH file, and to whom. Answering it meant reading the
+/// mod folders by hand - the flag could be raised by a texture the user cares
+/// about or by a stale `.log` the author happened to zip up, and the panel gave
+/// no way to tell those apart.
+///
+/// Capped, because a texture pack can contest thousands of paths and a list that
+/// long is not an answer either; the count says what was left out.
+fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a, Message> {
+    const SHOWN: usize = 40;
+    let Some(focus) = app.selected_mod else {
+        return text("Select a mod to see which files it contests.").size(11.0).into();
+    };
+    let origin = (focus + 1) as u32;
+    let name = app.mods.get(focus).map(|m| m.display_name().to_string()).unwrap_or_default();
+
+    let mut rows = Column::new().spacing(1);
+    let mut n = 0usize;
+    for node in map.files.values() {
+        let providers: Vec<u32> =
+            std::iter::once(node.winner).chain(node.alternatives.iter().copied()).collect();
+        if !providers.contains(&origin) || !node.is_conflicted() {
+            continue;
+        }
+        n += 1;
+        if n > SHOWN {
+            continue;
+        }
+        let wins = node.winner == origin;
+        // Who this file actually comes from, when it is not us.
+        let verdict = if wins {
+            "wins it".to_string()
+        } else {
+            format!("loses to {}", map.name(node.winner))
+        };
+        let row = Row::new()
+            .spacing(6)
+            .push(text(node.display_path.clone()).size(11.0).width(Length::Fill))
+            .push(
+                text(verdict)
+                    .size(11.0)
+                    .width(Length::Fixed(260.0))
+                    .color(if wins { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+            );
+        rows = rows.push(striped(row.into(), n.is_multiple_of(2)));
+    }
+
+    let head = if n == 0 {
+        format!("{name} contests no files.")
+    } else if n > SHOWN {
+        format!("{name}: {n} contested file(s), showing the first {SHOWN}")
+    } else {
+        format!("{name}: {n} contested file(s)")
+    };
+    Column::new()
+        .spacing(4)
+        .height(Length::FillPortion(3))
+        .push(text(head).size(12.0))
         .push(scrollable(rows).height(Length::Fill))
         .into()
 }
