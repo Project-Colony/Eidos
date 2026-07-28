@@ -42,8 +42,6 @@ const IC_CONFLICT_MIXED: &[u8] = include_bytes!("../assets/icons/conflict-mixed.
 const IC_CONFLICT_REDUNDANT: &[u8] = include_bytes!("../assets/icons/conflict-redundant.png");
 const IC_CONFLICT_HIDDEN: &[u8] = include_bytes!("../assets/icons/conflict-hidden.png");
 const IC_RUN: &[u8] = include_bytes!("../assets/icons/media-playback-start.png");
-const IC_UP: &[u8] = include_bytes!("../assets/icons/go-up.png");
-const IC_DOWN: &[u8] = include_bytes!("../assets/icons/go-down.png");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Screen {
@@ -98,8 +96,6 @@ enum Message {
     Restart,
     ToolPicked(String),
     ToggleMod(usize),
-    MoveUp(usize),
-    MoveDown(usize),
     SelectTab(Tab),
     SwitchProfile(String),
     NewProfile,
@@ -125,7 +121,6 @@ enum Message {
     OpenModMenu(usize),
     /// Dismiss the open action menu / rename editor.
     CloseMenu,
-    /// Reorder shortcuts (MO2 sendModsToTop / sendModsToBottom).
     ModSendTop(usize),
     ModSendBottom(usize),
     /// Open the mod's folder in the file manager (MO2 openExplorer).
@@ -453,8 +448,6 @@ enum Message {
     OpenUrl(String),
     // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
     /// Move the plugin at this index one slot earlier / later in the load order.
-    PluginMoveUp(usize),
-    PluginMoveDown(usize),
     Noop,
 }
 
@@ -676,6 +669,11 @@ enum Nav {
     /// Delete: arm removal of the focused mod. Never destructive on its own -
     /// it opens the same two-step confirmation the context menu uses.
     Remove,
+    /// Ctrl+Up / Ctrl+Down: MOVE the focused row (or the whole selection) one
+    /// place, rather than moving the focus. This is what the per-row arrow
+    /// buttons used to be, minus a column on every line.
+    ShiftUp,
+    ShiftDown,
 }
 
 /// Which list the keyboard is driving.
@@ -1779,6 +1777,65 @@ fn effective_focus(app: &App) -> Pane {
     }
 }
 
+/// Move the focused mod (or the whole selection) beside `neighbour`.
+///
+/// `neighbour` is the row the user can see next to this one, which under a
+/// filter is not the adjacent index - landing one raw place away would look like
+/// nothing happened.
+fn move_mod_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task<Message> {
+    let block = selection_or(app, from);
+    if block.is_empty() {
+        return Task::none();
+    }
+    // Nothing may be ordered above the game's own content: those rows are not in
+    // modlist.txt and a mod dropped among them would vanish on save.
+    let floor = first_managed(&app.mods);
+    let dest = if up { neighbour.max(floor) } else { neighbour + 1 };
+    let held = hold_mod_selection(app);
+    let at = move_block(&mut app.mods, &block, dest);
+    put_mod_selection(app, held);
+    app.selected_mod = Some(at);
+    mods_changed(app);
+    Task::none()
+}
+
+/// The plugin twin. The engine's ordering rules decide whether it happens at
+/// all, and say why when they refuse - the same answer a drag gets.
+fn move_plugin_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task<Message> {
+    let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+        return Task::none();
+    };
+    let block = plugin_selection_or(app, from);
+    if block.is_empty() {
+        return Task::none();
+    }
+    let gap = if up { neighbour } else { neighbour + 1 };
+    let held = hold_plugin_selection(app);
+    let mut moved = false;
+    if let Some(list) = app.plugins.as_mut() {
+        moved = list.move_plugins_to(&block, gap, &spec);
+        if moved {
+            list.refresh(&spec);
+        }
+    }
+    put_plugin_selection(app, held);
+    if !moved {
+        // Refused by the engine's rules, not by a mis-aimed gesture; say which
+        // plugin is in the way rather than looking like a dead key.
+        if let Some(r) = app
+            .plugins
+            .as_ref()
+            .and_then(|l| l.block_movable_range(&block, &spec))
+            .filter(|r| r.is_stuck(block[0]))
+        {
+            app.status = Some(pinned_by(&r));
+        }
+        return Task::none();
+    }
+    commit_plugin_order(app, &spec);
+    Task::none()
+}
+
 /// Move the focused row, or act on it. One place, so the two lists cannot drift
 /// into answering the same key differently.
 fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
@@ -1848,6 +1905,29 @@ fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
                     Task::none()
                 }
                 _ => Task::none(),
+            };
+        }
+        Nav::ShiftUp | Nav::ShiftDown => {
+            let up = matches!(nav, Nav::ShiftUp);
+            let Some(i) = cur else { return Task::none() };
+            // Land beside the neighbour the user can SEE, not one raw index
+            // away: under a filter those differ, and a move whose effect is
+            // invisible reads as a key that did nothing.
+            let Some(here) = rows.iter().position(|&r| r == i) else { return Task::none() };
+            let neighbour = if up {
+                if here == 0 {
+                    return Task::none();
+                }
+                rows[here - 1]
+            } else {
+                match rows.get(here + 1) {
+                    Some(&r) => r,
+                    None => return Task::none(),
+                }
+            };
+            return match pane {
+                Pane::Mods => move_mod_rows(app, i, neighbour, up),
+                Pane::Plugins => move_plugin_rows(app, i, neighbour, up),
             };
         }
         _ => {}
@@ -2317,26 +2397,6 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 m.enabled = !m.enabled;
             }
             mods_changed(app);
-        }
-        Message::MoveUp(i) => {
-            if i > 0 && i < app.mods.len() {
-                app.mods.swap(i - 1, i);
-                if app.selected_mod == Some(i) {
-                    app.selected_mod = Some(i - 1);
-                }
-                swap_in_selection(app, i - 1, i);
-                mods_changed(app);
-            }
-        }
-        Message::MoveDown(i) => {
-            if i + 1 < app.mods.len() {
-                app.mods.swap(i, i + 1);
-                if app.selected_mod == Some(i) {
-                    app.selected_mod = Some(i + 1);
-                }
-                swap_in_selection(app, i, i + 1);
-                mods_changed(app);
-            }
         }
         Message::SelectTab(t) => {
             app.tab = t;
@@ -2983,29 +3043,6 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
                 app.status = Some(format!("Opened {url}"));
             }
-        }
-        Message::PluginMoveUp(i) | Message::PluginMoveDown(i) => {
-            let up = matches!(message, Message::PluginMoveUp(_));
-            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
-                return Task::none();
-            };
-            let held = hold_plugin_selection(app);
-            let mut moved = false;
-            if let Some(list) = app.plugins.as_mut() {
-                moved = list.move_plugin(i, up, &spec);
-                if moved {
-                    // refresh() re-applies masters-before-dependents, so an illegal
-                    // move is corrected rather than written out.
-                    list.refresh(&spec);
-                }
-            }
-            // The row changed places; the selection must follow it rather than
-            // stay on a number that now names a different plugin.
-            put_plugin_selection(app, held);
-            if !moved {
-                return Task::none();
-            }
-            commit_plugin_order(app, &spec);
         }
         Message::ImportMo2Pick => {
             if app.created.is_none() {
@@ -4938,22 +4975,6 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
     Task::none()
 }
 
-/// Keep the multi-selection consistent when two rows are swapped (MoveUp/MoveDown):
-/// a selected index follows its row to the new slot.
-fn swap_in_selection(app: &mut App, a: usize, b: usize) {
-    let has_a = app.selected_mods.contains(&a);
-    let has_b = app.selected_mods.contains(&b);
-    if has_a == has_b {
-        return; // both or neither selected: the set is unchanged by the swap.
-    }
-    if has_a {
-        app.selected_mods.remove(&a);
-        app.selected_mods.insert(b);
-    } else {
-        app.selected_mods.remove(&b);
-        app.selected_mods.insert(a);
-    }
-}
 
 /// The real (non-separator) mods in the current multi-selection, as indices into
 /// `app.mods`. Falls back to the single focus row when the set is empty, so a batch
@@ -5409,7 +5430,6 @@ const C_FLAGS: Length = Length::Fixed(46.0);
 const C_VERSION: Length = Length::Fixed(64.0);
 const C_CATEGORY: Length = Length::Fixed(96.0);
 const C_CONTENT: Length = Length::Fixed(78.0);
-const C_MOVE: Length = Length::Fixed(70.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
 /// [`overwrite_entries`] memoised against the view generation: the Overwrite tab
@@ -5687,7 +5707,6 @@ fn toolbar<'a>(app: &App) -> Element<'a, Message> {
 fn mod_row<'a>(
     i: usize,
     m: &ModEntry,
-    len: usize,
     meta: Option<&RowMeta>,
     flag_icon: Option<&'static [u8]>,
     hidden_icon: Option<&'static [u8]>,
@@ -5695,20 +5714,12 @@ fn mod_row<'a>(
     // Unmanaged content - the game's own DLCs and Creation Club plugins - is
     // listed so the mod list matches what will actually load, but none of it is
     // ours to move, disable or remove. MO2 renders these the same way: present,
-    // greyed, inert. A checkbox with no `on_toggle` and an arrow with no message
-    // both draw disabled, which is exactly the look.
-    let (up, dn, toggle) = if m.unmanaged {
-        (
-            icon_btn(IC_UP, 14.0, None),
-            icon_btn(IC_DOWN, 14.0, None),
-            checkbox("", true).size(16),
-        )
+    // greyed, inert. A checkbox with no `on_toggle` draws disabled, which is
+    // exactly the look.
+    let toggle = if m.unmanaged {
+        checkbox("", true).size(16)
     } else {
-        (
-            icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i))),
-            icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i))),
-            checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16),
-        )
+        checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16)
     };
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
@@ -5744,8 +5755,7 @@ fn mod_row<'a>(
         )
         .push(text(content).size(10.0).width(C_CONTENT))
         .push(text(version).size(11.0).width(C_VERSION))
-        .push(flag_cell)
-        .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
+        .push(flag_cell);
 
     // Left-press selects + arms a drag, entering during a drag retargets the drop,
     // release commits it; right-click opens the action menu (MO2's context menu).
@@ -5772,13 +5782,10 @@ const SEPARATOR_ACCENT: Color = Color::from_rgb(0.784, 0.722, 0.584);
 fn separator_row<'a>(
     i: usize,
     m: &ModEntry,
-    len: usize,
     color: Option<[u8; 3]>,
     collapsed: bool,
     selected: bool,
 ) -> Element<'a, Message> {
-    let up = icon_btn(IC_UP, 14.0, (i > 0).then_some(Message::MoveUp(i)));
-    let dn = icon_btn(IC_DOWN, 14.0, (i + 1 < len).then_some(Message::MoveDown(i)));
     let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(SEPARATOR_ACCENT);
 
     // The collapse/expand toggle sits in the checkbox column (a separator has no
@@ -5798,7 +5805,7 @@ fn separator_row<'a>(
         .push(container(collapse).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
         .push(name)
-        .push(Row::new().spacing(2).push(up).push(dn).width(C_MOVE));
+        ;
 
     container(
         mouse_area(row)
@@ -5902,9 +5909,8 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Content").size(11.0).width(C_CONTENT))
         .push(text("Version").size(11.0).width(C_VERSION))
         .push(text("Flags").size(11.0).width(C_FLAGS))
-        .push(text("").width(C_MOVE));
+        ;
 
-    let len = app.mods.len();
     let query = app.search.trim().to_lowercase();
     // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
@@ -5944,7 +5950,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
             list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
-            list = list.push(separator_row(i, m, len, color, collapsed, selected));
+            list = list.push(separator_row(i, m, color, collapsed, selected));
             continue;
         }
         if !vis[i] {
@@ -5981,7 +5987,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // nothing may be ordered above the game's own content.
         list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
         list = list.push(list_row(
-            mod_row(i, m, len, meta, flag_icon, hidden_icon),
+            mod_row(i, m, meta, flag_icon, hidden_icon),
             i % 2 == 0,
             selected,
             conflict_tint(app, i),
@@ -7621,8 +7627,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("On").size(11.0).width(Length::Fixed(28.0)))
         .push(text("Plugin").size(11.0).width(Length::Fill))
         .push(text("Type").size(11.0).width(Length::Fixed(36.0)))
-        .push(text("Pin").size(11.0).width(Length::Fixed(26.0)))
-        .push(text("").width(Length::Fixed(44.0)));
+        .push(text("Pin").size(11.0).width(Length::Fixed(26.0)));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
@@ -7697,19 +7702,6 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             checkbox("", p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
         };
         // Manual reorder (MO2 lets the load order be moved by hand, not only
-        // LOOT-sorted). refresh() re-applies the invariants after each move, so an
-        // illegal position is corrected rather than persisted.
-        // A button with no `on_press` renders greyed, which is the whole point:
-        // a plugin boxed in by its masters SHOWS as immovable instead of
-        // accepting the click and snapping back.
-        let mut up = button(text("^").size(10.0)).padding([0, 5]).style(button::text);
-        if i > 0 && spec.as_ref().is_some_and(|s| list.can_move(i, true, s)) {
-            up = up.on_press(Message::PluginMoveUp(i));
-        }
-        let mut down = button(text("v").size(10.0)).padding([0, 5]).style(button::text);
-        if i + 1 < total && spec.as_ref().is_some_and(|s| list.can_move(i, false, s)) {
-            down = down.on_press(Message::PluginMoveDown(i));
-        }
         // The pin (MO2's locked order). A primary master is already nailed to the
         // top by the engine, so offering to pin it would be theatre.
         let locked = list.is_locked(i);
@@ -7773,9 +7765,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(toggle).width(Length::Fixed(28.0)))
             .push(container(name_cell).width(Length::Fill))
             .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
-            .push(container(pin).width(Length::Fixed(26.0)))
-            .push(up)
-            .push(down);
+            .push(container(pin).width(Length::Fixed(26.0)));
         // Grabbing the row arms the drag AND selects it, the same press doing
         // both exactly as in the mod list; hovering it during a drag means
         // "insert above me".
@@ -9710,6 +9700,14 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         // Navigation. Which list answers is decided in `update` - this closure
         // is a plain `fn` and cannot see the app.
         Key::Named(Named::Tab) => Some(Message::CycleFocus),
+        // Ctrl moves the ROW; plain moves the focus. Checked first, or the
+        // plain arms below would swallow it.
+        Key::Named(Named::ArrowUp) if mods.control() || mods.command() => {
+            Some(Message::KeyNav(Nav::ShiftUp))
+        }
+        Key::Named(Named::ArrowDown) if mods.control() || mods.command() => {
+            Some(Message::KeyNav(Nav::ShiftDown))
+        }
         Key::Named(Named::ArrowUp) => Some(Message::KeyNav(Nav::Up)),
         Key::Named(Named::ArrowDown) => Some(Message::KeyNav(Nav::Down)),
         Key::Named(Named::PageUp) => Some(Message::KeyNav(Nav::PageUp)),
@@ -10354,6 +10352,46 @@ mod tests {
         // Closing releases it, so a stale point cannot place the next one.
         let _ = update(&mut app, Message::CloseMenu);
         assert_eq!(app.menu_at, None);
+    }
+
+    #[test]
+    fn ctrl_arrow_moves_the_row_not_the_focus() {
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["a", "c", "b", "d"]);
+        assert_eq!(app.selected_mod, Some(1), "the focus travels with the row");
+
+        let _ = key_nav(&mut app, Nav::ShiftDown);
+        assert_eq!(names(&app.mods), ["a", "b", "c", "d"]);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn a_row_move_lands_beside_the_neighbour_the_user_can_see() {
+        // Under a filter the visible neighbour is not the adjacent index, and a
+        // move whose effect is invisible reads as a key that did nothing.
+        let mut app = nav_app(&["alpha", "hidden", "alderaan"]);
+        app.search = "al".to_string();
+        assert_eq!(mod_row_visibility(&app, None), [true, false, true]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        // "alderaan" jumped over the hidden row to sit above "alpha".
+        assert_eq!(names(&app.mods), ["alderaan", "alpha", "hidden"]);
+    }
+
+    #[test]
+    fn a_row_move_stops_at_the_ends_and_above_the_game_content() {
+        let mut app = nav_app(&["dlc", "a", "b"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(1);
+        // "a" is already the first movable row; nothing above it may be claimed.
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["dlc", "a", "b"]);
+
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftDown);
+        assert_eq!(names(&app.mods), ["dlc", "a", "b"], "the last row has nowhere to go");
     }
 
     #[test]
