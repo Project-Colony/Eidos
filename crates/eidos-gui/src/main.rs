@@ -7125,6 +7125,18 @@ fn download_state_label(state: DownloadState) -> &'static str {
     }
 }
 
+/// The colour of the status word, following MO2's own scheme
+/// (downloadlist.cpp:202): green for the one state that is asking to be acted
+/// on, amber for a mod that was installed and then removed, and NOTHING for
+/// "Installed" - a finished job should not keep waving.
+fn download_state_color(state: DownloadState, theme: &Theme) -> Option<Color> {
+    match state {
+        DownloadState::Ready => Some(theme.palette().success),
+        DownloadState::Uninstalled => Some(theme.palette().warning),
+        DownloadState::Installed | DownloadState::Untracked => None,
+    }
+}
+
 // Downloads column widths, declared once so the header and the rows cannot drift
 // apart. Each is sized to its widest real content and no more: every pixel they
 // do not take goes to the name, which is the only column whose content has no
@@ -7137,7 +7149,11 @@ fn download_state_label(state: DownloadState) -> &'static str {
 const DL_C_VERSION: f32 = 56.0; // "1.0.1"
 const DL_C_SIZE: f32 = 66.0; // "10.3 MiB"
 const DL_C_STATUS: f32 = 66.0; // "Installed"
-const DL_C_ACTIONS: f32 = 112.0; // Install + Delete, and "Confirm?" is wider
+// Sized on the WIDEST pair the column can ever hold at once, which is not the
+// resting state: "Reinstall" beside Delete armed as "Confirm?". Sizing it on
+// "Install" + "Delete" would clip the two labels that only appear when something
+// is at stake.
+const DL_C_ACTIONS: f32 = 128.0;
 
 fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
@@ -7171,10 +7187,20 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     for (i, row) in app.downloads.iter().enumerate() {
         let armed = app.confirm_delete_download == Some(i);
         // Two action buttons: Install (re-run the installer) and Delete.
-        let install = button(text("Install").size(11.0))
+        // MO2 keeps Install available on an already-installed archive
+        // (downloadlistview.cpp:230, `state >= STATE_READY`) because re-running a
+        // FOMOD with different answers is a real thing to want. What it does NOT
+        // do is present it as the next step: its Install lives in a context menu,
+        // and it colours the STATUS rather than the action.
+        //
+        // So keep the action, drop the shouting. Burgundy means "this is what to
+        // do here"; on a row that is already installed, that was a lie, and the
+        // label said "Install" for something that would install it a second time.
+        let installed = row.state == DownloadState::Installed;
+        let install = button(text(if installed { "Reinstall" } else { "Install" }).size(11.0))
             .padding(4)
             .on_press(Message::ModPicked(Some(row.path.clone())))
-            .style(button::primary);
+            .style(if installed { button::secondary } else { button::primary });
         let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
             .padding(4)
             .on_press(if armed { Message::ConfirmDeleteDownload(i) } else { Message::DeleteDownload(i) })
@@ -7187,7 +7213,15 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(text(display).size(12.0).width(Length::Fill))
             .push(text(row.version.clone()).size(11.0).width(Length::Fixed(DL_C_VERSION)))
             .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(DL_C_SIZE)))
-            .push(text(download_state_label(row.state)).size(11.0).width(Length::Fixed(DL_C_STATUS)))
+            .push({
+                let st = row.state;
+                text(download_state_label(st))
+                    .size(11.0)
+                    .width(Length::Fixed(DL_C_STATUS))
+                    .style(move |t: &Theme| iced::widget::text::Style {
+                        color: download_state_color(st, t),
+                    })
+            })
             .push(
                 Row::new()
                     .spacing(4)
