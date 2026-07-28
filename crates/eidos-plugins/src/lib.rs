@@ -752,6 +752,51 @@ impl PluginList {
         })
     }
 
+    /// Where a BLOCK of plugins may legally land, as the intersection of what
+    /// each of its rows allows once ties internal to the block are discounted.
+    ///
+    /// A block travels with its relative order intact, so a master and its own
+    /// dependent selected together constrain each other not at all - only what
+    /// is OUTSIDE the block can bound it. The bounding names come from whichever
+    /// row binds tightest, so the explanation the UI shows names the plugin that
+    /// is actually in the way.
+    pub fn block_movable_range(&self, rows: &[usize], spec: &GameSpec) -> Option<MovableRange> {
+        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        idx.sort_unstable();
+        idx.dedup();
+        let (&first, &last) = (idx.first()?, idx.last()?);
+        let mut out = MovableRange {
+            lo: 0,
+            hi: self.plugins.len(),
+            blocked: Vec::new(),
+            after: None,
+            before: None,
+        };
+        for &i in &idx {
+            let r = self.range_excluding(i, spec, &idx)?;
+            if r.lo > out.lo {
+                out.lo = r.lo;
+                out.after = r.after.clone();
+            }
+            if r.hi < out.hi {
+                out.hi = r.hi;
+                out.before = r.before.clone();
+            }
+            out.blocked.extend(r.blocked);
+        }
+        out.blocked.retain(|g| *g >= out.lo && *g <= out.hi);
+        out.blocked.sort_unstable();
+        out.blocked.dedup();
+        // A contradictory intersection must not hand the UI an inverted range;
+        // pin the block where it already is.
+        if out.lo > out.hi {
+            out.lo = first;
+            out.hi = last + 1;
+            out.blocked.clear();
+        }
+        Some(out)
+    }
+
     /// Move the plugins at `rows` so the block lands at the insertion point `gap`,
     /// keeping their relative order. `gap` counts BETWEEN rows: 0 is above the
     /// first plugin, `len()` is below the last - the same index the mod list's
@@ -1568,6 +1613,59 @@ mod tests {
         assert!(l.move_plugins_to(&[2], 4, &se()));
         l.refresh(&se());
         assert_eq!(names(&l), ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Other.esp", "Mod.esp"]);
+    }
+
+    #[test]
+    fn a_master_and_its_dependent_move_together_as_a_block() {
+        // Judged one row at a time, the master's "must load before its
+        // dependent" bound points at a row that is travelling with it, and the
+        // whole legal move is refused. A block carries its relative order, so
+        // ties inside it constrain nothing.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Base.esm", &[]),
+                p("Pair1.esp", &[]),
+                p("Pair2.esp", &["Pair1.esp"]),
+                p("Free1.esp", &[]),
+                p("Free2.esp", &[]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        assert_eq!(names(&l), ["Base.esm", "Pair1.esp", "Pair2.esp", "Free1.esp", "Free2.esp"]);
+
+        // Pair1 alone cannot pass Pair2 - it is its master.
+        assert_eq!(l.movable_range(1, &se()).unwrap().hi, 2);
+        // The two together can go to the end.
+        let r = l.block_movable_range(&[1, 2], &se()).unwrap();
+        assert_eq!((r.lo, r.hi), (1, 5));
+        assert!(l.move_plugins_to(&[1, 2], 5, &se()));
+        l.refresh(&se());
+        assert_eq!(names(&l), ["Base.esm", "Free1.esp", "Free2.esp", "Pair1.esp", "Pair2.esp"]);
+    }
+
+    #[test]
+    fn a_block_range_still_answers_to_what_is_outside_it() {
+        // Discounting internal ties must not discount external ones.
+        let mut l = PluginList {
+            plugins: vec![
+                p("Base.esm", &[]),
+                p("Anchor.esp", &[]),
+                p("Dep.esp", &["Anchor.esp"]),
+                p("Tail.esp", &["Dep.esp"]),
+            ],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
+        l.refresh(&se());
+        // Moving Anchor+Dep as a block: still bounded by Tail, which depends on
+        // Dep and is NOT travelling.
+        let r = l.block_movable_range(&[1, 2], &se()).unwrap();
+        assert_eq!(r.hi, 3);
+        assert_eq!(r.before.as_deref(), Some("Tail.esp"));
+        assert!(!l.move_plugins_to(&[1, 2], 4, &se()));
+        assert_eq!(names(&l), ["Base.esm", "Anchor.esp", "Dep.esp", "Tail.esp"]);
     }
 
     #[test]

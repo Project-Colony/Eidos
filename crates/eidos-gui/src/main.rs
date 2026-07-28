@@ -8,7 +8,7 @@
 //! right = Run + Data/Saves/Downloads tabs, plus a status bar. Colony parchment
 //! / burgundy palette. Run with: `cargo run -p eidos-gui`
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -152,10 +152,16 @@ enum Message {
     TogglePlugin(usize),
     /// Run LOOT's graph sort over the discovered plugins (MO2's "Sort" button).
     SortPlugins,
-    /// LOOT finished: the optimised plugin-name order plus the (advisory) report,
-    /// or an error. The inner `Result` is the report: it may fail without losing the
-    /// successfully-computed order.
-    PluginsSorted(Result<(Vec<String>, Result<eidos_loot::LootReport, String>), String>),
+    /// LOOT finished: the fingerprint of the list it was asked about, the
+    /// optimised plugin-name order, and the (advisory) report - or an error. The
+    /// inner `Result` is the report: it may fail without losing the successfully
+    /// computed order.
+    ///
+    /// The fingerprint travels with the answer because a sort takes seconds and
+    /// the window stays live: a profile switch, a Refresh or a mod toggle in that
+    /// window leaves an order computed for a list that no longer exists, and
+    /// applying it would silently rearrange the wrong plugins.
+    PluginsSorted(SortOutcome),
     /// Dismiss the LOOT report modal.
     CloseLootReport,
     /// Open (or close, if it is already open) the details pane for a save row.
@@ -381,6 +387,24 @@ enum Message {
     /// Pin the plugin at `i` to its current load-order slot, or release it
     /// (MO2's `lockedorder.txt`).
     TogglePluginLock(usize),
+    // ---- plugin selection (mirrors the mod list) ----
+    /// Focus plugin row `i`; a held modifier turns it into a multi-select.
+    SelectPlugin(usize),
+    /// Ctrl-click: flip this row's membership in the selection.
+    SelectPluginToggle(usize),
+    /// Shift-click: select the run from the anchor to `i`.
+    SelectPluginExtend(usize),
+    /// Enable or disable every selected plugin at once (MO2's batch toggle).
+    SetSelectedPluginsEnabled(bool),
+    // ---- keyboard navigation ----
+    /// A navigation key was pressed. Which list it moves is decided in `update`
+    /// from `App::focus`, because `on_key_press` takes a plain `fn` and cannot
+    /// read the app.
+    KeyNav(Nav),
+    /// Move the keyboard focus to the other list (Tab).
+    CycleFocus,
+    /// Select every row of the focused list (Ctrl+A).
+    SelectAllInFocus,
     // ---- keyboard tracking (drives Ctrl/Shift multi-select + shortcuts) ----
     /// The held keyboard modifiers changed (from key press/release subscriptions).
     ModifiersChanged(iced::keyboard::Modifiers),
@@ -611,6 +635,12 @@ struct DownloadRow {
 #[derive(Debug, Clone, Copy)]
 struct DragState {
     from: usize,
+    /// Whether the pointer ever reached an insertion point outside the block.
+    /// A press arms a drag, so a plain CLICK arrives as a drop; with a
+    /// multi-row selection there is no "own edge" to recognise, and committing
+    /// it would COMPACT a non-contiguous selection and save that. See
+    /// `PluginDrag::aimed`.
+    aimed: bool,
     /// Where the block would land, as an INSERTION index, not a row index: `gap`
     /// means "before the row currently at `gap`", and `mods.len()` means the end.
     ///
@@ -624,6 +654,62 @@ struct DragState {
     gap: usize,
 }
 
+/// A keyboard navigation intent, independent of which list will answer it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Nav {
+    Up,
+    Down,
+    /// A page is ten rows: enough to be worth a key, small enough that the row
+    /// you land on is still somewhere you were looking.
+    PageUp,
+    PageDown,
+    First,
+    Last,
+    /// Space: flip the enabled state of the focused row, or of the whole
+    /// selection when there is one.
+    Toggle,
+    /// Enter: open what the row is about (the mod information dialog).
+    Activate,
+    /// Delete: arm removal of the focused mod. Never destructive on its own -
+    /// it opens the same two-step confirmation the context menu uses.
+    Remove,
+}
+
+/// Which list the keyboard is driving.
+///
+/// The mod list and the tab panel sit side by side, both visible, so "the
+/// selected row" is ambiguous without this. It follows the last row the user
+/// pressed, which is what a pointer user expects, and Tab moves it explicitly
+/// for someone who never reaches for the mouse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pane {
+    Mods,
+    Plugins,
+}
+
+/// What comes back from a LOOT run: the fingerprint of the list it was asked
+/// about, the sorted names, and the report - or why the run failed. The report
+/// is a nested `Result` because it is advisory: losing it must not lose the
+/// order that was successfully computed.
+type SortOutcome =
+    Result<(SortFingerprint, Vec<String>, Result<eidos_loot::LootReport, String>), String>;
+
+/// What a LOOT sort was computed against, so a stale answer can be recognised.
+///
+/// The profile, because each owns its own load order, and the SET of plugin
+/// names - not their order, which is precisely what the sort is allowed to
+/// change. If either moved while LOOT ran, the returned permutation is a
+/// permutation of something else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SortFingerprint {
+    /// The game, not just the profile. Profiles are per-game and their names
+    /// collide - two games both have a "Default" - so a switch mid-sort would
+    /// compare equal and write one game's load order into the other's.
+    game: String,
+    profile: String,
+    names: BTreeSet<String>,
+}
+
 /// An in-flight plugin drag. Unlike the mod list, where any order is legal, a
 /// plugin's position is constrained by the engine, so the drag carries the range
 /// it is allowed to land in - computed ONCE when the row is grabbed, not per
@@ -633,6 +719,17 @@ struct PluginDrag {
     from: usize,
     /// Insertion index, same meaning as `DragState::gap`.
     gap: usize,
+    /// Every row travelling, ascending - the whole selection when the grabbed
+    /// row belonged to it, otherwise just that row.
+    block: Vec<usize>,
+    /// Whether the pointer ever reached an insertion point outside the block.
+    ///
+    /// A press arms a drag, so a plain CLICK on a row arrives here as a drop.
+    /// With a single row the "landed on its own edge" test caught that, but a
+    /// non-contiguous selection has no such edge: dropping it anywhere COMPACTS
+    /// it, so a click on one of its rows silently rewrote the load order and
+    /// saved it. Nothing commits until this is true.
+    aimed: bool,
     /// Where this plugin may legally go, and which plugins bound it.
     range: MovableRange,
 }
@@ -779,6 +876,14 @@ struct App {
     /// Two-click guard for a download deletion (the row's index in `downloads`).
     confirm_delete_download: Option<usize>,
     // ---- multi-select + batch actions ----
+    /// Where a Shift extension counts FROM.
+    ///
+    /// Distinct from `selected_mod`, which is the focus and moves with every
+    /// arrow key: if the extension counted from the focus, each Shift+Down would
+    /// re-anchor on the row it just reached and the selection would only ever be
+    /// two rows long. Set by a plain click and by Ctrl+click, left alone by
+    /// Shift - the behaviour of every list widget that has one.
+    sel_anchor: Option<usize>,
     /// The multi-selection set (indices into `app.mods`). `selected_mod` stays the
     /// focus anchor for single-row UI; this set drives batch actions and the row
     /// highlight when more than one row is selected.
@@ -790,6 +895,25 @@ struct App {
     modifiers: iced::keyboard::Modifiers,
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
+    /// The plugin list's Shift anchor; see [`App::sel_anchor`].
+    plugin_anchor: Option<usize>,
+    /// The focused plugin row, and the multi-selection around it - the same
+    /// model the mod list uses, because every batch action needs the same answer
+    /// to "which rows am I acting on".
+    selected_plugin: Option<usize>,
+    selected_plugins: HashSet<usize>,
+    /// Which list the arrow keys move in.
+    focus: Pane,
+    /// The user is typing into a field on the main screen (the mod filter, a
+    /// notes box, an inline rename).
+    ///
+    /// `on_key_press` is a global subscription: it does not know which widget
+    /// has the caret, so without this a space typed into the filter box would
+    /// toggle a mod and Home would jump the list instead of the text. Set by any
+    /// keystroke that reached a field, cleared the moment a row is pressed or
+    /// Escape is hit - approximate at the edges (clicking into a field without
+    /// typing leaves it false), but wrong only in the harmless direction.
+    typing: bool,
     /// The same, for the plugin list. Kept separate so a drag in one panel can
     /// never be committed against the other's indices, and carrying the legal
     /// range so the illegal strips can simply refuse to be targets.
@@ -1022,9 +1146,15 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         downloads: Vec::new(),
         confirm_delete_download: None,
         selected_mods: HashSet::new(),
+        sel_anchor: None,
         confirm_batch_remove: false,
         modifiers: iced::keyboard::Modifiers::default(),
         drag_state: None,
+        selected_plugin: None,
+        selected_plugins: HashSet::new(),
+        plugin_anchor: None,
+        focus: Pane::Mods,
+        typing: false,
         plugin_drag: None,
         profile_menu: None,
         profile_rename: None,
@@ -1232,7 +1362,12 @@ fn modlist_with_unmanaged(inst: &Instance, game: Option<&DetectedGame>) -> Vec<M
 fn reload_mods(app: &mut App) {
     let Some(inst) = app.created.clone() else { return };
     let game = selected_game(app).cloned();
+    // This replaces the list the selection indexes into, so it is carried
+    // across by name; anything that disappeared is dropped rather than silently
+    // re-pointed at whatever took its place.
+    let held = hold_mod_selection(app);
     app.mods = modlist_with_unmanaged(&inst, game.as_ref());
+    put_mod_selection(app, held);
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is
@@ -1566,6 +1701,211 @@ fn selection_or(app: &App, row: usize) -> Vec<usize> {
     v
 }
 
+/// The scrollables the keyboard has to move, named so `scroll_to` can reach them.
+fn mod_scroll_id() -> scrollable::Id {
+    scrollable::Id::new("mod-list")
+}
+fn plugin_scroll_id() -> scrollable::Id {
+    scrollable::Id::new("plugin-list")
+}
+
+/// Bring the row at visible position `pos` of `total` into view.
+///
+/// Without this the arrow keys move a highlight the user cannot see: past the
+/// bottom of a hundred-row list the focus is real, the selection is real, and
+/// nothing on screen changes. iced has no "scroll this row into view", so the
+/// list is scrolled proportionally - the focused row ends up roughly a third
+/// down the viewport, which keeps its neighbours visible in both directions.
+fn scroll_focus_into_view(id: scrollable::Id, pos: usize, total: usize) -> Task<Message> {
+    if total <= 1 {
+        return Task::none();
+    }
+    let frac = (pos as f32 / (total - 1) as f32).clamp(0.0, 1.0);
+    scrollable::snap_to(id, scrollable::RelativeOffset { x: 0.0, y: frac })
+}
+
+/// Which mod rows the list is currently drawing.
+///
+/// Shared with the keyboard on purpose. Computed separately, the two would
+/// drift, and the drift is invisible until an arrow key walks the focus into a
+/// row that is filtered out or folded away - where the highlight cannot be seen
+/// and Space toggles a mod the user is not looking at.
+fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::CategoryFactory>) -> Vec<bool> {
+    let query = app.search.trim().to_lowercase();
+    let filtering = !query.is_empty() || app.category_filter.is_some();
+    visible_rows(&app.mods, &app.collapsed, filtering, |_, m| {
+        if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
+            return false;
+        }
+        match app.category_filter {
+            None => true,
+            Some(fid) => app
+                .meta_cache
+                .get(&m.name)
+                .and_then(|r| r.category_id)
+                .zip(cats)
+                .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid)),
+        }
+    })
+}
+
+/// Which list the keyboard actually drives right now.
+///
+/// `App::focus` remembers the last list the user touched, but the plugin list is
+/// only on screen while its tab is - so a focus left there after switching tabs
+/// would send the arrow keys somewhere invisible.
+fn effective_focus(app: &App) -> Pane {
+    match app.focus {
+        Pane::Plugins if app.tab == Tab::Plugins && app.plugins.is_some() => Pane::Plugins,
+        _ => Pane::Mods,
+    }
+}
+
+/// Move the focused row, or act on it. One place, so the two lists cannot drift
+/// into answering the same key differently.
+fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
+    const PAGE: usize = 10;
+    let pane = effective_focus(app);
+    // The rows the keyboard may land on: what the list is actually DRAWING.
+    // Walking the raw vector would move the focus into rows hidden by the filter
+    // or folded into a collapsed group, where the highlight cannot be seen and
+    // Space toggles something nobody is looking at.
+    let rows: Vec<usize> = match pane {
+        Pane::Mods => {
+            let cats = app.created.as_ref().map(|i| i.category_factory());
+            let vis = mod_row_visibility(app, cats.as_ref());
+            (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect()
+        }
+        Pane::Plugins => (0..app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0)).collect(),
+    };
+    if rows.is_empty() {
+        return Task::none();
+    }
+    let cur = match pane {
+        Pane::Mods => app.selected_mod,
+        Pane::Plugins => app.selected_plugin,
+    };
+
+    // The actions first: they act on the row, not on where the row is.
+    match nav {
+        Nav::Toggle => {
+            return match (pane, cur) {
+                // The batch path already handles "just the focused row" via
+                // plugin_selection_or, so one message covers both cases.
+                (Pane::Plugins, Some(_)) => {
+                    let on = app
+                        .selected_plugin
+                        .and_then(|i| app.plugins.as_ref()?.plugins.get(i).map(|p| !p.enabled))
+                        .unwrap_or(true);
+                    update(app, Message::SetSelectedPluginsEnabled(on))
+                }
+                (Pane::Mods, Some(i)) => update(app, Message::ToggleMod(i)),
+                _ => Task::none(),
+            };
+        }
+        Nav::Activate => {
+            return match (pane, cur) {
+                (Pane::Mods, Some(i)) => update(app, Message::ShowModInfo(i)),
+                _ => Task::none(),
+            };
+        }
+        Nav::Remove => {
+            // The same two-step guard the row menu uses - and the SECOND press
+            // has to be able to finish it, or the promise in the status line is
+            // a lie and the key does nothing but light up a button elsewhere.
+            return match (pane, cur) {
+                (Pane::Mods, Some(i))
+                    if app
+                        .mods
+                        .get(i)
+                        .is_some_and(|m| !m.is_unmanaged() && !m.is_separator()) =>
+                {
+                    if app.confirm_remove == Some(i) {
+                        return update(app, Message::ModRemove(i));
+                    }
+                    let name = app.mods[i].display_name().to_string();
+                    app.confirm_remove = Some(i);
+                    app.status =
+                        Some(format!("Press Delete again to remove '{name}', Escape to cancel."));
+                    Task::none()
+                }
+                _ => Task::none(),
+            };
+        }
+        _ => {}
+    }
+
+    // Movement, in VISIBLE positions rather than raw indices, so a step is one
+    // row on screen however many are filtered out between them. With nothing
+    // focused yet the first key lands on an end rather than doing nothing, so
+    // the list is reachable without ever touching the mouse.
+    let last = rows.len() - 1;
+    // Where the current focus sits among the visible rows. A focus that is no
+    // longer drawn (the filter moved under it) is treated as "before the list",
+    // so the next key brings it back onto something visible.
+    let at = cur.and_then(|i| rows.iter().position(|&r| r == i));
+    let pos = match (at, nav) {
+        (None, Nav::Up | Nav::PageUp | Nav::Last) => last,
+        (None, _) => 0,
+        (Some(p), Nav::Up) => p.saturating_sub(1),
+        (Some(p), Nav::Down) => (p + 1).min(last),
+        (Some(p), Nav::PageUp) => p.saturating_sub(PAGE),
+        (Some(p), Nav::PageDown) => (p + PAGE).min(last),
+        (_, Nav::First) => 0,
+        (_, Nav::Last) => last,
+        (Some(p), _) => p,
+    };
+    let next = rows[pos];
+
+    // Shift extends from the anchor, exactly as Shift-click does, so the two
+    // ways of building a selection agree.
+    let extend = app.modifiers.shift();
+    match pane {
+        Pane::Mods => {
+            if extend {
+                let t = update(app, Message::SelectModExtend(next));
+                return Task::batch([t, scroll_focus_into_view(mod_scroll_id(), pos, rows.len())]);
+            }
+            app.selected_mod = Some(next);
+            app.sel_anchor = Some(next);
+            app.selected_mods.clear();
+            app.menu_mod = None;
+            app.confirm_remove = None;
+            scroll_focus_into_view(mod_scroll_id(), pos, rows.len())
+        }
+        Pane::Plugins => {
+            if extend {
+                let t = update(app, Message::SelectPluginExtend(next));
+                return Task::batch([t, scroll_focus_into_view(plugin_scroll_id(), pos, rows.len())]);
+            }
+            app.selected_plugin = Some(next);
+            app.plugin_anchor = Some(next);
+            app.selected_plugins.clear();
+            scroll_focus_into_view(plugin_scroll_id(), pos, rows.len())
+        }
+    }
+}
+
+/// The plugin rows an action should act on: the whole selection when the given
+/// row belongs to it, otherwise just that row.
+///
+/// The twin of [`selection_or`], and deliberately the same shape: a batch action
+/// and a single-row action must not disagree about what "the rows I am acting
+/// on" means, or a right-click would do something different from the menu it
+/// opened.
+fn plugin_selection_or(app: &App, row: usize) -> Vec<usize> {
+    let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+    let mut v: Vec<usize> = if app.selected_plugins.contains(&row) && app.selected_plugins.len() > 1
+    {
+        app.selected_plugins.iter().copied().collect()
+    } else {
+        vec![row]
+    };
+    v.retain(|&i| i < len);
+    v.sort_unstable();
+    v
+}
+
 /// Move `targets` (indices into `mods`) so the block lands at `dest`, preserving
 /// their relative order. Returns the destination index of the first moved row.
 ///
@@ -1648,10 +1988,77 @@ fn drop_files_cache(app: &App, layer: Option<&str>) {
 /// immediately so the pane updates in place instead of blanking to the
 /// placeholder until the user leaves and re-enters the tab.
 fn invalidate_plugins(app: &mut App) {
+    let held = hold_plugin_selection(app);
     app.plugins = None;
     if app.tab == Tab::Plugins && app.created.is_some() {
         app.plugins = compute_plugins(app);
     }
+    put_plugin_selection(app, held);
+}
+
+/// A selection captured BY NAME so it can survive its list being rebuilt or
+/// reordered.
+///
+/// A selection is a set of indices, and almost everything moves them: a LOOT
+/// sort, a drag, an arrow-button move, a refresh, a mod enabled. Left alone the
+/// numbers stay in range and simply mean different rows - which is worse than
+/// going out of range, because nothing errors: the highlight paints strangers
+/// and a batch action writes them to disk.
+///
+/// The ANCHOR is in here too. It is the one index a Shift extension counts from,
+/// so a stale one silently turns a three-row gesture into a twenty-row one.
+#[derive(Debug, Clone, Default)]
+struct HeldSelection {
+    focus: Option<String>,
+    anchor: Option<String>,
+    set: Vec<String>,
+}
+
+/// Capture the plugin selection by name. Pair every call with
+/// [`put_plugin_selection`] around whatever moves the rows.
+fn hold_plugin_selection(app: &App) -> HeldSelection {
+    let Some(list) = app.plugins.as_ref() else { return HeldSelection::default() };
+    let name = |i: &usize| list.plugins.get(*i).map(|p| p.name.clone());
+    HeldSelection {
+        focus: app.selected_plugin.as_ref().and_then(name),
+        anchor: app.plugin_anchor.as_ref().and_then(name),
+        set: app.selected_plugins.iter().filter_map(name).collect(),
+    }
+}
+
+/// Put it back on the current list, dropping whatever is no longer there.
+fn put_plugin_selection(app: &mut App, held: HeldSelection) {
+    let Some(list) = app.plugins.as_ref() else {
+        app.selected_plugin = None;
+        app.plugin_anchor = None;
+        app.selected_plugins.clear();
+        return;
+    };
+    let at = |n: &String| list.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(n));
+    app.selected_plugin = held.focus.as_ref().and_then(at);
+    app.plugin_anchor = held.anchor.as_ref().and_then(at);
+    app.selected_plugins = held.set.iter().filter_map(at).collect();
+}
+
+/// The mod-list twin of [`hold_plugin_selection`].
+fn hold_mod_selection(app: &App) -> HeldSelection {
+    let name = |i: &usize| app.mods.get(*i).map(|m| m.name.clone());
+    HeldSelection {
+        focus: app.selected_mod.as_ref().and_then(name),
+        anchor: app.sel_anchor.as_ref().and_then(name),
+        set: app.selected_mods.iter().filter_map(name).collect(),
+    }
+}
+
+/// The mod-list twin of [`put_plugin_selection`]. Also disarms a pending
+/// removal: that guard names its target by index, and confirming it after the
+/// list moved would delete whatever slid into the slot.
+fn put_mod_selection(app: &mut App, held: HeldSelection) {
+    let at = |n: &String| app.mods.iter().position(|m| &m.name == n);
+    app.selected_mod = held.focus.as_ref().and_then(at);
+    app.sel_anchor = held.anchor.as_ref().and_then(at);
+    app.selected_mods = held.set.iter().filter_map(at).collect();
+    app.confirm_remove = None;
 }
 
 /// Persist the mod list and invalidate everything derived from it (plugin order,
@@ -1881,8 +2288,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ToggleMod(i) => {
             // A separator is a group divider, not content - it has no toggle (MO2's
-            // canBeEnabled() == false).
-            if app.mods.get(i).is_some_and(|m| m.is_separator()) {
+            // canBeEnabled() == false). Unmanaged rows are the game's own DLC and
+            // Creation Club content: they are not in modlist.txt, so a flipped
+            // flag would be silently lost on the next save, which reads as the
+            // click having done nothing.
+            if app.mods.get(i).is_some_and(|m| m.is_separator() || m.is_unmanaged()) {
                 return Task::none();
             }
             if let Some(m) = app.mods.get_mut(i) {
@@ -1980,6 +2390,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.profile_delete_confirm = None;
         }
         Message::ProfileRenameChanged(s) => {
+            app.typing = true;
             if let Some((_, edited)) = &mut app.profile_rename {
                 *edited = s;
             }
@@ -2032,6 +2443,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.profile_delete_confirm = None;
         }
         Message::ProfileCopyChanged(s) => {
+            app.typing = true;
             if let Some((_, edited)) = &mut app.profile_copy {
                 *edited = s;
             }
@@ -2219,6 +2631,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::PickerNameChanged(s) => {
+            app.typing = true;
             if let Some(p) = app.picker.as_mut() {
                 p.name = s;
             }
@@ -2473,6 +2886,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.send_priority = Some((i, i.to_string()));
         }
         Message::SendToPriorityChanged(text) => {
+            app.typing = true;
             if let Some((_, t)) = app.send_priority.as_mut() {
                 *t = text;
             }
@@ -2535,6 +2949,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::OverwriteToModName(s) => {
+            app.typing = true;
             if app.overwrite_to_mod.is_some() {
                 app.overwrite_to_mod = Some(s);
             }
@@ -2554,6 +2969,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();
             };
+            let held = hold_plugin_selection(app);
             let mut moved = false;
             if let Some(list) = app.plugins.as_mut() {
                 moved = list.move_plugin(i, up, &spec);
@@ -2563,6 +2979,9 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     list.refresh(&spec);
                 }
             }
+            // The row changed places; the selection must follow it rather than
+            // stay on a number that now names a different plugin.
+            put_plugin_selection(app, held);
             if !moved {
                 return Task::none();
             }
@@ -2704,6 +3123,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SearchChanged(q) => {
+            app.typing = true;
             app.search = q;
             // A filter change can hide the menu's target row; keep it simple.
             app.menu_mod = None;
@@ -2728,14 +3148,21 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             // Plain click: single focus + collapse the multi-selection to just it,
             // and arm a potential drag from this row (committed only if it moves).
+            app.focus = Pane::Mods;
+            app.typing = false;
             app.selected_mod = Some(i);
+            app.sel_anchor = Some(i);
             app.selected_mods.clear();
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
-            app.drag_state = Some(DragState { from: i, gap: i });
+            app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
         }
         Message::SelectModToggle(i) => {
+            // A modifier click is still a press on this list: it has to take the
+            // keyboard, or the arrows would go on driving the other pane.
+            app.focus = Pane::Mods;
+            app.typing = false;
             // Ctrl+click: flip this row's membership; the first toggle also seeds the
             // set from the current focus so the anchor row stays selected.
             if app.selected_mods.is_empty() {
@@ -2747,15 +3174,24 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.selected_mods.insert(i);
             }
             app.selected_mod = Some(i);
+            app.sel_anchor = Some(i);
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
             app.drag_state = None;
         }
         Message::SelectModExtend(i) => {
-            // Shift+click: select the contiguous run from the focus anchor to `i`.
-            // With no anchor yet, behaves like a plain single select.
-            let anchor = app.selected_mod.unwrap_or(i);
+            app.focus = Pane::Mods;
+            app.typing = false;
+            // Shift+click: select the contiguous run from the ANCHOR to `i`. The
+            // anchor is not the focus - it stays where the selection began, so a
+            // second Shift gesture grows the same run instead of starting a new
+            // two-row one. With no anchor yet, behaves like a plain select.
+            let anchor = app.sel_anchor.or(app.selected_mod).unwrap_or(i);
+            // Pin it: the fallback above must be taken ONCE. Left unset, the next
+            // Shift would fall back to the focus this gesture is about to move,
+            // and the run would never grow past two rows.
+            app.sel_anchor = Some(anchor);
             let (lo, hi) = (anchor.min(i), anchor.max(i));
             app.selected_mods.clear();
             for idx in lo..=hi {
@@ -2770,8 +3206,12 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.drag_state = None;
         }
         Message::ClearSelection => {
+            app.typing = false;
+            app.confirm_remove = None;
             app.selected_mods.clear();
+            app.selected_plugins.clear();
             app.drag_state = None;
+            app.plugin_drag = None;
             app.menu_mod = None;
         }
         Message::OpenModMenu(i) => {
@@ -2888,6 +3328,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::RenameChanged(s) => {
+            app.typing = true;
             if let Some((_, name)) = &mut app.rename {
                 *name = s;
             }
@@ -3017,12 +3458,14 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     app.status =
                         Some(format!("{name} is a light plugin this game can't load and stays off."));
                 } else if app.plugins.is_some() {
+                    let held = hold_plugin_selection(app);
                     let mut now = false;
                     if let Some(list) = app.plugins.as_mut() {
                         now = list.plugins.get(i).map(|p| p.enabled).unwrap_or(false);
                         list.set_enabled(&name, !now);
                         list.refresh(&spec);
                     }
+                    put_plugin_selection(app, held);
                     // Persist to the profile (which owns the order) and the prefix.
                     // Both borrows below are shared, so this is fine after the
                     // mutation above has ended.
@@ -3101,17 +3544,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // first, Overwrite ahead of everything, matching the union's own
             // precedence - without these every file-conditioned masterlist rule
             // is evaluated against a directory the mods are not in.
-            let mut mod_dirs: Vec<PathBuf> = Vec::new();
-            if let Some(inst) = app.created.as_ref() {
-                mod_dirs.push(inst.overwrite_dir());
-            }
-            mod_dirs.extend(
-                app.mods
-                    .iter()
-                    .rev()
-                    .filter(|m| m.enabled && !m.is_separator())
-                    .map(|m| m.path.clone()),
-            );
+            let mod_dirs = loot_data_paths(app);
             // The enabled (active) plugin names, lowercased - drives which plugins the
             // LOOT report covers and what counts as a missing master.
             let enabled_lower: std::collections::HashSet<String> = list
@@ -3120,6 +3553,16 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .filter(|p| p.enabled)
                 .map(|p| p.name.to_ascii_lowercase())
                 .collect();
+            // What this answer will be checked against when it comes back.
+            let fingerprint = SortFingerprint {
+                game: id.clone(),
+                profile: app
+                    .created
+                    .as_ref()
+                    .map(|i| i.active_profile())
+                    .unwrap_or_default(),
+                names: list.plugins.iter().map(|p| p.name.clone()).collect(),
+            };
             app.sorting = true;
             app.status =
                 Some("Sorting plugins with LOOT (updating the masterlist)...".to_string());
@@ -3157,7 +3600,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // sort, so it is an inner Result the handler tolerates.
                     let report =
                         eidos_loot::report(&view, &enabled_lower).map_err(|e| e.to_string());
-                    Ok((order, report))
+                    Ok((fingerprint, order, report))
                 },
                 Message::PluginsSorted,
             );
@@ -3166,28 +3609,60 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Cleared on EVERY path, including the failures below, or a single
             // bad sort would leave the button dead for the rest of the session.
             app.sorting = false;
-            let (sorted, report_res) = match result {
+            let (asked_about, sorted, report_res) = match result {
                 Ok(x) => x,
                 Err(e) => {
                     app.status = Some(format!("LOOT sort failed: {e}"));
                     return Task::none();
                 }
             };
+            // A Refresh while LOOT ran drops the cached list. Rebuild it BEFORE
+            // fingerprinting, or a harmless refresh would look like a changed
+            // list and throw away a sort that is still perfectly valid.
+            if app.plugins.is_none() {
+                app.plugins = compute_plugins(app);
+            }
+            // Refuse an answer computed for a list that has since changed. The
+            // order LOOT returns is a permutation of the names it was GIVEN;
+            // applied to a different set - after a profile switch, a mod enabled
+            // or disabled, a mod installed - it silently rearranges plugins
+            // nobody asked about, and everything downstream reports a clean sort.
+            let now = SortFingerprint {
+                game: selected_game(app).map(|g| g.def.id.to_string()).unwrap_or_default(),
+                profile: app.created.as_ref().map(|i| i.active_profile()).unwrap_or_default(),
+                names: app
+                    .plugins
+                    .as_ref()
+                    .map(|l| l.plugins.iter().map(|p| p.name.clone()).collect())
+                    .unwrap_or_default(),
+            };
+            if now != asked_about {
+                app.status = Some(if now.game != asked_about.game {
+                    format!(
+                        "Discarded the LOOT sort: it was computed for {}, and {} is open now.",
+                        asked_about.game, now.game
+                    )
+                } else if now.profile != asked_about.profile {
+                    format!(
+                        "Discarded the LOOT sort: it was computed for profile '{}', and '{}' is active now.",
+                        asked_about.profile, now.profile
+                    )
+                } else {
+                    "Discarded the LOOT sort: the plugin list changed while it ran. Sort again."
+                        .to_string()
+                });
+                return Task::none();
+            }
             // Recompute spec + prefix dir (immutable borrows) before mutating plugins.
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();
             };
-            // A refresh may have invalidated the cache while LOOT ran off-thread;
-            // recompute instead of silently discarding the sort (the report would
-            // otherwise pop over an unsorted list).
-            if app.plugins.is_none() {
-                app.plugins = compute_plugins(app);
-            }
             let before: Vec<String> = app
                 .plugins
                 .as_ref()
                 .map(|l| l.plugins.iter().map(|p| p.name.clone()).collect())
                 .unwrap_or_default();
+            let held = hold_plugin_selection(app);
             if let Some(list) = app.plugins.as_mut() {
                 list.apply_sorted_order(&sorted);
                 // NOT repin_to_current: refresh() puts the pinned plugins back
@@ -3195,6 +3670,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // against the sorter is the entire purpose of a pin.
                 list.refresh(&spec);
             }
+            put_plugin_selection(app, held);
             // How much actually moved. Without this the status reads the same
             // whether the sort rearranged forty plugins or had nothing to do,
             // and a correct no-op on an already-sorted list is indistinguishable
@@ -3342,7 +3818,10 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::CloseInfo => app.info_mod = None,
         Message::InfoSelectTab(t) => app.info_tab = t,
-        Message::NotesChanged(s) => app.notes_edit = s,
+        Message::NotesChanged(s) => {
+            app.typing = true;
+            app.notes_edit = s;
+        }
         Message::NotesSave => {
             let result = match (app.info_mod, app.created.as_ref()) {
                 (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
@@ -4147,14 +4626,16 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
-            app.drag_state = Some(DragState { from: i, gap: i });
+            app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
         }
         Message::DragOverGap(gap) => {
             if let Some(d) = &mut app.drag_state {
                 // Never above the unmanaged block: those rows are the game's own
                 // content, they are not in modlist.txt, and a mod dropped among
                 // them would be silently dropped from the saved order.
-                d.gap = gap.max(first_managed(&app.mods)).min(app.mods.len());
+                let want = gap.max(first_managed(&app.mods)).min(app.mods.len());
+                d.aimed |= want != d.from && want != d.from + 1;
+                d.gap = want;
             }
         }
         Message::DragDrop => {
@@ -4170,9 +4651,12 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if block.is_empty() {
                 return Task::none();
             }
-            // A drop that changes nothing: the gap is already where the block
-            // starts, or immediately after a single grabbed row.
-            let unchanged = block.len() == 1 && (d.gap == block[0] || d.gap == block[0] + 1);
+            // A drop that changes nothing: the pointer never left the grabbed
+            // row's own edges, so this was a click. `aimed` is what makes that
+            // true for a MULTI-row selection too, which has no single edge - and
+            // where committing would compact a non-contiguous set and save it.
+            let unchanged =
+                !d.aimed || (block.len() == 1 && (d.gap == block[0] || d.gap == block[0] + 1));
             if !unchanged {
                 let at = move_block(&mut app.mods, &block, d.gap);
                 app.selected_mod = Some(at);
@@ -4183,14 +4667,141 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragCancel => {
             app.drag_state = None;
         }
+        Message::SelectPlugin(i) => {
+            if app.modifiers.control() || app.modifiers.command() {
+                return update(app, Message::SelectPluginToggle(i));
+            }
+            if app.modifiers.shift() {
+                return update(app, Message::SelectPluginExtend(i));
+            }
+            app.focus = Pane::Plugins;
+            app.typing = false;
+            app.selected_plugin = Some(i);
+            app.plugin_anchor = Some(i);
+            // Pressing a row that is NOT already in the set collapses it, so a
+            // mis-press does not silently wipe a careful Ctrl/Shift selection.
+            if !app.selected_plugins.contains(&i) {
+                app.selected_plugins.clear();
+            }
+            // One press, both jobs - selecting and arming the drag - exactly as
+            // the mod list does it. Splitting them would mean a row could be
+            // dragged without ever becoming the row the menus act on.
+            return update(app, Message::PluginDragStart(i));
+        }
+        Message::SelectPluginToggle(i) => {
+            app.typing = false;
+            // The first toggle seeds the set from the current focus, so the
+            // anchor row stays selected instead of vanishing.
+            if app.selected_plugins.is_empty() {
+                if let Some(f) = app.selected_plugin {
+                    app.selected_plugins.insert(f);
+                }
+            }
+            if !app.selected_plugins.remove(&i) {
+                app.selected_plugins.insert(i);
+            }
+            app.focus = Pane::Plugins;
+            app.selected_plugin = Some(i);
+            app.plugin_anchor = Some(i);
+            // A modifier click builds a selection; it must not also start a drag.
+            app.plugin_drag = None;
+        }
+        Message::SelectPluginExtend(i) => {
+            app.typing = false;
+            let anchor = app.plugin_anchor.or(app.selected_plugin).unwrap_or(i);
+            app.plugin_anchor = Some(anchor);
+            let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+            app.selected_plugins.clear();
+            for idx in anchor.min(i)..=anchor.max(i) {
+                if idx < len {
+                    app.selected_plugins.insert(idx);
+                }
+            }
+            app.focus = Pane::Plugins;
+            app.selected_plugin = Some(i);
+            // A modifier click builds a selection; it must not also start a drag.
+            app.plugin_drag = None;
+        }
+        Message::SetSelectedPluginsEnabled(on) => {
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            // The SET when there is one. Going through the focus row would act on
+            // a row the user had just Ctrl-clicked OFF: deselecting leaves the
+            // focus on it, so `plugin_selection_or` would see it outside the set
+            // and answer with that row alone - the one row they excluded.
+            let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+            let mut rows: Vec<usize> = if !app.selected_plugins.is_empty() {
+                app.selected_plugins.iter().copied().collect()
+            } else {
+                app.selected_plugin.into_iter().collect()
+            };
+            rows.retain(|&i| i < len);
+            rows.sort_unstable();
+            if rows.is_empty() {
+                app.status = Some("Select a plugin first.".to_string());
+                return Task::none();
+            }
+            // Collect names first: the indices shift under refresh(), the names
+            // do not, and a batch that half-applied would be worse than one that
+            // did not start.
+            let (names, refused) = {
+                let Some(list) = app.plugins.as_ref() else { return Task::none() };
+                let mut names = Vec::new();
+                let mut refused = 0usize;
+                for &i in &rows {
+                    let Some(p) = list.plugins.get(i) else { continue };
+                    let engine_owned = spec
+                        .primary_plugins
+                        .iter()
+                        .any(|pp| pp.eq_ignore_ascii_case(&p.name))
+                        || list.implicit.contains(&p.name.to_ascii_lowercase());
+                    if engine_owned || p.force_disabled {
+                        refused += 1;
+                        continue;
+                    }
+                    names.push(p.name.clone());
+                }
+                (names, refused)
+            };
+            if names.is_empty() {
+                app.status = Some(
+                    "Nothing to change: the game loads those plugins itself.".to_string(),
+                );
+                return Task::none();
+            }
+            let held = hold_plugin_selection(app);
+            if let Some(list) = app.plugins.as_mut() {
+                for n in &names {
+                    list.set_enabled(n, on);
+                }
+                // Enabling changes the tier a plugin sorts into, so this can
+                // reorder the very rows the selection points at.
+                list.refresh(&spec);
+            }
+            put_plugin_selection(app, held);
+            let verb = if on { "Enabled" } else { "Disabled" };
+            let tail = if refused > 0 {
+                format!(" ({refused} left alone - the game loads them itself)")
+            } else {
+                String::new()
+            };
+            app.status = Some(format!("{verb} {} plugin(s).{tail}", names.len()));
+            commit_plugin_order(app, &spec);
+        }
         Message::PluginDragStart(i) => {
             // The legal range is resolved once, here, and not per frame: it can
             // only change when the list itself changes, which a drag cannot do.
+            // The block this press will move: the whole selection when the
+            // grabbed row belongs to it, so the range is computed for what will
+            // actually travel rather than for one row of it.
+            let block = plugin_selection_or(app, i);
             let range = selected_game(app)
                 .and_then(|g| GameSpec::for_id(g.def.id))
                 .zip(app.plugins.as_ref())
-                .and_then(|(spec, list)| list.movable_range(i, &spec));
-            app.plugin_drag = range.map(|range| PluginDrag { from: i, gap: i, range });
+                .and_then(|(spec, list)| list.block_movable_range(&block, &spec));
+            app.plugin_drag =
+                range.map(|range| PluginDrag { from: i, gap: i, block, range, aimed: false });
         }
         Message::PluginDragOverGap(gap) => {
             if let Some(d) = &mut app.plugin_drag {
@@ -4203,6 +4814,13 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // the pin is going to take back.
                 let want = gap.clamp(d.range.lo, d.range.hi);
                 if !d.range.blocked.contains(&want) {
+                    let (lo, hi) = (
+                        d.block.first().copied().unwrap_or(d.from),
+                        d.block.last().copied().unwrap_or(d.from),
+                    );
+                    // Only a gap OUTSIDE the block counts as aiming; the ones
+                    // inside it are where the block already is.
+                    d.aimed |= want < lo || want > hi + 1;
                     d.gap = want;
                 }
             }
@@ -4215,22 +4833,31 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();
             };
+            // A press that never travelled is a click, not a drag.
+            if !d.aimed {
+                return Task::none();
+            }
+            let held = hold_plugin_selection(app);
             let mut moved = false;
             if let Some(list) = app.plugins.as_mut() {
                 // move_plugins_to carries the pin of what it moved across with
                 // it, so a pinned plugin the user dragged keeps its NEW slot
                 // instead of being snapped back by its own lock.
-                moved = list.move_plugins_to(&[d.from], d.gap, &spec);
+                moved = list.move_plugins_to(&d.block, d.gap, &spec);
                 if moved {
                     list.refresh(&spec);
                 }
             }
+            // The rows just changed places: without this the highlight, the
+            // "N selected" count and every batch action stay on the numbers,
+            // which now name different plugins.
+            put_plugin_selection(app, held);
             if !moved {
                 // The gesture did nothing. If the plugin was boxed in by the
                 // engine, say which plugins boxed it in rather than leaving the
                 // row to snap back in silence - that silence is what made a
                 // correct refusal read as a broken feature.
-                if d.range.is_stuck(d.from) {
+                if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
                     app.status = Some(pinned_by(&d.range));
                 }
                 return Task::none();
@@ -4251,6 +4878,29 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             commit_plugin_order(app, &spec);
         }
+        Message::CycleFocus => {
+            // Only somewhere there is a list to drive.
+            app.focus = match app.focus {
+                Pane::Mods if app.tab == Tab::Plugins => Pane::Plugins,
+                _ => Pane::Mods,
+            };
+        }
+        Message::SelectAllInFocus => match effective_focus(app) {
+            Pane::Mods => {
+                // Separators define groups; they are not rows an action moves,
+                // and `selection_or` drops them anyway - so leave them out here
+                // rather than showing a selection that silently shrinks.
+                app.selected_mods =
+                    (0..app.mods.len()).filter(|&i| !app.mods[i].is_separator()).collect();
+                app.selected_mod = app.selected_mod.or(Some(0)).filter(|_| !app.mods.is_empty());
+            }
+            Pane::Plugins => {
+                let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
+                app.selected_plugins = (0..len).collect();
+                app.selected_plugin = app.selected_plugin.or((len > 0).then_some(0));
+            }
+        },
+        Message::KeyNav(nav) => return key_nav(app, nav),
         Message::ModifiersChanged(mods) => {
             app.modifiers = mods;
         }
@@ -5115,20 +5765,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // mod BELOW it survives the filter - which the single downward pass this used
     // to be could not know when it reached the header.
     let filtering = !query.is_empty() || app.category_filter.is_some();
-    let vis = visible_rows(&app.mods, &app.collapsed, filtering, |_, m| {
-        if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
-            return false;
-        }
-        match app.category_filter {
-            None => true,
-            Some(fid) => app
-                .meta_cache
-                .get(&m.name)
-                .and_then(|r| r.category_id)
-                .zip(cats.as_ref())
-                .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid)),
-        }
-    });
+    let vis = mod_row_visibility(app, cats.as_ref());
     // The live drag's insertion point, if any, so exactly one gap draws the line.
     // A drag that has not moved off its own row targets nothing visible: a plain
     // click must never flash an indicator.
@@ -5227,7 +5864,10 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 
     // Wrap the list so the pointer leaving its bounds during a drag cancels it
     // (MO2 drops nothing when you release outside the list).
-    let list_area = mouse_area(scrollable(list).height(Length::Fill)).on_exit(Message::DragCancel);
+    let list_area = mouse_area(
+        scrollable(list).id(mod_scroll_id()).height(Length::Fill),
+    )
+    .on_exit(Message::DragCancel);
 
     let inner = Column::new()
         .spacing(6)
@@ -6627,6 +7267,37 @@ fn compute_plugins(app: &App) -> Option<PluginList> {
 /// Persist the plugin load order: into the active profile's plugins dir (the
 /// single source of truth, bind-mounted over the prefix at launch) AND a shadow
 /// copy into the prefix for external tools reading it outside Eidos.
+/// The trees LOOT must look at besides the game's own `Data`, highest priority
+/// first with Overwrite ahead of all - the union's own precedence.
+///
+/// Two filters, both of which cost a sort when they are missing:
+///
+/// UNMANAGED rows are the game's DLC and Creation Club content. `app.mods`
+/// carries them so the list can show them, but their `path` is a single `.esm`
+/// FILE inside the game's Data directory, not a directory. Offered to libloot as
+/// data paths, eighty files it is asked to scan as folders, every sort died with
+/// "libloot: an I/O error occurred" and no hint as to which path was at fault.
+/// They also need no offering: they are already in the Data dir LOOT reads.
+///
+/// And anything no longer on disk - a mod folder deleted since the list was
+/// read - for the same reason: libloot reports the failure without naming it, so
+/// one stale row would take the whole sort down.
+fn loot_data_paths(app: &App) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(inst) = app.created.as_ref() {
+        dirs.push(inst.overwrite_dir());
+    }
+    dirs.extend(
+        app.mods
+            .iter()
+            .rev()
+            .filter(|m| m.enabled && !m.is_separator() && !m.is_unmanaged())
+            .map(|m| m.path.clone()),
+    );
+    dirs.retain(|p| p.is_dir());
+    dirs
+}
+
 /// Why a plugin will not move, in the terms a modder already thinks in.
 ///
 /// A plugin must load after every one of its masters and before anything that
@@ -6725,6 +7396,29 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         }
         top = top.push(b);
     }
+    // Batch enable/disable, shown only once a selection exists so the toolbar
+    // does not offer an action with no subject.
+    let picked = if app.selected_plugins.len() > 1 {
+        app.selected_plugins.len()
+    } else {
+        usize::from(app.selected_plugin.is_some())
+    };
+    if picked > 0 {
+        top = top
+            .push(text(format!("{picked} selected")).size(11.0))
+            .push(
+                button(text("Enable").size(11.0))
+                    .padding([3, 8])
+                    .on_press(Message::SetSelectedPluginsEnabled(true))
+                    .style(button::secondary),
+            )
+            .push(
+                button(text("Disable").size(11.0))
+                    .padding([3, 8])
+                    .on_press(Message::SetSelectedPluginsEnabled(false))
+                    .style(button::secondary),
+            );
+    }
     let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
         head = head.push(
@@ -6765,8 +7459,17 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut rows = Column::new();
     let total = list.plugins.len();
     let drag = app.plugin_drag.as_ref();
-    let live_gap =
-        drag.filter(|d| d.gap != d.from && d.gap != d.from + 1).map(|d| d.gap);
+    // A drop anywhere between the block's own first row and just past its last
+    // leaves it where it is, so no indicator is drawn there.
+    let live_gap = drag
+        .filter(|d| {
+            let (lo, hi) = (
+                d.block.first().copied().unwrap_or(d.from),
+                d.block.last().copied().unwrap_or(d.from),
+            );
+            d.gap < lo || d.gap > hi + 1
+        })
+        .map(|d| d.gap);
     // A strip is a target only inside the range the engine allows this plugin,
     // so an illegal slot cannot be aimed at in the first place. That is strictly
     // better than MO2, which accepts the drop and clamps it afterwards
@@ -6780,7 +7483,7 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // Said once, above the list, while the drag is live: the boundary is visible
     // as a place the line stops, and this explains what is stopping it.
     if let Some(d) = drag {
-        let msg = if d.range.is_stuck(d.from) {
+        let msg = if d.range.is_stuck(d.block.first().copied().unwrap_or(d.from)) {
             pinned_by(&d.range)
         } else {
             match (&d.range.after, &d.range.before) {
@@ -6901,10 +7604,26 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(pin).width(Length::Fixed(26.0)))
             .push(up)
             .push(down);
-        // Grabbing the row arms the drag; hovering it during one means "insert
-        // above me", the same reading as the mod list.
-        let grab = mouse_area(striped(row.into(), i % 2 == 0))
-            .on_press(Message::PluginDragStart(i))
+        // Grabbing the row arms the drag AND selects it, the same press doing
+        // both exactly as in the mod list; hovering it during a drag means
+        // "insert above me".
+        let selected = app.selected_plugin == Some(i) || app.selected_plugins.contains(&i);
+        // Same padding as `striped`, or a selected row would be a different
+        // height from its neighbours and the list would twitch as focus moves.
+        let painted: Element<'a, Message> = if selected {
+            container(row)
+                .width(Length::Fill)
+                .padding(2)
+                .style(|_t: &Theme| container::Style {
+                    background: Some(Background::Color(SEL_BG)),
+                    ..Default::default()
+                })
+                .into()
+        } else {
+            striped(row.into(), i % 2 == 0)
+        };
+        let grab = mouse_area(painted)
+            .on_press(Message::SelectPlugin(i))
             .on_enter(Message::PluginDragOverGap(i))
             .on_release(Message::PluginDragDrop);
         rows = rows.push(drop_gap(
@@ -6929,8 +7648,8 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     }
 
     // Releasing outside the list drops nothing, as in the mod list.
-    let list_area =
-        mouse_area(scrollable(rows).height(Length::Fill)).on_exit(Message::PluginDragCancel);
+    let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill))
+        .on_exit(Message::PluginDragCancel);
 
     Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }
@@ -8807,11 +9526,35 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         // Ctrl+R launches the current run target (MO2's Run accelerator).
         Key::Character("r") if mods.control() => Some(Message::Run),
         Key::Named(Named::Escape) => Some(Message::ClearSelection),
+        Key::Character("a") if mods.control() || mods.command() => {
+            Some(Message::SelectAllInFocus)
+        }
+        // Navigation. Which list answers is decided in `update` - this closure
+        // is a plain `fn` and cannot see the app.
+        Key::Named(Named::Tab) => Some(Message::CycleFocus),
+        Key::Named(Named::ArrowUp) => Some(Message::KeyNav(Nav::Up)),
+        Key::Named(Named::ArrowDown) => Some(Message::KeyNav(Nav::Down)),
+        Key::Named(Named::PageUp) => Some(Message::KeyNav(Nav::PageUp)),
+        Key::Named(Named::PageDown) => Some(Message::KeyNav(Nav::PageDown)),
+        Key::Named(Named::Home) => Some(Message::KeyNav(Nav::First)),
+        Key::Named(Named::End) => Some(Message::KeyNav(Nav::Last)),
+        Key::Named(Named::Space) => Some(Message::KeyNav(Nav::Toggle)),
+        Key::Named(Named::Enter) => Some(Message::KeyNav(Nav::Activate)),
+        Key::Named(Named::Delete) => Some(Message::KeyNav(Nav::Remove)),
         _ => None,
     });
 
     // The shortcut stream is gated on the main screen (the wizard/FOMOD views have
     // their own focus); modifier tracking always runs so the set is never stale.
+    // Navigation keys are suppressed while a field has the caret; the always-safe
+    // ones (F5, Ctrl+R, Escape, Ctrl+A) keep working, and Escape is what gets the
+    // keyboard back out of a field.
+    let typing = app.typing;
+    let shortcuts = shortcuts.with(typing).map(|(typing, m)| match m {
+        Message::KeyNav(_) | Message::CycleFocus if typing => Message::Noop,
+        other => other,
+    });
+
     let mut subs = vec![track_press, track_release];
     if app.screen == Screen::Main
         && app.fomod.is_none()
@@ -8824,6 +9567,19 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         // running game or a LOOT report is open. An unlocked tracked run keeps them.
         && app.running.as_ref().is_none_or(|r| !r.lock)
         && app.loot_report.is_none()
+        // Every other overlay that owns the screen. A navigation key reaching
+        // the mod list from behind one of these moves a selection the user
+        // cannot see, and Space would toggle a mod they are not looking at.
+        && !app.about_open
+        && !app.view_menu_open
+        && app.picker.is_none()
+        && app.profile_menu.is_none()
+        && app.profile_rename.is_none()
+        && app.profile_copy.is_none()
+        && app.profile_delete_confirm.is_none()
+        && app.send_priority.is_none()
+        && app.overwrite_to_mod.is_none()
+        && app.menu_mod.is_none()
     {
         subs.push(shortcuts);
     }
@@ -9049,6 +9805,314 @@ mod tests {
         let v = mods(&["a", "b", "c"]);
         let vis = visible_rows(&v, &HashSet::new(), true, |_, m| m.name == "c");
         assert_eq!(vis, [false, false, true]);
+    }
+
+    /// An App with just enough filled in to drive `key_nav`.
+    fn nav_app(mod_names: &[&str]) -> App {
+        let mut app = new(Vec::new()).0;
+        app.mods = mods(mod_names);
+        app.screen = Screen::Main;
+        app
+    }
+
+    #[test]
+    fn the_first_arrow_key_lands_on_the_list_instead_of_doing_nothing() {
+        // With nothing focused, Down must reach the top and Up the bottom, or a
+        // keyboard-only user has no way in.
+        let mut app = nav_app(&["a", "b", "c"]);
+        assert_eq!(app.selected_mod, None);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn navigation_stops_at_the_ends_rather_than_wrapping() {
+        // Wrapping from the last row to the first is how a held arrow key
+        // silently loses your place in a long list.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(2));
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(0));
+
+        // A page past the end clamps too, and Home/End are absolute.
+        let _ = key_nav(&mut app, Nav::PageDown);
+        assert_eq!(app.selected_mod, Some(2));
+        let _ = key_nav(&mut app, Nav::First);
+        assert_eq!(app.selected_mod, Some(0));
+        let _ = key_nav(&mut app, Nav::Last);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn shift_and_arrows_build_the_same_selection_as_shift_and_click() {
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(1);
+        app.modifiers = iced::keyboard::Modifiers::SHIFT;
+        let _ = key_nav(&mut app, Nav::Down);
+        let _ = key_nav(&mut app, Nav::Down);
+        let mut got: Vec<usize> = app.selected_mods.iter().copied().collect();
+        got.sort_unstable();
+        assert_eq!(got, [1, 2, 3]);
+        assert_eq!(app.selected_mod, Some(3));
+
+        // And a plain arrow after that collapses back to one row.
+        app.modifiers = iced::keyboard::Modifiers::default();
+        let _ = key_nav(&mut app, Nav::Up);
+        assert!(app.selected_mods.is_empty());
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn an_empty_list_swallows_every_navigation_key() {
+        let mut app = nav_app(&[]);
+        for nav in [Nav::Down, Nav::Up, Nav::First, Nav::Last, Nav::PageDown, Nav::Toggle] {
+            let _ = key_nav(&mut app, nav);
+            assert_eq!(app.selected_mod, None, "{nav:?} on an empty list");
+        }
+    }
+
+    #[test]
+    fn delete_arms_the_guard_and_never_removes_on_its_own() {
+        // A key that deletes a mod outright is a key that deletes a mod by
+        // accident. It opens the same two-step confirmation the menu uses.
+        let mut app = nav_app(&["a", "b"]);
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, Some(1));
+        assert_eq!(names(&app.mods), ["a", "b"], "nothing may be removed yet");
+
+        // Unmanaged rows are the game's own content and are not removable.
+        let mut app = nav_app(&["dlc"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, None);
+    }
+
+    #[test]
+    fn the_keyboard_never_drives_a_list_that_is_not_on_screen() {
+        // Focus follows the last row pressed, but the plugin list only exists
+        // while its tab does - so a focus left there would send the arrows
+        // somewhere invisible.
+        let mut app = nav_app(&["a", "b"]);
+        app.focus = Pane::Plugins;
+        app.tab = Tab::Data;
+        assert_eq!(effective_focus(&app), Pane::Mods);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0), "the mod list answered");
+
+        // Even on the Plugins tab, with no plugin list computed there is nothing
+        // to drive.
+        app.tab = Tab::Plugins;
+        assert!(app.plugins.is_none());
+        assert_eq!(effective_focus(&app), Pane::Mods);
+    }
+
+    #[test]
+    fn typing_in_a_field_takes_the_navigation_keys_away_from_the_list() {
+        // iced's on_key_press is a global subscription and cannot see which
+        // widget holds the caret, so a space typed into the filter box would
+        // otherwise toggle a mod.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mod = Some(0);
+        let _ = update(&mut app, Message::SearchChanged("te".to_string()));
+        assert!(app.typing);
+
+        // Pressing a row hands it straight back.
+        let _ = update(&mut app, Message::SelectMod(1));
+        assert!(!app.typing);
+        // As does Escape, which is the way out when the pointer is not involved.
+        let _ = update(&mut app, Message::SearchChanged("te".to_string()));
+        let _ = update(&mut app, Message::ClearSelection);
+        assert!(!app.typing);
+    }
+
+    #[test]
+    fn every_main_screen_field_hands_the_keyboard_over() {
+        // A field that forgets to do this is invisible until someone types a
+        // space into it and a mod turns off.
+        for msg in [
+            Message::SearchChanged("x".into()),
+            Message::RenameChanged("x".into()),
+            Message::NotesChanged("x".into()),
+            Message::OverwriteToModName("x".into()),
+            Message::SendToPriorityChanged("x".into()),
+            Message::ProfileRenameChanged("x".into()),
+            Message::ProfileCopyChanged("x".into()),
+            Message::PickerNameChanged("x".into()),
+        ] {
+            let mut app = nav_app(&["a"]);
+            let label = format!("{msg:?}");
+            let _ = update(&mut app, msg);
+            assert!(app.typing, "{label} did not claim the keyboard");
+        }
+    }
+
+    #[test]
+    fn an_armed_removal_does_not_survive_the_list_being_rebuilt() {
+        // The guard names its target by index. After a refresh that index may be
+        // a different mod, and the second Delete would confirm against it.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, Some(2));
+        reload_mods(&mut app);
+        assert_eq!(app.confirm_remove, None, "a rebuild must disarm it");
+    }
+
+    #[test]
+    fn loot_is_never_handed_a_file_as_a_data_path() {
+        // Reproduced against the real 108-path list: 80 of them were the game's
+        // own .esm files, carried in app.mods as unmanaged rows, and libloot
+        // answered the whole sort with "an I/O error occurred".
+        let d = std::env::temp_dir().join(format!("eidos-lootpaths-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("RealMod")).unwrap();
+        fs::write(d.join("Dawnguard.esm"), b"x").unwrap();
+
+        let mut app = new(Vec::new()).0;
+        app.mods = vec![
+            ModEntry { name: "RealMod".into(), enabled: true, path: d.join("RealMod"), unmanaged: false },
+            // The shape that broke it: enabled, not a separator, and a FILE.
+            ModEntry { name: "Dawnguard.esm".into(), enabled: true, path: d.join("Dawnguard.esm"), unmanaged: true },
+            // And one that is simply gone from disk.
+            ModEntry { name: "Vanished".into(), enabled: true, path: d.join("Vanished"), unmanaged: false },
+            ModEntry { name: "Off".into(), enabled: false, path: d.join("RealMod"), unmanaged: false },
+            ModEntry { name: "grp_separator".into(), enabled: true, path: d.join("RealMod"), unmanaged: false },
+        ];
+        let paths = loot_data_paths(&app);
+        // The invariant that matters: nothing here may be anything but a real
+        // directory. An Overwrite dir from the live instance may lead the list.
+        assert!(paths.iter().all(|p| p.is_dir()), "a non-directory got through: {paths:?}");
+        assert!(paths.contains(&d.join("RealMod")), "the real mod is missing: {paths:?}");
+        assert!(!paths.contains(&d.join("Dawnguard.esm")), "an unmanaged FILE got through");
+        assert!(!paths.contains(&d.join("Vanished")), "a path that is gone got through");
+        // Disabled rows and separators contribute nothing, so RealMod appears once.
+        assert_eq!(paths.iter().filter(|p| **p == d.join("RealMod")).count(), 1);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn the_arrows_only_land_on_rows_the_list_is_drawing() {
+        // Walking the raw vector moved the focus into rows the filter had hidden:
+        // the highlight was invisible and Space toggled a mod nobody was looking
+        // at. Navigation counts in VISIBLE positions now.
+        let mut app = nav_app(&["alpha", "beta", "gamma", "alderaan"]);
+        app.search = "al".to_string();
+        // Only alpha (0) and alderaan (3) match.
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, [true, false, false, true]);
+
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(3), "one step skips the hidden rows");
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(3), "and stops at the last visible row");
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(0));
+
+        // A focus stranded on a row the filter has since hidden comes back onto
+        // something visible rather than sticking.
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+    }
+
+    #[test]
+    fn the_keyboard_leaves_the_games_own_content_alone() {
+        // Unmanaged rows are not in modlist.txt, so a flipped flag is lost on
+        // the next save - which reads as the key having done nothing.
+        let mut app = nav_app(&["dlc", "mod"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(0);
+        let before = app.mods[0].enabled;
+        let _ = update(&mut app, Message::ToggleMod(0));
+        assert_eq!(app.mods[0].enabled, before, "unmanaged content is not togglable");
+
+        // And Delete refuses it outright.
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, None);
+    }
+
+    #[test]
+    fn delete_twice_actually_removes_and_escape_calls_it_off() {
+        // The first version armed a guard the keyboard could not confirm, while
+        // telling the user to press Delete again. The promise has to be true.
+        let mut app = nav_app(&["a", "b"]);
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, Some(1));
+        assert!(app.status.as_deref().unwrap_or_default().contains("Delete again"));
+
+        // Escape is the advertised way out.
+        let _ = update(&mut app, Message::ClearSelection);
+        assert_eq!(app.confirm_remove, None);
+    }
+
+    #[test]
+    fn a_reorder_carries_the_selection_and_the_anchor_with_it() {
+        // Indices survive a reorder while meaning different rows - the failure
+        // that made a batch action write plugins nobody chose. Names do not.
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(2);
+        app.sel_anchor = Some(1);
+        app.selected_mods = [1, 2].into_iter().collect();
+
+        let held = hold_mod_selection(&app);
+        // Simulate what a drag does: move "a" to the end.
+        move_block(&mut app.mods, &[0], 4);
+        assert_eq!(names(&app.mods), ["b", "c", "d", "a"]);
+        put_mod_selection(&mut app, held);
+
+        // b and c moved up one; the selection followed them.
+        assert_eq!(app.selected_mod, Some(1), "focus follows 'c'");
+        assert_eq!(app.sel_anchor, Some(0), "anchor follows 'b'");
+        let mut got: Vec<usize> = app.selected_mods.iter().copied().collect();
+        got.sort_unstable();
+        assert_eq!(got, [0, 1]);
+    }
+
+    #[test]
+    fn a_click_on_a_selected_row_does_not_reorder_the_list() {
+        // A press arms a drag, so a plain click arrives as a drop. With a
+        // multi-row selection there is no "own edge" to recognise it by, and
+        // committing would COMPACT a non-contiguous set and save that.
+        let mut app = nav_app(&["a", "b", "c", "d", "e"]);
+        app.selected_mods = [0, 2, 4].into_iter().collect();
+        app.selected_mod = Some(2);
+        let _ = update(&mut app, Message::DragStart(2));
+        assert!(app.drag_state.is_some_and(|d| !d.aimed), "a press has aimed at nothing yet");
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["a", "b", "c", "d", "e"], "a click moved rows");
+
+        // Actually aiming somewhere still works.
+        let _ = update(&mut app, Message::DragStart(2));
+        let _ = update(&mut app, Message::DragOverGap(0));
+        assert!(app.drag_state.is_some_and(|d| d.aimed));
+    }
+
+    #[test]
+    fn a_batch_acts_on_the_selection_not_on_a_row_left_deselected() {
+        // Ctrl-clicking a row OFF leaves the focus on it. Going through the
+        // focus would then act on the one row the user just excluded.
+        let mut app = nav_app(&["a", "b", "c"]);
+        // Same shape on the mod side of the model: focus outside the set.
+        app.selected_mods = [0, 1].into_iter().collect();
+        app.selected_mod = Some(2);
+        let rows = selection_or(&app, 2);
+        assert_eq!(rows, vec![2], "selection_or answers about the row it is asked about");
+        // Which is exactly why the batch handler must not ask it about the
+        // focus: it consults the SET first. Documented here so the two do not
+        // get "unified" back into the bug.
+        assert!(!app.selected_mods.contains(&2));
     }
 
     #[test]

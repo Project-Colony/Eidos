@@ -1498,8 +1498,12 @@ fn cmd_sort(args: &[String]) {
     // holds only vanilla, so without these every file-conditioned masterlist
     // rule is evaluated against a tree the mods are not in. Highest priority
     // first, Overwrite ahead of all, as the union resolves.
+    // `load_order` already excludes separators and unmanaged content; the
+    // is_dir filter guards against a mod folder deleted since the list was read,
+    // which libloot answers with a bare "an I/O error occurred".
     let mut mod_dirs: Vec<PathBuf> = vec![inst.overwrite_dir()];
     mod_dirs.extend(inst.load_order());
+    mod_dirs.retain(|p| p.is_dir());
 
     let view = eidos_loot::GameView {
         game_id: id,
