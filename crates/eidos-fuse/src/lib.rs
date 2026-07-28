@@ -331,7 +331,7 @@ impl Stats {
         )
     }
 
-    fn report(&self) -> String {
+    fn report(&self, r: &eidos_core::ResolveStats) -> String {
         let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
         let (hit, miss) = (g(&self.lookup_hit), g(&self.lookup_miss));
         let total = hit + miss;
@@ -353,7 +353,7 @@ impl Stats {
             g(&self.open),
             g(&self.read),
             g(&self.write),
-        ) + &self.timings()
+        ) + &self.timings(r)
             + &self.dir_shape()
     }
 }
@@ -365,7 +365,7 @@ impl Stats {
     /// kernel came to us, never how long it waited. Empty when the run predates
     /// timing or when every handler was too fast to register, which is itself an
     /// answer - it means the filesystem is not where the seconds are.
-    fn timings(&self) -> String {
+    fn timings(&self, r: &eidos_core::ResolveStats) -> String {
         let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
         let ms = |ns: u64| ns as f64 / 1_000_000.0;
         let parts = [
@@ -382,22 +382,20 @@ impl Stats {
         }
         let each: Vec<String> =
             parts.iter().map(|(n, ns)| format!("{n} {:.0}", ms(*ns))).collect();
-        // Resolution is reported AGAINST the handler total, not beside it: it
-        // happens inside those handlers, and the question is what share of them
-        // is the layer walk rather than the disk. Probes and scans separate the
-        // two ways it can be slow - too many layers asked, or case folding
-        // falling back to reading whole directories.
-        let r = &eidos_core::RESOLVE_STATS;
-        let res = r.ns.load(Ordering::Relaxed);
-        let pct = if total == 0 { 0.0 } else { res as f64 * 100.0 / total as f64 };
+        // The counts lead, because they are the only exact figures here. Both
+        // millisecond totals are sums over concurrent FUSE worker threads, so
+        // neither is wall-clock, and resolution is NOT a subset of the handlers
+        // above - it also runs while listings are built. An earlier version
+        // divided one by the other and printed "960%", which is what a ratio
+        // between two things that do not nest looks like.
         format!(
-            "\n  time in handlers: {:.0} ms total ({})\
-             \n  path resolution: {:.0} ms, {pct:.0}% of that - {} probes, {} directory scans",
+            "\n  time in handlers: {:.0} ms, summed across threads ({})\
+             \n  path resolution: {} probes, {} directory scans, {:.0} ms (also summed)",
             ms(total),
             each.join(", "),
-            ms(res),
             r.probes.load(Ordering::Relaxed),
             r.scans.load(Ordering::Relaxed),
+            ms(r.ns.load(Ordering::Relaxed)),
         )
     }
 }
@@ -1138,7 +1136,7 @@ impl Filesystem for Eidos {
         // Unmount is the natural place to report: the run is over and the numbers
         // are final. Silent unless EIDOS_FUSE_STATS is set.
         if Stats::enabled() {
-            eprintln!("{}", self.stats.report());
+            eprintln!("{}", self.stats.report(self.stack.resolve_stats()));
         }
     }
 
@@ -2354,7 +2352,7 @@ mod tests {
         // would read as "the filesystem cost nothing", a claim the run did not
         // make.
         let s = Stats::default();
-        assert_eq!(s.timings(), "");
+        assert_eq!(s.timings(&eidos_core::ResolveStats::default()), "");
     }
 
     #[test]
@@ -2362,8 +2360,14 @@ mod tests {
         let s = Stats::default();
         s.ns_read.fetch_add(240_000_000, Ordering::Relaxed); // 240 ms
         s.ns_lookup.fetch_add(60_000_000, Ordering::Relaxed); // 60 ms
-        let out = s.timings();
-        assert!(out.contains("300 ms total"), "{out}");
+        let out = s.timings(&eidos_core::ResolveStats::default());
+        assert!(out.contains("300 ms"), "{out}");
+        // The wording is load-bearing. Both totals are sums over concurrent
+        // worker threads, and saying so is what stops the next reader treating
+        // them as elapsed time - or dividing one by the other, which is how a
+        // "960%" got printed.
+        assert!(out.contains("summed across threads"), "{out}");
+        assert!(!out.contains('%'), "no ratio between two things that do not nest: {out}");
         assert!(out.contains("read 240"), "{out}");
         assert!(out.contains("lookup 60"), "{out}");
         // Handlers that never ran are still listed, at zero: their absence is

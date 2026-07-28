@@ -77,6 +77,14 @@ pub struct LayerStack {
     /// same overwrite layer must serialise against each other, not each hold
     /// their own set.
     path_locks: std::sync::Arc<[std::sync::Mutex<()>]>,
+    /// What path resolution costs THIS mount. Per-stack, not global: Eidos
+    /// mounts two unions at once - Data and, for Root Builder mods, the game
+    /// install root - and a process-wide counter reported the same figure for
+    /// both, which is worse than reporting none.
+    ///
+    /// `Arc`, for the same reason as the locks: a cloned stack describes the
+    /// same mount and must add to the same tally.
+    resolve: std::sync::Arc<ResolveStats>,
 }
 
 /// Number of mutation-lock shards. Small: contention only matters when two
@@ -90,7 +98,7 @@ impl LayerStack {
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
         let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> =
             (0..PATH_LOCK_SHARDS).map(|_| std::sync::Mutex::new(())).collect();
-        Self { layers, overwrite, path_locks }
+        Self { layers, overwrite, path_locks, resolve: Default::default() }
     }
 
     /// Take the mutation lock for `vpath`. Folded, so the two spellings of one
@@ -126,7 +134,7 @@ impl LayerStack {
         let norm = normalize(vpath);
         let name = norm.file_name()?.to_string_lossy().to_ascii_lowercase();
         let parent = norm.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
-        let parent_dir = ci_lookup(&self.overwrite, &parent)?;
+        let parent_dir = self.ci_lookup(&self.overwrite, &parent)?;
         let want = format!("{WHITEOUT_PREFIX}{name}");
         fs::read_dir(&parent_dir)
             .ok()?
@@ -165,15 +173,46 @@ impl LayerStack {
     /// is what it should read back); a whiteout marker hides any lower copy;
     /// otherwise each mod layer is tried in priority order, falling through to
     /// the game data layer last. Returns `None` if nothing provides the path.
+    /// What resolution has cost this mount so far.
+    pub fn resolve_stats(&self) -> &ResolveStats {
+        &self.resolve
+    }
+
+    /// Walk `vpath` under `root`, folding case, and return the real path.
+    ///
+    /// A method rather than a free function so the counters belong to the mount
+    /// doing the work. The shape is the cost: one `exists` per component, and a
+    /// FULL directory read whenever that misses - which is not the rare case. A
+    /// layer that does not have the file misses its very first component and
+    /// pays an enumeration to be sure the name is not merely spelled otherwise.
+    fn ci_lookup(&self, root: &Path, vpath: &str) -> Option<PathBuf> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let mut current = root.to_path_buf();
+        for component in normalize(vpath).components() {
+            let want = component.as_os_str();
+            let exact = current.join(want);
+            self.resolve.probes.fetch_add(1, Relaxed);
+            if exact.exists() {
+                current = exact;
+                continue;
+            }
+            self.resolve.scans.fetch_add(1, Relaxed);
+            let entry = fs::read_dir(&current)
+                .ok()?
+                .filter_map(Result::ok)
+                .find(|e| eq_ignore_case(e.file_name().as_os_str(), want))?;
+            current = entry.path();
+        }
+        Some(current)
+    }
+
     pub fn resolve_read(&self, vpath: &str) -> Option<PathBuf> {
         if !*TIMING_ON {
             return self.resolve_read_inner(vpath);
         }
         let t = std::time::Instant::now();
         let r = self.resolve_read_inner(vpath);
-        RESOLVE_STATS
-            .ns
-            .fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.resolve.ns.fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
         r
     }
 
@@ -185,13 +224,13 @@ impl LayerStack {
         if under_hidden(vpath) {
             return None;
         }
-        if let Some(p) = ci_lookup(&self.overwrite, vpath) {
+        if let Some(p) = self.ci_lookup(&self.overwrite, vpath) {
             return Some(p);
         }
         if self.hidden_by_whiteout(vpath) || self.under_opaque_dir(vpath) {
             return None;
         }
-        self.layers.iter().find_map(|layer| ci_lookup(layer, vpath))
+        self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))
     }
 
     /// Whether `vpath` lies under a directory that was deleted and then re-created
@@ -204,7 +243,7 @@ impl LayerStack {
         // Proper ancestors only: each directory above the leaf component.
         for comp in comps.iter().take(comps.len().saturating_sub(1)) {
             prefix.push(comp);
-            if let Some(dir) = ci_lookup(&self.overwrite, &prefix.to_string_lossy()) {
+            if let Some(dir) = self.ci_lookup(&self.overwrite, &prefix.to_string_lossy()) {
                 if dir.join(OPAQUE_MARKER).exists() {
                     return true;
                 }
@@ -249,8 +288,8 @@ impl LayerStack {
     /// Whether a write to `vpath` needs a copy-up first: it exists in a lower
     /// layer but not yet in the overwrite layer.
     pub fn needs_copy_up(&self, vpath: &str) -> bool {
-        ci_lookup(&self.overwrite, vpath).is_none()
-            && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some())
+        self.ci_lookup(&self.overwrite, vpath).is_none()
+            && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some())
     }
 
     /// Ensure `vpath` is writable in the overwrite layer and return the real
@@ -272,7 +311,7 @@ impl LayerStack {
         // Writing a path un-deletes it: drop any stale whiteout.
         self.clear_whiteout(vpath);
         if !dest.exists() {
-            if let Some(src) = self.layers.iter().find_map(|l| ci_lookup(l, vpath)) {
+            if let Some(src) = self.layers.iter().find_map(|l| self.ci_lookup(l, vpath)) {
                 if src.is_file() {
                     fs::copy(&src, &dest)?;
                     // The point of a copy-up is that the result is WRITABLE, and
@@ -291,7 +330,7 @@ impl LayerStack {
                     clone_metadata(&src, &dest);
                 }
             }
-        } else if self.layers.iter().any(|l| ci_lookup(l, vpath).is_some()) {
+        } else if self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
             // A destination that already exists AND is shadowing a lower layer is
             // an orphaned copy-up from an earlier run, which may carry that run's
             // 0444. Heal it - but only in that case: a file living solely in the
@@ -314,7 +353,7 @@ impl LayerStack {
         let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
         self.clear_whiteout(vpath);
-        if was_deleted && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
+        if was_deleted && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
             let _ = fs::write(dest.join(OPAQUE_MARKER), b"");
         }
         Ok(dest)
@@ -338,7 +377,7 @@ impl LayerStack {
         // EACCES even though we are about to replace the contents wholesale. Only
         // for a path a lower layer also provides, so a user-set read-only mode on
         // their own Overwrite file is not silently undone.
-        if dest.exists() && self.layers.iter().any(|l| ci_lookup(l, vpath).is_some()) {
+        if dest.exists() && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
             ensure_owner_writable(&dest);
         }
         Ok(dest)
@@ -354,7 +393,7 @@ impl LayerStack {
         } else if dest.exists() {
             fs::remove_file(&dest)?;
         }
-        if self.layers.iter().any(|l| ci_lookup(l, vpath).is_some()) {
+        if self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
             let wh = self.whiteout_path(vpath);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -382,7 +421,7 @@ impl LayerStack {
         }
         fs::rename(&src, &dst)?;
         self.clear_whiteout(to);
-        if self.layers.iter().any(|l| ci_lookup(l, from).is_some()) {
+        if self.layers.iter().any(|l| self.ci_lookup(l, from).is_some()) {
             let wh = self.whiteout_path(from);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -431,7 +470,7 @@ impl LayerStack {
 
         // Overwrite layer first: collect whiteouts (and hide the markers).
         let mut opaque = false;
-        if let Some(dir) = ci_lookup(&self.overwrite, vpath).filter(|d| d.is_dir()) {
+        if let Some(dir) = self.ci_lookup(&self.overwrite, vpath).filter(|d| d.is_dir()) {
             if let Ok(entries) = fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().into_owned();
@@ -462,7 +501,7 @@ impl LayerStack {
 
         // Lower layers: skip whited-out names.
         for layer in &self.layers {
-            let Some(dir) = ci_lookup(layer, vpath).filter(|d| d.is_dir()) else { continue };
+            let Some(dir) = self.ci_lookup(layer, vpath).filter(|d| d.is_dir()) else { continue };
             let Ok(entries) = fs::read_dir(&dir) else { continue };
             for entry in entries.flatten() {
                 let name = entry.file_name().to_string_lossy().into_owned();
@@ -539,12 +578,7 @@ fn join_vpath(parent: &str, name: &str) -> String {
 /// saying WHY, and the two candidates want opposite fixes: many cheap `exists`
 /// calls means too many layers are being asked, while a few `read_dir` scans
 /// means case folding is falling back to enumerating whole directories.
-pub static RESOLVE_STATS: ResolveStats = ResolveStats {
-    probes: AtomicU64::new(0),
-    scans: AtomicU64::new(0),
-    ns: AtomicU64::new(0),
-};
-
+#[derive(Debug, Default)]
 pub struct ResolveStats {
     /// `exists()` calls: one per path component per layer tried.
     pub probes: AtomicU64,
@@ -564,25 +598,7 @@ static TIMING_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
     std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0")
 });
 
-fn ci_lookup(root: &Path, vpath: &str) -> Option<PathBuf> {
-    let mut current = root.to_path_buf();
-    for component in normalize(vpath).components() {
-        let want = component.as_os_str();
-        let exact = current.join(want);
-        RESOLVE_STATS.probes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if exact.exists() {
-            current = exact;
-            continue;
-        }
-        RESOLVE_STATS.scans.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let entry = fs::read_dir(&current)
-            .ok()?
-            .filter_map(Result::ok)
-            .find(|e| eq_ignore_case(e.file_name().as_os_str(), want))?;
-        current = entry.path();
-    }
-    Some(current)
-}
+
 
 /// Case-insensitive name comparison.
 ///
@@ -1307,9 +1323,12 @@ mod tests {
         fs::create_dir_all(&over).unwrap();
         let stack = LayerStack::new(vec![a, b.clone()], over);
 
-        let before = RESOLVE_STATS.probes.load(Ordering::Relaxed);
+        // Per-stack, so this starts at zero and no other test can perturb it -
+        // which is exactly what a process-wide counter could not promise.
+        let before = stack.resolve_stats().probes.load(Ordering::Relaxed);
+        assert_eq!(before, 0, "a fresh stack has resolved nothing");
         let got = stack.resolve_read("textures/actors/skin.dds");
-        let spent = RESOLVE_STATS.probes.load(Ordering::Relaxed) - before;
+        let spent = stack.resolve_stats().probes.load(Ordering::Relaxed) - before;
 
         assert_eq!(got, Some(b.join("textures/actors/skin.dds")));
         // Overwrite walks and fails, layer `a` walks and fails, layer `b`
@@ -1330,9 +1349,9 @@ mod tests {
         fs::create_dir_all(&over).unwrap();
         let stack = LayerStack::new(vec![l], over);
 
-        let before = RESOLVE_STATS.scans.load(Ordering::Relaxed);
+        let before = stack.resolve_stats().scans.load(Ordering::Relaxed);
         assert!(stack.resolve_read("textures/skin.dds").is_some(), "case must still fold");
-        let scans = RESOLVE_STATS.scans.load(Ordering::Relaxed) - before;
+        let scans = stack.resolve_stats().scans.load(Ordering::Relaxed) - before;
         assert!(scans >= 2, "both components were mis-spelled, got {scans}");
 
         // And here is the finding this test was written to disprove: spelling
@@ -1345,9 +1364,9 @@ mod tests {
         // So a file provided by one mod costs an enumeration in each of the
         // others. With 27 layers that is 26 wasted directory reads per resolve,
         // and resolve runs on lookup, getattr and open alike.
-        let before = RESOLVE_STATS.scans.load(Ordering::Relaxed);
+        let before = stack.resolve_stats().scans.load(Ordering::Relaxed);
         assert!(stack.resolve_read("Textures/Skin.DDS").is_some());
-        let exact = RESOLVE_STATS.scans.load(Ordering::Relaxed) - before;
+        let exact = stack.resolve_stats().scans.load(Ordering::Relaxed) - before;
         assert!(
             exact > 0,
             "a correctly spelled path still scans, because the OVERWRITE layer \
