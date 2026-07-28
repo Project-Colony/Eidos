@@ -5433,16 +5433,39 @@ fn drop_gap<'a>(
     mouse_area(strip).on_enter(over(gap)).on_release(drop).into()
 }
 
+/// The colour behind a mod row.
+///
+/// Selection outranks the conflict tint: the focused row is where the user's
+/// attention already is, and losing its highlight to a colour that describes
+/// OTHER rows would be a step backwards.
+///
+/// Its own function because the NAME CELL needs the same answer - it fades its
+/// overflow into this colour, and a fade into the wrong one is a smear.
+fn row_background(even: bool, selected: bool, conflict: Option<Color>) -> Color {
+    if selected {
+        SEL_BG
+    } else {
+        conflict.unwrap_or_else(|| row_bg(even))
+    }
+}
+
+/// Every mod row is exactly this tall, whatever its name.
+///
+/// iced wraps text by default, so a long mod name became two or three lines and
+/// that row grew with it - a list of uneven rows, which is harder to scan and
+/// makes a drag land somewhere other than where it looked.
+const MOD_ROW_H: f32 = 21.0;
+/// How much of the name cell the fade covers. Wide enough to read as a fade
+/// rather than a hard edge, narrow enough not to dim a name that fits.
+const NAME_FADE_W: f32 = 26.0;
+
 fn list_row<'a>(
     content: Element<'a, Message>,
     even: bool,
     selected: bool,
     conflict: Option<Color>,
 ) -> Element<'a, Message> {
-    // Selection outranks the conflict tint: the focused row is where the user's
-    // attention already is, and losing its highlight to a colour that describes
-    // OTHER rows would be a step backwards.
-    let bg = if selected { SEL_BG } else { conflict.unwrap_or_else(|| row_bg(even)) };
+    let bg = row_background(even, selected, conflict);
     container(content)
         .width(Length::Fill)
         .padding(2)
@@ -6008,12 +6031,56 @@ fn toolbar<'a>(app: &App) -> Element<'a, Message> {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// A name on ONE line, cut to its column and dissolved into `bg` at the edge.
+///
+/// MO2 elides with an ellipsis (Qt's default `ElideRight`; it only switches to
+/// `ElideLeft` for path columns, where the end is what matters). iced 0.14 has
+/// no elision, and faking one means measuring a proportional font to decide
+/// where to cut the string - a guess that is wrong again at every window width.
+///
+/// A fade needs no measurement at all. The gradient runs from transparent to the
+/// row's own colour, so where the name is short it blends the background into
+/// the background and cannot be seen; where the name overflows it dissolves the
+/// cut. It re-answers the question on every resize without being asked.
+fn name_cell<'a>(name: String, bg: Color) -> Element<'a, Message> {
+    let label = container(
+        // Without this the text wraps and the row grows; with it, and without
+        // the clip below, the text would instead paint over the next column -
+        // iced does not clip text to its node.
+        text(name).size(13.0).wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(Length::Fill)
+    .clip(true);
+
+    let fade = container(Space::new())
+        .width(Length::Fixed(NAME_FADE_W))
+        .height(Length::Fill)
+        .style(move |_t: &Theme| container::Style {
+            background: Some(Background::Gradient(iced::Gradient::Linear(
+                // Left to right: nothing, then the row colour.
+                iced::gradient::Linear::new(std::f32::consts::FRAC_PI_2)
+                    .add_stop(0.0, Color { a: 0.0, ..bg })
+                    .add_stop(1.0, bg),
+            ))),
+            ..Default::default()
+        });
+
+    Stack::new()
+        .width(Length::Fill)
+        .push(label)
+        // Pinned right: the Fill spacer pushes the fade to the edge of whatever
+        // width the column ends up with.
+        .push(Row::new().push(Space::new().width(Length::Fill)).push(fade))
+        .into()
+}
+
 fn mod_row<'a>(
     i: usize,
     m: &ModEntry,
     meta: Option<&RowMeta>,
     flag_icon: Option<&'static [u8]>,
     hidden_icon: Option<&'static [u8]>,
+    bg: Color,
 ) -> Element<'a, Message> {
     // Unmanaged content - the game's own DLCs and Creation Club plugins - is
     // listed so the mod list matches what will actually load, but none of it is
@@ -6049,9 +6116,11 @@ fn mod_row<'a>(
 
     let row = Row::new()
         .spacing(6)
+        .height(Length::Fixed(MOD_ROW_H))
+        .align_y(iced::Alignment::Center)
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
-        .push(text(m.name.clone()).size(13.0).width(Length::Fill))
+        .push(name_cell(m.name.clone(), bg))
         .push(
             text(if m.unmanaged { "Game content".to_string() } else { category })
                 .size(11.0)
@@ -6099,12 +6168,19 @@ fn separator_row<'a>(
         .on_press(Message::ToggleCollapse(m.display_name().to_string()))
         .style(button::text);
 
-    let name = container(text(m.display_name().to_string()).size(13.0))
-        .width(Length::Fill)
-        .align_x(iced::alignment::Horizontal::Center);
+    // One line here too, and clipped rather than faded: this name is CENTRED, so
+    // a fade would have to work from both ends, and a separator that needs one is
+    // a separator whose name should be shorter.
+    let name = container(
+        text(m.display_name().to_string()).size(13.0).wrapping(iced::widget::text::Wrapping::None),
+    )
+    .width(Length::Fill)
+    .clip(true)
+    .align_x(iced::alignment::Horizontal::Center);
 
     let row = Row::new()
         .spacing(6)
+        .height(Length::Fixed(MOD_ROW_H))
         .align_y(iced::Alignment::Center)
         .push(container(collapse).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
@@ -6290,11 +6366,15 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // targetable only during a drag and only from the first managed row down:
         // nothing may be ordered above the game's own content.
         list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
+        // Computed once and handed to both: the row paints this colour, and the
+        // name cell fades into it.
+        let conflict = conflict_tint(app, i);
+        let bg = row_background(i % 2 == 0, selected, conflict);
         list = list.push(list_row(
-            mod_row(i, m, meta, flag_icon, hidden_icon),
+            mod_row(i, m, meta, flag_icon, hidden_icon, bg),
             i % 2 == 0,
             selected,
-            conflict_tint(app, i),
+            conflict,
         ));
     }
     // The trailing strip: the only way to aim at the end of the list, since
@@ -11916,6 +11996,27 @@ mod tests {
         assert!(mods.join(".git").is_dir(), "a dotfile that is not ours is not ours to delete");
         assert!(app.status.as_deref().unwrap_or("").contains('2'), "{:?}", app.status);
         let _ = fs::remove_dir_all(&root);
+    }
+
+
+    #[test]
+    fn the_row_colour_has_exactly_one_owner() {
+        // The fill and the fade must agree, always. They agree because they ask
+        // the same function - this pins the precedence they both inherit.
+        let conflict = Some(CONFLICT_WINS_BG);
+        assert_eq!(
+            row_background(true, true, conflict),
+            SEL_BG,
+            "selection outranks the conflict tint"
+        );
+        assert_eq!(row_background(true, false, conflict), CONFLICT_WINS_BG);
+        assert_eq!(row_background(true, false, None), row_bg(true));
+        assert_eq!(row_background(false, false, None), row_bg(false));
+        assert_ne!(
+            row_bg(true),
+            row_bg(false),
+            "the stripes differ, so a fade into the wrong one would show"
+        );
     }
 
 }
