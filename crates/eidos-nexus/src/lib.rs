@@ -104,6 +104,9 @@ pub struct RemoteFile {
     pub mod_version: String,
     pub category_id: Option<u64>,
     pub description: String,
+    /// Total bytes, so a download can be shown as a percentage from the first
+    /// instant rather than as a byte count with no end in sight.
+    pub size_in_bytes: u64,
 }
 
 /// Nexus rate-limit budget from the `X-RL-*` response headers (MO2 surfaces these
@@ -298,6 +301,14 @@ impl Nexus {
             mod_version: s(&v, "mod_version"),
             category_id: v.get("category_id").and_then(|x| x.as_u64()),
             description: s(&v, "description"),
+            size_in_bytes: v
+                .get("size_in_bytes")
+                .and_then(|x| x.as_u64())
+                // Older payloads carry only the rounded kilobyte figure. It is
+                // approximate, which is fine for a progress bar and wrong for
+                // anything that compares sizes - so nothing else uses it.
+                .or_else(|| v.get("size_in_kb").and_then(|x| x.as_u64()).map(|kb| kb * 1024))
+                .unwrap_or(0),
         })
     }
 
@@ -493,7 +504,10 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
 /// keeping the real extension so a leftover partial maps back to its target and
 /// two files differing only by extension (`Foo.7z` vs `Foo.zip`) don't collide.
 /// (`Path::with_extension` would instead REPLACE `.7z`, destroying it.)
-fn unfinished_path(dest: &Path) -> PathBuf {
+/// Where a download lives while it is still running. Public because the window
+/// identifies an in-flight download by this suffix - the transfer happens in
+/// another process, so the file name is the only channel between them.
+pub fn unfinished_path(dest: &Path) -> PathBuf {
     PathBuf::from(format!("{}.unfinished", dest.display()))
 }
 
@@ -634,6 +648,9 @@ pub fn write_download_meta(
     if let Some(c) = remote_mod.category_id {
         out.push_str(&format!("category={c}\n"));
     }
+    if file.size_in_bytes != 0 {
+        out.push_str(&format!("totalSize={}\n", file.size_in_bytes));
+    }
     out.push_str("repository=Nexus\n");
     out.push_str("installed=false\nuninstalled=false\npaused=false\nremoved=false\n");
     fs::write(&meta_path, out)?;
@@ -700,6 +717,7 @@ mod tests {
             mod_version: "1.3.1".into(),
             category_id: Some(1),
             description: "Please read the changelog!".into(),
+            size_in_bytes: 4_194_304,
         };
         let rmod = RemoteMod {
             name: "Dynamic String Distributor (DSD)".into(),
@@ -830,6 +848,41 @@ mod tests {
             file_name_from_uri(free).unwrap(),
             "Dynamic Armor Physics-186346-1-0-1.zip"
         );
+    }
+
+
+    #[test]
+    fn the_sidecar_records_the_total_so_progress_can_be_a_percentage() {
+        let dir = std::env::temp_dir().join(format!("eidos-meta-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let archive = dir.join("Thing.zip");
+        let nxm = NxmUrl::parse("nxm://skyrimspecialedition/mods/1/files/2").unwrap();
+        let file = RemoteFile {
+            name: "Thing".into(),
+            file_name: "Thing.zip".into(),
+            version: "1.0".into(),
+            mod_version: "1.0".into(),
+            category_id: None,
+            description: String::new(),
+            size_in_bytes: 12_345,
+        };
+        let m = RemoteMod {
+            name: "Thing".into(),
+            version: "1.0".into(),
+            summary: String::new(),
+            category_id: None,
+            available: true,
+        };
+        let path = write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &m).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("totalSize=12345"), "{body}");
+
+        // A size we do not know must be ABSENT, not written as zero: the reader
+        // treats 0 as "unknown" either way, but a zero on disk looks like a fact.
+        let file0 = RemoteFile { size_in_bytes: 0, ..file };
+        let p0 = write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file0, &m).unwrap();
+        assert!(!fs::read_to_string(&p0).unwrap().contains("totalSize"));
+        let _ = fs::remove_dir_all(&dir);
     }
 
 }

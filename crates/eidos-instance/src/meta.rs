@@ -207,6 +207,17 @@ impl ModMeta {
         self.string("modName")
     }
 
+    /// The archive's total size in bytes, written when the download STARTS.
+    ///
+    /// Not an MO2 field. MO2 does not need one: its own process owns the
+    /// transfer and knows the content length in memory. Eidos downloads in a
+    /// separate `eidos nxm` process, so the size has to be on disk for the
+    /// window to draw a percentage - otherwise a running download can only be
+    /// reported as a number of bytes that keeps going up, with no end in sight.
+    pub fn total_size(&self) -> Option<u64> {
+        self.raw("totalsize").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+    }
+
     /// The sidecar's `name` (the file entry's name), HTML-stripped like MO2.
     pub fn name(&self) -> Option<String> {
         self.string("name").map(|s| strip_html(&s)).filter(|s| !s.is_empty())

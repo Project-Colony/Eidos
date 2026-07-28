@@ -1981,17 +1981,30 @@ fn cmd_nxm(args: &[String]) {
             let name = eidos_nexus::unique_download_name(&downloads, &name);
             let dest = downloads.join(&name);
 
+            // The sidecar goes down BEFORE the first byte, not after the last.
+            //
+            // The transfer runs in this process, launched from the browser; the
+            // window is somewhere else entirely. The `.meta` is the only thing
+            // that tells it a download exists at all - written afterwards, a mod
+            // was invisible for the whole minute it took to arrive and then
+            // appeared finished, which is precisely backwards from what a
+            // download manager is for. Written first, the row shows up at 0%
+            // and the `.unfinished` partial beside it carries the progress.
+            //
+            // If the download then fails, the sidecar and the partial are both
+            // left in place: that pair IS a paused download, and `download`
+            // already resumes it with a Range request.
+            let _ = eidos_nexus::write_download_meta(
+                &dest,
+                game.def.short_name,
+                &nxm,
+                &link,
+                &file,
+                &remote_mod,
+            );
             println!("Downloading {} ({}) ...", file.name, name);
             match nexus.download(&link, &dest) {
                 Ok(bytes) => {
-                    let _ = eidos_nexus::write_download_meta(
-                        &dest,
-                        game.def.short_name,
-                        &nxm,
-                        &link,
-                        &file,
-                        &remote_mod,
-                    );
                     println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
                     println!("Install it:  eidos install {} \"{}\"", game.def.id, dest.display());
                 }

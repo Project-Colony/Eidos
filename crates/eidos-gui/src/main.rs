@@ -181,6 +181,8 @@ enum Message {
     /// Expand or collapse a directory in the Data tree, by its path relative to
     /// `Data` (`""` is the root, which is always expanded).
     DataToggleDir(String),
+    /// Periodic re-scan of the downloads directory while one is arriving.
+    DownloadTick,
     /// Open or close a folder of the Overwrite tree.
     OverwriteToggleDir(String),
     /// Hide or unhide one path inside a mod: `(mod index, path relative to the mod
@@ -322,9 +324,9 @@ enum Message {
     /// Re-scan the downloads directory + reload each archive's `.meta` status.
     RefreshDownloads,
     /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).
-    DeleteDownload(usize),
+    DeleteDownload(String),
     /// Second click: actually delete the armed download.
-    ConfirmDeleteDownload(usize),
+    ConfirmDeleteDownload(String),
     // ---- multi-select + batch actions (MO2 multi-row selection) ----
     /// Ctrl+click a mod row: add/remove it from the selection set without
     /// disturbing the others.
@@ -617,6 +619,12 @@ enum PickerChoice {
 enum DownloadState {
     /// No `.meta` sidecar (a manually dropped archive) - status unknown.
     Untracked,
+    /// Arriving now: a `.unfinished` partial that is still growing.
+    Downloading,
+    /// A `.unfinished` partial that has stopped growing - the `eidos nxm` process
+    /// died, the network went, or the user closed the terminal. Not lost: the
+    /// partial resumes with a Range request on the next attempt.
+    Stalled,
     /// Downloaded but not yet installed into a mod.
     Ready,
     /// Already installed into a mod.
@@ -641,6 +649,14 @@ struct DownloadRow {
     mod_name: Option<String>,
     /// The derived install status.
     state: DownloadState,
+    /// Bytes on disk so far. Equals `size` once finished.
+    downloaded: u64,
+    /// Total bytes from the sidecar's `totalSize`, `0` when unknown - an older
+    /// download, or a manually dropped archive.
+    total: u64,
+    /// Bytes per second, measured between two ticks. `None` on the first tick of
+    /// a download, when there is nothing to compare against yet.
+    speed: Option<f64>,
 }
 
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
@@ -893,7 +909,11 @@ struct App {
     /// The completed downloads (cached so the panel does not re-scan on redraw).
     downloads: Vec<DownloadRow>,
     /// Two-click guard for a download deletion (the row's index in `downloads`).
-    confirm_delete_download: Option<usize>,
+    confirm_delete_download: Option<String>,
+    /// Last (instant, bytes) seen for each in-flight download, keyed by file
+    /// name. Speed is a derivative, so it needs the previous sample; keeping it
+    /// out of `DownloadRow` means a rebuilt row list does not lose the history.
+    download_samples: HashMap<String, (std::time::Instant, u64)>,
     // ---- multi-select + batch actions ----
     /// Where a Shift extension counts FROM.
     ///
@@ -1185,6 +1205,7 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         save_missing: Vec::new(),
         downloads: Vec::new(),
         confirm_delete_download: None,
+        download_samples: HashMap::new(),
         selected_mods: HashSet::new(),
         sel_anchor: None,
         confirm_batch_remove: false,
@@ -2352,6 +2373,10 @@ fn is_ambient(m: &Message) -> bool {
             | Message::WindowResized(_)
             | Message::FomodHover(_)
             | Message::FomodUnhover(..)
+            // The downloads tick fires twice a second on its own. Left out of
+            // this list it would disarm every confirmation before the second
+            // click could land - the same defect as the pointer, on a timer.
+            | Message::DownloadTick
     )
 }
 
@@ -2480,7 +2505,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if t == Tab::Saves && app.saves.is_empty() {
                 load_saves(app);
             }
-            if t == Tab::Downloads && app.downloads.is_empty() {
+            // Downloads reloads on EVERY visit, not just the first: the point of
+            // the tab is now what is happening right now, and the tick that keeps
+            // it fresh only runs while the tab is open - so arriving here with a
+            // list built minutes ago would show a stale picture for a whole tick.
+            if t == Tab::Downloads {
                 load_downloads(app);
             }
         }
@@ -4650,20 +4679,40 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             load_downloads(app);
             app.status = Some(format!("Found {} download(s).", app.downloads.len()));
         }
-        Message::DeleteDownload(i) => {
-            app.confirm_delete_download = Some(i);
+        Message::DownloadTick => {
+            // Cheap and bounded: one read_dir of a directory holding a few dozen
+            // files. It is NOT called from view() - that lesson is already paid
+            // for - so it costs twice a second, not once per frame.
+            load_downloads(app);
         }
-        Message::ConfirmDeleteDownload(i) => {
-            if app.confirm_delete_download == Some(i) {
-                if let Some(row) = app.downloads.get(i) {
+        Message::DeleteDownload(name) => {
+            app.confirm_delete_download = Some(name);
+        }
+        Message::ConfirmDeleteDownload(name) => {
+            // Armed and confirmed on the SAME file. The list re-sorts under a
+            // background tick, so an index would have been a way to delete the
+            // wrong archive by standing still.
+            if app.confirm_delete_download.as_deref() == Some(name.as_str()) {
+                if let Some(row) = app.downloads.iter().find(|r| r.name == name) {
                     let name = row.name.clone();
                     // Remove the archive and its `.meta` sidecar together (MO2 keeps
                     // them paired). A missing sidecar is fine.
                     let meta = PathBuf::from(format!("{}.meta", row.path.display()));
+                    // The partial goes too. A stalled download has no archive at
+                    // all - only `<name>.unfinished` - so removing the archive
+                    // and the sidecar would leave the very file that puts the row
+                    // back on the next tick.
+                    let partial = eidos_nexus::unfinished_path(&row.path);
+                    let had_partial = partial.is_file();
                     let archive_res = std::fs::remove_file(&row.path);
+                    let _ = std::fs::remove_file(&partial);
                     let _ = std::fs::remove_file(&meta);
                     match archive_res {
                         Ok(()) => app.status = Some(format!("Deleted download '{name}'.")),
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound && had_partial => {
+                            app.status =
+                                Some(format!("Removed the unfinished download '{name}'."));
+                        }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             app.status = Some(format!("Download '{name}' was already gone."));
                         }
@@ -7140,6 +7189,8 @@ fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> Element<'a, 
 fn download_state_label(state: DownloadState) -> &'static str {
     match state {
         DownloadState::Untracked => "-",
+        DownloadState::Downloading => "Downloading",
+        DownloadState::Stalled => "Stalled",
         DownloadState::Ready => "Ready",
         DownloadState::Installed => "Installed",
         DownloadState::Uninstalled => "Uninstalled",
@@ -7154,6 +7205,10 @@ fn download_state_color(state: DownloadState, theme: &Theme) -> Option<Color> {
     match state {
         DownloadState::Ready => Some(theme.palette().success),
         DownloadState::Uninstalled => Some(theme.palette().warning),
+        // Burgundy for the one that is happening right now, amber for one that
+        // stopped and is waiting to be resumed.
+        DownloadState::Downloading => Some(theme.palette().primary),
+        DownloadState::Stalled => Some(theme.palette().warning),
         DownloadState::Installed | DownloadState::Untracked => None,
     }
 }
@@ -7175,6 +7230,14 @@ const DL_C_STATUS: f32 = 66.0; // "Installed"
 // "Install" + "Delete" would clip the two labels that only appear when something
 // is at stake.
 const DL_C_ACTIONS: f32 = 128.0;
+/// Fixed height for the action cell, so a row does not change height at the one
+/// moment it changes CONTENT: a finishing download swaps its progress bar for
+/// two buttons, and if those measured differently the whole list below would
+/// jump at exactly the instant the user was watching it.
+const DL_ACTION_H: f32 = 24.0;
+/// Fixed width for the speed/percentage readout, so the progress bar beside it
+/// keeps the same geometry from one tick to the next. Fits "12.3 MiB/s".
+const DL_READOUT_W: f32 = 54.0;
 
 fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
@@ -7206,7 +7269,7 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         );
     }
     for (i, row) in app.downloads.iter().enumerate() {
-        let armed = app.confirm_delete_download == Some(i);
+        let armed = app.confirm_delete_download.as_deref() == Some(row.name.as_str());
         // Two action buttons: Install (re-run the installer) and Delete.
         // MO2 keeps Install available on an already-installed archive
         // (downloadlistview.cpp:230, `state >= STATE_READY`) because re-running a
@@ -7217,15 +7280,106 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         // So keep the action, drop the shouting. Burgundy means "this is what to
         // do here"; on a row that is already installed, that was a lie, and the
         // label said "Install" for something that would install it a second time.
+        let arriving =
+            matches!(row.state, DownloadState::Downloading | DownloadState::Stalled);
         let installed = row.state == DownloadState::Installed;
-        let install = button(text(if installed { "Reinstall" } else { "Install" }).size(11.0))
-            .padding(4)
-            .on_press(Message::ModPicked(Some(row.path.clone())))
-            .style(if installed { button::secondary } else { button::primary });
-        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
-            .padding(4)
-            .on_press(if armed { Message::ConfirmDeleteDownload(i) } else { Message::DeleteDownload(i) })
-            .style(if armed { button::danger } else { button::secondary });
+        // Nothing can be installed out of a partial file, so while one is
+        // arriving the action column carries the progress instead of two buttons
+        // that would either lie or refuse. It is also the widest column, which is
+        // what a bar wants.
+        let actions: Element<'a, Message> = if arriving {
+            let stalled = row.state == DownloadState::Stalled;
+            let frac = if row.total > 0 {
+                (row.downloaded as f32 / row.total as f32).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let label = if stalled {
+                match row.total {
+                    0 => format_size(row.downloaded),
+                    _ => format!("{:.0}%", frac * 100.0),
+                }
+            } else {
+                match (row.total, row.speed) {
+                // No total: an older sidecar, from before the size was recorded.
+                // Say how much has arrived rather than invent a percentage.
+                (0, _) => format_size(row.downloaded),
+                (_, Some(bps)) => format!("{}/s", format_size(bps as u64)),
+                // Between the first sighting and the next tick there is no rate
+                // yet. A "0 B/s" here would read as stopped, which it is not.
+                (_, None) => format!("{:.0}%", frac * 100.0),
+                }
+            };
+            // FIXED width for the readout. The bar takes what is left, so a
+            // label that measures differently every tick - "9.8 MiB/s" then
+            // "12.3 MiB/s" then "985 KiB/s" - would resize the bar under a
+            // monotonic value, and the fill would visibly step BACKWARDS while
+            // the download went forwards.
+            let readout = text(label)
+                .size(9.5)
+                .color(FOMOD_INK_SOFT)
+                .width(Length::Fixed(DL_READOUT_W))
+                .align_x(iced::alignment::Horizontal::Right);
+            let cell = Row::new()
+                .spacing(5)
+                .align_y(iced::Alignment::Center)
+                .width(Length::Fixed(DL_C_ACTIONS))
+                .height(Length::Fixed(DL_ACTION_H));
+            // A live transfer offers nothing: there is nothing to do but wait,
+            // and Install on a partial file would be a lie. A STALLED one has to
+            // be removable, or an abandoned download becomes a row that can never
+            // be got rid of - and its partial is invisible in a file manager too,
+            // having no archive extension.
+            //
+            // The button and the bar do not share the cell: squeezed beside it a
+            // bar would be twenty pixels wide, which says less than the number
+            // next to it already does. Stalled gets the number and the button.
+            if stalled {
+                cell.push(readout)
+                    .push(
+                        button(text(if armed { "Confirm?" } else { "Delete" }).size(10.0))
+                            .padding(3)
+                            .on_press(if armed {
+                                Message::ConfirmDeleteDownload(row.name.clone())
+                            } else {
+                                Message::DeleteDownload(row.name.clone())
+                            })
+                            .style(if armed { button::danger } else { button::secondary }),
+                    )
+                    .into()
+            } else {
+                cell.push(
+                    // iced 0.14 names a bar's axes `length` (along) and `girth`
+                    // (across), not width/height - it can be vertical.
+                    iced::widget::progress_bar(0.0..=1.0, frac)
+                        .length(Length::Fill)
+                        .girth(Length::Fixed(7.0)),
+                )
+                .push(readout)
+                .into()
+            }
+        } else {
+            let install = button(text(if installed { "Reinstall" } else { "Install" }).size(11.0))
+                .padding(4)
+                .on_press(Message::ModPicked(Some(row.path.clone())))
+                .style(if installed { button::secondary } else { button::primary });
+            let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
+                .padding(4)
+                .on_press(if armed {
+                    Message::ConfirmDeleteDownload(row.name.clone())
+                } else {
+                    Message::DeleteDownload(row.name.clone())
+                })
+                .style(if armed { button::danger } else { button::secondary });
+            Row::new()
+                .spacing(4)
+                .align_y(iced::Alignment::Center)
+                .width(Length::Fixed(DL_C_ACTIONS))
+                .height(Length::Fixed(DL_ACTION_H))
+                .push(install)
+                .push(del)
+                .into()
+        };
         // Prefer the friendly Nexus mod name when present, else the file name.
         let display = row.mod_name.clone().unwrap_or_else(|| row.name.clone());
         let r = Row::new()
@@ -7236,20 +7390,20 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(DL_C_SIZE)))
             .push({
                 let st = row.state;
-                text(download_state_label(st))
+                let label = match (st, row.total) {
+                    (DownloadState::Downloading, t) if t > 0 => {
+                        format!("{:.0}%", (row.downloaded as f64 / t as f64) * 100.0)
+                    }
+                    _ => download_state_label(st).to_string(),
+                };
+                text(label)
                     .size(11.0)
                     .width(Length::Fixed(DL_C_STATUS))
                     .style(move |t: &Theme| iced::widget::text::Style {
                         color: download_state_color(st, t),
                     })
             })
-            .push(
-                Row::new()
-                    .spacing(4)
-                    .width(Length::Fixed(DL_C_ACTIONS))
-                    .push(install)
-                    .push(del),
-            );
+            .push(actions);
         rows = rows.push(striped(container(r).padding(3).into(), i % 2 == 0));
     }
 
@@ -8956,20 +9110,62 @@ fn load_downloads(app: &mut App) {
         .flatten()
         .filter_map(|e| {
             let p = e.path();
-            let name = p.file_name()?.to_string_lossy().into_owned();
-            let lower = name.to_ascii_lowercase();
-            let is_archive =
-                lower.ends_with(".7z") || lower.ends_with(".zip") || lower.ends_with(".rar");
-            if !is_archive {
-                return None;
-            }
+            let raw = p.file_name()?.to_string_lossy().into_owned();
+            let lower = raw.to_ascii_lowercase();
+
+            // Two kinds of entry are a download. A finished archive, and a
+            // `<archive>.unfinished` partial, which is one ARRIVING - it is
+            // written by the separate `eidos nxm` process, and noticing it is
+            // the whole reason a running download can be shown at all.
+            let partial = lower.ends_with(".unfinished");
+            let name = if partial {
+                raw.get(..raw.len() - ".unfinished".len())?.to_string()
+            } else {
+                let is_archive =
+                    lower.ends_with(".7z") || lower.ends_with(".zip") || lower.ends_with(".rar");
+                if !is_archive {
+                    return None;
+                }
+                raw
+            };
+            // The row always points at where the archive WILL be, so Install
+            // works the instant it lands without the row being rebuilt around it.
+            let dest = p.with_file_name(&name);
             let md = e.metadata().ok()?;
+            let modified = md.modified().ok()?;
+
             // Version + install status from the MO2-format `.meta` sidecar.
-            let meta =
-                eidos_instance::ModMeta::read(&PathBuf::from(format!("{}.meta", p.display())));
-            let has_meta =
-                std::fs::metadata(PathBuf::from(format!("{}.meta", p.display()))).is_ok();
-            let state = if !has_meta {
+            let meta_path = PathBuf::from(format!("{}.meta", dest.display()));
+            let meta = eidos_instance::ModMeta::read(&meta_path);
+            let has_meta = std::fs::metadata(&meta_path).is_ok();
+            let total = meta.total_size().unwrap_or(0);
+            let state = if partial {
+                // Growing or abandoned? The writer is another process, so there
+                // is nobody to ask - but a file being appended to has a fresh
+                // mtime. A generous window, because a slow mirror can go quiet
+                // for a few seconds without being dead.
+                //
+                // The partial's mtime ALONE is not enough, and getting that wrong
+                // loses a download. `eidos nxm` writes the sidecar before the
+                // first byte, then makes three API calls and waits on the CDN
+                // before it opens the partial - and a RESUMED download appends,
+                // which does not touch the mtime until the first byte lands. So
+                // for the whole API-plus-latency window a live retry carries the
+                // DEAD attempt's mtime, read as "Stalled", which offered a Delete
+                // that unlinked the file the running process was writing to: it
+                // kept filling an unlinked inode, its rename failed, and the
+                // transfer vanished with its sidecar and no message anywhere.
+                //
+                // The sidecar is the missing signal. It is rewritten on every
+                // attempt, so the NEWER of the two mtimes is when something last
+                // happened. A genuinely dead download has an equally old sidecar,
+                // so this does not weaken the true case.
+                let touched = std::fs::metadata(&meta_path)
+                    .and_then(|m| m.modified())
+                    .map_or(modified, |t| t.max(modified));
+                let quiet = touched.elapsed().map(|d| d > STALLED_AFTER).unwrap_or(false);
+                if quiet { DownloadState::Stalled } else { DownloadState::Downloading }
+            } else if !has_meta {
                 DownloadState::Untracked
             } else if meta.uninstalled() {
                 DownloadState::Uninstalled
@@ -8980,18 +9176,45 @@ fn load_downloads(app: &mut App) {
             };
             let row = DownloadRow {
                 name,
-                path: p,
-                size: md.len(),
+                path: dest,
+                // Show the eventual size while it is arriving, so the number does
+                // not creep upward in the Size column while the bar already says
+                // how far along it is.
+                size: if partial && total != 0 { total } else { md.len() },
                 version: meta.version().unwrap_or_default(),
                 mod_name: meta.mod_name(),
                 state,
+                downloaded: md.len(),
+                total,
+                speed: None,
             };
-            Some((row, md.modified().ok()?))
+            Some((row, modified))
         })
         .collect();
     entries.sort_by(|a, b| b.1.cmp(&a.1));
-    app.downloads = entries.into_iter().map(|(r, _)| r).take(SAVES_LIST_CAP).collect();
-    app.confirm_delete_download = None;
+    let mut rows: Vec<DownloadRow> =
+        entries.into_iter().map(|(r, _)| r).take(SAVES_LIST_CAP).collect();
+
+    // Speed is a derivative: compare each in-flight row against the previous
+    // sample. A first sighting has no rate yet and says so rather than showing a
+    // zero, which would read as "stopped".
+    let now = std::time::Instant::now();
+    let mut samples = HashMap::new();
+    for r in rows.iter_mut().filter(|r| r.state == DownloadState::Downloading) {
+        if let Some((then, bytes)) = app.download_samples.get(&r.name) {
+            let secs = now.duration_since(*then).as_secs_f64();
+            // Guard both ends: a tick that arrives too close carries no signal,
+            // and a partial that SHRANK means the transfer restarted from zero
+            // (a server that ignored our Range), which is not a negative speed.
+            if secs > 0.05 && r.downloaded >= *bytes {
+                r.speed = Some((r.downloaded - *bytes) as f64 / secs);
+            }
+        }
+        samples.insert(r.name.clone(), (now, r.downloaded));
+    }
+    // Only in-flight rows are kept, so the map cannot grow without bound.
+    app.download_samples = samples;
+    app.downloads = rows;
 }
 
 /// Recursively copy the CONTENTS of `src` into `dst` (creating `dst`), MO2's
@@ -10369,6 +10592,21 @@ fn view(app: &App) -> Element<'_, Message> {
 /// Shortcuts only fire on the main screen, and only when no modal / inline editor is
 /// stealing input, so they never clobber typing into a text field. Mirrors MO2's
 /// global accelerators: F5 (Refresh) and Ctrl+R (Run).
+/// How long a `.unfinished` partial may go without growing before it is called
+/// stalled rather than downloading. Generous: a slow mirror can go quiet for a
+/// few seconds, and calling a live download dead is worse than the reverse.
+const STALLED_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// How often the downloads directory is re-scanned while something is arriving.
+/// Fast enough that a progress bar moves rather than jumps, slow enough that it
+/// is a rounding error next to the transfer itself.
+const DOWNLOAD_TICK: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// The same, when nothing is in flight: something has to notice that a download
+/// STARTED, and that something cannot be the download itself - it runs in
+/// another process, launched by the browser, with no way to reach this one.
+const DOWNLOAD_IDLE_TICK: std::time::Duration = std::time::Duration::from_secs(2);
+
 fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
@@ -10474,6 +10712,21 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.menu_mod.is_none()
     {
         subs.push(shortcuts);
+    }
+    // Watch the downloads directory while its tab is open. Polling is not a
+    // shortcut taken for want of something better: the transfer runs in a
+    // separate `eidos nxm` process spawned by the BROWSER, so there is no handle
+    // to await and no channel to listen on. The filesystem is the interface, and
+    // a directory of a few dozen entries is cheap to read twice a second.
+    //
+    // Faster while something is arriving, so a bar moves instead of jumping;
+    // slower otherwise, because the idle case only has to notice that a download
+    // has begun.
+    if app.tab == Tab::Downloads {
+        let arriving =
+            app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
+        let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
+        subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
     }
     // While waiting on a launched game/tool, poll for its exit so we can unlock.
     if app.running.is_some() {
@@ -11313,12 +11566,16 @@ mod tests {
         // confirmation is gone. The pointer HAS to move to reach the button, so
         // the two-click guard could never be completed.
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload(0));
-        assert_eq!(app.confirm_delete_download, Some(0), "the first click arms it");
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"), "the first click arms it");
 
         update_inner(&mut app, Message::PointerAt(iced::Point::new(10.0, 10.0)));
         update_inner(&mut app, Message::WindowResized(iced::Size::new(800.0, 600.0)));
-        assert_eq!(app.confirm_delete_download, Some(0), "ambient messages are not actions");
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "ambient messages are not actions"
+        );
     }
 
     #[test]
@@ -11327,7 +11584,7 @@ mod tests {
         // anything ELSE takes the loaded gun out of your hand.
         let mut app = nav_app(&[]);
         for (arm, check) in [
-            (Message::DeleteDownload(0), 0),
+            (Message::DeleteDownload("a.zip".into()), 0),
             (Message::DeleteSave(0), 1),
             (Message::ClearOverwrite, 2),
             (Message::BatchRemoveMods, 3),
@@ -11346,9 +11603,199 @@ mod tests {
     #[test]
     fn arming_one_row_disarms_another() {
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload(0));
-        update_inner(&mut app, Message::DeleteDownload(3));
-        assert_eq!(app.confirm_delete_download, Some(3), "only one may be armed");
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        update_inner(&mut app, Message::DeleteDownload("b.zip".into()));
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("b.zip"),
+            "only one may be armed"
+        );
+    }
+
+
+    /// Build an instance whose downloads dir holds the given `(name, bytes)`
+    /// entries, then scan it. Real files, because the whole feature is "notice
+    /// what another process is writing to disk".
+    fn downloads_app(files: &[(&str, &[u8])], metas: &[(&str, &str)]) -> App {
+        let mut app = nav_app(&[]);
+        let root = std::env::temp_dir().join(format!(
+            "eidos-dl-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let dl = root.join("downloads");
+        fs::create_dir_all(&dl).unwrap();
+        for (n, b) in files {
+            fs::write(dl.join(n), b).unwrap();
+        }
+        for (n, body) in metas {
+            fs::write(dl.join(n), body).unwrap();
+        }
+        app.created = Some(eidos_instance::Instance::portable(root));
+        load_downloads(&mut app);
+        app
+    }
+
+    #[test]
+    fn a_download_in_flight_is_listed_before_it_finishes() {
+        // The reported complaint: a mod being downloaded does not appear until
+        // it is done and Refresh is pressed. The partial IS the evidence.
+        let app = downloads_app(
+            &[("Cool Mod.zip.unfinished", b"1234567890")],
+            &[("Cool Mod.zip.meta", "[General]\nmodName=Cool Mod\ntotalSize=100\n")],
+        );
+        assert_eq!(app.downloads.len(), 1, "the partial must produce a row");
+        let r = &app.downloads[0];
+        assert_eq!(r.state, DownloadState::Downloading);
+        assert_eq!(r.name, "Cool Mod.zip", "named for what it will BE");
+        assert!(r.path.ends_with("Cool Mod.zip"), "Install must aim at the final path");
+        assert_eq!(r.downloaded, 10);
+        assert_eq!(r.total, 100);
+        assert_eq!(r.mod_name.as_deref(), Some("Cool Mod"));
+        // Size shows the destination, so the column does not creep upward while
+        // the bar is already saying how far along it is.
+        assert_eq!(r.size, 100);
+    }
+
+    #[test]
+    fn a_partial_that_stopped_growing_reads_as_stalled() {
+        let app = downloads_app(&[("x.zip.unfinished", b"abc")], &[]);
+        assert_eq!(app.downloads[0].state, DownloadState::Downloading, "fresh mtime");
+
+        // Backdate it well past the window: the writing process is gone.
+        let dl = app.created.as_ref().unwrap().downloads_dir();
+        let old = std::time::SystemTime::now() - STALLED_AFTER - std::time::Duration::from_secs(30);
+        let f = fs::File::options().write(true).open(dl.join("x.zip.unfinished")).unwrap();
+        f.set_modified(old).unwrap();
+        // No sidecar exists in this case, so the partial's own mtime decides.
+        let mut app = app;
+        load_downloads(&mut app);
+        assert_eq!(app.downloads[0].state, DownloadState::Stalled);
+    }
+
+    #[test]
+    fn a_finished_download_replaces_its_partial_and_becomes_installable() {
+        // The handover: `download` renames <dest>.unfinished to <dest>. One row
+        // throughout, never two, and never a gap where neither is listed.
+        let mut app = downloads_app(
+            &[("m.zip.unfinished", b"partial")],
+            &[("m.zip.meta", "[General]\ntotalSize=7\n")],
+        );
+        assert_eq!(app.downloads[0].state, DownloadState::Downloading);
+
+        let dl = app.created.as_ref().unwrap().downloads_dir();
+        fs::rename(dl.join("m.zip.unfinished"), dl.join("m.zip")).unwrap();
+        load_downloads(&mut app);
+        assert_eq!(app.downloads.len(), 1);
+        assert_eq!(app.downloads[0].state, DownloadState::Ready);
+    }
+
+    #[test]
+    fn speed_needs_two_samples_and_never_goes_backwards() {
+        let mut app = downloads_app(
+            &[("s.zip.unfinished", b"aaaa")],
+            &[("s.zip.meta", "[General]\ntotalSize=1000\n")],
+        );
+        assert_eq!(app.downloads[0].speed, None, "one sighting is not a rate");
+
+        let dl = app.created.as_ref().unwrap().downloads_dir();
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        fs::write(dl.join("s.zip.unfinished"), vec![b'a'; 4004]).unwrap();
+        load_downloads(&mut app);
+        let v = app.downloads[0].speed.expect("two samples give a rate");
+        assert!(v > 0.0, "grew by 4000 bytes, so the rate is positive: {v}");
+
+        // A server that ignores our Range restarts from zero, so the partial
+        // SHRINKS. That is not a negative speed.
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        fs::write(dl.join("s.zip.unfinished"), b"a").unwrap();
+        load_downloads(&mut app);
+        assert_eq!(app.downloads[0].speed, None, "a shrinking partial reports no rate");
+    }
+
+    #[test]
+    fn the_delete_confirmation_survives_the_background_tick() {
+        // The tick re-sorts the list twice a second. Keyed by index, arming a
+        // row and confirming it could delete a DIFFERENT archive.
+        let mut app = downloads_app(&[("a.zip", b"a"), ("b.zip", b"b")], &[]);
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
+        update_inner(&mut app, Message::DownloadTick);
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "a periodic re-scan is not an action"
+        );
+    }
+
+
+    #[test]
+    fn deleting_a_stalled_download_takes_the_partial_with_it() {
+        // Otherwise the file that produced the row is still there, and the row
+        // is back on the next tick - an entry the user cannot get rid of.
+        let mut app = downloads_app(
+            &[("dead.zip.unfinished", b"half")],
+            &[("dead.zip.meta", "[General]\ntotalSize=999\n")],
+        );
+        let dl = app.created.as_ref().unwrap().downloads_dir();
+        // BOTH files have to be old. A fresh sidecar means a retry is in its
+        // API/latency window, and calling that stalled is what used to hand the
+        // user a Delete button aimed at a live transfer.
+        let old = std::time::SystemTime::now() - STALLED_AFTER - std::time::Duration::from_secs(30);
+        for f in ["dead.zip.unfinished", "dead.zip.meta"] {
+            fs::File::options().write(true).open(dl.join(f)).unwrap().set_modified(old).unwrap();
+        }
+        load_downloads(&mut app);
+        assert_eq!(app.downloads[0].state, DownloadState::Stalled);
+
+        update_inner(&mut app, Message::DeleteDownload("dead.zip".into()));
+        update_inner(&mut app, Message::ConfirmDeleteDownload("dead.zip".into()));
+        assert!(!dl.join("dead.zip.unfinished").exists(), "the partial must go");
+        assert!(!dl.join("dead.zip.meta").exists(), "and its sidecar");
+        assert!(app.downloads.is_empty(), "so the row does not come back");
+    }
+
+
+    #[test]
+    fn a_resumed_download_is_not_called_stalled_while_it_waits_on_the_network() {
+        // The data-loss case. A previous attempt left an hours-old partial. The
+        // user retries: `eidos nxm` rewrites the sidecar, then spends seconds in
+        // API calls and CDN latency before the first byte lands - and a resume
+        // APPENDS, so the partial's mtime stays the dead attempt's throughout.
+        // Judged on the partial alone the row read "Stalled" and offered a
+        // Delete that unlinked the file a live process was writing to.
+        let app = downloads_app(
+            &[("retry.zip.unfinished", b"leftover")],
+            &[("retry.zip.meta", "[General]\ntotalSize=500\n")],
+        );
+        let dl = app.created.as_ref().unwrap().downloads_dir();
+        let ages_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(6 * 3600);
+        fs::File::options()
+            .write(true)
+            .open(dl.join("retry.zip.unfinished"))
+            .unwrap()
+            .set_modified(ages_ago)
+            .unwrap();
+
+        // The sidecar is fresh, because the retry just wrote it.
+        let mut app = app;
+        load_downloads(&mut app);
+        assert_eq!(
+            app.downloads[0].state,
+            DownloadState::Downloading,
+            "a fresh sidecar means an attempt is under way, whatever the partial's mtime"
+        );
+
+        // Genuinely abandoned: BOTH are old, so it really is stalled and can be
+        // cleared. Age the sidecar too.
+        fs::File::options()
+            .write(true)
+            .open(dl.join("retry.zip.meta"))
+            .unwrap()
+            .set_modified(ages_ago)
+            .unwrap();
+        load_downloads(&mut app);
+        assert_eq!(app.downloads[0].state, DownloadState::Stalled);
     }
 
 }
