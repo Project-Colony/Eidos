@@ -873,4 +873,41 @@ mod tests {
         // The [Archive] INI is the first of the per-profile set.
         assert_eq!(ini_files_for("fallout4").first().copied(), ini_file_for("fallout4"));
     }
+
+    #[test]
+    fn an_unknown_load_order_is_not_evidence_of_orphans() {
+        // Lin's eleven. Every one of these archives had an ACTIVE plugin; the
+        // window reported all eleven as unloadable because the caller passed an
+        // empty active list - it had simply never computed one. The rule the
+        // caller now enforces is asserted here, at the layer that would be asked
+        // the question: with nothing known, every archive looks orphaned, so an
+        // empty active list must never reach this function.
+        let archives = vec![
+            ("SkyUI".to_string(), "SkyUI_SE.bsa".to_string()),
+            ("USSEP FR".to_string(), "unofficial skyrim special edition patch.bsa".to_string()),
+            (
+                "USSEP FR".to_string(),
+                "unofficial skyrim special edition patch - textures.bsa".to_string(),
+            ),
+        ];
+        assert_eq!(
+            orphan_archives(&archives, &[], &[]).len(),
+            3,
+            "with no active plugins EVERYTHING is an orphan - which is why the \
+             caller must not ask when it does not know"
+        );
+
+        // With the real load order, in the real lowercase the mod ships, none of
+        // them is an orphan - including the ` - Textures` sibling.
+        let active = vec![
+            "SkyUI_SE.esp".to_string(),
+            "unofficial skyrim special edition patch.esp".to_string(),
+        ];
+        assert!(orphan_archives(&archives, &active, &[]).is_empty());
+
+        // And case never decides it: the archive is lowercase, the plugin is not.
+        let shouty = vec!["Unofficial Skyrim Special Edition Patch.ESP".to_string()];
+        assert_eq!(orphan_archives(&archives[1..], &shouty, &[]).len(), 0);
+    }
+
 }

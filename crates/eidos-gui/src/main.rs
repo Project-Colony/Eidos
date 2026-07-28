@@ -7744,11 +7744,41 @@ fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
     if archives.is_empty() {
         return Vec::new();
     }
-    let active: Vec<String> = app
-        .plugins
-        .as_ref()
-        .map(|l| l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect())
-        .unwrap_or_default();
+    // `app.plugins` is a CACHE. It is dropped whenever the mod list changes and
+    // only rebuilt while the Plugins tab is open, so most of the time it is
+    // `None` - and `unwrap_or_default()` turned "we have not looked" into
+    // "nothing is active", which makes EVERY archive an orphan. The tab then
+    // announced that eleven archives would not load, naming mods whose plugins
+    // were all active, and sent the user hunting a problem that did not exist.
+    //
+    // An absent list is not an empty one. Read the profile's own plugins.txt
+    // instead - one small file, on a diagnostic that already walks every enabled
+    // mod for archives - and if even that is unreadable, say nothing at all.
+    let active: Vec<String> = match app.plugins.as_ref() {
+        Some(l) => l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect(),
+        None => {
+            let Some(spec) = GameSpec::for_id(game_id) else { return Vec::new() };
+            let prof = inst.active();
+            let dir = if prof.has_plugin_state() {
+                prof.plugins_state_dir()
+            } else {
+                match selected_game(app).and_then(|g| g.compatdata.clone()) {
+                    Some(cd) => plugins_txt_dir(&cd.join("pfx"), &spec),
+                    None => return Vec::new(),
+                }
+            };
+            PluginList::read_active(&dir, &spec)
+                .into_iter()
+                .filter(|(_, on)| *on)
+                .map(|(n, _)| n)
+                .collect()
+        }
+    };
+    // Still nothing? Then the load order is unknown, and an unknown load order
+    // cannot be evidence that an archive is unloaded.
+    if active.is_empty() {
+        return Vec::new();
+    }
     // The profile's own INI copy is the one that gets deployed, so it is what the
     // next launch will actually register.
     let registered =
