@@ -752,6 +752,8 @@ fn run_through_view(
         // that uses none, in which case no second mount happens.
         root_layers,
         root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
+        // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
+        root_overwrite: Some(inst.root_overwrite_dir()),
     };
     let result = launch(spec);
 

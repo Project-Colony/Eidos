@@ -57,6 +57,11 @@ pub struct LaunchSpec {
     /// union over the game root gives the same result with nothing written to
     /// disk and no residue possible - the namespace dies with the process.
     pub root_layers: Vec<PathBuf>,
+    /// Writable layer for the ROOT union. `None` falls back to a directory beside
+    /// the root stash, which is what the standalone `eidos-launch` binary wants
+    /// (it has no instance to put one in); `eidos` passes the instance's single
+    /// Overwrite so everything the user can write ends up in one place.
+    pub root_overwrite: Option<PathBuf>,
     /// `(game_root, stash)` for the root union, mirroring [`Self::base_bind`]:
     /// the bind captures the pristine game root so the daemon can still read it
     /// once the union covers that same path.
@@ -206,9 +211,14 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
         let mut root_layers = spec.root_layers.clone();
         // Lowest priority: the pristine game files, read through the stash.
         root_layers.push(root_stash.clone());
-        // The root union gets its own overwrite area, so a game writing beside its
-        // own exe (crash logs, ReShade caches) still never touches the install.
-        let root_overwrite = root_stash.with_extension("root-overwrite");
+        // Writes beside the game's own exe (crash logs, ReShade caches, a tool
+        // aimed one directory too high) still never touch the install - but they
+        // land in the caller's ONE Overwrite, under `Root/`, rather than in a
+        // hidden directory of our own invention that no front end ever listed.
+        let root_overwrite = match spec.root_overwrite.as_ref() {
+            Some(p) => p.clone(),
+            None => root_stash.with_extension("root-overwrite"),
+        };
         std::fs::create_dir_all(&root_overwrite)?;
         eprintln!(
             "eidos: {} mod(s) provide root-level files; mounting a union over the game root",

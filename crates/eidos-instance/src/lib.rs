@@ -11,8 +11,13 @@
 //! <root>/mods/<name>/...   one folder per mod
 //! <root>/modlist.txt       order + enabled state (MO2 style; top = highest)
 //! <root>/overwrite/        the writable layer (saves, regenerated configs)
+//! <root>/overwrite/Root/   ... of it that lands beside the game's own exe
 //! <root>/.base             bind-stash mountpoint for the pristine game files
 //! ```
+//!
+//! There is ONE Overwrite, as in MO2. Writes aimed at the game install root go to
+//! its `Root/` subdirectory - the same name a mod uses for the same content - so
+//! turning the Overwrite into a mod yields a correctly shaped one.
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -374,6 +379,41 @@ impl Instance {
         self.root.join(".base-root")
     }
 
+    /// Where writes to the GAME INSTALL ROOT land: a `Root/` subdirectory of the
+    /// one Overwrite, not a second Overwrite of its own.
+    ///
+    /// MO2 has exactly one Overwrite and so does this. The subdirectory is not an
+    /// arbitrary bucket either - it is the SAME convention a mod uses, which ships
+    /// its game-root content in `<mod>/Root/`. So "turn the Overwrite into a mod"
+    /// produces a mod already shaped correctly, and a file the user drags from one
+    /// to the other keeps its meaning.
+    ///
+    /// This used to be `.base-root.root-overwrite`, a hidden sibling the GUI never
+    /// listed. A game or tool writing beside its own exe put files there that the
+    /// user had no way to see: BodySlide, misconfigured to output one directory too
+    /// high, put 1442 built meshes in it silently.
+    pub fn root_overwrite_dir(&self) -> PathBuf {
+        self.overwrite_dir().join("Root")
+    }
+
+    /// Move anything left in the pre-`Root/` overwrite into its new home, once.
+    /// Returns how many top-level entries moved. Idempotent: the legacy directory
+    /// is removed when it empties, so later calls find nothing to do.
+    pub fn migrate_root_overwrite(&self) -> std::io::Result<usize> {
+        let legacy = self.root.join(".base-root.root-overwrite");
+        let n = fs::read_dir(&legacy).into_iter().flatten().flatten().count();
+        if n == 0 {
+            // Also clears away an empty legacy dir left by an earlier run.
+            let _ = fs::remove_dir(&legacy);
+            return Ok(0);
+        }
+        let dest = self.root_overwrite_dir();
+        fs::create_dir_all(&dest)?;
+        move_tree(&legacy, &dest)?;
+        let _ = fs::remove_dir(&legacy);
+        Ok(n)
+    }
+
     /// The `Root/` directories of the enabled mods, highest priority FIRST.
     ///
     /// A mod ships its game-root content (a script extender, ENB, ReShade, an
@@ -417,6 +457,9 @@ impl Instance {
     pub fn create(&self) -> std::io::Result<()> {
         fs::create_dir_all(self.mods_dir())?;
         fs::create_dir_all(self.overwrite_dir())?;
+        // Never fatal: an instance that cannot be migrated is still perfectly
+        // usable, it just keeps showing the old hidden directory.
+        let _ = self.migrate_root_overwrite();
         self.ensure_profiles()?;
         Ok(())
     }
@@ -1001,4 +1044,62 @@ mod tests {
         }
         assert!(!inst.overwrite_is_empty(), "a rejected move leaves the Overwrite alone");
     }
+
+    #[test]
+    fn root_overwrite_moves_into_the_one_overwrite() {
+        let inst = tmp_instance();
+        let legacy = inst.root.join(".base-root.root-overwrite");
+        fs::create_dir_all(legacy.join("meshes/actors")).unwrap();
+        fs::write(legacy.join("meshes/actors/body.nif"), b"nif").unwrap();
+        fs::write(legacy.join("d3dx9_42.log"), b"log").unwrap();
+
+        assert_eq!(inst.migrate_root_overwrite().unwrap(), 2, "two top-level entries");
+        let root = inst.root_overwrite_dir();
+        assert_eq!(fs::read(root.join("meshes/actors/body.nif")).unwrap(), b"nif");
+        assert_eq!(fs::read(root.join("d3dx9_42.log")).unwrap(), b"log");
+        assert!(!legacy.exists(), "the hidden directory is gone, not left half-empty");
+        // The whole point: it is now under the Overwrite the front end lists.
+        assert!(root.starts_with(inst.overwrite_dir()));
+    }
+
+    #[test]
+    fn migrating_twice_is_a_no_op() {
+        let inst = tmp_instance();
+        let legacy = inst.root.join(".base-root.root-overwrite");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("a.txt"), b"1").unwrap();
+        assert_eq!(inst.migrate_root_overwrite().unwrap(), 1);
+        assert_eq!(inst.migrate_root_overwrite().unwrap(), 0);
+        assert_eq!(fs::read(inst.root_overwrite_dir().join("a.txt")).unwrap(), b"1");
+    }
+
+    #[test]
+    fn migration_merges_instead_of_clobbering() {
+        // A user who already has Root/ content in the Overwrite must not lose it,
+        // and must not lose the legacy file either.
+        let inst = tmp_instance();
+        let dest = inst.root_overwrite_dir();
+        fs::create_dir_all(dest.join("meshes")).unwrap();
+        fs::write(dest.join("meshes/kept.nif"), b"kept").unwrap();
+        let legacy = inst.root.join(".base-root.root-overwrite");
+        fs::create_dir_all(legacy.join("meshes")).unwrap();
+        fs::write(legacy.join("meshes/moved.nif"), b"moved").unwrap();
+
+        inst.migrate_root_overwrite().unwrap();
+        assert_eq!(fs::read(dest.join("meshes/kept.nif")).unwrap(), b"kept");
+        assert_eq!(fs::read(dest.join("meshes/moved.nif")).unwrap(), b"moved");
+    }
+
+    #[test]
+    fn creating_an_instance_migrates() {
+        // `create()` runs on every command, so the move happens without the user
+        // ever being told to do anything.
+        let inst = tmp_instance();
+        let legacy = inst.root.join(".base-root.root-overwrite");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("stray.nif"), b"x").unwrap();
+        inst.create().unwrap();
+        assert!(inst.root_overwrite_dir().join("stray.nif").is_file());
+    }
+
 }
