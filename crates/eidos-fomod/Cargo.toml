@@ -7,4 +7,4 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
-roxmltree = "0.20"
+roxmltree = "0.21"
