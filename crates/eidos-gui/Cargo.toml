@@ -23,4 +23,4 @@ eidos-conflicts = { path = "../eidos-conflicts" }
 eidos-gamefeatures = { path = "../eidos-gamefeatures" }
 eidos-install = { path = "../eidos-install" }
 eidos-fomod = { path = "../eidos-fomod" }
-rfd = "0.15"
+rfd = "0.17"
