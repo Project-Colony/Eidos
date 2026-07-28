@@ -1714,10 +1714,37 @@ fn nexus_client() -> eidos_nexus::Nexus {
 fn cmd_nexus(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("key") => {
-            let Some(key) = args.get(1) else {
-                eprintln!("usage: eidos nexus key <YOUR-PERSONAL-API-KEY>");
-                exit(2);
+            // Read it from stdin by default. Passed as an argument it lands in the
+            // shell history and, for as long as the process lives, in /proc where
+            // any local process can read it - a credential should not be a word in
+            // a command line. The argument form still works so existing scripts do
+            // not break, but it says what it just cost.
+            let key = match args.get(1) {
+                Some(k) => {
+                    eprintln!(
+                        "eidos: warning - a key passed as an argument is now in your shell \
+                         history and was visible in /proc. Prefer: eidos nexus key   (then paste)"
+                    );
+                    k.clone()
+                }
+                None => {
+                    eprint!("Paste your personal Nexus API key (it will not be echoed): ");
+                    let _ = std::io::Write::flush(&mut std::io::stderr());
+                    let mut line = String::new();
+                    if std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line).is_err()
+                    {
+                        eprintln!("\nusage: eidos nexus key   (paste the key on stdin)");
+                        exit(2);
+                    }
+                    eprintln!();
+                    line.trim().to_string()
+                }
             };
+            if key.is_empty() {
+                eprintln!("No key given. Get one at https://www.nexusmods.com/users/myaccount?tab=api");
+                exit(2);
+            }
+            let key = &key;
             match eidos_nexus::Nexus::new(key).validate() {
                 Ok(acct) => {
                     let path = nexus_key_path();

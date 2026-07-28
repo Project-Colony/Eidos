@@ -9262,7 +9262,12 @@ fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
             if !app.api_key_validating {
                 connect = connect.on_press(Message::ApiKeyValidateStart);
             }
+            // Masked. It is a credential, and this field sits in a window users
+            // screenshot to ask for help - which is one of the ways a key leaks.
+            // Nothing is lost by hiding it: validation names the account back, so
+            // the user still gets told whether what they pasted was right.
             let field = text_input("Personal API key", &app.settings_api_key)
+                .secure(true)
                 .on_input(Message::ApiKeyChanged)
                 .on_submit(Message::ApiKeyValidateStart)
                 .padding(6)
