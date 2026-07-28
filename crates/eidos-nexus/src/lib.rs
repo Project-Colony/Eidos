@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 
 pub const API_BASE: &str = "https://api.nexusmods.com/v1";
 
+pub mod oauth;
+
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NxmUrl {
