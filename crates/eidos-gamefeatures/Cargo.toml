@@ -10,7 +10,7 @@ edition.workspace = true
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
 # PE import-table parsing, to detect mods that import d3dcompiler_47.dll.
-object = { version = "0.37", default-features = false, features = ["read_core", "pe", "coff", "std"] }
+object = { version = "0.39", default-features = false, features = ["read_core", "pe", "coff", "std"] }
 # Inflate for the zlib-compressed save payload (savegame.rs). Already in the
 # workspace lockfile via png/tiff/ureq, and the default features are the pure-Rust
 # miniz_oxide backend, so this adds no new crate and no C dependency. The LZ4 side
