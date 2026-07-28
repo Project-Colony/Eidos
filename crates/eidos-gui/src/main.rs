@@ -5004,6 +5004,82 @@ fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<'a, Message
 /// The highlight behind the selected mod row.
 const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct from the stripes
 
+/// A mod the focused one OVERWRITES: it sits lower in the list and wins the
+/// files they share. Green - the focused mod is on top of these.
+const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);
+/// A mod that overwrites the focused one: it sits lower and takes those files
+/// away. Red - the focused mod is losing to these.
+const CONFLICT_LOSES_BG: Color = Color::from_rgb(0.921, 0.769, 0.741);
+
+/// The strip that explains the two conflict colours, and how many rows carry
+/// each - `None` when the focused mod fights with nothing, or nothing is
+/// focused.
+fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
+    let focus = app.selected_mod?;
+    let me = app.conflicts.as_ref()?.mods.get(&((focus + 1) as u32))?;
+    // Origin 0 is the game's own data and u32::MAX is the Overwrite layer;
+    // neither is a row, so neither is counted here.
+    let rows = |set: &std::collections::BTreeSet<u32>| {
+        set.iter().filter(|&&o| o != 0 && o != u32::MAX).count()
+    };
+    let (over, under) = (rows(&me.overwrites), rows(&me.overwritten_by));
+    if over == 0 && under == 0 {
+        return None;
+    }
+    let swatch = |c: Color, label: String| -> Element<'a, Message> {
+        Row::new()
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .push(
+                container(Space::new(Length::Fixed(12.0), Length::Fixed(12.0)))
+                    .style(move |_t: &Theme| container::Style {
+                        background: Some(Background::Color(c)),
+                        border: Border { color: Color::from_rgb8(0x6E, 0x24, 0x2E), width: 1.0, radius: 2.0.into() },
+                        ..Default::default()
+                    }),
+            )
+            .push(text(label).size(11.0))
+            .into()
+    };
+    let name = app.mods.get(focus).map(|m| m.display_name().to_string()).unwrap_or_default();
+    let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
+    row = row.push(text(format!("{name} conflicts:")).size(11.0));
+    if over > 0 {
+        row = row.push(swatch(CONFLICT_WINS_BG, format!("{over} it overwrites")));
+    }
+    if under > 0 {
+        row = row.push(swatch(CONFLICT_LOSES_BG, format!("{under} overwrite it")));
+    }
+    Some(row.into())
+}
+
+/// How the row at `i` relates to the focused mod, for painting.
+///
+/// MO2's whole conflict workflow is this: click a mod, and every mod it fights
+/// with lights up so the stack can be read at a glance instead of by opening a
+/// dialog per pair. Both directions are shown, because "who am I beating" and
+/// "who is beating me" are different questions and the answer to the second is
+/// what sends a texture pack to the bottom of the list.
+///
+/// `None` for the focused row itself, which already reads as selected.
+fn conflict_tint(app: &App, i: usize) -> Option<Color> {
+    let focus = app.selected_mod?;
+    if focus == i {
+        return None;
+    }
+    let map = app.conflicts.as_ref()?;
+    // Origins are `index + 1`; 0 is the game's own data.
+    let me = map.mods.get(&((focus + 1) as u32))?;
+    let other = (i + 1) as u32;
+    if me.overwrites.contains(&other) {
+        Some(CONFLICT_WINS_BG)
+    } else if me.overwritten_by.contains(&other) {
+        Some(CONFLICT_LOSES_BG)
+    } else {
+        None
+    }
+}
+
 /// A mod-list row background that also reflects selection (MO2's blue highlight,
 /// here a parchment-tan so it reads on the burgundy theme).
 /// The height of the insertion strip between two rows. Rendered ALWAYS, not only
@@ -5057,8 +5133,16 @@ fn drop_gap<'a>(
     mouse_area(strip).on_enter(over(gap)).on_release(drop).into()
 }
 
-fn list_row<'a>(content: Element<'a, Message>, even: bool, selected: bool) -> Element<'a, Message> {
-    let bg = if selected { SEL_BG } else { row_bg(even) };
+fn list_row<'a>(
+    content: Element<'a, Message>,
+    even: bool,
+    selected: bool,
+    conflict: Option<Color>,
+) -> Element<'a, Message> {
+    // Selection outranks the conflict tint: the focused row is where the user's
+    // attention already is, and losing its highlight to a colour that describes
+    // OTHER rows would be a step backwards.
+    let bg = if selected { SEL_BG } else { conflict.unwrap_or_else(|| row_bg(even)) };
     container(content)
         .width(Length::Fill)
         .padding(2)
@@ -5832,6 +5916,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             mod_row(i, m, len, meta, flag_icon, hidden_icon),
             i % 2 == 0,
             selected,
+            conflict_tint(app, i),
         ));
     }
     // The trailing strip: the only way to aim at the end of the list, since
@@ -5869,10 +5954,16 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     )
     .on_exit(Message::DragCancel);
 
+    // The tint means nothing without saying what it means. Shown only while a
+    // mod is focused AND actually fights with something, so the strip is a
+    // readout rather than permanent furniture.
+    let legend = conflict_legend(app);
+
     let inner = Column::new()
         .spacing(6)
         .push(profile)
         .push(search)
+        .push_maybe(legend)
         .push(header)
         .push(list_area)
         .push(overwrite);
@@ -6621,6 +6712,8 @@ fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             container(row).padding(3).into(),
             i % 2 == 0,
             app.selected_save == Some(i),
+            // Saves do not fight over files.
+            None,
         ));
     }
 
@@ -10113,6 +10206,33 @@ mod tests {
         // focus: it consults the SET first. Documented here so the two do not
         // get "unified" back into the bug.
         assert!(!app.selected_mods.contains(&2));
+    }
+
+    #[test]
+    fn the_conflict_tint_says_which_way_each_pair_goes() {
+        use eidos_conflicts::{ConflictMap, ModConflicts};
+        let mut app = nav_app(&["low", "focus", "high"]);
+        // Origins are index + 1. "focus" (index 1) overwrites "low" and is
+        // overwritten by "high".
+        let mut mods = HashMap::new();
+        mods.insert(
+            2u32,
+            ModConflicts {
+                overwrites: [1u32].into_iter().collect(),
+                overwritten_by: [3u32].into_iter().collect(),
+                ..Default::default()
+            },
+        );
+        app.conflicts = Some(ConflictMap { files: Default::default(), mods, names: HashMap::new() });
+
+        app.selected_mod = Some(1);
+        assert_eq!(conflict_tint(&app, 0), Some(CONFLICT_WINS_BG), "the row it beats");
+        assert_eq!(conflict_tint(&app, 2), Some(CONFLICT_LOSES_BG), "the row that beats it");
+        assert_eq!(conflict_tint(&app, 1), None, "the focused row keeps its selection colour");
+
+        // Nothing focused, nothing tinted.
+        app.selected_mod = None;
+        assert_eq!(conflict_tint(&app, 0), None);
     }
 
     #[test]

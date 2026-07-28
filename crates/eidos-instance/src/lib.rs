@@ -430,7 +430,15 @@ impl Instance {
     }
 
     /// The active profile's mod list (folders in the shared `mods/`, in priority
-    /// order with enabled state). Top of the list = highest priority.
+    /// order with enabled state).
+    ///
+    /// DISPLAY order, which is MO2's: the top of the list is the LOWEST priority
+    /// and the bottom row wins every file conflict. `modlist.txt` stores the
+    /// opposite orientation and [`Profile::modlist_checked`] flips it;
+    /// [`Profile::load_order`] flips it back, because the union wants its layers
+    /// highest-priority first. This comment used to say the top was highest,
+    /// which is exactly backwards - and a wrong contract on a public method is
+    /// read once and believed everywhere.
     pub fn modlist(&self) -> Vec<ModEntry> {
         self.active().modlist()
     }
