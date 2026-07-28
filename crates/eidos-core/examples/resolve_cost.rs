@@ -51,7 +51,13 @@ fn main() {
         fs::write(overwrite.join(format!("textures/actors/character/o{j:04}.dds")), b"x").unwrap();
     }
 
+    // The cost this trades against: one walk of every layer, at mount time.
+    // Reported because moving work from "every resolve" to "once" is only a win
+    // if the once is small, and saying so is the difference between a
+    // measurement and a claim.
+    let built = std::time::Instant::now();
     let stack = eidos_core::LayerStack::new(layers, overwrite);
+    let build_ms = built.elapsed();
     let s = stack.resolve_stats();
     let (p0, c0) = (s.probes.load(Ordering::Relaxed), s.scans.load(Ordering::Relaxed));
 
@@ -63,6 +69,8 @@ fn main() {
 
     let probes = s.probes.load(Ordering::Relaxed) - p0;
     let scans = s.scans.load(Ordering::Relaxed) - c0;
+    let indexed = LAYERS * FILES_PER_DIR;
+    println!("index built over {indexed} entries in {build_ms:?}");
     println!("{RESOLVES} resolves of one path, {LAYERS} layers, depth 6:");
     println!("  probes {probes:>7}  ({} per resolve)", probes / u64::from(RESOLVES));
     println!("  scans  {scans:>7}  ({} per resolve)", scans / u64::from(RESOLVES));

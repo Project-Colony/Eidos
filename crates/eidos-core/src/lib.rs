@@ -11,7 +11,7 @@
 //! Path matching is case-insensitive, reproducing the Windows semantics that
 //! game engines and mods rely on (see `docs/architecture.md`).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::sync::atomic::AtomicU64;
@@ -85,6 +85,154 @@ pub struct LayerStack {
     /// `Arc`, for the same reason as the locks: a cloned stack describes the
     /// same mount and must add to the same tally.
     resolve: std::sync::Arc<ResolveStats>,
+    /// What the read-only layers provide, walked once at construction.
+    ///
+    /// `None` means there is no index and every query walks the layers - the
+    /// behaviour that existed before this field, kept reachable because it is
+    /// the one that is never wrong.
+    lower: Option<std::sync::Arc<LowerIndex>>,
+}
+
+/// What the read-only layers provide, resolved once at construction.
+///
+/// The whole design rests on one property: **the layers never change while
+/// mounted**. `LayerStack` has no method that writes into a layer - every
+/// mutation lands in `overwrite`, which is deliberately NOT indexed and is read
+/// live on every resolve. So there is no invalidation, not because it was
+/// skipped, but because there is nothing to invalidate.
+///
+/// # Why absence is trustworthy
+///
+/// The index answers "no layer provides this" as confidently as it answers
+/// "layer 7 does", and that is only sound if the build was COMPLETE. So the
+/// build is all-or-nothing with no exemptions: any unreadable directory, any
+/// surprise, and the whole index is discarded and every query walks the layers
+/// as before. Slow is a cost; a mod file that silently is not there is a
+/// corruption, and this filesystem exists to prevent exactly that.
+///
+/// `EIDOS_NO_INDEX=1` forces that fallback, for when the difference between the
+/// two answers is the thing being debugged.
+#[derive(Debug)]
+struct LowerIndex {
+    /// Folded virtual path -> the real path of the highest-priority layer that
+    /// provides it. Folding matches `eq_ignore_case`: ASCII-lowercased.
+    entries: HashMap<Box<[u8]>, Resolved>,
+}
+
+#[derive(Debug, Clone)]
+enum Resolved {
+    /// Exactly one layer entry folds to this key at this priority.
+    One(PathBuf),
+    /// Two entries in ONE directory differ only by case, so which one wins
+    /// depends on how the caller spelled it - something a folded map cannot
+    /// represent. The walk can, so this key defers to it.
+    Ambiguous,
+}
+
+/// Give up rather than index a tree this deep: the only way to reach it is a
+/// symlink cycle, and a cycle would otherwise be walked until memory ran out.
+const MAX_INDEX_DEPTH: usize = 64;
+/// Give up rather than hold an index this large. A real setup measured 7,083
+/// entries; this is three orders of magnitude of headroom before the fallback,
+/// which is still correct, takes over.
+const MAX_INDEX_ENTRIES: usize = 4_000_000;
+
+impl LowerIndex {
+    fn build(layers: &[PathBuf]) -> Option<std::sync::Arc<LowerIndex>> {
+        if std::env::var("EIDOS_NO_INDEX").is_ok_and(|v| v != "0") {
+            return None;
+        }
+        let mut entries = HashMap::new();
+        // Highest priority first, and `or_insert` keeps the first writer - the
+        // same winner `layers.iter().find_map(..)` picks.
+        for layer in layers {
+            walk_layer(layer, &mut Vec::new(), 0, &mut entries)?;
+        }
+        Some(std::sync::Arc::new(LowerIndex { entries }))
+    }
+
+    /// The real path for `vpath`, or `None` when no layer provides it.
+    /// `Err(())` means the index cannot answer and the caller must walk.
+    fn get(&self, folded: &[u8]) -> Result<Option<&PathBuf>, ()> {
+        match self.entries.get(folded) {
+            Some(Resolved::One(p)) => Ok(Some(p)),
+            Some(Resolved::Ambiguous) => Err(()),
+            None => Ok(None),
+        }
+    }
+}
+
+/// One layer's subtree, added to `entries` under folded virtual paths.
+///
+/// Returns `None` on ANY doubt - an unreadable directory, a name that is not
+/// UTF-8, a tree too deep or too large. The caller discards the whole index.
+fn walk_layer(
+    dir: &Path,
+    rel: &mut Vec<u8>,
+    depth: usize,
+    entries: &mut HashMap<Box<[u8]>, Resolved>,
+) -> Option<()> {
+    if depth > MAX_INDEX_DEPTH || entries.len() > MAX_INDEX_ENTRIES {
+        return None;
+    }
+    // An unreadable directory is not "an empty directory": the walk cannot know
+    // what is inside, so it cannot claim the paths under it do not exist.
+    let read = fs::read_dir(dir).ok()?;
+    // Names that fold to the same key inside THIS directory: the exact-case
+    // preference in `ci_lookup` makes the winner depend on the query, so the
+    // key is handed back to the walk instead of guessed at.
+    let mut seen_here: HashSet<Vec<u8>> = HashSet::new();
+    for entry in read {
+        let entry = entry.ok()?;
+        let name = entry.file_name();
+        // Non-UTF-8 names compare by raw bytes in `eq_ignore_case` while UTF-8
+        // ones ASCII-fold, so one folded key cannot represent both without
+        // risking a collision between two genuinely different names. They do not
+        // occur in practice; when they do, the walk handles them and this does
+        // not have to.
+        let text = name.to_str()?;
+        let folded_name = text.to_ascii_lowercase().into_bytes();
+
+        let mark = rel.len();
+        if !rel.is_empty() {
+            rel.push(b'/');
+        }
+        rel.extend_from_slice(&folded_name);
+
+        let ambiguous = !seen_here.insert(folded_name);
+        let key: Box<[u8]> = rel.as_slice().into();
+        let real = entry.path();
+        if ambiguous {
+            entries.insert(key, Resolved::Ambiguous);
+        } else {
+            entries.entry(key).or_insert_with(|| Resolved::One(real.clone()));
+        }
+
+        // `is_dir` FOLLOWS symlinks, exactly as `ci_lookup`'s `exists` and
+        // `read_dir` do, so the index sees what the walk sees. A symlink cycle
+        // is caught by the depth cap, which abandons the whole index.
+        //
+        // Asked once and reused: it is a syscall, and this runs per entry over
+        // every layer.
+        if real.is_dir() {
+            walk_layer(&real, rel, depth + 1, entries)?;
+        }
+        rel.truncate(mark);
+    }
+    Some(())
+}
+
+/// Fold a virtual path the way `eq_ignore_case` compares its components.
+fn fold_vpath(vpath: &str) -> Vec<u8> {
+    let mut key: Vec<u8> = Vec::with_capacity(vpath.len());
+    for comp in normalize(vpath).components() {
+        let Some(text) = comp.as_os_str().to_str() else { return Vec::new() };
+        if !key.is_empty() {
+            key.push(b'/');
+        }
+        key.extend_from_slice(text.to_ascii_lowercase().as_bytes());
+    }
+    key
 }
 
 /// Number of mutation-lock shards. Small: contention only matters when two
@@ -98,7 +246,11 @@ impl LayerStack {
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
         let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> =
             (0..PATH_LOCK_SHARDS).map(|_| std::sync::Mutex::new(())).collect();
-        Self { layers, overwrite, path_locks, resolve: Default::default() }
+        // Built here, synchronously, so "is the index ready" is never a question
+        // any caller can ask. `None` is a complete answer: it means every query
+        // walks the layers exactly as it did before this existed.
+        let lower = LowerIndex::build(&layers);
+        Self { layers, overwrite, path_locks, resolve: Default::default(), lower }
     }
 
     /// Take the mutation lock for `vpath`. Folded, so the two spellings of one
@@ -273,7 +425,19 @@ impl LayerStack {
         // the commonest case by far - Wine probes vastly more paths than exist,
         // and each of those probes used to pay a full hide check before finding
         // out there was nothing to hide.
-        let lower = self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?;
+        // The index answers from memory when it can, and hands the question back
+        // when it cannot - an ambiguous key, or no index at all. Both fall to the
+        // walk, which is the code this replaces and is never wrong.
+        let lower = match self.lower.as_ref().map(|i| i.get(&fold_vpath(vpath))) {
+            Some(Ok(Some(path))) => path.clone(),
+            // A complete index saying "nothing has it" is as good as the walk
+            // saying so, and this is the commonest answer by far: Wine probes
+            // far more paths than exist.
+            Some(Ok(None)) => return None,
+            Some(Err(())) | None => {
+                self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?
+            }
+        };
         if self.overwrite_hides(vpath) {
             return None;
         }
@@ -1340,10 +1504,11 @@ mod tests {
     }
 
     #[test]
-    fn resolution_counts_a_probe_per_component_per_layer() {
-        // The number that explains the cost. A miss in a layer still walks that
-        // layer's components before failing, so probes grow with LAYERS x DEPTH -
-        // which is why a 27-mod setup pays for a file only one mod provides.
+    fn the_index_answers_without_walking_the_layers() {
+        // What this whole change is for. Before the index a resolve cost one
+        // `exists` per component per layer, plus a full directory read for every
+        // one that missed - 95 probes and 37 enumerations on a real-sized stack.
+        // Now the layers are not touched at all.
         let t = TempTree::new();
         let (over, a, b) = (t.sub("ow"), t.sub("a"), t.sub("b"));
         put(&b, "textures/actors/skin.dds", "x");
@@ -1351,54 +1516,93 @@ mod tests {
         fs::create_dir_all(&over).unwrap();
         let stack = LayerStack::new(vec![a, b.clone()], over);
 
-        // Per-stack, so this starts at zero and no other test can perturb it -
-        // which is exactly what a process-wide counter could not promise.
-        let before = stack.resolve_stats().probes.load(Ordering::Relaxed);
-        assert_eq!(before, 0, "a fresh stack has resolved nothing");
-        let got = stack.resolve_read("textures/actors/skin.dds");
-        let spent = stack.resolve_stats().probes.load(Ordering::Relaxed) - before;
-
-        assert_eq!(got, Some(b.join("textures/actors/skin.dds")));
-        // Overwrite walks and fails, layer `a` walks and fails, layer `b`
-        // succeeds. The exact figure is not the point - that it scales with the
-        // number of layers is.
-        assert!(spent >= 7, "expected a probe per component per layer, got {spent}");
+        let st = stack.resolve_stats();
+        let (p0, s0) = (st.probes.load(Ordering::Relaxed), st.scans.load(Ordering::Relaxed));
+        assert_eq!(
+            stack.resolve_read("textures/actors/skin.dds"),
+            Some(b.join("textures/actors/skin.dds"))
+        );
+        let (probes, scans) = (
+            st.probes.load(Ordering::Relaxed) - p0,
+            st.scans.load(Ordering::Relaxed) - s0,
+        );
+        // One probe and one scan, and both belong to the OVERWRITE - the mutable
+        // layer, deliberately never indexed and still read live. Every layer
+        // below was answered from memory. Two layers here; the point is that
+        // this figure does not grow when there are twenty-seven.
+        assert_eq!(probes, 1, "only the overwrite may be probed, got {probes}");
+        assert_eq!(scans, 1, "and only its own miss may enumerate, got {scans}");
     }
 
     #[test]
-    fn a_spelling_that_does_not_match_costs_a_directory_scan() {
-        // The expensive half. An exact hit is one `exists`; a case mismatch
-        // reads the WHOLE directory to find its match, which is why a game
-        // asking for `ccbgssse001-fish.bsa` against `ccBGSSSE001-Fish.bsa` costs
-        // more than it looks.
+    fn the_index_folds_case_exactly_as_the_walk_did() {
+        // The reason the walk was slow was case folding, so an index that
+        // dropped it would be fast and useless: Bethesda games ask for
+        // `ccbgssse001-fish.bsa` while the file is `ccBGSSSE001-Fish.bsa`.
         let t = TempTree::new();
         let (over, l) = (t.sub("ow"), t.sub("l"));
         put(&l, "Textures/Skin.DDS", "x");
         fs::create_dir_all(&over).unwrap();
-        let stack = LayerStack::new(vec![l], over);
+        let stack = LayerStack::new(vec![l.clone()], over);
 
-        let before = stack.resolve_stats().scans.load(Ordering::Relaxed);
-        assert!(stack.resolve_read("textures/skin.dds").is_some(), "case must still fold");
-        let scans = stack.resolve_stats().scans.load(Ordering::Relaxed) - before;
-        assert!(scans >= 2, "both components were mis-spelled, got {scans}");
+        for spelling in ["textures/skin.dds", "TEXTURES/SKIN.DDS", "Textures/Skin.DDS"] {
+            assert_eq!(
+                stack.resolve_read(spelling),
+                Some(l.join("Textures/Skin.DDS")),
+                "{spelling} must reach the same file"
+            );
+        }
+        assert_eq!(stack.resolve_read("textures/absent.dds"), None);
+    }
 
-        // And here is the finding this test was written to disprove: spelling
-        // the path EXACTLY still costs directory scans, because they are not
-        // paid by the layer that has the file - they are paid by every layer
-        // that does NOT. A missing component fails its `exists` and then reads
-        // the whole directory to be sure the name is not merely spelled
-        // differently.
-        //
-        // So a file provided by one mod costs an enumeration in each of the
-        // others. With 27 layers that is 26 wasted directory reads per resolve,
-        // and resolve runs on lookup, getattr and open alike.
-        let before = stack.resolve_stats().scans.load(Ordering::Relaxed);
-        assert!(stack.resolve_read("Textures/Skin.DDS").is_some());
-        let exact = stack.resolve_stats().scans.load(Ordering::Relaxed) - before;
+    #[test]
+    fn two_names_differing_only_by_case_defer_to_the_walk() {
+        // A folded map holds one key, but `ci_lookup` tries the exact spelling
+        // first - so with `Skin.dds` and `SKIN.DDS` side by side the winner
+        // depends on how the caller asked. The index cannot represent that, so
+        // it declines and the walk answers, exactly as before.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "t/Skin.dds", "one");
+        put(&l, "t/SKIN.DDS", "two");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l.clone()], over);
+
+        // Each exact spelling still finds its own file - the property the index
+        // would have broken by picking a winner at build time.
+        assert_eq!(fs::read_to_string(stack.resolve_read("t/Skin.dds").unwrap()).unwrap(), "one");
+        assert_eq!(fs::read_to_string(stack.resolve_read("t/SKIN.DDS").unwrap()).unwrap(), "two");
+        // And it cost a walk, which is the point: declining is the safe answer.
+        let before = stack.resolve_stats().probes.load(Ordering::Relaxed);
+        let _ = stack.resolve_read("t/skin.dds");
         assert!(
-            exact > 0,
-            "a correctly spelled path still scans, because the OVERWRITE layer \
-             misses it first - this is the cost, not a quirk"
+            stack.resolve_stats().probes.load(Ordering::Relaxed) - before > 1,
+            "an ambiguous key must fall back to the layer walk"
         );
+    }
+
+    #[test]
+    fn no_index_means_the_old_behaviour_and_the_same_answers() {
+        // The escape hatch has to produce identical results, or it is not an
+        // escape hatch, it is a second implementation.
+        let t = TempTree::new();
+        let (over, a, b) = (t.sub("ow"), t.sub("a"), t.sub("b"));
+        put(&a, "shared.esp", "high");
+        put(&b, "shared.esp", "low");
+        put(&b, "only-low.esp", "x");
+        fs::create_dir_all(&over).unwrap();
+
+        let indexed = LayerStack::new(vec![a.clone(), b.clone()], over.clone());
+        // SAFETY: single-threaded here, and the variable is read once per
+        // LayerStack::new. Restored immediately below.
+        unsafe { std::env::set_var("EIDOS_NO_INDEX", "1") };
+        let walked = LayerStack::new(vec![a.clone(), b.clone()], over);
+        unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
+
+        for q in ["shared.esp", "SHARED.ESP", "only-low.esp", "absent.esp", "a/b/c.esp"] {
+            assert_eq!(indexed.resolve_read(q), walked.resolve_read(q), "disagreed on {q}");
+        }
+        // And priority is the layer order, not the disk order.
+        assert_eq!(indexed.resolve_read("shared.esp"), Some(a.join("shared.esp")));
     }
 }
