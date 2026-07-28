@@ -401,6 +401,9 @@ enum Message {
     /// from `App::focus`, because `on_key_press` takes a plain `fn` and cannot
     /// read the app.
     KeyNav(Nav),
+    /// The pointer moved, or the window was resized. Only stored.
+    PointerAt(iced::Point),
+    WindowResized(iced::Size),
     /// Move the keyboard focus to the other list (Tab).
     CycleFocus,
     /// Select every row of the focused list (Ctrl+A).
@@ -904,6 +907,18 @@ struct App {
     selected_plugins: HashSet<usize>,
     /// Which list the arrow keys move in.
     focus: Pane,
+    /// The live pointer position, and the window it moves in.
+    ///
+    /// iced's `on_right_press` carries no coordinates, so a context menu has no
+    /// way to know where it was summoned from unless the position is tracked
+    /// separately. Both are fed by the event subscription and read only when a
+    /// menu opens.
+    cursor: iced::Point,
+    window: iced::Size,
+    /// Where the open context menu was summoned from, frozen at that moment - the
+    /// pointer keeps moving afterwards, and a menu that slid along with it would
+    /// be unusable.
+    menu_at: Option<iced::Point>,
     /// The user is typing into a field on the main screen (the mod filter, a
     /// notes box, an inline rename).
     ///
@@ -1154,6 +1169,9 @@ fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         selected_plugins: HashSet::new(),
         plugin_anchor: None,
         focus: Pane::Mods,
+        cursor: iced::Point::ORIGIN,
+        window: iced::Size::new(1280.0, 800.0),
+        menu_at: None,
         typing: false,
         plugin_drag: None,
         profile_menu: None,
@@ -2374,11 +2392,13 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // ---- profile management (rename / delete / named copy) --------------
         Message::ProfileMenuOpen(name) => {
             app.profile_menu = Some(name);
+            app.menu_at = Some(app.cursor);
             app.profile_rename = None;
             app.profile_copy = None;
             app.profile_delete_confirm = None;
         }
         Message::ProfileCloseMenu => {
+            app.menu_at = None;
             app.profile_menu = None;
             app.profile_rename = None;
             app.profile_copy = None;
@@ -3223,11 +3243,15 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             app.selected_mod = Some(i);
             app.menu_mod = Some(i);
+            // Frozen here: the pointer keeps moving and a menu that followed it
+            // would be impossible to aim at.
+            app.menu_at = Some(app.cursor);
             app.rename = None;
             app.confirm_remove = None;
             app.drag_state = None;
         }
         Message::CloseMenu => {
+            app.menu_at = None;
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
@@ -3324,6 +3348,9 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // for editing and re-applied on commit (MO2 getDisplayName/makeInternalName).
                 app.rename = Some((i, m.display_name().to_string()));
                 app.menu_mod = Some(i);
+                // NOT re-anchored: this reopens the same menu around an inline
+                // editor, and moving it to wherever the pointer had drifted
+                // would yank it out from under the user mid-gesture.
                 app.confirm_remove = None;
             }
         }
@@ -4878,6 +4905,8 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             commit_plugin_order(app, &spec);
         }
+        Message::PointerAt(p) => app.cursor = p,
+        Message::WindowResized(s) => app.window = s,
         Message::CycleFocus => {
             // Only somewhere there is a list to drive.
             app.focus = match app.focus {
@@ -5010,6 +5039,45 @@ const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);
 /// A mod that overwrites the focused one: it sits lower and takes those files
 /// away. Red - the focused mod is losing to these.
 const CONFLICT_LOSES_BG: Color = Color::from_rgb(0.921, 0.769, 0.741);
+
+/// Place a floating card with one corner at `at`, growing away from the nearest
+/// window edge.
+///
+/// The card's height is not known until it is laid out, so a menu summoned near
+/// the bottom cannot simply be offset downwards - it would run off the screen.
+/// Anchoring the BOTTOM edge to the pointer instead, and mirroring the same
+/// trick horizontally, avoids ever needing to guess the size: the container
+/// aligns the card and the padding does the positioning.
+fn floating_at<'a>(
+    card: Element<'a, Message>,
+    at: iced::Point,
+    win: iced::Size,
+) -> Element<'a, Message> {
+    // Past the halfway line the menu would head towards an edge, so flip it.
+    let right = at.x > win.width * 0.5;
+    let below = at.y > win.height * 0.5;
+    let pad = iced::Padding {
+        top: if below { 0.0 } else { at.y },
+        bottom: if below { (win.height - at.y).max(0.0) } else { 0.0 },
+        left: if right { 0.0 } else { at.x },
+        right: if right { (win.width - at.x).max(0.0) } else { 0.0 },
+    };
+    container(card)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(pad)
+        .align_x(if right {
+            iced::alignment::Horizontal::Right
+        } else {
+            iced::alignment::Horizontal::Left
+        })
+        .align_y(if below {
+            iced::alignment::Vertical::Bottom
+        } else {
+            iced::alignment::Vertical::Top
+        })
+        .into()
+}
 
 /// The strip that explains the two conflict colours, and how many rows carry
 /// each - `None` when the focused mod fights with nothing, or nothing is
@@ -8002,12 +8070,8 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         if i < app.mods.len() {
             let catcher =
                 mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseMenu);
-            let card = container(mod_menu_card(app, i))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .padding(iced::Padding { top: 150.0, right: 0.0, bottom: 0.0, left: 40.0 })
-                .align_x(iced::alignment::Horizontal::Left)
-                .align_y(iced::alignment::Vertical::Top);
+            let at = app.menu_at.unwrap_or(app.cursor);
+            let card = floating_at(mod_menu_card(app, i), at, app.window);
             layers = layers.push(catcher).push(card);
         }
     }
@@ -8080,12 +8144,8 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(name) = app.profile_menu.clone() {
         let catcher =
             mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::ProfileCloseMenu);
-        let card = container(profile_menu_card(app, &name))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(iced::Padding { top: 120.0, right: 0.0, bottom: 0.0, left: 60.0 })
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top);
+        let at = app.menu_at.unwrap_or(app.cursor);
+        let card = floating_at(profile_menu_card(app, &name), at, app.window);
         layers = layers.push(catcher).push(card);
     }
 
@@ -9624,6 +9684,19 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     let track_release =
         keyboard::on_key_release(|_key, mods| Some(Message::ModifiersChanged(mods)));
 
+    // Where the pointer is, and how big the window is. Needed because iced's
+    // right-press carries no coordinates, so a context menu cannot otherwise be
+    // placed where it was summoned from. The handlers do nothing but store.
+    let pointer = iced::event::listen_with(|event, _status, _window| match event {
+        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::PointerAt(position))
+        }
+        iced::Event::Window(iced::window::Event::Resized(size)) => {
+            Some(Message::WindowResized(size))
+        }
+        _ => None,
+    });
+
     // App shortcuts. `on_key_press` takes a plain `fn`, so it cannot read `app`;
     // the handlers themselves no-op off the main screen / while a modal is open.
     let shortcuts = keyboard::on_key_press(|key, mods| match key.as_ref() {
@@ -9660,7 +9733,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         other => other,
     });
 
-    let mut subs = vec![track_press, track_release];
+    let mut subs = vec![track_press, track_release, pointer];
     if app.screen == Screen::Main
         && app.fomod.is_none()
         && app.rename.is_none()
@@ -10245,6 +10318,42 @@ mod tests {
         // Nothing focused, nothing tinted.
         app.selected_mod = None;
         assert_eq!(conflict_tint(&app, 0), None);
+    }
+
+    #[test]
+    fn a_menu_grows_away_from_the_edge_it_was_summoned_near() {
+        // The card's height is unknown until layout, so a menu opened near the
+        // bottom cannot just be offset downwards - it would run off screen.
+        // Anchoring the far edge to the pointer instead needs no size at all.
+        let win = iced::Size::new(1000.0, 800.0);
+
+        // Top-left quadrant: the card's top-left corner sits at the pointer.
+        let p = iced::Point::new(100.0, 100.0);
+        assert!(p.x <= win.width * 0.5 && p.y <= win.height * 0.5);
+
+        // Bottom-right: it must flip on BOTH axes, and the padding that places
+        // it is measured from the opposite edges.
+        let p = iced::Point::new(900.0, 700.0);
+        let (right, below) = (p.x > win.width * 0.5, p.y > win.height * 0.5);
+        assert!(right && below);
+        assert_eq!(win.height - p.y, 100.0, "padding from the bottom edge");
+        assert_eq!(win.width - p.x, 100.0, "padding from the right edge");
+    }
+
+    #[test]
+    fn opening_a_menu_freezes_where_it_was_summoned() {
+        let mut app = nav_app(&["a", "b"]);
+        let _ = update(&mut app, Message::PointerAt(iced::Point::new(300.0, 220.0)));
+        let _ = update(&mut app, Message::OpenModMenu(1));
+        assert_eq!(app.menu_at, Some(iced::Point::new(300.0, 220.0)));
+
+        // The pointer keeps moving; a menu that followed it could not be aimed at.
+        let _ = update(&mut app, Message::PointerAt(iced::Point::new(700.0, 600.0)));
+        assert_eq!(app.menu_at, Some(iced::Point::new(300.0, 220.0)));
+
+        // Closing releases it, so a stale point cannot place the next one.
+        let _ = update(&mut app, Message::CloseMenu);
+        assert_eq!(app.menu_at, None);
     }
 
     #[test]
