@@ -7125,6 +7125,20 @@ fn download_state_label(state: DownloadState) -> &'static str {
     }
 }
 
+// Downloads column widths, declared once so the header and the rows cannot drift
+// apart. Each is sized to its widest real content and no more: every pixel they
+// do not take goes to the name, which is the only column whose content has no
+// bound - Nexus file names run to eighty characters.
+//
+// They were 80/80/90/150, which is 400px of a pane that is roughly 500 wide once
+// the mod list has its half. That left about 68px for the name, so "Dynamic Armor
+// Physics" came out three lines tall. The action column was the worst of it: 150
+// reserved for two buttons that measure about 100.
+const DL_C_VERSION: f32 = 56.0; // "1.0.1"
+const DL_C_SIZE: f32 = 66.0; // "10.3 MiB"
+const DL_C_STATUS: f32 = 66.0; // "Installed"
+const DL_C_ACTIONS: f32 = 112.0; // Install + Delete, and "Confirm?" is wider
+
 fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(inst) = &app.created else {
         return text("No instance open.").into();
@@ -7142,10 +7156,10 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let col_header = Row::new()
         .spacing(8)
         .push(text("Name").size(11.0).width(Length::Fill))
-        .push(text("Version").size(11.0).width(Length::Fixed(80.0)))
-        .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
-        .push(text("Status").size(11.0).width(Length::Fixed(90.0)))
-        .push(Space::new().width(Length::Fixed(150.0)));
+        .push(text("Version").size(11.0).width(Length::Fixed(DL_C_VERSION)))
+        .push(text("Size").size(11.0).width(Length::Fixed(DL_C_SIZE)))
+        .push(text("Status").size(11.0).width(Length::Fixed(DL_C_STATUS)))
+        .push(Space::new().width(Length::Fixed(DL_C_ACTIONS)));
 
     let mut rows = Column::new().spacing(2);
     if app.downloads.is_empty() {
@@ -7171,13 +7185,13 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             .spacing(8)
             .align_y(iced::Alignment::Center)
             .push(text(display).size(12.0).width(Length::Fill))
-            .push(text(row.version.clone()).size(11.0).width(Length::Fixed(80.0)))
-            .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(80.0)))
-            .push(text(download_state_label(row.state)).size(11.0).width(Length::Fixed(90.0)))
+            .push(text(row.version.clone()).size(11.0).width(Length::Fixed(DL_C_VERSION)))
+            .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(DL_C_SIZE)))
+            .push(text(download_state_label(row.state)).size(11.0).width(Length::Fixed(DL_C_STATUS)))
             .push(
                 Row::new()
                     .spacing(4)
-                    .width(Length::Fixed(150.0))
+                    .width(Length::Fixed(DL_C_ACTIONS))
                     .push(install)
                     .push(del),
             );
