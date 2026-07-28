@@ -14,6 +14,7 @@
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fs;
+use std::sync::atomic::AtomicU64;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
@@ -165,6 +166,18 @@ impl LayerStack {
     /// otherwise each mod layer is tried in priority order, falling through to
     /// the game data layer last. Returns `None` if nothing provides the path.
     pub fn resolve_read(&self, vpath: &str) -> Option<PathBuf> {
+        if !*TIMING_ON {
+            return self.resolve_read_inner(vpath);
+        }
+        let t = std::time::Instant::now();
+        let r = self.resolve_read_inner(vpath);
+        RESOLVE_STATS
+            .ns
+            .fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        r
+    }
+
+    fn resolve_read_inner(&self, vpath: &str) -> Option<PathBuf> {
         // A hidden file (or anything under a hidden directory) is not part of the
         // virtual view at all: `list_dir` never emits it, and refusing to resolve
         // it here means a path guessed or remembered by the game cannot reach it
@@ -518,15 +531,50 @@ fn join_vpath(parent: &str, name: &str) -> String {
 ///
 /// The exact-case join is tried first as a fast path; only on a miss do we scan
 /// the directory for a case-insensitive match.
+/// How much filesystem work path resolution is doing, for the FUSE layer to
+/// report. Free when nobody reads them: two relaxed increments on a path that
+/// already performs a syscall.
+///
+/// They exist because the handler timings could say resolution was slow without
+/// saying WHY, and the two candidates want opposite fixes: many cheap `exists`
+/// calls means too many layers are being asked, while a few `read_dir` scans
+/// means case folding is falling back to enumerating whole directories.
+pub static RESOLVE_STATS: ResolveStats = ResolveStats {
+    probes: AtomicU64::new(0),
+    scans: AtomicU64::new(0),
+    ns: AtomicU64::new(0),
+};
+
+pub struct ResolveStats {
+    /// `exists()` calls: one per path component per layer tried.
+    pub probes: AtomicU64,
+    /// Full directory reads, taken when a component's spelling did not match
+    /// byte-for-byte. Orders of magnitude dearer than a probe.
+    pub scans: AtomicU64,
+    /// Nanoseconds spent inside `resolve_read`. Timed here rather than at the
+    /// FUSE call sites because there are a dozen of those and one of them would
+    /// eventually be added without its stopwatch.
+    pub ns: AtomicU64,
+}
+
+/// Whether to time resolution. Same switch as the FUSE stats, read once: the
+/// counters above are two relaxed adds on a path that already syscalls, but a
+/// clock read twice per resolve is worth gating.
+static TIMING_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0")
+});
+
 fn ci_lookup(root: &Path, vpath: &str) -> Option<PathBuf> {
     let mut current = root.to_path_buf();
     for component in normalize(vpath).components() {
         let want = component.as_os_str();
         let exact = current.join(want);
+        RESOLVE_STATS.probes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if exact.exists() {
             current = exact;
             continue;
         }
+        RESOLVE_STATS.scans.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let entry = fs::read_dir(&current)
             .ok()?
             .filter_map(Result::ok)
@@ -1245,5 +1293,65 @@ mod tests {
         assert_eq!(dest, over.join("a/b.txt"));
         assert!(dest.parent().unwrap().is_dir()); // parents materialised
         assert!(!dest.exists()); // no lower file copied up, just made writable
+    }
+
+    #[test]
+    fn resolution_counts_a_probe_per_component_per_layer() {
+        // The number that explains the cost. A miss in a layer still walks that
+        // layer's components before failing, so probes grow with LAYERS x DEPTH -
+        // which is why a 27-mod setup pays for a file only one mod provides.
+        let t = TempTree::new();
+        let (over, a, b) = (t.sub("ow"), t.sub("a"), t.sub("b"));
+        put(&b, "textures/actors/skin.dds", "x");
+        fs::create_dir_all(a.join("textures/actors")).unwrap();
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![a, b.clone()], over);
+
+        let before = RESOLVE_STATS.probes.load(Ordering::Relaxed);
+        let got = stack.resolve_read("textures/actors/skin.dds");
+        let spent = RESOLVE_STATS.probes.load(Ordering::Relaxed) - before;
+
+        assert_eq!(got, Some(b.join("textures/actors/skin.dds")));
+        // Overwrite walks and fails, layer `a` walks and fails, layer `b`
+        // succeeds. The exact figure is not the point - that it scales with the
+        // number of layers is.
+        assert!(spent >= 7, "expected a probe per component per layer, got {spent}");
+    }
+
+    #[test]
+    fn a_spelling_that_does_not_match_costs_a_directory_scan() {
+        // The expensive half. An exact hit is one `exists`; a case mismatch
+        // reads the WHOLE directory to find its match, which is why a game
+        // asking for `ccbgssse001-fish.bsa` against `ccBGSSSE001-Fish.bsa` costs
+        // more than it looks.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Textures/Skin.DDS", "x");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over);
+
+        let before = RESOLVE_STATS.scans.load(Ordering::Relaxed);
+        assert!(stack.resolve_read("textures/skin.dds").is_some(), "case must still fold");
+        let scans = RESOLVE_STATS.scans.load(Ordering::Relaxed) - before;
+        assert!(scans >= 2, "both components were mis-spelled, got {scans}");
+
+        // And here is the finding this test was written to disprove: spelling
+        // the path EXACTLY still costs directory scans, because they are not
+        // paid by the layer that has the file - they are paid by every layer
+        // that does NOT. A missing component fails its `exists` and then reads
+        // the whole directory to be sure the name is not merely spelled
+        // differently.
+        //
+        // So a file provided by one mod costs an enumeration in each of the
+        // others. With 27 layers that is 26 wasted directory reads per resolve,
+        // and resolve runs on lookup, getattr and open alike.
+        let before = RESOLVE_STATS.scans.load(Ordering::Relaxed);
+        assert!(stack.resolve_read("Textures/Skin.DDS").is_some());
+        let exact = RESOLVE_STATS.scans.load(Ordering::Relaxed) - before;
+        assert!(
+            exact > 0,
+            "a correctly spelled path still scans, because the OVERWRITE layer \
+             misses it first - this is the cost, not a quirk"
+        );
     }
 }

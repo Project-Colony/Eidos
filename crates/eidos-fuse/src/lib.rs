@@ -382,7 +382,23 @@ impl Stats {
         }
         let each: Vec<String> =
             parts.iter().map(|(n, ns)| format!("{n} {:.0}", ms(*ns))).collect();
-        format!("\n  time in handlers: {:.0} ms total ({})", ms(total), each.join(", "))
+        // Resolution is reported AGAINST the handler total, not beside it: it
+        // happens inside those handlers, and the question is what share of them
+        // is the layer walk rather than the disk. Probes and scans separate the
+        // two ways it can be slow - too many layers asked, or case folding
+        // falling back to reading whole directories.
+        let r = &eidos_core::RESOLVE_STATS;
+        let res = r.ns.load(Ordering::Relaxed);
+        let pct = if total == 0 { 0.0 } else { res as f64 * 100.0 / total as f64 };
+        format!(
+            "\n  time in handlers: {:.0} ms total ({})\
+             \n  path resolution: {:.0} ms, {pct:.0}% of that - {} probes, {} directory scans",
+            ms(total),
+            each.join(", "),
+            ms(res),
+            r.probes.load(Ordering::Relaxed),
+            r.scans.load(Ordering::Relaxed),
+        )
     }
 }
 
