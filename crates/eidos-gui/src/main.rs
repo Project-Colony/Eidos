@@ -4063,6 +4063,20 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("'{rel}' is no longer there."));
                 return Task::none();
             }
+            // Hiding renames a file INSIDE a mod directory, which is a layer of
+            // a live mount while a session is running - and this was the one
+            // mutation in this file that took no lock, so it could rename a file
+            // out from under a playing game. Every other mutating handler here
+            // takes it; this one did not, and the omission is invisible until it
+            // is not.
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot change hidden files: {e}."));
+                    return Task::none();
+                }
+            };
             let hide = !path_is_hidden(&rel);
             match set_hidden(&target, hide) {
                 Ok(_) => {
