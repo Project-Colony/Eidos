@@ -10,6 +10,19 @@
 //! assertions flaky. If the namespace cannot be entered (userns disabled) or a
 //! FUSE mount cannot be established (no `/dev/fuse`, restricted sandbox), the
 //! affected tests are skipped so the suite stays green.
+//!
+//! RUN THIS SUITE TWICE. By default the daemon declines `opendir` so the kernel
+//! opens and reads directories from its own cache, which is where nearly all of
+//! a real session's directory cost went. `EIDOS_FUSE_OPENDIR=1` restores the
+//! per-handle snapshots. The two paths reach `readdir` completely differently -
+//! one through a snapshot pinned to a file handle, one through the by-path
+//! listing cache - so a listing or invalidation bug can live in either alone.
+//! Both must pass:
+//!
+//! ```sh
+//! cargo test -p eidos-fuse --test union
+//! EIDOS_FUSE_OPENDIR=1 cargo test -p eidos-fuse --test union
+//! ```
 
 use std::fs;
 use std::os::unix::ffi::OsStrExt;

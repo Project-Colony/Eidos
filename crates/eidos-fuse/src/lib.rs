@@ -34,7 +34,7 @@ use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -646,6 +646,9 @@ pub struct Eidos {
     aliases: Mutex<HashMap<u64, Vec<(u64, String)>>>,
     /// Set once the session is mounted; used to push those invalidations.
     notifier: Arc<Mutex<Option<fuser::Notifier>>>,
+    /// The kernel advertised `FUSE_NO_OPENDIR_SUPPORT`, so it can open and read
+    /// directories without asking us. Negotiated in `init`; see [`Eidos::opendir`].
+    no_opendir: AtomicBool,
 }
 
 /// Join a parent virtual path and a child name into a virtual path.
@@ -720,6 +723,7 @@ impl Eidos {
             open_dirs: Mutex::new(HashMap::new()),
             dir_cache: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
+            no_opendir: AtomicBool::new(false),
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
             aliases: Mutex::new(HashMap::new()),
@@ -1049,6 +1053,17 @@ impl Filesystem for Eidos {
             let _ = config.set_max_stack_depth(1);
         }
 
+        // Zero-message opendir. Recorded here rather than probed later because
+        // this is the ONLY place the negotiated capability is visible, and
+        // answering ENOSYS to a kernel that did not advertise it would not make
+        // directory opens cheap - it would make them FAIL.
+        //
+        // `EIDOS_FUSE_OPENDIR=1` keeps the handles, for bisecting a directory
+        // bug against the old path.
+        let forced_off = std::env::var("EIDOS_FUSE_OPENDIR").is_ok_and(|v| v != "0");
+        let cap = config.capabilities().contains(InitFlags::FUSE_NO_OPENDIR_SUPPORT);
+        self.no_opendir.store(cap && !forced_off, Ordering::Relaxed);
+
         // FUSE_WRITEBACK_CACHE is deliberately NOT enabled. It makes writable
         // shared mmap work, but it breaks loading Windows DLLs from the mount
         // under Wine/Proton: an image loader dirties MAP_PRIVATE copy-on-write
@@ -1357,6 +1372,28 @@ impl Filesystem for Eidos {
         // measured at 220000 of them in ninety seconds of Skyrim startup, for
         // listings nobody ever read. Offsets stay stable because the snapshot is
         // still taken exactly once per handle, just later.
+        // Declining ONCE is the whole optimisation: the kernel sets `no_opendir`
+        // on the connection and never sends another OPENDIR, opening and reading
+        // directories from its own cache instead.
+        //
+        // This is the dominant cost in a real session. Measured on Skyrim SE:
+        // 273214 directory opens, 94.4% of which never enumerated anything -
+        // Wine issues an unconditional `openat` on the parent directory for
+        // every lookup of a file that does not exist (ntdll's
+        // get_dir_case_sensitivity_stat), and its cache for that answer is
+        // compiled in on macOS only. The kernel has no cache for an open, so
+        // every one of those reached this daemon. On a synthetic mount the
+        // count falls from 23026 to 1, a directory open from 13.9 us to 2.8 us
+        // and an enumeration from 102 us to 7.3 us - the kernel serving both
+        // from the page cache instead of round-tripping to us.
+        //
+        // `readdir` already handles this: its fallback resolves the path from
+        // the inode and reads through the by-path listing cache, so offsets stay
+        // stable across calls without a per-handle snapshot.
+        if self.no_opendir.load(Ordering::Relaxed) {
+            reply.error(Errno::ENOSYS);
+            return;
+        }
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
