@@ -155,12 +155,50 @@ impl LayerStack {
     /// directory). `resolve_read` checks the overwrite layer first, so a path
     /// the game re-created still resolves; only un-recreated lower paths stay
     /// hidden.
-    fn hidden_by_whiteout(&self, vpath: &str) -> bool {
+    ///
+    /// ONE top-down descent answers both questions this used to ask separately.
+    /// `hidden_by_whiteout` and `under_opaque_dir` each restarted from the
+    /// overwrite root for every prefix of the path, so between them they walked
+    /// it 2d-1 times to answer a question about d levels - quadratic work, and
+    /// each of those walks paid `ci_lookup`'s enumeration whenever a component's
+    /// spelling did not match. Descending once is linear and reads each level
+    /// exactly once.
+    fn overwrite_hides(&self, vpath: &str) -> bool {
         let norm = normalize(vpath);
-        let mut prefix = PathBuf::new();
-        for comp in norm.components() {
-            prefix.push(comp);
-            if self.find_whiteout(&prefix.to_string_lossy()).is_some() {
+        let comps: Vec<_> = norm.components().collect();
+        let mut dir = self.overwrite.clone();
+        for (i, comp) in comps.iter().enumerate() {
+            let want = comp.as_os_str().to_string_lossy().to_ascii_lowercase();
+            let marker = format!("{WHITEOUT_PREFIX}{want}");
+            // ONE enumeration answers both questions at this level: is this
+            // component whited out, and which real entry do we descend into.
+            //
+            // It has to be an enumeration rather than a probe, because a marker
+            // is WRITTEN with the original case (`whiteout_path`) and MATCHED
+            // without it (`find_whiteout`): `.eidoswh.Foo.esp` must answer a
+            // query for `foo.esp`, so there is no single name to probe for.
+            let Ok(entries) = fs::read_dir(&dir) else {
+                // The overwrite does not go this deep, so it hides nothing here
+                // and cannot hide anything below. Also the unreadable-directory
+                // case, where both original checks likewise concluded "no".
+                return false;
+            };
+            let mut child = None;
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+                if name == marker {
+                    return true;
+                }
+                if name == want {
+                    child = Some(e.path());
+                }
+            }
+            let Some(next) = child else { return false };
+            dir = next;
+            // Opacity applies to proper ANCESTORS only: a directory deleted and
+            // re-created hides what lies beneath it, but the leaf itself being
+            // opaque says nothing about the leaf.
+            if i + 1 < comps.len() && dir.join(OPAQUE_MARKER).exists() {
                 return true;
             }
         }
@@ -227,29 +265,19 @@ impl LayerStack {
         if let Some(p) = self.ci_lookup(&self.overwrite, vpath) {
             return Some(p);
         }
-        if self.hidden_by_whiteout(vpath) || self.under_opaque_dir(vpath) {
+        // Ask the layers BEFORE asking what the overwrite hides.
+        //
+        // Provably the same function: if nothing below provides the path the
+        // answer is `None` whatever the whiteouts say, and if something does,
+        // the hide check still gets the last word. What changes is the cost of
+        // the commonest case by far - Wine probes vastly more paths than exist,
+        // and each of those probes used to pay a full hide check before finding
+        // out there was nothing to hide.
+        let lower = self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?;
+        if self.overwrite_hides(vpath) {
             return None;
         }
-        self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))
-    }
-
-    /// Whether `vpath` lies under a directory that was deleted and then re-created
-    /// in the overwrite layer (carrying an opaque marker). Such a directory hides
-    /// its lower-layer contents, so a lower file beneath it must not resolve.
-    fn under_opaque_dir(&self, vpath: &str) -> bool {
-        let norm = normalize(vpath);
-        let comps: Vec<_> = norm.components().collect();
-        let mut prefix = PathBuf::new();
-        // Proper ancestors only: each directory above the leaf component.
-        for comp in comps.iter().take(comps.len().saturating_sub(1)) {
-            prefix.push(comp);
-            if let Some(dir) = self.ci_lookup(&self.overwrite, &prefix.to_string_lossy()) {
-                if dir.join(OPAQUE_MARKER).exists() {
-                    return true;
-                }
-            }
-        }
-        false
+        Some(lower)
     }
 
     /// The overwrite layer's root directory (for statfs / free-space queries).

@@ -20,6 +20,8 @@ const LAYERS: usize = 27;
 /// than what it costs on an empty directory.
 const FILES_PER_DIR: usize = 200;
 const RESOLVES: u32 = 200;
+/// Files in the overwrite, which the hide checks walk on every resolve.
+const OVERWRITE_FILES: usize = 800;
 
 fn main() {
     let root = std::env::temp_dir().join("eidos-resolve-cost");
@@ -40,8 +42,14 @@ fn main() {
     let last = layers.last().unwrap().clone();
     fs::create_dir_all(last.join("textures/actors/character/male/body")).unwrap();
     fs::write(last.join(rel), b"data").unwrap();
+    // A POPULATED overwrite, because an empty one flatters the measurement: the
+    // whiteout and opacity checks walk it once per path prefix, and walking an
+    // empty directory costs nothing. The real one held 4,903 files.
     let overwrite = root.join("overwrite");
-    fs::create_dir_all(&overwrite).unwrap();
+    fs::create_dir_all(overwrite.join("textures/actors/character")).unwrap();
+    for j in 0..OVERWRITE_FILES {
+        fs::write(overwrite.join(format!("textures/actors/character/o{j:04}.dds")), b"x").unwrap();
+    }
 
     let stack = eidos_core::LayerStack::new(layers, overwrite);
     let s = stack.resolve_stats();
