@@ -10,7 +10,7 @@
 //! bind-stash) inside a private namespace, then runs the command through it.
 
 use std::os::unix::process::ExitStatusExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_games::{detect, home, DetectedGame};
@@ -625,6 +625,30 @@ fn swap_script_extender(id: &str, command: &mut [String]) {
 /// deploy the active profile's INIs (+ BSA invalidation), bind its saves, mount
 /// the merged view over the game's Data dir, run `command` through it, then
 /// capture game-modified INIs back into the profile. Never returns.
+/// Re-root a path that lives inside an enabled mod onto the game's Data directory,
+/// so a tool shipped as a mod runs from the MERGED view instead of from its own
+/// folder. `None` when the path is not inside any mounted layer.
+///
+/// This is MO2's `adjustForVirtualized` (processrunner.cpp:13, whose comment reads
+/// `mods\FNIS\path\exe => game\data\path\exe`). It matters because tools of this
+/// kind read their data relative to their own executable: BodySlide ships an EMPTY
+/// `SliderSets`, and every body it can build comes from CBBE and the outfit mods.
+/// Launched from its own folder it finds nothing - which is not a crash, just an
+/// empty list, so it looks like the tool is broken rather than misplaced.
+///
+/// Where MO2 matches the mods folder by string prefix and drops one path component,
+/// this matches against the layers actually mounted. That is the same answer for a
+/// plain mod, and a better one twice over: a mod whose real content sits in a
+/// subdirectory is re-rooted from the subdirectory that gets mounted, and a DISABLED
+/// mod matches nothing, so it is not silently mapped to a path that will not exist.
+fn virtualize_under_data(path: &Path, layers: &[PathBuf], data: &Path) -> Option<PathBuf> {
+    // Longest match: layers are whole mod roots, but nothing forbids one being
+    // nested inside another, and the innermost is the one that provides the file.
+    let layer = layers.iter().filter(|l| path.starts_with(l)).max_by_key(|l| l.as_os_str().len())?;
+    let tail = path.strip_prefix(layer).ok()?;
+    (!tail.as_os_str().is_empty()).then(|| data.join(tail))
+}
+
 fn run_through_view(
     id: &str,
     game: &DetectedGame,
@@ -1055,10 +1079,30 @@ fn cmd_tool(args: &[String]) {
             } else {
                 game.install_path.join(&tool.exe)
             };
+            // Existence is checked on the REAL path, before any rewriting: the
+            // virtual path deliberately does not exist yet, it only appears once
+            // the union is mounted.
             if !exe.is_file() {
                 eprintln!("Tool executable not found: {}", exe.display());
                 exit(1);
             }
+            // `load_order`, NOT `root_layers`: the latter is the Root Builder list
+            // (mods with a `root/` subdir, destined for the game's install folder)
+            // and would have matched almost nothing.
+            let layers = inst.load_order();
+            let exe = virtualize_under_data(&exe, &layers, &game.data_path).unwrap_or_else(|| {
+                // Not inside an enabled mod: either a game-root tool (xEdit, the
+                // script extender) which is already where it should be, or a mod
+                // the user has disabled, in which case its own files are not in the
+                // view either and running it from its folder is the only option.
+                if exe.starts_with(inst.mods_dir()) {
+                    eprintln!(
+                        "eidos tool: '{title}' lives in a mod that is not enabled - it will run \
+                         from its own folder and will not see other mods' files."
+                    );
+                }
+                exe.clone()
+            });
             let Some(compat) = game.compatdata.as_ref() else {
                 eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
                 exit(1);
@@ -1110,8 +1154,16 @@ fn cmd_tool(args: &[String]) {
             }
             let mut command = run.command(&exe, &tool.args);
             command.extend(extra);
-            // MO2's default working directory for a tool is its own folder.
-            let cwd = tool.workdir.clone().or_else(|| exe.parent().map(|p| p.to_path_buf()));
+            // MO2's default working directory for a tool is its own folder - which,
+            // after the rewrite above, is the merged one. An explicit workdir gets
+            // the same treatment (MO2 adjusts cwd and binary independently).
+            let cwd = tool
+                .workdir
+                .clone()
+                .map(|c| {
+                    virtualize_under_data(&c, &layers, &game.data_path).unwrap_or(c)
+                })
+                .or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
@@ -2211,6 +2263,72 @@ mod tests {
         assert_eq!(
             normal.code().unwrap_or_else(|| 128 + normal.signal().unwrap_or(1)),
             3
+        );
+    }
+
+    #[test]
+    fn a_tool_inside_a_mod_runs_from_the_merged_view() {
+        // MO2's `mods\FNIS\path\exe => game\data\path\exe`. BodySlide reads
+        // its slider sets relative to its own executable, and ships none of them:
+        // run it from its own folder and the list is empty.
+        let data = PathBuf::from("/games/skyrim/Data");
+        let layers = vec![PathBuf::from("/inst/mods/BodySlide 5.8.2")];
+        assert_eq!(
+            virtualize_under_data(
+                Path::new("/inst/mods/BodySlide 5.8.2/CalienteTools/BodySlide/BodySlide.exe"),
+                &layers,
+                &data,
+            ),
+            Some(PathBuf::from("/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"))
+        );
+    }
+
+    #[test]
+    fn a_tool_outside_every_layer_is_left_alone() {
+        let data = PathBuf::from("/games/skyrim/Data");
+        let layers = vec![PathBuf::from("/inst/mods/BodySlide")];
+        // xEdit in the game root, and a mod the user disabled (so it is not a
+        // layer): both must keep their real path rather than be pointed at a
+        // merged path that will not contain them.
+        assert_eq!(
+            virtualize_under_data(Path::new("/games/skyrim/SSEEdit.exe"), &layers, &data),
+            None
+        );
+        assert_eq!(
+            virtualize_under_data(Path::new("/inst/mods/Disabled/tool.exe"), &layers, &data),
+            None
+        );
+    }
+
+    #[test]
+    fn the_layer_root_is_what_gets_stripped_not_the_mod_name() {
+        // A mod whose real content sits one level down is MOUNTED from that level,
+        // so that is what has to be stripped. Stripping a fixed number of
+        // components (MO2's approach) would leave the subdirectory in the path.
+        let data = PathBuf::from("/games/skyrim/Data");
+        let layers = vec![PathBuf::from("/inst/mods/Weird Archive/Data")];
+        assert_eq!(
+            virtualize_under_data(
+                Path::new("/inst/mods/Weird Archive/Data/CalienteTools/BodySlide/BodySlide.exe"),
+                &layers,
+                &data,
+            ),
+            Some(PathBuf::from("/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"))
+        );
+    }
+
+    #[test]
+    fn the_layer_itself_does_not_become_the_data_dir() {
+        // Guard against the degenerate case: a path equal to the layer root has an
+        // empty tail, and `data.join("")` would hand back the Data dir itself.
+        let layers = vec![PathBuf::from("/inst/mods/BodySlide")];
+        assert_eq!(
+            virtualize_under_data(
+                Path::new("/inst/mods/BodySlide"),
+                &layers,
+                Path::new("/games/skyrim/Data"),
+            ),
+            None
         );
     }
 }
