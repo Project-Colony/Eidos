@@ -649,6 +649,23 @@ pub struct Eidos {
     /// The kernel advertised `FUSE_NO_OPENDIR_SUPPORT`, so it can open and read
     /// directories without asking us. Negotiated in `init`; see [`Eidos::opendir`].
     no_opendir: AtomicBool,
+    /// The listing an in-flight enumeration is being served from, by inode.
+    ///
+    /// A `readdir` offset is an INDEX into the listing the previous chunk came
+    /// from, so that listing has to survive until the enumeration ends. With
+    /// handles, `opendir` gave that for free - the snapshot hung off the handle.
+    /// Declining `opendir` took the handle away, and the by-path cache underneath
+    /// is dropped by any mutation, so a directory written to between two chunks
+    /// would have the second chunk resume into a DIFFERENT list at the same index
+    /// and silently skip or repeat entries. The Creation Engine's loose-file
+    /// indexer answers an inconsistent enumeration by restarting it, which is the
+    /// endless loop `dir_snapshot` already warns about.
+    ///
+    /// So the guarantee moves here: pinned on the first chunk, served unchanged
+    /// for the rest, released when the enumeration finishes. Deliberately NOT
+    /// cleared by `dir_changed` - a walk in progress must finish against what it
+    /// started with; it is the NEXT one that must see the change.
+    enumerations: Mutex<HashMap<u64, Arc<Vec<DirEntry>>>>,
 }
 
 /// Join a parent virtual path and a child name into a virtual path.
@@ -724,6 +741,7 @@ impl Eidos {
             dir_cache: Mutex::new(HashMap::new()),
             next_fh: AtomicU64::new(1),
             no_opendir: AtomicBool::new(false),
+            enumerations: Mutex::new(HashMap::new()),
             stats: Stats::default(),
             negatives: Mutex::new(HashMap::new()),
             aliases: Mutex::new(HashMap::new()),
@@ -1460,16 +1478,45 @@ impl Filesystem for Eidos {
             }
         }
 
-        // Fallback: the kernel issued readdir without an opendir snapshot.
+        // No handle: the kernel opens directories itself (see `opendir`). The
+        // listing is pinned per inode for the length of one enumeration instead,
+        // so the offsets a resume request carries keep meaning what they meant.
         let Some(vpath) = self.inodes.lock_recover().path(ino.0) else {
             reply.error(Errno::ENOENT);
             return;
         };
-        let entries = self.dir_snapshot(ino.0, &vpath);
-        for (i, (e_ino, kind, name)) in entries.into_iter().enumerate().skip(offset as usize) {
-            if reply.add(INodeNo(e_ino), (i + 1) as u64, kind, name) {
+        let entries = {
+            let mut live = self.enumerations.lock_recover();
+            match (offset, live.get(&ino.0)) {
+                // Resuming a walk we are already serving: same list, always.
+                (o, Some(e)) if o > 0 => Arc::clone(e),
+                // Starting one (offset 0), or resuming one whose pin was lost.
+                // Build outside the lock: this does disk I/O and must not block
+                // every other directory in the daemon.
+                _ => {
+                    drop(live);
+                    let built = Arc::new(self.dir_snapshot(ino.0, &vpath));
+                    live = self.enumerations.lock_recover();
+                    Arc::clone(live.entry(ino.0).insert_entry(Arc::clone(&built)).get())
+                }
+            }
+        };
+        let mut sent = 0usize;
+        let mut full = false;
+        for (i, (e_ino, kind, name)) in entries.iter().enumerate().skip(offset as usize) {
+            if reply.add(INodeNo(*e_ino), (i + 1) as u64, *kind, name) {
+                full = true;
                 break;
             }
+            sent += 1;
+        }
+        // The buffer was not filled, so this chunk carried the tail: the walk is
+        // over and the pin can go. A caller that abandons one mid-way leaves an
+        // entry behind, which the next `offset == 0` on that inode replaces - the
+        // map is bounded by the number of directories, not by walks.
+        if !full {
+            let _ = sent;
+            self.enumerations.lock_recover().remove(&ino.0);
         }
         reply.ok();
     }

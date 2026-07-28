@@ -418,6 +418,64 @@ fn readdir_lists_merged_deduped_entries() {
     assert_eq!(names, vec!["a.dat", "b.dat", "shared.dat", "_under.dat"]); // shared once; `_` last
 }
 
+/// A directory written to WHILE it is being walked must not make the walk skip
+/// or repeat entries.
+///
+/// A readdir offset is an index into the listing the previous chunk came from.
+/// While `opendir` handed out handles, that listing hung off the handle and
+/// could not change under the walk. Declining `opendir` took the handle away,
+/// and the by-path cache underneath is dropped by any mutation - so a large
+/// directory written to between two chunks would resume at the same index into a
+/// DIFFERENT list. The Creation Engine's loose-file indexer answers an
+/// inconsistent enumeration by restarting it, so the failure mode is not a
+/// missing file, it is a core pinned at 100%.
+///
+/// The directory here is deliberately large enough to need several round trips.
+fn a_walk_survives_the_directory_changing_under_it() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    // Long names so the kernel's readdir buffer fills several times over.
+    let original: Vec<String> =
+        (0..6000).map(|i| format!("entry_{i:05}_with_a_deliberately_long_name_to_fill_the_buffer.dat")).collect();
+    for n in &original {
+        put(&game, n, b"x");
+    }
+    let _s = mounted!(vec![game], over, &mnt);
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut rd = fs::read_dir(&mnt).unwrap();
+    // Take one entry, so the first chunk has been served and an offset is live.
+    if let Some(e) = rd.next() {
+        seen.push(e.unwrap().file_name().to_string_lossy().into_owned());
+    }
+    // Now mutate the directory mid-walk, which drops the by-path listing cache.
+    fs::write(mnt.join("appeared_during_the_walk.dat"), b"n").unwrap();
+    fs::remove_file(mnt.join(&original[3000])).unwrap();
+    // Drain the rest of the walk that was already in flight.
+    for e in rd {
+        seen.push(e.unwrap().file_name().to_string_lossy().into_owned());
+    }
+
+    let mut dedup = seen.clone();
+    dedup.sort();
+    dedup.dedup();
+    assert_eq!(dedup.len(), seen.len(), "the walk repeated entries: {} vs {}", seen.len(), dedup.len());
+    // Every name the directory held when the walk STARTED must appear. What the
+    // walk does with the two later changes is its own business - it may or may
+    // not see them - but it may not lose what was already there.
+    for n in &original {
+        assert!(seen.contains(n), "the walk lost {n}");
+    }
+
+    // And the NEXT walk sees the new shape.
+    let after: Vec<String> = fs::read_dir(&mnt)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(after.contains(&"appeared_during_the_walk.dat".to_string()), "next walk missed the create");
+    assert!(!after.contains(&original[3000]), "next walk still shows the deleted entry");
+}
+
 /// The merged listing is memoised by path, so every mutation must drop it. Each
 /// case here ENUMERATES FIRST - that is what fills the cache - then mutates, then
 /// enumerates again. Without the drop the second listing is the first one, and the
@@ -618,6 +676,7 @@ fn main() {
         ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
         ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
         ("a_cached_listing_is_dropped_by_every_mutation", a_cached_listing_is_dropped_by_every_mutation, true),
+        ("a_walk_survives_the_directory_changing_under_it", a_walk_survives_the_directory_changing_under_it, true),
         ("a_recreated_directory_does_not_inherit_the_old_listing", a_recreated_directory_does_not_inherit_the_old_listing, true),
         ("large_file_round_trips_through_cached_handle", large_file_round_trips_through_cached_handle, false),
         ("symlink_in_a_layer_is_readable", symlink_in_a_layer_is_readable, false),
