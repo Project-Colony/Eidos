@@ -2337,23 +2337,44 @@ fn update(app: &mut App, message: Message) -> Task<Message> {
     task
 }
 
+/// Whether a message reports where the pointer or the window IS, rather than
+/// something the user DID.
+///
+/// The distinction decides whether a two-click confirmation survives. Arming
+/// Delete and then moving the mouse a single pixel used to cancel it, because
+/// pointer tracking publishes a message per `CursorMoved` and every disarm rule
+/// read that as an action. The confirmation was unreachable in practice: the
+/// pointer has to travel to the button, and travelling is a mouse move.
+fn is_ambient(m: &Message) -> bool {
+    matches!(
+        m,
+        Message::PointerAt(_)
+            | Message::WindowResized(_)
+            | Message::FomodHover(_)
+            | Message::FomodUnhover(..)
+    )
+}
+
 fn update_inner(app: &mut App, message: Message) -> Task<Message> {
-    // Any action other than a second Clear click cancels the clear confirmation.
-    if !matches!(message, Message::ClearOverwrite) {
-        app.confirm_clear = false;
-    }
-    // A pending save/download deletion is armed by the first Delete click; any
-    // other action (including arming a different row) cancels the previous one.
-    if !matches!(message, Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)) {
-        app.confirm_delete_save = None;
-    }
-    if !matches!(message, Message::DeleteDownload(_) | Message::ConfirmDeleteDownload(_)) {
-        app.confirm_delete_download = None;
-    }
-    // The batch-remove confirmation is armed by the first click; any other action
-    // (including merely re-rendering on a modifier change) cancels it.
-    if !matches!(message, Message::BatchRemoveMods | Message::ConfirmBatchRemove) {
-        app.confirm_batch_remove = false;
+    // A confirmation is armed by the first click and cancelled by any other
+    // ACTION - including arming a different row. Ambient messages are not
+    // actions and must leave it standing.
+    if !is_ambient(&message) {
+        // Any action other than a second Clear click cancels the clear confirmation.
+        if !matches!(message, Message::ClearOverwrite) {
+            app.confirm_clear = false;
+        }
+        if !matches!(message, Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)) {
+            app.confirm_delete_save = None;
+        }
+        if !matches!(message, Message::DeleteDownload(_) | Message::ConfirmDeleteDownload(_)) {
+            app.confirm_delete_download = None;
+        }
+        // The batch-remove confirmation is armed by the first click; any other
+        // action (including merely re-rendering on a modifier change) cancels it.
+        if !matches!(message, Message::BatchRemoveMods | Message::ConfirmBatchRemove) {
+            app.confirm_batch_remove = false;
+        }
     }
     match message {
         Message::Next => {
@@ -11283,6 +11304,51 @@ mod tests {
         let mut app = nav_app(&[]);
         app.overwrite_expanded.insert("d".to_string());
         assert_eq!(overwrite_tree_rows(&app, &many, 10).len(), 10);
+    }
+
+
+    #[test]
+    fn moving_the_mouse_does_not_cancel_an_armed_confirmation() {
+        // The reported bug: arm Delete on a download, twitch the mouse, and the
+        // confirmation is gone. The pointer HAS to move to reach the button, so
+        // the two-click guard could never be completed.
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteDownload(0));
+        assert_eq!(app.confirm_delete_download, Some(0), "the first click arms it");
+
+        update_inner(&mut app, Message::PointerAt(iced::Point::new(10.0, 10.0)));
+        update_inner(&mut app, Message::WindowResized(iced::Size::new(800.0, 600.0)));
+        assert_eq!(app.confirm_delete_download, Some(0), "ambient messages are not actions");
+    }
+
+    #[test]
+    fn a_real_action_still_cancels_every_confirmation() {
+        // The guard must not become decorative: the whole point is that doing
+        // anything ELSE takes the loaded gun out of your hand.
+        let mut app = nav_app(&[]);
+        for (arm, check) in [
+            (Message::DeleteDownload(0), 0),
+            (Message::DeleteSave(0), 1),
+            (Message::ClearOverwrite, 2),
+            (Message::BatchRemoveMods, 3),
+        ] {
+            update_inner(&mut app, arm);
+            update_inner(&mut app, Message::Refresh);
+            match check {
+                0 => assert_eq!(app.confirm_delete_download, None),
+                1 => assert_eq!(app.confirm_delete_save, None),
+                2 => assert!(!app.confirm_clear),
+                _ => assert!(!app.confirm_batch_remove),
+            }
+        }
+    }
+
+    #[test]
+    fn arming_one_row_disarms_another() {
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteDownload(0));
+        update_inner(&mut app, Message::DeleteDownload(3));
+        assert_eq!(app.confirm_delete_download, Some(3), "only one may be armed");
     }
 
 }
