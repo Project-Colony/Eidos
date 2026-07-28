@@ -811,4 +811,25 @@ mod tests {
         mark_installed(&dir.join("absent.7z")).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn a_supporter_cdn_uri_yields_no_usable_name() {
+        // The real URL from Lin's first download: Nexus serves supporter files
+        // from a path whose last segment is a bare UUID. It parses fine as a
+        // name, which is exactly the trap - the caller must prefer the API's
+        // `file_name` and only fall back to the URI when it has an extension.
+        let uri = "https://supporter-files.nexus-cdn.com/66/2a/35/\
+662a3503-f985-4c27-a638-c811070e103a?expires=1785275952&h=4161fdf&md5=dQlw&user_id=86878448";
+        let from_uri = file_name_from_uri(uri).unwrap();
+        assert_eq!(from_uri, "662a3503-f985-4c27-a638-c811070e103a");
+        assert!(!from_uri.contains('.'), "no extension, so not a file name");
+
+        // A free-user CDN link does carry the real name, and must still work.
+        let free = "https://cf-files.nexus-cdn.com/1704/186346/Dynamic%20Armor%20Physics-186346-1-0-1.zip?md5=x&expires=1";
+        assert_eq!(
+            file_name_from_uri(free).unwrap(),
+            "Dynamic Armor Physics-186346-1-0-1.zip"
+        );
+    }
+
 }

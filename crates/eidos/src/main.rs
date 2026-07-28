@@ -1951,8 +1951,19 @@ fn cmd_nxm(args: &[String]) {
                     exit(1);
                 }
             };
-            let name = eidos_nexus::file_name_from_uri(&link)
-                .or_else(|| eidos_nexus::sanitize_file_name(&file.file_name))
+            // The API's `file_name` FIRST - it is the authoritative answer to
+            // "what is this archive called", and the CDN URI is not. Nexus serves
+            // supporter downloads from a path whose last segment is a bare UUID
+            // (`supporter-files.nexus-cdn.com/66/2a/35/662a3503-...`), which parses
+            // perfectly well as a name, so preferring the URI meant every premium
+            // download landed as an unreadable UUID with no extension.
+            let name = eidos_nexus::sanitize_file_name(&file.file_name)
+                .or_else(|| {
+                    // Only trust the URI when it actually looks like a file. An
+                    // archive always has an extension; a segment without one is a
+                    // CDN object id, not a name.
+                    eidos_nexus::file_name_from_uri(&link).filter(|n| n.contains('.'))
+                })
                 .unwrap_or_else(|| format!("{}-{}.archive", nxm.mod_id, nxm.file_id));
             let downloads = inst.downloads_dir();
             // Don't silently clobber an existing download. If the very same file is
