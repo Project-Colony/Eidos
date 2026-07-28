@@ -5949,21 +5949,32 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 
     // Wrap the list so the pointer leaving its bounds during a drag cancels it
     // (MO2 drops nothing when you release outside the list).
-    let list_area = mouse_area(
-        scrollable(list).id(mod_scroll_id()).height(Length::Fill),
-    )
-    .on_exit(Message::DragCancel);
+    // `on_release` here is the catch-all: a row or a strip that handles the
+    // release captures it and this never fires, but a release landing anywhere
+    // else in the list - a header, a gap the layout moved, empty space below the
+    // last row - disarms instead of leaving a drag live for the next click to
+    // commit. `on_exit` covers releasing outside the list entirely.
+    let list_area = mouse_area(scrollable(list).id(mod_scroll_id()).height(Length::Fill))
+        .on_exit(Message::DragCancel)
+        .on_release(Message::DragCancel);
 
-    // The tint means nothing without saying what it means. Shown only while a
-    // mod is focused AND actually fights with something, so the strip is a
-    // readout rather than permanent furniture.
-    let legend = conflict_legend(app);
+    // ALWAYS in the flow, at a fixed height, even when it has nothing to say.
+    // Appearing and disappearing moved every row below it by its own height, so
+    // clicking a mod scrolled the list out from under the pointer - and if the
+    // button came up somewhere that was no longer a row, the armed drag was
+    // never released and the next click moved the mod. The same mistake the
+    // insertion strips were built to avoid, made again one panel over.
+    let legend = container(conflict_legend(app).unwrap_or_else(|| Space::new(0, 0).into()))
+        // Tall enough for the 12px swatch and the 11pt label without clipping,
+        // and identical whether or not there is anything to show.
+        .height(Length::Fixed(20.0))
+        .align_y(iced::alignment::Vertical::Center);
 
     let inner = Column::new()
         .spacing(6)
         .push(profile)
         .push(search)
-        .push_maybe(legend)
+        .push(legend)
         .push(header)
         .push(list_area)
         .push(overwrite);
@@ -7742,7 +7753,8 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     // Releasing outside the list drops nothing, as in the mod list.
     let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill))
-        .on_exit(Message::PluginDragCancel);
+        .on_exit(Message::PluginDragCancel)
+        .on_release(Message::PluginDragCancel);
 
     Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }
