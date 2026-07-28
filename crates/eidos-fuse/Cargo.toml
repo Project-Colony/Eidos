@@ -8,12 +8,12 @@ edition.workspace = true
 
 [dependencies]
 eidos-core = { path = "../eidos-core" }
-fuser = "0.17"
+fuser = "0.18"
 libc = "0.2"
 
 [dev-dependencies]
 # Integration tests mount a real union and check kernel-level behaviour.
-fuser = "0.17"
+fuser = "0.18"
 libc = "0.2"
 
 # The union integration test enters a private user+mount namespace (so its

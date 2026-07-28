@@ -751,13 +751,13 @@ impl Eidos {
 
     /// Mount at `mountpoint`, blocking until the filesystem is unmounted.
     pub fn mount(self, mountpoint: &Path) -> std::io::Result<()> {
-        fuser::mount2(self, mountpoint, &mount_config())
+        fuser::mount(self, mountpoint, &mount_config())
     }
 
     /// Mount at `mountpoint` on a background thread, returning a session handle.
     /// Dropping the handle unmounts.
     pub fn spawn(self, mountpoint: &Path) -> std::io::Result<BackgroundSession> {
-        // Build the session by hand rather than via spawn_mount2, so the kernel
+        // Build the session by hand rather than via spawn_mount, so the kernel
         // notifier can be handed back INTO the filesystem: it is what lets a
         // create invalidate a stale, differently-cased negative dentry.
         let notifier_slot = Arc::clone(&self.notifier);
