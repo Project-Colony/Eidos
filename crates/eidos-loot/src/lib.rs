@@ -768,3 +768,256 @@ mod tests {
         assert_eq!(report.dirty_count(), 0);
     }
 }
+
+// ---- case bridge -----------------------------------------------------------
+
+/// Build a directory of symlinks that hands libloot the exact SPELLING the
+/// masterlist asks for, for files that are on disk under a different one.
+///
+/// The masterlist is written on and for Windows, where file names have no case.
+/// Linux does, and libloot's condition evaluator is a bare `exists()` -
+/// `loot-condition-interpreter`'s `evaluate_file_path` is literally
+/// `resolve_path(state, file_path).exists()`. So a rule written
+/// `file("scripts/skse.pex")` does not see `Scripts/skse.pex`, the condition is
+/// false, and a rule of the shape `not file(...)` fires a warning about
+/// something that is correctly installed. That is how a complete SKSE install
+/// gets reported as missing its scripts.
+///
+/// The fix belongs upstream, in the interpreter. Until it is there, this closes
+/// the gap from the one side Eidos controls: the additional data paths it hands
+/// libloot. For every literal path the masterlist mentions, if it does not
+/// resolve exactly but does resolve ignoring case, a symlink is created here
+/// under the masterlist's own spelling, pointing at the real file.
+///
+/// Deliberately driven by the masterlist rather than by the mods. Mirroring
+/// every mod tree in every casing is unbounded and mostly useless; the
+/// masterlist names a finite set of files it actually asks about - on a real
+/// Skyrim SE setup, 1636 literal paths, of which seven needed a link.
+///
+/// # Layout
+///
+/// ```text
+/// <out>/            <- root-relative links, reached as `../x` from below
+/// <out>/data/       <- what the caller appends to `mod_dirs`
+/// ```
+///
+/// Because `resolve_path` joins a relative path onto each base in turn,
+/// `../d3dx9_42.dll` evaluated against `<out>/data` lands in `<out>`. The two
+/// levels exist for exactly that.
+///
+/// Returns the paths bridged, for the caller to log or show.
+pub fn build_case_bridge(
+    masterlist: &Path,
+    bases: &[PathBuf],
+    game_path: &Path,
+    out: &Path,
+) -> std::io::Result<Vec<String>> {
+    // Rebuilt from scratch every time: mods come and go, and a link left over
+    // from a mod that has been removed would answer for a file that is no
+    // longer there - the exact failure this is meant to prevent, inverted.
+    let _ = fs::remove_dir_all(out);
+    let data = out.join("data");
+    fs::create_dir_all(&data)?;
+
+    let Ok(text) = fs::read_to_string(masterlist) else { return Ok(Vec::new()) };
+    let mut bridged = Vec::new();
+    for rel in masterlist_literal_paths(&text) {
+        // `..` is the game root; anything else is data-relative.
+        let (search_root, tail, link_dir) = match rel.strip_prefix("../") {
+            Some(t) => (game_path.to_path_buf(), t.to_string(), out.to_path_buf()),
+            None => (PathBuf::new(), rel.clone(), data.clone()),
+        };
+        let roots: Vec<PathBuf> = if search_root.as_os_str().is_empty() {
+            bases.to_vec()
+        } else {
+            vec![search_root]
+        };
+        // Already correct somewhere? Then there is nothing to bridge, and adding
+        // a link would only create a second answer to the same question.
+        if roots.iter().any(|b| b.join(&tail).exists()) {
+            continue;
+        }
+        let Some(real) = roots.iter().find_map(|b| resolve_ignoring_case(b, &tail)) else {
+            continue;
+        };
+        let link = link_dir.join(&tail);
+        if let Some(parent) = link.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        if std::os::unix::fs::symlink(&real, &link).is_ok() {
+            bridged.push(rel);
+        }
+    }
+    Ok(bridged)
+}
+
+/// Where the caller should point libloot, given a bridge built at `out`.
+pub fn case_bridge_data_dir(out: &Path) -> PathBuf {
+    out.join("data")
+}
+
+/// Every literal path a masterlist condition names. Patterns containing regex
+/// metacharacters are skipped: those are matched by the interpreter against
+/// directory listings, which it already does case-insensitively.
+fn masterlist_literal_paths(text: &str) -> Vec<String> {
+    const FNS: [&str; 7] =
+        ["file(", "version(", "product_version(", "checksum(", "readable(", "is_executable(", "active("];
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let mut rest = line;
+        while let Some(at) = FNS.iter().filter_map(|f| rest.find(f).map(|i| (i, f.len()))).min() {
+            rest = &rest[at.0 + at.1..];
+            let Some(open) = rest.find('"') else { break };
+            let after = &rest[open + 1..];
+            let Some(close) = after.find('"') else { break };
+            let p = &after[..close];
+            rest = &after[close + 1..];
+            if p.is_empty() || p.contains(['[', ']', '(', ')', '*', '+', '?', '\\']) {
+                continue;
+            }
+            if !out.iter().any(|q| q == p) {
+                out.push(p.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Walk `rel` under `base` comparing each component without case, and return the
+/// REAL path when every component matches. `None` as soon as one does not.
+fn resolve_ignoring_case(base: &Path, rel: &str) -> Option<PathBuf> {
+    let mut cur = base.to_path_buf();
+    for part in rel.split('/').filter(|p| !p.is_empty()) {
+        let hit = fs::read_dir(&cur)
+            .ok()?
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(part))?;
+        cur = hit.path();
+    }
+    cur.exists().then_some(cur)
+}
+
+#[cfg(test)]
+mod case_bridge_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("eidos-cb-{}-{tag}", std::process::id()));
+        let _ = fs::remove_dir_all(&p);
+        fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    #[test]
+    fn only_literal_paths_are_taken_from_the_masterlist() {
+        let ml = r#"
+    condition: 'not file("scripts/skse.pex") and (file("../skse64_loader.exe"))'
+    condition: 'version("SKSE/Plugins/EngineFixes.dll", "7.0.0", >=)'
+    condition: 'file("SKSE/Plugins/([^\.]+\.dll)")'
+    condition: 'checksum("Plugin.esp", DEADBEEF)'
+"#;
+        let got = masterlist_literal_paths(ml);
+        assert!(got.contains(&"scripts/skse.pex".to_string()));
+        assert!(got.contains(&"../skse64_loader.exe".to_string()));
+        assert!(got.contains(&"SKSE/Plugins/EngineFixes.dll".to_string()));
+        assert!(got.contains(&"Plugin.esp".to_string()));
+        // The regex form is matched against directory listings by the
+        // interpreter, which already ignores case there - bridging it would be
+        // both wrong and unbounded.
+        assert!(
+            !got.iter().any(|p| p.contains('[')),
+            "regex patterns must not be treated as paths: {got:?}"
+        );
+        // Each path once, however many rules mention it.
+        let mut sorted = got.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(sorted.len(), got.len());
+    }
+
+    #[test]
+    fn a_file_whose_case_differs_gets_a_link_under_the_masterlists_spelling() {
+        let root = tmp("link");
+        let mod_dir = root.join("mods/SKSE");
+        fs::create_dir_all(mod_dir.join("Scripts")).unwrap();
+        fs::write(mod_dir.join("Scripts/skse.pex"), b"pex").unwrap();
+        let ml = root.join("masterlist.yaml");
+        fs::write(&ml, "condition: 'not file(\"scripts/skse.pex\")'").unwrap();
+
+        let out = root.join("bridge");
+        let bridged =
+            build_case_bridge(&ml, &[mod_dir.clone()], &root.join("game"), &out).unwrap();
+        assert_eq!(bridged, vec!["scripts/skse.pex".to_string()]);
+
+        // What libloot will actually do: join the relative path onto the base.
+        let seen = case_bridge_data_dir(&out).join("scripts/skse.pex");
+        assert!(seen.exists(), "libloot's exists() must succeed through the link");
+        assert_eq!(fs::read(&seen).unwrap(), b"pex", "and read the real file");
+    }
+
+    #[test]
+    fn a_file_already_spelled_correctly_is_left_alone() {
+        // A link here would be a second answer to a question that already had
+        // one, and would go stale independently of the file it duplicates.
+        let root = tmp("exact");
+        let mod_dir = root.join("mods/M");
+        fs::create_dir_all(mod_dir.join("scripts")).unwrap();
+        fs::write(mod_dir.join("scripts/skse.pex"), b"x").unwrap();
+        let ml = root.join("m.yaml");
+        fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
+        let out = root.join("b");
+        assert!(build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out).unwrap().is_empty());
+        assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
+    }
+
+    #[test]
+    fn a_game_root_path_lands_one_level_above_the_data_dir() {
+        // `../x` is evaluated by joining it onto the base, so it has to resolve
+        // from the directory the caller hands libloot - not inside it.
+        let root = tmp("root");
+        let game = root.join("game");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("SKSE64_Loader.exe"), b"exe").unwrap();
+        let ml = root.join("m.yaml");
+        fs::write(&ml, "condition: 'file(\"../skse64_loader.exe\")'").unwrap();
+
+        let out = root.join("b");
+        let bridged = build_case_bridge(&ml, &[], &game, &out).unwrap();
+        assert_eq!(bridged.len(), 1);
+        let base = case_bridge_data_dir(&out);
+        assert!(base.join("../skse64_loader.exe").exists(), "reached as libloot reaches it");
+    }
+
+    #[test]
+    fn a_missing_file_is_not_invented() {
+        // The bridge must never make a condition true that was honestly false:
+        // that would suppress a warning the user needs.
+        let root = tmp("absent");
+        let ml = root.join("m.yaml");
+        fs::write(&ml, "condition: 'file(\"scripts/nothere.pex\")'").unwrap();
+        let out = root.join("b");
+        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out).unwrap().is_empty());
+        assert!(!case_bridge_data_dir(&out).join("scripts/nothere.pex").exists());
+    }
+
+    #[test]
+    fn a_rebuild_drops_links_for_files_that_are_gone() {
+        // A mod removed between two sorts must not keep answering through a
+        // stale link - that is this bug inverted, and worse.
+        let root = tmp("stale");
+        let mod_dir = root.join("mods/M");
+        fs::create_dir_all(mod_dir.join("Scripts")).unwrap();
+        fs::write(mod_dir.join("Scripts/skse.pex"), b"x").unwrap();
+        let ml = root.join("m.yaml");
+        fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
+        let out = root.join("b");
+        build_case_bridge(&ml, &[mod_dir.clone()], &root, &out).unwrap();
+        assert!(case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
+
+        fs::remove_dir_all(&mod_dir).unwrap();
+        let again = build_case_bridge(&ml, &[], &root, &out).unwrap();
+        assert!(again.is_empty());
+        assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
+    }
+}
+

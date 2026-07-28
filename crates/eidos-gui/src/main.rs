@@ -3760,6 +3760,29 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, true)
                         .map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");
+                    // Close libloot's case gap before it evaluates anything. Its
+                    // condition evaluator is a bare `exists()`, and the masterlist
+                    // is written in Windows casing, so on Linux a rule like
+                    // `not file("scripts/skse.pex")` misses `Scripts/skse.pex` and
+                    // warns that a correctly installed SKSE is missing its scripts.
+                    // The bridge hands libloot the spelling the masterlist asks
+                    // for, pointing at the real file, and nothing else.
+                    let bridge_dir = cache.join("case-bridge");
+                    let mut mod_dirs = mod_dirs;
+                    match eidos_loot::build_case_bridge(&ml, &mod_dirs, &install, &bridge_dir) {
+                        Ok(bridged) if !bridged.is_empty() => {
+                            eprintln!(
+                                "eidos: LOOT case bridge: {} path(s) spelled differently on disk ({})",
+                                bridged.len(),
+                                bridged.join(", ")
+                            );
+                            // LAST, so a real file always answers before a link.
+                            mod_dirs.push(eidos_loot::case_bridge_data_dir(&bridge_dir));
+                        }
+                        Ok(_) => {}
+                        // Never fatal: a sort with the old blind spot beats no sort.
+                        Err(e) => eprintln!("eidos: could not build the LOOT case bridge: {e}"),
+                    }
                     // One view, used by both calls, so the report can never be
                     // built from a different picture than the sort.
                     let view = eidos_loot::GameView {
