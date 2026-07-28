@@ -13,9 +13,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{
-    button, checkbox, container, image, mouse_area, pick_list, scrollable, text, text_input, tooltip,
-    Column, Row, Space, Stack,
+    button, checkbox, container, image, mouse_area, operation, pick_list, scrollable, text,
+    text_input, tooltip, Column, Row, Space, Stack,
 };
+// For `widget::Id`, the shared handle every operation addresses a widget by.
+use iced::widget;
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
@@ -1727,12 +1729,15 @@ fn selection_or(app: &App, row: usize) -> Vec<usize> {
     v
 }
 
-/// The scrollables the keyboard has to move, named so `scroll_to` can reach them.
-fn mod_scroll_id() -> scrollable::Id {
-    scrollable::Id::new("mod-list")
+/// The scrollables the keyboard has to move, named so `snap_to` can reach them.
+///
+/// `scrollable::Id` became the shared `widget::Id` in iced 0.14 - the same type
+/// every operation addresses a widget by.
+fn mod_scroll_id() -> widget::Id {
+    widget::Id::new("mod-list")
 }
-fn plugin_scroll_id() -> scrollable::Id {
-    scrollable::Id::new("plugin-list")
+fn plugin_scroll_id() -> widget::Id {
+    widget::Id::new("plugin-list")
 }
 
 /// Bring the row at visible position `pos` of `total` into view.
@@ -1742,12 +1747,15 @@ fn plugin_scroll_id() -> scrollable::Id {
 /// nothing on screen changes. iced has no "scroll this row into view", so the
 /// list is scrolled proportionally - the focused row ends up roughly a third
 /// down the viewport, which keeps its neighbours visible in both directions.
-fn scroll_focus_into_view(id: scrollable::Id, pos: usize, total: usize) -> Task<Message> {
+fn scroll_focus_into_view(id: widget::Id, pos: usize, total: usize) -> Task<Message> {
     if total <= 1 {
         return Task::none();
     }
     let frac = (pos as f32 / (total - 1) as f32).clamp(0.0, 1.0);
-    scrollable::snap_to(id, scrollable::RelativeOffset { x: 0.0, y: frac })
+    // The offset is per-axis optional in 0.14, so `x: None` says "leave the
+    // horizontal scroll where the user put it" instead of yanking it back to 0
+    // on every arrow key - which is what passing 0.0 used to do.
+    operation::snap_to(id, operation::RelativeOffset { x: None, y: Some(frac) })
 }
 
 /// Which mod rows the list is currently drawing.
@@ -5009,6 +5017,10 @@ fn palette() -> iced::theme::Palette {
         text: Color::from_rgb8(0x2B, 0x20, 0x18),
         primary: Color::from_rgb8(0x7A, 0x1F, 0x2B),
         success: Color::from_rgb8(0x4A, 0x6B, 0x3A),
+        // New in iced 0.14, and it has to sit between the green of success and
+        // the deep red of danger without reading as either: a burnt amber that
+        // belongs to the same parchment family.
+        warning: Color::from_rgb8(0xB0, 0x6A, 0x1E),
         danger: Color::from_rgb8(0x8A, 0x2A, 0x2A),
     }
 }
@@ -5133,7 +5145,7 @@ fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
             .spacing(4)
             .align_y(iced::Alignment::Center)
             .push(
-                container(Space::new(Length::Fixed(12.0), Length::Fixed(12.0)))
+                container(Space::new().width(Length::Fixed(12.0)).height(Length::Fixed(12.0)))
                     .style(move |_t: &Theme| container::Style {
                         background: Some(Background::Color(c)),
                         border: Border { color: Color::from_rgb8(0x6E, 0x24, 0x2E), width: 1.0, radius: 2.0.into() },
@@ -5215,7 +5227,7 @@ fn drop_gap<'a>(
     over: fn(usize) -> Message,
     drop: Message,
 ) -> Element<'a, Message> {
-    let bar = container(Space::new(Length::Fill, Length::Fixed(if active { 2.0 } else { 0.0 })))
+    let bar = container(Space::new().width(Length::Fill).height(Length::Fixed(if active { 2.0 } else { 0.0 })))
         .width(Length::Fill)
         .style(move |_t: &Theme| container::Style {
             background: active.then(|| Background::Color(Color::from_rgb8(0x6E, 0x24, 0x2E))),
@@ -5322,7 +5334,7 @@ fn frame<'a>(
 
     let footer = Row::new()
         .push(nav("Back", back, false))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(nav(next_label, next_msg, true));
 
     Column::new()
@@ -5330,7 +5342,7 @@ fn frame<'a>(
         .push(header)
         .push(text(title).size(20.0))
         .push(card)
-        .push(Space::with_height(Length::Fill))
+        .push(Space::new().height(Length::Fill))
         .push(footer)
         .into()
 }
@@ -5709,7 +5721,7 @@ fn toolbar<'a>(app: &App) -> Element<'a, Message> {
         .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::ShowExecutablesDialog))
         .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
         .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenSettings))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(icon_btn(IC_ENDORSE, 20.0, endorse_msg))
         .push(icon_btn(IC_UPDATE, 20.0, update_msg))
         .push(icon_btn(IC_HELP, 20.0, Some(Message::ShowAbout)));
@@ -5730,9 +5742,9 @@ fn mod_row<'a>(
     // greyed, inert. A checkbox with no `on_toggle` draws disabled, which is
     // exactly the look.
     let toggle = if m.unmanaged {
-        checkbox("", true).size(16)
+        checkbox(true).size(16)
     } else {
-        checkbox("", m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16)
+        checkbox(m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16)
     };
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
@@ -5860,7 +5872,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     }
     let profile = profile
         .push(tool_btn("+ New", Message::NewProfile))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(
             text(format!(
                 "Active: {active}  |  Endorsed: {}  |  Updates: {}",
@@ -6051,7 +6063,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // button came up somewhere that was no longer a row, the armed drag was
     // never released and the next click moved the mod. The same mistake the
     // insertion strips were built to avoid, made again one panel over.
-    let legend = container(conflict_legend(app).unwrap_or_else(|| Space::new(0, 0).into()))
+    let legend = container(conflict_legend(app).unwrap_or_else(|| Space::new().width(0).height(0).into()))
         // Tall enough for the 12px swatch and the 11pt label without clipping,
         // and identical whether or not there is anything to show.
         .height(Length::Fixed(20.0))
@@ -6091,7 +6103,7 @@ fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
 
 /// A small separator line inside the context menu.
 fn menu_sep<'a>() -> Element<'a, Message> {
-    container(Space::new(Length::Fill, Length::Fixed(1.0)))
+    container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
         .padding([2, 6])
         .style(|_t: &Theme| container::Style {
             background: Some(Background::Color(Color::from_rgb8(0xC8, 0xB8, 0x95))),
@@ -6105,7 +6117,7 @@ fn menu_sep<'a>() -> Element<'a, Message> {
 /// reinstall, rename, remove). Shows the rename editor when a rename is in flight.
 fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(m) = app.mods.get(i) else {
-        return Space::new(Length::Shrink, Length::Shrink).into();
+        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
     };
 
     // When more than one mod is selected, the right-click menu becomes a batch menu
@@ -6302,7 +6314,7 @@ fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Element<'a, Mes
     for &rgb in PALETTE {
         let [r, g, b] = rgb;
         let sel = current == Some(rgb);
-        let sw = button(Space::new(Length::Fixed(15.0), Length::Fixed(13.0)))
+        let sw = button(Space::new().width(Length::Fixed(15.0)).height(Length::Fixed(13.0)))
             .padding(0)
             .on_press(Message::SetSeparatorColor(i, Some(rgb)))
             .style(move |_t: &Theme, _s: button::Status| button::Style {
@@ -6417,7 +6429,7 @@ fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         col = col.push(text(format!("  {p}   >   {who}")).size(11.0));
     }
     col = col
-        .push(Space::with_height(Length::Fixed(8.0)))
+        .push(Space::new().height(Length::Fixed(8.0)))
         .push(text(format!("Overridden by ({}):", loses.len())).size(13.0));
     if loses.is_empty() {
         col = col.push(text("  (none)").size(11.0));
@@ -6493,7 +6505,7 @@ fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a, Message
         let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
         let label = name.clone();
         col = col.push(
-            checkbox(label, on)
+            checkbox(on).label(label)
                 .on_toggle(move |_| Message::ToggleIniTweak(i, name.clone()))
                 .size(13.0)
                 .text_size(12.0),
@@ -6522,7 +6534,7 @@ fn info_notes<'a>(app: &App) -> Element<'a, Message> {
 /// Filetree / Notes tabs.
 fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(m) = app.mods.get(i) else {
-        return Space::new(Length::Shrink, Length::Shrink).into();
+        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
     };
 
     let title = Row::new()
@@ -6608,12 +6620,12 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .style(button::text)
                 .into()
         } else {
-            Space::with_width(Length::Fixed(18.0)).into()
+            Space::new().width(Length::Fixed(18.0)).into()
         };
         let name = Row::new()
             .spacing(2)
             .align_y(iced::Alignment::Center)
-            .push(Space::with_width(Length::Fixed(r.depth as f32 * 14.0)))
+            .push(Space::new().width(Length::Fixed(r.depth as f32 * 14.0)))
             .push(lead)
             .push(text(r.name).size(12.0));
 
@@ -6627,7 +6639,7 @@ fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
                 .style(button::secondary)
                 .into(),
-            None => Space::with_width(Length::Fixed(56.0)).into(),
+            None => Space::new().width(Length::Fixed(56.0)).into(),
         };
 
         let row = Row::new()
@@ -6768,7 +6780,7 @@ fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(text("Save").size(13.0))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
         .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshSaves));
 
@@ -6777,7 +6789,7 @@ fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Name").size(11.0).width(Length::Fill))
         .push(text("Date").size(11.0).width(Length::Fixed(130.0)))
         .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
-        .push(Space::with_width(Length::Fixed(80.0)));
+        .push(Space::new().width(Length::Fixed(80.0)));
 
     let mut rows = Column::new().spacing(2);
     if app.saves.is_empty() {
@@ -6868,7 +6880,7 @@ fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> Element<'a, 
     }
 
     let missing = &app.save_missing;
-    col = col.push(Space::with_height(Length::Fixed(6.0)));
+    col = col.push(Space::new().height(Length::Fixed(6.0)));
     if missing.is_empty() {
         return col
             .push(text("Every plugin this save uses is active.").size(11.0))
@@ -6901,7 +6913,7 @@ fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> Element<'a, 
     let fixable = missing.iter().any(|m| !m.providers.is_empty());
     if fixable {
         col = col
-            .push(Space::with_height(Length::Fixed(4.0)))
+            .push(Space::new().height(Length::Fixed(4.0)))
             .push(tool_btn("Enable the mods this save needs", Message::FixSaveMods));
     }
     if info.truncated {
@@ -6932,7 +6944,7 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(text("Downloads").size(13.0))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
         .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshDownloads));
 
@@ -6942,7 +6954,7 @@ fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("Version").size(11.0).width(Length::Fixed(80.0)))
         .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
         .push(text("Status").size(11.0).width(Length::Fixed(90.0)))
-        .push(Space::with_width(Length::Fixed(150.0)));
+        .push(Space::new().width(Length::Fixed(150.0)));
 
     let mut rows = Column::new().spacing(2);
     if app.downloads.is_empty() {
@@ -7707,12 +7719,12 @@ fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // which is exactly the look for the non-togglable cases.
         let toggle: Element<'a, Message> = if engine_owned {
             // A forced game master: always on, never togglable (checked + greyed).
-            checkbox("", true).size(15).into()
+            checkbox(true).size(15).into()
         } else if p.force_disabled {
             // An .esl on a no-light engine: can never load (unchecked + greyed).
-            checkbox("", false).size(15).into()
+            checkbox(false).size(15).into()
         } else {
-            checkbox("", p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
+            checkbox(p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
         };
         // Manual reorder (MO2 lets the load order be moved by hand, not only
         // The pin (MO2's locked order). A primary master is already nailed to the
@@ -8025,7 +8037,7 @@ fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .push(text("Run:").size(13.0))
         .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(13.0).padding(8))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(
             button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
                 .padding(10)
@@ -8105,7 +8117,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(10)
         .push(text("Eidos").size(20.0))
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(tool_btn("New instance", Message::Restart));
 
     let body = Row::new()
@@ -8137,7 +8149,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(i) = app.menu_mod {
         if i < app.mods.len() {
             let catcher =
-                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseMenu);
+                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseMenu);
             let at = app.menu_at.unwrap_or(app.cursor);
             let card = floating_at(mod_menu_card(app, i), at, app.window);
             layers = layers.push(catcher).push(card);
@@ -8148,7 +8160,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(i) = app.info_mod {
         if i < app.mods.len() {
             let scrim =
-                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseInfo);
+                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseInfo);
             let dialog = container(mod_info_dialog(app, i)).center(Length::Fill);
             layers = layers.push(scrim).push(dialog);
         }
@@ -8159,14 +8171,14 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // has to be the thing you can click.
     if let Some(p) = &app.picker {
         let scrim =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::PickerCancel);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::PickerCancel);
         layers = layers.push(scrim).push(container(install_picker_dialog(p)).center(Length::Fill));
     }
 
     // The install-collision chooser is a centered modal (MO2's QueryOverwriteDialog).
     if let Some(c) = &app.collision {
         let scrim =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CollisionCancel);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
         let dialog = container(collision_dialog(c)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
@@ -8174,14 +8186,14 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // The Preferences modal (MO2's Settings dialog).
     if app.settings_open {
         let scrim =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseSettings);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseSettings);
         let dialog = container(settings_dialog(app)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
     // The Executables editor (MO2's Modify Executables dialog).
     if let Some(state) = &app.executables {
-        let scrim = mouse_area(Space::new(Length::Fill, Length::Fill))
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseExecutablesDialog);
         let dialog = container(executables_dialog(state)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
@@ -8189,7 +8201,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
 
     // The About box (Help menu).
     if app.about_open {
-        let scrim = mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseAbout);
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseAbout);
         let dialog = container(about_dialog()).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
@@ -8197,7 +8209,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // The View dropdown floats just under the menu bar, near the View item.
     if app.view_menu_open {
         let catcher =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseViewMenu);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseViewMenu);
         let card = container(view_menu_card(app))
             .width(Length::Fill)
             .height(Length::Fill)
@@ -8211,7 +8223,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // profile chip. A catcher behind it dismisses on an outside click.
     if let Some(name) = app.profile_menu.clone() {
         let catcher =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::ProfileCloseMenu);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::ProfileCloseMenu);
         let at = app.menu_at.unwrap_or(app.cursor);
         let card = floating_at(profile_menu_card(app, &name), at, app.window);
         layers = layers.push(catcher).push(card);
@@ -8221,7 +8233,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // messages + per-plugin missing masters / messages / dirty advice.
     if let Some(report) = &app.loot_report {
         let scrim =
-            mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CloseLootReport);
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseLootReport);
         let dialog = container(loot_report_dialog(report)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
@@ -8236,7 +8248,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         // scroll wheel are all inert while locked. `interaction` also tells the Stack
         // to mark lower layers unavailable for scroll.
         let scrim = mouse_area(
-            container(Space::new(Length::Fill, Length::Fill)).style(|_| container::Style {
+            container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| container::Style {
                 background: Some(iced::Color { a: 0.55, ..iced::Color::BLACK }.into()),
                 ..Default::default()
             }),
@@ -8907,7 +8919,7 @@ fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Message> {
     let mut list = Column::new();
             for (i, (name, &on)) in subpackages.iter().zip(picked).enumerate() {
                 list = list.push(
-                    checkbox(name.clone(), on)
+                    checkbox(on).label(name.clone())
                         .on_toggle(move |_| Message::PickerBainToggle(i))
                         .size(13.0)
                         .text_size(12.0),
@@ -9130,7 +9142,7 @@ fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .align_y(iced::Alignment::Center)
                 .push(text("Run behaviour").size(12.0).width(Length::Fixed(120.0)))
                 .push(
-                    checkbox("Lock the window while a game or tool is running", app.prefs.lock_gui)
+                    checkbox(app.prefs.lock_gui).label("Lock the window while a game or tool is running")
                         .on_toggle(Message::ToggleLockGui)
                         .size(16)
                         .text_size(12.0),
@@ -9251,7 +9263,7 @@ fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message
 
     let footer = Row::new()
         .spacing(8)
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(tool_btn("Cancel", Message::CloseExecutablesDialog))
         .push(
             button(text("Save").size(12.0))
@@ -9329,13 +9341,13 @@ fn about_dialog<'a>() -> Element<'a, Message> {
             text("A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus integration.")
                 .size(12.0),
         )
-        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(Space::new().height(Length::Fixed(6.0)))
         .push(text("Shortcuts").size(13.0))
         .push(
             text("Ctrl+R run   ·   F5 refresh   ·   Ctrl+click multi-select   ·   Shift+click range   ·   Esc clear   ·   drag a row to reorder")
                 .size(11.0),
         )
-        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(Space::new().height(Length::Fixed(6.0)))
         .push(
             button(text("Close").size(12.0))
                 .padding([5, 14])
@@ -9385,7 +9397,7 @@ fn cap_warning_banner<'a>() -> Element<'a, Message> {
                     ..Default::default()
                 }),
         )
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(flat_btn("Re-check (F5)", Message::Refresh));
     container(row)
         .width(Length::Fill)
@@ -9416,7 +9428,7 @@ fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> {
             text("It is being run through the merged mod view. Loading a save or starting a new game writes the load order; Eidos refreshes when it exits.")
                 .size(11.0),
         )
-        .push(Space::with_height(Length::Fixed(6.0)))
+        .push(Space::new().height(Length::Fixed(6.0)))
         .push(
             button(text("Unlock").size(13.0))
                 .padding([6, 22])
@@ -9683,7 +9695,7 @@ fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         nav = nav.push(tool_btn("Back", Message::FomodBack));
     }
     nav = nav.push(tool_btn("Cancel", Message::FomodCancel));
-    nav = nav.push(Space::with_width(Length::Fill));
+    nav = nav.push(Space::new().width(Length::Fill));
     let (label, msg) = if has_next {
         ("Next", Message::FomodNext)
     } else {
@@ -9717,7 +9729,7 @@ fn view(app: &App) -> Element<'_, Message> {
         // show over it (the wizard replaces the whole view).
         if let Some(c) = &app.collision {
             let scrim =
-                mouse_area(Space::new(Length::Fill, Length::Fill)).on_press(Message::CollisionCancel);
+                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
             let dialog = container(collision_dialog(c)).center(Length::Fill);
             return Stack::new().push(base).push(scrim).push(dialog).into();
         }
@@ -9748,9 +9760,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 
     // Track held modifiers from every key press AND release (a release with no
     // remaining keys still carries the updated modifier set).
-    let track_press = keyboard::on_key_press(|_key, mods| Some(Message::ModifiersChanged(mods)));
-    let track_release =
-        keyboard::on_key_release(|_key, mods| Some(Message::ModifiersChanged(mods)));
+    // One stream now: `listen` yields every keyboard event and all three variants
+    // carry the modifier set, so press and release no longer need separate
+    // subscriptions. ModifiersChanged also reaches us for the first time - no
+    // widget captures it - which means the held set no longer goes stale while a
+    // text field has the caret.
+    let track = keyboard::listen().map(|event| match event {
+        keyboard::Event::KeyPressed { modifiers, .. }
+        | keyboard::Event::KeyReleased { modifiers, .. }
+        | keyboard::Event::ModifiersChanged(modifiers) => Message::ModifiersChanged(modifiers),
+    });
 
     // Where the pointer is, and how big the window is. Needed because iced's
     // right-press carries no coordinates, so a context menu cannot otherwise be
@@ -9767,7 +9786,11 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 
     // App shortcuts. `on_key_press` takes a plain `fn`, so it cannot read `app`;
     // the handlers themselves no-op off the main screen / while a modal is open.
-    let shortcuts = keyboard::on_key_press(|key, mods| match key.as_ref() {
+    let shortcuts = keyboard::listen().filter_map(|event| {
+        let keyboard::Event::KeyPressed { key, modifiers: mods, .. } = event else {
+            return None;
+        };
+        match key.as_ref() {
         Key::Named(Named::F5) => Some(Message::Refresh),
         // Ctrl+R launches the current run target (MO2's Run accelerator).
         Key::Character("r") if mods.control() => Some(Message::Run),
@@ -9796,6 +9819,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         Key::Named(Named::Enter) => Some(Message::KeyNav(Nav::Activate)),
         Key::Named(Named::Delete) => Some(Message::KeyNav(Nav::Remove)),
         _ => None,
+        }
     });
 
     // The shortcut stream is gated on the main screen (the wizard/FOMOD views have
@@ -9809,7 +9833,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         other => other,
     });
 
-    let mut subs = vec![track_press, track_release, pointer];
+    let mut subs = vec![track, pointer];
     if app.screen == Screen::Main
         && app.fomod.is_none()
         && app.rename.is_none()
@@ -9849,10 +9873,15 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 fn main() -> iced::Result {
     // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
     let launch_command: Vec<String> = std::env::args().skip(1).collect();
-    iced::application("Eidos", update, view)
+    // The title moved out of `application` and onto a builder; the first argument
+    // is now the boot function that `run_with` used to take. It must be `Fn`, not
+    // `FnOnce` - which is why the `.clone()` stays: without it the closure would
+    // consume the Vec and only be callable once.
+    iced::application(move || new(launch_command.clone()), update, view)
+        .title("Eidos")
         .theme(theme)
         .subscription(subscription)
-        .run_with(move || new(launch_command.clone()))
+        .run()
 }
 
 #[cfg(test)]
