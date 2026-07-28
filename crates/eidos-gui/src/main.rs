@@ -401,6 +401,8 @@ enum Message {
     /// The pointer moved, or the window was resized. Only stored.
     PointerAt(iced::Point),
     WindowResized(iced::Size),
+    /// The pointer entered (or left) a FOMOD option; drives the preview pane.
+    FomodHover(Option<(usize, usize)>),
     /// Move the keyboard focus to the other list (Tab).
     CycleFocus,
     /// Select every row of the focused list (Ctrl+A).
@@ -465,6 +467,11 @@ struct FomodWizard {
     /// Current plugin states, so fileDependency/gameDependency conditions evaluate
     /// against the real setup instead of always reading Missing.
     ctx: eidos_fomod::Context,
+    /// The `(group, option)` the pointer is over, which is what the preview pane
+    /// shows. `None` falls back to the option that is actually selected, so the
+    /// pane is never blank and the keyboard is not left out - MO2 tracks hover
+    /// only, and its preview empties the moment you move the mouse away.
+    hover: Option<(usize, usize)>,
 }
 
 /// An open Executables editor (MO2's Modify Executables dialog). The list shown is
@@ -2639,7 +2646,15 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     } else {
                         let selection = eidos_fomod::default_selection(&session.config, &ctx);
                         app.fomod =
-                            Some(FomodWizard { session, step: 0, selection, game_id: gid, archive: path, ctx });
+                            Some(FomodWizard {
+                            session,
+                            step: 0,
+                            selection,
+                            game_id: gid,
+                            archive: path,
+                            ctx,
+                            hover: None,
+                        });
                         app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
                     }
                 }
@@ -4974,6 +4989,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::PointerAt(p) => app.cursor = p,
         Message::WindowResized(s) => app.window = s,
+        Message::FomodHover(at) => {
+            if let Some(w) = app.fomod.as_mut() {
+                w.hover = at;
+            }
+        }
         Message::CycleFocus => {
             // Only somewhere there is a list to drive.
             app.focus = match app.focus {
@@ -9658,99 +9678,191 @@ fn step_valid(w: &FomodWizard) -> bool {
 
 /// The FOMOD installer wizard: the current step's groups as selectable options,
 /// with Back / Cancel / Next / Install.
+/// Width of the option column. FIXED, and narrow: the options are short labels,
+/// and every pixel it does not take is a pixel the preview image gets. A long
+/// option name is clipped rather than allowed to widen the column, because the
+/// image is what the user is actually comparing.
+const FOMOD_OPTIONS_W: f32 = 260.0;
+/// Height of the preview box. Also fixed, and it stays even when an option has
+/// no image: FOMOD art is wildly inconsistent - CBBE ships portrait body shots
+/// next to letterbox eyebrow strips - so a box that resized to its content would
+/// make the whole dialog jump on every hover.
+const FOMOD_PREVIEW_H: f32 = 420.0;
+
+/// The FOMOD installer, laid out the way MO2 lays it out: the options on one
+/// side, and ONE description and ONE image for whichever option is current.
+///
+/// The previous version rendered every option's description and full-size image
+/// inline, one after another, so a step of CBBE was several thousand pixels tall
+/// and two body shapes could never be compared without scrolling between them.
+/// MO2 avoids that by filtering HoverEnter on each option and filling two fixed
+/// panes (fomodinstallerdialog.cpp:628); this does the same, and additionally
+/// falls back to the SELECTED option when nothing is hovered, so the pane is
+/// never blank and the dialog is usable without a mouse.
 fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     use eidos_fomod::PluginType;
     let config = &w.session.config;
     let total = config.steps.len();
-    // Effective option types for this step (re-evaluated against the choices so far).
     let types = eidos_fomod::step_types(config, &w.selection, &w.ctx, w.step);
+    let step = config.steps.get(w.step);
 
-    let mut col = Column::new().spacing(8).padding(12);
-    col = col.push(text(format!("{}  -  FOMOD installer", config.module_name)).size(20.0));
-    if let Some(banner) = config.module_image.as_ref().and_then(|p| w.session.resolve(p)) {
-        col = col.push(image(image::Handle::from_path(banner)).width(Length::Fixed(360.0)));
+    // What the preview is about: the hovered option, else the first selected one,
+    // else the first option of the step.
+    let current = w.hover.filter(|&(gi, pi)| {
+        step.is_some_and(|s| s.groups.get(gi).is_some_and(|g| pi < g.plugins.len()))
+    });
+    let current = current.or_else(|| {
+        let s = step?;
+        let sel = w.selection.get(w.step)?;
+        s.groups.iter().enumerate().find_map(|(gi, g)| {
+            (0..g.plugins.len())
+                .find(|&pi| sel.get(gi).and_then(|gg| gg.get(pi)).copied().unwrap_or(false))
+                .map(|pi| (gi, pi))
+        })
+    });
+    let current = current.or_else(|| step.and_then(|s| (!s.groups.is_empty()).then_some((0, 0))));
+
+    // ---- header: which mod, which step ----
+    let mut head = Row::new().spacing(10).align_y(iced::Alignment::Center).push(
+        text(config.module_name.clone()).size(16.0).width(Length::Fill),
+    );
+    if let Some(s) = step {
+        head = head.push(text(format!("Step {}/{}: {}", w.step + 1, total, s.name)).size(12.0));
     }
-    if let Some(step) = config.steps.get(w.step) {
-        col = col.push(text(format!("Step {}/{}: {}", w.step + 1, total, step.name)).size(14.0));
-        for (gi, group) in step.groups.iter().enumerate() {
-            col = col.push(
-                text(format!("{}  ({})", group.name, group_type_label(group.group_type))).size(13.0),
+
+    // ---- left: the options, compact ----
+    let mut opts = Column::new().spacing(2);
+    if let Some(s) = step {
+        for (gi, group) in s.groups.iter().enumerate() {
+            opts = opts.push(
+                container(
+                    text(format!("{}  -  {}", group.name, group_type_label(group.group_type)))
+                        .size(11.0),
+                )
+                .padding([6, 2]),
             );
             for (pi, plugin) in group.plugins.iter().enumerate() {
                 let on = w
                     .selection
                     .get(w.step)
-                    .and_then(|s| s.get(gi))
+                    .and_then(|sl| sl.get(gi))
                     .and_then(|g| g.get(pi))
                     .copied()
                     .unwrap_or(false);
-                let ptype = types.get(gi).and_then(|g| g.get(pi)).copied().unwrap_or(PluginType::Optional);
+                let ptype =
+                    types.get(gi).and_then(|g| g.get(pi)).copied().unwrap_or(PluginType::Optional);
                 let usable = ptype != PluginType::NotUsable;
                 let mark = if on {
-                    "[x]  "
+                    "[x] "
                 } else if usable {
-                    "[  ]  "
+                    "[ ] "
                 } else {
-                    "[-]  "
+                    "[-] "
                 };
                 let tag = match ptype {
-                    PluginType::Required => "   - required",
-                    PluginType::Recommended => "   - recommended",
-                    PluginType::NotUsable => "   - not usable",
+                    PluginType::Required => "  required",
+                    PluginType::Recommended => "  recommended",
+                    PluginType::NotUsable => "  not usable",
                     _ => "",
                 };
-                let mut b = button(text(format!("{mark}{}{tag}", plugin.name)).size(13.0))
-                    .padding(4)
+                let row = Row::new()
+                    .spacing(4)
+                    .push(text(format!("{mark}{}", plugin.name)).size(12.0).width(Length::Fill))
+                    .push(text(tag).size(10.0));
+                let mut b = button(row)
+                    .padding(5)
                     .width(Length::Fill)
                     .style(if on { button::primary } else { button::secondary });
                 if usable {
                     b = b.on_press(Message::FomodToggle(gi, pi));
                 }
-                col = col.push(b);
-                if !plugin.description.is_empty() {
-                    col = col.push(text(plugin.description.clone()).size(11.0));
-                }
-                if let Some(img) = plugin.image.as_ref().and_then(|p| w.session.resolve(p)) {
-                    col = col.push(image(image::Handle::from_path(img)).width(Length::Fixed(220.0)));
-                }
+                // Hover drives the preview; leaving falls back to the selection
+                // rather than blanking the pane.
+                opts = opts.push(
+                    mouse_area(b)
+                        .on_enter(Message::FomodHover(Some((gi, pi))))
+                        .on_exit(Message::FomodHover(None)),
+                );
             }
         }
     }
+
+    // ---- right: one image, one description ----
+    let shown = current.and_then(|(gi, pi)| step?.groups.get(gi)?.plugins.get(pi));
+    let art = shown
+        .and_then(|p| p.image.as_ref())
+        .and_then(|p| w.session.resolve(p))
+        .or_else(|| config.module_image.as_ref().and_then(|p| w.session.resolve(p)));
+    let preview: Element<'_, Message> = match art {
+        // `contain` keeps the aspect ratio inside the fixed box, so a portrait
+        // body shot and a letterbox eyebrow sheet both sit still.
+        Some(path) => image(image::Handle::from_path(path))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .content_fit(iced::ContentFit::Contain)
+            .into(),
+        None => container(text("No preview for this option.").size(12.0))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into(),
+    };
+    let mut right = Column::new().spacing(8).push(
+        container(preview)
+            .width(Length::Fill)
+            .height(Length::Fixed(FOMOD_PREVIEW_H))
+            .padding(4)
+            .style(|_t: &Theme| container::Style {
+                background: Some(Background::Color(Color::from_rgb8(0xD9, 0xC9, 0xA8))),
+                border: Border {
+                    color: Color::from_rgb8(0xC9, 0xB8, 0x96),
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            }),
+    );
+    if let Some(p) = shown {
+        let mut d = Row::new().spacing(6).push(text(p.name.clone()).size(13.0));
+        if !p.description.is_empty() {
+            d = d.push(text(p.description.clone()).size(12.0).width(Length::Fill));
+        }
+        right = right.push(d);
+    }
+
+    // ---- footer ----
     let vis = eidos_fomod::visible_steps(config, &w.selection, &w.ctx);
     let has_prev = (0..w.step).any(|i| vis.get(i).copied().unwrap_or(false));
     let has_next = (w.step + 1..vis.len()).any(|i| vis[i]);
     let valid = step_valid(w);
 
-    let mut nav = Row::new().spacing(8);
+    let mut nav = Row::new().spacing(8).align_y(iced::Alignment::Center);
+    if !valid {
+        nav = nav.push(text("Select the required option(s) to continue.").size(11.0));
+    }
+    nav = nav.push(Space::new().width(Length::Fill));
+    nav = nav.push(tool_btn("Cancel", Message::FomodCancel));
     if has_prev {
         nav = nav.push(tool_btn("Back", Message::FomodBack));
     }
-    nav = nav.push(tool_btn("Cancel", Message::FomodCancel));
-    nav = nav.push(Space::new().width(Length::Fill));
-    let (label, msg) = if has_next {
-        ("Next", Message::FomodNext)
-    } else {
-        ("Install", Message::FomodInstall)
-    };
+    let (label, msg) =
+        if has_next { ("Next", Message::FomodNext) } else { ("Install", Message::FomodInstall) };
     if valid {
         nav = nav.push(tool_btn(label, msg));
     } else {
-        // A constraint is unmet (e.g. a "choose one" group with nothing picked).
         nav = nav.push(button(text(label).size(13.0)).padding(6).style(button::secondary));
     }
 
-    let mut bottom = Column::new().spacing(4);
-    if !valid {
-        bottom = bottom.push(text("Select the required option(s) to continue.").size(11.0));
-    }
-    bottom = bottom.push(nav);
+    let panes = Row::new()
+        .spacing(10)
+        .push(
+            container(scrollable(opts).height(Length::Fill))
+                .width(Length::Fixed(FOMOD_OPTIONS_W)),
+        )
+        .push(container(right).width(Length::Fill));
 
-    Column::new()
-        .spacing(8)
-        .padding(8)
-        .push(scrollable(col).height(Length::Fill))
-        .push(bottom)
-        .into()
+    Column::new().spacing(10).padding(12).push(head).push(panes).push(nav).into()
 }
 
 fn view(app: &App) -> Element<'_, Message> {
