@@ -187,6 +187,22 @@ struct Stats {
     marker: AtomicU64,
     open: AtomicU64,
     read: AtomicU64,
+    /// Nanoseconds spent INSIDE each handler, summed. Counters alone cannot
+    /// answer the only question that matters when a load feels slow - "how much
+    /// of it is us" - because an operation count is not a duration, and the two
+    /// do not even rank the same: `read` outnumbers `readdir` fifty to one and
+    /// may still cost less, a merged listing being a multi-layer walk plus a
+    /// sort while a read is a `pread` on an already-open handle.
+    ///
+    /// Measured only while `EIDOS_FUSE_STATS` is set. Two clock reads per
+    /// operation is roughly 40ns against handlers measured at 2.8-7.3µs, so
+    /// about 1% - visible in these numbers, absent from every normal run.
+    ns_lookup: AtomicU64,
+    ns_getattr: AtomicU64,
+    ns_open: AtomicU64,
+    ns_read: AtomicU64,
+    ns_readdir: AtomicU64,
+    ns_write: AtomicU64,
     write: AtomicU64,
     /// How many times each directory was opened, by path.
     ///
@@ -215,6 +231,28 @@ const DIR_HISTOGRAM_CAP: usize = 200_000;
 /// cost on a path taken half a million times a session is an atomic load and
 /// not a `getenv`.
 static STATS_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(Stats::enabled);
+
+/// Adds the time a handler took to `total`, on the way out.
+///
+/// A guard rather than a pair of calls because several handlers return early -
+/// on ENOENT, on a cache hit, on a refused write - and a stopwatch that only
+/// stops on the success path would report the fast cases as free.
+struct Timed<'a> {
+    total: &'a AtomicU64,
+    start: std::time::Instant,
+}
+
+impl<'a> Timed<'a> {
+    fn start(total: &'a AtomicU64) -> Option<Timed<'a>> {
+        STATS_ON.then(|| Timed { total, start: std::time::Instant::now() })
+    }
+}
+
+impl Drop for Timed<'_> {
+    fn drop(&mut self) {
+        self.total.fetch_add(self.start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
 
 impl Stats {
     fn bump(c: &AtomicU64) {
@@ -315,7 +353,36 @@ impl Stats {
             g(&self.open),
             g(&self.read),
             g(&self.write),
-        ) + &self.dir_shape()
+        ) + &self.timings()
+            + &self.dir_shape()
+    }
+}
+
+impl Stats {
+    /// Where the time actually went, in milliseconds.
+    ///
+    /// The point of the whole counter set: an operation count says how often the
+    /// kernel came to us, never how long it waited. Empty when the run predates
+    /// timing or when every handler was too fast to register, which is itself an
+    /// answer - it means the filesystem is not where the seconds are.
+    fn timings(&self) -> String {
+        let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let ms = |ns: u64| ns as f64 / 1_000_000.0;
+        let parts = [
+            ("lookup", g(&self.ns_lookup)),
+            ("getattr", g(&self.ns_getattr)),
+            ("open", g(&self.ns_open)),
+            ("read", g(&self.ns_read)),
+            ("readdir", g(&self.ns_readdir)),
+            ("write", g(&self.ns_write)),
+        ];
+        let total: u64 = parts.iter().map(|(_, n)| n).sum();
+        if total == 0 {
+            return String::new();
+        }
+        let each: Vec<String> =
+            parts.iter().map(|(n, ns)| format!("{n} {:.0}", ms(*ns))).collect();
+        format!("\n  time in handlers: {:.0} ms total ({})", ms(total), each.join(", "))
     }
 }
 
@@ -1122,6 +1189,7 @@ impl Filesystem for Eidos {
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
         Stats::bump(&self.stats.open);
+        let _t = Timed::start(&self.stats.ns_open);
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -1249,6 +1317,7 @@ impl Filesystem for Eidos {
     }
 
     fn lookup(&self, _req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
+        let _t = Timed::start(&self.stats.ns_lookup);
         let Some(parent_vpath) = self.inodes.lock_recover().path(parent.0) else {
             reply.error(Errno::ENOENT);
             return;
@@ -1303,6 +1372,7 @@ impl Filesystem for Eidos {
 
     fn getattr(&self, _req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
         Stats::bump(&self.stats.getattr);
+        let _t = Timed::start(&self.stats.ns_getattr);
         let vpath = match self.inodes.lock_recover().path(ino.0) {
             Some(p) => p,
             None => {
@@ -1344,6 +1414,7 @@ impl Filesystem for Eidos {
         reply: ReplyData,
     ) {
         Stats::bump(&self.stats.read);
+        let _t = Timed::start(&self.stats.ns_read);
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
@@ -1445,6 +1516,7 @@ impl Filesystem for Eidos {
         mut reply: ReplyDirectory,
     ) {
         Stats::bump(&self.stats.readdir);
+        let _t = Timed::start(&self.stats.ns_readdir);
         // Take the snapshot on the first readdir of this handle, then serve every
         // later call from it; stop the moment the kernel buffer is full (the
         // offset we pass is the resume point: index of the next entry).
@@ -1615,6 +1687,7 @@ impl Filesystem for Eidos {
         reply: ReplyWrite,
     ) {
         Stats::bump(&self.stats.write);
+        let _t = Timed::start(&self.stats.ns_write);
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
         if let Some(file) = cached {
@@ -2257,4 +2330,44 @@ mod tests {
         assert!(!inodes.by_path.contains_key("save.tmp"));
         assert_eq!(inodes.by_path.get("save.ess"), Some(&ino));
     }
+
+    #[test]
+    fn timings_are_absent_until_something_is_measured() {
+        // A run without EIDOS_FUSE_STATS records no time, and the report must
+        // then say nothing rather than print a row of confident zeroes - which
+        // would read as "the filesystem cost nothing", a claim the run did not
+        // make.
+        let s = Stats::default();
+        assert_eq!(s.timings(), "");
+    }
+
+    #[test]
+    fn timings_report_milliseconds_and_a_total() {
+        let s = Stats::default();
+        s.ns_read.fetch_add(240_000_000, Ordering::Relaxed); // 240 ms
+        s.ns_lookup.fetch_add(60_000_000, Ordering::Relaxed); // 60 ms
+        let out = s.timings();
+        assert!(out.contains("300 ms total"), "{out}");
+        assert!(out.contains("read 240"), "{out}");
+        assert!(out.contains("lookup 60"), "{out}");
+        // Handlers that never ran are still listed, at zero: their absence is
+        // information too.
+        assert!(out.contains("write 0"), "{out}");
+    }
+
+    #[test]
+    fn the_timer_charges_the_early_returns_too() {
+        // Several handlers bail before doing the work - ENOENT, a cache hit, a
+        // refused write. A stopwatch stopped only on the success path would
+        // report exactly the cheap cases as free and skew the total the other
+        // way from the truth.
+        let total = AtomicU64::new(0);
+        {
+            let _t = Timed { total: &total, start: std::time::Instant::now() };
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            // falls out of scope on an early return, exactly like a handler
+        }
+        assert!(total.load(Ordering::Relaxed) >= 1_000_000, "at least 1ms was charged");
+    }
+
 }
