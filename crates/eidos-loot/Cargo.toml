@@ -8,5 +8,5 @@ version = "0.0.0"
 
 [dependencies]
 libloot = "0.29"
-ureq = "2"
+ureq = "3"
 eidos-plugins = { path = "../eidos-plugins" }

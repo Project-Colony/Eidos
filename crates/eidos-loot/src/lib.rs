@@ -115,15 +115,20 @@ fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
     // caller forever. It would hang more than the fetch: the GUI sorts on iced's
     // executor, which is smol's single-threaded one, so a stalled download also
     // holds up every other Task and every timer subscription behind it.
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(10))
-        .timeout(std::time::Duration::from_secs(60))
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(std::time::Duration::from_secs(10)))
+        // `timeout_global` is ureq 2's plain `timeout`: the whole exchange, not
+        // one socket operation. A masterlist is a megabyte, so a minute is
+        // generous even on a bad line.
+        .timeout_global(Some(std::time::Duration::from_secs(60)))
+        .build()
+        .into();
     let body = agent
         .get(url)
         .call()
         .map_err(|e| LootError::Fetch(format!("{url}: {e}")))?
-        .into_string()
+        .into_body()
+        .read_to_string()
         .map_err(|e| LootError::Fetch(format!("{url}: {e}")))?;
     // Guard against an HTML error page or a truncated body poisoning the cache:
     // a masterlist is YAML and starts with real content, never a doctype.

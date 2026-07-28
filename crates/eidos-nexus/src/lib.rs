@@ -140,16 +140,23 @@ impl Nexus {
         // Read/write timeouts detect a stalled connection (which would otherwise
         // hang a task forever and leave GUI buttons greyed) without capping the
         // total duration of a legitimately long download.
-        let agent = ureq::AgentBuilder::new()
-            .user_agent(&format!(
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .user_agent(format!(
                 "Eidos/{} (Linux {})",
                 env!("CARGO_PKG_VERSION"),
                 std::env::consts::ARCH
             ))
-            .timeout_connect(std::time::Duration::from_secs(10))
-            .timeout_read(std::time::Duration::from_secs(30))
-            .timeout_write(std::time::Duration::from_secs(30))
-            .build();
+            .timeout_connect(Some(std::time::Duration::from_secs(10)))
+            .timeout_recv_body(Some(std::time::Duration::from_secs(30)))
+            .timeout_send_body(Some(std::time::Duration::from_secs(30)))
+            // A non-2xx reply comes back as a RESPONSE, not an error. Nexus puts
+            // the rate-limit budget in headers on EVERY reply including a 429,
+            // and that is the one we most need to read: ureq 2 handed us the
+            // response inside Error::Status, and 3 does not, so asking for the
+            // response directly is how the budget stays visible.
+            .http_status_as_error(false)
+            .build()
+            .into();
         Nexus {
             agent,
             api_key: api_key.trim().to_string(),
@@ -162,8 +169,10 @@ impl Nexus {
         self.limits.get()
     }
 
-    fn capture_limits(&self, resp: &ureq::Response) {
-        let parse = |h: &str| resp.header(h).and_then(|x| x.trim().parse::<i64>().ok());
+    fn capture_limits(&self, resp: &ureq::http::Response<ureq::Body>) {
+        let parse = |h: &str| {
+            resp.headers().get(h).and_then(|v| v.to_str().ok()).and_then(|x| x.trim().parse::<i64>().ok())
+        };
         self.limits.set(RateLimits {
             hourly_remaining: parse("X-RL-Hourly-Remaining"),
             daily_remaining: parse("X-RL-Daily-Remaining"),
@@ -182,11 +191,11 @@ impl Nexus {
 
     /// Attach MO2's four identifying headers + APIKEY to a request (every v1 call
     /// carries these, per nxmaccessmanager.cpp addAPIHeaders).
-    fn with_headers(&self, req: ureq::Request) -> ureq::Request {
-        req.set("APIKEY", &self.api_key)
-            .set("Protocol-Version", "1.0.0")
-            .set("Application-Name", "Eidos")
-            .set("Application-Version", env!("CARGO_PKG_VERSION"))
+    fn with_headers<B>(&self, req: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+        req.header("APIKEY", &self.api_key)
+            .header("Protocol-Version", "1.0.0")
+            .header("Application-Name", "Eidos")
+            .header("Application-Version", env!("CARGO_PKG_VERSION"))
     }
 
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
@@ -195,13 +204,15 @@ impl Nexus {
         // addAPIHeaders): Protocol-Version + Application-Name/-Version with APIKEY.
         // It also reads the X-RL-* budget from every reply (incl. a 429).
         match self.with_headers(self.agent.get(&url)).call() {
-            Ok(resp) => {
+            Ok(mut resp) => {
+                // Read the budget FIRST: it is present on a rejection too, and a
+                // 429 is exactly when the caller needs to know how long to wait.
                 self.capture_limits(&resp);
-                resp.into_json().map_err(|e| e.to_string())
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                self.capture_limits(&resp);
-                Err(Nexus::status_err(code))
+                let code = resp.status().as_u16();
+                if !resp.status().is_success() {
+                    return Err(Nexus::status_err(code));
+                }
+                resp.body_mut().read_json().map_err(|e| e.to_string())
             }
             Err(other) => Err(other.to_string()),
         }
@@ -211,15 +222,15 @@ impl Nexus {
     /// endorsement endpoints (MO2's endorseMod posts `version=<installed>`). The
     /// reply body is ignored - only success/failure matters. Captures the X-RL-*
     /// budget on success and on a Status error, exactly like [`get`].
-    fn send_with_version(&self, req: ureq::Request, version: &str) -> Result<(), String> {
-        match self.with_headers(req).send_form(&[("version", version)]) {
+    fn send_with_version(&self, req: ureq::RequestBuilder<ureq::typestate::WithBody>, version: &str) -> Result<(), String> {
+        match self.with_headers(req).send_form([("version", version)]) {
             Ok(resp) => {
                 self.capture_limits(&resp);
-                Ok(())
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                self.capture_limits(&resp);
-                Err(Nexus::status_err(code))
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(Nexus::status_err(resp.status().as_u16()))
+                }
             }
             Err(other) => Err(other.to_string()),
         }
@@ -335,9 +346,15 @@ impl Nexus {
 
         let mut req = self.agent.get(url);
         if have > 0 {
-            req = req.set("Range", &format!("bytes={have}-"));
+            req = req.header("Range", format!("bytes={have}-"));
         }
         let resp = req.call().map_err(|e| e.to_string())?;
+        // With http_status_as_error off, a rejection arrives here as a response;
+        // downloading an HTML error page into the .unfinished file would look
+        // like a resumable partial on the next attempt.
+        if !resp.status().is_success() {
+            return Err(Nexus::status_err(resp.status().as_u16()));
+        }
 
         // 206 Partial Content = the server honoured the range, so append; any other
         // status (200) means it sent the whole file - restart from byte 0.
@@ -349,7 +366,7 @@ impl Nexus {
         }
         .map_err(|e| e.to_string())?;
 
-        let mut reader = resp.into_reader();
+        let mut reader = resp.into_body().into_reader();
         let n = copy_stream(&mut reader, &mut out).map_err(|e| e.to_string())?;
         out.flush().map_err(|e| e.to_string())?;
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
