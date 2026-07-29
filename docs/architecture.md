@@ -277,6 +277,61 @@ The lesson generalises: `EIDOS_FUSE_NO_CACHE` now takes names
 answers "is it the caching?" costs a rebuild per hypothesis; one that answers
 "which caching?" costs four launches.
 
+## Path resolution, and why it was quadratic
+
+Every `lookup`, `getattr` and `open` has to answer one question: which real file
+does this virtual path name. The first implementation asked each layer in turn
+(`resolve_read` -> `ci_lookup`), walking the path one component at a time.
+
+Case folding is what made that expensive, and it is not optional. Bethesda games
+ask for `data/ccbgssse001-fish.bsa` while the file on disk is
+`ccBGSSSE001-Fish.bsa`; Windows does not distinguish them and the game was
+written for Windows. So `ci_lookup` tries the exact join first and, when that
+misses, reads the **whole directory** looking for a case-insensitive match.
+
+The trap is who pays for that. It is not the layer that has the file - it is
+every layer that does not. A layer without the path misses on its *first*
+component and pays an enumeration to be sure the name was not merely spelled
+differently. A file provided by one mod therefore cost an enumeration in each of
+the others, on every resolve. With 27 layers at median depth 6, one path cost 95
+probes and 37 directory reads; a measured session made 5,608,084 of the latter.
+
+### The index, and why it needs no invalidation
+
+The read-only layers are walked once at `LayerStack::new` into a map from folded
+virtual path to real path. A resolve becomes a hash lookup.
+
+The design rests on one property: **layers never change while mounted**. Every
+mutation in the tree - create, unlink, rename, mkdir, copy-up - lands in
+`overwrite`, which is deliberately not indexed and is read live on every
+resolve. So there is no invalidation, not as an omission but as the reason this
+design was chosen over faster ones that needed it.
+
+Two rules keep it honest:
+
+- **All-or-nothing, no exemptions.** An unreadable directory, a name that is not
+  UTF-8, a tree too deep or too large, and the whole index is discarded and every
+  query walks the layers as before. The index answers "no layer provides this" as
+  confidently as it answers "layer 7 does", and that is only sound if the walk
+  that built it completed. Slow is a cost; a mod file that silently is not there
+  is a corruption.
+- **Ambiguity defers.** Two names in one directory differing only by case cannot
+  be represented by a folded key, because `ci_lookup` prefers the exact spelling
+  and so the winner depends on the query. Those keys hand the question back to
+  the walk rather than guessing.
+
+`EIDOS_NO_INDEX=1` forces the fallback. `examples/index_agrees.rs` compares both
+paths over every path of a real instance; `examples/resolve_cost.rs` reports what
+one resolve costs in syscalls, which is deterministic where a duration is not.
+
+### What is left
+
+335,493 directory scans remain, all in the Overwrite - the one layer that is read
+live because it is the one that changes. They are 12% of what remains; the other
+82% is `read`, which is the disk. Indexing the Overwrite is possible in principle,
+since it changes only through code in this repository, but it reintroduces exactly
+the invalidation problem this design avoids, for a fraction of the gain.
+
 ## References
 
 - `ModOrganizer2/usvfs` - the semantics we reproduce.

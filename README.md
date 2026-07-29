@@ -83,6 +83,49 @@ run - what the script extender's own log says actually loaded.
 The long-form analysis - every Linux approach, what each costs, and which
 properties are genuinely exclusive - is in [docs/landscape.md](docs/landscape.md).
 
+## How fast it is
+
+Measured on a real 27-mod Skyrim SE instance, not a benchmark. Loading a save
+took about twenty seconds; it now takes six to seven, and cell changes are
+immediate.
+
+|                   | before      | after     |         |
+|-------------------|-------------|-----------|---------|
+| `exists()` probes | 6,408,527   | 481,826   | **13x** |
+| directory scans   | 5,608,084   | 335,493   | **17x** |
+| `lookup`          | 1627 ms     | 276 ms    | 5.9x    |
+| `getattr`         | 505 ms      | 77 ms     | 6.6x    |
+| `open`            | 1150 ms     | 236 ms    | 4.9x    |
+| `read`            | 3173 ms     | 3459 ms   | unchanged |
+
+`read` not moving is the point, not a disappointment. It resolves nothing - it
+`pread`s a handle that is already open - so it is the disk, and no amount of
+cleverness in a filesystem makes a disk faster. After this change 82% of what
+remains is the disk, which is where a mod manager should stop being the answer.
+
+**What was slow.** Resolving one virtual path asked every layer in turn, and a
+name that did not match byte-for-byte fell back to reading the whole directory
+to find a case-insensitive match - which Bethesda games need constantly, since
+the game asks for `ccbgssse001-fish.bsa` while the file is
+`ccBGSSSE001-Fish.bsa`. A layer that does *not* have the file misses on its
+first component and pays that enumeration anyway, so a file provided by one mod
+cost an enumeration in each of the other twenty-six, on every lookup, getattr
+and open. The cost grew with the thing users add most.
+
+The read-only layers are now indexed once at mount (10 ms over 5,400 entries,
+under 2 MB), so a resolve is a hash lookup. The Overwrite is deliberately *not*
+indexed - it is the layer that changes - so there is no invalidation to get
+wrong. `EIDOS_NO_INDEX=1` restores the old path, and a differential test
+compares the two on every path of a real instance: 22,951 compared, zero
+disagreements.
+
+Reproduce either half yourself:
+
+```sh
+cargo run --release -p eidos-core --example resolve_cost
+cargo run --release -p eidos-core --example index_agrees -- <mods-dir> <overwrite-dir>
+```
+
 ## Quick start
 
 ```sh
