@@ -1249,15 +1249,21 @@ impl Filesystem for Eidos {
             return;
         }
 
+        // O_TRUNC makes the name appear, so it goes through the stack like every
+        // other creation; the remaining opens here only ever touch a name that
+        // already exists.
+        if truncating {
+            match self.stack.create_truncated(&vpath) {
+                Ok(_) => {}
+                Err(e) => {
+                    reply.error(e.into());
+                    return;
+                }
+            }
+        }
         let mut opts = OpenOptions::new();
         if want_write {
             opts.read(true).write(true);
-            // For O_TRUNC the overwrite file may not exist yet (the copy-up was
-            // skipped): create it and truncate, instead of the old open-then-set_len
-            // which failed (EIO) when the path had no overwrite copy.
-            if truncating {
-                opts.create(true).truncate(true);
-            }
         } else {
             opts.read(true);
         }
@@ -1650,9 +1656,7 @@ impl Filesystem for Eidos {
         // truncate(true) guarantees zero length. Using open_for_write here would
         // resurrect the old bytes of a deleted mod/game file into the "new" file.
         let opened = (|| -> std::io::Result<(PathBuf, File, Metadata)> {
-            let dest = self.stack.prepare_overwrite(&vpath)?;
-            let file =
-                OpenOptions::new().read(true).write(true).create(true).truncate(true).open(&dest)?;
+            let (dest, file) = self.stack.create_truncated(&vpath)?;
             let meta = fs::symlink_metadata(&dest)?;
             Ok((dest, file, meta))
         })();
@@ -1772,9 +1776,7 @@ impl Filesystem for Eidos {
         let vpath = join(&parent_vpath, &link_name.to_string_lossy());
         // Create the symlink in the Overwrite layer; it shadows any lower entry.
         let made = (|| -> std::io::Result<Metadata> {
-            let dest = self.stack.prepare_overwrite(&vpath)?;
-            let _ = fs::remove_file(&dest); // replace any existing overwrite entry
-            std::os::unix::fs::symlink(target, &dest)?;
+            let dest = self.stack.create_symlink(&vpath, target)?;
             fs::symlink_metadata(&dest)
         })();
         match made {
@@ -1835,9 +1837,7 @@ impl Filesystem for Eidos {
                     fs::set_permissions(&dest, Permissions::from_mode(m & 0o7777))?;
                 }
                 if let Some(sz) = size {
-                    let f =
-                        OpenOptions::new().create(true).write(true).truncate(false).open(&dest)?;
-                    f.set_len(sz)?;
+                    self.stack.set_len(&vpath, sz)?;
                 }
                 if atime.is_some() || mtime.is_some() {
                     set_times(&dest, atime, mtime)?;
@@ -2388,6 +2388,50 @@ mod tests {
             // falls out of scope on an early return, exactly like a handler
         }
         assert!(total.load(Ordering::Relaxed) >= 1_000_000, "at least 1ms was charged");
+    }
+
+
+    #[test]
+    fn this_crate_never_makes_a_name_appear_or_vanish_by_itself() {
+        // The invariant step 1 exists to establish: `LayerStack` owns every name
+        // in the overwrite, so there is exactly ONE place that has to be told
+        // when one appears - which is what makes a cache or an index of that
+        // layer tractable at all.
+        //
+        // Three handlers used to breach it with their own `OpenOptions`, and
+        // nothing would have noticed a fourth. This test notices. It reads this
+        // crate's own source, which is blunt but is the only thing that actually
+        // enforces an architectural rule rather than describing one.
+        //
+        // The needles are assembled from fragments so this test does not match
+        // itself.
+        let src = include_str!("lib.rs");
+        let needles = [
+            concat!("fs::remove_", "file"),
+            concat!("fs::remove_", "dir"),
+            concat!("fs::", "rename"),
+            concat!("fs::create_", "dir"),
+            concat!("File::", "create"),
+            concat!("unix::fs::", "symlink"),
+            concat!("create", "(true)"),
+            concat!("fs::hard_", "link"),
+        ];
+        let mut found = Vec::new();
+        for (n, line) in src.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            for needle in needles {
+                if code.contains(needle) {
+                    found.push(format!("line {}: {}", n + 1, line.trim()));
+                }
+            }
+        }
+        assert!(
+            found.is_empty(),
+            "a name-creating filesystem call has appeared in eidos-fuse. It belongs \
+             on LayerStack, beside create_truncated / create_symlink / set_len, so \
+             that one layer knows about every name in the overwrite:\n  {}",
+            found.join("\n  ")
+        );
     }
 
 }

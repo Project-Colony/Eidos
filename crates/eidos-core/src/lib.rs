@@ -557,6 +557,52 @@ impl LayerStack {
     /// Unlike [`Self::open_for_write`] it does NOT copy a lower file up, because
     /// the caller is replacing the entry, not editing it; the new overwrite entry
     /// shadows any lower-layer copy.
+    /// Create `vpath` in the overwrite as an empty file, and hand back a
+    /// read-write handle on it.
+    ///
+    /// Exists so that `eidos-fuse` does not. Three handlers used to make a name
+    /// appear in the overwrite with their own `OpenOptions`, which meant this
+    /// layer did not know about every name it owns - and anything that has to be
+    /// told about every change (a cache, an index, an audit) had three doors to
+    /// watch instead of one, with no way to notice a fourth being added.
+    ///
+    /// Deliberately truncating and deliberately NOT a copy-up: the caller is
+    /// creating or emptying a file, so resurrecting the bytes of a lower-layer
+    /// file it is about to overwrite would be wrong.
+    pub fn create_truncated(&self, vpath: &str) -> std::io::Result<(PathBuf, fs::File)> {
+        let dest = self.prepare_overwrite(vpath)?;
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&dest)?;
+        Ok((dest, file))
+    }
+
+    /// Create `vpath` in the overwrite as a symlink to `target`, replacing any
+    /// entry already there.
+    pub fn create_symlink(&self, vpath: &str, target: &Path) -> std::io::Result<PathBuf> {
+        let dest = self.prepare_overwrite(vpath)?;
+        // An existing entry is replaced rather than failing EEXIST: the overwrite
+        // is where a re-created path lands, and `symlink` has already been told
+        // this name is theirs.
+        let _ = fs::remove_file(&dest);
+        std::os::unix::fs::symlink(target, &dest)?;
+        Ok(dest)
+    }
+
+    /// Set `vpath`'s length, copying it up first if it lives only in a lower
+    /// layer. Creates the file when the copy-up left nothing (a truncate of
+    /// something that resolves but has no overwrite copy).
+    pub fn set_len(&self, vpath: &str, size: u64) -> std::io::Result<PathBuf> {
+        let dest = self.open_for_write(vpath)?;
+        let file =
+            fs::OpenOptions::new().create(true).write(true).truncate(false).open(&dest)?;
+        file.set_len(size)?;
+        Ok(dest)
+    }
+
     pub fn prepare_overwrite(&self, vpath: &str) -> std::io::Result<PathBuf> {
         let _guard = self.path_lock(vpath);
         let dest = self.resolve_write(vpath);
