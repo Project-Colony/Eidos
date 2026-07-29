@@ -162,6 +162,7 @@ Full walkthrough (GUI tour, tools, MO2 import): [docs/usage.md](docs/usage.md).
 | [troubleshooting.md](docs/troubleshooting.md) | env switches, op counters, known issues and their history |
 | [status.md](docs/status.md) | the full done/remaining ledger |
 | [master-pieces.md](docs/master-pieces.md) | the MO2 + usvfs study that drove parity |
+| [tools.md](docs/tools.md) | xEdit / BodySlide / DynDOLOD: adding them, and the DLLs their name selects |
 | [adding-games.md](docs/adding-games.md) | wiring a new game family |
 | [packaging.md](docs/packaging.md) | distribution notes (AppImage viable - no capability needed) |
 

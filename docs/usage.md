@@ -127,6 +127,23 @@ scope using only unprivileged OverlayFS in a user namespace (Linux >= 5.11):
 ./scripts/poc-overlay.sh
 ```
 
+## Tools
+
+xEdit, BodySlide, DynDOLOD and friends run through the merged view inside the
+game's Proton prefix:
+
+```sh
+eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
+eidos tool skyrimse run BodySlide
+eidos prereqs skyrimse --install   # the .NET / VC++ runtimes some of them need
+```
+
+One thing to know before naming a tool: **the title decides which runtime DLLs
+Eidos provisions for it** - `BodySlide` gets its DirectX libraries, `BS` gets
+nothing. The table, the two prerequisite tiers, and why a tool installed as a mod
+is launched from the merged path rather than its own folder are in
+[tools.md](tools.md).
+
 ## Build and test
 
 ```sh

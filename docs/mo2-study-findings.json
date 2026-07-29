@@ -17,15 +17,15 @@
       "ntdllHandleTracker (HANDLE->UnicodeString) populated on every successful NtCreateFile/NtOpenFile of a FILE_TYPE_DISK handle, consulted to resolve relative-to-handle opens and reverse name queries"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/kernel32.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/maptracker.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hookcallcontext.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hookmanager.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (usvfsVirtualLinkFile/Directory, skip lists, force-load)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-core/src/lib.rs (LayerStack = tree+reroute combined)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-fuse/src/lib.rs (VFS op -> LayerStack)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-launch/src/lib.rs (namespace = per-process scope)"
+      "mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp",
+      "mo2-study/usvfs/src/usvfs_dll/hooks/kernel32.cpp",
+      "mo2-study/usvfs/src/usvfs_dll/maptracker.h",
+      "mo2-study/usvfs/src/usvfs_dll/hookcallcontext.cpp",
+      "mo2-study/usvfs/src/usvfs_dll/hookmanager.cpp",
+      "mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (usvfsVirtualLinkFile/Directory, skip lists, force-load)",
+      "crates/eidos-core/src/lib.rs (LayerStack = tree+reroute combined)",
+      "crates/eidos-fuse/src/lib.rs (VFS op -> LayerStack)",
+      "crates/eidos-launch/src/lib.rs (namespace = per-process scope)"
     ],
     "whatEidosShould build": "The headline finding: do NOT port the hooking layer. It is an artifact of intercepting above Wine; Eidos intercepts below Wine, so ~25 of usvfs's ~30 hooks (all the per-call path rewriting, attribute queries, directory merges, INI/move/copy redirection) are already delivered by the existing FUSE union + Wine's own NT->host-syscall translation. eidos-core + eidos-fuse are a complete, correct replacement for the path-interception MECHANISM. This subsystem is therefore NOT a master piece to build — it is a master piece Eidos has ALREADY built by a different route, and this study's value is confirming that and isolating the three true residuals.\n\nConcretely:\n1. TOOLS-THROUGH-VFS RE-ENTRY (the one real gap, belongs in eidos-launch + eidos-gui). When the GUI launches xEdit/FNIS/BodySlide, it must run them inside the SAME merged view, not the bare game dir. usvfs does this by DLL-injecting tools spawned from MO2. Eidos's equivalent is namespace re-entry: either keep the game's mount namespace alive and `setns(CLONE_NEWNS)` into it to launch the tool, or (simpler) re-run `launch()` with the identical LayerStack so the tool gets its own mount of the same union. Add a `launch_tool`/`reenter` path to eidos-launch and wire the GUI \"Run <tool>\" button to it. This is a genuine master-piece-adjacent feature for tool users and is currently unbuilt. Track it as the priority follow-up.\n2. MODULE-PATH SPOOFING: explicitly verify, then document as not-needed. Because Eidos mounts AT the game Data dir, a DLL's reported path is already its virtual path; the inverse tree usvfs needs has no analog. Add a regression note (and ideally one integration check that a plugin querying its own module path sees the mount path). No code likely required.\n3. PER-CALL SKIP LISTS: defer. In Eidos's model exclusion happens at layer-assembly time (eidos-instance decides which dirs become layers); a per-call suffix/dir filter is a nice-to-have only if a specific game needs to hide a path that is physically present in a layer.\n\nAlso fold into eidos-core the two already-tracked correctness items this study reinforces: directory rename across the lower boundary (usvfs models it as copy+delete — adopt the same), and the eventual in-memory resolver index to replace per-lookup `ci_lookup` real-FS stats (usvfs's shared-memory RedirectionTree is the proof that an in-RAM index, not repeated stat()s, is the scalable design for 1000+ mod stacks).",
     "recommendation": "Do not build a hooking layer or port any individual usvfs hook. eidos-core's LayerStack + eidos-fuse together are already a complete, behavior-equivalent replacement for usvfs's path-interception mechanism, because Wine translates every NT/Win32 path call into a host syscall that lands on the FUSE mount — so NtCreateFile/NtOpenFile/NtQueryAttributesFile/NtQueryDirectoryFile/GetFileAttributes/MoveFile/CopyFile/GetPrivateProfileString/FindFirstFile are all covered implicitly. The MutExHookGroup re-entrancy guard, GetLastError preservation, device-file/hid# filtering, and per-handle search-state tracking are Windows-in-process artifacts with no FUSE equivalent and no need. Spend effort only on the three genuine residuals, in priority order: (1) TOOLS-THROUGH-VFS RE-ENTRY in eidos-launch + eidos-gui — re-enter the running game's mount namespace (setns) or re-mount the identical LayerStack so xEdit/FNIS/BodySlide run against the same merged view and write back into Overwrite; this is the one usvfs capability (its CreateProcessInternalW injection) Eidos does not yet match for separately-launched tools, and it is the highest-value follow-up. (2) Confirm + document that module-path spoofing (usvfs's inverse tree / GetModuleFileName / NtQueryObject reverse-rewrite) is unnecessary because Eidos mounts at the game Data dir, with one integration check. (3) Defer per-call skip lists (handled at layer-assembly time in eidos-instance). Separately, treat usvfs's shared-memory RedirectionTree as confirmation that the planned in-memory resolver index in eidos-core (replacing per-lookup ci_lookup stat()s) is the right scaling design for large load orders.",
@@ -52,16 +52,16 @@
       "Eidos caches path<->ino and the open fd, but never the resolution result; every lookup/getattr/open/readdir re-resolves from cold FS scans (eidos-fuse/lib.rs:356,417,437,276)"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/directory_tree.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/tree_container.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/shared_memory.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/redirectiontree.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/maptracker.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (assertPathExists ~583, usvfsVirtualLinkDirectoryStatic ~716)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp (gatherVirtualEntries ~420)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/usvfsconnector.cpp (updateMapping ~213)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-core/src/lib.rs (resolve_read:102, ci_lookup:293, list_dir:227)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-fuse/src/lib.rs (lookup:417, getattr:437, open:356, dir_snapshot:265)"
+      "mo2-study/usvfs/src/shared/directory_tree.h",
+      "mo2-study/usvfs/src/shared/tree_container.h",
+      "mo2-study/usvfs/src/shared/shared_memory.h",
+      "mo2-study/usvfs/src/usvfs_dll/redirectiontree.h",
+      "mo2-study/usvfs/src/usvfs_dll/maptracker.h",
+      "mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (assertPathExists ~583, usvfsVirtualLinkDirectoryStatic ~716)",
+      "mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp (gatherVirtualEntries ~420)",
+      "mo2-study/modorganizer/src/usvfsconnector.cpp (updateMapping ~213)",
+      "crates/eidos-core/src/lib.rs (resolve_read:102, ci_lookup:293, list_dir:227)",
+      "crates/eidos-fuse/src/lib.rs (lookup:417, getattr:437, open:356, dir_snapshot:265)"
     ],
     "complexity": "medium"
   },
@@ -86,13 +86,13 @@
       "EIDOS contrast: single merged Vec, overwrite-first then layers, dedup HashSet keyed by to_ascii_lowercase with HIGHEST layer winning, then the WHOLE vec re-sorted by to_ascii_lowercase via Rust String Ord; '.'/'..' prepended after (eidos-core lib.rs:227-280, eidos-fuse lib.rs:284-291)"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp (hook_NtQueryDirectoryFile 520-673, hook_NtQueryDirectoryFileEx 675-830, addNtSearchData 295-380 dedup+compaction, gatherVirtualEntries 420-462 pre-seed, addVirtualSearchResult 477-518)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/directory_tree.h (CILess/_strnicmp comparator 185-219, NodeMapT ordered_unique multi_index 166-231, find/findLocal 435-607)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/stringutils.cpp (to_upper = LCMapStringW LOCALE_INVARIANT 123-131; startswith towlower 43-54)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/wildcard.cpp (DOS wildcard Match/PartialMatch, CharUpperW/A fold)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-core/src/lib.rs (Layers::list_dir merge+dedup+sort 227-280; eq_ignore_case 311-320; ci_lookup 293-309)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-fuse/src/lib.rs (dir_snapshot + readdir 262-293, 520-560)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-fuse/tests/union.rs (readdir_lists_merged_deduped_entries 180-195 -- sorts before asserting, so does not test order)"
+      "mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp (hook_NtQueryDirectoryFile 520-673, hook_NtQueryDirectoryFileEx 675-830, addNtSearchData 295-380 dedup+compaction, gatherVirtualEntries 420-462 pre-seed, addVirtualSearchResult 477-518)",
+      "mo2-study/usvfs/src/shared/directory_tree.h (CILess/_strnicmp comparator 185-219, NodeMapT ordered_unique multi_index 166-231, find/findLocal 435-607)",
+      "mo2-study/usvfs/src/shared/stringutils.cpp (to_upper = LCMapStringW LOCALE_INVARIANT 123-131; startswith towlower 43-54)",
+      "mo2-study/usvfs/src/shared/wildcard.cpp (DOS wildcard Match/PartialMatch, CharUpperW/A fold)",
+      "crates/eidos-core/src/lib.rs (Layers::list_dir merge+dedup+sort 227-280; eq_ignore_case 311-320; ci_lookup 293-309)",
+      "crates/eidos-fuse/src/lib.rs (dir_snapshot + readdir 262-293, 520-560)",
+      "crates/eidos-fuse/tests/union.rs (readdir_lists_merged_deduped_entries 180-195 -- sorts before asserting, so does not test order)"
     ]
   },
   {
@@ -113,16 +113,16 @@
       "Eidos equivalent: eidos-core resolve_write/open_for_write copy-up into single Overwrite layer; FUSE in-place union over real Data dir means DLL mmap path == virtual path, so GetModuleFileName is correct with zero hooks"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/maptracker.h (RerouteW + CreateRerouter: the whole reroute/create-target engine)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/kernel32.cpp:141 (hook_LoadLibraryExW), :1396 (hook_GetModuleFileNameW inverse reroute)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp:210 (FindCreateTarget), :1189 (NtCreateFile disposition+create-target path)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/include/usvfs/usvfs.h:46 (LINKFLAG_CREATETARGET semantics)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/organizercore.cpp:2070-2156 (fileMapping: overwrite = the create-target)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/usvfsconnector.cpp:196-295 (updateMapping LINKFLAG_CREATETARGET; updateForcedLibraries)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/usvfs.cpp:415-433 (forced-library LoadLibraryExW at InitHooks)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-core/src/lib.rs:122-219 (resolve_write/open_for_write/prepare_overwrite/remove/rename)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-fuse/src/lib.rs:334-663 (open/create/write copy-up into Overwrite), :297-327 (init: passthrough on, writeback_cache off)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-launch/src/lib.rs:78-126 (in-place union over Data via base_bind; CWD=game-root)"
+      "mo2-study/usvfs/src/usvfs_dll/maptracker.h (RerouteW + CreateRerouter: the whole reroute/create-target engine)",
+      "mo2-study/usvfs/src/usvfs_dll/hooks/kernel32.cpp:141 (hook_LoadLibraryExW), :1396 (hook_GetModuleFileNameW inverse reroute)",
+      "mo2-study/usvfs/src/usvfs_dll/hooks/ntdll.cpp:210 (FindCreateTarget), :1189 (NtCreateFile disposition+create-target path)",
+      "mo2-study/usvfs/include/usvfs/usvfs.h:46 (LINKFLAG_CREATETARGET semantics)",
+      "mo2-study/modorganizer/src/organizercore.cpp:2070-2156 (fileMapping: overwrite = the create-target)",
+      "mo2-study/modorganizer/src/usvfsconnector.cpp:196-295 (updateMapping LINKFLAG_CREATETARGET; updateForcedLibraries)",
+      "mo2-study/usvfs/src/usvfs_dll/usvfs.cpp:415-433 (forced-library LoadLibraryExW at InitHooks)",
+      "crates/eidos-core/src/lib.rs:122-219 (resolve_write/open_for_write/prepare_overwrite/remove/rename)",
+      "crates/eidos-fuse/src/lib.rs:334-663 (open/create/write copy-up into Overwrite), :297-327 (init: passthrough on, writeback_cache off)",
+      "crates/eidos-launch/src/lib.rs:78-126 (in-place union over Data via base_bind; CWD=game-root)"
     ],
     "recommendation": "Do NOT build a LoadLibrary/GetModuleFileName equivalent - the task's core question resolves favorably: Eidos's in-place union makes the DLL's mmap path identical to its virtual path, so a plugin querying its own path is already correct without any hook, and writing next to its own DLL already copies up into Overwrite. usvfs's inverse-table GetModuleFileName reroute exists only to paper over the fact that it loads DLLs from a different real path; Eidos doesn't have that divergence. The single-Overwrite write model is already implemented and matches MO2's single create-target exactly (eidos-core resolve_write/open_for_write).\n\nThe one real follow-up, and it is a nice-to-have not a master piece, is to add a 'forced libraries / DLL overrides' notion for the Linux world: a per-executable setting in eidos-instance (mirroring MO2's ExecutableForcedLoadSetting) that eidos-launch translates into WINEDLLOVERRIDES entries and/or drops proxy DLLs (dxgi.dll, d3d11.dll, etc.) into the Proton prefix's game dir before launch. This is what unlocks ENB/ReShade-class mods. Put the data model in eidos-instance and the prefix/env wiring in eidos-launch (with per-game defaults in eidos-games). Optionally also surface a skip-list (eidos-core already only merges what it is given, so a skip-list is just a filter when building the LayerStack - cheap, belongs in eidos-instance load-order assembly).\n\nNet: spend master-piece effort elsewhere (FOMOD installers, ESP/LOOT load order, conflict detection, tools-through-VFS). The write/module surface is effectively done.",
     "complexity": "low"
@@ -148,18 +148,18 @@
       "Post-extract bookkeeping: doInstall() writes meta.ini (gameName, modid, version, category, installationFile, repository, author, installedFiles[]) read partly from a sidecar <archive>.meta the downloader left next to the file; testOverwrite() handles an existing mods/<name>/ with merge/replace/rename + optional backup."
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/installationmanager.cpp (install() L624, doInstall() L483, testOverwrite() L376, extractFiles() L266, installer-plugin loop L759-872)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/archivefiletree.h (lazy archive tree + mapToArchive())",
-      "/home/mothersphere/Documents/Repositories/mo2-study/uibase/src/ifiletree.cpp (IFileTree: case-insensitive find/addFile/addDirectory/insert/walk - the tree API installers mutate)",
+      "mo2-study/modorganizer/src/installationmanager.cpp (install() L624, doInstall() L483, testOverwrite() L376, extractFiles() L266, installer-plugin loop L759-872)",
+      "mo2-study/modorganizer/src/archivefiletree.h (lazy archive tree + mapToArchive())",
+      "mo2-study/uibase/src/ifiletree.cpp (IFileTree: case-insensitive find/addFile/addDirectory/insert/walk - the tree API installers mutate)",
       "github.com/ModOrganizer2/modorganizer-installer_fomod/src/installerfomod.cpp (findFomodDirectory, buildFomodTree, isArchiveSupported, install(); locally cached at /tmp/installerfomod.cpp)",
       "github.com/ModOrganizer2/modorganizer-installer_fomod/src/fomodinstallerdialog.cpp (the ModuleConfig engine: updateTree L546, copyFileIterator/copyLeaf/applyPriority L289-370, testCondition family L372-519 & L1358, readFileList L745, readPluginList L931, getPluginDependencyType L917; cached /tmp/fomod_dlg.cpp)",
       "github.com/ModOrganizer2/modorganizer-installer_fomod/src/fomodinstallerdialog.h (full FOMOD data model: enums + Plugin/FileDescriptor/Condition/ConditionalInstall structs; cached /tmp/fomod_dlg.h)",
       "github.com/ModOrganizer2/modorganizer-installer_quick/src/installerquick.cpp (Simple installer: getSimpleArchiveBase recursive descent, priority 50)",
       "github.com/ModOrganizer2/modorganizer-game_features/src/moddatachecker.h (CheckReturn{INVALID,FIXABLE,VALID}, dataLooksValid/fix contract)",
       "github.com/ModOrganizer2/modorganizer-game_gamebryo/src/gamebryo/gamebryomoddatachecker.cpp (concrete valid folder-name + file-suffix sets for Bethesda)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-instance/src/lib.rs (install target: mods_dir, modlist/save_modlist, load_order)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-games/src/lib.rs (GameDef.data_dir - the per-game input for ModDataChecker)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-gui/src/main.rs (Downloads panel L844-848: current 'extract mods into mods/' placeholder)"
+      "crates/eidos-instance/src/lib.rs (install target: mods_dir, modlist/save_modlist, load_order)",
+      "crates/eidos-games/src/lib.rs (GameDef.data_dir - the per-game input for ModDataChecker)",
+      "crates/eidos-gui/src/main.rs (Downloads panel L844-848: current 'extract mods into mods/' placeholder)"
     ],
     "complexity": "high"
   },
@@ -185,10 +185,10 @@
       "Bootstrap: createDefaultProfile makes a single AppConfig::defaultProfileName() profile if none exist (organizercore.cpp:458)"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/profile.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/profile.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/profilesdialog.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/organizercore.cpp (setCurrentProfile ~553, createDefaultProfile ~458, fileMapping ~2070)",
+      "mo2-study/modorganizer/src/profile.h",
+      "mo2-study/modorganizer/src/profile.cpp",
+      "mo2-study/modorganizer/src/profilesdialog.cpp",
+      "mo2-study/modorganizer/src/organizercore.cpp (setCurrentProfile ~553, createDefaultProfile ~458, fileMapping ~2070)",
       "modorganizer-game_skyrimse/src/gameskyrimse.cpp (initializeProfile - CONFIGURATION copies INIs, MODS copies plugins.txt)",
       "modorganizer-game_gamebryo/src/gamebryo/gamegamebryo.cpp (copyToProfile copy-if-absent overloads)"
     ]
@@ -215,17 +215,17 @@
       "Missing-master detection (testMasters, pluginlist.cpp:1342-1361): for each enabled plugin, any master not in the enabled set is flagged - a hard crash predictor worth surfacing in the UI even before LOOT."
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/pluginlist.h (ESPInfo struct: priority/loadOrder/index/masters/flag fields, lines 329-368; model interface)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/pluginlist.cpp (refresh 204-341; fix passes 343-478; saveLoadOrder mtime 812-867; syncLoadOrder 906-918; setLoadOrder 1030-1050; generatePluginIndexes FE/FD 1281-1326; testMasters 1342-1361; reorder constraints 1940-2016; ESPInfo/TES4 parse 2127-2180)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/uibase/include/uibase/game_features/gameplugins.h (writePluginLists/readPluginLists/getLoadOrder + light/medium/blueprint capability flags)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/uibase/include/uibase/ipluginlist.h (the plugin-list API surface: state/priority/loadOrder/setLoadOrder/masters/hasLightExtension/isMediumFlagged/isBlueprintFlagged/formVersion)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/loot.cpp (runLoot 960-982; spawnLootcli args 462-507; pipe streaming; lootreport.json parse 720-958)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/loot.h (Loot::Report/Plugin/Dirty/Message data structures attached to plugin rows)",
+      "mo2-study/modorganizer/src/pluginlist.h (ESPInfo struct: priority/loadOrder/index/masters/flag fields, lines 329-368; model interface)",
+      "mo2-study/modorganizer/src/pluginlist.cpp (refresh 204-341; fix passes 343-478; saveLoadOrder mtime 812-867; syncLoadOrder 906-918; setLoadOrder 1030-1050; generatePluginIndexes FE/FD 1281-1326; testMasters 1342-1361; reorder constraints 1940-2016; ESPInfo/TES4 parse 2127-2180)",
+      "mo2-study/uibase/include/uibase/game_features/gameplugins.h (writePluginLists/readPluginLists/getLoadOrder + light/medium/blueprint capability flags)",
+      "mo2-study/uibase/include/uibase/ipluginlist.h (the plugin-list API surface: state/priority/loadOrder/setLoadOrder/masters/hasLightExtension/isMediumFlagged/isBlueprintFlagged/formVersion)",
+      "mo2-study/modorganizer/src/loot.cpp (runLoot 960-982; spawnLootcli args 462-507; pipe streaming; lootreport.json parse 720-958)",
+      "mo2-study/modorganizer/src/loot.h (Loot::Report/Plugin/Dirty/Message data structures attached to plugin rows)",
       "modorganizer-game_gamebryo/src/gamebryo/gamebryogameplugins.cpp (writeList: header comment, priority sort, plugins.txt=active vs loadorder.txt=full, encoding; the asterisk format lives in the SE/FO4 game subclasses)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-instance/src/lib.rs (ModEntry + modlist.txt = the mod-FOLDER order; the plugin axis must be added alongside, not here)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-games/src/lib.rs (GameDef catalog + DetectedGame.compatdata - extend with plugin capability flags + local_appdata name + prefix-path resolver)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-gui/src/main.rs (Tab enum line 47, mod-list pane + ToggleMod/MoveUp/MoveDown - add the Plugins tab here)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-launch/src/lib.rs (mounts union over Data with CWD=game-root; the point to write plugins.txt into the prefix right before launch)"
+      "crates/eidos-instance/src/lib.rs (ModEntry + modlist.txt = the mod-FOLDER order; the plugin axis must be added alongside, not here)",
+      "crates/eidos-games/src/lib.rs (GameDef catalog + DetectedGame.compatdata - extend with plugin capability flags + local_appdata name + prefix-path resolver)",
+      "crates/eidos-gui/src/main.rs (Tab enum line 47, mod-list pane + ToggleMod/MoveUp/MoveDown - add the Plugins tab here)",
+      "crates/eidos-launch/src/lib.rs (mounts union over Data with CWD=game-root; the point to write plugins.txt into the prefix right before launch)"
     ],
     "complexity": "high"
   },
@@ -246,13 +246,13 @@
       "Display: GeneralConflictsTab bins a mod's files into Overwrite (this mod wins, alternatives non-empty) / Overwritten (this mod is an alternative) / NoConflict trees; AdvancedConflictsTab shows the before/after origin chain; Data tab sets FileTreeItem::Conflicted when alternatives non-empty + labels the winner"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/shared/fileentry.cpp (addOrigin/sortOrigins/removeOrigin -- winner/loser arbitration core)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/shared/fileentry.h + shared/fileregisterfwd.h (FileEntry, FileAlternative, AlternativesVector, DataArchiveOrigin)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/shared/filesorigin.h (FilesOrigin = per-mod origin with priority + file set)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/directoryrefresher.cpp (refresh(): merged-tree build, priority assignment, threaded walk)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/modinfowithconflictinfo.cpp + .h (doConflictCheck, six conflict sets, EConflictType/EConflictFlag, memoization)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/modinfodialogconflicts.cpp + modinfodialogconflictsmodels.h (Overwrite/Overwritten/NoConflict + Advanced views, ConflictItem)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/filetreemodel.cpp (Data tab: Conflicted flag from non-empty alternatives + winner label)"
+      "mo2-study/modorganizer/src/shared/fileentry.cpp (addOrigin/sortOrigins/removeOrigin -- winner/loser arbitration core)",
+      "mo2-study/modorganizer/src/shared/fileentry.h + shared/fileregisterfwd.h (FileEntry, FileAlternative, AlternativesVector, DataArchiveOrigin)",
+      "mo2-study/modorganizer/src/shared/filesorigin.h (FilesOrigin = per-mod origin with priority + file set)",
+      "mo2-study/modorganizer/src/directoryrefresher.cpp (refresh(): merged-tree build, priority assignment, threaded walk)",
+      "mo2-study/modorganizer/src/modinfowithconflictinfo.cpp + .h (doConflictCheck, six conflict sets, EConflictType/EConflictFlag, memoization)",
+      "mo2-study/modorganizer/src/modinfodialogconflicts.cpp + modinfodialogconflictsmodels.h (Overwrite/Overwritten/NoConflict + Advanced views, ConflictItem)",
+      "mo2-study/modorganizer/src/filetreemodel.cpp (Data tab: Conflicted flag from non-empty alternatives + winner label)"
     ],
     "recommendation": "Build a conflict-analysis engine as a new pure module -- prefer a new crate eidos-conflicts, or a sibling module `conflicts` in eidos-core. Keep it OUT of eidos-fuse so it stays unit-testable and reusable by the GUI and a future `eidos conflicts` CLI. 1) Inputs: ordered enabled layers as Vec<{origin_id: u32, name: String, root: PathBuf}> highest-first (exactly eidos-instance::load_order() zipped with a stable id + mod name) plus game data as origin 0. 2) Build a VirtualTree by walking every layer recursively ONCE (walkdir), keyed by ASCII-lowercased relative path -- reuse eidos-core's eq_ignore_case/normalize so it agrees with the resolver, and honor overwrite-layer whiteouts. Per path store FileNode { winner: OriginId, alternatives: Vec<OriginId> } sorted by priority; winner determination collapses MO2's addOrigin/sortOrigins into one sorted pass ('first layer in priority order with the path' wins, the rest become alternatives in order). No incremental swap needed since Eidos has no BSA tiebreak yet. This tree is the natural in-memory resolver index that kills the per-lookup-stat 'lowerdir wall'. 3) Derive per-mod conflicts in one pass: HashMap<OriginId, ModConflicts> where ModConflicts { overwrites: BTreeSet<OriginId>, overwritten_by: BTreeSet<OriginId>, state: ConflictState }; the winner overwrites every alternative, each alternative is overwritten_by the winner; state = { None, Winning, Losing, Mixed, Redundant } using MO2's exact rule (Redundant = visible files but wins nothing; Mixed = both sets non-empty). 4) GUI: replace merged_listing with a recursive Data tree fed by VirtualTree (row = name, winning mod, conflict marker when alternatives non-empty); add a per-mod Conflicts panel binning the mod's files into Overwrite/Overwritten/No-conflict (GeneralConflictsTab split); render the conflict flag on each mod_row (Flags column is empty today). Memoize the VirtualTree on App, rebuild on Refresh/toggle/reorder (MO2 memoizes + invalidates identically). Defer BSA/archive + loose-vs-archive tiebreak as a documented TODO until BSA parsing lands. Unit-test with eidos-core's TempTree pattern (three layers one path -> winner highest, rest alternatives in order; fully shadowed mod -> Redundant; wins-some-loses-some -> Mixed).",
     "complexity": "medium"
@@ -276,15 +276,15 @@
       "Eidos launch() (lib.rs:78-126): unshare CLONE_NEWNS (privileged) or CLONE_NEWUSER|CLONE_NEWNS (rootless), MS_PRIVATE root, optional base_bind stash of real Data as lowest layer, spawn FUSE daemon, Command with current_dir=game_root, cmd.status(), drop=unmount; inherits parent env verbatim, waits on single PID"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/spawn.cpp (spawn::spawn lines 419-481: PATH append/restore, CreateProcess flags, usvfsCreateProcessHooked call; checkSteam lines 611-693)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/env.cpp:385-407 (appendToPath/prependToPath/setPath)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/processrunner.cpp (adjustForVirtualized:13-55, process-tree wait machinery:55-443, runBinary:756-803)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (InitHooks force-load:415-441, usvfsCreateProcessHooked:817-859, usvfsForceLoadLibrary:905-913)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/sharedparameters.cpp:231-260 (addForcedLibrary/forcedLibraries/clearForcedLibraries)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_helper/inject.cpp:94-140 (usvfs_x64.dll / usvfs_proxy_x64.exe path resolution - the reason PATH matters)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/usvfsconnector.cpp:285-295 (updateForcedLibraries) and :124-186 (VFS params setup)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos-launch/src/lib.rs:19-126 (LaunchSpec + launch)",
-      "/home/mothersphere/Documents/Repositories/Eidos/crates/eidos/src/main.rs:56-106 (cmd_play wiring of LaunchSpec)"
+      "mo2-study/modorganizer/src/spawn.cpp (spawn::spawn lines 419-481: PATH append/restore, CreateProcess flags, usvfsCreateProcessHooked call; checkSteam lines 611-693)",
+      "mo2-study/modorganizer/src/env.cpp:385-407 (appendToPath/prependToPath/setPath)",
+      "mo2-study/modorganizer/src/processrunner.cpp (adjustForVirtualized:13-55, process-tree wait machinery:55-443, runBinary:756-803)",
+      "mo2-study/usvfs/src/usvfs_dll/usvfs.cpp (InitHooks force-load:415-441, usvfsCreateProcessHooked:817-859, usvfsForceLoadLibrary:905-913)",
+      "mo2-study/usvfs/src/usvfs_dll/sharedparameters.cpp:231-260 (addForcedLibrary/forcedLibraries/clearForcedLibraries)",
+      "mo2-study/usvfs/src/usvfs_helper/inject.cpp:94-140 (usvfs_x64.dll / usvfs_proxy_x64.exe path resolution - the reason PATH matters)",
+      "mo2-study/modorganizer/src/usvfsconnector.cpp:285-295 (updateForcedLibraries) and :124-186 (VFS params setup)",
+      "crates/eidos-launch/src/lib.rs:19-126 (LaunchSpec + launch)",
+      "crates/eidos/src/main.rs:56-106 (cmd_play wiring of LaunchSpec)"
     ],
     "complexity": "medium"
   },
@@ -309,13 +309,13 @@
       "eidos-fuse BackgroundSession (fuser::spawn_mount2) is the unmount-on-drop handle; one mount = one shared inode table + one COW Overwrite, which is exactly the sharing tools need"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/executableslist.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/processrunner.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/usvfsconnector.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_dll/usvfs.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/usvfs_proxy/main.cpp",
-      "/home/mothersphere/Documents/Repositories/mo2-study/usvfs/src/shared/tree_container.h",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/organizercore.cpp (beforeRun/afterRun/fileMapping/prepareVFS)"
+      "mo2-study/modorganizer/src/executableslist.cpp",
+      "mo2-study/modorganizer/src/processrunner.cpp",
+      "mo2-study/modorganizer/src/usvfsconnector.cpp",
+      "mo2-study/usvfs/src/usvfs_dll/usvfs.cpp",
+      "mo2-study/usvfs/src/usvfs_proxy/main.cpp",
+      "mo2-study/usvfs/src/shared/tree_container.h",
+      "mo2-study/modorganizer/src/organizercore.cpp (beforeRun/afterRun/fileMapping/prepareVFS)"
     ],
     "complexity": "high"
   },
@@ -374,12 +374,12 @@
       "Load order is per-PROFILE (profiles/<name>/modlist.txt + plugins.txt + loadorder.txt + local INIs/saves), NOT at instance level"
     ],
     "keySourceFiles": [
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/modinforegular.cpp (readMeta lines 85-247, saveMeta 249-328 - the canonical meta.ini schema)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/modinfo.cpp (updateFromDisc 233-280, updateIndices 282-295, checkAllForUpdate 299-387 - provenance indices + update-check)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/downloadmanager.cpp (createMetaFile ~1770-1798 + loadMetaData ~93-160 - download .meta sidecar that feeds meta.ini)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/instancemanager.cpp (Instance::setup/readFromIni/updateIni 145-235, objectsForDeletion 372-522, global/portable resolution 551-655)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/shared/appconfig.inc (canonical folder/file names: mods, overwrite, downloads, profiles, webcache, ModOrganizer.ini, portable.txt)",
-      "/home/mothersphere/Documents/Repositories/mo2-study/modorganizer/src/settings.h (GameSettings 49-88, PathSettings 383-429 - instance INI structure + %BASE_DIR%)"
+      "mo2-study/modorganizer/src/modinforegular.cpp (readMeta lines 85-247, saveMeta 249-328 - the canonical meta.ini schema)",
+      "mo2-study/modorganizer/src/modinfo.cpp (updateFromDisc 233-280, updateIndices 282-295, checkAllForUpdate 299-387 - provenance indices + update-check)",
+      "mo2-study/modorganizer/src/downloadmanager.cpp (createMetaFile ~1770-1798 + loadMetaData ~93-160 - download .meta sidecar that feeds meta.ini)",
+      "mo2-study/modorganizer/src/instancemanager.cpp (Instance::setup/readFromIni/updateIni 145-235, objectsForDeletion 372-522, global/portable resolution 551-655)",
+      "mo2-study/modorganizer/src/shared/appconfig.inc (canonical folder/file names: mods, overwrite, downloads, profiles, webcache, ModOrganizer.ini, portable.txt)",
+      "mo2-study/modorganizer/src/settings.h (GameSettings 49-88, PathSettings 383-429 - instance INI structure + %BASE_DIR%)"
     ]
   }
 ]
