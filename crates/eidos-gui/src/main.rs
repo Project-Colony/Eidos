@@ -3230,6 +3230,16 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             let Some(inst) = app.created.as_ref() else { return Task::none() };
             let existing = inst.mods_dir().join(&name).exists();
+            // Same reason as Clear: this MOVES the whole Overwrite into a mod
+            // folder, so doing it mid-session pulls the write layer out from under
+            // a running game.
+            let _guard = match inst.try_lock("the Eidos window") {
+                Ok(g) => g,
+                Err(e) => {
+                    app.status = Some(format!("Cannot turn the Overwrite into a mod: {e}."));
+                    return Task::none();
+                }
+            };
             match inst.overwrite_into_mod(&name) {
                 Ok(dest) => {
                     // Highest priority (the end of the display order), which is where
@@ -3282,9 +3292,19 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let dir = inst.overwrite_dir();
                 if app.confirm_clear {
                     app.confirm_clear = false;
-                    app.status = Some(match clear_dir_contents(&dir) {
-                        Ok(()) => "Overwrite cleared.".to_string(),
-                        Err(e) => format!("Clear failed: {e}"),
+                    // The Overwrite is the running game's WRITE LAYER. Emptying it
+                    // mid-session deletes files the game has open - shader caches,
+                    // MCM configs, script-extender cosaves - and the game finds out
+                    // by failing. The lock is what makes that impossible; arming the
+                    // confirmation above deliberately does not take it, so a
+                    // refusal is reported once, on the click that would act.
+                    let held = inst.try_lock("the Eidos window");
+                    app.status = Some(match held {
+                        Err(e) => format!("Cannot clear the Overwrite: {e}."),
+                        Ok(_guard) => match clear_dir_contents(&dir) {
+                            Ok(()) => "Overwrite cleared.".to_string(),
+                            Err(e) => format!("Clear failed: {e}"),
+                        },
                     });
                     drop_files_cache(app, Some("Overwrite"));
                     app.conflicts = compute_conflicts(app);
