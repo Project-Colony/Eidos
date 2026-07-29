@@ -1,6 +1,6 @@
 [package]
 name = "eidos-games"
-version = "0.0.0"
+version.workspace = true
 description = "Supported-game catalog and Steam install detection for Eidos"
 license.workspace = true
 repository.workspace = true

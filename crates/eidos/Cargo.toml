@@ -1,6 +1,6 @@
 [package]
 name = "eidos"
-version = "0.0.0"
+version.workspace = true
 description = "Eidos: a native Linux mod manager (CLI front end)"
 license.workspace = true
 repository.workspace = true

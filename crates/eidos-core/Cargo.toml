@@ -1,6 +1,6 @@
 [package]
 name = "eidos-core"
-version = "0.0.0"
+version.workspace = true
 description = "Layer-resolution engine for the Eidos mod VFS"
 license.workspace = true
 repository.workspace = true

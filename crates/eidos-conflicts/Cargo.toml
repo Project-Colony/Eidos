@@ -1,6 +1,6 @@
 [package]
 name = "eidos-conflicts"
-version = "0.0.0"
+version.workspace = true
 description = "Eidos per-file conflict analysis: winners, losers, per-mod conflict state"
 license.workspace = true
 repository.workspace = true

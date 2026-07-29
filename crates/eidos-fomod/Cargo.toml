@@ -1,6 +1,6 @@
 [package]
 name = "eidos-fomod"
-version = "0.0.0"
+version.workspace = true
 description = "Eidos FOMOD scripted-installer engine (MO2 installer_fomod parity)"
 license.workspace = true
 repository.workspace = true

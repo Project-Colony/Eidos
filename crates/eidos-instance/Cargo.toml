@@ -1,6 +1,6 @@
 [package]
 name = "eidos-instance"
-version = "0.0.0"
+version.workspace = true
 description = "Eidos instance model: global vs portable, mods/overwrite layout, load order"
 license.workspace = true
 repository.workspace = true

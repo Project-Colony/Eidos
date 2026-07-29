@@ -1,6 +1,6 @@
 [package]
 name = "eidos-fuse"
-version = "0.0.0"
+version.workspace = true
 description = "FUSE union daemon for the Eidos mod VFS"
 license.workspace = true
 repository.workspace = true

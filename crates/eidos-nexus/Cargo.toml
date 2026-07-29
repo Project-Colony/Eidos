@@ -1,6 +1,6 @@
 [package]
 name = "eidos-nexus"
-version = "0.0.0"
+version.workspace = true
 description = "Eidos Nexus Mods integration: v1 API client, nxm:// links, MO2-compatible download .meta"
 license.workspace = true
 repository.workspace = true

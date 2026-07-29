@@ -1,6 +1,6 @@
 [package]
 name = "eidos-log"
-version = "0.0.0"
+version.workspace = true
 description = "Session log files for Eidos: levels, rotation, and home-path redaction"
 license.workspace = true
 repository.workspace = true
