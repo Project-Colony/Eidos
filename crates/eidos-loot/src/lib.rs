@@ -15,9 +15,17 @@ use libloot::metadata::{
 };
 use libloot::{EvalMode, Game, GameType, MergeMode};
 
-/// The masterlist metadata-syntax branch libloot 0.29 reads (LOOT versions the
-/// per-game masterlist repos by a `v<major>.<minor>` branch). Bump alongside libloot.
-const MASTERLIST_BRANCH: &str = "v0.26";
+/// The masterlist metadata-syntax branch libloot reads. LOOT versions the
+/// per-game masterlist repos by a `v<major>.<minor>` branch matching the library,
+/// and **the old branches are not maintained** - they are frozen at whatever the
+/// syntax bump found there.
+///
+/// This must be bumped with the `libloot` dependency, and once was not: the crate
+/// went to 0.29 while this stayed on `v0.26`, so sorting ran on metadata that had
+/// stopped being updated on 2026-04-11 while upstream kept moving. Three and a
+/// half months of new mods, dirty-plugin records and incompatibility rules, all
+/// invisible, with nothing failing to say so.
+const MASTERLIST_BRANCH: &str = "v0.29";
 
 #[derive(Debug)]
 pub enum LootError {
