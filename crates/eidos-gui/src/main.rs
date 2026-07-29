@@ -7638,7 +7638,23 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
     }
 
     // Missing masters: the single most reliable crash predictor.
-    match app.plugins.as_ref() {
+    //
+    // `app.plugins` is a CACHE - dropped on every mod-list change and only
+    // rebuilt while the Plugins tab is open - so most of the time it is `None`.
+    // This check used to skip itself and print "load order not computed yet",
+    // which reads as reassurance and is not: it says nothing was looked at, on
+    // the one check most likely to predict a crash. If the cache is cold,
+    // compute the answer. `diagnostics` only runs when something changed, not
+    // per frame, so it can afford to.
+    let computed;
+    let plugins = match app.plugins.as_ref() {
+        Some(list) => Some(list),
+        None => {
+            computed = compute_plugins(app);
+            computed.as_ref()
+        }
+    };
+    match plugins {
         Some(list) => {
             let missing = list.missing_masters();
             if missing.is_empty() {
@@ -7666,10 +7682,15 @@ fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 });
             }
         }
+        // Only reachable when there is no game or no plugin support for it, not
+        // when nobody has opened a tab yet. Say which, rather than asking the
+        // user to go and do the program's job.
         None => out.push(Diagnostic {
             level: DiagLevel::Advice,
-            title: "Load order not computed yet".to_string(),
-            detail: "Open the Plugins tab to analyse the load order.".to_string(),
+            title: "Load order unavailable".to_string(),
+            detail: "No game is selected, or this game has no plugin load order \
+                     for Eidos to analyse."
+                .to_string(),
             actions: Vec::new(),
         }),
     }
@@ -12030,6 +12051,23 @@ mod tests {
             row_bg(true),
             row_bg(false),
             "the stripes differ, so a fade into the wrong one would show"
+        );
+    }
+
+
+    #[test]
+    fn a_cold_plugin_cache_does_not_silence_the_missing_master_check() {
+        // The check that predicts crashes must never answer "not computed yet".
+        // `app.plugins` is None here, exactly as it is after any mod-list change,
+        // and the diagnostic set must still contain a real verdict rather than an
+        // apology.
+        let mut app = nav_app(&["A"]);
+        app.plugins = None;
+        let out = diagnostics(&app);
+        assert!(
+            !out.iter().any(|d| d.title.contains("not computed")),
+            "the old message is gone: {:?}",
+            out.iter().map(|d| &d.title).collect::<Vec<_>>()
         );
     }
 
