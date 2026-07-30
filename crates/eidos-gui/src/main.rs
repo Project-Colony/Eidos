@@ -10981,7 +10981,40 @@ fn main() -> iced::Result {
         .title("Eidos")
         .theme(theme)
         .subscription(subscription)
+        .window(window_settings())
         .run()
+}
+
+/// The desktop identity of the window. MUST equal the basename of the installed
+/// `eidos.desktop`, because that pairing is the only thing tying the two
+/// together.
+pub const APP_ID: &str = "eidos";
+
+/// How the window introduces itself to the desktop.
+///
+/// Without `application_id` a Wayland surface announces an EMPTY app id, so the
+/// compositor has nothing to match against a desktop entry and a taskbar shows a
+/// placeholder tile no matter how many icons are installed. That was the actual
+/// symptom; the icon files were never the missing part.
+///
+/// The embedded icon covers X11 and XWayland, where the icon travels with the
+/// window instead of being looked up from a desktop file - so the binary is
+/// self-sufficient even with nothing installed. It is the dark-ground tile
+/// rather than the transparent mark: the mark is pale ink, which disappears
+/// against a light panel. A decode failure costs the icon, never the launch.
+fn window_settings() -> iced::window::Settings {
+    iced::window::Settings {
+        platform_specific: iced::window::settings::PlatformSpecific {
+            application_id: APP_ID.to_string(),
+            ..Default::default()
+        },
+        icon: iced::window::icon::from_file_data(
+            include_bytes!("../../../assets/brand/png/eidos-icon-256-on-dark.png"),
+            None,
+        )
+        .ok(),
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]

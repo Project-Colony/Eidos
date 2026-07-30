@@ -140,16 +140,30 @@ package() {
 		Terminal=false
 	EOF
 
-	# The tree ships no application icon yet, so point at a stock freedesktop
-	# name rather than leaving a dangling Icon= key that renders as a blank tile.
+	# The application icon, in the sizes a panel actually asks for. The
+	# dark-ground tile rather than the transparent mark: the mark is pale ink and
+	# vanishes against a light panel.
+	for s in 16 32 48 64 128 256 512; do
+		install -Dm644 "assets/brand/png/eidos-icon-$s-on-dark.png" \
+			"$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/eidos.png"
+	done
+	install -Dm644 assets/brand/eidos-icon.svg \
+		"$pkgdir/usr/share/icons/hicolor/scalable/apps/eidos.svg"
+
+	# The BASENAME of this file is load-bearing: a Wayland compositor matches it
+	# against the window's application id (`eidos`, set in eidos-gui) and that
+	# pairing is the only thing that puts the icon above on a taskbar. Renaming
+	# one without the other silently produces a blank tile.
 	install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/eidos.desktop" <<-'EOF'
 		[Desktop Entry]
 		Type=Application
 		Name=Eidos
+		GenericName=Mod Manager
 		Comment=Mod manager for games running under Proton
 		Exec=/usr/bin/eidos-gui
-		Icon=applications-games
-		Categories=Game;Utility;
+		Icon=eidos
+		Categories=Game;
+		Keywords=mod;mods;modding;skyrim;fallout;starfield;bethesda;
 		Terminal=false
 		StartupNotify=true
 	EOF

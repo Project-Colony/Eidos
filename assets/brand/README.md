@@ -25,6 +25,32 @@ the full icon, `48` and below from the simplified one.
 listing, Nexus Mods) - square, dark background baked in, so it renders as
 designed rather than depending on where it lands.
 
+## The application icon
+
+`png/eidos-icon-<size>-on-dark.png` is what gets installed into the icon theme
+and embedded in the binary. Dark ground baked in on purpose: the mark is pale
+ink and disappears against a light panel, and a taskbar is not somewhere you get
+to choose the background.
+
+Three things have to agree or the icon silently does not appear:
+
+| | |
+|---|---|
+| `APP_ID` in `crates/eidos-gui/src/main.rs` | `eidos` |
+| the installed desktop file | `eidos.desktop` |
+| the installed icon | `hicolor/<size>/apps/eidos.png` |
+
+A Wayland compositor matches the window's application id against the desktop
+file's basename, then reads `Icon=` from it. Miss any leg and a panel shows a
+placeholder no matter how many icons are installed - which is exactly what
+happened before this was wired: the window announced an *empty* app id, so there
+was nothing to match. `hyprctl clients -j` reporting `"class": ""` is that
+failure.
+
+`packaging/install.sh` and `packaging/PKGBUILD` install all three. They each
+generate the desktop entry inline, because it has to carry the real `Exec` path
+for the layout it is installing.
+
 ## Colours
 
 | role | dark | light |

@@ -222,22 +222,56 @@ fi
 echo
 
 echo "desktop entry"
-# The GUI launcher. No application icon ships in the tree yet, so use a stock
-# freedesktop name rather than a dangling Icon= key that renders as a blank tile.
+# The GUI launcher, plus the icon theme entries it names.
+#
+# The desktop file's BASENAME is load-bearing: a Wayland compositor matches it
+# against the window's application id (`eidos`, set in eidos-gui) and that
+# pairing is the only thing that puts an icon on a taskbar. Renaming one without
+# the other silently produces a blank tile.
 apps="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+icons="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor"
 if [[ "$(id -u)" -eq 0 && -z "${SUDO_USER:-}" ]]; then
 	say "skipped (running as root)"
 else
-	[[ -n "${SUDO_USER:-}" ]] && apps="$(getent passwd "$SUDO_USER" | cut -d: -f6)/.local/share/applications"
+	if [[ -n "${SUDO_USER:-}" ]]; then
+		user_home="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+		apps="$user_home/.local/share/applications"
+		icons="$user_home/.local/share/icons/hicolor"
+	fi
 	mkdir -p "$apps"
+
+	# Icons are optional: a release tarball may not carry the asset tree, and a
+	# missing icon must not cost the launcher entry.
+	icon_key=applications-games
+	art="$here/../assets/brand/png"
+	[[ -d "$art" ]] || art="$here/assets/brand/png"
+	if [[ -d "$art" ]]; then
+		for s in 16 32 48 64 128 256 512; do
+			src="$art/eidos-icon-$s-on-dark.png"
+			[[ -f "$src" ]] || continue
+			install -Dm644 "$src" "$icons/${s}x${s}/apps/eidos.png"
+			[[ -n "${SUDO_USER:-}" ]] && chown -R "$SUDO_USER" "$icons" 2>/dev/null
+		done
+		if [[ -f "$icons/256x256/apps/eidos.png" ]]; then
+			icon_key=eidos
+			say "$icons/*/apps/eidos.png"
+			command -v gtk-update-icon-cache >/dev/null &&
+				gtk-update-icon-cache -qtf "$icons" 2>/dev/null || true
+		fi
+	else
+		say "no assets/ beside this script - keeping the stock icon name"
+	fi
+
 	cat > "$apps/eidos.desktop" <<-EOF
 		[Desktop Entry]
 		Type=Application
 		Name=Eidos
+		GenericName=Mod Manager
 		Comment=Mod manager for games running under Proton
 		Exec=$bindir/eidos-gui
-		Icon=applications-games
-		Categories=Game;Utility;
+		Icon=$icon_key
+		Categories=Game;
+		Keywords=mod;mods;modding;skyrim;fallout;starfield;bethesda;
 		Terminal=false
 		StartupNotify=true
 	EOF
