@@ -17,24 +17,39 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The xEdit family. These are 32-bit-era Delphi applications whose file dialogs
-/// misbehave under Wine's default Windows version; `winxp` is the compatibility
-/// mode the community settled on, and it is applied per-executable so nothing
-/// else in the prefix is affected.
-const XEDIT_EXES: &[&str] = &[
-    "SSEEdit.exe",
-    "SSEEdit64.exe",
-    "TES5Edit.exe",
-    "TES5Edit64.exe",
-    "TES4Edit.exe",
-    "FO4Edit.exe",
-    "FO4Edit64.exe",
-    "FO3Edit.exe",
-    "FNVEdit.exe",
-    "SF1Edit64.exe",
-    "xEdit.exe",
-    "xEdit64.exe",
+/// The xEdit family, by base name. These are 32-bit-era Delphi applications
+/// whose file dialogs misbehave under Wine's default Windows version; `winxp` is
+/// the compatibility mode the community settled on, and it is applied
+/// per-executable so nothing else in the prefix is affected.
+const XEDIT_BASES: &[&str] = &[
+    "SSEEdit",
+    "SSEEdit64",
+    "TES5Edit",
+    "TES5Edit64",
+    "TES4Edit",
+    "FO4Edit",
+    "FO4Edit64",
+    "FO3Edit",
+    "FNVEdit",
+    "SF1Edit64",
+    "xEdit",
+    "xEdit64",
 ];
+
+/// Every executable that should run in `winxp` mode: each base name, and its
+/// `QuickAutoClean` sibling.
+///
+/// The siblings are DERIVED rather than listed, because listing them is how the
+/// original list came to cover `SSEEdit.exe` but not `SSEEditQuickAutoClean.exe`
+/// - and QuickAutoClean is the one a user actually runs, since cleaning the
+/// official masters is a prerequisite of DynDOLOD and of most load-order guides.
+/// A key for an executable that does not exist costs nothing: wine only consults
+/// it if something by that name runs.
+fn xedit_exes() -> impl Iterator<Item = String> {
+    XEDIT_BASES
+        .iter()
+        .flat_map(|base| [format!("{base}.exe"), format!("{base}QuickAutoClean.exe")])
+}
 
 /// Render the `.reg` blob. Pure, so the exact text is unit-testable without a
 /// prefix or a wine process anywhere in sight.
@@ -58,7 +73,7 @@ pub fn registry_blob(registry_name: &str, install_path: &Path) -> String {
             out.push_str(&format!("\"installed path\"=\"{}\"\r\n", escape_reg(&win_path)));
         }
     }
-    for exe in XEDIT_EXES {
+    for exe in xedit_exes() {
         out.push_str(&format!("\r\n[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\{exe}]\r\n"));
         out.push_str("\"Version\"=\"winxp\"\r\n");
     }
@@ -85,9 +100,13 @@ fn escape_reg(s: &str) -> String {
 ///
 /// The marker records the exact path that was registered, so moving the game to
 /// another drive re-runs the import instead of leaving a stale key behind.
+/// Bump the suffix whenever the BLOB gains entries that are not covered by the
+/// value checks: a prefix written by an older Eidos then re-imports once instead
+/// of keeping a blob that no longer says everything it should. `v2` added the
+/// `QuickAutoClean` executables.
 fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
     let key = if registry_name.is_empty() { "xedit" } else { registry_name };
-    compatdata.join(".eidos_registry").join(format!("{key}.v1"))
+    compatdata.join(".eidos_registry").join(format!("{key}.v2"))
 }
 
 /// Whether `system.reg` currently holds `want` in BOTH views of the game's key.
@@ -320,6 +339,33 @@ mod tests {
         let esc = escape_reg(WANT);
         let reg = system_reg(&esc, &esc);
         assert!(!registry_matches(&reg, "Fallout4", WANT));
+    }
+
+    #[test]
+    fn quick_auto_clean_gets_the_same_compatibility_mode() {
+        // The one a user actually runs: cleaning the official masters is a
+        // prerequisite of DynDOLOD and of most load-order guides, and it is a
+        // SEPARATE executable from the editor. Listing the editors by hand is
+        // how it was missed.
+        let blob = registry_blob("Skyrim Special Edition", Path::new("/games/skyrim"));
+        for exe in ["SSEEdit.exe", "SSEEditQuickAutoClean.exe", "FO4EditQuickAutoClean.exe"] {
+            assert!(
+                blob.contains(&format!("AppDefaults\\{exe}]")),
+                "{exe} missing from the blob"
+            );
+        }
+    }
+
+    #[test]
+    fn every_editor_has_a_cleaner_beside_it() {
+        // The derivation, not a sample of it: each base must yield exactly two
+        // entries, so adding a game to the list cannot half-cover it.
+        let names: Vec<String> = xedit_exes().collect();
+        assert_eq!(names.len(), XEDIT_BASES.len() * 2);
+        for base in XEDIT_BASES {
+            assert!(names.contains(&format!("{base}.exe")), "{base}");
+            assert!(names.contains(&format!("{base}QuickAutoClean.exe")), "{base} cleaner");
+        }
     }
 
     #[test]
