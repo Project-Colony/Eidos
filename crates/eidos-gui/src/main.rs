@@ -4192,7 +4192,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // edited during the round-trip) so the CLI and a relaunch see it.
                     let saved = eidos_instance::settings::save_nexus_key(&key);
                     app.status = Some(match &saved {
-                        Ok(()) => format!("Connected to Nexus as {}.", account.name),
+                        Ok(()) => format!(
+                            "Connected to Nexus as {} ({}).",
+                            account.name,
+                            if account.is_premium { "Premium" } else { "free" }
+                        ),
                         Err(e) => format!("Validated, but could not save the key: {e}"),
                     });
                     app.nexus_account = Some(account);
@@ -8731,9 +8735,12 @@ fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         format!("{game} - {kind} - {profile}")
     };
     // The Nexus account, if connected this session (MO2's status-bar login state).
+    // The tier is always spelled out: showing "(Premium)" only when premium made
+    // a free account look like an account whose tier had not been checked yet -
+    // and the difference is not cosmetic, since a free account cannot fetch a
+    // download link without the key/expires pair from a fresh nxm:// link.
     let account = match &app.nexus_account {
-        Some(a) if a.is_premium => format!("Nexus: {} (Premium)", a.name),
-        Some(a) => format!("Nexus: {}", a.name),
+        Some(a) => format!("Nexus: {} ({})", a.name, if a.is_premium { "Premium" } else { "free" }),
         None => "not logged in".to_string(),
     };
     let mut row = Row::new()
@@ -9802,8 +9809,8 @@ fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .push(Row::new().spacing(8).push(field).push(connect));
 
             if let Some(account) = &app.nexus_account {
-                let suffix = if account.is_premium { " (Premium)" } else { "" };
-                col = col.push(text(format!("Connected as {}{}.", account.name, suffix)).size(11.0));
+                let tier = if account.is_premium { "Premium" } else { "free" };
+                col = col.push(text(format!("Connected as {} ({tier}).", account.name)).size(11.0));
             }
             if let Some(err) = &app.api_key_error {
                 col = col.push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
