@@ -90,6 +90,44 @@ fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
     compatdata.join(".eidos_registry").join(format!("{key}.v1"))
 }
 
+/// Whether `system.reg` currently holds `want` in BOTH views of the game's key.
+///
+/// The marker alone is not enough. It answers "did Eidos write this?", and the
+/// prefix is not ours: the game's own 32-bit launcher writes `installed path`
+/// too, through whatever drive letter Wine happened to offer it. Observed on a
+/// real prefix (2026-07-30): Eidos wrote `Z:\...\steamapps\common\...` to both
+/// views, `SkyrimSELauncher.exe` later rewrote the `Wow6432Node` view as
+/// `S:\common\...`, and Steam subsequently repointed `S:` from
+/// `<library>/steamapps` to `<library>` - leaving a key that had been correct
+/// when written and now resolved to a directory that does not exist. TexGen
+/// then died with `EDirectoryNotFoundException`.
+///
+/// So the question has to be "is the key right NOW", which is what this asks.
+/// Anything unparsed reads as "does not match", because re-importing is cheap
+/// and idempotent while a wrong path costs the user a support thread.
+fn registry_matches(system_reg: &str, registry_name: &str, want: &str) -> bool {
+    if registry_name.is_empty() {
+        // xEdit-only mode registers no game path, so there is nothing to check.
+        return true;
+    }
+    let want_escaped = escape_reg(want);
+    ["Software", "Software\\Wow6432Node"].iter().all(|view| {
+        let header = format!("[{}]", escape_reg(&format!("{view}\\Bethesda Softworks\\{registry_name}")));
+        let Some(section) = system_reg.split(&header).nth(1) else {
+            return false;
+        };
+        // Stop at the next section so a later key's value cannot be mistaken
+        // for this one's.
+        section
+            .split("\n[")
+            .next()
+            .unwrap_or("")
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("\"installed path\"="))
+            .any(|v| v.trim().trim_matches('"') == want_escaped)
+    })
+}
+
 /// Write the registry entries into the prefix, unless they are already there.
 ///
 /// Returns `Ok(true)` when an import ran, `Ok(false)` when it was unnecessary.
@@ -119,7 +157,15 @@ pub fn ensure_registry(
 
     let marker = marker_path(compatdata, registry_name);
     let want = to_windows_path(install_path);
-    if fs::read_to_string(&marker).is_ok_and(|s| s.trim() == want) {
+    // Both must agree before skipping: the marker says we did the work, the
+    // registry says the work is still there. Another program overwriting the key
+    // is not hypothetical - see `registry_matches`. The prefix is idle here (the
+    // busy check above returned nothing), so `system.reg` is authoritative
+    // rather than a stale copy of what wineserver holds in memory.
+    let already_written = fs::read_to_string(&marker).is_ok_and(|s| s.trim() == want);
+    let still_correct = fs::read_to_string(prefix.join("system.reg"))
+        .is_ok_and(|reg| registry_matches(&reg, registry_name, &want));
+    if already_written && still_correct {
         return Ok(false);
     }
 
@@ -207,5 +253,103 @@ mod tests {
         .unwrap();
         assert!(!ran, "must not import into a prefix Proton has not created yet");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---- "is the key still right?" ------------------------------------------
+    //
+    // Reproduced from a real prefix on 2026-07-30: Eidos wrote the correct Z:
+    // path to both views, the game's 32-bit launcher later rewrote the
+    // Wow6432Node view through the S: drive, and Steam then repointed S: one
+    // directory up. The value stayed syntactically fine and became wrong.
+
+    const WANT: &str = r"Z:\mnt\Jeux\SteamLibrary\steamapps\common\Skyrim Special Edition\";
+
+    fn system_reg(plain: &str, wow: &str) -> String {
+        format!(
+            "WINE REGISTRY Version 2\n\n\
+             [Software\\\\Bethesda Softworks\\\\Skyrim Special Edition] 1784981197\n\
+             #time=1dd1c2e0b98867a\n\
+             \"installed path\"=\"{plain}\"\n\n\
+             [Software\\\\Borland\\\\Database Engine] 1775303033\n\
+             \"SHAREDMEMLOCATION\"=\"9000\"\n\n\
+             [Software\\\\Wow6432Node\\\\Bethesda Softworks\\\\Skyrim Special Edition] 1784982116\n\
+             #time=1dd1c302f5cd1d6\n\
+             \"installed path\"=\"{wow}\"\n"
+        )
+    }
+
+    #[test]
+    fn both_views_correct_is_a_match() {
+        let esc = escape_reg(WANT);
+        assert!(registry_matches(&system_reg(&esc, &esc), "Skyrim Special Edition", WANT));
+    }
+
+    #[test]
+    fn the_exact_failure_that_killed_texgen_is_detected() {
+        // Plain view still ours, Wow6432Node view rewritten via a drive letter
+        // that has since moved. The marker would have said "done"; this must not.
+        let reg = system_reg(&escape_reg(WANT), &escape_reg(r"S:\common\Skyrim Special Edition\"));
+        assert!(
+            !registry_matches(&reg, "Skyrim Special Edition", WANT),
+            "a clobbered 32-bit view was reported as correct"
+        );
+    }
+
+    #[test]
+    fn a_missing_key_is_not_a_match() {
+        assert!(!registry_matches("WINE REGISTRY Version 2\n", "Skyrim Special Edition", WANT));
+    }
+
+    #[test]
+    fn a_value_from_a_neighbouring_key_is_not_borrowed() {
+        // Our key present but EMPTY, with the right-looking value sitting in the
+        // next section. Reading past the section boundary would pass this.
+        let reg = format!(
+            "WINE REGISTRY Version 2\n\n\
+             [Software\\\\Bethesda Softworks\\\\Skyrim Special Edition] 1\n\n\
+             [Software\\\\Wow6432Node\\\\Bethesda Softworks\\\\Skyrim Special Edition] 2\n\n\
+             [Software\\\\Something Else] 3\n\
+             \"installed path\"=\"{}\"\n",
+            escape_reg(WANT)
+        );
+        assert!(!registry_matches(&reg, "Skyrim Special Edition", WANT));
+    }
+
+    #[test]
+    fn a_different_game_in_the_same_prefix_is_not_confused_for_ours() {
+        let esc = escape_reg(WANT);
+        let reg = system_reg(&esc, &esc);
+        assert!(!registry_matches(&reg, "Fallout4", WANT));
+    }
+
+    #[test]
+    fn xedit_only_mode_has_nothing_to_verify() {
+        // No game key is written in that mode, so demanding one would re-import
+        // on every single launch.
+        assert!(registry_matches("", "", WANT));
+    }
+
+    #[test]
+    fn what_the_blob_writes_is_what_the_check_accepts() {
+        // The producer and the verifier must agree on escaping, or Eidos
+        // re-imports for ever. Build a system.reg the way wine would from our
+        // own blob and require the check to pass.
+        let path = Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Skyrim Special Edition");
+        let blob = registry_blob("Skyrim Special Edition", path);
+        // wine stores HKLM section names WITHOUT the hive prefix and WITH their
+        // backslashes escaped - `[Software\\Bethesda Softworks\\...]`, as seen in
+        // a real system.reg. Values are already escaped in the blob.
+        let as_system_reg: String = blob
+            .replace("\r\n", "\n")
+            .lines()
+            .map(|l| match l.strip_prefix("[HKEY_LOCAL_MACHINE\\").and_then(|r| r.strip_suffix(']')) {
+                Some(key) => format!("[{}] 1\n", escape_reg(key)),
+                None => format!("{l}\n"),
+            })
+            .collect();
+        assert!(
+            registry_matches(&as_system_reg, "Skyrim Special Edition", &to_windows_path(path)),
+            "blob and check disagree:\n{as_system_reg}"
+        );
     }
 }
