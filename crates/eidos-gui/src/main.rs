@@ -161,6 +161,9 @@ enum Message {
     PluginsSorted(SortOutcome),
     /// Dismiss the LOOT report modal.
     CloseLootReport,
+    /// Put the whole LOOT report on the clipboard, as plain text. Also what
+    /// Ctrl+C does while the report is open.
+    CopyLootReport,
     /// Open (or close, if it is already open) the details pane for a save row.
     SelectSave(usize),
     /// Enable every mod that supplies one of the selected save's missing plugins.
@@ -3042,6 +3045,15 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CloseLootReport => {
             app.loot_report = None;
         }
+        Message::CopyLootReport => {
+            // No report open means this arrived from the Ctrl+C shortcut with
+            // nothing to copy; leaving the clipboard alone is the right answer.
+            let Some(report) = &app.loot_report else { return Task::none() };
+            let text = loot_report_text(report);
+            let lines = text.lines().count();
+            app.status = Some(format!("LOOT report copied ({lines} lines)."));
+            return iced::clipboard::write(text);
+        }
         Message::SendToFirstConflict(i) | Message::SendToLastConflict(i) => {
             let first = matches!(message, Message::SendToFirstConflict(_));
             app.menu_mod = None;
@@ -3401,6 +3413,13 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.drag_state = None;
         }
         Message::ClearSelection => {
+            // Escape reaches here. A modal on screen owns it: dismissing the LOOT
+            // report is what the key means while it is up, not clearing a
+            // selection the user cannot even see.
+            if app.loot_report.is_some() {
+                app.loot_report = None;
+                return Task::none();
+            }
             app.typing = false;
             app.confirm_remove = None;
             app.selected_mods.clear();
@@ -8881,7 +8900,11 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(report) = &app.loot_report {
         let scrim =
             mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseLootReport);
-        let dialog = container(loot_report_dialog(report)).center(Length::Fill);
+        // The card swallows its own presses. A `container` does not take mouse
+        // events, so without this a click anywhere ON the report fell through to
+        // the scrim behind it and dismissed the thing the user was reading.
+        let dialog = container(mouse_area(loot_report_dialog(report)).on_press(Message::Noop))
+            .center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
@@ -10303,12 +10326,70 @@ fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element<'a, Messag
         .push(text(summary).size(12.0))
         .push(scrollable(body).height(Length::Fixed(360.0)))
         .push(
-            button(text("Close").size(12.0))
-                .padding([5, 14])
-                .on_press(Message::CloseLootReport)
-                .style(button::primary),
+            Row::new()
+                .spacing(8)
+                .push(
+                    button(text("Close").size(12.0))
+                        .padding([5, 14])
+                        .on_press(Message::CloseLootReport)
+                        .style(button::primary),
+                )
+                // The report is a worklist: the plugins to clean get read off it
+                // while xEdit runs on another screen. Selecting rich text inside a
+                // modal is not something this toolkit does, so hand over the whole
+                // thing in one press - which is what the Ctrl+A/Ctrl+C people are
+                // really after anyway. Ctrl+C does the same while this is open.
+                .push(
+                    button(text("Copy report").size(12.0))
+                        .padding([5, 14])
+                        .on_press(Message::CopyLootReport)
+                        .style(button::secondary),
+                ),
         );
     container(card).max_width(580.0).padding(16).style(card_style).into()
+}
+
+/// The report as plain text, for the clipboard.
+///
+/// Deliberately not the on-screen layout: colour carries the severity there, and
+/// a paste into a text editor would lose it silently. Each line says what it is.
+fn loot_report_text(report: &eidos_loot::LootReport) -> String {
+    let mut out = String::from("LOOT report\n");
+    if report.is_empty() {
+        out.push_str("\nNo issues - the load order is clean.\n");
+        return out;
+    }
+    if !report.general.is_empty() {
+        out.push_str("\nGeneral messages\n");
+        for m in &report.general {
+            out.push_str(&format!("  [{}] {}\n", loot_severity_label(m.kind), m.text));
+        }
+    }
+    for p in &report.plugins {
+        out.push_str(&format!("\n{}\n", p.name));
+        if !p.missing_masters.is_empty() {
+            out.push_str(&format!("  Missing masters: {}\n", p.missing_masters.join(", ")));
+        }
+        for m in &p.messages {
+            out.push_str(&format!("  [{}] {}\n", loot_severity_label(m.kind), m.text));
+        }
+        for d in &p.dirty {
+            let util = if d.cleaning_utility.is_empty() { "?" } else { d.cleaning_utility.as_str() };
+            out.push_str(&format!(
+                "  Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)\n",
+                d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
+            ));
+        }
+    }
+    out
+}
+
+fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str {
+    match kind {
+        eidos_loot::MessageType::Error => "error",
+        eidos_loot::MessageType::Warn => "warning",
+        eidos_loot::MessageType::Say => "note",
+    }
 }
 
 fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
@@ -10882,6 +10963,11 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         Key::Named(Named::Escape) => Some(Message::ClearSelection),
         Key::Character("a") if mods.control() || mods.command() => {
             Some(Message::SelectAllInFocus)
+        }
+        // Ctrl+C over the LOOT report copies it whole. `update` no-ops when the
+        // report is not open, since this closure cannot see the app.
+        Key::Character("c") if mods.control() || mods.command() => {
+            Some(Message::CopyLootReport)
         }
         // Navigation. Which list answers is decided in `update` - this closure
         // is a plain `fn` and cannot see the app.
@@ -12135,4 +12221,65 @@ mod tests {
         );
     }
 
+
+    // ---- the LOOT report as a worklist ---------------------------------------
+
+    fn sample_report() -> eidos_loot::LootReport {
+        use eidos_loot::{LootDirtyInfo, LootMessage, MessageType, PluginReport};
+        eidos_loot::LootReport {
+            general: vec![LootMessage {
+                kind: MessageType::Warn,
+                text: "Skyrim Script Extender scripts seem to be missing".into(),
+            }],
+            plugins: vec![PluginReport {
+                name: "Update.esm".into(),
+                missing_masters: vec!["Nope.esm".into()],
+                messages: vec![LootMessage {
+                    kind: MessageType::Say,
+                    text: "a note".into(),
+                }],
+                dirty: vec![LootDirtyInfo {
+                    crc: 1,
+                    cleaning_utility: "SSEEdit v4.1.5d".into(),
+                    itm_count: 386,
+                    deleted_reference_count: 93,
+                    deleted_navmesh_count: 3,
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn the_copied_report_carries_what_the_screen_shows() {
+        let out = loot_report_text(&sample_report());
+        // The counts are the point: they are what gets read off while xEdit runs.
+        assert!(out.contains("386 ITM"), "{out}");
+        assert!(out.contains("93 deleted refs"), "{out}");
+        assert!(out.contains("Update.esm"), "{out}");
+        assert!(out.contains("Missing masters: Nope.esm"), "{out}");
+        assert!(out.contains("SSEEdit v4.1.5d"), "{out}");
+    }
+
+    #[test]
+    fn severity_survives_the_loss_of_colour() {
+        // On screen the severity is a colour. Pasted into a text editor a colour
+        // is nothing, so each line has to say it.
+        let out = loot_report_text(&sample_report());
+        assert!(out.contains("[warning] Skyrim Script Extender"), "{out}");
+        assert!(out.contains("[note] a note"), "{out}");
+    }
+
+    #[test]
+    fn a_clean_report_still_says_something() {
+        let out = loot_report_text(&eidos_loot::LootReport::default());
+        assert!(out.contains("clean"), "{out}");
+        assert!(!out.trim().is_empty());
+    }
+
+    #[test]
+    fn an_unnamed_cleaning_utility_does_not_print_an_empty_gap() {
+        let mut r = sample_report();
+        r.plugins[0].dirty[0].cleaning_utility = String::new();
+        assert!(loot_report_text(&r).contains("Dirty - ? found"), "empty utility left a hole");
+    }
 }
