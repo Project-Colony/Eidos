@@ -13,4 +13,8 @@ serde_json = "1"
 # hash to save a dependency would trade an audited 200 lines for our own.
 sha2 = "0.10"
 base64 = "0.22"
+# JWT signature verification for the OAuth access token. Already in the tree via
+# ureq -> rustls, so this costs a line here and nothing at build time. Nexus
+# signs with RSA-1024, which needs ring's explicitly-named legacy verifier.
+ring = "0.17"
 eidos-instance = { path = "../eidos-instance" }

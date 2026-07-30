@@ -42,15 +42,56 @@ pub fn load_nexus_key() -> Option<String> {
     parse_nexus_key(&text)
 }
 
-/// Persist the Nexus API key so it survives across sessions. Creates the parent
-/// directory if needed and writes the `[Nexus]` section the CLI also reads.
+/// Persist the Nexus API key so it survives across sessions.
+///
+/// Merges rather than overwrites: `nexus.ini` also holds the OAuth tokens, and
+/// a plain `fs::write` of the key would sign the user out every time they
+/// re-pasted it.
 pub fn save_nexus_key(key: &str) -> io::Result<()> {
+    let mut creds = load_nexus_creds();
+    let key = key.trim();
+    creds.api_key = (!key.is_empty()).then(|| key.to_string());
+    save_nexus_creds(&creds)
+}
+
+/// Everything `nexus.ini` can hold. The personal API key and the OAuth tokens
+/// live in the same file because they answer the same question - how this
+/// machine talks to Nexus - and because a user who has both should not lose one
+/// by touching the other.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NexusCreds {
+    pub api_key: Option<String>,
+    pub access_token: Option<String>,
+    pub refresh_token: Option<String>,
+    /// Unix seconds. Absolute, so it survives being written and read back.
+    pub expires_at: u64,
+}
+
+impl NexusCreds {
+    /// Whether a stored sign-in is present at all. Says nothing about whether
+    /// the access token is still fresh - that is `expires_at`'s job.
+    pub fn has_oauth(&self) -> bool {
+        self.access_token.as_ref().is_some_and(|t| !t.is_empty())
+    }
+}
+
+/// Read every credential in `nexus.ini`. A missing or unreadable file reads as
+/// "nothing stored", which is the same thing from the caller's point of view.
+pub fn load_nexus_creds() -> NexusCreds {
+    let text = fs::read_to_string(nexus_key_path()).unwrap_or_default();
+    parse_nexus_creds(&text)
+}
+
+/// Write the credentials back, preserving any key we do not know about so a
+/// newer Eidos writing a field an older one drops does not lose it.
+pub fn save_nexus_creds(creds: &NexusCreds) -> io::Result<()> {
     let path = nexus_key_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&path, format!("[Nexus]\napi_key={}\n", key.trim()))?;
-    // An API key is a credential: keep it out of other users' reach (0600), the
+    let existing = fs::read_to_string(&path).unwrap_or_default();
+    fs::write(&path, render_nexus_creds(&existing, creds))?;
+    // These are credentials: keep them out of other users' reach (0600), the
     // same as ssh does. Applied after the write so a pre-existing 0644 file from
     // an older Eidos gets tightened too.
     #[cfg(unix)]
@@ -59,6 +100,69 @@ pub fn save_nexus_key(key: &str) -> io::Result<()> {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
+}
+
+/// Forget the OAuth sign-in, keeping any API key. What "Sign out" does.
+pub fn clear_nexus_tokens() -> io::Result<()> {
+    let mut creds = load_nexus_creds();
+    creds.access_token = None;
+    creds.refresh_token = None;
+    creds.expires_at = 0;
+    save_nexus_creds(&creds)
+}
+
+/// The four fields this module owns; anything else in the file is passed through
+/// untouched by [`render_nexus_creds`].
+const OWNED_KEYS: [&str; 4] = ["api_key", "access_token", "refresh_token", "expires_at"];
+
+fn parse_nexus_creds(text: &str) -> NexusCreds {
+    let val = |want: &str| {
+        text.lines()
+            .filter_map(|l| l.trim().split_once('='))
+            .find(|(k, _)| k.trim() == want)
+            .map(|(_, v)| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    NexusCreds {
+        api_key: val("api_key"),
+        access_token: val("access_token"),
+        refresh_token: val("refresh_token"),
+        expires_at: val("expires_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+    }
+}
+
+/// Serialise `creds` into a `[Nexus]` body, carrying over any line from
+/// `existing` whose key is not one of ours. Split out so the merge is testable
+/// without touching the filesystem.
+fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
+    let mut out = String::from("[Nexus]\n");
+    let mut push = |k: &str, v: &str| {
+        if !v.is_empty() {
+            out.push_str(k);
+            out.push('=');
+            out.push_str(v);
+            out.push('\n');
+        }
+    };
+    push("api_key", creds.api_key.as_deref().unwrap_or_default().trim());
+    push("access_token", creds.access_token.as_deref().unwrap_or_default().trim());
+    push("refresh_token", creds.refresh_token.as_deref().unwrap_or_default().trim());
+    if creds.expires_at != 0 {
+        push("expires_at", &creds.expires_at.to_string());
+    }
+    for line in existing.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('[') || t.starts_with('#') {
+            continue;
+        }
+        if let Some((k, _)) = t.split_once('=') {
+            if !OWNED_KEYS.contains(&k.trim()) {
+                out.push_str(t);
+                out.push('\n');
+            }
+        }
+    }
+    out
 }
 
 /// The `[Nexus]` `api_key=` value from a `nexus.ini` body, if non-empty. Split
@@ -215,6 +319,52 @@ mod tests {
     fn tmp(label: &str) -> PathBuf {
         let n = N.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("eidos-settings-{}-{}-{}.ini", label, std::process::id(), n))
+    }
+
+    #[test]
+    fn saving_a_key_does_not_sign_the_user_out() {
+        // The regression this guards: `nexus.ini` holds the API key AND the
+        // OAuth tokens, so a write of one that overwrites the file destroys the
+        // other. Re-pasting a key must not log you out.
+        let existing = "[Nexus]\napi_key=old\naccess_token=at\nrefresh_token=rt\nexpires_at=999\n";
+        let mut creds = parse_nexus_creds(existing);
+        creds.api_key = Some("new".into());
+        let out = render_nexus_creds(existing, &creds);
+        let back = parse_nexus_creds(&out);
+        assert_eq!(back.api_key.as_deref(), Some("new"));
+        assert_eq!(back.access_token.as_deref(), Some("at"), "the sign-in was destroyed");
+        assert_eq!(back.refresh_token.as_deref(), Some("rt"));
+        assert_eq!(back.expires_at, 999);
+    }
+
+    #[test]
+    fn signing_out_keeps_the_api_key() {
+        let existing = "[Nexus]\napi_key=abc\naccess_token=at\nrefresh_token=rt\nexpires_at=5\n";
+        let mut creds = parse_nexus_creds(existing);
+        creds.access_token = None;
+        creds.refresh_token = None;
+        creds.expires_at = 0;
+        let back = parse_nexus_creds(&render_nexus_creds(existing, &creds));
+        assert_eq!(back.api_key.as_deref(), Some("abc"));
+        assert!(!back.has_oauth());
+        assert_eq!(back.expires_at, 0);
+    }
+
+    #[test]
+    fn unknown_keys_survive_a_rewrite() {
+        // A newer Eidos may store a field this build knows nothing about;
+        // dropping it on every save would corrupt their config by downgrade.
+        let existing = "[Nexus]\napi_key=abc\nsomething_new=keep-me\n";
+        let out = render_nexus_creds(existing, &parse_nexus_creds(existing));
+        assert!(out.contains("something_new=keep-me"), "{out}");
+        assert_eq!(out.matches("[Nexus]").count(), 1, "the header was duplicated: {out}");
+    }
+
+    #[test]
+    fn an_empty_file_reads_as_nothing_stored() {
+        let c = parse_nexus_creds("");
+        assert_eq!(c, NexusCreds::default());
+        assert!(!c.has_oauth());
     }
 
     #[test]

@@ -1,10 +1,12 @@
 //! Nexus Mods integration, mirroring Mod Organizer 2's client behaviour
 //! (`nxmaccessmanager.cpp` + `nexusinterface.cpp` + `downloadmanager.cpp`):
 //!
-//! - **Auth**: the personal API key sent as a raw `APIKEY` header against
-//!   `https://api.nexusmods.com/v1/` (MO2's legacy-but-supported path; OAuth
-//!   needs a registered client and can come later), validated via
-//!   `users/validate`. Like MO2, no `.json` suffix on requests.
+//! - **Auth**: either credential Nexus accepts, chosen by [`Nexus::connect`] -
+//!   a personal API key as a raw `APIKEY` header (MO2's legacy-but-supported
+//!   path), or an OAuth access token as `Authorization: Bearer`. Both are
+//!   validated via `users/validate`; like MO2, no `.json` suffix on requests.
+//!   Signing in additionally needs a `client_id` registered with Nexus (see
+//!   [`oauth`]); until one exists, `connect` uses the API key.
 //! - **`nxm://` links** (the site's "Mod Manager Download" button):
 //!   `nxm://<game>/mods/<id>/files/<file_id>?key=..&expires=..&user_id=..` -
 //!   non-premium downloads REQUIRE that key/expires pair forwarded to the
@@ -16,6 +18,7 @@
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub const API_BASE: &str = "https://api.nexusmods.com/v1";
 
@@ -117,10 +120,64 @@ pub struct RateLimits {
     pub daily_remaining: Option<i64>,
 }
 
+/// What [`Nexus::connect`] decided to do, separated from doing it so the rule
+/// can be tested without a network, a clock or a config file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CredentialChoice {
+    /// A stored access token that is still fresh.
+    Bearer,
+    /// A stored session whose access token needs renewing first.
+    Refresh,
+    /// No usable session; use the personal API key.
+    ApiKey,
+    /// Nothing stored at all.
+    None,
+}
+
+/// Five minutes of skew, matching MO2: a token that expires mid-request is a
+/// failure the user cannot act on, so treat "nearly expired" as expired.
+const TOKEN_SKEW: Duration = Duration::from_secs(300);
+
+fn choose_credential(
+    creds: &eidos_instance::settings::NexusCreds,
+    now: u64,
+    can_refresh: bool,
+) -> CredentialChoice {
+    let has_key = creds.api_key.as_deref().is_some_and(|k| !k.is_empty());
+    if creds.has_oauth() {
+        let stale = creds.expires_at <= now.saturating_add(TOKEN_SKEW.as_secs());
+        if !stale {
+            return CredentialChoice::Bearer;
+        }
+        // Renewing needs BOTH a refresh token and a registered client_id. Without
+        // the client_id there is no request we are allowed to make.
+        let renewable = can_refresh && creds.refresh_token.as_deref().is_some_and(|r| !r.is_empty());
+        if renewable {
+            return CredentialChoice::Refresh;
+        }
+    }
+    if has_key {
+        CredentialChoice::ApiKey
+    } else {
+        CredentialChoice::None
+    }
+}
+
+/// How a request proves who it is. Nexus accepts either on the v1 API, and the
+/// OAuth guide says the same token also works on v2 - so this is the ONLY thing
+/// that changes between the personal-key path and the signed-in path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Credential {
+    /// A personal API key, in the `APIKEY` header (what MO2 sends).
+    ApiKey(String),
+    /// An OAuth access token, as `Authorization: Bearer <token>`.
+    Bearer(String),
+}
+
 /// The Nexus v1 API client.
 pub struct Nexus {
     agent: ureq::Agent,
-    api_key: String,
+    credential: Credential,
     limits: std::cell::Cell<RateLimits>,
 }
 
@@ -141,7 +198,22 @@ fn endorse_version(version: &str) -> &str {
 }
 
 impl Nexus {
+    /// A client authenticating with a personal API key.
     pub fn new(api_key: &str) -> Nexus {
+        Nexus::with_credential(Credential::ApiKey(api_key.trim().to_string()))
+    }
+
+    /// A client authenticating with an OAuth access token.
+    ///
+    /// The caller is responsible for handing over a token that is still valid -
+    /// see `oauth::Tokens::is_expired` and `oauth::refresh`. A stale token comes
+    /// back as a 401 here, which reads as "signed out" rather than as an error
+    /// worth retrying.
+    pub fn with_bearer(access_token: &str) -> Nexus {
+        Nexus::with_credential(Credential::Bearer(access_token.trim().to_string()))
+    }
+
+    pub fn with_credential(credential: Credential) -> Nexus {
         // Read/write timeouts detect a stalled connection (which would otherwise
         // hang a task forever and leave GUI buttons greyed) without capping the
         // total duration of a legitimately long download.
@@ -162,10 +234,69 @@ impl Nexus {
             .http_status_as_error(false)
             .build()
             .into();
-        Nexus {
-            agent,
-            api_key: api_key.trim().to_string(),
-            limits: std::cell::Cell::new(RateLimits::default()),
+        Nexus { agent, credential, limits: std::cell::Cell::new(RateLimits::default()) }
+    }
+
+    /// Which credential this client carries. Exposed so a caller can report
+    /// "signed in" versus "using an API key" without holding the secret itself.
+    pub fn credential_kind(&self) -> &'static str {
+        match self.credential {
+            Credential::ApiKey(_) => "api_key",
+            Credential::Bearer(_) => "oauth",
+        }
+    }
+
+    /// Whether ANY credential is stored, without touching the network.
+    ///
+    /// Reads a file, so it is safe to call from a UI update handler - unlike
+    /// [`Nexus::connect`], which may spend a round trip renewing a token and
+    /// belongs in a background task.
+    pub fn have_credentials() -> bool {
+        let creds = eidos_instance::settings::load_nexus_creds();
+        creds.has_oauth() || creds.api_key.as_deref().is_some_and(|k| !k.is_empty())
+    }
+
+    /// The client to use right now, from whatever is stored on this machine.
+    ///
+    /// Prefers a signed-in OAuth session over a personal API key, refreshing the
+    /// access token first when it is stale. Falls back to the API key whenever
+    /// OAuth cannot be made to work - an expired session with no way to renew
+    /// it should degrade to the key the user already pasted, not to an error.
+    pub fn connect() -> Result<Nexus, String> {
+        let mut creds = eidos_instance::settings::load_nexus_creds();
+        let cfg = oauth::Config::from_env();
+        match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {
+            CredentialChoice::Bearer => {
+                Ok(Nexus::with_bearer(creds.access_token.as_deref().unwrap_or_default()))
+            }
+            CredentialChoice::Refresh => {
+                let cfg = cfg.expect("choose_credential only picks Refresh when a config exists");
+                let refresh = creds.refresh_token.clone().unwrap_or_default();
+                match oauth::refresh(&cfg, &refresh) {
+                    Ok(t) => {
+                        creds.access_token = Some(t.access_token.clone());
+                        creds.refresh_token = Some(t.refresh_token);
+                        creds.expires_at = t.expires_at;
+                        // A failed write is not fatal: the token in hand still
+                        // works, the user just signs in again next session.
+                        let _ = eidos_instance::settings::save_nexus_creds(&creds);
+                        Ok(Nexus::with_bearer(&t.access_token))
+                    }
+                    // The refresh token is spent or revoked. Their API key, if
+                    // any, is still good - so try that before giving up.
+                    Err(e) => match creds.api_key.as_deref() {
+                        Some(key) if !key.is_empty() => Ok(Nexus::new(key)),
+                        _ => Err(format!("Nexus sign-in expired and could not be renewed: {e}")),
+                    },
+                }
+            }
+            CredentialChoice::ApiKey => {
+                Ok(Nexus::new(creds.api_key.as_deref().unwrap_or_default()))
+            }
+            CredentialChoice::None => Err(
+                "not connected to Nexus: sign in, or set a personal API key in Settings"
+                    .to_string(),
+            ),
         }
     }
 
@@ -194,13 +325,21 @@ impl Nexus {
         }
     }
 
-    /// Attach MO2's four identifying headers + APIKEY to a request (every v1 call
-    /// carries these, per nxmaccessmanager.cpp addAPIHeaders).
+    /// Attach the identifying headers MO2 sends on every v1 call
+    /// (nxmaccessmanager.cpp addAPIHeaders) plus whichever credential we hold.
+    ///
+    /// `Application-Name`/`Application-Version` are not decoration: the Nexus
+    /// API acceptable-use policy requires them so usage can be attributed, and
+    /// they ride on BOTH credential paths.
     fn with_headers<B>(&self, req: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
-        req.header("APIKEY", &self.api_key)
+        let req = req
             .header("Protocol-Version", "1.0.0")
             .header("Application-Name", "Eidos")
-            .header("Application-Version", env!("CARGO_PKG_VERSION"))
+            .header("Application-Version", env!("CARGO_PKG_VERSION"));
+        match &self.credential {
+            Credential::ApiKey(key) => req.header("APIKEY", key),
+            Credential::Bearer(token) => req.header("Authorization", format!("Bearer {token}")),
+        }
     }
 
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
@@ -885,4 +1024,85 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+
+    // ---- which credential a session actually uses -------------------------
+    //
+    // `Nexus::connect` reads the disk, the clock and the environment; the RULE
+    // it applies does not, so it is tested here directly. These are the cases
+    // that decide whether a user with both an API key and a lapsed sign-in can
+    // still download.
+
+    use eidos_instance::settings::NexusCreds;
+
+    fn signed_in(expires_at: u64) -> NexusCreds {
+        NexusCreds {
+            api_key: None,
+            access_token: Some("at".into()),
+            refresh_token: Some("rt".into()),
+            expires_at,
+        }
+    }
+
+    #[test]
+    fn a_fresh_session_is_used_as_is() {
+        assert_eq!(choose_credential(&signed_in(10_000), 1_000, true), CredentialChoice::Bearer);
+    }
+
+    #[test]
+    fn a_session_expiring_within_the_skew_is_renewed_early() {
+        // Expires in 60s, inside the 300s skew: renew now rather than fail
+        // halfway through a download the user cannot retry cleanly.
+        assert_eq!(choose_credential(&signed_in(1_060), 1_000, true), CredentialChoice::Refresh);
+        // Comfortably outside it, so leave it alone.
+        assert_eq!(choose_credential(&signed_in(1_400), 1_000, true), CredentialChoice::Bearer);
+    }
+
+    #[test]
+    fn oauth_wins_over_a_key_that_is_also_present() {
+        let mut c = signed_in(10_000);
+        c.api_key = Some("abc".into());
+        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::Bearer);
+    }
+
+    #[test]
+    fn a_lapsed_session_falls_back_to_the_key_instead_of_failing() {
+        // No client_id registered yet, so no refresh is possible - exactly the
+        // state Eidos ships in today. A user with a key must still work.
+        let mut c = signed_in(500);
+        c.api_key = Some("abc".into());
+        assert_eq!(choose_credential(&c, 1_000, false), CredentialChoice::ApiKey);
+
+        // Same when the refresh token itself is gone.
+        c.refresh_token = None;
+        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::ApiKey);
+    }
+
+    #[test]
+    fn a_lapsed_session_with_no_key_is_not_silently_ok() {
+        assert_eq!(choose_credential(&signed_in(500), 1_000, false), CredentialChoice::None);
+    }
+
+    #[test]
+    fn a_key_alone_is_the_ordinary_case_today() {
+        let c = NexusCreds { api_key: Some("abc".into()), ..Default::default() };
+        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::ApiKey);
+        assert!(!c.has_oauth());
+    }
+
+    #[test]
+    fn nothing_stored_is_reported_not_guessed() {
+        assert_eq!(choose_credential(&NexusCreds::default(), 1_000, true), CredentialChoice::None);
+    }
+
+    #[test]
+    fn each_credential_rides_in_its_own_header() {
+        // The whole point of the Credential split: a Bearer request must NOT
+        // carry APIKEY, and vice versa.
+        assert_eq!(Nexus::new("k").credential_kind(), "api_key");
+        assert_eq!(Nexus::with_bearer("t").credential_kind(), "oauth");
+        assert_eq!(
+            Nexus::with_credential(Credential::Bearer("t".into())).credential_kind(),
+            "oauth"
+        );
+    }
 }

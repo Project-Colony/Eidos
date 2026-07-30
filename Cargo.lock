@@ -1152,6 +1152,7 @@ version = "0.5.1"
 dependencies = [
  "base64",
  "eidos-instance",
+ "ring",
  "serde_json",
  "sha2",
  "ureq",

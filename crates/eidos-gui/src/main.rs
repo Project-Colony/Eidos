@@ -4377,12 +4377,15 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.endorsing.is_some() {
                 return Task::none();
             }
-            let Some(key) = load_nexus_api_key() else {
+            // Cheap check here (it reads a file); the actual credential is chosen
+            // inside the task, because renewing an OAuth token costs a round trip
+            // and must not run on the UI thread.
+            if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
                     "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
                 );
                 return Task::none();
-            };
+            }
             let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
             let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
             let info = app.created.as_ref().zip(app.mods.get(i)).filter(|(_, m)| !m.is_separator()).map(
@@ -4403,7 +4406,8 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
             return Task::perform(
                 async move {
-                    eidos_nexus::Nexus::new(&key).set_endorsed(&domain, mod_id, &version, endorse)
+                    eidos_nexus::Nexus::connect()?
+                        .set_endorsed(&domain, mod_id, &version, endorse)
                 },
                 move |r| Message::ModEndorsed(folder.clone(), r),
             );
@@ -4533,12 +4537,12 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.update_in_progress {
                 return Task::none();
             }
-            let Some(key) = load_nexus_api_key() else {
+            if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
                     "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
                 );
                 return Task::none();
-            };
+            }
             let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
                 return Task::none();
             };
@@ -4550,7 +4554,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some("Checking Nexus for mod updates...".to_string());
             return Task::perform(
                 async move {
-                    let nexus = eidos_nexus::Nexus::new(&key);
+                    let nexus = eidos_nexus::Nexus::connect()?;
                     eidos_nexus::check_updates(&nexus, &inst, &domain)
                 },
                 Message::UpdatesChecked,

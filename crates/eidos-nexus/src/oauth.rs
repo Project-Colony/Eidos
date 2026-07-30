@@ -42,8 +42,12 @@ pub const DEFAULT_REDIRECT_PORT: u16 = 28638;
 
 const AUTHORIZE_URL: &str = "https://users.nexusmods.com/oauth/authorize";
 const TOKEN_URL: &str = "https://users.nexusmods.com/oauth/token";
-/// Plain OIDC scopes, not application-specific.
-const SCOPES: &str = "openid profile email";
+/// Nexus asks for an EMPTY scope: their OAuth2 guide passes `scope: ''` on both
+/// the authorize URL and the token exchange, and everything an application needs
+/// about the user (id, username, membership roles) already rides inside the
+/// access token's own claims - see [`claims`]. Requesting OIDC scopes we were
+/// never granted is a way to be refused at the authorize step for no gain.
+const SCOPES: &str = "";
 
 /// Everything the flow needs that is deployment-specific.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,6 +308,116 @@ pub fn now_unix() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
 
+/// Nexus's JWT signing key, PKCS#1 `RSAPublicKey` DER.
+///
+/// Published as SPKI PEM in their OAuth2 guide; `ring` wants PKCS#1, so the
+/// wrapper is stripped once here rather than parsing DER at runtime:
+///
+/// ```text
+/// openssl rsa -pubin -in nexus.pem -RSAPublicKey_out -outform DER
+/// ```
+///
+/// `key_is_the_published_nexus_key` re-derives the modulus from the PEM and
+/// fails if this array ever drifts from what they publish.
+const NEXUS_JWT_KEY: &[u8] = &[
+    0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xe1, 0x28, 0x7c, 0x42, 0x58, 0xe7, 0x94, 0xcb, 0x7f,
+    0x12, 0xdd, 0x43, 0x81, 0x38, 0x1d, 0x75, 0x48, 0xd7, 0x7f, 0xc3, 0x22, 0xfd, 0x4d, 0x5b, 0xf3,
+    0xc5, 0xe3, 0xe4, 0x12, 0xc6, 0x5b, 0xe1, 0xf1, 0x15, 0x1a, 0x9d, 0x14, 0xe4, 0xc1, 0x1c, 0x0d,
+    0xc2, 0x60, 0x5d, 0x4a, 0x3f, 0x7d, 0x93, 0x98, 0x4d, 0x41, 0x4c, 0x5f, 0xb8, 0xa9, 0xbc, 0x20,
+    0xbb, 0xb1, 0xbb, 0x32, 0x2a, 0x92, 0x74, 0xc5, 0x9f, 0xcc, 0x97, 0x9c, 0xd7, 0x30, 0x17, 0x08,
+    0xd3, 0x78, 0x2e, 0xea, 0x9d, 0x53, 0xbc, 0x6f, 0x9e, 0x2f, 0x4c, 0x44, 0x93, 0xa5, 0xfc, 0x2c,
+    0x3f, 0xad, 0xf8, 0x66, 0xf3, 0x1f, 0xd1, 0x18, 0xe7, 0xc6, 0xd9, 0xf2, 0x43, 0x8b, 0x13, 0x1e,
+    0x25, 0x6c, 0x05, 0xf7, 0x7c, 0xd6, 0x21, 0x32, 0x16, 0xe1, 0x1c, 0x9a, 0xda, 0xf5, 0x95, 0x56,
+    0xd9, 0x07, 0x60, 0x1e, 0x80, 0xd5, 0xeb, 0x02, 0x03, 0x01, 0x00, 0x01,
+];
+
+/// Who the access token says its bearer is.
+///
+/// These come from the token itself, so reading them costs no API call - which
+/// is the point: the UI can say "signed in as X (Premium)" the moment the flow
+/// finishes.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Claims {
+    pub user_id: u64,
+    pub username: String,
+    pub is_premium: bool,
+    /// Unix seconds, the token's own `exp`.
+    pub expires_at: u64,
+}
+
+/// Verify an access token against Nexus's published key and return its claims.
+///
+/// The signature IS checked. A JWT arrives over TLS from the token endpoint, so
+/// verifying it on arrival proves little - but Eidos writes tokens to disk and
+/// reads them back sessions later, and this is what makes a tampered
+/// `nexus.ini` fail closed instead of quietly claiming Premium.
+///
+/// Nexus signs with a 1024-bit key, below what `ring` accepts by default; the
+/// `..._FOR_LEGACY_USE_ONLY` verifier is the deliberate, named exception. That
+/// weakness is theirs to fix, and it is exactly why nothing here is treated as
+/// an authorization decision: the claims drive DISPLAY. Whether an account may
+/// actually download is answered by the API rejecting the request.
+pub fn claims(access_token: &str) -> Result<Claims, String> {
+    claims_with_key(access_token, NEXUS_JWT_KEY)
+}
+
+/// [`claims`] against an arbitrary key, so the verification path can be tested
+/// with a key we hold the private half of. Nothing outside the tests should
+/// call this: a caller choosing its own key is a caller that can be told to
+/// trust anything.
+fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
+    let mut parts = access_token.split('.');
+    let (Some(header), Some(payload), Some(signature), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err("not a JWT: expected three dot-separated segments".to_string());
+    };
+
+    // Pin the algorithm from the header rather than trusting it: accepting
+    // whatever `alg` says is the classic JWT hole ("alg":"none" verifies
+    // everything).
+    let head: serde_json::Value = serde_json::from_slice(&b64(header)?)
+        .map_err(|e| format!("unreadable JWT header: {e}"))?;
+    if head.get("alg").and_then(|a| a.as_str()) != Some("RS256") {
+        return Err("unexpected JWT algorithm (only RS256 is accepted)".to_string());
+    }
+
+    let signed = format!("{header}.{payload}");
+    ring::signature::UnparsedPublicKey::new(
+        &ring::signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY,
+        key,
+    )
+    .verify(signed.as_bytes(), &b64(signature)?)
+    .map_err(|_| "JWT signature does not match the Nexus signing key".to_string())?;
+
+    let body: serde_json::Value =
+        serde_json::from_slice(&b64(payload)?).map_err(|e| format!("unreadable JWT body: {e}"))?;
+    let user = body.get("user");
+    Ok(Claims {
+        user_id: user.and_then(|u| u.get("id")).and_then(|x| x.as_u64()).unwrap_or(0),
+        username: user
+            .and_then(|u| u.get("username"))
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        // "premium" and "lifetimepremium" are separate roles in their example
+        // payload, so match the prefix rather than listing the ones we happen
+        // to have seen.
+        is_premium: user
+            .and_then(|u| u.get("membership_roles"))
+            .and_then(|x| x.as_array())
+            .is_some_and(|roles| {
+                roles.iter().filter_map(|r| r.as_str()).any(|r| r.contains("premium"))
+            }),
+        expires_at: body.get("exp").and_then(|x| x.as_u64()).unwrap_or(0),
+    })
+}
+
+/// base64url without padding, which is what JWT segments are.
+fn b64(segment: &str) -> Result<Vec<u8>, String> {
+    URL_SAFE_NO_PAD.decode(segment).map_err(|e| format!("bad base64 in JWT: {e}"))
+}
+
 /// Build [`Tokens`] from a token-endpoint reply. `now` is passed in so the
 /// expiry arithmetic is testable without waiting for a clock.
 pub fn tokens_from_json(v: &serde_json::Value, now: u64) -> Result<Tokens, String> {
@@ -447,9 +561,14 @@ mod tests {
         ] {
             assert!(u.contains(expected), "{expected} missing from {u}");
         }
-        // The redirect and the scopes are percent-encoded, not raw.
+        // The redirect is percent-encoded, not raw.
         assert!(u.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A28638%2Fcallback"));
-        assert!(u.contains("scope=openid%20profile%20email"));
+        // `scope` is PRESENT and EMPTY - Nexus's guide passes `scope: ''`, and
+        // dropping the parameter entirely is not the same request as sending it
+        // blank. Asserting both halves is what stops a future edit from
+        // silently reintroducing a scope we were never granted.
+        assert!(u.contains("scope=&") || u.ends_with("scope="), "scope not sent empty: {u}");
+        assert!(!u.contains("scope=openid"), "an OIDC scope came back: {u}");
         // The verifier is the secret half: it must never leave this process.
         assert!(!u.contains("dBjftJeZ4CVP"), "the verifier leaked into the browser URL");
     }
@@ -541,5 +660,103 @@ mod tests {
         let err = wait_for_code(28938, "st4te", Duration::from_millis(300)).unwrap_err();
         assert!(err.contains("timed out"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    // ---- access-token claims -------------------------------------------------
+    //
+    // Signed with a throwaway 1024-bit key generated for these tests, NOT with
+    // anyone's real token: the point is to exercise the verification path
+    // deterministically. Payload copied from the shape in the Nexus OAuth2
+    // guide. `exp` is in 2100 so the vector does not rot.
+
+    const TEST_JWT: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbl9pZCI6MTAwLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTc1NDM4OTU5OCwianRpIjoidGVzdCIsInN1YiI6IjEyMzQ1IiwiaXNzIjoibmV4dXMtdXNlci1zZXJ2aWNlIiwidXNlciI6eyJpZCI6MTIzNDUsInVzZXJuYW1lIjoiVGVzdEFjY291bnQiLCJncm91cF9pZCI6MSwibWVtYmVyc2hpcF9yb2xlcyI6WyJtZW1iZXIiLCJzdXBwb3J0ZXIiLCJwcmVtaXVtIl0sInByZW1pdW1fZXhwaXJ5IjowLCJqb2luZWQiOjE0MTk1MzExMzR9fQ.cZDrnuTjfUip1Xsv2zG2Yj99LwmUM9vGaXtei3KlXaBs3OezwlQ9nCaf58hrCugeKYMHn4jRMwXRCSpTpIkpH44scPaVj1vhPJCUfMq5sNoYUvlsumYdeH3HHv4ijSbf8xs5gqeayNDPOlP2o_rBURAZXTKljqkUJKLEPK-xACI";
+
+    const TEST_KEY: &[u8] = &[
+        0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xa2, 0xf2, 0x82, 0x31, 0xe2, 0xd6, 0xa4, 0x01,
+        0x24, 0xe7, 0x08, 0x0d, 0x75, 0xf4, 0xc2, 0xf5, 0xc1, 0x9c, 0xd0, 0xbe, 0x65, 0xcc, 0x2b,
+        0x17, 0x69, 0xb6, 0x8f, 0x0b, 0x40, 0x20, 0x74, 0xd3, 0xdb, 0x13, 0x92, 0xda, 0x48, 0x56,
+        0x95, 0x48, 0x16, 0x2d, 0x2e, 0x81, 0x36, 0x8f, 0x1e, 0xe0, 0xa1, 0xa6, 0x6d, 0xfe, 0x5a,
+        0x65, 0x64, 0xec, 0xe0, 0x6d, 0xa1, 0xff, 0x57, 0xbb, 0xd7, 0x1a, 0xc4, 0x4a, 0xa3, 0xef,
+        0xc5, 0x24, 0xc0, 0xd2, 0x3b, 0x33, 0x7d, 0xb0, 0xe8, 0x8f, 0xaa, 0xb1, 0xab, 0x63, 0x2a,
+        0xdc, 0xda, 0xbb, 0xc8, 0x6c, 0x1e, 0xbf, 0x9f, 0x18, 0xc1, 0x9e, 0x54, 0x4e, 0x7d, 0xc5,
+        0x0c, 0xb7, 0xf7, 0x53, 0xef, 0x08, 0x4d, 0x85, 0xc3, 0x7d, 0xa6, 0xc3, 0x13, 0x43, 0x0b,
+        0x74, 0xf7, 0x71, 0x6a, 0x23, 0xdd, 0x6a, 0x7d, 0x60, 0xbb, 0x7e, 0x8d, 0xb3, 0xf9, 0x7b,
+        0x02, 0x03, 0x01, 0x00, 0x01,
+    ];
+
+    #[test]
+    fn a_valid_token_yields_its_claims() {
+        let c = claims_with_key(TEST_JWT, TEST_KEY).expect("the vector is correctly signed");
+        assert_eq!(c.user_id, 12345);
+        assert_eq!(c.username, "TestAccount");
+        assert!(c.is_premium, "membership_roles carries \"premium\"");
+        assert_eq!(c.expires_at, 4_102_444_800);
+    }
+
+    #[test]
+    fn a_tampered_payload_is_refused() {
+        // Re-encode the body with premium granted to a free account, leaving the
+        // signature untouched: the exact edit someone would make by hand in
+        // nexus.ini, and the reason the signature is checked at all.
+        let mut parts: Vec<&str> = TEST_JWT.split('.').collect();
+        let forged = URL_SAFE_NO_PAD.encode(
+            br#"{"exp":4102444800,"user":{"id":1,"username":"Nobody","membership_roles":["premium"]}}"#,
+        );
+        parts[1] = &forged;
+        let err = claims_with_key(&parts.join("."), TEST_KEY).unwrap_err();
+        assert!(err.contains("signature"), "{err}");
+    }
+
+    #[test]
+    fn the_algorithm_is_pinned_so_alg_none_cannot_pass() {
+        let head = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
+        let body = URL_SAFE_NO_PAD.encode(br#"{"user":{"username":"Nobody"}}"#);
+        let err = claims_with_key(&format!("{head}.{body}."), TEST_KEY).unwrap_err();
+        assert!(err.contains("algorithm"), "{err}");
+    }
+
+    #[test]
+    fn junk_is_rejected_without_panicking() {
+        for bad in ["", "abc", "a.b", "a.b.c.d", "....", "!!.??.$$"] {
+            assert!(claims_with_key(bad, TEST_KEY).is_err(), "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_free_account_is_not_premium() {
+        // The role list decides it, and only a role CONTAINING "premium" counts -
+        // "supporter" and "member" must not be mistaken for it.
+        let v = serde_json::json!({"user": {"membership_roles": ["member", "supporter"]}});
+        let roles = v["user"]["membership_roles"].as_array().unwrap().clone();
+        assert!(!roles.iter().filter_map(|r| r.as_str()).any(|r| r.contains("premium")));
+    }
+
+    #[test]
+    fn key_is_the_published_nexus_key() {
+        // The modulus in the PEM Nexus publishes must be byte-identical to the
+        // one baked in above; if they ever rotate the key this fails loudly
+        // instead of every sign-in failing mysteriously.
+        let spki = base64::engine::general_purpose::STANDARD
+            .decode(concat!(
+                "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDhKHxCWOeUy38S3UOBOB11SNd/",
+                "wyL9TVvzxePkEsZb4fEVGp0U5MEcDcJgXUo/fZOYTUFMX7ipvCC7sbsyKpJ0xZ/M",
+                "l5zXMBcI03gu6p1TvG+eL0xEk6X8LD+t+GbzH9EY58bZ8kOLEx4lbAX3fNYhMhbh",
+                "HJra9ZVW2QdgHoDV6wIDAQAB"
+            ))
+            .expect("the published key is valid base64");
+        // The 128-byte modulus sits inside both encodings; find it in the SPKI
+        // and require our PKCS#1 array to carry the same run of bytes.
+        let modulus = &NEXUS_JWT_KEY[7..7 + 128];
+        assert!(
+            spki.windows(modulus.len()).any(|w| w == modulus),
+            "the baked-in modulus is not the one Nexus publishes"
+        );
+    }
+
+    #[test]
+    fn scope_is_empty_as_the_guide_requires() {
+        // Their own example passes scope: ''. A non-empty scope here would be
+        // sent on both the authorize URL and the token exchange.
+        assert_eq!(SCOPES, "");
     }
 }

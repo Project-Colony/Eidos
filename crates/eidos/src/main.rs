@@ -1693,21 +1693,21 @@ fn nexus_key_path() -> std::path::PathBuf {
     eidos_instance::settings::nexus_key_path()
 }
 
-/// The stored Nexus API key, if any (the shared store the GUI also reads).
-fn load_nexus_key() -> Option<String> {
-    eidos_instance::settings::load_nexus_key()
-}
-
 /// A connected Nexus client, or exit with a pointer to `eidos nexus key`.
 fn nexus_client() -> eidos_nexus::Nexus {
-    let Some(key) = load_nexus_key() else {
-        eprintln!(
-            "No Nexus API key configured. Get yours at nexusmods.com -> Site settings -> \
-             API keys (Personal API Key), then run:  eidos nexus key <KEY>"
-        );
-        exit(1);
-    };
-    eidos_nexus::Nexus::new(&key)
+    // `connect` prefers a signed-in OAuth session and falls back to the personal
+    // key, so this one call covers both paths; the message below is what "no
+    // credential at all" looks like from the CLI.
+    match eidos_nexus::Nexus::connect() {
+        Ok(nexus) => nexus,
+        Err(_) => {
+            eprintln!(
+                "No Nexus API key configured. Get yours at nexusmods.com -> Site settings -> \
+                 API keys (Personal API Key), then run:  eidos nexus key <KEY>"
+            );
+            exit(1);
+        }
+    }
 }
 
 /// `eidos nexus key|status|update` - account + update checks.
