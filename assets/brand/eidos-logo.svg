@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -14 219 124" width="219" height="124" role="img" aria-label="Eidos">
+  <title>Eidos</title>
+  <!--
+    Eidos - marque "Convergence".
+    Le E : trois barres dont la fragmentation decroit vers le bas - plusieurs
+    couches de mods qui se resolvent en une seule vue. Le losange : la Forme
+    (eidos), evidee, avec en son centre le noyau resolu.
+
+    Geometrie : barre h=16, pas vertical 40, montant w=18, gouttiere 8.
+    Losange centre (150,48), demi-diagonale 36 sur les DEUX axes, trait 10.
+    Tout est sur une grille de 2 px. Ne pas deformer : reechelonner le viewBox.
+  -->
+  <g fill="#eaf2f7">
+    <rect x="0"  y="0"  width="18"  height="96"/>
+    <rect x="26" y="0"  width="34"  height="16"/>
+    <rect x="68" y="0"  width="18"  height="16"/>
+    <rect x="26" y="40" width="46"  height="16"/>
+    <rect x="80" y="40" width="14"  height="16"/>
+    <rect x="26" y="80" width="76"  height="16"/>
+  </g>
+  <path d="M150 12 L186 48 L150 84 L114 48 Z" fill="none" stroke="#eaf2f7" stroke-width="10"/>
+  <path d="M150 34 L164 48 L150 62 L136 48 Z" fill="#eaf2f7"/>
+</svg>

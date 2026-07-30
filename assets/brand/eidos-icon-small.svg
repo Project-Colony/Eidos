@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Eidos">
+  <title>Eidos</title>
+  <!--
+    Icone petite taille (<= 48 px). Les strates interieures deviennent du bruit
+    sous 48 px, donc elles disparaissent : il ne reste que le losange et son
+    noyau. Meme silhouette que l'icone pleine, donc la marque reste reconnaissable.
+    Traits epaissis (20 au lieu de 16) pour survivre a la rasterisation.
+  -->
+  <path d="M128 22 L234 128 L128 234 L22 128 Z" fill="none" stroke="#eaf2f7" stroke-width="20"/>
+  <path d="M128 92 L164 128 L128 164 L92 128 Z" fill="#eaf2f7"/>
+</svg>

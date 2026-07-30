@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-14 -14 219 124" width="219" height="124" role="img" aria-label="Eidos">
+  <title>Eidos</title>
+  <!-- Version fond clair. Encre et parchemin repris de la palette reelle de
+       l'application (iced): texte #2B2018 sur fond #ECDFC2. -->
+  <g fill="#2b2018">
+    <rect x="0"  y="0"  width="18"  height="96"/>
+    <rect x="26" y="0"  width="34"  height="16"/>
+    <rect x="68" y="0"  width="18"  height="16"/>
+    <rect x="26" y="40" width="46"  height="16"/>
+    <rect x="80" y="40" width="14"  height="16"/>
+    <rect x="26" y="80" width="76"  height="16"/>
+  </g>
+  <path d="M150 12 L186 48 L150 84 L114 48 Z" fill="none" stroke="#2b2018" stroke-width="10"/>
+  <path d="M150 34 L164 48 L150 62 L136 48 Z" fill="#2b2018"/>
+</svg>
