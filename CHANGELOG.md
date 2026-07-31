@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.1](https://github.com/Project-Colony/Eidos/compare/v1.0.0...v1.0.1) (2026-07-31)
+
+
+### Fixes
+
+* **ci:** release-please cannot read a version the crates inherit ([bc28968](https://github.com/Project-Colony/Eidos/commit/bc2896844c124192ef35ac334f79fe9b2d983cc1))
+* **ci:** stop assuming a Cargo package lives at the workspace root ([18a3acb](https://github.com/Project-Colony/Eidos/commit/18a3acbd26df16c2ce3d272caff2a13ea118612c))
+* **ci:** sync Cargo.lock on a condition that actually holds ([b94cd90](https://github.com/Project-Colony/Eidos/commit/b94cd909ac571f68bd8aeb8ce58251b20d1b1a1b))
+* **ci:** tag the version line so release-please can find it ([a4531f1](https://github.com/Project-Colony/Eidos/commit/a4531f11f5850526b77e7b55b29884d9fe14008e))
+* **ci:** use the command that actually rewrites Cargo.lock ([86705be](https://github.com/Project-Colony/Eidos/commit/86705be8a63040703004379d965a93aaefb9ac9f))
+
 ## 1.0.0
 
 Skyrim SE has been played through Eidos daily for weeks - SKSE, script-extender
