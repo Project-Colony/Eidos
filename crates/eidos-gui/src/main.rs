@@ -1805,17 +1805,93 @@ fn probe_lock(inst: &Instance) -> std::io::Result<()> {
 }
 
 /// The rows a row-targeted action should act on: the whole multi-selection when
-/// the clicked row belongs to it, otherwise just that row. Separators are never
-/// moved by these actions - they define the groups.
+/// the clicked row belongs to it, otherwise just that row.
 fn selection_or(app: &App, row: usize) -> Vec<usize> {
     let mut v: Vec<usize> = if app.selected_mods.contains(&row) && app.selected_mods.len() > 1 {
         app.selected_mods.iter().copied().collect()
     } else {
         vec![row]
     };
-    v.retain(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator()));
+    // Separators are IN. They used to be filtered out here, on the theory that a
+    // separator defines a group rather than sitting in one - which made every
+    // reorder gesture a no-op on a separator, since the callers all bail on an
+    // empty block. MO2 does the opposite: `ModList::flags` marks a separator
+    // `ItemIsDragEnabled` like any other row (modlist.cpp:630), and
+    // `dropMimeData` hands the dragged rows to `changeModPriority` untouched
+    // (modlist.cpp:1159). Group membership is positional and recomputed after
+    // every move, so a separator that moves alone has not abandoned its mods -
+    // it now heads whatever follows it, and they belong to the header above them.
+    //
+    // Actions a separator cannot answer are refused where MO2 refuses them: at
+    // the menu entry, on the grounds of the thing being missing (no conflict
+    // flags, no checkbox), never on the grounds of being a separator.
+    v.retain(|&i| i < app.mods.len());
     v.sort_unstable();
     v
+}
+
+/// The rows a separator heads: everything after it up to the next separator.
+///
+/// Adjacency IS the group - the same rule `visible_rows` walks to decide what a
+/// fold hides. There is no parent pointer anywhere, in Eidos or in MO2.
+fn group_children(mods: &[ModEntry], sep: usize) -> std::ops::Range<usize> {
+    let end = mods
+        .iter()
+        .enumerate()
+        .skip(sep + 1)
+        .find(|(_, m)| m.is_separator())
+        .map(|(i, _)| i)
+        .unwrap_or(mods.len());
+    (sep + 1).min(end)..end
+}
+
+/// The mods a fold is currently hiding, by name, so a move can be compared
+/// against what it swallowed.
+fn hidden_by_folds(app: &App) -> HashSet<String> {
+    let vis = visible_rows(&app.mods, &app.collapsed, false, |_, _| true);
+    app.mods
+        .iter()
+        .zip(&vis)
+        .filter(|(m, &shown)| !shown && !m.is_separator())
+        .map(|(m, _)| m.name.clone())
+        .collect()
+}
+
+/// Reconcile the fold state with a move that just happened.
+///
+/// Two things, both about rows going invisible without being asked to:
+///
+/// A separator that moved is unfolded if it heads anything at its new position.
+/// MO2 does exactly this after a priority change (`ModListView::onModPrioritiesChanged`,
+/// modlistview.cpp:449), and it is what makes "a separator moves alone"
+/// survivable: a folded header dropped somewhere new would otherwise go on
+/// hiding rows that were never inside it, which reads as mods having been deleted.
+///
+/// The mirror case has no MO2 answer, because MO2's tree at least draws the
+/// swallowed rows under a parent: lift a separator out from between a folded
+/// group and its own mods, and those mods join the folded group and vanish. The
+/// fold is the user's, so it is not overridden - but the disappearance is named,
+/// because a row leaving the screen unbidden and unremarked is the failure mode
+/// this list is most often accused of.
+fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidden_before: &HashSet<String>) {
+    let opened: Vec<String> = (at..(at + len).min(app.mods.len()))
+        .filter(|&i| app.mods[i].is_separator())
+        .filter(|&i| !group_children(&app.mods, i).is_empty())
+        .map(|i| app.mods[i].display_name().to_string())
+        .collect();
+    let mut changed = false;
+    for name in opened {
+        changed |= app.collapsed.remove(&name);
+    }
+    if changed {
+        save_collapsed(app);
+    }
+    let swallowed = hidden_by_folds(app);
+    let n = swallowed.difference(hidden_before).count();
+    if n > 0 {
+        app.status =
+            Some(format!("{n} mod(s) are now inside a folded group. Unfold it to see them."));
+    }
 }
 
 /// The scrollables the keyboard has to move, named so `snap_to` can reach them.
@@ -1901,9 +1977,11 @@ fn move_mod_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task
     // and a collapsed block is the only way to put that noise away.
     let dest = if up { neighbour } else { neighbour + 1 };
     let held = hold_mod_selection(app);
+    let hidden = hidden_by_folds(app);
     let at = move_block(&mut app.mods, &block, dest);
     put_mod_selection(app, held);
     app.selected_mod = Some(at);
+    settle_folds_after_move(app, at, block.len(), &hidden);
     mods_changed(app);
     Task::none()
 }
@@ -3118,13 +3196,20 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             // "Just below the last mod that overrides it" is one slot past it.
             let dest = if first { dest } else { (dest + 1).min(app.mods.len()) };
+            let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, dest);
             app.selected_mod = Some(at);
             app.selected_mods.clear();
+            settle_folds_after_move(app, at, targets.len(), &hidden);
             mods_changed(app);
         }
         Message::SendToPriorityStart(i) => {
-            app.menu_mod = None;
+            // The menu STAYS open, exactly as `RenameStart` keeps it: the editor
+            // this arms is drawn by `send_to_targets`, inside the menu card, which
+            // `view` only renders while `menu_mod` is set. Clearing it here closed
+            // the menu over the editor - so the item did nothing visible, and the
+            // armed state then hijacked the next right-click on that row.
+            app.menu_mod = Some(i);
             app.send_separator = None;
             app.send_priority = Some((i, i.to_string()));
         }
@@ -3142,14 +3227,20 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             let targets = selection_or(app, i);
             let dest = dest.min(app.mods.len());
+            let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, dest);
             app.selected_mod = Some(at);
             app.selected_mods.clear();
+            settle_folds_after_move(app, at, targets.len(), &hidden);
+            // The card hosting the editor is dismissed by the commit, not by the
+            // click that armed it.
+            app.menu_mod = None;
             mods_changed(app);
             app.status = Some(format!("Moved to priority {at}."));
         }
         Message::SendToSeparatorStart(i) => {
-            app.menu_mod = None;
+            // Same as above: the chooser lives inside the menu card.
+            app.menu_mod = Some(i);
             app.send_priority = None;
             app.send_separator = Some(i);
         }
@@ -3166,9 +3257,12 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .find(|(_, m)| m.is_separator())
                 .map(|(idx, _)| idx)
                 .unwrap_or(app.mods.len());
+            let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, dest);
             app.selected_mod = Some(at);
             app.selected_mods.clear();
+            settle_folds_after_move(app, at, targets.len(), &hidden);
+            app.menu_mod = None;
             mods_changed(app);
         }
         Message::SendToTargetCancel => {
@@ -3476,20 +3570,28 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.rename = None;
             app.confirm_remove = None;
             app.drag_state = None;
+            app.send_priority = None;
+            app.send_separator = None;
         }
         Message::CloseMenu => {
             app.menu_at = None;
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
+            // An armed inline editor must not outlive the menu that hosts it, or
+            // the next right-click on that row opens straight into it.
+            app.send_priority = None;
+            app.send_separator = None;
         }
         Message::ModSendTop(i) => {
             if i < app.mods.len() {
+                let hidden = hidden_by_folds(app);
                 let at = move_block(&mut app.mods, &[i], 0);
                 app.selected_mod = Some(at);
                 // Every other row's index shifted: a stale multi-selection here
                 // could feed the wrong rows into a batch remove.
                 app.selected_mods.clear();
+                settle_folds_after_move(app, at, 1, &hidden);
                 mods_changed(app);
             }
             app.menu_mod = None;
@@ -3497,9 +3599,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::ModSendBottom(i) => {
             if i < app.mods.len() {
                 let end = app.mods.len();
+                let hidden = hidden_by_folds(app);
                 let at = move_block(&mut app.mods, &[i], end);
                 app.selected_mod = Some(at);
                 app.selected_mods.clear();
+                settle_folds_after_move(app, at, 1, &hidden);
                 mods_changed(app);
             }
             app.menu_mod = None;
@@ -3613,6 +3717,19 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                     }
                                     // The cache is keyed by name; the old key is stale.
                                     drop_files_cache(app, Some(&old.name));
+                                    // So is the fold state, which is keyed by DISPLAY
+                                    // name. Left alone, a folded group springs open on
+                                    // rename and the dead key is written back forever -
+                                    // until some future separator happens to take that
+                                    // name and folds itself the moment it is created.
+                                    // `AddSeparator` opens this editor immediately, so
+                                    // every separator passes through here.
+                                    if old.is_separator()
+                                        && app.collapsed.remove(old.display_name())
+                                    {
+                                        app.collapsed.insert(typed.clone());
+                                        save_collapsed(app);
+                                    }
                                     mods_changed(app);
                                     app.status = Some(format!("Renamed to '{typed}'."));
                                 }
@@ -4934,32 +5051,53 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::BatchSendTop => {
             // Lift the whole selection (keeping its relative order) to the top.
-            let mut targets = real_selection(app);
+            let mut targets = move_selection(app);
             if targets.is_empty() {
                 return Task::none();
             }
             targets.sort_unstable();
+            let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, 0);
             // The selection is now a contiguous block at the destination.
             app.selected_mods = (at..at + targets.len()).collect();
             app.selected_mod = Some(at);
+            settle_folds_after_move(app, at, targets.len(), &hidden);
             mods_changed(app);
             app.menu_mod = None;
         }
         Message::BatchSendBottom => {
-            let mut targets = real_selection(app);
+            let mut targets = move_selection(app);
             if targets.is_empty() {
                 return Task::none();
             }
             targets.sort_unstable();
             let end = app.mods.len();
+            let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, end);
             app.selected_mods = (at..at + targets.len()).collect();
             app.selected_mod = Some(at);
+            settle_folds_after_move(app, at, targets.len(), &hidden);
             mods_changed(app);
             app.menu_mod = None;
         }
         Message::DragStart(i) => {
+            // Alt on a group header takes the whole group, header included - MO2's
+            // gesture for moving a section rather than its label
+            // (ModListView::mousePressEvent, modlistview.cpp:1444). It works on a
+            // FOLDED group too: the hidden rows are still rows, so they travel.
+            if app.modifiers.alt() && app.mods.get(i).is_some_and(|m| m.is_separator()) {
+                app.focus = Pane::Mods;
+                app.typing = false;
+                let end = group_children(&app.mods, i).end;
+                app.selected_mods = (i..end).collect();
+                app.selected_mod = Some(i);
+                app.sel_anchor = Some(i);
+                app.menu_mod = None;
+                app.rename = None;
+                app.confirm_remove = None;
+                app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
+                return Task::none();
+            }
             // Arm a drag and (re)select the row, unless a modifier means the click
             // was a multi-select gesture (then leave the existing selection alone).
             if app.modifiers.control()
@@ -5011,9 +5149,21 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let unchanged =
                 !d.aimed || (block.len() == 1 && (d.gap == block[0] || d.gap == block[0] + 1));
             if !unchanged {
+                let hidden = hidden_by_folds(app);
                 let at = move_block(&mut app.mods, &block, d.gap);
                 app.selected_mod = Some(at);
-                app.selected_mods.clear();
+                // The anchor was left pointing at a pre-move index, so the next
+                // Shift+click built its run from a row nobody had chosen.
+                app.sel_anchor = Some(at);
+                // A block dragged as one stays selected where it landed, so it can
+                // be dragged again without rebuilding the selection; a single row
+                // still collapses to a plain focus, as it always did.
+                app.selected_mods = if block.len() > 1 {
+                    (at..(at + block.len()).min(app.mods.len())).collect()
+                } else {
+                    HashSet::new()
+                };
+                settle_folds_after_move(app, at, block.len(), &hidden);
                 mods_changed(app);
             }
         }
@@ -5254,11 +5404,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SelectAllInFocus => match effective_focus(app) {
             Pane::Mods => {
-                // Separators define groups; they are not rows an action moves,
-                // and `selection_or` drops them anyway - so leave them out here
-                // rather than showing a selection that silently shrinks.
-                app.selected_mods =
-                    (0..app.mods.len()).filter(|&i| !app.mods[i].is_separator()).collect();
+                // Everything, separators included - MO2's Ctrl+A does the same, and
+                // a reorder now carries them. The destructive batch actions still
+                // spare them, but on their own terms (`real_selection`), so a
+                // Select All followed by Remove does not delete the headers.
+                app.selected_mods = (0..app.mods.len()).collect();
                 app.selected_mod = app.selected_mod.or(Some(0)).filter(|_| !app.mods.is_empty());
             }
             Pane::Plugins => {
@@ -5290,6 +5440,22 @@ fn real_selection(app: &App) -> Vec<usize> {
     set.into_iter()
         .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator()))
         .collect()
+}
+
+/// The same set, for the batch actions that REORDER rather than act on contents.
+///
+/// The split matters: filtering separators out of a move is what used to lift a
+/// group's mods above their own header and leave it stranded. Filtering them out
+/// of enable/disable/remove is right, because those act on files a separator does
+/// not have.
+fn move_selection(app: &App) -> Vec<usize> {
+    let mut set = app.selected_mods.clone();
+    if set.is_empty() {
+        if let Some(f) = app.selected_mod {
+            set.insert(f);
+        }
+    }
+    set.into_iter().filter(|&i| i < app.mods.len()).collect()
 }
 
 // ---- theme -------------------------------------------------------------------
@@ -6413,8 +6579,9 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
         // A separator renders as a full-width group header - no checkbox, version,
-        // conflict flags, or content (it never queries the ConflictMap). It always
-        // shows (even under a filter, and even when its own group is collapsed).
+        // conflict flags, or content (it never queries the ConflictMap). It draws
+        // whatever its own group's fold state, since a folded header is exactly
+        // what the user clicks to unfold; a filter hides it like any other row.
         if m.is_separator() {
             if !vis[i] {
                 continue;
@@ -6459,8 +6626,9 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         };
         let meta = app.meta_cache.get(&m.name);
         // The insertion strip ABOVE this row. Always rendered (stable layout),
-        // targetable only during a drag and only from the first managed row down:
-        // nothing may be ordered above the game's own content.
+        // targetable during a drag. Every gap is a target, the very top included:
+        // the game's own content is written to modlist.txt now, so a row landing
+        // above it keeps its place.
         list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
@@ -6636,6 +6804,12 @@ fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
             .push(menu_sep())
             .push(menu_item("Send to Top", Message::ModSendTop(i)))
             .push(menu_item("Send to Bottom", Message::ModSendBottom(i)))
+            // The same targeted moves every other row gets. MO2's separator menu
+            // calls `addSendToContextMenu()` unchanged (modlistcontextmenu.cpp:395);
+            // the conflict entries drop out on their own, because a separator owns
+            // no files and so carries no conflict flags - which is MO2's reason
+            // too, rather than a test for separator-ness.
+            .push(send_to_targets(app, i))
             .push(menu_item("Add separator above", Message::AddSeparator(i)))
             .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)))
             .push(menu_sep())
@@ -8977,6 +9151,21 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
 /// relevant set being non-empty, so the menu never offers a move that would do
 /// nothing. Priority and separator open an inline editor rather than a modal,
 /// matching how rename already works in this menu.
+/// The separators offered as a destination when sending row `i` (and whatever
+/// else is selected with it) into a group.
+///
+/// The moved rows are excluded. MO2 does not bother, because in a flat list
+/// sending a separator into its own group is merely nonsensical rather than
+/// unsound - it lands at the tail of the group it used to head. Offering the
+/// user a choice whose only outcome is confusion is not parity worth having.
+fn separator_choices(app: &App, i: usize) -> Vec<usize> {
+    let moving = selection_or(app, i);
+    (0..app.mods.len())
+        .filter(|&idx| app.mods[idx].is_separator())
+        .filter(|idx| !moving.contains(idx))
+        .collect()
+}
+
 fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
     // Same origin convention as the emblems: index + 1, with the game (0) and the
     // Overwrite pseudo-layer (u32::MAX) excluded because they are not rows.
@@ -9003,9 +9192,9 @@ fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
         // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
     let mut list = Column::new();
-        for (idx, sep) in app.mods.iter().enumerate().filter(|(_, m)| m.is_separator()) {
+        for idx in separator_choices(app, i) {
             // Owned, so the Element does not borrow from `app`.
-            let label = sep.display_name().to_string();
+            let label = app.mods[idx].display_name().to_string();
             list = list.push(menu_item_owned(label, Message::SendToSeparatorPick(idx)));
         }
         col = col
@@ -11267,10 +11456,6 @@ mod tests {
         }
     }
 
-    /// Unmanaged rows (the game's DLC and Creation Club content) are listed first
-    /// and never written to modlist.txt, so no strip is offered above them - a
-    /// drop there would vanish on save.
-
     /// The rows `visible_rows` says to draw, by name, for a readable assertion.
     fn drawn<'a>(v: &'a [ModEntry], vis: &[bool]) -> Vec<&'a str> {
         v.iter().zip(vis).filter(|(_, &s)| s).map(|(m, _)| m.name.as_str()).collect()
@@ -11629,6 +11814,192 @@ mod tests {
         let _ = update(&mut app, Message::DragStart(2));
         let _ = update(&mut app, Message::DragOverGap(0));
         assert!(app.drag_state.is_some_and(|d| d.aimed));
+    }
+
+    /// The indices of a selection, sorted, for a readable assertion.
+    fn sel(app: &App) -> Vec<usize> {
+        let mut v: Vec<usize> = app.selected_mods.iter().copied().collect();
+        v.sort_unstable();
+        v
+    }
+
+    #[test]
+    fn group_children_stops_at_the_next_separator() {
+        let v = mods(&["Head_separator", "a", "b", "Tail_separator", "c"]);
+        assert_eq!(group_children(&v, 0), 1..3);
+        assert_eq!(group_children(&v, 3), 4..5, "the last group runs to the end");
+        let empty = mods(&["Head_separator", "Tail_separator"]);
+        assert!(group_children(&empty, 0).is_empty(), "a header with nothing under it");
+        assert!(group_children(&empty, 1).is_empty());
+    }
+
+    #[test]
+    fn a_separator_dragged_alone_leaves_its_mods_behind() {
+        // MO2's behaviour, and the whole point of the fix: `dropMimeData` hands
+        // exactly the dragged rows to `changeModPriority` (modlist.cpp:1159),
+        // gathering no children. The mods left behind are not orphaned - they now
+        // belong to whatever header is above them, because membership is nothing
+        // but adjacency.
+        let mut app = nav_app(&["Head_separator", "a", "b", "Tail_separator", "c"]);
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragOverGap(4));
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["a", "b", "Tail_separator", "Head_separator", "c"]);
+    }
+
+    #[test]
+    fn a_folded_separator_still_moves_alone_and_comes_back_open() {
+        // MO2 force-expands a separator whose priority just changed
+        // (ModListView::onModPrioritiesChanged, modlistview.cpp:449). Without it a
+        // folded header dropped somewhere new goes on hiding rows that were never
+        // inside it, which reads as mods having been deleted.
+        let mut app = nav_app(&["Head_separator", "a", "Tail_separator", "b"]);
+        app.collapsed.insert("Head".to_string());
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragOverGap(3));
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["a", "Tail_separator", "Head_separator", "b"]);
+        assert!(!app.collapsed.contains("Head"), "a header that now hides rows must be open");
+
+        // Landing with nothing under it hides nothing, so the fold is left alone -
+        // the user's choice is only overridden where keeping it would mislead.
+        let mut app = nav_app(&["a", "Head_separator", "b"]);
+        app.collapsed.insert("Head".to_string());
+        let _ = update(&mut app, Message::DragStart(1));
+        let _ = update(&mut app, Message::DragOverGap(3));
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["a", "b", "Head_separator"]);
+        assert!(app.collapsed.contains("Head"), "nothing is hidden, so nothing was unfolded");
+    }
+
+    #[test]
+    fn mods_swallowed_by_a_folded_neighbour_are_named() {
+        // Lift a header out from between a folded group and its own mods, and
+        // those mods join the folded group: off screen, and with nothing else to
+        // say so. The fold is the user's and is left alone; the disappearance is
+        // not left to be discovered.
+        let mut app = nav_app(&["Armour_separator", "a", "Weapons_separator", "w1", "w2"]);
+        app.collapsed.insert("Armour".to_string());
+        let _ = update(&mut app, Message::ModSendBottom(2));
+        assert_eq!(names(&app.mods), ["Armour_separator", "a", "w1", "w2", "Weapons_separator"]);
+        assert!(
+            app.status.as_deref().is_some_and(|s| s.contains("folded group")),
+            "two mods went off screen unremarked: {:?}",
+            app.status
+        );
+
+        // An ordinary move hides nothing, and says nothing.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::ModSendBottom(0));
+        assert_eq!(app.status, None);
+    }
+
+    #[test]
+    fn ctrl_arrow_moves_a_separator_like_any_other_row() {
+        // This was a dead key: `selection_or` returned an empty block and
+        // `move_mod_rows` bailed without so much as a status line.
+        let mut app = nav_app(&["a", "Sec_separator", "b"]);
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["Sec_separator", "a", "b"]);
+        assert_eq!(app.selected_mod, Some(0), "the focus follows the row it moved");
+    }
+
+    #[test]
+    fn a_separator_can_be_parked_above_the_games_own_content() {
+        // The user's actual goal: a header above the DLC / Creation Club block, so
+        // the arrow beside it folds all of that away.
+        let mut app = nav_app(&["dlc", "Sec_separator", "a"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["Sec_separator", "dlc", "a"]);
+    }
+
+    #[test]
+    fn alt_click_on_a_separator_selects_its_whole_group() {
+        // MO2's gesture for taking a section rather than its label
+        // (ModListView::mousePressEvent, modlistview.cpp:1444).
+        let mut app = nav_app(&["Head_separator", "a", "b", "Tail_separator", "c"]);
+        app.modifiers = iced::keyboard::Modifiers::ALT;
+        let _ = update(&mut app, Message::DragStart(0));
+        assert_eq!(sel(&app), vec![0, 1, 2], "header plus its group, stopping at the next header");
+
+        let _ = update(&mut app, Message::DragStart(3));
+        assert_eq!(sel(&app), vec![3, 4], "the last group runs to the end of the list");
+
+        // Alt on an ordinary row is not this gesture.
+        let _ = update(&mut app, Message::DragStart(1));
+        assert_eq!(sel(&app), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn a_group_selected_with_alt_moves_as_one_block() {
+        let mut app = nav_app(&["Head_separator", "a", "b", "Tail_separator", "c"]);
+        app.modifiers = iced::keyboard::Modifiers::ALT;
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragOverGap(5));
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["Tail_separator", "c", "Head_separator", "a", "b"]);
+        assert_eq!(sel(&app), vec![2, 3, 4], "a block stays selected so it can be dragged again");
+    }
+
+    #[test]
+    fn a_mixed_selection_no_longer_leaves_its_header_behind() {
+        // `real_selection` filtered the separator out of the batch reorders, which
+        // lifted a group's mods above their own header and stranded it.
+        let mut app = nav_app(&["a", "Sec_separator", "b", "c"]);
+        app.selected_mods = [1, 2].into_iter().collect();
+        app.selected_mod = Some(1);
+        let _ = update(&mut app, Message::BatchSendTop);
+        assert_eq!(names(&app.mods), ["Sec_separator", "b", "a", "c"]);
+    }
+
+    #[test]
+    fn a_drag_re_anchors_the_selection_it_just_moved() {
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mods = [0, 1].into_iter().collect();
+        app.selected_mod = Some(0);
+        app.sel_anchor = Some(0);
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragOverGap(4));
+        let _ = update(&mut app, Message::DragDrop);
+        assert_eq!(names(&app.mods), ["c", "d", "a", "b"]);
+        // Left at 0, the next Shift+click would have built its run from a row
+        // nobody chose.
+        assert_eq!(app.sel_anchor, Some(2));
+        assert_eq!(sel(&app), vec![2, 3]);
+    }
+
+    #[test]
+    fn send_to_separator_will_not_send_a_separator_into_itself() {
+        let app = nav_app(&["A_separator", "a", "B_separator", "b"]);
+        assert_eq!(separator_choices(&app, 0), vec![2], "a header is not a destination for itself");
+        assert_eq!(separator_choices(&app, 2), vec![0]);
+        assert_eq!(separator_choices(&app, 1), vec![0, 2], "an ordinary mod may go anywhere");
+    }
+
+    #[test]
+    fn send_to_priority_keeps_the_menu_that_hosts_its_editor() {
+        // Both "Send to..." items armed an inline editor and closed the card that
+        // draws it, so they did nothing visible - for every row, not just
+        // separators - and the armed state then hijacked the next right-click.
+        let mut app = nav_app(&["a", "b"]);
+        let _ = update(&mut app, Message::OpenModMenu(1));
+        let _ = update(&mut app, Message::SendToPriorityStart(1));
+        assert_eq!(app.menu_mod, Some(1), "the card holding the editor was dismissed");
+        assert!(app.send_priority.is_some());
+
+        let _ = update(&mut app, Message::SendToPriorityChanged("0".to_string()));
+        let _ = update(&mut app, Message::SendToPriorityCommit);
+        assert_eq!(names(&app.mods), ["b", "a"]);
+        assert_eq!(app.menu_mod, None, "the commit is what closes the menu");
+
+        // And closing the menu disarms it, so the next right-click opens a menu.
+        let _ = update(&mut app, Message::OpenModMenu(0));
+        let _ = update(&mut app, Message::SendToSeparatorStart(0));
+        let _ = update(&mut app, Message::CloseMenu);
+        assert!(app.send_separator.is_none());
     }
 
     #[test]

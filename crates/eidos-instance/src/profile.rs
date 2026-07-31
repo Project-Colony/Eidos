@@ -1401,6 +1401,37 @@ mod tests {
     }
 
     #[test]
+    fn a_separator_above_the_games_content_round_trips() {
+        // The arrangement the whole feature exists for: a header, then the game's
+        // DLC block, then the mods. Only the file decides whether it survives -
+        // a separator is an ordinary managed row, so it needs its folder on disk,
+        // and the `*` row needs its position read back in the same place.
+        let root = inst_with_mods(&["Skyrim DLCs_separator", "Real"]);
+        let p = prof(&root, "Default");
+        let e = |n: &str, un: bool| ModEntry {
+            name: n.into(),
+            enabled: true,
+            path: if un { root.join("gamedata").join(n) } else { root.join("mods").join(n) },
+            unmanaged: un,
+        };
+        p.save_modlist(&[e("Skyrim DLCs_separator", false), e("Dawnguard", true), e("Real", false)])
+            .unwrap();
+
+        let (back, _) = p.modlist_checked();
+        assert_eq!(
+            back.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+            ["Skyrim DLCs_separator", "Dawnguard", "Real"],
+            "the header did not stay above the game's content"
+        );
+        assert!(back[1].unmanaged, "the DLC row is still the game's, not a mod");
+        // And the header is not a mount layer either - it has no files, and a
+        // group of nothing must not shadow anything.
+        let mounted = p.load_order();
+        assert!(!mounted.iter().any(|m| m.to_string_lossy().contains("_separator")), "{mounted:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn unmanaged_content_keeps_its_position_but_is_never_mounted() {
         // The game's own DLCs and Creation Club plugins belong in the list - four
         // mods beside eighty loading plugins is what makes a user ask whether
