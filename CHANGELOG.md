@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/Project-Colony/Eidos/compare/v1.0.1...v1.0.2) (2026-07-31)
+
+
+### Fixes
+
+* **ci:** attach artifacts to a release that already exists ([9caf1f1](https://github.com/Project-Colony/Eidos/commit/9caf1f18c2e97415fd4a615271cc078b74180498))
+* **ci:** stop naming a component this repo does not have ([12ea5a2](https://github.com/Project-Colony/Eidos/commit/12ea5a2983c3676978bd24c8012b2ca72065d3ae))
+
 ## [1.0.1](https://github.com/Project-Colony/Eidos/compare/v1.0.0...v1.0.1) (2026-07-31)
 
 
