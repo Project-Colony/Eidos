@@ -3,7 +3,6 @@
   "packages": {
     ".": {
       "release-type": "simple",
-      "package-name": "eidos",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "draft": false,
