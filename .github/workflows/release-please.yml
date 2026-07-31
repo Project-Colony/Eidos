@@ -61,8 +61,11 @@ jobs:
           fi
           git clone --branch "$branch" --depth 1 "$url" pr
           cd pr
-          # Re-resolves and rewrites the lock without compiling anything.
-          cargo metadata --format-version 1 --no-deps >/dev/null
+          # Rewrites the workspace members' versions in the lock, and nothing
+          # else - no external dependency is touched, and nothing is compiled.
+          # (`cargo metadata --no-deps` does NOT do this: skipping resolution is
+          # the whole point of that flag, so the lock is never rewritten.)
+          cargo update --workspace
           if git diff --quiet Cargo.lock; then
             echo "Cargo.lock already agrees with Cargo.toml"
             exit 0
