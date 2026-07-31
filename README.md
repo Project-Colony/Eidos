@@ -63,11 +63,9 @@ update checks against your installed versions.
 
 **Tools.** xEdit, BodySlide, DynDOLOD and friends run *through the merged view*
 inside the game's Proton prefix - they see your mods, their output lands in
-Overwrite, and one click turns it into a real mod. Each tool's runtime
-prerequisites are named from its title and shown with their real state, so
-"NOT FOUND" is a button rather than a discovery you make an hour later: bundled
-DirectX DLLs ship inside Eidos, winetricks verbs and the .NET runtime DynDOLOD's
-LOD generator needs are fetched on request.
+Overwrite, and one click turns it into a real mod. Whatever runtime each one
+needs is named from its title and fetched on request, so a missing DLL is a
+button rather than an afternoon.
 
 **Diagnostics.** Live health checks: missing masters, orphaned archives,
 mod-list drift, damaged plugin sets (with the restore button), and - after a
@@ -89,79 +87,18 @@ properties are genuinely exclusive - is in [docs/landscape.md](docs/landscape.md
 
 ## How fast it is
 
-Measured on a real Skyrim SE instance, not a benchmark. Loading a save took about
-twenty seconds; it now takes six to seven, and cell changes are immediate.
+| | before | now |
+|---|---|---|
+| loading a save | ~20 seconds | **6-7 seconds** |
+| directory reads in one session | 5.6 million | 465 thousand |
 
-|                   | before      | after     |         |
-|-------------------|-------------|-----------|---------|
-| `exists()` probes | 6,408,527   | 481,826   | **13x** |
-| directory scans   | 5,608,084   | 335,493   | **17x** |
-| `lookup`          | 1627 ms     | 276 ms    | 5.9x    |
-| `getattr`         | 505 ms      | 77 ms     | 6.6x    |
-| `open`            | 1150 ms     | 236 ms    | 4.9x    |
-| `read`            | 3173 ms     | 3459 ms   | unchanged |
+Cell changes are immediate. The gain came from asking your mods fewer questions:
+finding one file used to interrogate all fifty of them in turn, and listing one
+folder used to do it fifty times over. Neither does any more.
 
-`read` not moving is the point, not a disappointment. It resolves nothing - it
-`pread`s a handle that is already open - so it is the disk, and no amount of
-cleverness in a filesystem makes a disk faster. After this change 82% of what
-remains is the disk, which is where a mod manager should stop being the answer.
-
-**What was slow.** Resolving one virtual path asked every layer in turn, and a
-name that did not match byte-for-byte fell back to reading the whole directory
-to find a case-insensitive match - which Bethesda games need constantly, since
-the game asks for `ccbgssse001-fish.bsa` while the file is
-`ccBGSSSE001-Fish.bsa`. A layer that does *not* have the file misses on its
-first component and pays that enumeration anyway, so a file provided by one mod
-cost an enumeration in each of the others, on every lookup, getattr and open.
-The cost grew with the thing users add most.
-
-The read-only layers are now indexed once at mount, so a resolve is a hash
-lookup. The Overwrite is deliberately *not* indexed - it is the layer that
-changes - so there is no invalidation to get wrong.
-
-### Then the directories
-
-Two things were still asking the layers on every call.
-
-**Opening one.** A measured session sent **516,301** directory opens and
-enumerated almost none of them: Wine opens a directory to ask whether it folds
-case, on every path that fails to resolve. The kernel can answer that itself, so
-Eidos accepts `FUSE_NO_OPENDIR_SUPPORT` and stops being asked.
-
-**Listing one.** `readdir` needs every layer's copy of a directory, merged, while
-the path index only knew which layer wins - so a listing on a 50-layer stack cost
-50 case-folding walks whatever the index held. The layers cannot change while
-mounted, so their merge cannot either: it is computed once at mount and read as a
-hash lookup.
-
-|                   | before      | today   |         |
-|-------------------|-------------|---------|---------|
-| `opendir`         | 516,301     | **1**   | gone    |
-| `readdir`         | 799 ms      | 105 ms  | **7.6x**|
-| directory scans   | 800,722     | 464,564 | 1.7x    |
-
-Measured on two real sessions that happened to issue **exactly the same 2,063
-listings** - which is what makes the comparison worth printing, rather than a
-benchmark shaped to flatter.
-
-### Checking it rather than trusting it
-
-The index is all-or-nothing and built in silence, so a stack that quietly fell
-back looks exactly like one that is working. Three examples answer that, on your
-own instance:
-
-```sh
-cargo run --release -p eidos-core --example index_health  -- <mods-dir> <overwrite-dir>
-cargo run --release -p eidos-core --example index_agrees  -- <mods-dir> <overwrite-dir>
-cargo run --release -p eidos-core --example listing_cost  -- <mods-dir> <overwrite-dir>
-cargo run --release -p eidos-core --example resolve_cost
-```
-
-`index_agrees` is the one that matters: it requires the indexed and the walked
-answer to be identical on every path AND every listing of a real instance -
-37,127 paths and 1,492 directories, zero disagreements. It is also what caught a
-bug the index had been hiding, where a mod shipping both `meshes/` and `Meshes/`
-lost everything under the second spelling.
+Measured on a real instance played normally, not on a benchmark. What was slow,
+what each change bought, and the commands to reproduce every figure on your own
+setup: [docs/performance.md](docs/performance.md).
 
 ## Quick start
 
@@ -196,6 +133,7 @@ Full walkthrough (GUI tour, tools, MO2 import): [docs/usage.md](docs/usage.md).
 | [usage.md](docs/usage.md) | CLI, GUI tour, Steam setup, building from source |
 | [landscape.md](docs/landscape.md) | the problem, every Linux approach, what is exclusive here |
 | [architecture.md](docs/architecture.md) | why FUSE, the daemon's design, caching, write semantics |
+| [performance.md](docs/performance.md) | what was slow, what each change bought, how to measure it yourself |
 | [troubleshooting.md](docs/troubleshooting.md) | env switches, op counters, known issues and their history |
 | [status.md](docs/status.md) | the full done/remaining ledger |
 | [master-pieces.md](docs/master-pieces.md) | the MO2 + usvfs study that drove parity |
