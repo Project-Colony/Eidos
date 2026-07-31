@@ -1419,24 +1419,62 @@ fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
 
 
 
-/// The mod list as the user should see it: the profile's managed mods with the
-/// game's own unmanaged content (DLCs, Creation Club) prepended.
+/// The mod list as the user should see it: the profile's rows, with the game's
+/// own content (DLCs, Creation Club) reconciled into them.
 ///
-/// Prepended, because the display runs lowest-priority-first and the engine loads
-/// this content before anything anyone installed. Without it the list shows four
-/// mods while eighty plugins load, which is how you end up asking whether your
-/// DLC is even there.
+/// A row the profile already places KEEPS ITS POSITION. That is the whole
+/// difference from prepending everything: a user who drags the DLC block under a
+/// separator, or puts one above it, has said where it goes, and re-pinning it to
+/// the top on the next refresh would throw that away silently.
+///
+/// Content the profile has never seen is prepended, because the display runs
+/// lowest-priority-first and the engine loads its own content before anything
+/// anyone installed. Content the profile lists but the game no longer ships is
+/// dropped - a DLC can be uninstalled, and a row pointing at nothing helps no one.
 fn modlist_with_unmanaged(inst: &Instance, game: Option<&DetectedGame>) -> Vec<ModEntry> {
-    let managed = inst.modlist();
-    let Some(game) = game else { return managed };
-    let Some(spec) = GameSpec::for_id(game.def.id) else { return managed };
+    let listed = inst.modlist();
+    let Some(game) = game else { return strip_unmanaged(listed) };
+    let Some(spec) = GameSpec::for_id(game.def.id) else { return strip_unmanaged(listed) };
     // The order the engine imposes on its own content: the primary masters, then
     // whatever the `.ccc` lists. Anything else falls in after, alphabetically.
     let mut engine_order: Vec<String> = spec.primary_plugins.clone();
     engine_order.extend(eidos_plugins::implicit_plugins(&game.install_path));
-    let mut out = inst.unmanaged_mods(&game.data_path, &engine_order, &managed);
-    out.extend(managed);
+    let managed: Vec<ModEntry> = listed.iter().filter(|m| !m.unmanaged).cloned().collect();
+    let real = inst.unmanaged_mods(&game.data_path, &engine_order, &managed);
+
+    // What the game actually ships, by name, so a listed row can be matched to it
+    // and given the path this layer alone knows.
+    let mut by_name: std::collections::HashMap<String, ModEntry> =
+        real.into_iter().map(|m| (m.name.to_ascii_lowercase(), m)).collect();
+
+    let mut out: Vec<ModEntry> = Vec::with_capacity(listed.len() + by_name.len());
+    let mut placed: Vec<ModEntry> = Vec::new();
+    for m in listed {
+        if !m.unmanaged {
+            placed.push(m);
+            continue;
+        }
+        // `remove` both fills in the real path and marks the row as accounted for,
+        // so what is left in the map afterwards is exactly the new content.
+        if let Some(found) = by_name.remove(&m.name.to_ascii_lowercase()) {
+            placed.push(found);
+        }
+        // Otherwise the game no longer ships it: drop the row.
+    }
+    // Whatever the profile never mentioned, in engine order, ahead of everything.
+    let mut fresh: Vec<ModEntry> = by_name.into_values().collect();
+    fresh.sort_by_key(|m| m.name.to_ascii_lowercase());
+    out.extend(fresh);
+    out.extend(placed);
     out
+}
+
+/// The list without the game's content, for when there is no game to reconcile
+/// against. A `*` row whose files cannot be located is not a mod and must not be
+/// shown as one - least of all with an empty path, which every consumer would
+/// then have to defend against.
+fn strip_unmanaged(mods: Vec<ModEntry>) -> Vec<ModEntry> {
+    mods.into_iter().filter(|m| !m.unmanaged).collect()
 }
 
 
@@ -1702,13 +1740,6 @@ fn planned_instance(app: &App) -> Option<Instance> {
     })
 }
 
-/// The first row a mod may legally occupy: unmanaged rows (the game's own DLC and
-/// Creation Club content) are listed first and are not part of `modlist.txt`, so
-/// nothing can be ordered above them - a drop there would vanish on save.
-fn first_managed(mods: &[ModEntry]) -> usize {
-    mods.iter().position(|m| !m.is_unmanaged()).unwrap_or(mods.len())
-}
-
 /// Which rows the mod list draws, given the filter and the folded groups.
 ///
 /// Filtering SUSPENDS folding. A search is a question - "which of my mods are
@@ -1863,10 +1894,12 @@ fn move_mod_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task
     if block.is_empty() {
         return Task::none();
     }
-    // Nothing may be ordered above the game's own content: those rows are not in
-    // modlist.txt and a mod dropped among them would vanish on save.
-    let floor = first_managed(&app.mods);
-    let dest = if up { neighbour.max(floor) } else { neighbour + 1 };
+    // No floor. This used to clamp every move to below the game's own content,
+    // for a reason that was true at the time - those rows were not in modlist.txt,
+    // so a mod dropped among them vanished on the next save. They are written now
+    // (MO2's `*`), which is what makes a separator above the DLC block possible,
+    // and a collapsed block is the only way to put that noise away.
+    let dest = if up { neighbour } else { neighbour + 1 };
     let held = hold_mod_selection(app);
     let at = move_block(&mut app.mods, &block, dest);
     put_mod_selection(app, held);
@@ -4949,10 +4982,11 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DragOverGap(gap) => {
             if let Some(d) = &mut app.drag_state {
-                // Never above the unmanaged block: those rows are the game's own
-                // content, they are not in modlist.txt, and a mod dropped among
-                // them would be silently dropped from the saved order.
-                let want = gap.max(first_managed(&app.mods)).min(app.mods.len());
+                // Every gap is a target now, the top of the list included. The
+                // clamp here matched the one in `move_mod_rows` and rested on the
+                // same premise - unmanaged rows outside modlist.txt - which no
+                // longer holds.
+                let want = gap.min(app.mods.len());
                 d.aimed |= want != d.from && want != d.from + 1;
                 d.gap = want;
             }
@@ -6375,7 +6409,6 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .filter(|d| d.gap != d.from && d.gap != d.from + 1)
         .map(|d| d.gap);
     let dragging = app.drag_state.is_some();
-    let lowest_gap = first_managed(&app.mods);
     for (i, m) in app.mods.iter().enumerate() {
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
@@ -6392,7 +6425,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
-            list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
+            list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
             list = list.push(separator_row(i, m, color, collapsed, selected));
             continue;
         }
@@ -6428,7 +6461,7 @@ fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // The insertion strip ABOVE this row. Always rendered (stable layout),
         // targetable only during a drag and only from the first managed row down:
         // nothing may be ordered above the game's own content.
-        list = list.push(drop_gap(i, live_gap == Some(i), dragging && i >= lowest_gap, Message::DragOverGap, Message::DragDrop));
+        list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
@@ -11237,23 +11270,6 @@ mod tests {
     /// Unmanaged rows (the game's DLC and Creation Club content) are listed first
     /// and never written to modlist.txt, so no strip is offered above them - a
     /// drop there would vanish on save.
-    #[test]
-    fn no_insertion_point_is_offered_above_the_game_content() {
-        let mut v = mods(&["dlc1", "dlc2", "mod1", "mod2"]);
-        v[0].unmanaged = true;
-        v[1].unmanaged = true;
-        assert_eq!(first_managed(&v), 2);
-
-        // An all-unmanaged list offers nothing at all rather than index 0.
-        let mut all_dlc = mods(&["dlc1", "dlc2"]);
-        for m in all_dlc.iter_mut() {
-            m.unmanaged = true;
-        }
-        assert_eq!(first_managed(&all_dlc), 2);
-
-        // And an all-managed list starts at the top.
-        assert_eq!(first_managed(&mods(&["a", "b"])), 0);
-    }
 
     /// The rows `visible_rows` says to draw, by name, for a readable assertion.
     fn drawn<'a>(v: &'a [ModEntry], vis: &[bool]) -> Vec<&'a str> {
@@ -11721,17 +11737,26 @@ mod tests {
     }
 
     #[test]
-    fn a_row_move_stops_at_the_ends_and_above_the_game_content() {
+    fn a_row_move_stops_at_the_ends_but_may_pass_the_game_content() {
         let mut app = nav_app(&["dlc", "a", "b"]);
         app.mods[0].unmanaged = true;
+
+        // Above the game's own content is now a legal place to be. It has to be:
+        // a separator can only fold what comes AFTER it, so the only way to put
+        // the DLC block away is to get a separator above it. The rows are written
+        // to modlist.txt with MO2's `*` now, so nothing is lost by going there.
         app.selected_mod = Some(1);
-        // "a" is already the first movable row; nothing above it may be claimed.
         let _ = key_nav(&mut app, Nav::ShiftUp);
-        assert_eq!(names(&app.mods), ["dlc", "a", "b"]);
+        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "a row could not pass the game content");
+
+        // The ends still hold.
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "the first row has nowhere to go");
 
         app.selected_mod = Some(2);
         let _ = key_nav(&mut app, Nav::ShiftDown);
-        assert_eq!(names(&app.mods), ["dlc", "a", "b"], "the last row has nowhere to go");
+        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "the last row has nowhere to go");
     }
 
     #[test]
@@ -12355,6 +12380,101 @@ mod tests {
             }
         }
     }
+
+    // ---- the game's own content, reconciled -------------------------------
+    //
+    // `modlist_with_unmanaged` decides where the DLC and Creation Club rows land.
+    // The rule that matters: a row the profile already places keeps its position,
+    // because that position is something the user said. Re-pinning it to the top
+    // on every refresh is what stopped a separator from ever sitting above the
+    // block, so it could not be collapsed.
+
+    fn entry(name: &str, unmanaged: bool) -> ModEntry {
+        ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: if unmanaged { PathBuf::new() } else { PathBuf::from("/mods").join(name) },
+            unmanaged,
+        }
+    }
+
+    /// The reconciliation, extracted from the filesystem so it can be tested:
+    /// `listed` is what the profile holds, `real` what the game ships.
+    fn reconcile(listed: Vec<ModEntry>, real: Vec<ModEntry>) -> Vec<String> {
+        let mut by_name: std::collections::HashMap<String, ModEntry> =
+            real.into_iter().map(|m| (m.name.to_ascii_lowercase(), m)).collect();
+        let mut placed: Vec<ModEntry> = Vec::new();
+        for m in listed {
+            if !m.unmanaged {
+                placed.push(m);
+            } else if let Some(found) = by_name.remove(&m.name.to_ascii_lowercase()) {
+                placed.push(found);
+            }
+        }
+        let mut fresh: Vec<ModEntry> = by_name.into_values().collect();
+        fresh.sort_by_key(|m| m.name.to_ascii_lowercase());
+        fresh.into_iter().chain(placed).map(|m| m.name).collect()
+    }
+
+    #[test]
+    fn a_placed_dlc_row_stays_where_the_user_put_it() {
+        // The separator sits ABOVE the DLC block - the arrangement that lets it be
+        // collapsed, and the one that was impossible before.
+        let listed = vec![
+            entry("00. DLCs_separator", false),
+            entry("Dawnguard", true),
+            entry("Dragonborn", true),
+            entry("SkyUI", false),
+        ];
+        let real = vec![entry("Dawnguard", true), entry("Dragonborn", true)];
+        assert_eq!(
+            reconcile(listed, real),
+            ["00. DLCs_separator", "Dawnguard", "Dragonborn", "SkyUI"],
+            "the DLC rows were moved out from under their separator"
+        );
+    }
+
+    #[test]
+    fn a_dlc_the_game_no_longer_ships_is_dropped() {
+        // Uninstalling a DLC must not leave a row pointing at nothing - it has no
+        // path, and every consumer would have to defend against that.
+        let listed = vec![entry("Dawnguard", true), entry("Dragonborn", true), entry("SkyUI", false)];
+        let real = vec![entry("Dawnguard", true)];
+        assert_eq!(reconcile(listed, real), ["Dawnguard", "SkyUI"]);
+    }
+
+    #[test]
+    fn content_the_profile_has_never_seen_goes_to_the_top() {
+        // A newly installed DLC has no position yet, and the engine loads its own
+        // content first - so lowest priority, which is the top of the display.
+        let listed = vec![entry("Dawnguard", true), entry("SkyUI", false)];
+        let real = vec![entry("Dawnguard", true), entry("Anniversary", true)];
+        assert_eq!(reconcile(listed, real), ["Anniversary", "Dawnguard", "SkyUI"]);
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_like_every_other_name_here() {
+        // The profile stores what the display showed; the game directory spells it
+        // however Bethesda spelled it. A case difference must not duplicate a row.
+        let listed = vec![entry("dawnguard", true), entry("SkyUI", false)];
+        let real = vec![entry("Dawnguard", true)];
+        let got = reconcile(listed, real);
+        assert_eq!(got, ["Dawnguard", "SkyUI"], "a case difference split one row into two");
+    }
+
+    #[test]
+    fn managed_mods_are_untouched_by_any_of_this() {
+        // The reconciliation must not reorder, drop or duplicate a single mod the
+        // user actually installed.
+        let listed = vec![
+            entry("A", false),
+            entry("Dawnguard", true),
+            entry("B", false),
+            entry("C", false),
+        ];
+        let got = reconcile(listed, vec![]);
+        assert_eq!(got, ["A", "B", "C"]);
+    }
 }
 
 
@@ -12473,5 +12593,4 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         );
     }
     col.into()
-
 }

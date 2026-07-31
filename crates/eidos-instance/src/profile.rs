@@ -709,19 +709,34 @@ impl Profile {
                 if line.is_empty() || line.starts_with('#') {
                     continue;
                 }
-                let (enabled, name) = if let Some(n) = line.strip_prefix('+') {
-                    (true, n.trim())
+                let (enabled, unmanaged, name) = if let Some(n) = line.strip_prefix('+') {
+                    (true, false, n.trim())
                 } else if let Some(n) = line.strip_prefix('-') {
-                    (false, n.trim())
+                    (false, false, n.trim())
                 } else if let Some(n) = line.strip_prefix('*') {
-                    // MO2 marks unmanaged/foreign mods with '*'; Eidos does not
-                    // model foreign mods, so treat the line as an enabled entry.
-                    (true, n.trim())
+                    // MO2's mark for the game's own content - DLCs, Creation Club.
+                    // Kept as a POSITION, which is the whole point: without a line
+                    // of its own the row can only be pinned to the top of the list,
+                    // and nothing the user owns can ever sit above it.
+                    (true, true, n.trim())
                 } else {
-                    (true, line)
+                    (true, false, line)
                 };
                 listed += 1;
-                if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
+                if unmanaged {
+                    // The path is not knowable here: it lives in the GAME's data
+                    // directory, which this layer has never been told about. The
+                    // caller that does know reconciles these against what the game
+                    // actually ships - see `Instance::unmanaged_mods`.
+                    if seen.insert(name.to_string()) {
+                        out.push(ModEntry {
+                            name: name.to_string(),
+                            enabled,
+                            path: PathBuf::new(),
+                            unmanaged: true,
+                        });
+                    }
+                } else if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
                     out.push(ModEntry { name: name.to_string(), enabled, path: mods_dir.join(name), unmanaged: false });
                 }
             }
@@ -763,13 +778,24 @@ impl Profile {
         // `mods` is in MO2 DISPLAY order (lowest priority first); the file stores
         // highest priority first (MO2's on-disk convention), so write it reversed.
         //
-        // Unmanaged entries are dropped: they are the game's own DLCs and
-        // Creation Club content, discovered from its data directory on every
-        // refresh. Writing them would make `modlist.txt` claim ownership of files
-        // Eidos never installed, and the next reconciliation would then see them
-        // as mods whose folder is missing.
-        for m in mods.iter().rev().filter(|m| !m.unmanaged) {
-            s.push(if m.enabled { '+' } else { '-' });
+        // Unmanaged entries - the game's own DLCs and Creation Club content - are
+        // written with MO2's `*`, which says "this row has a position, but Eidos
+        // does not own the files". Dropping them, as this did, cost the user the
+        // one thing a row needs: somewhere to be. They were re-discovered from the
+        // game's data directory on every refresh and pinned to the top, so no
+        // separator could ever sit above them and the block could not be collapsed.
+        //
+        // Nothing else changes: `load_order` filters `!unmanaged`, so a `*` row is
+        // never mounted, and reconciliation against the game directory drops a line
+        // whose content is gone.
+        for m in mods.iter().rev() {
+            s.push(if m.unmanaged {
+                '*'
+            } else if m.enabled {
+                '+'
+            } else {
+                '-'
+            });
             s.push_str(&m.name);
             s.push('\n');
         }
@@ -1375,12 +1401,16 @@ mod tests {
     }
 
     #[test]
-    fn unmanaged_content_is_shown_but_never_saved_or_mounted() {
-        // The game's own DLCs and Creation Club plugins belong in the list - a
-        // list of four mods beside eighty loading plugins is what makes a user
-        // ask whether their DLC is there at all. But they are not ours: writing
-        // them to modlist.txt would claim files Eidos never installed, and
-        // mounting them would stack the game's Data on top of itself.
+    fn unmanaged_content_keeps_its_position_but_is_never_mounted() {
+        // The game's own DLCs and Creation Club plugins belong in the list - four
+        // mods beside eighty loading plugins is what makes a user ask whether
+        // their DLC is there at all.
+        //
+        // They are written with MO2's `*`, which grants the row a POSITION without
+        // claiming Eidos installed the files. Dropping them, as this once did,
+        // meant they could only ever be re-discovered and pinned to the top: no
+        // separator could sit above them, so the block could not be collapsed and
+        // the noise could not be put away.
         let root = inst_with_mods(&["Real"]);
         let p = prof(&root, "Default");
         let e = |n: &str, un: bool| ModEntry {
@@ -1392,10 +1422,21 @@ mod tests {
         p.save_modlist(&[e("Dawnguard", true), e("Real", false)]).unwrap();
 
         let written = fs::read_to_string(p.modlist_path()).unwrap();
-        assert!(written.contains("Real"), "{written}");
-        assert!(!written.contains("Dawnguard"), "unmanaged content must not be saved: {written}");
+        assert!(written.contains("+Real"), "{written}");
+        assert!(written.contains("*Dawnguard"), "the game's content needs a line to have a place: {written}");
 
-        // And it is never a mount layer, whatever a caller hands us.
+        // Read back, the row is still there, still marked as the game's.
+        let (back, _) = p.modlist_checked();
+        let dg = back.iter().find(|m| m.name == "Dawnguard").expect("row survived the round trip");
+        assert!(dg.unmanaged, "a `*` line is the game's content, not a mod");
+        assert!(dg.path.as_os_str().is_empty(), "this layer cannot know the game's data dir");
+        // And the order is preserved: display runs lowest priority first, and it
+        // was saved ahead of Real.
+        assert_eq!(back.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["Dawnguard", "Real"]);
+
+        // It is never a mount layer, whatever a caller hands us. This is what makes
+        // writing the row safe: the `*` says "position only", and the one consumer
+        // that could act on it refuses by name.
         let mounted = p.load_order();
         assert!(
             !mounted.iter().any(|m| m.to_string_lossy().contains("Dawnguard")),
