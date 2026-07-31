@@ -135,14 +135,18 @@ game's Proton prefix:
 ```sh
 eidos tool skyrimse add BodySlide "<path>/CalienteTools/BodySlide/BodySlide.exe"
 eidos tool skyrimse run BodySlide
-eidos prereqs skyrimse --install   # the .NET / VC++ runtimes some of them need
+eidos prereqs skyrimse            # what the registered tools need, and its state
+eidos prereqs skyrimse --install  # fetch whatever is missing
 ```
 
 One thing to know before naming a tool: **the title decides which runtime DLLs
 Eidos provisions for it** - `BodySlide` gets its DirectX libraries, `BS` gets
-nothing. The table, the two prerequisite tiers, and why a tool installed as a mod
-is launched from the merged path rather than its own folder are in
-[tools.md](tools.md).
+nothing. In the GUI the Executables dialog shows each prerequisite's real state
+under the field, and the missing ones are buttons.
+
+The table, the three prerequisite tiers, why DynDOLOD needs a .NET runtime that
+winetricks cannot install, and why a tool installed as a mod is launched from the
+merged path rather than its own folder are in [tools.md](tools.md).
 
 ## Build and test
 

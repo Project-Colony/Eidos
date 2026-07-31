@@ -204,7 +204,7 @@ README carries only the short version; this is the receipts.
       where `setcap` reaches it
 
 The manager layer above the VFS is complete per the MO2 + usvfs study that drove
-this work ([docs/master-pieces.md](docs/master-pieces.md), all 6 master pieces
+this work ([docs/master-pieces.md](master-pieces.md), all 6 master pieces
 done): the mod installer (Simple + FOMOD wizard), plugins, conflicts, profiles,
 `meta.ini`, the instance manifest, per-game Bethesda features (BSA invalidation +
 per-profile INIs/saves off a declarative `GameDef`), and tools through the VFS
@@ -214,6 +214,26 @@ daily-driver parity (separators, categories, diagnostics, Overwrite-to-mod, MO2
 profile import), LOOT sorting, native DLL provisioning so Proton graphics mods
 (Community Shaders) and tools (BodySlide) just work, the `eidos prereqs`
 tool-prerequisite system, and a correctness-plus-caching pass over the daemon
-itself. Next up: casing normalization at import, more game families proven
-in-game, and packaging - plus the open `plugins.txt` question in troubleshooting.md,
-which is the one thing standing between a working mount and a working playthrough.
+itself.
+
+Since then, and all measured on a real 50-layer instance rather than a benchmark:
+
+- **The layer index** turned path resolution from a walk of every layer into a
+  hash lookup, and a save load from twenty seconds into six or seven.
+- **Zero-message `opendir`**: 516,301 directory opens per session became 1. Wine
+  opens a directory to ask whether it folds case, on every path that fails to
+  resolve, and the kernel can answer that itself.
+- **The merged-children map** did the same for `readdir`, the one handler the
+  path index could not help: 799 ms -> 105 ms across two sessions issuing the
+  same 2,063 listings.
+- **A layer spelling one directory two ways** no longer loses everything under
+  the second spelling - a bug that hid 74 files of one real mod with no error
+  anywhere, and which the index had been quietly working around while the
+  documented-as-never-wrong fallback was the half that was wrong.
+- **Tier 3 prerequisites**: Eidos fetches the .NET runtime DynDOLOD's LOD
+  generator needs, and the Executables dialog now says whether each prerequisite
+  is actually present instead of only what was typed.
+
+Next up: casing normalization at import, more game families proven in-game, and
+packaging - plus the open `plugins.txt` question in troubleshooting.md, which is
+the one thing standing between a working mount and a working playthrough.

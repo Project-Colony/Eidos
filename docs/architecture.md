@@ -322,15 +322,59 @@ Two rules keep it honest:
 
 `EIDOS_NO_INDEX=1` forces the fallback. `examples/index_agrees.rs` compares both
 paths over every path of a real instance; `examples/resolve_cost.rs` reports what
-one resolve costs in syscalls, which is deterministic where a duration is not.
+one resolve costs in syscalls, which is deterministic where a duration is not;
+`examples/index_health.rs` answers whether the index was built at all, which the
+logs cannot - it is created in silence, so a stack that fell back looks exactly
+like one that is working.
+
+### Listings need a different map
+
+`readdir` was the one handler the index did nothing for, and the reason is
+structural rather than an oversight. A resolve asks *which layer wins*, which is
+what the map holds. A listing needs *every* layer's copy of one directory,
+merged - so it went on asking each layer separately, and a listing on a 50-layer
+stack cost 50 case-folding walks whatever the index knew.
+
+The same invariant that makes the path index safe makes this safe: the layers
+cannot change while mounted, so neither can their merge. It is computed once at
+build time, in priority order, deduplicated by folded name, with `.mohidden`
+entries dropped before they can claim a slot - so a lower layer's copy of a file
+a hidden one shadowed becomes the winner, which is the point of hiding one mod's
+stray override. Whiteouts stay out of it: they live in the Overwrite, which
+changes.
+
+Measured on two real sessions issuing the same 2,063 listings: `readdir` 799 ms
+-> 105 ms, directory scans 800,722 -> 464,564. `examples/listing_cost.rs`
+reproduces it.
+
+### A component that matches is a candidate, not a decision
+
+`ci_lookup` used to take the exact-case match and commit to it, which loses whole
+layers rather than reporting anything. A layer may hold two directories differing
+only in case - ext4 keeps them apart, the merged view does not - and real mods do:
+XP32 Maximum Skeleton ships both `meshes/` and `Meshes/`, with its animations and
+its FNIS behaviour file under the capitalised one. The greedy walk entered
+`meshes/`, failed to find the rest of the path, and abandoned the layer. On a real
+instance that hid 74 files with no error anywhere.
+
+Exact case is still tried first, because it is the common answer and costs one
+`exists`; only when the remainder fails underneath it does the scan look for
+fold-equal siblings. Listings had the same fault a directory higher, and
+`ci_lookup_all` now returns every fold-equal directory so the merge reads them
+all.
+
+The index never had this bug - it walks every directory it finds - so it had been
+quietly returning files the fallback could not. That is the wrong way round: the
+fallback is the answer that is meant to be never wrong.
 
 ### What is left
 
-335,493 directory scans remain, all in the Overwrite - the one layer that is read
-live because it is the one that changes. They are 12% of what remains; the other
-82% is `read`, which is the disk. Indexing the Overwrite is possible in principle,
-since it changes only through code in this repository, but it reintroduces exactly
-the invalidation problem this design avoids, for a fraction of the gain.
+464,564 directory scans remain, dominated by the Overwrite - the one layer read
+live because it is the one that changes - and by the paths no layer provides.
+`read` is still where the time goes, and that is the disk. Indexing the Overwrite
+is possible in principle, since it changes only through code in this repository,
+but it reintroduces exactly the invalidation problem this design avoids, for a
+fraction of the gain.
 
 ## References
 

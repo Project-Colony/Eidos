@@ -50,3 +50,21 @@ GPL-3.0 license before any public release that embeds these binaries.
 - The **.NET** runtimes/SDK (`dotnet8`, `dotnetdesktop8`, ...) - too large to bundle and
   must run an in-prefix installer (CLR host + registry + GAC). Tools that need .NET
   (Synthesis, Pandora, FNIS) get it via the Tier-2 winetricks path, on explicit consent.
+
+## What is NOT bundled, and why
+
+The .NET runtime DynDOLOD's LOD generator needs (`dotnet10`) is **downloaded**,
+not shipped here. .NET is MIT-licensed, so bundling it would be legal - the
+reasons are size and failure mode.
+
+It is 193 files, 78 MB unpacked, against 18 MB for everything in this directory.
+Measured on a real generation run, LODGen touched 25 of those files, 25.6 MB, so
+a trimmed set is tempting. But those 25 are what ONE worldspace happened to need;
+another code path pulls in `System.Private.Xml` or `System.Text.Json`, and
+neither is among them. A trimmed runtime missing one fails with a
+`FileNotFoundException` and no indication of what is absent - which is the exact
+class of silent failure the prerequisite system exists to end.
+
+Trimming a runtime is something an application's own author does, knowing their
+own code. See `crates/eidos-gamefeatures/src/runtime.rs`.
+

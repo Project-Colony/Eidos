@@ -61,9 +61,13 @@ synced back for Steam Cloud after every session.
 "Mod Manager Download" button downloads straight into the instance, with
 update checks against your installed versions.
 
-**Tools.** xEdit, BodySlide, FNIS and friends run *through the merged view*
+**Tools.** xEdit, BodySlide, DynDOLOD and friends run *through the merged view*
 inside the game's Proton prefix - they see your mods, their output lands in
-Overwrite, and one click turns it into a real mod.
+Overwrite, and one click turns it into a real mod. Each tool's runtime
+prerequisites are named from its title and shown with their real state, so
+"NOT FOUND" is a button rather than a discovery you make an hour later: bundled
+DirectX DLLs ship inside Eidos, winetricks verbs and the .NET runtime DynDOLOD's
+LOD generator needs are fetched on request.
 
 **Diagnostics.** Live health checks: missing masters, orphaned archives,
 mod-list drift, damaged plugin sets (with the restore button), and - after a
@@ -85,9 +89,8 @@ properties are genuinely exclusive - is in [docs/landscape.md](docs/landscape.md
 
 ## How fast it is
 
-Measured on a real 27-mod Skyrim SE instance, not a benchmark. Loading a save
-took about twenty seconds; it now takes six to seven, and cell changes are
-immediate.
+Measured on a real Skyrim SE instance, not a benchmark. Loading a save took about
+twenty seconds; it now takes six to seven, and cell changes are immediate.
 
 |                   | before      | after     |         |
 |-------------------|-------------|-----------|---------|
@@ -109,22 +112,56 @@ to find a case-insensitive match - which Bethesda games need constantly, since
 the game asks for `ccbgssse001-fish.bsa` while the file is
 `ccBGSSSE001-Fish.bsa`. A layer that does *not* have the file misses on its
 first component and pays that enumeration anyway, so a file provided by one mod
-cost an enumeration in each of the other twenty-six, on every lookup, getattr
-and open. The cost grew with the thing users add most.
+cost an enumeration in each of the others, on every lookup, getattr and open.
+The cost grew with the thing users add most.
 
-The read-only layers are now indexed once at mount (10 ms over 5,400 entries,
-under 2 MB), so a resolve is a hash lookup. The Overwrite is deliberately *not*
-indexed - it is the layer that changes - so there is no invalidation to get
-wrong. `EIDOS_NO_INDEX=1` restores the old path, and a differential test
-compares the two on every path of a real instance: 22,951 compared, zero
-disagreements.
+The read-only layers are now indexed once at mount, so a resolve is a hash
+lookup. The Overwrite is deliberately *not* indexed - it is the layer that
+changes - so there is no invalidation to get wrong.
 
-Reproduce either half yourself:
+### Then the directories
+
+Two things were still asking the layers on every call.
+
+**Opening one.** A measured session sent **516,301** directory opens and
+enumerated almost none of them: Wine opens a directory to ask whether it folds
+case, on every path that fails to resolve. The kernel can answer that itself, so
+Eidos accepts `FUSE_NO_OPENDIR_SUPPORT` and stops being asked.
+
+**Listing one.** `readdir` needs every layer's copy of a directory, merged, while
+the path index only knew which layer wins - so a listing on a 50-layer stack cost
+50 case-folding walks whatever the index held. The layers cannot change while
+mounted, so their merge cannot either: it is computed once at mount and read as a
+hash lookup.
+
+|                   | before      | today   |         |
+|-------------------|-------------|---------|---------|
+| `opendir`         | 516,301     | **1**   | gone    |
+| `readdir`         | 799 ms      | 105 ms  | **7.6x**|
+| directory scans   | 800,722     | 464,564 | 1.7x    |
+
+Measured on two real sessions that happened to issue **exactly the same 2,063
+listings** - which is what makes the comparison worth printing, rather than a
+benchmark shaped to flatter.
+
+### Checking it rather than trusting it
+
+The index is all-or-nothing and built in silence, so a stack that quietly fell
+back looks exactly like one that is working. Three examples answer that, on your
+own instance:
 
 ```sh
+cargo run --release -p eidos-core --example index_health  -- <mods-dir> <overwrite-dir>
+cargo run --release -p eidos-core --example index_agrees  -- <mods-dir> <overwrite-dir>
+cargo run --release -p eidos-core --example listing_cost  -- <mods-dir> <overwrite-dir>
 cargo run --release -p eidos-core --example resolve_cost
-cargo run --release -p eidos-core --example index_agrees -- <mods-dir> <overwrite-dir>
 ```
+
+`index_agrees` is the one that matters: it requires the indexed and the walked
+answer to be identical on every path AND every listing of a real instance -
+37,127 paths and 1,492 directories, zero disagreements. It is also what caught a
+bug the index had been hiding, where a mod shipping both `meshes/` and `Meshes/`
+lost everything under the second spelling.
 
 ## Quick start
 

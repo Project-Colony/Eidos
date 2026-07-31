@@ -97,7 +97,7 @@ the semantics OverlayFS cannot express (exact Windows-style case-insensitivity,
 precise write redirection, no lowerdir scaling wall). Kernel **passthrough**
 (Linux 6.9+) is implemented for the data path but off by default, so resolved
 reads are served by the daemon from a cached backing fd. See
-[docs/architecture.md](docs/architecture.md) for the full rationale, including
+[docs/architecture.md](architecture.md) for the full rationale, including
 why FUSE over OverlayFS for completeness and long-term stability.
 
 The data path was never the bottleneck anyway. Metadata (`lookup`, `getattr`,

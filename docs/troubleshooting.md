@@ -76,7 +76,58 @@ d3dcompiler for shader compilation; Eidos merges that with any DLL overrides a
 mod ships (ENB/ReShade/`.asi` loaders).
 
 
+### Is the layer index actually in use?
+
+The index is all-or-nothing and built in silence: `LayerStack::new` either gets a
+complete map of the read-only layers or `None`, after which every query walks
+them exactly as before. Nothing in a session log tells the two apart, so a stack
+that quietly fell back looks identical to one that is working - while paying the
+old cost.
+
+```sh
+cargo run --release -p eidos-core --example index_health -- <mods-dir> <overwrite-dir>
+cargo run --release -p eidos-core --example index_agrees -- <mods-dir> <overwrite-dir>
+cargo run --release -p eidos-core --example listing_cost -- <mods-dir> <overwrite-dir>
+```
+
+`index_health` resolves real paths with and without the index and compares the
+directory scans. `index_agrees` checks the two answer the SAME thing, on every
+path and every listing of a real instance. `listing_cost` measures what the
+merged-children map saves on `readdir`.
+
+`EIDOS_NO_INDEX=1` forces the walk, for when the difference between the two
+answers is the thing being debugged.
+
 ## Known issues
+
+**A mod that spells one directory two ways lost everything under the second.**
+Fixed. ext4 keeps `meshes/` and `Meshes/` apart; the merged view must not, and
+real mods ship both - XP32 Maximum Skeleton has its animations and its FNIS
+behaviour file under the capitalised one, its `character assets` under the other.
+
+The resolver took the exact-case match for each path component and committed to
+it: it entered `meshes/`, failed to find the rest of the path there, and
+abandoned the WHOLE LAYER. Every file under the other spelling was invisible to
+the game - no error, no log, nothing in any diagnostic. On a real 50-layer
+instance that was 74 files.
+
+A component that matches is now a candidate, not a decision; exact case is still
+tried first, and only when the remainder fails underneath it does the scan look
+for fold-equal siblings. Listings had the same fault a directory higher and now
+read every fold-equal directory per layer.
+
+Worth knowing for the shape of it: the path index never had this bug, because it
+walks every directory it finds. It had been quietly returning files the fallback
+could not, which is the wrong way round - the fallback is the answer that is
+meant to be never wrong.
+
+**DynDOLOD's LODGen dies leaving an empty log.** Fixed by `dotnet10`; see
+[tools.md](tools.md). The symptom is unmistakable: `LODGen_SSE_<world>_log.txt`
+holding a version banner, a `.NET Version:` line and nothing else, for every
+world, and a dialog saying only "failed to generate object LOD for one or more
+worlds". The cause is Wine's Mono answering for .NET Framework, and no amount of
+installing .NET Framework fixes it - Proton replaces `mscoree.dll` with a symlink
+into its own tree on every prefix update.
 
 **Wine could not tell that the mount folds case.** Fixed, and it was the one that
 mattered.

@@ -49,7 +49,7 @@ is a case-insensitive substring of the title.
 | If the title contains | Eidos requests |
 |---|---|
 | `bodyslide`, `outfit` | `d3dx9_43`, `d3dcompiler_47` |
-| `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43` |
+| `dyndolod`, `texgen`, `xlodgen` | `d3dcompiler_47`, `d3dx9_43`, `d3dx11_43`, `dotnet10` |
 | `cathedral`, `cao` | `vcrun2022`, `d3dcompiler_47`, `d3dx11_43` |
 | `synthesis` | `dotnet8`, `vcrun2022` |
 | `pandora` | `dotnetdesktop8` |
@@ -65,20 +65,50 @@ The list is in `default_prereqs` (`crates/eidos-instance/src/tools.rs`), and the
 `Prereqs` field in the Executables dialog is editable - the detection is a
 default, not a rule.
 
-### Two kinds of prerequisite
+### Three kinds of prerequisite
 
 **Tier 1 - bundled DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
 ships them and copies them into the prefix at launch. Nothing to do, no network.
 
 **Tier 2 - winetricks verbs** (`vcrun2022`, `dotnet8`, `dotnetdesktop8`,
 `dotnet48`, `xact`...). These write registry keys, the GAC and CLR hosts, so they
-cannot be file-copied. They **download from Microsoft**, and therefore never run
-silently:
+cannot be file-copied. They **download from Microsoft**.
+
+**Tier 3 - runtimes** (`dotnet10`). A modern .NET runtime is 193 files that live
+in their own directory and are found through `DOTNET_ROOT`: never registered,
+never installed into the prefix at all, so neither of the other tiers can carry
+it. Eidos downloads it itself, checks it against a checksum built into the
+binary, and caches it in `~/.local/share/eidos/runtimes/` - **outside any
+instance**, because 78 MB is not per-game and not per-profile.
+
+Nothing in tiers 2 or 3 runs silently:
 
 ```sh
-eidos prereqs skyrimse            # show what the registered tools need
-eidos prereqs skyrimse --install  # install the Tier-2 verbs (downloads)
+eidos prereqs skyrimse            # show what the registered tools need, and their state
+eidos prereqs skyrimse --install  # fetch what is missing (downloads)
 ```
+
+In the GUI the same states sit under the Prereqs field, and the missing ones are
+buttons. A verb that is neither bundled, nor a runtime, nor a known winetricks
+verb is reported as a probable typo rather than offered as a download.
+
+### Why DynDOLOD needs `dotnet10`
+
+DynDOLOD does not build object LOD itself: it shells out to LODGen, and it ships
+three of them. `LODGenx64.exe` targets .NET Framework 4.8, which under Proton is
+routed to Wine's Mono - whose `System.Uri` initialiser calls a method Mono does
+not implement. It dies before its first line of work, leaving a log holding a
+version banner and nothing else, and a DynDOLOD dialog that says only "failed for
+one or more worlds".
+
+Installing the real .NET Framework does not fix it: Proton replaces `mscoree.dll`
+- the loader that would find it - with a symlink into its own tree, and re-does
+that on every prefix update.
+
+The build that works is `LODGenx64Win10.exe`, which targets modern .NET and never
+touches `mscoree`. Point `DOTNET_ROOT` at a .NET 10 runtime and it runs. That is
+what `dotnet10` provisions, and Eidos sets the variable when launching any tool
+that declares it.
 
 Eidos runs the system `winetricks` against Proton's own `wine` and the game
 prefix, which sidesteps Steam's pressure-vessel container and the

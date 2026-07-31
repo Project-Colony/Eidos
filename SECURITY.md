@@ -95,6 +95,14 @@ The interesting attack surface, roughly in order of severity:
 - **Credential handling.** The Nexus API key: where it is stored, its file
   permissions, and anywhere it could be logged or sent to a host other than
   Nexus.
+- **Runtime provisioning.** Eidos can download a .NET runtime (the `dotnet10`
+  prerequisite) and unpack it into `~/.local/share/eidos/runtimes/`. The expected
+  SHA-256 is compiled into the binary rather than fetched alongside the file, and
+  a mismatch refuses the install rather than warning about it; the archive is
+  unpacked into a staging directory and renamed into place only once complete.
+  Anything that defeats that - a path escaping the runtime directory during
+  extraction, a checksum that can be bypassed, a download that can be pointed at
+  another host - is in scope.
 
 ## Out of scope
 
