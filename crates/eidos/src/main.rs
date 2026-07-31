@@ -1170,7 +1170,7 @@ fn cmd_tool(args: &[String]) {
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
             // warn with the fix - without blocking (the user may have it via Steam).
-            let satisfied = satisfied_prereqs(&inst);
+            let satisfied = satisfied_prereqs_in(&inst, game.compatdata.as_ref());
             let missing2: Vec<&String> = prereqs
                 .iter()
                 .filter(|v| eidos_gamefeatures::is_tier2_verb(v) && !satisfied.contains(*v))
@@ -1231,6 +1231,21 @@ fn satisfied_prereqs(inst: &Instance) -> std::collections::BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// What this machine already has, from BOTH records: Eidos's own, and the
+/// prefix's. winetricks appends every verb it installs to `winetricks.log`
+/// inside the prefix, and protontricks is winetricks - so a user who set a
+/// runtime up years ago is not asked to download it again.
+fn satisfied_prereqs_in(
+    inst: &Instance,
+    compatdata: Option<&std::path::PathBuf>,
+) -> std::collections::BTreeSet<String> {
+    let mut done = satisfied_prereqs(inst);
+    if let Some(c) = compatdata {
+        done.extend(eidos_gamefeatures::verbs_in_prefix(&c.join("pfx")));
+    }
+    done
+}
+
 /// `eidos prereqs <game-id> [--install]`: show, or install, the runtime
 /// prerequisites the instance's tools declare. Tier-1 (bundled DirectX DLLs) copy
 /// with no network; Tier-2 (vcrun/dotnet) DOWNLOAD from Microsoft via winetricks and
@@ -1278,7 +1293,7 @@ fn cmd_prereqs(args: &[String]) {
         .filter(|v| eidos_gamefeatures::runtime(v).is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r)))
         .cloned()
         .collect();
-    let satisfied = satisfied_prereqs(&inst);
+    let satisfied = satisfied_prereqs_in(&inst, game.compatdata.as_ref());
     let pending2: Vec<String> = tier2.iter().filter(|v| !satisfied.contains(*v)).cloned().collect();
 
     if !install {

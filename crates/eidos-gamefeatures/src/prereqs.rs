@@ -28,6 +28,33 @@ const TIER2_VERBS: &[&str] = &[
     "xact_x64",
 ];
 
+/// Every winetricks verb this prefix already carries, according to the prefix
+/// itself.
+///
+/// winetricks appends each verb it installs to `winetricks.log` inside the
+/// prefix, and protontricks is winetricks, so this is the record of what is
+/// there no matter who put it there. Eidos's own `prereqs.done` only knows what
+/// EIDOS installed - which reports a runtime the user set up years ago as
+/// missing and offers to download it again.
+///
+/// A missing or unreadable log reads as "nothing recorded", never as "nothing
+/// installed": the two are different, and the honest failure is to over-report
+/// work rather than to claim a prerequisite is absent when it is not.
+pub fn verbs_in_prefix(prefix: &Path) -> std::collections::BTreeSet<String> {
+    std::fs::read_to_string(prefix.join("winetricks.log"))
+        .map(|s| {
+            s.lines()
+                .map(str::trim)
+                // Settings are logged the same way as packages (`fontsmooth=rgb`,
+                // `winxp`); only the part before `=` is a verb name.
+                .map(|l| l.split('=').next().unwrap_or(l).trim())
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Whether `verb` is a Tier-2 installer verb (runs winetricks, downloads).
 pub fn is_tier2_verb(verb: &str) -> bool {
     TIER2_VERBS.contains(&verb)
@@ -308,3 +335,60 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod verbs_in_prefix_tests {
+    use super::*;
+
+    fn tmp() -> PathBuf {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let d = std::env::temp_dir().join(format!(
+            "eidos-vip-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn a_real_winetricks_log_is_read_verb_by_verb() {
+        // Copied from a real prefix: package verbs and settings, mixed.
+        let p = tmp();
+        std::fs::write(
+            p.join("winetricks.log"),
+            "arial\nfontsmooth=rgb\nxact\nvcrun2022\nremove_mono internal\nwinxp\ndotnet48\ndotnetdesktop8\n",
+        )
+        .unwrap();
+        let got = verbs_in_prefix(&p);
+        assert!(got.contains("dotnetdesktop8"), "{got:?}");
+        assert!(got.contains("vcrun2022"), "{got:?}");
+        // A setting is logged like a package; only the name before `=` is a verb,
+        // or `fontsmooth=rgb` would never match the verb `fontsmooth`.
+        assert!(got.contains("fontsmooth"), "{got:?}");
+        assert!(!got.iter().any(|v| v.contains('=')), "a setting leaked in: {got:?}");
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
+    fn no_log_means_nothing_recorded_not_nothing_installed() {
+        // The distinction matters: this feeds a "you already have it" check, and
+        // over-reporting work is a nuisance while claiming a prerequisite is
+        // absent when it is not sends the user to download what they have.
+        let p = tmp();
+        assert!(verbs_in_prefix(&p).is_empty());
+        assert!(verbs_in_prefix(std::path::Path::new("/nonexistent/prefix")).is_empty());
+        let _ = std::fs::remove_dir_all(&p);
+    }
+
+    #[test]
+    fn blank_lines_and_comments_are_not_verbs() {
+        let p = tmp();
+        std::fs::write(p.join("winetricks.log"), "\n# a comment\n  \nvcrun2022\n\n").unwrap();
+        let got = verbs_in_prefix(&p);
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got.contains("vcrun2022"));
+        let _ = std::fs::remove_dir_all(&p);
+    }
+}
+

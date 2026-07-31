@@ -12426,15 +12426,19 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         return Space::new().height(Length::Fixed(0.0)).into();
     }
 
-    // Tier 2 records what it has done in the instance; tier 3 answers from the
-    // shared runtime cache, which is why it can be right even with no instance
-    // open.
-    let done: std::collections::HashSet<String> = app
+    // Two sources, and both are needed. Eidos records what IT installed in the
+    // instance; the prefix records what winetricks installed in it, by whoever
+    // ran it. Trusting only the first reports a runtime the user set up years ago
+    // as missing and offers to download it again.
+    let mut done: std::collections::HashSet<String> = app
         .created
         .as_ref()
         .and_then(|i| std::fs::read_to_string(i.root.join("prereqs.done")).ok())
         .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
         .unwrap_or_default();
+    if let Some(prefix) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
+        done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
+    }
 
     let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(FOMOD_INK_FAINT));
     let mut any_missing = false;
