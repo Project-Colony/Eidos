@@ -1072,6 +1072,7 @@ dependencies = [
  "eidos-ini",
  "flate2",
  "object",
+ "ureq",
 ]
 
 [[package]]

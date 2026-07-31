@@ -16,3 +16,7 @@ object = { version = "0.39", default-features = false, features = ["read_core", 
 # miniz_oxide backend, so this adds no new crate and no C dependency. The LZ4 side
 # is decoded in-crate: see lz4_block_decompress for why.
 flate2 = "1"
+# Fetching the .NET runtime DynDOLOD's LODGen needs (runtime.rs). Already in the
+# workspace via eidos-nexus and eidos-loot, so this is a line here and no new
+# build.
+ureq = "3"

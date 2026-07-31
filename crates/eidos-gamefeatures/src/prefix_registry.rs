@@ -40,11 +40,11 @@ const XEDIT_BASES: &[&str] = &[
 /// `QuickAutoClean` sibling.
 ///
 /// The siblings are DERIVED rather than listed, because listing them is how the
-/// original list came to cover `SSEEdit.exe` but not `SSEEditQuickAutoClean.exe`
-/// - and QuickAutoClean is the one a user actually runs, since cleaning the
-/// official masters is a prerequisite of DynDOLOD and of most load-order guides.
-/// A key for an executable that does not exist costs nothing: wine only consults
-/// it if something by that name runs.
+/// original list came to cover `SSEEdit.exe` but not `SSEEditQuickAutoClean.exe`,
+/// and QuickAutoClean is the one a user actually runs: cleaning the official
+/// masters is a prerequisite of DynDOLOD and of most load-order guides. A key for
+/// an executable that does not exist costs nothing, since wine only consults it
+/// if something by that name runs.
 fn xedit_exes() -> impl Iterator<Item = String> {
     XEDIT_BASES
         .iter()

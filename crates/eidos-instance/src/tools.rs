@@ -219,7 +219,12 @@ pub fn default_prereqs(title: &str) -> Vec<String> {
     } else if has("bodyslide") || has("outfit") {
         &["d3dx9_43", "d3dcompiler_47"]
     } else if has("dyndolod") || has("texgen") || has("xlodgen") {
-        &["d3dcompiler_47", "d3dx9_43", "d3dx11_43"]
+        // `dotnet10` is not decoration. These tools shell out to LODGen to build
+        // object LOD, and the LODGen that works under Proton is the .NET 10
+        // build - the .NET Framework one is routed to Wine's Mono, whose
+        // `System.Uri` initialiser is missing a method it calls, so it dies
+        // before its first line of work with a 214-byte log and no error.
+        &["d3dcompiler_47", "d3dx9_43", "d3dx11_43", "dotnet10"]
     } else if has("cathedral") || has("cao") {
         &["vcrun2022", "d3dcompiler_47", "d3dx11_43"]
     } else if has("nemesis") || has("loot") {

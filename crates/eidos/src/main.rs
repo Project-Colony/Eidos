@@ -1181,6 +1181,27 @@ fn cmd_tool(args: &[String]) {
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
+            // Tier 3: point the tool at any runtime it declares. Nothing is
+            // installed into the prefix - the variable IS the mechanism, which is
+            // why an absent runtime must contribute nothing rather than a path
+            // that does not exist (the .NET host stops looking once it is set).
+            let mut run = run;
+            run.env.extend(eidos_gamefeatures::runtime_env_for(&prereqs));
+            let missing3: Vec<&String> = prereqs
+                .iter()
+                .filter(|v| {
+                    eidos_gamefeatures::runtime(v)
+                        .is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r))
+                })
+                .collect();
+            if !missing3.is_empty() {
+                let names = missing3.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                eprintln!(
+                    "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
+                     run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
+                     leaving a log with nothing in it but a version banner."
+                );
+            }
 
             if print_only {
                 println!("would run (through the merged view at {}):", game.data_path.display());
@@ -1238,9 +1259,23 @@ fn cmd_prereqs(args: &[String]) {
     let tier2: Vec<String> = verbs.iter().filter(|v| eidos_gamefeatures::is_tier2_verb(v)).cloned().collect();
     // A verb that is neither a bundled DLL nor a known winetricks verb (a tools.ini
     // typo, or one Eidos hasn't catalogued): surface it rather than silently drop it.
+    // Tier 3: a self-contained runtime Eidos fetches itself. Not a bundled DLL
+    // and not a winetricks verb, so it needs its own bucket - and must not fall
+    // into `unknown`, which exists to catch typos.
+    let tier3: Vec<String> =
+        verbs.iter().filter(|v| eidos_gamefeatures::is_runtime_verb(v)).cloned().collect();
     let unknown: Vec<String> = verbs
         .iter()
-        .filter(|v| !eidos_gamefeatures::is_tier1_dll(v) && !eidos_gamefeatures::is_tier2_verb(v))
+        .filter(|v| {
+            !eidos_gamefeatures::is_tier1_dll(v)
+                && !eidos_gamefeatures::is_tier2_verb(v)
+                && !eidos_gamefeatures::is_runtime_verb(v)
+        })
+        .cloned()
+        .collect();
+    let pending3: Vec<String> = tier3
+        .iter()
+        .filter(|v| eidos_gamefeatures::runtime(v).is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r)))
         .cloned()
         .collect();
     let satisfied = satisfied_prereqs(&inst);
@@ -1265,13 +1300,27 @@ fn cmd_prereqs(args: &[String]) {
                 .join(", ")
         };
         println!("Tier 2 (winetricks, DOWNLOADS from Microsoft): {t2}");
+        if !tier3.is_empty() {
+            let t3 = tier3
+                .iter()
+                .map(|v| {
+                    let done = eidos_gamefeatures::runtime(v)
+                        .is_some_and(eidos_gamefeatures::runtime_is_installed);
+                    format!("{v} [{}]", if done { "done" } else { "missing" })
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            println!("Tier 3 (runtime, DOWNLOADS once, shared by every instance): {t3}");
+        }
         if !unknown.is_empty() {
             println!("Unknown verbs (ignored - typo or uncatalogued): {}", unknown.join(", "));
         }
-        if !pending2.is_empty() {
+        let waiting: Vec<String> =
+            pending2.iter().chain(pending3.iter()).cloned().collect();
+        if !waiting.is_empty() {
             println!(
                 "\nRun `eidos prereqs {id} --install` to download + install: {}",
-                pending2.join(", ")
+                waiting.join(", ")
             );
         }
         return;
@@ -1294,8 +1343,19 @@ fn cmd_prereqs(args: &[String]) {
             Err(e) => eprintln!("could not provision {v}: {e}"),
         }
     }
+    // Tier 3 first: it needs no prefix and no Proton, so a machine that cannot
+    // run winetricks can still get its runtime.
+    for v in &pending3 {
+        match eidos_gamefeatures::install_runtime(v, |step| println!("  {v}: {step}")) {
+            Ok(true) => println!("installed {v}"),
+            Ok(false) => {}
+            Err(e) => eprintln!("could not install {v}: {e}"),
+        }
+    }
     if pending2.is_empty() {
-        println!("Tier 2 already satisfied (nothing to download).");
+        if pending3.is_empty() {
+            println!("Tier 2 already satisfied (nothing to download).");
+        }
         return;
     }
     let Some(run) =

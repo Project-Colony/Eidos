@@ -37,6 +37,12 @@ pub use prereqs::{
     cabextract_available, find_winetricks, install_tier2_verb, is_tier2_verb, prefix_busy,
 };
 
+mod runtime;
+pub use runtime::{
+    env_for as runtime_env_for, install as install_runtime, is_installed as runtime_is_installed,
+    is_runtime_verb, runtime, runtime_dir, runtimes_dir, Runtime, RuntimeError,
+};
+
 mod savegame;
 pub use savegame::{
     missing_plugins, parse_sse_save, KnownPlugin, MissingPlugin, ModFolder, SaveCompression,
