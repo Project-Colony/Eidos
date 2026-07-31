@@ -47,15 +47,10 @@
         }
       ],
       "extra-files": [
-        {
-          "type": "toml",
-          "path": "Cargo.toml",
-          "jsonpath": "$.workspace.package.version"
-        }
+        "Cargo.toml"
       ]
     }
   },
   "separate-pull-requests": false,
-  "pull-request-title-pattern": "chore(release): ${version}",
   "pull-request-header": "The next release, assembled from the commits since the last one. Merging this tags it, and the tag is what builds and publishes."
 }
