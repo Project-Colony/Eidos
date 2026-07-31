@@ -43,22 +43,32 @@ jobs:
 
       # Cargo.lock pins every workspace member by version, and CI builds with
       # `--locked`. A release PR that bumped Cargo.toml alone would therefore
-      # fail the moment it was merged - so the lock is brought along here.
-      # `cargo metadata` re-resolves and rewrites it without compiling anything.
+      # fail the moment it merged - so the lock is brought along here.
+      #
+      # The condition is the branch existing, not an output of the action above.
+      # Conditioning on `prs_created` silently skipped this step, and a step that
+      # skips looks exactly like a step that had nothing to do.
       - name: Keep Cargo.lock in step with the version
-        if: ${{ steps.rp.outputs.prs_created == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          branch=$(echo '${{ steps.rp.outputs.prs }}' | jq -r '.[0].headBranchName')
-          [ -n "$branch" ] || exit 0
-          git clone --branch "$branch" --depth 1 \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" pr
+          branch="release-please--branches--${GITHUB_REF_NAME}"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if ! git ls-remote --exit-code --heads "$url" "$branch" >/dev/null 2>&1; then
+            echo "no release branch open - nothing to sync"
+            exit 0
+          fi
+          git clone --branch "$branch" --depth 1 "$url" pr
           cd pr
+          # Re-resolves and rewrites the lock without compiling anything.
           cargo metadata --format-version 1 --no-deps >/dev/null
-          git diff --quiet Cargo.lock && exit 0
+          if git diff --quiet Cargo.lock; then
+            echo "Cargo.lock already agrees with Cargo.toml"
+            exit 0
+          fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore: sync Cargo.lock with the release version" Cargo.lock
           git push
+          echo "Cargo.lock synced onto $branch"
