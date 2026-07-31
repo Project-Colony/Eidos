@@ -31,10 +31,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: rp
         with:
           # The workspace is a virtual manifest: one `[workspace.package]`
-          # version that all seventeen crates inherit. The `cargo-workspace`
-          # plugin in the config understands that shape; the manifest file
-          # records where the version currently stands.
+          # version that all seventeen crates inherit, and no `[package]` at the
+          # root at all. That is why the config uses `release-type: simple` and
+          # names the version line outright - the `rust` type assumes a Cargo
+          # package lives here and fails on the manifest that does not have one.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Cargo.lock pins every workspace member by version, and CI builds with
+      # `--locked`. A release PR that bumped Cargo.toml alone would therefore
+      # fail the moment it was merged - so the lock is brought along here.
+      # `cargo metadata` re-resolves and rewrites it without compiling anything.
+      - name: Keep Cargo.lock in step with the version
+        if: ${{ steps.rp.outputs.prs_created == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch=$(echo '${{ steps.rp.outputs.prs }}' | jq -r '.[0].headBranchName')
+          [ -n "$branch" ] || exit 0
+          git clone --branch "$branch" --depth 1 \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" pr
+          cd pr
+          cargo metadata --format-version 1 --no-deps >/dev/null
+          git diff --quiet Cargo.lock && exit 0
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync Cargo.lock with the release version" Cargo.lock
+          git push
