@@ -75,3 +75,35 @@ jobs:
           git commit -m "chore: sync Cargo.lock with the release version" Cargo.lock
           git push
           echo "Cargo.lock synced onto $branch"
+
+      # A tag created with GITHUB_TOKEN does not start another workflow - GitHub
+      # blocks that so workflows cannot trigger each other in a loop. So the tag
+      # release-please writes would sit there and `release.yml` would never build
+      # it: a release published with no artifacts attached, which is worse than
+      # no release at all. It happened on v1.0.1.
+      #
+      # The condition is the invariant itself - a release with no assets has not
+      # been built - rather than an output of the action above. Guessing at output
+      # names is what silently skipped the Cargo.lock step twice already.
+      #
+      # Dispatching ON THE TAG is what matters: release.yml gates its publish job
+      # on `startsWith(github.ref, 'refs/tags/v')`, so a dispatch against a branch
+      # would build and then decline to ship.
+      - name: Build any release that has no artifacts yet
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 \
+                  --json tagName,isDraft --jq '.[] | select(.isDraft|not) | .tagName')
+          if [ -z "$tag" ]; then
+            echo "no releases yet"
+            exit 0
+          fi
+          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')
+          if [ "$assets" -gt 0 ]; then
+            echo "$tag already has $assets artifact(s)"
+            exit 0
+          fi
+          echo "$tag has no artifacts - dispatching release.yml on it"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"

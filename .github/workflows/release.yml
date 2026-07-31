@@ -345,9 +345,25 @@ jobs:
           prerelease=""
           case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
           # shellcheck disable=SC2086
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Eidos $VERSION" \
-            --notes-file notes.md \
-            $prerelease \
-            "dist/${TARBALL}" \
-            "dist/${TARBALL}.sha256"
+          # release-please creates the release when it tags, so by the time this
+          # runs the release usually EXISTS and only wants its artifacts. A plain
+          # `gh release create` fails outright on that ("a release with the same
+          # tag name already exists"), which is how v1.0.1 shipped with none.
+          #
+          # So: attach to what is there, create it when it is not. The notes are
+          # left alone on an existing release - release-please wrote the changelog
+          # and it is better than this template.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME exists - attaching artifacts"
+            gh release upload "$GITHUB_REF_NAME" \
+              "dist/${TARBALL}" \
+              "dist/${TARBALL}.sha256" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "Eidos $VERSION" \
+              --notes-file notes.md \
+              $prerelease \
+              "dist/${TARBALL}" \
+              "dist/${TARBALL}.sha256"
+          fi
