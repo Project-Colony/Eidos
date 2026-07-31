@@ -4030,7 +4030,9 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let has_prefix = selected_game(app).and_then(|g| g.compatdata.as_ref()).is_some();
             let log = app.created.as_ref().map(|i| i.root.join("prereqs.log"));
             match (id, log) {
-                (Some(_), _) if !has_prefix => {
+                // A runtime needs no prefix and no Proton - it is a directory and
+                // an environment variable - so a missing prefix must not block it.
+                (Some(_), _) if !has_prefix && !any_runtime_pending(app) => {
                     app.status = Some(
                         "Launch the game once through Steam first so its Proton prefix exists, then run Tool Setup."
                             .to_string(),
@@ -8861,7 +8863,7 @@ fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(state) = &app.executables {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseExecutablesDialog);
-        let dialog = container(executables_dialog(state)).center(Length::Fill);
+        let dialog = container(executables_dialog(app, state)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
@@ -9912,7 +9914,7 @@ fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
 
 // ---- Executables editor (MO2's Modify Executables) --------------------------
 
-fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
         .push(text("Executables").size(16.0).width(Length::Fill))
@@ -9988,6 +9990,7 @@ fn executables_dialog<'a>(state: &ExecutablesDialogState) -> Element<'a, Message
                     .width(Length::Fill),
             )
             .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
+            .push(prereq_status_rows(app, &state.prereqs))
             .into()
     } else if state.selected.is_some() {
         Column::new()
@@ -12287,4 +12290,184 @@ mod tests {
         r.plugins[0].dirty[0].cleaning_utility = String::new();
         assert!(loot_report_text(&r).contains("Dirty - ? found"), "empty utility left a hole");
     }
+
+    // ---- the prerequisite status line ---------------------------------------
+    //
+    // The Prereqs field accepts any text, so this is the only thing that answers
+    // "will this tool start?". A verb reported as present when it is not sends
+    // the user hunting through their mods for a fault that is not there.
+
+    #[test]
+    fn a_bundled_dll_is_never_something_to_click() {
+        let none = std::collections::HashSet::new();
+        for v in ["d3dcompiler_47", "d3dx9_43", "d3dx11_43"] {
+            let (label, missing) = prereq_state(v, &none);
+            assert!(!missing, "{v} offered an install it does not need");
+            assert!(label.contains("bundled"), "{v}: {label}");
+        }
+    }
+
+    #[test]
+    fn a_winetricks_verb_reads_from_what_the_instance_recorded() {
+        let mut done = std::collections::HashSet::new();
+        let (_, missing) = prereq_state("dotnetdesktop8", &done);
+        assert!(missing, "nothing recorded, so it cannot be installed");
+        done.insert("dotnetdesktop8".to_string());
+        let (label, missing) = prereq_state("dotnetdesktop8", &done);
+        assert!(!missing);
+        assert_eq!(label, "installed");
+    }
+
+    #[test]
+    fn a_typo_is_named_as_one_and_offers_nothing() {
+        // `dotnet10` is real; `dotnet1O` (letter O) is what a tired user types.
+        // Offering to install it would spend a download on nothing.
+        let none = std::collections::HashSet::new();
+        let (label, missing) = prereq_state("dotnet1O", &none);
+        assert!(!missing, "offered to install a verb that does not exist");
+        assert!(label.contains("unknown"), "{label}");
+    }
+
+    #[test]
+    fn a_runtime_answers_from_the_shared_cache_not_the_instance() {
+        // Tier 3 lives outside any instance, so an empty `prereqs.done` must not
+        // make an installed runtime look missing.
+        let none = std::collections::HashSet::new();
+        let installed = eidos_gamefeatures::runtime("dotnet10")
+            .is_some_and(eidos_gamefeatures::runtime_is_installed);
+        let (label, missing) = prereq_state("dotnet10", &none);
+        assert_eq!(missing, !installed, "state disagrees with the cache: {label}");
+        if missing {
+            assert!(label.contains("click"), "a missing runtime must say what to do: {label}");
+        }
+    }
+
+    #[test]
+    fn the_wording_tells_the_user_what_to_do() {
+        // Every actionable state has to say so; a red label with no verb is just
+        // bad news.
+        let none = std::collections::HashSet::new();
+        for v in ["dotnetdesktop8", "dotnet10"] {
+            let (label, missing) = prereq_state(v, &none);
+            if missing {
+                assert!(label.contains("click"), "{v}: {label}");
+                assert!(label.contains("NOT FOUND"), "{v}: {label}");
+            }
+        }
+    }
+}
+
+
+/// Whether any tool declares a runtime that is not downloaded yet.
+///
+/// Asked before refusing Tool Setup for want of a Proton prefix: a runtime is a
+/// directory and an environment variable, so it can be fetched on a machine that
+/// has never launched the game.
+fn any_runtime_pending(app: &App) -> bool {
+    app.created
+        .as_ref()
+        .map(|i| eidos_instance::read_tools(&i.root.join("tools.ini")))
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|t| t.prereqs.iter())
+        .any(|v| {
+            eidos_gamefeatures::runtime(v)
+                .is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r))
+        })
+}
+
+/// One prerequisite's state, as a label and whether it needs the user to act.
+///
+/// Pure so the wording and the classification can be tested: a verb reported as
+/// present when it is not sends the user to look for the fault in their mods.
+fn prereq_state(verb: &str, done: &std::collections::HashSet<String>) -> (&'static str, bool) {
+    if eidos_gamefeatures::is_tier1_dll(verb) {
+        // Shipped inside the binary and copied in at launch, so there is nothing
+        // that could be missing and nothing to click.
+        ("bundled with Eidos", false)
+    } else if eidos_gamefeatures::is_runtime_verb(verb) {
+        let ok =
+            eidos_gamefeatures::runtime(verb).is_some_and(eidos_gamefeatures::runtime_is_installed);
+        if ok {
+            ("downloaded", false)
+        } else {
+            ("NOT FOUND - click to download", true)
+        }
+    } else if eidos_gamefeatures::is_tier2_verb(verb) {
+        if done.contains(verb) {
+            ("installed", false)
+        } else {
+            ("NOT FOUND - click to install", true)
+        }
+    } else {
+        // Neither bundled, nor a runtime, nor a winetricks verb: almost always a
+        // typo. Saying so beats a tool that fails later for a reason that names
+        // nothing the user recognises. Not offered as a click - there is nothing
+        // to install.
+        ("unknown - check the spelling", false)
+    }
+}
+
+/// What Eidos can say about each prerequisite a tool declares, and a way to fix
+/// the ones it can.
+///
+/// The field above accepts any text, so this is the only place that answers the
+/// question the user actually has - "will this tool start?". A verb that is
+/// merely typed is not a verb that is present, and the difference used to be
+/// invisible until the tool failed with an error naming neither Eidos nor the
+/// missing runtime.
+fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
+    let verbs: Vec<String> = prereqs
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if verbs.is_empty() {
+        return Space::new().height(Length::Fixed(0.0)).into();
+    }
+
+    // Tier 2 records what it has done in the instance; tier 3 answers from the
+    // shared runtime cache, which is why it can be right even with no instance
+    // open.
+    let done: std::collections::HashSet<String> = app
+        .created
+        .as_ref()
+        .and_then(|i| std::fs::read_to_string(i.root.join("prereqs.done")).ok())
+        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default();
+
+    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(FOMOD_INK_FAINT));
+    let mut any_missing = false;
+    for v in verbs {
+        let (label, missing) = prereq_state(&v, &done);
+        any_missing |= missing;
+
+        let row = Row::new()
+            .spacing(8)
+            .push(text(v.clone()).size(11.0).width(Length::Fixed(150.0)))
+            .push(text(label).size(11.0).color(if missing {
+                Color::from_rgb8(0x8A, 0x2A, 0x2A)
+            } else {
+                FOMOD_INK_SOFT
+            }));
+        col = if missing {
+            col.push(
+                button(row)
+                    .padding(2)
+                    .on_press(Message::SetupPrereqs)
+                    .style(button::text),
+            )
+        } else {
+            col.push(row)
+        };
+    }
+    if any_missing {
+        col = col.push(
+            text("Downloads run in the background; the status bar reports when they finish.")
+                .size(10.0)
+                .color(FOMOD_INK_FAINT),
+        );
+    }
+    col.into()
+
 }
