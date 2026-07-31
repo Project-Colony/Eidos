@@ -12,3 +12,7 @@
 
 # Claude Code session / workflow worktrees + scripts
 /.claude/
+
+# Tool scratch: DynDOLOD/xEdit drop these wherever they are launched from.
+LODGen_log.txt
+*_log.txt

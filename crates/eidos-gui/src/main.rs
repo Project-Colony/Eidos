@@ -11970,10 +11970,15 @@ mod tests {
     /// what another process is writing to disk".
     fn downloads_app(files: &[(&str, &[u8])], metas: &[(&str, &str)]) -> App {
         let mut app = nav_app(&[]);
+        // A counter, not a timestamp. `cargo test` runs these on parallel
+        // threads, and two of them reading the clock in the same instant got the
+        // same directory - one test then saw the other's files and failed, but
+        // only sometimes and never alone. A counter cannot collide.
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
-            "eidos-dl-{}-{:?}",
+            "eidos-dl-{}-{}",
             std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let dl = root.join("downloads");
         fs::create_dir_all(&dl).unwrap();

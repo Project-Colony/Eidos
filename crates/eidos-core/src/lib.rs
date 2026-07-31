@@ -117,6 +117,40 @@ struct LowerIndex {
     /// Folded virtual path -> the real path of the highest-priority layer that
     /// provides it. Folding matches `eq_ignore_case`: ASCII-lowercased.
     entries: HashMap<Box<[u8]>, Resolved>,
+    /// Folded virtual directory -> its MERGED lower-layer listing, already in
+    /// priority order and deduplicated by folded name.
+    ///
+    /// `entries` answers "who wins this path", which is all a resolve needs. A
+    /// listing needs something else entirely: every layer's copy of one
+    /// directory, merged. That is why `readdir` was the one handler the index did
+    /// nothing for - it asked each of the layers separately, so a listing on a
+    /// 50-layer stack cost 50 case-folding walks whatever the index knew.
+    ///
+    /// Merging at build time rather than per call is what makes it O(1): the
+    /// layers cannot change while mounted, so their merge cannot either. Only the
+    /// overwrite is read live, and the caller still applies whiteouts on top -
+    /// those live in the overwrite and are none of this map's business.
+    ///
+    /// Names hidden with `.mohidden` are dropped HERE, before they can claim a
+    /// slot, so a lower layer's copy of the file a hidden one shadowed becomes
+    /// the winner - which is the point of hiding one mod's stray override.
+    dirs: HashMap<Box<[u8]>, Box<[DirEntryInfo]>>,
+}
+
+/// One entry of a merged listing: the name as the winning layer spells it, where
+/// it really is, and what `readdir` said it was.
+type DirEntryInfo = (String, PathBuf, Option<fs::FileType>);
+
+/// The two maps under construction, plus the per-directory bookkeeping that only
+/// the build needs. Passed as one value so `walk_layer` keeps a single
+/// accumulator argument rather than four.
+#[derive(Default)]
+struct IndexBuild {
+    entries: HashMap<Box<[u8]>, Resolved>,
+    dirs: HashMap<Box<[u8]>, Vec<DirEntryInfo>>,
+    /// Folded child names already claimed in each directory, across all layers.
+    /// Separate from `dirs` because it is dropped once the build finishes.
+    claimed: HashMap<Box<[u8]>, HashSet<Vec<u8>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,13 +176,23 @@ impl LowerIndex {
         if std::env::var("EIDOS_NO_INDEX").is_ok_and(|v| v != "0") {
             return None;
         }
-        let mut entries = HashMap::new();
+        let mut build = IndexBuild::default();
         // Highest priority first, and `or_insert` keeps the first writer - the
         // same winner `layers.iter().find_map(..)` picks.
         for layer in layers {
-            walk_layer(layer, &mut Vec::new(), 0, &mut entries)?;
+            walk_layer(layer, &mut Vec::new(), 0, &mut build)?;
         }
-        Some(std::sync::Arc::new(LowerIndex { entries }))
+        let dirs = build.dirs.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
+        Some(std::sync::Arc::new(LowerIndex { entries: build.entries, dirs }))
+    }
+
+    /// The merged lower-layer listing of a directory.
+    ///
+    /// `None` means no layer provides that directory - which, from a complete
+    /// index, is a real answer and not a shrug: the caller adds nothing rather
+    /// than falling back to a walk that would find nothing either.
+    fn children(&self, folded: &[u8]) -> Option<&[DirEntryInfo]> {
+        self.dirs.get(folded).map(|v| &**v)
     }
 
     /// The real path for `vpath`, or `None` when no layer provides it.
@@ -166,15 +210,13 @@ impl LowerIndex {
 ///
 /// Returns `None` on ANY doubt - an unreadable directory, a name that is not
 /// UTF-8, a tree too deep or too large. The caller discards the whole index.
-fn walk_layer(
-    dir: &Path,
-    rel: &mut Vec<u8>,
-    depth: usize,
-    entries: &mut HashMap<Box<[u8]>, Resolved>,
-) -> Option<()> {
-    if depth > MAX_INDEX_DEPTH || entries.len() > MAX_INDEX_ENTRIES {
+fn walk_layer(dir: &Path, rel: &mut Vec<u8>, depth: usize, build: &mut IndexBuild) -> Option<()> {
+    if depth > MAX_INDEX_DEPTH || build.entries.len() > MAX_INDEX_ENTRIES {
         return None;
     }
+    // `rel` is this directory's own folded path until the loop appends a child
+    // to it, so capture it once: it is the key every entry below files under.
+    let parent: Box<[u8]> = rel.as_slice().into();
     // An unreadable directory is not "an empty directory": the walk cannot know
     // what is inside, so it cannot claim the paths under it do not exist.
     let read = fs::read_dir(dir).ok()?;
@@ -199,13 +241,24 @@ fn walk_layer(
         }
         rel.extend_from_slice(&folded_name);
 
-        let ambiguous = !seen_here.insert(folded_name);
+        let ambiguous = !seen_here.insert(folded_name.clone());
         let key: Box<[u8]> = rel.as_slice().into();
         let real = entry.path();
         if ambiguous {
-            entries.insert(key, Resolved::Ambiguous);
+            build.entries.insert(key, Resolved::Ambiguous);
         } else {
-            entries.entry(key).or_insert_with(|| Resolved::One(real.clone()));
+            build.entries.entry(key).or_insert_with(|| Resolved::One(real.clone()));
+        }
+
+        // The merged listing. A hidden name is skipped BEFORE claiming its slot,
+        // so the copy it was shadowing in a lower layer takes the name instead.
+        if !is_hidden_name(text) && build.claimed.entry(parent.clone()).or_default().insert(folded_name)
+        {
+            build
+                .dirs
+                .entry(parent.clone())
+                .or_default()
+                .push((text.to_string(), real.clone(), entry.file_type().ok()));
         }
 
         // `is_dir` FOLLOWS symlinks, exactly as `ci_lookup`'s `exists` and
@@ -215,7 +268,7 @@ fn walk_layer(
         // Asked once and reused: it is a syscall, and this runs per entry over
         // every layer.
         if real.is_dir() {
-            walk_layer(&real, rel, depth + 1, entries)?;
+            walk_layer(&real, rel, depth + 1, build)?;
         }
         rel.truncate(mark);
     }
@@ -376,24 +429,90 @@ impl LayerStack {
     /// layer that does not have the file misses its very first component and
     /// pays an enumeration to be sure the name is not merely spelled otherwise.
     fn ci_lookup(&self, root: &Path, vpath: &str) -> Option<PathBuf> {
+        let comps: Vec<_> = normalize(vpath).components().map(|c| c.as_os_str().to_owned()).collect();
+        self.ci_descend(root.to_path_buf(), &comps)
+    }
+
+    /// EVERY real directory in `root` that a virtual directory path folds onto.
+    ///
+    /// Normally one. But a layer holding both `meshes/` and `Meshes/` presents
+    /// ONE directory in the merged view, whose contents are the union of the
+    /// two, so a listing has to read both. [`LayerStack::ci_lookup`] answers
+    /// "which path wins", which is the right question for a resolve and the
+    /// wrong one here: it would silently drop everything in the variant it did
+    /// not pick.
+    fn ci_lookup_all(&self, root: &Path, vpath: &str) -> Vec<PathBuf> {
+        let comps: Vec<_> =
+            normalize(vpath).components().map(|c| c.as_os_str().to_owned()).collect();
+        let mut out = Vec::new();
+        self.ci_descend_all(root.to_path_buf(), &comps, &mut out);
+        out
+    }
+
+    fn ci_descend_all(&self, current: PathBuf, rest: &[std::ffi::OsString], out: &mut Vec<PathBuf>) {
         use std::sync::atomic::Ordering::Relaxed;
-        let mut current = root.to_path_buf();
-        for component in normalize(vpath).components() {
-            let want = component.as_os_str();
-            let exact = current.join(want);
-            self.resolve.probes.fetch_add(1, Relaxed);
-            if exact.exists() {
-                current = exact;
+        let Some((want, tail)) = rest.split_first() else {
+            if current.is_dir() {
+                out.push(current);
+            }
+            return;
+        };
+        self.resolve.scans.fetch_add(1, Relaxed);
+        let Ok(entries) = fs::read_dir(&current) else { return };
+        for entry in entries.filter_map(Result::ok) {
+            if eq_ignore_case(entry.file_name().as_os_str(), want) {
+                self.ci_descend_all(entry.path(), tail, out);
+            }
+        }
+    }
+
+    /// The body of [`LayerStack::ci_lookup`], one component at a time, WITH
+    /// BACKTRACKING.
+    ///
+    /// Taking the exact-case match and committing to it is wrong, and wrong in a
+    /// way that hides files rather than reporting anything. A layer may hold two
+    /// directories differing only in case - ext4 keeps them apart, the merged view
+    /// does not - and real mods do: XP32 Maximum Skeleton ships both `meshes/`
+    /// and `Meshes/`, with its animations and its FNIS behaviour file under the
+    /// capitalised one. A greedy walk enters `meshes/`, fails to find the rest of
+    /// the path there, and abandons the whole LAYER, so every file under
+    /// `Meshes/` is invisible to the game. No error, no log: the mod is simply
+    /// not applied.
+    ///
+    /// So a component that matches is a candidate, not a decision. Exact case is
+    /// tried first because it is the common answer and costs one `exists`; only
+    /// when the remainder fails underneath it does the scan look for siblings
+    /// that fold to the same name.
+    fn ci_descend(&self, current: PathBuf, rest: &[std::ffi::OsString]) -> Option<PathBuf> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let Some((want, tail)) = rest.split_first() else { return Some(current) };
+
+        let exact = current.join(want);
+        self.resolve.probes.fetch_add(1, Relaxed);
+        let exact_exists = exact.exists();
+        if exact_exists {
+            if let Some(found) = self.ci_descend(exact, tail) {
+                return Some(found);
+            }
+        }
+
+        // Either no exact match, or one whose subtree does not hold the rest.
+        // Fold-equal siblings are the remaining candidates; the exact one is
+        // skipped because it has already been tried.
+        self.resolve.scans.fetch_add(1, Relaxed);
+        for entry in fs::read_dir(&current).ok()?.filter_map(Result::ok) {
+            let name = entry.file_name();
+            if !eq_ignore_case(name.as_os_str(), want) {
                 continue;
             }
-            self.resolve.scans.fetch_add(1, Relaxed);
-            let entry = fs::read_dir(&current)
-                .ok()?
-                .filter_map(Result::ok)
-                .find(|e| eq_ignore_case(e.file_name().as_os_str(), want))?;
-            current = entry.path();
+            if exact_exists && name == *want {
+                continue;
+            }
+            if let Some(found) = self.ci_descend(entry.path(), tail) {
+                return Some(found);
+            }
         }
-        Some(current)
+        None
     }
 
     pub fn resolve_read(&self, vpath: &str) -> Option<PathBuf> {
@@ -738,23 +857,49 @@ impl LayerStack {
         }
 
         // Lower layers: skip whited-out names.
-        for layer in &self.layers {
-            let Some(dir) = self.ci_lookup(layer, vpath).filter(|d| d.is_dir()) else { continue };
-            let Ok(entries) = fs::read_dir(&dir) else { continue };
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let key = name.to_ascii_lowercase();
-                if whiteouts.contains(&key) {
-                    continue;
+        //
+        // The index has already merged them - in priority order, deduplicated,
+        // hidden names dropped - so this is one hash lookup instead of one
+        // case-folding walk per layer. Whiteouts stay here: they live in the
+        // overwrite, which changes, and the index only ever knew the layers.
+        match self.lower.as_ref().map(|i| i.children(&fold_vpath(vpath))) {
+            Some(merged) => {
+                // `None` from a complete index means no layer has this directory,
+                // which is an answer: add nothing.
+                for (name, real, kind) in merged.unwrap_or(&[]) {
+                    let key = name.to_ascii_lowercase();
+                    if whiteouts.contains(&key) {
+                        continue;
+                    }
+                    if seen.insert(key) {
+                        out.push((name.clone(), real.clone(), *kind));
+                    }
                 }
-                // A user-hidden entry is dropped without claiming its name, so a
-                // lower layer's copy of the file it shadowed becomes the winner -
-                // which is the whole point of hiding one mod's stray override.
-                if is_hidden_name(&name) {
-                    continue;
-                }
-                if seen.insert(key) {
-                    out.push((name, entry.path(), entry.file_type().ok()));
+            }
+            // No index: the walk this replaces, which is never wrong.
+            None => {
+                // Every fold-equal directory, not just the winner: a layer with
+                // both `meshes/` and `Meshes/` shows ONE directory here, holding
+                // the union of the two.
+                for dir in self.layers.iter().flat_map(|l| self.ci_lookup_all(l, vpath)) {
+                    let Ok(entries) = fs::read_dir(&dir) else { continue };
+                    for entry in entries.flatten() {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        let key = name.to_ascii_lowercase();
+                        if whiteouts.contains(&key) {
+                            continue;
+                        }
+                        // A user-hidden entry is dropped without claiming its
+                        // name, so a lower layer's copy of the file it shadowed
+                        // becomes the winner - the point of hiding one mod's
+                        // stray override.
+                        if is_hidden_name(&name) {
+                            continue;
+                        }
+                        if seen.insert(key) {
+                            out.push((name, entry.path(), entry.file_type().ok()));
+                        }
+                    }
                 }
             }
         }
@@ -1650,5 +1795,81 @@ mod tests {
         }
         // And priority is the layer order, not the disk order.
         assert_eq!(indexed.resolve_read("shared.esp"), Some(a.join("shared.esp")));
+    }
+
+    // ---- a layer holding two spellings of one directory ----------------------
+    //
+    // ext4 keeps `meshes/` and `Meshes/` apart; the merged view must not. Real
+    // mods ship both - XP32 Maximum Skeleton has its animations and its FNIS
+    // behaviour file under the capitalised one - and the greedy walk entered the
+    // lowercase one, failed to find the rest of the path, and abandoned the whole
+    // LAYER. Every file under the other spelling was invisible, with no error
+    // anywhere: the mod was simply not applied.
+
+    fn case_variant_layer() -> (TempTree, LayerStack) {
+        let dir = TempTree::new();
+        let layer = dir.sub("layer");
+        // The lowercase spelling exists and is what an exact-case probe finds
+        // first - but the file lives under the capitalised one.
+        fs::create_dir_all(layer.join("meshes/actors")).unwrap();
+        fs::write(layer.join("meshes/actors/decoy.nif"), b"decoy").unwrap();
+        fs::create_dir_all(layer.join("Meshes/actors")).unwrap();
+        fs::write(layer.join("Meshes/actors/real.nif"), b"real").unwrap();
+        let over = dir.sub("over");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![layer], over);
+        (dir, stack)
+    }
+
+    #[test]
+    fn a_file_under_the_other_spelling_is_still_found() {
+        let (_d, stack) = case_variant_layer();
+        let got = stack.resolve_read("meshes/actors/real.nif");
+        assert!(got.is_some(), "the greedy walk lost the whole Meshes/ subtree");
+        assert_eq!(fs::read(got.unwrap()).unwrap(), b"real");
+        // And the one that IS under the exact-case spelling still resolves.
+        assert!(stack.resolve_read("meshes/actors/decoy.nif").is_some());
+    }
+
+    #[test]
+    fn both_spellings_merge_into_one_listing() {
+        let (_d, stack) = case_variant_layer();
+        let names: Vec<String> =
+            stack.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
+        assert!(names.iter().any(|n| n == "real.nif"), "missing from listing: {names:?}");
+        assert!(names.iter().any(|n| n == "decoy.nif"), "missing from listing: {names:?}");
+        assert_eq!(names.len(), 2, "{names:?}");
+    }
+
+    #[test]
+    fn the_walk_agrees_with_the_index_on_case_variants() {
+        // The fallback is documented as the answer that is never wrong, so it has
+        // to survive this too - it was the half that was wrong.
+        let (_d, indexed) = case_variant_layer();
+        let dir = TempTree::new();
+        let layer = dir.sub("layer");
+        fs::create_dir_all(layer.join("meshes/actors")).unwrap();
+        fs::write(layer.join("meshes/actors/decoy.nif"), b"decoy").unwrap();
+        fs::create_dir_all(layer.join("Meshes/actors")).unwrap();
+        fs::write(layer.join("Meshes/actors/real.nif"), b"real").unwrap();
+        let over = dir.sub("over");
+        fs::create_dir_all(&over).unwrap();
+        // SAFETY: single-threaded test, read once per LayerStack::new.
+        unsafe { std::env::set_var("EIDOS_NO_INDEX", "1") };
+        let walked = LayerStack::new(vec![layer], over);
+        unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
+
+        for p in ["meshes/actors/real.nif", "meshes/actors/decoy.nif", "MESHES/ACTORS/REAL.NIF"] {
+            assert_eq!(
+                indexed.resolve_read(p).is_some(),
+                walked.resolve_read(p).is_some(),
+                "index and walk disagree on {p}"
+            );
+        }
+        let mut a: Vec<String> = indexed.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
+        let mut b: Vec<String> = walked.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b, "index and walk disagree on the listing");
     }
 }

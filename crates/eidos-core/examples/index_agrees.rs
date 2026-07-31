@@ -75,7 +75,38 @@ fn main() {
         }
     }
 
+    // Listings, which the index answers from a DIFFERENT map than resolves - the
+    // merged children rather than the winning path. A resolve being right says
+    // nothing about a listing being right, and a listing that quietly drops one
+    // entry is a mod file the game never sees.
+    let mut dirs: Vec<&String> = vpaths.iter().filter(|v| indexed.resolve_read(v).is_some_and(|p| p.is_dir())).collect();
+    dirs.sort();
+    let mut listing_disagreements = 0usize;
+    for d in &dirs {
+        let a = indexed.list_dir_typed(d);
+        let b = walked.list_dir_typed(d);
+        // Compare name + real path; the file type comes from the same dirent on
+        // both sides and carries no independent information.
+        let key = |v: &Vec<(String, PathBuf, Option<std::fs::FileType>)>| {
+            v.iter().map(|(n, p, _)| (n.clone(), p.clone())).collect::<Vec<_>>()
+        };
+        if key(&a) != key(&b) {
+            listing_disagreements += 1;
+            if listing_disagreements <= 10 {
+                println!("  LISTING DIFFERS {d}\n    index {} entries\n    walk  {} entries", a.len(), b.len());
+                for (n, _, _) in a.iter().filter(|(n, _, _)| !b.iter().any(|(m, _, _)| m == n)).take(4) {
+                    println!("      only with index: {n}");
+                }
+                for (n, _, _) in b.iter().filter(|(n, _, _)| !a.iter().any(|(m, _, _)| m == n)).take(4) {
+                    println!("      only in walk:    {n}");
+                }
+            }
+        }
+    }
+
     println!("\n{} paths compared, {disagreements} disagreements", probes.len());
+    println!("{} directories listed, {listing_disagreements} disagreements", dirs.len());
+    let disagreements = disagreements + listing_disagreements;
     if disagreements == 0 {
         println!("the index and the walk are indistinguishable on this instance");
     }
