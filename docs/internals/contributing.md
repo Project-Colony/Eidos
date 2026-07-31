@@ -44,3 +44,26 @@ docs/architecture.md    the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required
 ```
+
+## Releasing
+
+Two workflows, and they do different jobs.
+
+**release-please** watches `main` and keeps a pull request open with the next
+version and a changelog, both derived from the conventional-commit messages since
+the last release. It decides *what* the release is; it builds nothing.
+
+**release.yml** triggers on a `vX.Y.Z` tag and does the building, testing and
+publishing.
+
+So a release is: land conventional commits on `main`, then merge the release PR
+when you want one. Merging creates the tag, the tag builds the artifacts.
+
+The prefixes that move the version: `feat:` bumps the minor, `fix:` and `perf:`
+the patch, and a `!` or a `BREAKING CHANGE:` footer bumps the major. `docs:`,
+`chore:`, `test:` and `ci:` ride along without moving anything.
+
+The workspace is a virtual manifest - one `[workspace.package]` version that all
+seventeen crates inherit - which is why the config uses the `cargo-workspace`
+plugin. `.release-please-manifest.json` records where the version currently
+stands; nothing else should edit it.

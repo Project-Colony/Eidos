@@ -1,0 +1,40 @@
+# Keeps a release PR open against main, built from the conventional-commit
+# messages since the last release.
+#
+# The division of labour matters here. This workflow decides WHAT the next
+# version is and writes the changelog; it does not build anything. Merging its PR
+# creates the `vX.Y.Z` tag, and `release.yml` - which triggers on exactly that
+# tag pattern - is what compiles, tests and publishes the artifacts. Neither
+# needs to know about the other beyond the tag.
+#
+# So the flow is: land conventional commits on main -> a PR appears and keeps
+# itself up to date -> merge it when the release is wanted.
+name: release-please
+
+on:
+  push:
+    branches: [main]
+  # Useful after fixing a commit message, or to see the PR reappear without
+  # waiting for the next push.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # The workspace is a virtual manifest: one `[workspace.package]`
+          # version that all seventeen crates inherit. The `cargo-workspace`
+          # plugin in the config understands that shape; the manifest file
+          # records where the version currently stands.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
