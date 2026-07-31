@@ -17,7 +17,7 @@
 #   ./install.sh --no-cap            skip setcap (print the command instead)
 #
 # On Arch, prefer the package: packaging/PKGBUILD applies the capability through
-# the package payload, so pacman owns it. See docs/packaging.md.
+# the package payload, so pacman owns it. See docs/internals/packaging.md.
 
 set -euo pipefail
 
@@ -56,7 +56,7 @@ usage() {
 		  ./install.sh --no-cap       skip setcap, print the command instead
 
 		On Arch, prefer the package: packaging/PKGBUILD ships the capability in the
-		package payload, so pacman owns it. See docs/packaging.md.
+		package payload, so pacman owns it. See docs/internals/packaging.md.
 	EOF
 }
 

@@ -59,7 +59,7 @@ lives**, and what the kernel does underneath it:
    `.ciopfs` marker so Wine trusts the mount to fold case instead of brute-force
    rescanning every directory. Kernel `FUSE_PASSTHROUGH` (Linux 6.9+) is
    implemented as well but ships **off**, because it stops the game opening its
-   own archives and plugins - see [troubleshooting.md](troubleshooting.md).
+   own archives and plugins - see [troubleshooting.md](../guide/troubleshooting.md).
 
 ## The Eidos approach
 
@@ -97,7 +97,7 @@ the semantics OverlayFS cannot express (exact Windows-style case-insensitivity,
 precise write redirection, no lowerdir scaling wall). Kernel **passthrough**
 (Linux 6.9+) is implemented for the data path but off by default, so resolved
 reads are served by the daemon from a cached backing fd. See
-[docs/architecture.md](architecture.md) for the full rationale, including
+[docs/architecture.md](../internals/architecture.md) for the full rationale, including
 why FUSE over OverlayFS for completeness and long-term stability.
 
 The data path was never the bottleneck anyway. Metadata (`lookup`, `getattr`,
@@ -111,7 +111,7 @@ sets `FOPEN_CACHE_DIR` so the kernel serves repeat enumerations itself. Requests
 are served from several event loops over `clone_fd`.
 
 `FOPEN_KEEP_CACHE` is deliberately **not** among them: it crashed Skyrim SE
-outright (see [troubleshooting.md](troubleshooting.md)), which settles it on its own. The
+outright (see [troubleshooting.md](../guide/troubleshooting.md)), which settles it on its own. The
 old argument that dropping it was free no longer holds, though - it rested on
 passthrough serving every read, and passthrough is now off, so repeat reads do
 cross into the daemon. Worth re-measuring, not worth re-enabling blind.

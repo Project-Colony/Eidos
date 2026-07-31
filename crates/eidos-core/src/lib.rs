@@ -9,7 +9,7 @@
 //!   * write -> where in the overwrite layer should this virtual path land?
 //!
 //! Path matching is case-insensitive, reproducing the Windows semantics that
-//! game engines and mods rely on (see `docs/architecture.md`).
+//! game engines and mods rely on (see `docs/internals/architecture.md`).
 
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
@@ -986,7 +986,7 @@ static TIMING_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
 /// Case-insensitive name comparison.
 ///
 /// v1 folds ASCII case only; Windows folds a wider Unicode table. Most game and
-/// mod paths are ASCII; broadening this is tracked in `docs/architecture.md`.
+/// mod paths are ASCII; broadening this is tracked in `docs/internals/architecture.md`.
 fn eq_ignore_case(a: &OsStr, b: &OsStr) -> bool {
     match (a.to_str(), b.to_str()) {
         (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),

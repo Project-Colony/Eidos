@@ -13,7 +13,7 @@
 #   4. Per-process    - the merge only exists inside the namespace
 #
 # OverlayFS is used here because it proves the thesis fastest. The real Eidos
-# engine is a FUSE union filesystem (see docs/architecture.md) for completeness
+# engine is a FUSE union filesystem (see docs/internals/architecture.md) for completeness
 # and control the kernel overlay cannot give.
 
 set -euo pipefail

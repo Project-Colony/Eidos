@@ -115,4 +115,4 @@ mattered - how much of that was Wine probing rather than enumerating - was
 invisible until they were counted apart.
 
 See [architecture.md](architecture.md) for how the resolver and the index are
-built, and [troubleshooting.md](troubleshooting.md) for the environment switches.
+built, and [troubleshooting.md](../guide/troubleshooting.md) for the environment switches.
