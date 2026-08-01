@@ -1,0 +1,591 @@
+# Golden record of the layout checker's verdicts on corpus/shapes.txt.
+# Regenerate with: EIDOS_BLESS=1 cargo test -p eidos-install --test corpus
+
+> modroot 001 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 002 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 003 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 3 invalid
+  root_builder_split = none
+
+> modroot 004 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 005 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 5 invalid
+  root_builder_split = none
+
+> modroot 006 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 007 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 4 invalid
+  root_builder_split = none
+
+> modroot 008 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 7 invalid
+  root_builder_split = none
+
+> modroot 009 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 010 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 011 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 012 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 4 invalid
+  root_builder_split = none
+
+> modroot 013 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 3 invalid
+  root_builder_split = none
+
+> modroot 014 game=skyrimse
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = data=None root_dir=Some("root") root_entries=[]
+
+> modroot 015 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 3 invalid
+  root_builder_split = none
+
+> modroot 016 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 017 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 2 invalid
+  root_builder_split = none
+
+> modroot 018 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d1"] + 6 invalid
+  root_builder_split = none
+
+> modroot 019 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 020 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 021 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 022 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d1"] + 6 invalid
+  root_builder_split = none
+
+> modroot 023 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d1"] + 7 invalid
+  root_builder_split = none
+
+> modroot 024 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 2 invalid
+  root_builder_split = none
+
+> modroot 025 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 3 invalid
+  root_builder_split = none
+
+> modroot 026 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 027 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 028 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 2 invalid
+  root_builder_split = none
+
+> modroot 029 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 2 invalid
+  root_builder_split = none
+
+> modroot 030 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 031 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 032 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 033 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 7 invalid
+  root_builder_split = none
+
+> modroot 034 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 035 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 4 invalid
+  root_builder_split = none
+
+> modroot 036 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 037 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 038 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 039 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 040 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 6 invalid
+  root_builder_split = none
+
+> modroot 041 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 4 invalid
+  root_builder_split = none
+
+> modroot 042 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 043 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 044 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 045 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 046 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 047 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 048 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 3 invalid
+  root_builder_split = none
+
+> modroot 049 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 050 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0"] + 2 invalid
+  root_builder_split = none
+
+> archive 001 game=skyrimse
+  data_looks_valid   = Invalid
+  simple_archive_base= "data/"
+  bain_subpackages   = ["data"] + 0 invalid
+  root_builder_split = none
+
+> archive 002 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> archive 003 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d1", "d2", "d3", "d4", "d5"] + 3 invalid
+  root_builder_split = none
+
+> archive 004 game=skyrimse
+  data_looks_valid   = Invalid
+  simple_archive_base= "data/"
+  bain_subpackages   = ["data"] + 0 invalid
+  root_builder_split = none
+
+> archive 005 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 006 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 007 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 001 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 002 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 003 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 004 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 005 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 006 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 007 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 008 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 009 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 010 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 011 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 012 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 013 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 014 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 015 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 016 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 017 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 018 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> modroot 019 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 020 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> modroot 021 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0", "d1", "d2", "d3", "d4", "d5"] + 0 invalid
+  root_builder_split = none
+
+> modroot 022 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> modroot 023 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 024 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 025 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 026 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 2 invalid
+  root_builder_split = none
+
+> modroot 027 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> modroot 028 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = ["d0", "d1", "d2", "d3", "d4", "d5"] + 0 invalid
+  root_builder_split = none
+
+> archive 001 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> archive 002 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> archive 003 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> archive 004 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 005 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 006 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= none
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 007 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> archive 008 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> archive 009 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> archive 010 game=stellarblade
+  data_looks_valid   = Invalid
+  simple_archive_base= "d0/"
+  bain_subpackages   = ["d0"] + 0 invalid
+  root_builder_split = none
+
+> archive 011 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> archive 012 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+
+> archive 013 game=stellarblade
+  data_looks_valid   = Valid
+  simple_archive_base= ""
+  bain_subpackages   = [] + 0 invalid
+  root_builder_split = none
+

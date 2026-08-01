@@ -15,7 +15,7 @@ use eidos_instance::ModMeta;
 
 use crate::{
     bain_default_selection, fix_directory_name, guess_mod_name, guess_mod_name_and_id, ArchiveEntry,
-    ArchiveTree, RootSplit, BAIN_MIN_SUBPACKAGES,
+    ArchiveTree, LayoutRules, RootSplit, BAIN_MIN_SUBPACKAGES,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -162,13 +162,13 @@ pub fn install_archive(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
 ) -> Result<InstallReport, InstallError> {
     install_archive_with_policy(
         archive,
         mods_dir,
         name,
-        game_name,
+        game_id,
         OverwritePolicy::Fail,
         &eidos_fomod::Context::default(),
     )
@@ -182,7 +182,7 @@ pub fn install_archive_with_policy(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
     policy: OverwritePolicy,
     ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
@@ -193,7 +193,7 @@ pub fn install_archive_with_policy(
         }
     }
     let tree = extract_to_temp(archive, mods_dir)?;
-    install_extracted(&tree, archive, mods_dir, name, game_name, policy, ctx)
+    install_extracted(&tree, archive, mods_dir, name, game_id, policy, ctx)
 }
 
 /// Install an already-extracted archive (see [`open_archive`]), resolving a
@@ -205,7 +205,7 @@ pub fn install_extracted(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
     policy: OverwritePolicy,
     ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
@@ -250,10 +250,11 @@ pub fn install_extracted(
     // move is a rename); `tree` owns the temp and removes it when the caller
     // drops it.
     let tmp = tree.path();
+    let rules = LayoutRules::for_game(game_id);
 
     let result = (|| {
         let layout = ArchiveTree::from_dir(tmp)?;
-        let base = match layout.simple_archive_base() {
+        let base = match layout.simple_archive_base(rules) {
             Some(b) => b,
             None => {
                 // A FOMOD scripted installer: run it with the default selections.
@@ -271,7 +272,7 @@ pub fn install_extracted(
                     }
                     fs::create_dir_all(&dest)?;
                     let missing = apply_plan(&fomod_root, &plan, &dest)?;
-                    write_meta(archive, &dest, game_name, guessed_id)?;
+                    write_meta(archive, &dest, game_id, guessed_id)?;
                     return Ok(InstallReport {
                         name: name.clone(),
                         stripped: String::new(),
@@ -285,7 +286,7 @@ pub fn install_extracted(
                 // core sub-packages), exactly as the FOMOD branch above installs the
                 // default selections. A front end that wants the checkbox list goes
                 // through `open_archive` -> `Opened::Bain` -> `install_bain`.
-                let (subpackages, _invalid) = layout.bain_subpackages();
+                let (subpackages, _invalid) = layout.bain_subpackages(rules);
                 if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
                     let picks = bain_default_selection(&subpackages, &[]);
                     let chosen: Vec<String> = subpackages
@@ -305,7 +306,7 @@ pub fn install_extracted(
                         }
                         fs::create_dir_all(&dest)?;
                         place_sources(&sources, &dest, merging)?;
-                        write_meta(archive, &dest, game_name, guessed_id)?;
+                        write_meta(archive, &dest, game_id, guessed_id)?;
                         return Ok(InstallReport {
                             name: name.clone(),
                             stripped: String::new(),
@@ -320,7 +321,7 @@ pub fn install_extracted(
                 // it installs directly rather than falling to the manual picker -
                 // which would drop the root half and leave a mod that looks
                 // installed and does nothing.
-                if let Some(split) = layout.root_builder_split() {
+                if let Some(split) = layout.root_builder_split(rules) {
                     // Resolve first, wipe second (the whole point of the ordering).
                     let sources = resolve_root_split(tmp, &split)?;
                     if replacing {
@@ -328,7 +329,7 @@ pub fn install_extracted(
                     }
                     fs::create_dir_all(&dest)?;
                     place_root_split(&sources, &dest, merging)?;
-                    write_meta(archive, &dest, game_name, guessed_id)?;
+                    write_meta(archive, &dest, game_id, guessed_id)?;
                     return Ok(InstallReport {
                         name: name.clone(),
                         stripped: split.data_prefix.unwrap_or_default(),
@@ -357,7 +358,7 @@ pub fn install_extracted(
         } else {
             move_dir_contents(&src, &dest)?;
         }
-        write_meta(archive, &dest, game_name, guessed_id)?;
+        write_meta(archive, &dest, game_id, guessed_id)?;
         Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, missing: Vec::new(), dest: dest.clone() })
     })();
 
@@ -394,13 +395,13 @@ fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
 /// Write a MO2-compatible `meta.ini`, seeded from the download's `<archive>.meta`
 /// sidecar if MO2/Nexus left one next to the file. `guessed_id` is the mod id
 /// recovered from the filename, used when the sidecar carries none.
-fn write_meta(archive: &Path, dest: &Path, game_name: &str, guessed_id: Option<u64>) -> io::Result<()> {
+fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id: Option<u64>) -> io::Result<()> {
     // The sidecar is the full archive name + ".meta" (e.g. Mod-1234.7z.meta).
     let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
     let from = ModMeta::read(&sidecar);
 
     let mut meta = ModMeta::default();
-    meta.set("gameName", &from.game_name().unwrap_or_else(|| game_name.to_string()));
+    meta.set("gameName", &from.game_name().unwrap_or_else(|| game_id.to_string()));
     // Mod id: the sidecar's, else the one guessed from the Nexus filename, so a
     // manually-downloaded archive with no sidecar can still be update-checked.
     if let Some(id) = from.mod_id().or(guessed_id) {
@@ -874,7 +875,7 @@ fn install_sources(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
     policy: OverwritePolicy,
     stripped: String,
 ) -> Result<InstallReport, InstallError> {
@@ -911,7 +912,7 @@ fn install_sources(
         }
         fs::create_dir_all(&dest)?;
         place_sources(sources, &dest, merging)?;
-        write_meta(archive, &dest, game_name, guessed_id)?;
+        write_meta(archive, &dest, game_id, guessed_id)?;
         Ok(InstallReport {
             name: name.clone(),
             stripped,
@@ -949,11 +950,11 @@ pub fn install_bain(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
     let sources = resolve_bain_sources(tree.path(), subpackages)?;
-    install_sources(&sources, archive, mods_dir, name, game_name, policy, String::new())
+    install_sources(&sources, archive, mods_dir, name, game_id, policy, String::new())
 }
 
 /// Install from an explicit, user-chosen data root inside the archive - MO2's manual
@@ -973,7 +974,7 @@ pub fn install_manual(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
-    game_name: &str,
+    game_id: &str,
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
     let src = resolve_manual_root(tree.path(), data_root)?;
@@ -982,7 +983,7 @@ pub fn install_manual(
     } else {
         format!("{}/", data_root.trim_matches(['/', '\\'].as_slice()))
     };
-    install_sources(&[src], archive, mods_dir, name, game_name, policy, stripped)
+    install_sources(&[src], archive, mods_dir, name, game_id, policy, stripped)
 }
 
 /// Parse the `fomod/ModuleConfig.xml` under `root`.
@@ -1158,10 +1159,15 @@ pub fn extract_to_temp(archive: &Path, mods_dir: &Path) -> Result<ExtractedTree,
 /// wizard), a simple archive, a BAIN package (whose sub-packages the user ticks) or
 /// an unrecognised layout the user must resolve by hand. The extracted tree rides
 /// along in every case, so installing it costs no second extraction.
+///
+/// `game_id` is the Eidos game id (`skyrimse`), not MO2's short name: it selects
+/// the [`LayoutRules`] the classification runs under, so passing the wrong spelling
+/// silently falls back to the Gamebryo vocabulary instead of erroring.
 pub fn open_archive(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
+    game_id: &str,
 ) -> Result<Opened, InstallError> {
     let tree = extract_to_temp(archive, mods_dir)?;
     if let Some(root) = find_fomod_root(&tree.tmp) {
@@ -1176,11 +1182,12 @@ pub fn open_archive(
     }
     // MO2's priority order, see `Opened`. Reading the extracted layout costs one
     // directory walk against an extraction that already paid for the whole archive.
+    let rules = LayoutRules::for_game(game_id);
     let layout = ArchiveTree::from_dir(&tree.tmp)?;
-    if layout.simple_archive_base().is_some() {
+    if layout.simple_archive_base(rules).is_some() {
         return Ok(Opened::Simple(tree));
     }
-    let (subpackages, invalid) = layout.bain_subpackages();
+    let (subpackages, invalid) = layout.bain_subpackages(rules);
     if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
         return Ok(Opened::Bain { tree, subpackages, invalid });
     }
@@ -1188,7 +1195,7 @@ pub fn open_archive(
     // so it takes the Simple path, which `install_extracted` then lays out. Left to
     // fall through, it would reach the manual picker, whose contract is to drop
     // everything beside the chosen root: exactly the root half.
-    if layout.root_builder_split().is_some() {
+    if layout.root_builder_split(rules).is_some() {
         return Ok(Opened::Simple(tree));
     }
     Ok(Opened::Manual(tree))
@@ -1213,7 +1220,7 @@ pub fn finish_fomod(
     session: FomodSession,
     selection: &eidos_fomod::Selection,
     mods_dir: &Path,
-    game_name: &str,
+    game_id: &str,
     ctx: &eidos_fomod::Context,
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
@@ -1252,7 +1259,7 @@ pub fn finish_fomod(
     }
     fs::create_dir_all(&dest)?;
     let missing = apply_plan(&session.root, &plan, &dest)?;
-    write_meta(&session.archive, &dest, game_name, guessed_id)?;
+    write_meta(&session.archive, &dest, game_id, guessed_id)?;
     if let Some(old) = preserved {
         reapply_user_meta(&old, &dest.join("meta.ini"));
     }
@@ -1459,6 +1466,11 @@ fn rename_if_needed(from: &Path, to: &Path) -> io::Result<()> {
 mod tests {
     use super::*;
     use eidos_fomod::FileItem;
+
+    /// The Gamebryo vocabulary, which is what these cases are written against.
+    fn rules() -> LayoutRules {
+        LayoutRules::default()
+    }
 
     /// A unique temp directory removed on drop (the crate has no `tempfile` dep).
     struct TempDir(PathBuf);
@@ -2482,8 +2494,8 @@ mod tests {
         write_at(&tmp, "--03 Disabled/meshes/a.nif", b"z");
         write_at(&tmp, "Docs/readme.txt", b"d");
         let layout = ArchiveTree::from_dir(&tmp).unwrap();
-        assert_eq!(layout.simple_archive_base(), None, "not a simple archive");
-        let (subs, invalid) = layout.bain_subpackages();
+        assert_eq!(layout.simple_archive_base(rules()), None, "not a simple archive");
+        let (subs, invalid) = layout.bain_subpackages(rules());
         assert_eq!(subs, vec!["00 Core", "01 Optional Textures"]);
         assert_eq!(invalid, 0);
     }

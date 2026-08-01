@@ -70,6 +70,18 @@ pub struct GameDef {
     /// The data directory under the game install (`Data`, or `Data Files` for
     /// Morrowind).
     pub data_dir: &'static str,
+    /// Top-level directory names that mark a level inside an archive as this
+    /// game's mod root - MO2's per-game `ModDataChecker::possibleFolderNames`.
+    ///
+    /// **Empty means the Gamebryo vocabulary**, which is what every built-in game
+    /// here uses and why they all leave this unset. It does NOT mean "nothing is a
+    /// mod root": an empty list taken literally would reject every archive and send
+    /// every install to the manual picker.
+    pub valid_folders: &'static [&'static str],
+    /// File extensions, without the dot, that mark a level as this game's mod root
+    /// (`esp`, `esm`, ... for Gamebryo; `pak` for Unreal; `archive` for Cyberpunk).
+    /// Empty means the Gamebryo set, with the same caveat as [`Self::valid_folders`].
+    pub valid_suffixes: &'static [&'static str],
     /// The game's folder under the prefix `Documents/My Games` and
     /// `AppData/Local`, e.g. `Skyrim Special Edition`. Empty for games that keep
     /// their config in the install dir (Morrowind).
@@ -110,6 +122,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "SkyrimSE",
         nexus_game: "skyrimspecialedition",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Skyrim Special Edition",
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -128,6 +142,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "SkyrimVR",
         nexus_game: "skyrimspecialedition",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Skyrim VR",
         ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::Asterisk,
@@ -146,6 +162,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Skyrim",
         nexus_game: "skyrim",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Skyrim",
         // The gamebryo engine reads SkyrimCustom.ini in LE too (MO2 manages it as a
         // per-profile INI, same as SkyrimSE), so include it in the per-profile set.
@@ -166,6 +184,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "EnderalSE",
         nexus_game: "enderalspecialedition",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Enderal Special Edition",
         ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
         load_order: LoadOrder::Asterisk,
@@ -185,6 +205,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Fallout4",
         nexus_game: "fallout4",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Fallout4",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -203,6 +225,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Fallout4VR",
         nexus_game: "fallout4",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Fallout4VR",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -221,6 +245,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "FalloutNV",
         nexus_game: "newvegas",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "FalloutNV",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
@@ -239,6 +265,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Fallout3",
         nexus_game: "fallout3",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Fallout3",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
         load_order: LoadOrder::PlainList,
@@ -257,6 +285,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Oblivion",
         nexus_game: "oblivion",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Oblivion",
         ini_files: &["Oblivion.ini", "OblivionPrefs.ini"],
         load_order: LoadOrder::FileTime,
@@ -275,6 +305,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Morrowind",
         nexus_game: "morrowind",
         data_dir: "Data Files",
+        valid_folders: &[],
+        valid_suffixes: &[],
         // Morrowind keeps Morrowind.ini in the install directory, not My Games; the
         // per-profile INI machinery is pointed there by game id (see prepare_inis).
         documents_dir: "",
@@ -292,6 +324,8 @@ pub static GAMES: &[GameDef] = &[
         short_name: "Starfield",
         nexus_game: "starfield",
         data_dir: "Data",
+        valid_folders: &[],
+        valid_suffixes: &[],
         documents_dir: "Starfield",
         ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
         load_order: LoadOrder::Asterisk,
@@ -302,6 +336,43 @@ pub static GAMES: &[GameDef] = &[
             launcher: "Starfield.exe",
             loader: "sfse_loader.exe",
         }),
+    },
+    // The first non-Bethesda game here, and the first to declare its own vocabulary.
+    //
+    // Unreal Engine, so no plugins.txt, no BSA, no My Games INI. A mod is a
+    // `.pak`/`.ucas`/`.utoc` triplet under `SB/Content/Paks`, either loose or in one
+    // of the two folders the community sorts them into: `~mods` (the `~` is what
+    // makes the engine scan it last, so those paks win) and `LogicMods` for UE4SS.
+    // `Paks` is the deploy root rather than `~mods` precisely so an archive can
+    // choose either, and so both land in the right place from one union.
+    //
+    // Declaring `valid_suffixes` is what makes `valid_folders` mean "only these":
+    // see `From<&GameDef> for LayoutRules`. That is deliberate. A Stellar Blade mod
+    // is identified by carrying a pak, and inheriting the Gamebryo folder list would
+    // let an archive shipping a `textures/` folder read as a valid mod root.
+    //
+    // UE4SS is this game's script extender - its SKSE. `script_extender` stays None
+    // because that field models an EXE SWAP (run the loader instead of the vanilla
+    // launcher), and UE4SS does not work that way: it is a proxy DLL side-loaded
+    // next to the game binary. Its own Lua mods ship a `SB/Binaries/Win64/ue4ss/...`
+    // tree, which is install-root-relative, so they belong on the `Root/` surface
+    // rather than this one and do not classify automatically yet.
+    GameDef {
+        id: "stellarblade",
+        name: "Stellar Blade",
+        steam_app_id: 3489700,
+        short_name: "StellarBlade",
+        nexus_game: "stellarblade",
+        data_dir: "SB/Content/Paks",
+        valid_folders: &["~mods", "logicmods"],
+        valid_suffixes: &["pak", "utoc", "ucas"],
+        documents_dir: "",
+        ini_files: &[],
+        load_order: LoadOrder::None,
+        primary_plugins: &[],
+        game_binary: "SB.exe",
+        registry_name: "",
+        script_extender: None,
     },
 ];
 
@@ -376,6 +447,10 @@ struct RawGameDef {
     steam_app_id: u32,
     data_dir: String,
     #[serde(default)]
+    valid_folders: Vec<String>,
+    #[serde(default)]
+    valid_suffixes: Vec<String>,
+    #[serde(default)]
     documents_dir: String,
     #[serde(default)]
     ini_files: Vec<String>,
@@ -410,6 +485,8 @@ impl RawGameDef {
             nexus_game: leak(self.nexus_game),
             steam_app_id: self.steam_app_id,
             data_dir: leak(self.data_dir),
+            valid_folders: leak_vec(self.valid_folders),
+            valid_suffixes: leak_vec(self.valid_suffixes),
             documents_dir: leak(self.documents_dir),
             ini_files: leak_vec(self.ini_files),
             load_order: parse_load_order(&self.load_order),
@@ -577,11 +654,28 @@ mod tests {
     #[test]
     fn plugin_games_have_primaries() {
         // A game using a plugins.txt mechanism must declare its master plugins.
+        //
+        // Written as "anything but FileTime" this held only while every game here
+        // was Bethesda's. `LoadOrder::None` is a real answer now (Stellar Blade),
+        // and a game with no plugin system at all has no masters to declare - so
+        // the condition has to name the two mechanisms it is actually about.
         for g in GAMES {
-            if g.load_order != LoadOrder::FileTime {
+            if matches!(g.load_order, LoadOrder::Asterisk | LoadOrder::PlainList) {
                 assert!(!g.primary_plugins.is_empty(), "{} has no primary plugins", g.id);
             }
         }
+    }
+
+    /// A game with no plugin system declares no plugin machinery at all, so the
+    /// rest of the workspace can key off `LoadOrder::None` alone.
+    #[test]
+    fn a_game_without_a_load_order_declares_no_plugin_machinery() {
+        for g in GAMES.iter().filter(|g| g.load_order == LoadOrder::None) {
+            assert!(g.primary_plugins.is_empty(), "{} has masters but no load order", g.id);
+            assert!(g.ini_files.is_empty(), "{} has per-profile INIs but no load order", g.id);
+        }
+        // And the one that exists is the one we expect, so this cannot pass vacuously.
+        assert!(GAMES.iter().any(|g| g.id == "stellarblade" && g.load_order == LoadOrder::None));
     }
 
     #[test]

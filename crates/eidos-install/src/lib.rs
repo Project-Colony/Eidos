@@ -7,7 +7,12 @@
 //! `ModDataChecker`. This module reproduces both as pure, testable logic over an
 //! [`ArchiveTree`]; the archive backend and the extraction wiring live alongside.
 //!
-//! Tier 1 (here): archive tree + Gamebryo `ModDataChecker` + wrapper-strip.
+//! The `ModDataChecker` half is per-game, driven by [`LayoutRules`] rather than by
+//! a hardcoded list: a mod root is whatever the game says a mod root looks like.
+//! [`LayoutRules::default()`] is the Gamebryo vocabulary, which is what every game
+//! that declares nothing still gets.
+//!
+//! Tier 1 (here): archive tree + per-game `ModDataChecker` + wrapper-strip.
 //! Tier 2 (later): the FOMOD scripted installer.
 
 use std::collections::BTreeMap;
@@ -178,7 +183,7 @@ impl ArchiveTree {
     /// drops them. Anything else is kept: a stray file at the game root is inert,
     /// while a dropped `.dll` is a mod that silently does nothing - the failure
     /// this whole path exists to prevent.
-    pub fn root_builder_split(&self) -> Option<RootSplit> {
+    pub fn root_builder_split(&self, rules: LayoutRules) -> Option<RootSplit> {
         let mut data: Option<&str> = None;
         let mut root_dir: Option<String> = None;
         let mut root_entries: Vec<String> = Vec::new();
@@ -221,7 +226,7 @@ impl ArchiveTree {
             // or an actual executable image to project. Otherwise leave it to the
             // manual picker rather than guess a mod into the game root, where it
             // would do nothing.
-            if self.simple_archive_base().is_some() || (root_dir.is_none() && !has_image) {
+            if self.simple_archive_base(rules).is_some() || (root_dir.is_none() && !has_image) {
                 return None;
             }
             return Some(RootSplit { data_prefix: None, root_dir, root_entries });
@@ -238,22 +243,23 @@ impl ArchiveTree {
             Some(TreeNode::Dir { tree, .. }) => tree,
             _ => return None,
         };
-        let inner = sub.simple_archive_base()?;
+        let inner = sub.simple_archive_base(rules)?;
         Some(RootSplit { data_prefix: Some(format!("{data}/{inner}")), root_dir, root_entries })
     }
 
-    /// MO2's `ModDataChecker::dataLooksValid` for Gamebryo games: this level is a
-    /// valid mod root if a top-level entry is a known Data folder or a known
-    /// plugin/archive file. (Per-game checkers can specialise this later.)
-    pub fn data_looks_valid(&self) -> CheckReturn {
+    /// MO2's `ModDataChecker::dataLooksValid`: this level is a valid mod root if a
+    /// top-level entry is one of the game's data folders, or a file carrying one of
+    /// its data extensions.
+    ///
+    /// `rules` is the whole of what makes this per-game; see [`LayoutRules`], whose
+    /// default is the Gamebryo list this used to read directly.
+    pub fn data_looks_valid(&self, rules: LayoutRules) -> CheckReturn {
         for (key, node) in &self.entries {
             match node {
-                TreeNode::Dir { .. } if GAMEBRYO_FOLDERS.contains(&key.as_str()) => {
-                    return CheckReturn::Valid;
-                }
+                TreeNode::Dir { .. } if rules.folder_matches(key) => return CheckReturn::Valid,
                 TreeNode::File { .. } => {
                     if let Some(ext) = key.rsplit_once('.').map(|(_, e)| e) {
-                        if GAMEBRYO_SUFFIXES.contains(&ext) {
+                        if rules.suffix_matches(ext) {
                             return CheckReturn::Valid;
                         }
                     }
@@ -268,27 +274,27 @@ impl ArchiveTree {
     /// subdirectory, until this level looks like a valid mod root. Returns the
     /// `/`-joined prefix to strip on extraction (empty if already valid), or
     /// `None` if it never resolves to a mod root (not a "simple" archive).
-    pub fn simple_archive_base(&self) -> Option<String> {
-        fn rec(tree: &ArchiveTree, prefix: &mut String) -> bool {
-            if tree.data_looks_valid() == CheckReturn::Valid {
+    pub fn simple_archive_base(&self, rules: LayoutRules) -> Option<String> {
+        fn rec(tree: &ArchiveTree, prefix: &mut String, rules: LayoutRules) -> bool {
+            if tree.data_looks_valid(rules) == CheckReturn::Valid {
                 return true;
             }
             if let Some((name, sub)) = tree.single_subdir() {
                 prefix.push_str(name);
                 prefix.push('/');
-                return rec(sub, prefix);
+                return rec(sub, prefix, rules);
             }
             // MO2's DataText layer: a sole `Data` dir beside loose docs - descend
             // into Data (the docs are not mod content and are dropped here).
             if let Some((name, sub)) = tree.data_text_subdir() {
                 prefix.push_str(name);
                 prefix.push('/');
-                return rec(sub, prefix);
+                return rec(sub, prefix, rules);
             }
             false
         }
         let mut prefix = String::new();
-        if rec(self, &mut prefix) {
+        if rec(self, &mut prefix, rules) {
             Some(prefix)
         } else {
             None
@@ -310,7 +316,7 @@ impl ArchiveTree {
     /// A non-zero invalid count is deliberately NOT a verdict. MO2 asks the user,
     /// because `Data/` beside `OptionalStuff/` is indistinguishable from a two-package
     /// BAIN by structure alone; the caller decides (see [`BAIN_MIN_SUBPACKAGES`]).
-    pub fn bain_subpackages(&self) -> (Vec<String>, usize) {
+    pub fn bain_subpackages(&self, rules: LayoutRules) -> (Vec<String>, usize) {
         let mut valid = Vec::new();
         let mut invalid = 0usize;
         for (key, node) in &self.entries {
@@ -320,7 +326,7 @@ impl ArchiveTree {
             if BAIN_IGNORED_FOLDERS.contains(&key.as_str()) || key.starts_with("--") {
                 continue;
             }
-            if tree.data_looks_valid() == CheckReturn::Valid {
+            if tree.data_looks_valid(rules) == CheckReturn::Valid {
                 valid.push(name.clone());
             } else {
                 invalid += 1;
@@ -347,8 +353,8 @@ impl ArchiveTree {
     /// "The content of &lt;Data&gt; looks valid." / "does not look valid." feedback in
     /// the manual installer, so the user learns their pick is wrong BEFORE committing.
     /// A path that does not resolve is not valid.
-    pub fn root_looks_valid(&self, path: &str) -> bool {
-        self.subtree(path).is_some_and(|t| t.data_looks_valid() == CheckReturn::Valid)
+    pub fn root_looks_valid(&self, path: &str, rules: LayoutRules) -> bool {
+        self.subtree(path).is_some_and(|t| t.data_looks_valid(rules) == CheckReturn::Valid)
     }
 
     /// Flatten the tree to display rows for a picker UI, depth-first in
@@ -442,6 +448,79 @@ pub use install::{
     extract_to_temp, install_bain, install_extracted, install_manual, open_archive, ExtractedTree,
     FomodSession, InstallError, InstallReport, Opened, OverwritePolicy,
 };
+
+/// What makes a directory level a valid mod root, for one game.
+///
+/// This is MO2's per-game `ModDataChecker` reduced to the two lists it actually
+/// consults. It exists as a value rather than a pair of consts because the check
+/// is the one piece of the installer that is not game-agnostic: a Stardew mod is a
+/// folder holding `manifest.json`, a BepInEx mod is a `BepInEx/` tree, and neither
+/// has ever resolved here because the Gamebryo vocabulary was the only vocabulary.
+///
+/// [`Default`] is that Gamebryo vocabulary, unchanged and still the answer for
+/// every game that does not ask for another one - so a caller with no game in hand
+/// classifies exactly as this module did when the lists were read from a const.
+///
+/// Matching is case-insensitive, so a game may spell its rules however its own
+/// documentation does (`BepInEx`, not `bepinex`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LayoutRules {
+    /// Top-level directory names that mark this level as a mod root.
+    pub folders: &'static [&'static str],
+    /// File extensions, without the dot, that mark this level as a mod root.
+    pub suffixes: &'static [&'static str],
+}
+
+impl Default for LayoutRules {
+    fn default() -> Self {
+        LayoutRules { folders: GAMEBRYO_FOLDERS, suffixes: GAMEBRYO_SUFFIXES }
+    }
+}
+
+impl LayoutRules {
+    /// The rules for an Eidos game id (`skyrimse`, `stardew`, ...). An unknown id,
+    /// or a game that declares no vocabulary of its own, gets [`Default`].
+    pub fn for_game(game_id: &str) -> LayoutRules {
+        eidos_gamedef::GameDef::for_id(game_id).map(LayoutRules::from).unwrap_or_default()
+    }
+
+    /// Whether `name` is one of this game's data folders.
+    pub fn folder_matches(&self, name: &str) -> bool {
+        self.folders.iter().any(|f| f.eq_ignore_ascii_case(name))
+    }
+
+    /// Whether `ext` (no dot) is one of this game's data file extensions.
+    pub fn suffix_matches(&self, ext: &str) -> bool {
+        self.suffixes.iter().any(|s| s.eq_ignore_ascii_case(ext))
+    }
+}
+
+impl From<&eidos_gamedef::GameDef> for LayoutRules {
+    /// An empty list on the descriptor means "the Gamebryo vocabulary", NOT "no
+    /// vocabulary".
+    ///
+    /// This distinction is the single load-bearing line in the whole per-game
+    /// checker. Taken literally, an empty list makes [`ArchiveTree::data_looks_valid`]
+    /// return `Invalid` for every level of every archive, which makes
+    /// `simple_archive_base` return `None`, which sends every install of every
+    /// game - Skyrim included, since no built-in game declares these fields - to
+    /// the manual picker. `every_builtin_game_keeps_the_default_vocabulary` exists
+    /// to make that mistake impossible to merge.
+    /// A game declares its vocabulary as a WHOLE, not list by list. Naming even one
+    /// rule means the Gamebryo lists do not apply to that game at all.
+    ///
+    /// Falling back per-list would be worse than useless for the games this exists
+    /// for: Stellar Blade's mods are `.pak`/`.ucas`/`.utoc` and nothing else, and a
+    /// per-list fallback would leave it inheriting `textures/`, `meshes/` and
+    /// `.esp`. An archive shipping a stray `textures` folder would then read as a
+    /// valid mod root and install to the wrong place, silently.
+    fn from(def: &eidos_gamedef::GameDef) -> Self {
+        if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
+            return LayoutRules::default();
+        }
+        LayoutRules { folders: def.valid_folders, suffixes: def.valid_suffixes }
+    }
+}
 
 /// Known top-level Data folder names (lowercased), from MO2's
 /// `GamebryoModDataChecker::possibleFolderNames`.
@@ -643,6 +722,98 @@ pub fn fix_directory_name(name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// The Gamebryo vocabulary, which is what every case below is written
+    /// against: these tests predate the rules being a parameter and must keep
+    /// asserting exactly what they asserted then.
+    fn rules() -> LayoutRules {
+        LayoutRules::default()
+    }
+
+    /// A game that declares nothing must classify with the Gamebryo vocabulary.
+    ///
+    /// This guards the one line that could break every existing install at once.
+    /// No Bethesda game declares `valid_folders`/`valid_suffixes`, so
+    /// `From<&GameDef>` has to read those empty lists as "use the default" rather
+    /// than as "nothing is ever a mod root". Get that backwards and
+    /// `data_looks_valid` returns `Invalid` everywhere, `simple_archive_base`
+    /// returns `None` everywhere, and every Skyrim mod lands in the manual picker.
+    ///
+    /// The eleven Bethesda games are named outright rather than derived from
+    /// `GAMES`, so that adding a twelfth game cannot quietly shrink what this
+    /// covers - which is exactly what would have happened here when Stellar Blade
+    /// arrived and the loop stopped meaning "every game".
+    #[test]
+    fn a_game_that_declares_nothing_keeps_the_gamebryo_vocabulary() {
+        let default = LayoutRules::default();
+        for id in [
+            "skyrimse", "skyrim", "skyrimvr", "enderalse", "fallout4", "fallout4vr", "falloutnv",
+            "fallout3", "oblivion", "morrowind", "starfield",
+        ] {
+            assert!(eidos_gamedef::GameDef::for_id(id).is_some(), "{id} vanished from the catalog");
+            assert_eq!(LayoutRules::for_game(id), default, "{id} lost the Gamebryo vocabulary");
+        }
+        // An id nobody knows must not become "nothing is a mod root" either.
+        assert_eq!(LayoutRules::for_game("no-such-game"), default);
+        assert_eq!(LayoutRules::for_game(""), default);
+
+        // And the general rule, over whatever the catalog holds: declaring nothing
+        // yields the default, declaring anything yields something else. Both
+        // branches must be exercised or the assertions above pass vacuously.
+        let (mut declaring, mut inheriting) = (0, 0);
+        for def in eidos_gamedef::GAMES {
+            let rules = LayoutRules::from(def);
+            assert_eq!(LayoutRules::for_game(def.id), rules, "{} disagrees via for_game", def.id);
+            if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
+                inheriting += 1;
+                assert_eq!(rules, default, "{} declares nothing but lost the default", def.id);
+            } else {
+                declaring += 1;
+                assert_ne!(rules, default, "{} declared rules that were ignored", def.id);
+            }
+        }
+        assert!(declaring > 0, "no game declares its own vocabulary");
+        assert!(inheriting > 0, "no game relies on the default");
+    }
+
+    /// A game that declares any rule replaces the Gamebryo vocabulary entirely,
+    /// including the list it did NOT name.
+    ///
+    /// A game whose mods are only ever `.pak` files has no folder vocabulary at
+    /// all, and must not inherit one: `textures/` inside an Unreal archive is
+    /// texture content, not a sign that the archive is a Bethesda mod root.
+    #[test]
+    fn declaring_any_rule_replaces_the_whole_vocabulary() {
+        let def = eidos_gamedef::parse_game(
+            "id = \"unreal-ish\"\nname = \"Unreal-ish\"\nsteam_app_id = 1\n\
+             data_dir = \".\"\nvalid_suffixes = [\"pak\"]\n",
+        )
+        .unwrap();
+        let r = LayoutRules::from(&def);
+        assert!(r.suffix_matches("pak"), "the declared suffix applies");
+        assert!(!r.suffix_matches("esp"), "and the Gamebryo suffixes are gone");
+        assert!(r.folders.is_empty(), "an undeclared list stays empty, not Gamebryo");
+        assert!(!r.folder_matches("textures"));
+        // So a stray `textures/` no longer passes this game off as a mod root.
+        assert_eq!(tree(&["textures/a.dds"]).data_looks_valid(r), CheckReturn::Invalid);
+        assert_eq!(tree(&["mod_P.pak"]).data_looks_valid(r), CheckReturn::Valid);
+    }
+
+    /// Matching ignores case, so a descriptor may spell its rules the way the
+    /// game's own documentation does (`BepInEx`, not `bepinex`).
+    #[test]
+    fn declared_vocabulary_matches_case_insensitively() {
+        let def = eidos_gamedef::parse_game(
+            "id = \"valheim\"\nname = \"Valheim\"\nsteam_app_id = 892970\n\
+             data_dir = \".\"\nvalid_folders = [\"BepInEx\"]\nvalid_suffixes = [\"DLL\"]\n",
+        )
+        .unwrap();
+        let r = LayoutRules::from(&def);
+        assert!(r.folder_matches("bepinex") && r.folder_matches("BepInEx"));
+        assert!(r.suffix_matches("dll"));
+        // And the tree agrees, since its keys are lowercased.
+        assert_eq!(tree(&["BepInEx/plugins/x.dll"]).data_looks_valid(r), CheckReturn::Valid);
+    }
+
     fn tree(files: &[&str]) -> ArchiveTree {
         let entries: Vec<ArchiveEntry> =
             files.iter().map(|p| ArchiveEntry { path: p.to_string(), is_dir: p.ends_with('/') }).collect();
@@ -651,7 +822,7 @@ mod tests {
 
     #[test]
     fn valid_when_top_level_is_a_data_folder() {
-        assert_eq!(tree(&["meshes/armor/a.nif"]).data_looks_valid(), CheckReturn::Valid);
+        assert_eq!(tree(&["meshes/armor/a.nif"]).data_looks_valid(rules()), CheckReturn::Valid);
     }
 
     /// SSE Engine Fixes' All-In-One, the archive that motivated this: a `data/` half
@@ -666,8 +837,8 @@ mod tests {
             "SSE Engine Fixes - Install Instructions.txt",
             "vortex_override_instructions.json",
         ]);
-        assert_eq!(t.simple_archive_base(), None, "must not already resolve as simple");
-        let split = t.root_builder_split().expect("root builder split");
+        assert_eq!(t.simple_archive_base(rules()), None, "must not already resolve as simple");
+        let split = t.root_builder_split(rules()).expect("root builder split");
         assert_eq!(split.data_prefix.as_deref(), Some("data/"));
         assert_eq!(split.root_dir, None);
         // The DLL is kept, the .txt is dropped as documentation. The .json is not a
@@ -682,7 +853,7 @@ mod tests {
     #[test]
     fn an_explicit_root_folder_is_taken_as_itself() {
         let t = tree(&["Data/MyMod.esp", "Root/binkw64.dll", "Root/tools/patch.exe"]);
-        let split = t.root_builder_split().expect("root builder split");
+        let split = t.root_builder_split(rules()).expect("root builder split");
         assert_eq!(split.data_prefix.as_deref(), Some("Data/"));
         assert_eq!(split.root_dir.as_deref(), Some("Root"));
         assert!(split.root_entries.is_empty(), "Root/ contents are not also loose entries");
@@ -693,8 +864,8 @@ mod tests {
     #[test]
     fn a_bare_preloader_dll_is_a_pure_root_mod() {
         let t = tree(&["d3dx9_42.dll", "vortex_override_instructions.json"]);
-        assert_eq!(t.simple_archive_base(), None);
-        let split = t.root_builder_split().expect("pure root mod");
+        assert_eq!(t.simple_archive_base(rules()), None);
+        let split = t.root_builder_split(rules()).expect("pure root mod");
         assert_eq!(split.data_prefix, None, "there is no Data half to place");
         assert!(split.root_entries.contains(&"d3dx9_42.dll".to_string()));
     }
@@ -705,14 +876,14 @@ mod tests {
     /// goes to the manual picker instead.
     #[test]
     fn a_dataless_archive_without_an_executable_is_left_to_the_picker() {
-        assert_eq!(tree(&["config.json", "notes.md"]).root_builder_split(), None);
+        assert_eq!(tree(&["config.json", "notes.md"]).root_builder_split(rules()), None);
     }
 
     /// And a stray directory means the archive has structure we are not modelling,
     /// so the pure-root shortcut must not fire.
     #[test]
     fn a_dataless_archive_with_a_stray_directory_is_not_a_pure_root_mod() {
-        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(), None);
+        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(rules()), None);
     }
 
     /// A plain `Data/ + readme` archive is the DataText case and already installs.
@@ -720,15 +891,15 @@ mod tests {
     #[test]
     fn a_data_folder_beside_only_docs_is_not_a_root_split() {
         let t = tree(&["Data/MyMod.esp", "readme.txt", "preview.png"]);
-        assert!(t.simple_archive_base().is_some(), "still the simple/DataText path");
-        assert_eq!(t.root_builder_split(), None);
+        assert!(t.simple_archive_base(rules()).is_some(), "still the simple/DataText path");
+        assert_eq!(t.root_builder_split(rules()), None);
     }
 
     /// A mod shipping its own folder called `data` (config, not the game's Data) must
     /// not be torn in half: the Data candidate has to look like a mod root first.
     #[test]
     fn a_coincidental_data_folder_is_not_a_root_split() {
-        assert_eq!(tree(&["data/settings.cfg", "loader.dll"]).root_builder_split(), None);
+        assert_eq!(tree(&["data/settings.cfg", "loader.dll"]).root_builder_split(rules()), None);
     }
 
     /// A folder beside `Data/` is ordinary archive structure - a texture variant, a
@@ -746,7 +917,7 @@ mod tests {
             &["Data/meshes/a.nif", "Documentation/manual.pdf"][..],
         ] {
             assert_eq!(
-                tree(files).root_builder_split(),
+                tree(files).root_builder_split(rules()),
                 None,
                 "must not claim {files:?} - it belongs to BAIN or the manual picker"
             );
@@ -757,49 +928,49 @@ mod tests {
     /// model means we do not guess.
     #[test]
     fn a_directory_beside_a_loose_dll_disqualifies_the_split() {
-        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(), None);
+        assert_eq!(tree(&["loader.dll", "extras/thing.cfg"]).root_builder_split(rules()), None);
     }
 
     #[test]
     fn valid_when_top_level_has_a_plugin() {
-        assert_eq!(tree(&["MyMod.esp", "readme.txt"]).data_looks_valid(), CheckReturn::Valid);
+        assert_eq!(tree(&["MyMod.esp", "readme.txt"]).data_looks_valid(rules()), CheckReturn::Valid);
     }
 
     #[test]
     fn invalid_when_wrapped_in_a_useless_folder() {
         // The classic Nexus wrapper: nothing useful at the top level.
-        assert_eq!(tree(&["MyMod-1234/meshes/a.nif"]).data_looks_valid(), CheckReturn::Invalid);
+        assert_eq!(tree(&["MyMod-1234/meshes/a.nif"]).data_looks_valid(rules()), CheckReturn::Invalid);
     }
 
     #[test]
     fn base_strips_a_single_wrapper() {
         let t = tree(&["MyMod-1234/meshes/a.nif", "MyMod-1234/textures/b.dds"]);
-        assert_eq!(t.simple_archive_base().as_deref(), Some("MyMod-1234/"));
+        assert_eq!(t.simple_archive_base(rules()).as_deref(), Some("MyMod-1234/"));
     }
 
     #[test]
     fn base_strips_nested_wrappers() {
         let t = tree(&["a/b/scripts/x.pex", "a/b/MyMod.esp"]);
-        assert_eq!(t.simple_archive_base().as_deref(), Some("a/b/"));
+        assert_eq!(t.simple_archive_base(rules()).as_deref(), Some("a/b/"));
     }
 
     #[test]
     fn base_is_empty_when_already_valid() {
         let t = tree(&["meshes/a.nif", "MyMod.esp"]);
-        assert_eq!(t.simple_archive_base().as_deref(), Some(""));
+        assert_eq!(t.simple_archive_base(rules()).as_deref(), Some(""));
     }
 
     #[test]
     fn base_is_none_when_not_a_mod() {
         // A single wrapper of only docs is not a Bethesda mod root.
         let t = tree(&["MyMod/readme.txt", "MyMod/screenshot.png"]);
-        assert_eq!(t.simple_archive_base(), None);
+        assert_eq!(t.simple_archive_base(rules()), None);
     }
 
     #[test]
     fn case_insensitive_folder_match() {
-        assert_eq!(tree(&["MESHES/a.nif"]).data_looks_valid(), CheckReturn::Valid);
-        assert_eq!(tree(&["x/SKSE/Plugins/y.dll"]).simple_archive_base().as_deref(), Some("x/"));
+        assert_eq!(tree(&["MESHES/a.nif"]).data_looks_valid(rules()), CheckReturn::Valid);
+        assert_eq!(tree(&["x/SKSE/Plugins/y.dll"]).simple_archive_base(rules()).as_deref(), Some("x/"));
     }
 
     #[test]
@@ -828,10 +999,10 @@ mod tests {
     fn data_text_archive_is_simple() {
         // Data/ + loose docs: MO2 installs it (DataText), descending into Data.
         let t = tree(&["Data/meshes/a.nif", "Data/MyMod.esp", "readme.txt", "preview.png"]);
-        assert_eq!(t.simple_archive_base().as_deref(), Some("Data/"));
+        assert_eq!(t.simple_archive_base(rules()).as_deref(), Some("Data/"));
         // A non-doc, non-mod sibling beside Data is NOT the DataText pattern.
         let u = tree(&["Data/MyMod.esp", "loose.dll"]);
-        assert_eq!(u.simple_archive_base(), None);
+        assert_eq!(u.simple_archive_base(rules()), None);
     }
 
     #[test]
@@ -844,14 +1015,14 @@ mod tests {
             "01 Optional Textures/textures/b.dds",
             "10 Alternate/MyMod.esp",
         ]);
-        let (subs, invalid) = t.bain_subpackages();
+        let (subs, invalid) = t.bain_subpackages(rules());
         assert_eq!(subs, vec!["00 Core", "01 Optional Textures", "10 Alternate"]);
         assert_eq!(invalid, 0);
         // Original casing is preserved (the folder must be findable on disk), and the
         // order is the archive's, which is the merge order (later wins).
         assert!(subs.len() >= BAIN_MIN_SUBPACKAGES);
         // A BAIN package is NOT a simple archive - that is why the fallback exists.
-        assert_eq!(t.simple_archive_base(), None);
+        assert_eq!(t.simple_archive_base(rules()), None);
     }
 
     #[test]
@@ -870,7 +1041,7 @@ mod tests {
             "fomod/info.xml",
             "package.txt",
         ]);
-        let (subs, invalid) = t.bain_subpackages();
+        let (subs, invalid) = t.bain_subpackages(rules());
         assert_eq!(subs, vec!["00 Core", "01 Extras"]);
         assert_eq!(invalid, 0, "skipped folders must not count as invalid either");
     }
@@ -884,7 +1055,7 @@ mod tests {
             "01 Optional/textures/b.dds",
             "Utilities/BuildScript/thing.exe",
         ]);
-        let (subs, invalid) = t.bain_subpackages();
+        let (subs, invalid) = t.bain_subpackages(rules());
         assert_eq!(subs, vec!["00 Core", "01 Optional"]);
         assert_eq!(invalid, 1);
     }
@@ -893,12 +1064,12 @@ mod tests {
     fn bain_is_structural_not_a_numeric_prefix_guess() {
         // Numbered folders that hold no mod data are NOT sub-packages...
         let t = tree(&["00 Screens/a.png", "01 More Screens/b.png"]);
-        let (subs, invalid) = t.bain_subpackages();
+        let (subs, invalid) = t.bain_subpackages(rules());
         assert!(subs.is_empty());
         assert_eq!(invalid, 2);
         // ...and unnumbered folders that DO hold mod data are.
         let u = tree(&["Core/MyMod.esp", "Optional/meshes/a.nif"]);
-        assert_eq!(u.bain_subpackages().0, vec!["Core", "Optional"]);
+        assert_eq!(u.bain_subpackages(rules()).0, vec!["Core", "Optional"]);
     }
 
     #[test]
@@ -913,7 +1084,7 @@ mod tests {
             "meshes/y.nif",
             "MyMod.esp",
         ]);
-        let (subs, _) = t.bain_subpackages();
+        let (subs, _) = t.bain_subpackages(rules());
         assert!(subs.is_empty(), "a FOMOD must not be offered as BAIN");
         // Note a COMBINED fomod/bain package does have valid sub-packages; MO2 (and
         // `open_archive`) resolve that by priority - FOMOD is checked first.
@@ -924,12 +1095,12 @@ mod tests {
         // A plain Data-relative mod: `meshes`/`textures` are content, not
         // sub-packages, and the archive is simple anyway.
         let t = tree(&["meshes/a.nif", "textures/b.dds", "MyMod.esp"]);
-        assert_eq!(t.simple_archive_base().as_deref(), Some(""));
-        let (subs, _) = t.bain_subpackages();
+        assert_eq!(t.simple_archive_base(rules()).as_deref(), Some(""));
+        let (subs, _) = t.bain_subpackages(rules());
         assert!(subs.len() < BAIN_MIN_SUBPACKAGES);
         // The classic wrapped archive is not BAIN either (one candidate at most).
         let u = tree(&["MyMod-1234/meshes/a.nif"]);
-        assert_eq!(u.bain_subpackages().0.len(), 1);
+        assert_eq!(u.bain_subpackages(rules()).0.len(), 1);
     }
 
     #[test]
@@ -949,15 +1120,15 @@ mod tests {
         // top-level one would make the archive root look valid.
         let t = tree(&["Utilities/thing.exe", "Package/Data/meshes/a.nif", "Package/Data/MyMod.esp"]);
         // The archive root is not a mod root, nor is a random folder...
-        assert!(!t.root_looks_valid(""));
-        assert!(!t.root_looks_valid("Utilities"));
+        assert!(!t.root_looks_valid("", rules()));
+        assert!(!t.root_looks_valid("Utilities", rules()));
         // ...but the nested Data the user would point at is (case-insensitively).
-        assert!(t.root_looks_valid("Package/Data"));
-        assert!(t.root_looks_valid("package/data"));
+        assert!(t.root_looks_valid("Package/Data", rules()));
+        assert!(t.root_looks_valid("package/data", rules()));
         // A file or a missing path never resolves.
         assert!(t.subtree("Utilities/thing.exe").is_none());
         assert!(t.subtree("nope").is_none());
-        assert!(!t.root_looks_valid("nope"));
+        assert!(!t.root_looks_valid("nope", rules()));
     }
 
     #[test]

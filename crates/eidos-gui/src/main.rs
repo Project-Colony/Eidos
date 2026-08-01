@@ -2806,7 +2806,7 @@ fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let name = eidos_install::mod_name_for(&path);
             // One extraction, then classify: a plain archive installs straight from
             // the extracted tree instead of being unpacked a second time.
-            match eidos_install::open_archive(&path, &mods_dir, &name) {
+            match eidos_install::open_archive(&path, &mods_dir, &name, &gid) {
                 Ok(eidos_install::Opened::Fomod(session)) => {
                     let enabled_roots: Vec<std::path::PathBuf> =
                         app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
@@ -9903,7 +9903,8 @@ fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Message> {
         PickerMode::Manual { root } => {
             // Re-derived on every pick, like MO2's live green/red label.
             let tree = eidos_install::ArchiveTree::from_dir(p.tree.path()).ok();
-            let valid = tree.as_ref().is_some_and(|t| t.root_looks_valid(root));
+            let rules = eidos_install::LayoutRules::for_game(&p.game_id);
+            let valid = tree.as_ref().is_some_and(|t| t.root_looks_valid(root, rules));
             let chosen = if root.is_empty() { "<archive root>" } else { root.as_str() };
 
             let mut list = Column::new().spacing(1).push(
