@@ -38,7 +38,7 @@ are the DirectX End-User Runtime helper DLLs), not the Wine builtins.
 
 Governed by the Microsoft Windows SDK / DirectX redistributable license. Confirm the
 redistribution terms for these specific builds and their interaction with Eidos's
-GPL-3.0 license before any public release that embeds these binaries.
+GPL-3.0-or-later license before any public release that embeds these binaries.
 
 ## Not bundled (intentionally)
 

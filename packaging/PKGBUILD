@@ -54,7 +54,7 @@ pkgrel=1
 pkgdesc="Native Linux mod manager: a FUSE union filesystem that merges mods over a game for Proton, MO2/usvfs-style"
 arch=('x86_64')
 url="https://github.com/Project-Colony/Eidos"
-license=('GPL-3.0-only')
+license=('GPL-3.0-or-later')
 # fuse3 is what actually mounts (fusermount3 for the rootless path); 7zip backs
 # the mod installer's extraction; xdg-utils is the nxm:// handler registration
 # and "open in explorer".
