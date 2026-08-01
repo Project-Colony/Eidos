@@ -82,4 +82,4 @@ for s in 48 32 16;         do rsvg-convert -w $s eidos-icon-small.svg -o png/eid
 rsvg-convert -w 1024 eidos-logo.svg -o png/eidos-logo-1024.png
 ```
 
-Original work, GPL-3.0 with the rest of Eidos.
+Original work, GPL-3.0-or-later with the rest of Eidos.

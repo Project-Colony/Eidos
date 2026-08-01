@@ -146,4 +146,4 @@ Adding a family is one descriptor row:
 
 ## License
 
-GPL-3.0. Mod management belongs to everyone.
+GPL-3.0-or-later. Mod management belongs to everyone.
