@@ -21,6 +21,17 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # For the last step only, which dispatches release.yml on a tag that shipped
+  # without artifacts. Dispatching a workflow is an `actions` write, and its
+  # absence is not visible until the moment it is needed: every other step
+  # passed, the guard correctly noticed v1.0.2 had nothing attached, and the
+  # dispatch came back 403 "Resource not accessible by integration".
+  #
+  # Dispatching with GITHUB_TOKEN does start the run. The rule that a token's
+  # own events cannot trigger workflows - the one that made this step necessary
+  # in the first place - names `workflow_dispatch` and `repository_dispatch` as
+  # its two exceptions.
+  actions: write
 
 concurrency:
   group: release-please
