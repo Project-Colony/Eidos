@@ -295,8 +295,13 @@ read as a valid mod root. A game now declares its vocabulary as a whole.
 recognised by extension wherever it sits - and it belongs with the first game that
 actually has folder-shaped mods rather than as speculative schema.
 
-**4. Next.** Fix `gameName` in `meta.ini`, hide the Plugins tab for
-`LoadOrder::None` (Stellar Blade is the first game that shows an empty one).
+**4. Done.** `meta.ini` records MO2's short name (`SkyrimSE`) instead of the Eidos
+id, with a sidecar still winning and an unknown id falling back to itself. And the
+Plugins tab is only offered where `GameSpec::for_id` resolves, which excludes both
+Stellar Blade (no plugin system) and Oblivion/Morrowind (timestamp order, which
+Eidos does not manage either) - all three used to show a tab that opened an empty
+list. `app.tab` outlives a game switch, so `effective_tab` also stops a
+remembered-but-invisible tab from deciding which panel draws.
 
 **Also outstanding**, surfaced by Stellar Blade rather than by design: UE4SS is
 this game's script extender, and its Lua mods ship an install-root-relative tree.
