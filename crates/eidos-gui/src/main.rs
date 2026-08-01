@@ -26,6 +26,9 @@ use eidos_instance::{Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
+mod theme;
+use theme::*;
+
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
 const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
 const IC_NEXUS: &[u8] = include_bytes!("../assets/icons/internet-web-browser.png");
@@ -5458,82 +5461,6 @@ fn move_selection(app: &App) -> Vec<usize> {
     set.into_iter().filter(|&i| i < app.mods.len()).collect()
 }
 
-// ---- theme -------------------------------------------------------------------
-
-fn palette() -> iced::theme::Palette {
-    iced::theme::Palette {
-        background: Color::from_rgb8(0xEC, 0xDF, 0xC2),
-        text: Color::from_rgb8(0x2B, 0x20, 0x18),
-        primary: Color::from_rgb8(0x7A, 0x1F, 0x2B),
-        success: Color::from_rgb8(0x4A, 0x6B, 0x3A),
-        // New in iced 0.14, and it has to sit between the green of success and
-        // the deep red of danger without reading as either: a burnt amber that
-        // belongs to the same parchment family.
-        warning: Color::from_rgb8(0xB0, 0x6A, 0x1E),
-        danger: Color::from_rgb8(0x8A, 0x2A, 0x2A),
-    }
-}
-
-fn theme(_app: &App) -> Theme {
-    Theme::custom("Eidos".to_string(), palette())
-}
-
-fn card_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
-        border: Border { color: Color::from_rgb8(0x7A, 0x1F, 0x2B), width: 1.5, radius: 8.0.into() },
-        ..Default::default()
-    }
-}
-
-fn panel_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
-        border: Border { color: Color::from_rgb8(0x7A, 0x1F, 0x2B), width: 1.0, radius: 3.0.into() },
-        ..Default::default()
-    }
-}
-
-fn bar_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xE3, 0xD6, 0xB6))),
-        border: Border { color: Color::from_rgb8(0xC9, 0xB8, 0x90), width: 1.0, radius: 0.0.into() },
-        ..Default::default()
-    }
-}
-
-fn row_bg(even: bool) -> Color {
-    if even {
-        Color::from_rgb8(0xF3, 0xEA, 0xD3)
-    } else {
-        Color::from_rgb8(0xEA, 0xDD, 0xBF)
-    }
-}
-
-/// Wrap a row with an alternating background (MO2-style row striping).
-fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<'a, Message> {
-    container(content)
-        .width(Length::Fill)
-        .padding(2)
-        .style(move |_t: &Theme| container::Style {
-            background: Some(Background::Color(row_bg(even))),
-            ..Default::default()
-        })
-        .into()
-}
-
-/// The highlight behind the selected mod row.
-const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct from the stripes
-
-/// A mod the focused one OVERWRITES: it sits lower in the list and wins the
-/// files they share. Green - the focused mod is on top of these.
-const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);
-/// A mod that overwrites the focused one: it sits lower and takes those files
-/// away. Red - the focused mod is losing to these.
-const CONFLICT_LOSES_BG: Color = Color::from_rgb(0.921, 0.769, 0.741);
-/// The same two meanings as text, dark enough to read on parchment.
-const CONFLICT_WINS_FG: Color = Color::from_rgb(0.13, 0.42, 0.16);
-const CONFLICT_LOSES_FG: Color = Color::from_rgb(0.60, 0.16, 0.16);
 
 /// Place a floating card with one corner at `at`, growing away from the nearest
 /// window edge.
