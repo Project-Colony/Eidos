@@ -3,6 +3,7 @@
 //!
 //! Split out of `main.rs` unchanged, and by far the largest single block in it.
 
+use crate::fomod::{FOMOD_INK_FAINT, FOMOD_INK_SOFT};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
