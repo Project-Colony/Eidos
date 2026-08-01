@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/Project-Colony/Eidos/compare/v1.0.2...v1.1.0) (2026-08-01)
+
+
+### Features
+
+* **gui:** let the game's own content be ordered like any other row ([9f35576](https://github.com/Project-Colony/Eidos/commit/9f3557646584c90eaa0ecf554fd36aaf6d9dcd06))
+
+
+### Fixes
+
+* **ci:** let the release job start the build it asks for ([604a0cd](https://github.com/Project-Colony/Eidos/commit/604a0cd33505cc799f0b36afd91f5977c3622c54))
+* **gui:** separators could not be reordered at all ([0a4ff4b](https://github.com/Project-Colony/Eidos/commit/0a4ff4b10def21e03de85b2ec673bad6cf9b0d4e))
+
 ## [1.0.2](https://github.com/Project-Colony/Eidos/compare/v1.0.1...v1.0.2) (2026-07-31)
 
 
