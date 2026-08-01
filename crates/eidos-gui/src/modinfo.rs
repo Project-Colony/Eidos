@@ -1940,17 +1940,26 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
                 .style(button::primary),
         );
 
-    let tabs = Row::new()
+    // The tab in force, which is not always `app.tab`: see `effective_tab`.
+    let tab = effective_tab(app);
+    let mut tabs = Row::new()
         .spacing(4)
-        .push(tab_btn("Data".to_string(), Tab::Data, app.tab == Tab::Data))
-        .push(tab_btn("Plugins".to_string(), Tab::Plugins, app.tab == Tab::Plugins))
-        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, app.tab == Tab::Conflicts))
-        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, app.tab == Tab::Overwrite))
-        .push(tab_btn("Saves".to_string(), Tab::Saves, app.tab == Tab::Saves))
-        .push(tab_btn("Downloads".to_string(), Tab::Downloads, app.tab == Tab::Downloads))
-        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, app.tab == Tab::Diagnostics));
+        .push(tab_btn("Data".to_string(), Tab::Data, tab == Tab::Data));
+    // Only for a game whose plugins Eidos actually manages. Stellar Blade is the
+    // first game with no plugin system at all, and every other pane keys off the
+    // same `GameSpec::for_id` - so without this the tab is there, opens, and
+    // shows an empty list for a game that will never have one.
+    if game_manages_plugins(app) {
+        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, tab == Tab::Plugins));
+    }
+    let tabs = tabs
+        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, tab == Tab::Conflicts))
+        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, tab == Tab::Overwrite))
+        .push(tab_btn("Saves".to_string(), Tab::Saves, tab == Tab::Saves))
+        .push(tab_btn("Downloads".to_string(), Tab::Downloads, tab == Tab::Downloads))
+        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, tab == Tab::Diagnostics));
 
-    let content = match app.tab {
+    let content = match tab {
         Tab::Data => data_panel(app),
         Tab::Plugins => plugins_panel(app),
         Tab::Conflicts => conflicts_panel(app),

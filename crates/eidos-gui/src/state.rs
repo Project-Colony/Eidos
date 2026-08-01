@@ -877,6 +877,27 @@ pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::Catego
 /// `App::focus` remembers the last list the user touched, but the plugin list is
 /// only on screen while its tab is - so a focus left there after switching tabs
 /// would send the arrow keys somewhere invisible.
+/// Whether Eidos manages this game's plugin load order at all.
+///
+/// The condition every plugin path already bails on, named once: a game with no
+/// `GameSpec` has no `plugins.txt` that Eidos writes, so there is no list to show
+/// and no tab worth offering. Stellar Blade is the first such game.
+pub(crate) fn game_manages_plugins(app: &App) -> bool {
+    selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)).is_some()
+}
+
+/// The tab actually in force.
+///
+/// `app.tab` is remembered across a game switch, so it can name a tab the
+/// current game does not have. A tab that is not on screen must not be the one
+/// deciding which panel gets drawn.
+pub(crate) fn effective_tab(app: &App) -> Tab {
+    match app.tab {
+        Tab::Plugins if !game_manages_plugins(app) => Tab::Data,
+        t => t,
+    }
+}
+
 pub(crate) fn effective_focus(app: &App) -> Pane {
     match app.focus {
         Pane::Plugins if app.tab == Tab::Plugins && app.plugins.is_some() => Pane::Plugins,

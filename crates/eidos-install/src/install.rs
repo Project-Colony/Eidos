@@ -401,7 +401,15 @@ fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id: Option<u64
     let from = ModMeta::read(&sidecar);
 
     let mut meta = ModMeta::default();
-    meta.set("gameName", &from.game_name().unwrap_or_else(|| game_id.to_string()));
+    // MO2 records the game's SHORT NAME here (`SkyrimSE`), not a lowercase id.
+    // Eidos was writing its own id, which nothing reads back for behaviour but
+    // which MO2 does not recognise when it opens a mod Eidos installed. An id
+    // outside the catalog falls back to itself rather than inventing a spelling.
+    let short = eidos_gamedef::GameDef::for_id(game_id)
+        .map(|d| d.short_name)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(game_id);
+    meta.set("gameName", &from.game_name().unwrap_or_else(|| short.to_string()));
     // Mod id: the sidecar's, else the one guessed from the Nexus filename, so a
     // manually-downloaded archive with no sidecar can still be update-checked.
     if let Some(id) = from.mod_id().or(guessed_id) {
@@ -1570,6 +1578,45 @@ mod tests {
         // present), the old mod must still be fully intact.
         assert_eq!(fs::read(mods.join("MyMod/textures/a.dds")).unwrap(), b"precious");
         assert_eq!(fs::read(mods.join("MyMod/meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
+    }
+
+    #[test]
+    fn meta_ini_records_the_game_the_way_mo2_spells_it() {
+        // MO2 writes `gameName=SkyrimSE`, its short name. Eidos was writing its
+        // own lowercase id, so MO2 opening a mod Eidos installed did not
+        // recognise the game. Nothing reads this back for behaviour; it is purely
+        // what the other manager sees.
+        let t = TempDir::new("gamename");
+        let archive = t.path().join("MyMod-1234.7z");
+        fs::write(&archive, b"x").unwrap();
+        let dest = t.path().join("MyMod");
+        fs::create_dir_all(&dest).unwrap();
+
+        write_meta(&archive, &dest, "skyrimse", None).unwrap();
+        assert_eq!(
+            ModMeta::read(&dest.join("meta.ini")).game_name().as_deref(),
+            Some("SkyrimSE")
+        );
+
+        // A game outside the catalog falls back to the id it was given rather
+        // than inventing a spelling.
+        write_meta(&archive, &dest, "not-a-game", None).unwrap();
+        assert_eq!(
+            ModMeta::read(&dest.join("meta.ini")).game_name().as_deref(),
+            Some("not-a-game")
+        );
+
+        // And a sidecar always wins: it is what the download itself declared.
+        fs::write(
+            t.path().join("MyMod-1234.7z.meta"),
+            b"[General]\ngameName=Fallout4\n",
+        )
+        .unwrap();
+        write_meta(&archive, &dest, "skyrimse", None).unwrap();
+        assert_eq!(
+            ModMeta::read(&dest.join("meta.ini")).game_name().as_deref(),
+            Some("Fallout4")
+        );
     }
 
     #[test]

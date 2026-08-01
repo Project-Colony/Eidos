@@ -1671,6 +1671,54 @@ mod tests {
         app
     }
 
+    /// An App with one game selected, built without touching the disk.
+    fn app_for_game(id: &str) -> App {
+        let mut app = nav_app(&[]);
+        app.games = vec![DetectedGame {
+            def: eidos_games::GameDef::for_id(id).expect("a game in the catalog"),
+            install_path: PathBuf::from("/nowhere"),
+            data_path: PathBuf::from("/nowhere/data"),
+            compatdata: None,
+            steam_name: id.to_string(),
+        }];
+        app.selected = Some(0);
+        app
+    }
+
+    #[test]
+    fn the_plugins_tab_is_only_offered_where_eidos_manages_plugins() {
+        // Skyrim has a plugins.txt Eidos writes, so the tab means something.
+        assert!(game_manages_plugins(&app_for_game("skyrimse")));
+        // Stellar Blade has no plugin system at all. Offering the tab would open
+        // an empty list for a game that will never have one.
+        assert!(!game_manages_plugins(&app_for_game("stellarblade")));
+        // Neither does a game whose order is file timestamps, which Eidos does
+        // not manage either - the tab would be just as empty there.
+        assert!(!game_manages_plugins(&app_for_game("morrowind")));
+        // And with no game chosen at all there is nothing to manage.
+        assert!(!game_manages_plugins(&nav_app(&[])));
+    }
+
+    #[test]
+    fn a_remembered_plugins_tab_does_not_survive_a_game_without_plugins() {
+        // `app.tab` outlives a game switch, so it can name a tab this game does
+        // not show. The panel must follow what is on screen, not what was.
+        let mut app = app_for_game("stellarblade");
+        app.tab = Tab::Plugins;
+        assert_eq!(effective_tab(&app), Tab::Data, "an invisible tab must not draw");
+
+        let mut app = app_for_game("skyrimse");
+        app.tab = Tab::Plugins;
+        assert_eq!(effective_tab(&app), Tab::Plugins, "and a visible one still does");
+
+        // Every other tab is untouched by this.
+        for t in [Tab::Data, Tab::Conflicts, Tab::Overwrite, Tab::Saves, Tab::Downloads] {
+            let mut app = app_for_game("stellarblade");
+            app.tab = t;
+            assert_eq!(effective_tab(&app), t);
+        }
+    }
+
     #[test]
     fn the_first_arrow_key_lands_on_the_list_instead_of_doing_nothing() {
         // With nothing focused, Down must reach the top and Up the bottom, or a
