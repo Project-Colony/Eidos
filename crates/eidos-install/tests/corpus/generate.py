@@ -24,23 +24,45 @@ KEEP = {
     "ue4ss", "mods",
 }
 
-# Where each game's real mod roots and real downloaded archives live on the
-# machine this was generated from. A source that is absent is simply skipped, so
-# the script still runs on a machine that has only one of these games.
+# Where each game's real mod roots and real downloaded archives live.
+#
+# The defaults are the paths this corpus was first generated from, which is only
+# useful on that machine - so every one of them can be pointed elsewhere with an
+# environment variable. A source that does not exist is skipped silently, which
+# is why the override matters: without it, running this on another machine
+# produces a quietly smaller corpus rather than an error.
+#
+#   EIDOS_CORPUS_SKYRIM_MODS   EIDOS_CORPUS_SKYRIM_DOWNLOADS
+#   EIDOS_CORPUS_SB_MODS
+# No default: a Stellar Blade install is wherever that machine's Steam library
+# is, and a wrong guess would be skipped in silence. Absent, the run reports the
+# skip instead of quietly shrinking the corpus.
+SB_DEFAULT = ""
+
+
+def src(var, default):
+    return os.environ.get(var) or default
+
+
 SOURCES = [
     {
         "game": "skyrimse",
-        "mods": os.path.expanduser("~/.local/share/eidos/skyrimse/mods"),
+        "mods": src("EIDOS_CORPUS_SKYRIM_MODS", os.path.expanduser("~/.local/share/eidos/skyrimse/mods")),
         "skip_suffix": "_separator",
-        "archives": [os.path.expanduser("~/.local/share/eidos/skyrimse/downloads")],
+        "archives": [
+            src(
+                "EIDOS_CORPUS_SKYRIM_DOWNLOADS",
+                os.path.expanduser("~/.local/share/eidos/skyrimse/downloads"),
+            )
+        ],
     },
     {
         # Deployed by Vortex, which is why the mod roots and the archives it never
         # unpacked sit in the same directory.
         "game": "stellarblade",
-        "mods": "/mnt/Jeux/SteamLibrary/steamapps/common/StellarBlade/SB/Content/Paks/~mods",
+        "mods": src("EIDOS_CORPUS_SB_MODS", SB_DEFAULT),
         "skip_suffix": None,
-        "archives": ["/mnt/Jeux/SteamLibrary/steamapps/common/StellarBlade/SB/Content/Paks/~mods"],
+        "archives": [src("EIDOS_CORPUS_SB_MODS", SB_DEFAULT)],
     },
 ]
 
@@ -211,6 +233,16 @@ def main():
         "# One case per block: a `> <kind> <id> game=<id>` header, then its paths.",
         "",
     ]
+    # Say what was actually read. A source that is missing produces a smaller
+    # corpus, and a smaller corpus that looks successful is how a regression test
+    # quietly stops covering half of what it claims to.
+    for s in SOURCES:
+        for label, path in [("mods", s["mods"])] + [("archives", p) for p in s["archives"]]:
+            if not path:
+                sys.stderr.write("SKIP %s %s: no path set\n" % (s["game"], label))
+            elif not os.path.isdir(path):
+                sys.stderr.write("SKIP %s %s: %s does not exist\n" % (s["game"], label, path))
+
     n = collections.Counter()
     for kind, game, paths in cases:
         n[(game, kind)] += 1
