@@ -961,10 +961,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 });
             }
         }
-        // Only reachable when there is no game or no plugin support for it, not
-        // when nobody has opened a tab yet. Say which, rather than asking the
-        // user to go and do the program's job.
-        None => out.push(Diagnostic {
+        // Reachable when there is no game yet, not when nobody has opened a tab.
+        // Say which, rather than asking the user to go and do the program's job.
+        //
+        // NOT reachable for a game that simply has no plugins: telling a Stellar
+        // Blade user that their load order is unavailable describes a thing that
+        // does not exist for their game, which reads as something being broken.
+        None if game_has_plugins(app) => out.push(Diagnostic {
             level: DiagLevel::Advice,
             title: "Load order unavailable".to_string(),
             detail: "No game is selected, or this game has no plugin load order \
@@ -972,6 +975,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 .to_string(),
             actions: Vec::new(),
         }),
+        None => {}
     }
 
     // ENB + Community Shaders both injecting into D3D11.
@@ -1058,7 +1062,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
 
     // The game rewrites its own load order; a profile that never captured one is
     // still riding on the prefix's copy.
-    if let Some(inst) = app.created.as_ref() {
+    if let Some(inst) = app.created.as_ref().filter(|_| game_manages_plugins(app)) {
         let prof = inst.active();
         if !prof.has_plugin_state() {
             out.push(Diagnostic {
@@ -1072,7 +1076,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
 
     // LOOT coverage for this game.
     if let Some(game) = selected_game(app) {
-        if !eidos_loot::is_supported(game.def.id) {
+        // Only worth saying for a game that HAS plugins. LOOT sorts Bethesda
+        // plugin files and nothing else, so "LOOT cannot sort Stellar Blade" is
+        // true of every game ever made that is not Bethesda's - and it pointed at
+        // a Plugins tab that this game does not even show.
+        if game_has_plugins(app) && !eidos_loot::is_supported(game.def.id) {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
                 title: format!("LOOT cannot sort {}", game.def.name),

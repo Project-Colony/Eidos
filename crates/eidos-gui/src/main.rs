@@ -1739,6 +1739,56 @@ mod tests {
     }
 
     #[test]
+    fn plugin_advice_is_only_given_to_games_that_have_plugins() {
+        // Two predicates that are easy to confuse, kept apart by the three games
+        // that fall differently between them.
+        //
+        //   Skyrim   : has plugins, Eidos writes the order   -> both true
+        //   Morrowind: has plugins, Eidos does not write it  -> has, not manages
+        //   Stellar Blade: no plugin system at all           -> both false
+        //
+        // Getting this wrong in either direction is visible: gate LOOT advice on
+        // "manages" and Morrowind stops being told that LOOT cannot sort it,
+        // which is the only game the message was written for. Gate it on nothing
+        // and Stellar Blade is told LOOT cannot sort it - true of every game ever
+        // made that is not Bethesda's - and pointed at a Plugins tab it does not
+        // show.
+        let sky = app_for_game("skyrimse");
+        assert!(game_has_plugins(&sky) && game_manages_plugins(&sky));
+
+        let mw = app_for_game("morrowind");
+        assert!(game_has_plugins(&mw), "Morrowind has .esp files and a load order");
+        assert!(!game_manages_plugins(&mw), "Eidos just does not write it");
+
+        let sb = app_for_game("stellarblade");
+        assert!(!game_has_plugins(&sb) && !game_manages_plugins(&sb));
+
+        // With no game at all, neither is true.
+        let none = nav_app(&[]);
+        assert!(!game_has_plugins(&none) && !game_manages_plugins(&none));
+    }
+
+    #[test]
+    fn a_game_without_plugins_gets_no_plugin_diagnostics() {
+        let titles = |app: &App| -> Vec<String> {
+            diagnostics(app).into_iter().map(|d| d.title).collect()
+        };
+        let sb = titles(&app_for_game("stellarblade"));
+        for needle in ["LOOT", "Load order", "load order"] {
+            assert!(
+                !sb.iter().any(|t| t.contains(needle)),
+                "Stellar Blade was given plugin advice: {sb:?}"
+            );
+        }
+        // And Morrowind still is, because for it the advice is true and useful.
+        let mw = titles(&app_for_game("morrowind"));
+        assert!(
+            mw.iter().any(|t| t.contains("LOOT cannot sort")),
+            "Morrowind lost the advice the message exists for: {mw:?}"
+        );
+    }
+
+    #[test]
     fn a_remembered_plugins_tab_does_not_survive_a_game_without_plugins() {
         // `app.tab` outlives a game switch, so it can name a tab this game does
         // not show. The panel must follow what is on screen, not what was.

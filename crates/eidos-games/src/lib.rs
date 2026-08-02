@@ -22,7 +22,7 @@ pub use proton::{is_flatpak_steam, proton_command, steam_root, ProtonRun};
 
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`
 /// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.
-pub use eidos_gamedef::GameDef;
+pub use eidos_gamedef::{GameDef, LoadOrder};
 
 /// The supported-game catalog (every game defined in `eidos-gamedef`).
 pub fn catalog() -> &'static [GameDef] {
