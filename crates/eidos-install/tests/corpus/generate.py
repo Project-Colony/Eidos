@@ -15,6 +15,13 @@ KEEP = {
     "calientetools", "netscriptframework", "shadersfx",
     "data", "root", "fomod", "omod conversion data", "images", "screenshots", "docs",
     "facegendata", "plugins",
+    # Unreal / Stellar Blade. These are ENGINE directory names, not mod names, and
+    # the checker reads them the same way it reads `meshes`: `sb` is the game's own
+    # directory at the install root, `~mods` and `logicmods` are its data folders,
+    # and `content/paks` is what tells a root-relative archive apart from one that
+    # would be shadowed by the data mount.
+    "sb", "engine", "content", "paks", "~mods", "logicmods", "binaries", "win64",
+    "ue4ss", "mods",
 }
 
 # Where each game's real mod roots and real downloaded archives live on the

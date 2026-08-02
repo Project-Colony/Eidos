@@ -303,11 +303,34 @@ Eidos does not manage either) - all three used to show a tab that opened an empt
 list. `app.tab` outlives a game switch, so `effective_tab` also stops a
 remembered-but-invisible tab from deciding which panel draws.
 
-**Also outstanding**, surfaced by Stellar Blade rather than by design: UE4SS is
-this game's script extender, and its Lua mods ship an install-root-relative tree.
-Eidos mounts `Root/` natively, so the mechanism exists; what is missing is
-`root_builder_split` recognising a game-root-relative archive that leads with the
-game's own directory (`SB/`) rather than with `Data/` or `Root/`.
+**5. Done.** UE4SS mods, which are Stellar Blade's equivalent of SKSE plugins,
+ship a tree addressed from the game INSTALL root (`SB/Binaries/Win64/ue4ss/...`)
+rather than from the mod-merge root. `root_builder_split` now recognises an
+archive leading with the game's own directory.
+
+Which directory that is comes from `data_dir`: a mod root nested below the install
+root (`SB/Content/Paks`) names one, a mod root that IS the install root's child
+(`Data`, `Data Files`) does not. Every Bethesda game falls in the second group, so
+the branch is unreachable for them - asserted, not assumed.
+
+The real archives forced one thing further. CustomNanosuitSystem ships a UE4SS mod
+**and** a pak, both under `SB/`. Routing the whole directory to `Root/` would put
+the pak back at `<game>/SB/Content/Paks`, which is exactly where the Data union is
+mounted, so the pak would be shadowed and never served: a mod that installs
+cleanly and works by half. The split is therefore cut along the `data_dir` path -
+`SB/Content/Paks` becomes the Data half, `SB/Binaries` travels through `Root/` at
+its own path.
+
+That last part needed `RootSplit`'s root entries to carry their archive-relative
+path rather than just a name, since `Root/Binaries` is not where the loader looks.
+Existing entries are top-level, where the path and the name are the same thing, so
+nothing about the Bethesda cases moved.
+
+The corpus went with it: the anonymiser now keeps the engine's own directory names
+(`sb`, `content`, `paks`, `binaries`), which it had been replacing with `dN` -
+without them the corpus could not exercise the rule at all. Skyrim's verdicts are
+unchanged, and Stellar Blade is at **10 of 13 real archives installing with no
+question asked**.
 
 ## Open question
 

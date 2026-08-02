@@ -178,7 +178,12 @@ fn the_corpus_exercises_both_verdicts() {
 /// `expected.txt` is describing a game other than the one it came from.
 #[test]
 fn the_corpus_game_resolves_to_the_frozen_vocabulary() {
-    assert_eq!(LayoutRules::for_game(GAME), LayoutRules::default());
+    let (skyrim, default) = (LayoutRules::for_game(GAME), LayoutRules::default());
+    assert_eq!(skyrim.folders, default.folders);
+    assert_eq!(skyrim.suffixes, default.suffixes);
+    // And its mod root is the install root's child, so no archive of its can be
+    // read as install-root relative.
+    assert!(skyrim.game_dir().is_empty());
 }
 
 /// What the per-game vocabulary actually buys, measured on real archives.
@@ -205,22 +210,29 @@ fn the_game_vocabulary_is_what_makes_unreal_archives_install() {
         .collect();
     assert_eq!(cases.len(), 13, "the Stellar Blade archive corpus changed");
 
-    let resolves = |rules: LayoutRules| {
+    // What `open_archive` calls Simple: a wrapper chain it can strip, OR a split
+    // into a Data half and an install-root half. Either way the user is asked
+    // nothing, which is the thing being measured.
+    let installs_unattended = |rules: LayoutRules| {
         cases
             .iter()
-            .filter(|c| ArchiveTree::from_entries(&c.entries).simple_archive_base(rules).is_some())
+            .filter(|c| {
+                let t = ArchiveTree::from_entries(&c.entries);
+                t.simple_archive_base(rules).is_some() || t.root_builder_split(rules).is_some()
+            })
             .count()
     };
 
     assert_eq!(
-        resolves(LayoutRules::default()),
+        installs_unattended(LayoutRules::default()),
         0,
         "the Gamebryo vocabulary must not resolve Unreal archives; if it does, \
          the default list has grown something it should not have"
     );
     assert_eq!(
-        resolves(LayoutRules::for_game("stellarblade")),
-        9,
-        "9 of the 13 real archives install without asking the user anything"
+        installs_unattended(LayoutRules::for_game("stellarblade")),
+        10,
+        "10 of the 13 real archives install without asking the user anything: 9 by \
+         stripping a wrapper, and the UE4SS one by splitting off its pak half"
     );
 }

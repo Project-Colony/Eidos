@@ -676,9 +676,15 @@ struct RootSources {
     /// Directories whose contents are overlaid onto the mod root ON TOP of `data`.
     /// This is where an archive's `Root/Data/` goes - see [`resolve_root_split`].
     data_extra: Vec<PathBuf>,
-    /// What lands in the mod's `Root/`. An archive's own `Root` directory
-    /// contributes its CONTENTS; every other entry contributes itself.
-    root: Vec<PathBuf>,
+    /// What lands in the mod's `Root/`, as (path inside `Root/`, source) pairs.
+    /// An archive's own `Root` directory contributes its CONTENTS; every other
+    /// entry contributes itself, at the same relative path it had in the archive.
+    ///
+    /// The path is carried rather than derived from the source's file name because
+    /// an entry is not always top-level: an archive addressing the install root
+    /// contributes `SB/Binaries`, which has to land at `Root/SB/Binaries` and not
+    /// at `Root/Binaries`.
+    root: Vec<(String, PathBuf)>,
 }
 
 /// Resolve a [`RootSplit`] against the extraction temp.
@@ -731,25 +737,27 @@ fn resolve_root_split(tmp: &Path, split: &RootSplit) -> Result<RootSources, Inst
             if is_data && is_real_dir(&path) {
                 data_extra.push(path);
             } else {
-                root.push(path);
+                let name = e.file_name().to_string_lossy().into_owned();
+                root.push((name, path));
             }
         }
     }
     for n in &split.root_entries {
         // Never skip: dropping an entry here is the exact bug this whole path was
         // written to fix, so a miss is a refusal, not a silent loss.
-        root.push(resolve_ci(tmp, n).ok_or_else(|| refuse(&format!("'{n}' is missing")))?);
+        let src = resolve_ci(tmp, n).ok_or_else(|| refuse(&format!("'{n}' is missing")))?;
+        root.push((n.clone(), src));
     }
 
     // Two sources landing on the same name in `Root/` - a loose `notes` file beside
     // the archive's own `Root/notes/` - would have one clobber the other, or abort
     // the install mid-way on a type mismatch. Neither is ours to choose.
     let mut seen = std::collections::BTreeSet::new();
-    for p in &root {
-        let key = p.file_name().map(|n| n.to_string_lossy().to_ascii_lowercase());
-        let Some(key) = key else {
-            return Err(refuse("an entry has no file name"));
-        };
+    for (rel, _) in &root {
+        let key = rel.trim_matches('/').to_ascii_lowercase();
+        if key.is_empty() {
+            return Err(refuse("an entry has no name"));
+        }
         if !seen.insert(key.clone()) {
             return Err(refuse(&format!("two entries would both become Root/{key}")));
         }
@@ -801,9 +809,12 @@ fn place_root_split(src: &RootSources, dest: &Path, merging: bool) -> io::Result
     // after the Replace wipe, so an EEXIST would take the old mod down with it.
     clear_non_dir(&root_dest)?;
     fs::create_dir_all(&root_dest)?;
-    for from in &src.root {
-        let Some(name) = from.file_name() else { continue };
-        let to = root_dest.join(name);
+    for (rel, from) in &src.root {
+        let to = root_dest.join(rel.trim_matches('/'));
+        // An entry can be nested (`SB/Binaries`), so its parent may not exist yet.
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent)?;
+        }
         if is_real_dir(from) {
             clear_non_dir(&to)?;
             overlay_dir(from, &to)?;
@@ -2325,6 +2336,42 @@ mod tests {
     /// Same shape one level down: a directory from the archive's `Root/` landing on
     /// a name already occupied by a file. `overlay_dir` cannot clear its OWN
     /// destination - its first act is `create_dir_all` - so the caller must.
+    #[test]
+    fn a_ue4ss_mod_lands_in_both_halves_at_the_paths_it_shipped_with() {
+        // End to end on the shape of a real Stellar Blade archive: a UE4SS script
+        // mod plus a pak, both addressed from the game INSTALL root. The pak half
+        // has to become the mod root - routed through Root/ it would sit under the
+        // Data mount and never be served - and the ue4ss half has to keep its own
+        // path, or it lands at Root/Binaries and the loader never finds it.
+        let (t, mods, tmp) = bain_layout("ue4ss");
+        write_at(&tmp, "SB/Content/Paks/~mods/Dress_P.pak", b"pak");
+        write_at(&tmp, "SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt", b"1");
+
+        let archive = t.path().join("CustomNanosuitSystem-1496.zip");
+        fs::write(&archive, b"x").unwrap();
+        let r = install_extracted(
+            &extracted(&tmp),
+            &archive,
+            &mods,
+            "CNS",
+            "stellarblade",
+            OverwritePolicy::Fail,
+            &eidos_fomod::Context::default(),
+        )
+        .expect("a mixed install-root archive installs");
+
+        // The Data half is the mod root, so it deploys to <data_dir>/~mods/.
+        assert!(r.dest.join("~mods/Dress_P.pak").is_file(), "the pak is Data-relative");
+        // The rest keeps its archive path under Root/.
+        assert!(
+            r.dest.join("Root/SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt").is_file(),
+            "the ue4ss tree keeps the path the loader expects"
+        );
+        // And nothing was left behind at the wrong depth.
+        assert!(!r.dest.join("Root/Binaries").exists(), "the game directory is not flattened");
+        assert!(!r.dest.join("Root/SB/Content").exists(), "the pak half did not travel twice");
+    }
+
     #[test]
     fn a_root_entry_can_land_on_a_file_of_the_same_name() {
         let (t, mods, tmp) = bain_layout("rootocc");

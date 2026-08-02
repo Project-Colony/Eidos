@@ -155,6 +155,46 @@ impl ArchiveTree {
         data
     }
 
+    /// Every entry sitting BESIDE the `data_dir` path, as archive-relative paths.
+    ///
+    /// Walks down `data_dir` one component at a time and collects the other
+    /// children of each level. For `SB/Content/Paks` in an archive holding
+    /// `SB/Binaries/...` and `SB/Content/Paks/...` this is `["SB/Binaries"]`:
+    /// everything that is NOT the data half, each at the path it must keep so it
+    /// lands back where the archive meant it to.
+    ///
+    /// The first level is skipped deliberately: its siblings are the archive's own
+    /// top level, which [`root_builder_split`](Self::root_builder_split) has
+    /// already classified (and where it drops documentation). `None` when the path
+    /// does not resolve.
+    fn root_entries_beside(&self, data_dir: &str) -> Option<Vec<String>> {
+        let parts: Vec<&str> = data_dir.split(['/', '\\']).filter(|s| !s.is_empty()).collect();
+        let mut out = Vec::new();
+        let mut cur = self;
+        let mut prefix = String::new();
+        for (depth, part) in parts.iter().enumerate() {
+            if depth > 0 {
+                for node in cur.entries.values() {
+                    let name = match node {
+                        TreeNode::Dir { name, .. } | TreeNode::File { name } => name,
+                    };
+                    if !name.eq_ignore_ascii_case(part) {
+                        out.push(format!("{prefix}{name}"));
+                    }
+                }
+            }
+            match cur.entries.get(&part.to_ascii_lowercase()) {
+                Some(TreeNode::Dir { name, tree }) => {
+                    prefix.push_str(name);
+                    prefix.push('/');
+                    cur = tree;
+                }
+                _ => return None,
+            }
+        }
+        Some(out)
+    }
+
     /// The Root Builder shape: ONE archive carrying both `Data`-relative content
     /// and content for the game INSTALL ROOT, next to the game executable.
     ///
@@ -186,6 +226,7 @@ impl ArchiveTree {
     pub fn root_builder_split(&self, rules: LayoutRules) -> Option<RootSplit> {
         let mut data: Option<&str> = None;
         let mut root_dir: Option<String> = None;
+        let mut game_dir: Option<&str> = None;
         let mut root_entries: Vec<String> = Vec::new();
         let mut has_image = false;
         for node in self.entries.values() {
@@ -202,6 +243,23 @@ impl ArchiveTree {
                     }
                     root_dir = Some(name.clone());
                 }
+                // The game's own directory inside its install (`SB/`). An archive
+                // leading with it is addressing the install ROOT, not the mod-merge
+                // root: `SB/Binaries/Win64/ue4ss/Mods/...` is a UE4SS script mod,
+                // which is Stellar Blade's equivalent of an SKSE plugin.
+                //
+                // Only reachable for a game whose mod root is nested (see
+                // [`LayoutRules::game_dir`]), so this arm is unreachable for every
+                // Bethesda game and cannot change what they do.
+                TreeNode::Dir { name, .. }
+                    if !rules.game_dir().is_empty()
+                        && name.eq_ignore_ascii_case(rules.game_dir()) =>
+                {
+                    if game_dir.is_some() {
+                        return None;
+                    }
+                    game_dir = Some(name.as_str());
+                }
                 // Structure we are not modelling: a BAIN sub-package, a texture
                 // variant folder, a docs folder. Refuse rather than sweep it to the
                 // game root.
@@ -217,6 +275,46 @@ impl ArchiveTree {
                     }
                 }
             }
+        }
+        if let Some(gd) = game_dir {
+            // Two contradictory statements about where the content is anchored.
+            // Whichever the author meant, guessing here files half the mod in the
+            // wrong place, so it goes to the picker.
+            if data.is_some() || root_dir.is_some() {
+                return None;
+            }
+            // A subtree matching the game's OWN data dir cannot travel through
+            // `Root/`: the root union would put it back at `<game>/<data_dir>`,
+            // which is exactly the path the Data union is mounted over, so the
+            // Data layer wins and the file is never served. `resolve_root_split`
+            // handles the one-level version of this (`Root/Data`) by moving it to
+            // the Data half; the nested version has to be cut out here.
+            //
+            // This is not a corner case. It is how a UE4SS mod that also ships a
+            // pak arrives - the archive carries `SB/Binaries/.../Mods/X` and
+            // `SB/Content/Paks/...` at once - and routing the whole thing to
+            // `Root/` would install cleanly and serve half of it.
+            let entries = match self.subtree(rules.data_dir) {
+                None => {
+                    // Pure install-root archive: the directory goes in whole.
+                    let mut e = vec![gd.to_string()];
+                    e.append(&mut root_entries);
+                    e
+                }
+                Some(_) => {
+                    let mut e = self.root_entries_beside(rules.data_dir)?;
+                    e.append(&mut root_entries);
+                    e
+                }
+            };
+            let data_prefix = self
+                .subtree(rules.data_dir)
+                .map(|_| rules.data_dir.trim_matches('/').to_string());
+            // Nothing outside the data dir: this is not the root shape at all, it
+            // is an archive that simply wrapped its content in the game's own path.
+            // `simple_archive_base` cannot see that far down, so it is claimed here
+            // with no root half rather than sent to the picker.
+            return Some(RootSplit { data_prefix, root_dir: None, root_entries: entries });
         }
         let Some(data) = data else {
             // No Data half at all. This is the pure root mod - a preloader or wrapper
@@ -469,15 +567,37 @@ pub struct LayoutRules {
     pub folders: &'static [&'static str],
     /// File extensions, without the dot, that mark this level as a mod root.
     pub suffixes: &'static [&'static str],
+    /// The game's mod-merge root relative to its install directory, exactly as the
+    /// game declares it (`Data`, `SB/Content/Paks`). Empty in the default rules,
+    /// which belong to no game.
+    ///
+    /// Not part of the vocabulary: this is here so the checker can tell a
+    /// `Data`-relative archive from one addressing the install ROOT. See
+    /// [`Self::game_dir`].
+    pub data_dir: &'static str,
 }
 
 impl Default for LayoutRules {
     fn default() -> Self {
-        LayoutRules { folders: GAMEBRYO_FOLDERS, suffixes: GAMEBRYO_SUFFIXES }
+        LayoutRules { folders: GAMEBRYO_FOLDERS, suffixes: GAMEBRYO_SUFFIXES, data_dir: "" }
     }
 }
 
 impl LayoutRules {
+    /// The game's own directory inside its install, when the mod-merge root sits
+    /// BELOW it - `SB` for Stellar Blade, whose data dir is `SB/Content/Paks`.
+    ///
+    /// Empty when the mod root is a direct child of the install root, which is
+    /// every Bethesda game (`Data`, `Data Files`). That emptiness is what keeps
+    /// [`ArchiveTree::root_builder_split`]'s install-root branch from ever firing
+    /// for them.
+    pub fn game_dir(&self) -> &'static str {
+        match self.data_dir.trim_matches('/').split_once('/') {
+            Some((first, rest)) if !first.is_empty() && !rest.trim_matches('/').is_empty() => first,
+            _ => "",
+        }
+    }
+
     /// The rules for an Eidos game id (`skyrimse`, `stardew`, ...). An unknown id,
     /// or a game that declares no vocabulary of its own, gets [`Default`].
     pub fn for_game(game_id: &str) -> LayoutRules {
@@ -515,10 +635,16 @@ impl From<&eidos_gamedef::GameDef> for LayoutRules {
     /// `.esp`. An archive shipping a stray `textures` folder would then read as a
     /// valid mod root and install to the wrong place, silently.
     fn from(def: &eidos_gamedef::GameDef) -> Self {
-        if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
-            return LayoutRules::default();
-        }
-        LayoutRules { folders: def.valid_folders, suffixes: def.valid_suffixes }
+        // `data_dir` is not part of the vocabulary and is always carried through:
+        // where a game's mods deploy is a fact about the game, not a dialect it
+        // opts into.
+        let d = LayoutRules::default();
+        let (folders, suffixes) = if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
+            (d.folders, d.suffixes)
+        } else {
+            (def.valid_folders, def.valid_suffixes)
+        };
+        LayoutRules { folders, suffixes, data_dir: def.data_dir }
     }
 }
 
@@ -745,12 +871,18 @@ mod tests {
     #[test]
     fn a_game_that_declares_nothing_keeps_the_gamebryo_vocabulary() {
         let default = LayoutRules::default();
+        let vocabulary = |r: LayoutRules| (r.folders, r.suffixes);
         for id in [
             "skyrimse", "skyrim", "skyrimvr", "enderalse", "fallout4", "fallout4vr", "falloutnv",
             "fallout3", "oblivion", "morrowind", "starfield",
         ] {
             assert!(eidos_gamedef::GameDef::for_id(id).is_some(), "{id} vanished from the catalog");
-            assert_eq!(LayoutRules::for_game(id), default, "{id} lost the Gamebryo vocabulary");
+            let r = LayoutRules::for_game(id);
+            assert_eq!(vocabulary(r), vocabulary(default), "{id} lost the Gamebryo vocabulary");
+            // Their mod root is the install root's own child, so they have no game
+            // directory - which is what makes `root_builder_split`'s install-root
+            // branch unreachable for them.
+            assert!(r.game_dir().is_empty(), "{id} would now be read as install-root relative");
         }
         // An id nobody knows must not become "nothing is a mod root" either.
         assert_eq!(LayoutRules::for_game("no-such-game"), default);
@@ -765,10 +897,20 @@ mod tests {
             assert_eq!(LayoutRules::for_game(def.id), rules, "{} disagrees via for_game", def.id);
             if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
                 inheriting += 1;
-                assert_eq!(rules, default, "{} declares nothing but lost the default", def.id);
+                assert_eq!(
+                    vocabulary(rules),
+                    vocabulary(default),
+                    "{} declares nothing but lost the default",
+                    def.id
+                );
             } else {
                 declaring += 1;
-                assert_ne!(rules, default, "{} declared rules that were ignored", def.id);
+                assert_ne!(
+                    vocabulary(rules),
+                    vocabulary(default),
+                    "{} declared rules that were ignored",
+                    def.id
+                );
             }
         }
         assert!(declaring > 0, "no game declares its own vocabulary");
@@ -861,6 +1003,91 @@ mod tests {
 
     /// Engine Fixes' second half downloaded on its own: a bare preloader DLL, no
     /// `Data` anywhere. The purest root mod there is, and the shape MO2 cannot take.
+    /// Stellar Blade's rules, whose data dir is nested two levels down.
+    fn sb() -> LayoutRules {
+        LayoutRules::for_game("stellarblade")
+    }
+
+    #[test]
+    fn an_archive_leading_with_the_game_directory_is_install_root_relative() {
+        // The real shape of a UE4SS script mod: everything is addressed from the
+        // game INSTALL root, not from the mod-merge root. Before this it walked
+        // down a single-subdir chain, recognised nothing, and reached the manual
+        // picker - whose contract is to drop everything beside the chosen root,
+        // which is the whole archive.
+        let t = tree(&[
+            "SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt",
+            "SB/Binaries/Win64/ue4ss/Mods/DekCNS/Scripts/main.lua",
+        ]);
+        assert_eq!(t.simple_archive_base(sb()), None, "no level of it is a mod root");
+        let split = t.root_builder_split(sb()).expect("install-root relative");
+        assert_eq!(split.data_prefix, None, "there is no Data half");
+        assert_eq!(split.root_dir, None, "the archive used no Root/ convention");
+        // The directory goes in whole, so it lands at Root/SB/Binaries/...
+        assert_eq!(split.root_entries, vec!["SB".to_string()]);
+    }
+
+    #[test]
+    fn the_game_directory_rule_cannot_fire_for_a_bethesda_game() {
+        // Skyrim's mod root IS the install root's child, so it has no game
+        // directory and this branch is unreachable - which is the whole reason
+        // adding it could not disturb any existing game.
+        assert_eq!(LayoutRules::for_game("skyrimse").game_dir(), "");
+        assert_eq!(LayoutRules::for_game("morrowind").game_dir(), "", "'Data Files' is one component");
+        assert_eq!(LayoutRules::default().game_dir(), "");
+        assert_eq!(sb().game_dir(), "SB");
+        // Under Skyrim's rules the same archive is just an unrecognised folder.
+        let t = tree(&["SB/Binaries/Win64/ue4ss/Mods/X/enabled.txt"]);
+        assert_eq!(t.root_builder_split(rules()), None);
+    }
+
+    #[test]
+    fn a_ue4ss_mod_that_also_ships_a_pak_is_cut_along_the_data_dir() {
+        // The real shape of CustomNanosuitSystem, and the reason the install-root
+        // branch cannot simply route the whole directory to `Root/`: the root
+        // union would put `SB/Content/Paks` back at exactly the path the Data
+        // union is mounted over, so the pak would be shadowed and never served.
+        // The archive would install cleanly and work by half.
+        let t = tree(&[
+            "SB/Content/Paks/~mods/a_P.pak",
+            "SB/Binaries/Win64/ue4ss/Mods/X/enabled.txt",
+        ]);
+        assert_eq!(t.simple_archive_base(sb()), None, "not a wrapper chain");
+        let split = t.root_builder_split(sb()).expect("cut into two halves");
+        // The pak half becomes the mod root, so it deploys through the Data mount.
+        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks"));
+        // The rest keeps the path it had, so it lands at Root/SB/Binaries/...
+        assert_eq!(split.root_entries, vec!["SB/Binaries".to_string()]);
+        assert_eq!(split.root_dir, None);
+    }
+
+    #[test]
+    fn an_archive_wrapped_in_the_game_path_is_just_its_data_half() {
+        // Nothing beside the data dir: the archive only wrapped its content in the
+        // game's own path. There is no root half to make, and claiming one would
+        // create an empty `Root/`.
+        let t = tree(&["SB/Content/Paks/~mods/thing_P.pak"]);
+        let split = t.root_builder_split(sb()).expect("a data half and nothing else");
+        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks"));
+        assert!(split.root_entries.is_empty());
+        // In practice the simple path claims this one first, which is the same
+        // outcome by a shorter route - `~mods` is one of the game's data folders.
+        assert_eq!(t.simple_archive_base(sb()).as_deref(), Some("SB/Content/Paks/"));
+    }
+
+    #[test]
+    fn the_game_directory_does_not_mix_with_the_other_two_conventions() {
+        // An archive claiming both anchors is saying two contradictory things.
+        assert_eq!(tree(&["SB/Binaries/x.dll", "Data/textures/a.dds"]).root_builder_split(sb()), None);
+        assert_eq!(tree(&["SB/Binaries/x.dll", "Root/dxgi.dll"]).root_builder_split(sb()), None);
+        // And loose files beside it still travel with it, as they do everywhere
+        // else on this path: a dropped .dll is a mod that silently does nothing.
+        let split = tree(&["SB/Binaries/x.dll", "dxgi.dll", "readme.txt"])
+            .root_builder_split(sb())
+            .expect("game dir plus a loose image");
+        assert_eq!(split.root_entries, vec!["SB".to_string(), "dxgi.dll".to_string()]);
+    }
+
     #[test]
     fn a_bare_preloader_dll_is_a_pure_root_mod() {
         let t = tree(&["d3dx9_42.dll", "vortex_override_instructions.json"]);

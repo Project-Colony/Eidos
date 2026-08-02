@@ -355,8 +355,9 @@ pub static GAMES: &[GameDef] = &[
     // because that field models an EXE SWAP (run the loader instead of the vanilla
     // launcher), and UE4SS does not work that way: it is a proxy DLL side-loaded
     // next to the game binary. Its own Lua mods ship a `SB/Binaries/Win64/ue4ss/...`
-    // tree, which is install-root-relative, so they belong on the `Root/` surface
-    // rather than this one and do not classify automatically yet.
+    // tree, addressed from the install root; `root_builder_split` recognises that
+    // shape from `data_dir` naming `SB` as the game's own directory, and routes it
+    // to the `Root/` surface.
     GameDef {
         id: "stellarblade",
         name: "Stellar Blade",

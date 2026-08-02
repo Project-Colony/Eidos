@@ -298,6 +298,12 @@
 > modroot 050 game=skyrimse
   data_looks_valid   = Valid
   simple_archive_base= ""
+  bain_subpackages   = [] + 1 invalid
+  root_builder_split = none
+
+> modroot 051 game=skyrimse
+  data_looks_valid   = Valid
+  simple_archive_base= ""
   bain_subpackages   = ["d0"] + 2 invalid
   root_builder_split = none
 
@@ -539,7 +545,7 @@
   data_looks_valid   = Invalid
   simple_archive_base= none
   bain_subpackages   = [] + 1 invalid
-  root_builder_split = none
+  root_builder_split = data=Some("SB/Content/Paks") root_dir=None root_entries=["sb/binaries"]
 
 > archive 006 game=stellarblade
   data_looks_valid   = Invalid

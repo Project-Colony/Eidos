@@ -610,6 +610,10 @@ textures/d0/
 f0.esp
 
 > modroot 050 game=skyrimse
+textures/
+textures/d0/
+
+> modroot 051 game=skyrimse
 scripts/
 scripts/f0.pex
 skse/
@@ -923,10 +927,10 @@ f5.ucas
 f6.utoc
 
 > modroot 026 game=stellarblade
-d0/
-d0/d0/
-d1/
-d1/d0/
+binaries/
+binaries/win64/
+content/
+content/paks/
 
 > modroot 027 game=stellarblade
 f0.jpeg
@@ -988,11 +992,11 @@ d0/f3.rar
 d0/f4.txt
 
 > archive 005 game=stellarblade
-d0/
-d0/d0/
-d0/d0/d0/
-d0/d1/
-d0/d1/d0/
+sb/
+sb/binaries/
+sb/binaries/win64/
+sb/content/
+sb/content/paks/
 
 > archive 006 game=stellarblade
 d0/
