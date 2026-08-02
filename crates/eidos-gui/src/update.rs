@@ -123,6 +123,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         app.drag_state = None;
                         app.menu_mod = None;
                         app.collapsed = load_collapsed(app);
+                        // The merged-view caches too, which the list above kept
+                        // missing: they are keyed by directory and validated
+                        // against `view_generation`, so without a bump the Data
+                        // tab answers every already-listed directory out of the
+                        // PREVIOUS instance. Switching from Skyrim to a game with
+                        // no mods at all still showed Skyrim's merged Data tree,
+                        // provenance labels and all.
+                        drop_files_cache(app, None);
+                        // And the tree's own navigation state, which names paths
+                        // that need not exist in this game at all.
+                        app.data_expanded.clear();
                         recompute_counts(app);
                     }
                     Err(e) => app.error = Some(e.to_string()),

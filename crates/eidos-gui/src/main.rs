@@ -1686,6 +1686,45 @@ mod tests {
     }
 
     #[test]
+    fn switching_instance_drops_the_previous_games_merged_view() {
+        // The Data tab is memoised per directory against `view_generation`, so a
+        // switch that does not bump it answers every already-listed directory out
+        // of the OLD instance. Going from Skyrim to a game with no mods at all
+        // still drew Skyrim's merged tree, `[skyrimse]` provenance and all.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "eidos-switch-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+
+        let mut app = app_for_game("stellarblade");
+        app.kind = InstanceKind::Portable;
+        app.portable_path = root.to_string_lossy().into_owned();
+
+        // Stand in for what browsing the previous instance's Data tab leaves behind.
+        app.data_listing
+            .borrow_mut()
+            .insert(String::new(), (app.view_generation.get(), vec![("SKSE".into(), "[skyrimse]".into(), true)]));
+        app.listing_cache
+            .borrow_mut()
+            .insert(PathBuf::from("/old"), (app.view_generation.get(), vec!["stale".to_string()]));
+        app.files_cache.borrow_mut().insert("OldMod".into(), (vec!["a.esp".into()], false));
+        app.data_expanded.insert("meshes".to_string());
+
+        let _ = update(&mut app, Message::Finish);
+        assert!(app.created.is_some(), "the instance was created");
+
+        assert!(app.data_listing.borrow().is_empty(), "the merged listing survived the switch");
+        assert!(app.listing_cache.borrow().is_empty(), "a directory listing survived the switch");
+        assert!(app.files_cache.borrow().is_empty(), "a mod's file list survived the switch");
+        assert!(app.data_expanded.is_empty(), "expanded paths from the old game survived");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn the_plugins_tab_is_only_offered_where_eidos_manages_plugins() {
         // Skyrim has a plugins.txt Eidos writes, so the tab means something.
         assert!(game_manages_plugins(&app_for_game("skyrimse")));
