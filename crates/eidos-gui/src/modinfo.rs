@@ -2868,6 +2868,33 @@ pub(crate) const PICKER_TREE_ROWS: usize = 1500;
 
 /// The manual / BAIN install picker: MO2's `InstallDialog` (point at the data
 /// root) and `BainComplexInstallerDialog` (tick sub-packages), which share an
+/// When nothing in an archive looks like a mod, whether the archive is really a
+/// bundle of OTHER archives - the variant packs that ship two `.zip` options and
+/// a folder of screenshots.
+///
+/// Neither level of such an archive can ever look valid, so the dialog otherwise
+/// just repeats "does NOT look valid" wherever the user clicks, with no hint that
+/// the answer is to open one of the inner files instead.
+pub(crate) fn nested_archive_hint(rows: &[eidos_install::TreeRow]) -> Option<String> {
+    let n = rows
+        .iter()
+        .filter(|r| !r.is_dir)
+        .filter(|r| {
+            r.name
+                .rsplit_once('.')
+                .is_some_and(|(_, e)| matches!(e.to_ascii_lowercase().as_str(), "7z" | "zip" | "rar"))
+        })
+        .count();
+    match n {
+        0 => None,
+        1 => Some("This archive contains another archive - the mod is probably inside it.".to_string()),
+        n => Some(format!(
+            "This archive contains {n} archives - it is a set of variants, and the mod is inside \
+             the one you want."
+        )),
+    }
+}
+
 /// archive tree and a name field.
 pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Message> {
     let name_row = Row::new()
@@ -2982,12 +3009,28 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                         }),
                     )
                     // MO2 warns but still lets you through: the checker only knows
-                    // the game's own folder names, and plenty of valid mods (SKSE
-                    // plugins, tool configs) match none of them.
+                    // what the game itself calls mod content, and plenty of valid
+                    // mods (SKSE plugins, tool configs) match none of it.
+                    //
+                    // "folder names" alone was already half the story - extensions
+                    // have always counted too - and became actively misleading once
+                    // the vocabulary went per-game: a Stellar Blade mod is
+                    // recognised ONLY by its `.pak`, never by a folder.
                     .push(
-                        text("You can install anyway - the check only recognises the game's own folder names.")
-                            .size(10.0),
+                        text(
+                            "You can install anyway - the check only recognises this game's \
+                             own folder names and file types.",
+                        )
+                        .size(10.0),
                     )
+                    // The case that sends people round in circles: an archive whose
+                    // real content is another archive. Nothing here can install it,
+                    // and without saying so the dialog just repeats that nothing
+                    // looks valid at every level the user tries.
+                    .push(match nested_archive_hint(&p.rows) {
+                        Some(h) => Element::from(text(h).size(10.0)),
+                        None => Space::new().into(),
+                    })
                     .into(),
             )
         }

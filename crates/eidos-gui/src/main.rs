@@ -1739,6 +1739,47 @@ mod tests {
     }
 
     #[test]
+    fn a_bundle_of_variants_says_the_mod_is_inside_one_of_them() {
+        use eidos_install::{ArchiveEntry, ArchiveTree};
+        let rows = |paths: &[&str]| {
+            ArchiveTree::from_entries(
+                &paths
+                    .iter()
+                    .map(|p| ArchiveEntry {
+                        path: p.trim_end_matches('/').to_string(),
+                        is_dir: p.ends_with('/'),
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .flatten()
+        };
+
+        // The real shape of EVE_Sunrise_Dress.7z: screenshots, a readme, and two
+        // zips that each hold one variant of the mod. No level of it can ever look
+        // valid, so without this the dialog just repeats "does NOT look valid"
+        // wherever the user clicks.
+        let hint = nested_archive_hint(&rows(&[
+            "EVE Sunrise Dress/1 (1).jpg",
+            "EVE Sunrise Dress/1 (2).jpg",
+            "EVE Sunrise Dress/Full replaces planet diving suit-704.zip",
+            "EVE Sunrise Dress/No back accessories-704.zip",
+            "EVE Sunrise Dress/readme.txt",
+        ]))
+        .expect("a bundle of variants is worth naming");
+        assert!(hint.contains('2'), "it should say how many: {hint}");
+
+        // One inner archive is the singular case, not "0 archives".
+        let one = nested_archive_hint(&rows(&["Mod/inner.rar"])).expect("one nested archive");
+        assert!(!one.contains('2'));
+
+        // And an ordinary mod says nothing at all: the hint is for the dead end,
+        // not a remark on every archive that fails the check.
+        assert_eq!(nested_archive_hint(&rows(&["Mod/thing_P.pak", "Mod/notes.txt"])), None);
+        // A directory that merely ends in an archive extension is not one.
+        assert_eq!(nested_archive_hint(&rows(&["Mod/backup.zip/x.pak"])), None);
+    }
+
+    #[test]
     fn plugin_advice_is_only_given_to_games_that_have_plugins() {
         // Two predicates that are easy to confuse, kept apart by the three games
         // that fall differently between them.
