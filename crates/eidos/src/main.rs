@@ -734,6 +734,28 @@ fn run_through_view(
         eprintln!("eidos: {} mod(s) provide root-level files", root_layers.len());
     }
 
+    // The mount point has to exist before anything can be mounted over it, and for
+    // some games it does not ship with the game at all: Stellar Blade deploys into
+    // `SB/Content/Paks/~mods`, which is a modding convention the game never
+    // creates. On a clean install the mount therefore failed with a bare
+    // "No such file or directory (os error 2)" that named neither the path nor the
+    // reason - and it would have failed that way for every user of such a game,
+    // not just one who moved the directory.
+    //
+    // Creating it is the same promise Eidos already makes for its own directories,
+    // and an empty directory inside the game is inert: nothing loads from it, and
+    // it is what the user would have had to make by hand anyway.
+    if !game.data_path.is_dir() {
+        if let Err(e) = std::fs::create_dir_all(&game.data_path) {
+            eprintln!(
+                "eidos: cannot create the mod directory {}: {e}",
+                game.data_path.display()
+            );
+            exit(1);
+        }
+        eprintln!("eidos: created {} (the game does not ship it)", game.data_path.display());
+    }
+
     let spec = LaunchSpec {
         layers: inst.load_order(),
         overwrite: inst.overwrite_dir(),
@@ -835,7 +857,15 @@ fn run_through_view(
         // eidos exit 0 and hide the failure from Steam or any wrapping script.
         Ok(status) => exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1))),
         Err(e) => {
+            // Name what was being mounted. `No such file or directory (os error 2)`
+            // on its own gives the user nothing to act on, and it is the message
+            // they get for the most likely failure here - a mount point or a game
+            // directory that is not where the descriptor says.
             eprintln!("eidos: launch failed: {e}");
+            if e.kind() == std::io::ErrorKind::NotFound {
+                eprintln!("eidos:   mod directory: {}", game.data_path.display());
+                eprintln!("eidos:   game install:  {}", game.install_path.display());
+            }
             exit(1)
         }
     }
