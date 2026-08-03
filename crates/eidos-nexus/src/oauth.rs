@@ -24,7 +24,7 @@
 //! `MO2_NEXUS_CLIENT_ID`) and the flow works unchanged.
 //!
 //! The personal API key path stays: it needs no registration, it is what the
-//! `[Nexus] api_key=` setting already holds, and MO2 keeps its equivalent too.
+//! `[Nexus]` section already holds, and MO2 keeps its equivalent too.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -286,9 +286,6 @@ pub struct Tokens {
     /// Unix seconds. Absolute rather than a duration, because it has to survive
     /// being written to disk and read back in a later session.
     pub expires_at: u64,
-    /// Some deployments hand back a v1 API key alongside the tokens; the rest of
-    /// Eidos speaks v1, so keep it when it is offered.
-    pub api_key: Option<String>,
 }
 
 impl Tokens {
@@ -436,11 +433,6 @@ pub fn tokens_from_json(v: &serde_json::Value, now: u64) -> Result<Tokens, Strin
         scope: s("scope"),
         token_type: s("token_type"),
         expires_at: now.saturating_add(expires_in),
-        api_key: v
-            .get("api_key")
-            .and_then(|x| x.as_str())
-            .filter(|k| !k.is_empty())
-            .map(str::to_string),
     })
 }
 
@@ -614,7 +606,10 @@ mod tests {
         let t = tokens_from_json(&v, 1_000).unwrap();
         assert_eq!(t.expires_at, 4_600);
         assert!(t.is_valid());
-        assert!(t.api_key.is_none());
+        // The token endpoint may hand back a v1 API key. Eidos does not parse it:
+        // Nexus requires personal-key usage gone from the client entirely, and a
+        // key that is read "just in case" is exactly what that rules out.
+        assert!(!format!("{t:?}").contains("api_key"));
     }
 
     #[test]

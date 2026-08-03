@@ -1878,60 +1878,47 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // ---- Settings / Preferences ------------------------------------------
         Message::OpenSettings => {
             app.menu_mod = None;
-            app.api_key_error = None;
-            // Re-read the stored key so the field reflects what's on disk.
-            app.settings_api_key = eidos_instance::settings::load_nexus_key().unwrap_or_default();
+            app.nexus_error = None;
             app.settings_open = true;
         }
         Message::CloseSettings => {
             app.settings_open = false;
-            app.api_key_error = None;
+            app.nexus_error = None;
         }
         Message::SettingsTabSelected(t) => app.settings_tab = t,
-        Message::ApiKeyChanged(s) => {
-            app.settings_api_key = s;
-            app.api_key_error = None;
-        }
-        Message::ApiKeyValidateStart => {
-            let key = app.settings_api_key.trim().to_string();
-            if key.is_empty() {
-                app.api_key_error = Some("Enter your personal Nexus API key.".to_string());
+        Message::NexusSignInStart => {
+            if app.nexus_signing_in {
                 return Task::none();
             }
-            if app.api_key_validating {
-                return Task::none();
-            }
-            app.api_key_validating = true;
-            app.api_key_error = None;
-            // Blocking ureq inside the async closure, like SortPlugins.
-            return Task::perform(
-                async move {
-                    let result = eidos_nexus::Nexus::new(&key).validate();
-                    (key, result)
-                },
-                |(key, result)| Message::ApiKeyValidateResult(key, result),
-            );
+            app.nexus_signing_in = true;
+            app.nexus_error = None;
+            app.status = Some("Opening your browser to sign in to Nexus...".to_string());
+            // The whole dance on a worker: browser hand-off, loopback listener,
+            // code exchange. Blocking calls inside the async closure, like the
+            // other network work here.
+            return Task::perform(async move { nexus_sign_in() }, Message::NexusSignInResult);
         }
-        Message::ApiKeyValidateResult(key, result) => {
-            app.api_key_validating = false;
+        Message::NexusSignInResult(result) => {
+            app.nexus_signing_in = false;
             match result {
                 Ok(account) => {
-                    // Persist the key that was validated (the field may have been
-                    // edited during the round-trip) so the CLI and a relaunch see it.
-                    let saved = eidos_instance::settings::save_nexus_key(&key);
-                    app.status = Some(match &saved {
-                        Ok(()) => format!(
-                            "Connected to Nexus as {} ({}).",
-                            account.name,
-                            if account.is_premium { "Premium" } else { "free" }
-                        ),
-                        Err(e) => format!("Validated, but could not save the key: {e}"),
-                    });
+                    app.status = Some(format!(
+                        "Signed in to Nexus as {} ({}).",
+                        account.name,
+                        if account.is_premium { "Premium" } else { "free" }
+                    ));
                     app.nexus_account = Some(account);
                 }
-                Err(e) => {
-                    app.api_key_error = Some(e);
+                Err(e) => app.nexus_error = Some(e),
+            }
+        }
+        Message::NexusSignOut => {
+            match eidos_instance::settings::clear_nexus_tokens() {
+                Ok(()) => {
+                    app.nexus_account = None;
+                    app.status = Some("Signed out of Nexus.".to_string());
                 }
+                Err(e) => app.nexus_error = Some(format!("could not sign out: {e}")),
             }
         }
         Message::ThemeChanged(t) => {

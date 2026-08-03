@@ -67,8 +67,11 @@ README carries only the short version; this is the receipts.
       `WINEDLLOVERRIDES` forcing, so the Wine builtin cannot silently win. Nothing
       is ever copied into the real game folder - unlike Root Builder's copy mode,
       which has to restore backups afterwards and leaves debris if it dies
-- [x] Nexus Mods integration (`eidos-nexus`) - connect with a personal API key
-      (`eidos nexus key`), register the `nxm://` handler (`eidos nxm --register`)
+- [x] Nexus Mods integration (`eidos-nexus`) - sign in with OAuth (authorization
+      code + PKCE S256, loopback listener, no personal API key anywhere: Nexus
+      requires them absent from a distributed client, so Eidos needs a registered
+      `client_id` and has no Nexus access without one), register the `nxm://`
+      handler (`eidos nxm --register`)
       so the site's "Mod Manager Download" button downloads straight into the
       instance's `downloads/` (with MO2-format `.meta` sidecars), check installed
       mods for updates (`eidos nexus update`, MO2's rate-limit-friendly

@@ -268,13 +268,13 @@ enum Message {
     /// Switch the Preferences tab (General / Nexus).
     SettingsTabSelected(SettingsTab),
     /// Edit the Nexus API key field.
-    ApiKeyChanged(String),
-    /// Validate + persist the entered Nexus API key.
-    ApiKeyValidateStart,
-    /// The key validation finished: the account on success, else an error.
-    /// Carries the key that was actually VALIDATED, so an edit made to the field
-    /// during the round-trip is never saved as if it had been checked.
-    ApiKeyValidateResult(String, Result<eidos_nexus::Account, String>),
+    /// Start the Nexus OAuth sign-in: open the browser, wait on the loopback
+    /// listener, exchange the code, store the session.
+    NexusSignInStart,
+    /// The sign-in finished: the account on success, else an error.
+    NexusSignInResult(Result<eidos_nexus::Account, String>),
+    /// Forget the stored Nexus session.
+    NexusSignOut,
     /// Set the preferred colour theme.
     ThemeChanged(PrefTheme),
     /// Set the default game id to open (`None` = none).
@@ -885,14 +885,13 @@ struct App {
     settings_open: bool,
     /// The active Preferences tab.
     settings_tab: SettingsTab,
-    /// The editable Nexus API key field.
-    settings_api_key: String,
-    /// The validated Nexus account, if the stored key checked out (or was cached).
+
+    /// The validated Nexus account, if a stored session checked out.
     nexus_account: Option<eidos_nexus::Account>,
-    /// A key validation is in flight (guards the button + concurrent validations).
-    api_key_validating: bool,
-    /// The last key-validation error, shown inline in the dialog.
-    api_key_error: Option<String>,
+    /// A sign-in is in flight (guards the button + concurrent attempts).
+    nexus_signing_in: bool,
+    /// The last sign-in error, shown inline in the dialog.
+    nexus_error: Option<String>,
     /// The persisted app-global preferences (theme, default game).
     prefs: Settings,
     // ---- Executables dialog ----

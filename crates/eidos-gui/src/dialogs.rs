@@ -57,38 +57,51 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
 
     let body: Element<'a, Message> = match app.settings_tab {
         SettingsTab::Nexus => {
-            // The validate/connect button greys out while a check is in flight.
-            let connect_label = if app.api_key_validating { "Checking..." } else { "Validate & Save" };
-            let mut connect = button(text(connect_label).size(12.0)).padding([5, 12]).style(button::primary);
-            if !app.api_key_validating {
-                connect = connect.on_press(Message::ApiKeyValidateStart);
+            // Sign-in, and only sign-in. There is no personal-API-key field, on
+            // purpose: Nexus requires personal keys absent from a distributed
+            // client, not merely unused, so there is nothing here to enter.
+            let signed_in = app.nexus_account.is_some();
+            let label = if app.nexus_signing_in {
+                "Waiting for your browser..."
+            } else if signed_in {
+                "Sign in again"
+            } else {
+                "Sign in to Nexus Mods"
+            };
+            let mut action = button(text(label).size(12.0)).padding([5, 12]).style(button::primary);
+            if !app.nexus_signing_in {
+                action = action.on_press(Message::NexusSignInStart);
             }
-            // Masked. It is a credential, and this field sits in a window users
-            // screenshot to ask for help - which is one of the ways a key leaks.
-            // Nothing is lost by hiding it: validation names the account back, so
-            // the user still gets told whether what they pasted was right.
-            let field = text_input("Personal API key", &app.settings_api_key)
-                .secure(true)
-                .on_input(Message::ApiKeyChanged)
-                .on_submit(Message::ApiKeyValidateStart)
-                .padding(6)
-                .size(12.0)
-                .width(Length::Fill);
 
             let mut col = Column::new()
                 .spacing(8)
-                .push(text("Personal Nexus Mods API key").size(13.0))
+                .push(text("Nexus Mods account").size(13.0))
                 .push(
-                    text("Get it from nexusmods.com -> Account -> API Keys (Personal API Key). It is stored at ~/.config/eidos/nexus.ini and shared with the CLI.")
-                        .size(10.0),
-                )
-                .push(Row::new().spacing(8).push(field).push(connect));
+                    text(
+                        "Signing in opens your browser. The session is stored at \
+                         ~/.config/eidos/nexus.ini and shared with the CLI.",
+                    )
+                    .size(10.0),
+                );
+
+            let mut row = Row::new().spacing(8).push(action);
+            if signed_in {
+                row = row.push(
+                    button(text("Sign out").size(12.0))
+                        .padding([5, 12])
+                        .on_press(Message::NexusSignOut)
+                        .style(button::secondary),
+                );
+            }
+            col = col.push(row);
 
             if let Some(account) = &app.nexus_account {
                 let tier = if account.is_premium { "Premium" } else { "free" };
-                col = col.push(text(format!("Connected as {} ({tier}).", account.name)).size(11.0));
+                col = col.push(text(format!("Signed in as {} ({tier}).", account.name)).size(11.0));
+            } else {
+                col = col.push(text("Not signed in.").size(11.0));
             }
-            if let Some(err) = &app.api_key_error {
+            if let Some(err) = &app.nexus_error {
                 col = col.push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
             }
             col.into()

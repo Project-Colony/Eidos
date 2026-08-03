@@ -1794,21 +1794,14 @@ fn cmd_install(args: &[String]) {
 /// `~/.config/eidos/nexus.ini`, holding the personal Nexus API key. Delegates to
 /// the shared `eidos-instance` settings store so the CLI and the GUI can never
 /// disagree on the path or the file format.
-fn nexus_key_path() -> std::path::PathBuf {
-    eidos_instance::settings::nexus_key_path()
-}
-
-/// A connected Nexus client, or exit with a pointer to `eidos nexus key`.
+/// A connected Nexus client, or exit with a pointer to signing in.
 fn nexus_client() -> eidos_nexus::Nexus {
-    // `connect` prefers a signed-in OAuth session and falls back to the personal
-    // key, so this one call covers both paths; the message below is what "no
-    // credential at all" looks like from the CLI.
     match eidos_nexus::Nexus::connect() {
         Ok(nexus) => nexus,
         Err(_) => {
             eprintln!(
-                "No Nexus API key configured. Get yours at nexusmods.com -> Site settings -> \
-                 API keys (Personal API Key), then run:  eidos nexus key <KEY>"
+                "Not signed in to Nexus. Sign in from the GUI (Settings -> Nexus); \
+                 personal API keys are not supported."
             );
             exit(1);
         }
@@ -1818,59 +1811,6 @@ fn nexus_client() -> eidos_nexus::Nexus {
 /// `eidos nexus key|status|update` - account + update checks.
 fn cmd_nexus(args: &[String]) {
     match args.first().map(String::as_str) {
-        Some("key") => {
-            // Read it from stdin by default. Passed as an argument it lands in the
-            // shell history and, for as long as the process lives, in /proc where
-            // any local process can read it - a credential should not be a word in
-            // a command line. The argument form still works so existing scripts do
-            // not break, but it says what it just cost.
-            let key = match args.get(1) {
-                Some(k) => {
-                    eprintln!(
-                        "eidos: warning - a key passed as an argument is now in your shell \
-                         history and was visible in /proc. Prefer: eidos nexus key   (then paste)"
-                    );
-                    k.clone()
-                }
-                None => {
-                    eprint!("Paste your personal Nexus API key (it will not be echoed): ");
-                    let _ = std::io::Write::flush(&mut std::io::stderr());
-                    let mut line = String::new();
-                    if std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line).is_err()
-                    {
-                        eprintln!("\nusage: eidos nexus key   (paste the key on stdin)");
-                        exit(2);
-                    }
-                    eprintln!();
-                    line.trim().to_string()
-                }
-            };
-            if key.is_empty() {
-                eprintln!("No key given. Get one at https://www.nexusmods.com/users/myaccount?tab=api");
-                exit(2);
-            }
-            let key = &key;
-            match eidos_nexus::Nexus::new(key).validate() {
-                Ok(acct) => {
-                    let path = nexus_key_path();
-                    if let Err(e) = eidos_instance::settings::save_nexus_key(key) {
-                        eprintln!("could not store the key at {}: {e}", path.display());
-                        exit(1);
-                    }
-                    println!(
-                        "Connected as {} ({}). Key stored in {}.",
-                        acct.name,
-                        if acct.is_premium { "premium" } else { "free" },
-                        path.display()
-                    );
-                    println!("Next: register the browser handler:  eidos nxm --register");
-                }
-                Err(e) => {
-                    eprintln!("key validation failed: {e}");
-                    exit(1);
-                }
-            }
-        }
         Some("status") => match nexus_client().validate() {
             Ok(acct) => println!(
                 "Connected as {} ({}).",
@@ -1975,8 +1915,7 @@ fn cmd_nexus(args: &[String]) {
         _ => {
             eprintln!(
                 "usage:\n\
-                 \x20 eidos nexus key <KEY>       connect (personal API key)\n\
-                 \x20 eidos nexus status          check the stored key\n\
+                 \x20 eidos nexus status          check the stored sign-in\n\
                  \x20 eidos nexus update <game>   check installed mods for updates"
             );
             exit(2);
@@ -2141,7 +2080,7 @@ fn usage() -> ! {
          \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game\n\
          \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)\n\
          \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view\n\
-         \x20 eidos nexus key|status|update     connect a Nexus account / check for mod updates\n\
+         \x20 eidos nexus status|update         check the Nexus sign-in / check for mod updates\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
          \x20 eidos export <id> [-o file]       export the mod list to CSV (MO2 format; --active = enabled only)\n\
          \x20 eidos sort <id> [--dry-run]       LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
