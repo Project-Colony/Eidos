@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Project-Colony/Eidos/compare/v1.1.0...v1.2.0) (2026-08-03)
+
+
+### Features
+
+* support non-Bethesda games, starting with Stellar Blade ([#5](https://github.com/Project-Colony/Eidos/issues/5)) ([4e50858](https://github.com/Project-Colony/Eidos/commit/4e50858d5a05342889936f1e56e5b3758f2f4276))
+
 ## [1.1.0](https://github.com/Project-Colony/Eidos/compare/v1.0.2...v1.1.0) (2026-08-01)
 
 
