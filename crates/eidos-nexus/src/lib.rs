@@ -329,8 +329,9 @@ impl Nexus {
 
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
         let url = format!("{API_BASE}/{path}");
-        // MO2 identifies the client on every v1 request (nxmaccessmanager.cpp
-        // addAPIHeaders): Protocol-Version + Application-Name/-Version with APIKEY.
+        // Every v1 request identifies the client, as MO2 does
+        // (nxmaccessmanager.cpp addAPIHeaders): Protocol-Version plus
+        // Application-Name/-Version, alongside the bearer token.
         // It also reads the X-RL-* budget from every reply (incl. a 429).
         match self.with_headers(self.agent.get(&url)).call() {
             Ok(mut resp) => {
