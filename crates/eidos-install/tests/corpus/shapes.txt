@@ -625,19 +625,38 @@ d0/scripts/
 data/
 data/skse/
 data/skse/d0/
+data/skse/d0/d0/
+data/skse/d0/d0/f0.json
+data/skse/d0/d0/f1.json
 data/skse/plugins/
+data/skse/plugins/f0.dll
+data/skse/plugins/f1.ini
+data/skse/plugins/f2.pdb
 
 > archive 002 game=skyrimse
 calientetools/
 calientetools/d0/
 calientetools/d0/d0/
+calientetools/d0/d0/d0/
+calientetools/d0/d0/d0/f0.nif
+calientetools/d0/d0/d0/f1.osd
+calientetools/d0/d0/d0/f2.nif
+calientetools/d0/d0/d0/f3.osd
 calientetools/d0/d1/
+calientetools/d0/d1/f0.xml
 calientetools/d0/d2/
+calientetools/d0/d2/f0.osp
 f0.bsa
 f1.esp
 meshes/
 meshes/d0/
 meshes/d0/d0/
+meshes/d0/d0/d0/
+meshes/d0/d0/d0/f0.nif
+meshes/d0/d0/d0/f1.nif
+meshes/d0/d0/d0/f2.xml
+meshes/d0/d0/d0/f3.xml
+meshes/d0/d0/f0.nif
 
 > archive 003 game=skyrimse
 d0/
@@ -646,15 +665,23 @@ d0/f1
 d1/
 d1/skse/
 d1/skse/plugins/
+d1/skse/plugins/f0.dll
+d1/skse/plugins/f1.pdb
 d2/
 d2/skse/
 d2/skse/plugins/
+d2/skse/plugins/f0.dll
+d2/skse/plugins/f1.pdb
 d3/
 d3/skse/
 d3/skse/plugins/
+d3/skse/plugins/f0.dll
+d3/skse/plugins/f1.pdb
 d4/
 d4/skse/
 d4/skse/plugins/
+d4/skse/plugins/f0.dll
+d4/skse/plugins/f1.pdb
 d5/
 d5/scripts/
 d5/scripts/f0.psc
@@ -670,21 +697,38 @@ scripts/f0.pex
 skse/
 skse/plugins/
 skse/plugins/d0/
+skse/plugins/d0/f0.txt
 skse/plugins/d1/
+skse/plugins/d1/d0/
+skse/plugins/d1/d0/f0.json
+skse/plugins/d1/d0/f1.json
+skse/plugins/d1/d1/
+skse/plugins/d1/d1/f0.json
+skse/plugins/d1/d1/f1.json
+skse/plugins/d1/f0.json
 
 > archive 004 game=skyrimse
 data/
 data/scripts/
 data/scripts/d0/
+data/scripts/d0/f0.psc
+data/scripts/d0/f1.psc
 data/scripts/f0.pex
 data/scripts/f1.pex
 data/skse/
 data/skse/plugins/
+data/skse/plugins/d0/
+data/skse/plugins/d0/d0/
+data/skse/plugins/d0/d1/
+data/skse/plugins/d0/d2/
+data/skse/plugins/f0.dll
 
 > archive 005 game=skyrimse
 skse/
 skse/plugins/
 skse/plugins/d0/
+skse/plugins/d0/f0.json
+skse/plugins/d0/f1.json
 skse/plugins/f0.dll
 skse/plugins/f1.ini
 skse/plugins/f2.pdb
@@ -692,6 +736,8 @@ skse/plugins/f3.txt
 skse/plugins/f4.json
 skse/plugins/f5.json
 skse/plugins/fonts/
+skse/plugins/fonts/f0.ttf
+skse/plugins/fonts/f1.ttf
 
 > archive 006 game=skyrimse
 f0.bsa
@@ -700,9 +746,17 @@ f2.esp
 skse/
 skse/d0/
 skse/d0/d0/
+skse/d0/d0/f0.json
+skse/d0/d0/f1.json
 skse/d0/d1/
+skse/d0/d1/f0.json
+skse/d0/d1/f1.json
 skse/d0/d2/
+skse/d0/d2/f0.json
+skse/d0/d2/f1.json
 skse/d0/d3/
+skse/d0/d3/f0.json
+skse/d0/d3/f1.json
 skse/d1/
 skse/d1/f0.json
 skse/d1/f1.json
@@ -995,8 +1049,17 @@ d0/f4.txt
 sb/
 sb/binaries/
 sb/binaries/win64/
+sb/binaries/win64/ue4ss/
+sb/binaries/win64/ue4ss/f0.ini
+sb/binaries/win64/ue4ss/mods/
 sb/content/
 sb/content/paks/
+sb/content/paks/logicmods/
+sb/content/paks/logicmods/f0.pak
+sb/content/paks/logicmods/f1.ucas
+sb/content/paks/logicmods/f2.utoc
+sb/content/paks/~mods/
+sb/content/paks/~mods/d0/
 
 > archive 006 game=stellarblade
 d0/

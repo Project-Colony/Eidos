@@ -70,7 +70,12 @@ SOURCES = [
 # reads level 1, `bain_subpackages` reads each top-level dir's own contents), and
 # never past a wrapper chain in an archive. Anything deeper is bulk, not shape.
 MOD_DEPTH = 2
-ARCHIVE_DEPTH = 3
+# Deep enough to reach INSIDE the deepest game's deploy root. Stellar Blade's is
+# `SB/Content/Paks/~mods`, four components, so an archive addressing the install
+# root needs five levels before its content becomes visible at all - at three the
+# corpus recorded a verdict for a shape it had truncated past the part that
+# decides it.
+ARCHIVE_DEPTH = 5
 
 # A textures folder with 500 .dds files exercises the checker exactly as hard as
 # one with two. Cap siblings so the corpus stays readable and diffable.

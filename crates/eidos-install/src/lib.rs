@@ -1055,7 +1055,7 @@ mod tests {
         assert_eq!(t.simple_archive_base(sb()), None, "not a wrapper chain");
         let split = t.root_builder_split(sb()).expect("cut into two halves");
         // The pak half becomes the mod root, so it deploys through the Data mount.
-        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks"));
+        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks/~mods"));
         // The rest keeps the path it had, so it lands at Root/SB/Binaries/...
         assert_eq!(split.root_entries, vec!["SB/Binaries".to_string()]);
         assert_eq!(split.root_dir, None);
@@ -1068,11 +1068,12 @@ mod tests {
         // create an empty `Root/`.
         let t = tree(&["SB/Content/Paks/~mods/thing_P.pak"]);
         let split = t.root_builder_split(sb()).expect("a data half and nothing else");
-        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks"));
+        assert_eq!(split.data_prefix.as_deref(), Some("SB/Content/Paks/~mods"));
         assert!(split.root_entries.is_empty());
-        // In practice the simple path claims this one first, which is the same
-        // outcome by a shorter route - `~mods` is one of the game's data folders.
-        assert_eq!(t.simple_archive_base(sb()).as_deref(), Some("SB/Content/Paks/"));
+        // In practice the simple path claims this one first, by the shorter route:
+        // it descends the whole wrapper chain to the level that holds the pak, so
+        // the `~mods` in the archive is stripped rather than nested inside itself.
+        assert_eq!(t.simple_archive_base(sb()).as_deref(), Some("SB/Content/Paks/~mods/"));
     }
 
     #[test]

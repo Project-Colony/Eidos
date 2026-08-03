@@ -2337,14 +2337,19 @@ mod tests {
     /// a name already occupied by a file. `overlay_dir` cannot clear its OWN
     /// destination - its first act is `create_dir_all` - so the caller must.
     #[test]
-    fn a_ue4ss_mod_lands_in_both_halves_at_the_paths_it_shipped_with() {
-        // End to end on the shape of a real Stellar Blade archive: a UE4SS script
-        // mod plus a pak, both addressed from the game INSTALL root. The pak half
-        // has to become the mod root - routed through Root/ it would sit under the
-        // Data mount and never be served - and the ue4ss half has to keep its own
-        // path, or it lands at Root/Binaries and the loader never finds it.
+    fn a_ue4ss_mod_lands_in_all_three_places_it_shipped_for() {
+        // The real shape of CustomNanosuitSystem, which addresses THREE different
+        // places from one archive, all relative to the game INSTALL root:
+        //
+        //   ~mods/…           the config JSONs, which is the deploy root
+        //   LogicMods/…       a blueprint pak, a SIBLING of the deploy root
+        //   SB/Binaries/…     the UE4SS Lua mod
+        //
+        // Only the first is Data-relative. The other two have to travel through
+        // Root/ at their own paths, or they land somewhere nothing reads.
         let (t, mods, tmp) = bain_layout("ue4ss");
-        write_at(&tmp, "SB/Content/Paks/~mods/Dress_P.pak", b"pak");
+        write_at(&tmp, "SB/Content/Paks/~mods/CNS/Cosmetics/Outfits.dekcns.json", b"{}");
+        write_at(&tmp, "SB/Content/Paks/LogicMods/DekCNS_P.pak", b"pak");
         write_at(&tmp, "SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt", b"1");
 
         let archive = t.path().join("CustomNanosuitSystem-1496.zip");
@@ -2358,18 +2363,22 @@ mod tests {
             OverwritePolicy::Fail,
             &eidos_fomod::Context::default(),
         )
-        .expect("a mixed install-root archive installs");
+        .expect("a three-way install-root archive installs");
 
-        // The Data half is the mod root, so it deploys to <data_dir>/~mods/.
-        assert!(r.dest.join("~mods/Dress_P.pak").is_file(), "the pak is Data-relative");
-        // The rest keeps its archive path under Root/.
+        // The Data half is the mod root, so it deploys INTO ~mods - which is where
+        // CNS roots its recursive config scan. One level higher and the mod loads
+        // its pak and adds nothing, which is what a real install did.
+        assert!(r.dest.join("CNS/Cosmetics/Outfits.dekcns.json").is_file());
+        // The other two keep their archive paths under Root/.
+        assert!(r.dest.join("Root/SB/Content/Paks/LogicMods/DekCNS_P.pak").is_file());
         assert!(
             r.dest.join("Root/SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt").is_file(),
             "the ue4ss tree keeps the path the loader expects"
         );
-        // And nothing was left behind at the wrong depth.
+        // And nothing was flattened or duplicated on the way.
         assert!(!r.dest.join("Root/Binaries").exists(), "the game directory is not flattened");
-        assert!(!r.dest.join("Root/SB/Content").exists(), "the pak half did not travel twice");
+        assert!(!r.dest.join("Root/LogicMods").exists(), "nor is the paks directory");
+        assert!(!r.dest.join("~mods").exists(), "the deploy root is not nested inside itself");
     }
 
     #[test]

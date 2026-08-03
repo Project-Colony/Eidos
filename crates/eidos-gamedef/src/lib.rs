@@ -340,11 +340,25 @@ pub static GAMES: &[GameDef] = &[
     // The first non-Bethesda game here, and the first to declare its own vocabulary.
     //
     // Unreal Engine, so no plugins.txt, no BSA, no My Games INI. A mod is a
-    // `.pak`/`.ucas`/`.utoc` triplet under `SB/Content/Paks`, either loose or in one
-    // of the two folders the community sorts them into: `~mods` (the `~` is what
-    // makes the engine scan it last, so those paks win) and `LogicMods` for UE4SS.
-    // `Paks` is the deploy root rather than `~mods` precisely so an archive can
-    // choose either, and so both land in the right place from one union.
+    // `.pak`/`.ucas`/`.utoc` triplet, and it deploys into `~mods` - the `~` is what
+    // makes the engine scan that folder last, so mods there win over the base
+    // game's own paks.
+    //
+    // `Paks` itself is NOT the deploy root, and the difference is not cosmetic.
+    // Unreal would load a `_P` pak from either, but the mod frameworks read
+    // `~mods` by name: Custom Nanosuit System roots its recursive config scan at
+    // `Dirs.Game.Content.Paks["~mods"]`, so a `.dekcns.json` deployed one level
+    // higher is never seen and the mod installs, loads its pak, and adds nothing.
+    // That is exactly what a real install did before this line was corrected.
+    //
+    // A mod's own `LogicMods` half still lands correctly: an archive addressing
+    // `SB/Content/Paks/LogicMods` has it collected beside the data dir and routed
+    // through `Root/`, which puts it back at the game root under its own path.
+    //
+    // `valid_folders` is empty for the same reason the deploy root moved. A mod is
+    // recognised by carrying a pak, never by a folder: naming `~mods` here would
+    // make an archive that ships `~mods/foo.pak` look valid AT that level, and the
+    // wrapper would survive into `~mods/~mods/foo.pak`.
     //
     // Declaring `valid_suffixes` is what makes `valid_folders` mean "only these":
     // see `From<&GameDef> for LayoutRules`. That is deliberate. A Stellar Blade mod
@@ -364,8 +378,8 @@ pub static GAMES: &[GameDef] = &[
         steam_app_id: 3489700,
         short_name: "StellarBlade",
         nexus_game: "stellarblade",
-        data_dir: "SB/Content/Paks",
-        valid_folders: &["~mods", "logicmods"],
+        data_dir: "SB/Content/Paks/~mods",
+        valid_folders: &[],
         valid_suffixes: &["pak", "utoc", "ucas"],
         documents_dir: "",
         ini_files: &[],

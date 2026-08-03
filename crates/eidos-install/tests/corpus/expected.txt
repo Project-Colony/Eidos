@@ -545,7 +545,7 @@
   data_looks_valid   = Invalid
   simple_archive_base= none
   bain_subpackages   = [] + 1 invalid
-  root_builder_split = data=Some("SB/Content/Paks") root_dir=None root_entries=["sb/binaries"]
+  root_builder_split = data=Some("SB/Content/Paks/~mods") root_dir=None root_entries=["sb/binaries", "sb/content/paks/logicmods"]
 
 > archive 006 game=stellarblade
   data_looks_valid   = Invalid
