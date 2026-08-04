@@ -1935,6 +1935,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::DragScrollSpeedChanged(v) => {
+            app.prefs.drag_scroll_speed = v.clamp(0.25, 4.0);
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
         Message::ThemeChanged(t) => {
             app.prefs.theme = t;
             if let Err(e) = app.prefs.save() {
@@ -2751,8 +2757,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // which is exactly what the first version got wrong.
             // Speed follows how deep into the band the pointer is: a nudge
             // creeps a row at a time, the very edge crosses the list.
-            let px = DRAG_SCROLL_SLOW_PX
-                + (DRAG_SCROLL_FAST_PX - DRAG_SCROLL_SLOW_PX) * app.drag_scroll_depth;
+            let px = (DRAG_SCROLL_SLOW_PX
+                + (DRAG_SCROLL_FAST_PX - DRAG_SCROLL_SLOW_PX) * app.drag_scroll_depth)
+                * app.prefs.drag_scroll_speed;
             let y = match edge {
                 ScrollEdge::Up => -px,
                 ScrollEdge::Down => px,

@@ -4,6 +4,8 @@
 //!
 //! Split out of `main.rs` unchanged.
 
+use iced::widget::slider;
+
 use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
@@ -36,24 +38,31 @@ impl std::fmt::Display for ThemeChoice {
     }
 }
 
-pub(crate) fn settings_tab_btn<'a>(label: &'a str, tab: SettingsTab, active: bool) -> Element<'a, Message> {
-    button(text(label).size(12.0))
-        .padding([4, 10])
-        .on_press(Message::SettingsTabSelected(tab))
-        .style(if active { button::primary } else { button::secondary })
-        .into()
-}
-
 pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
-        .push(text("Settings").size(16.0).width(Length::Fill))
-        .push(button(text("x").size(14.0)).padding([1, 8]).on_press(Message::CloseSettings).style(button::text));
+        .align_y(iced::Alignment::Center)
+        .push(text("Settings").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([5, 12])
+                .on_press(Message::CloseSettings)
+                .style(button::secondary),
+        );
 
-    let tabs = Row::new()
-        .spacing(4)
-        .push(settings_tab_btn("General", SettingsTab::General, app.settings_tab == SettingsTab::General))
-        .push(settings_tab_btn("Nexus", SettingsTab::Nexus, app.settings_tab == SettingsTab::Nexus));
+    // A vertical rail, as in Colony: five sections do not fit across a dialog,
+    // and a rail takes a sixth without re-laying anything out.
+    let mut rail = Column::new().spacing(2).width(Length::Fixed(132.0));
+    for tab in SettingsTab::ALL {
+        let active = app.settings_tab == tab;
+        rail = rail.push(
+            button(text(tab.label()).size(12.0).width(Length::Fill))
+                .padding([6, 10])
+                .width(Length::Fill)
+                .on_press(Message::SettingsTabSelected(tab))
+                .style(if active { button::primary } else { button::text }),
+        );
+    }
 
     let body: Element<'a, Message> = match app.settings_tab {
         SettingsTab::Nexus => {
@@ -94,23 +103,6 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
             col.into()
         }
         SettingsTab::General => {
-            let themes = vec![
-                ThemeChoice(PrefTheme::System),
-                ThemeChoice(PrefTheme::Light),
-                ThemeChoice(PrefTheme::Dark),
-            ];
-            let theme_row = Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(text("Theme").size(12.0).width(Length::Fixed(120.0)))
-                .push(
-                    pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
-                        Message::ThemeChanged(c.0)
-                    })
-                    .text_size(12.0)
-                    .padding(6),
-                );
-
             // Default-game dropdown: "(none)" plus every supported game.
             let mut games = vec![DefaultGameChoice { id: None, label: "(none)".to_string() }];
             for g in eidos_games::catalog() {
@@ -147,20 +139,104 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
 
             Column::new()
                 .spacing(10)
-                .push(theme_row)
                 .push(game_row)
                 .push(lock_row)
                 .push(text("Saved to ~/.config/eidos/settings.ini.").size(10.0))
                 .into()
         }
+        SettingsTab::Appearance => {
+            let themes = vec![
+                ThemeChoice(PrefTheme::System),
+                ThemeChoice(PrefTheme::Light),
+                ThemeChoice(PrefTheme::Dark),
+            ];
+            let theme_row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Theme").size(12.0).width(Length::Fixed(120.0)))
+                .push(
+                    pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
+                        Message::ThemeChanged(c.0)
+                    })
+                    .text_size(12.0)
+                    .padding(6),
+                );
+
+            Column::new()
+                .spacing(10)
+                .push(theme_row)
+                .push(text("System follows your desktop's light/dark preference.").size(10.0))
+                .into()
+        }
+        SettingsTab::ModList => {
+            // The one knob worth exposing here: it was tuned twice by hand
+            // against a 250-mod list, which is exactly the sign that the right
+            // value depends on the list rather than on the program.
+            let speed = app.prefs.drag_scroll_speed;
+            let row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Drag scrolling").size(12.0).width(Length::Fixed(120.0)))
+                .push(
+                    slider(0.25..=4.0, speed, Message::DragScrollSpeedChanged)
+                        .step(0.25)
+                        .width(Length::Fixed(200.0)),
+                )
+                .push(text(format!("{speed:.2}x")).size(12.0));
+            Column::new()
+                .spacing(10)
+                .push(row)
+                .push(
+                    text(
+                        "How fast the list scrolls when you drag a mod to its top or bottom edge. \
+                         Speed already rises the closer to the edge you push; this scales the whole range.",
+                    )
+                    .size(10.0),
+                )
+                .into()
+        }
+        SettingsTab::About => {
+            let line = |k: &'static str, v: String| {
+                Row::new()
+                    .spacing(8)
+                    .push(text(k).size(11.0).width(Length::Fixed(120.0)))
+                    .push(text(v).size(11.0))
+            };
+            let instance = app
+                .created
+                .as_ref()
+                .map(|i| i.root.display().to_string())
+                .unwrap_or_else(|| "(none open)".to_string());
+            Column::new()
+                .spacing(6)
+                .push(text("Eidos").size(15.0))
+                .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(12.0))
+                .push(Space::new().height(Length::Fixed(4.0)))
+                .push(line("Instance", instance))
+                .push(line(
+                    "Settings",
+                    eidos_instance::settings::settings_path().display().to_string(),
+                ))
+                .push(line(
+                    "Nexus",
+                    eidos_instance::settings::nexus_key_path().display().to_string(),
+                ))
+                .push(line("Games", "~/.config/eidos/games/*.toml".to_string()))
+                .push(Space::new().height(Length::Fixed(4.0)))
+                .push(
+                    text("Ctrl+R run   ·   F5 refresh   ·   Ctrl+click multi-select   ·   Shift+click range   ·   Esc clear")
+                        .size(10.0),
+                )
+                .into()
+        }
     };
 
-    let card = Column::new()
-        .spacing(12)
-        .push(header)
-        .push(tabs)
-        .push(container(body).width(Length::Fill).padding(4));
-    container(card).max_width(560.0).padding(16).style(card_style).into()
+    let panes = Row::new()
+        .spacing(14)
+        .push(rail)
+        .push(container(scrollable(body)).width(Length::Fill).height(Length::Fixed(240.0)));
+    let card = Column::new().spacing(12).push(header).push(panes);
+    container(card).max_width(620.0).padding(16).style(card_style).into()
 }
 
 // ---- Executables editor (MO2's Modify Executables) --------------------------

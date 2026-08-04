@@ -105,11 +105,39 @@ enum InfoTab {
     Notes,
 }
 
-/// Tabs of the Preferences modal (MO2's Settings dialog).
+/// Sections of the Settings screen, in sidebar order.
+///
+/// A vertical rail rather than a row of tabs, matching Colony: five entries do
+/// not fit across a dialog, and the rail leaves room to add a sixth without
+/// re-laying anything out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
     General,
+    Appearance,
+    ModList,
     Nexus,
+    About,
+}
+
+impl SettingsTab {
+    /// Every section, in the order the sidebar lists them.
+    pub(crate) const ALL: [SettingsTab; 5] = [
+        SettingsTab::General,
+        SettingsTab::Appearance,
+        SettingsTab::ModList,
+        SettingsTab::Nexus,
+        SettingsTab::About,
+    ];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SettingsTab::General => "General",
+            SettingsTab::Appearance => "Appearance",
+            SettingsTab::ModList => "Mod list",
+            SettingsTab::Nexus => "Nexus",
+            SettingsTab::About => "About",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +309,8 @@ enum Message {
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
     ToggleLockGui(bool),
+    /// Set how fast the mod list scrolls when a drag rests on an edge.
+    DragScrollSpeedChanged(f32),
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,

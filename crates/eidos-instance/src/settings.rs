@@ -214,7 +214,9 @@ impl Theme {
 /// The app-global preferences that are not secret. The Nexus API key is stored
 /// separately (see `load_nexus_key`/`save_nexus_key`) so it never lands in this
 /// file.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// No `Eq`: `drag_scroll_speed` is a float, and a total equality on floats is a
+// promise this type cannot keep.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The color theme to render in.
     pub theme: Theme,
@@ -226,6 +228,10 @@ pub struct Settings {
     /// on by default): the main window is blocked behind an overlay until the
     /// process exits, with an Unlock escape hatch.
     pub lock_gui: bool,
+    /// Multiplier on how fast the mod list scrolls when a drag rests on one of
+    /// its edges. 1.0 is the tuned default; the range a user can pick from is
+    /// the GUI's business, this only stores what they picked.
+    pub drag_scroll_speed: f32,
 }
 
 impl Default for Settings {
@@ -236,6 +242,7 @@ impl Default for Settings {
             window_size: None,
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
+            drag_scroll_speed: 1.0,
         }
     }
 }
@@ -279,6 +286,16 @@ impl Settings {
                 "window_width" => width = v.parse().ok(),
                 "window_height" => height = v.parse().ok(),
                 // Any value other than an explicit off keeps locking on (default).
+                "drag_scroll_speed" => {
+                    // Out-of-range or unparseable reads as the default rather
+                    // than as a value: a bad number here is a list that either
+                    // will not move or cannot be aimed.
+                    if let Ok(n) = v.parse::<f32>() {
+                        if (0.25..=4.0).contains(&n) {
+                            s.drag_scroll_speed = n;
+                        }
+                    }
+                }
                 "lock_gui" => {
                     s.lock_gui = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
                 }
@@ -296,7 +313,12 @@ impl Settings {
 
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
-        let mut out = format!("[eidos]\ntheme={}\nlock_gui={}\n", self.theme.as_str(), self.lock_gui);
+        let mut out = format!(
+            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\n",
+            self.theme.as_str(),
+            self.lock_gui,
+            self.drag_scroll_speed
+        );
         if let Some(game) = &self.default_game {
             out.push_str("default_game=");
             out.push_str(game);
@@ -430,6 +452,7 @@ mod tests {
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
             lock_gui: false,
+            drag_scroll_speed: 1.0,
         };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
@@ -437,9 +460,27 @@ mod tests {
 
     #[test]
     fn settings_round_trip_minimal() {
-        let s = Settings { theme: Theme::Light, default_game: None, window_size: None, lock_gui: true };
+        let s = Settings { theme: Theme::Light, ..Settings::default() };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn the_drag_scroll_speed_round_trips_and_refuses_nonsense() {
+        assert_eq!(Settings::default().drag_scroll_speed, 1.0);
+        assert_eq!(Settings::parse("drag_scroll_speed=2.5\n").drag_scroll_speed, 2.5);
+        // Out of range or unparseable falls back to the default rather than
+        // being taken at face value: a bad number here is a list that either
+        // will not move or cannot be aimed.
+        for bad in ["0", "99", "-3", "fast", ""] {
+            assert_eq!(
+                Settings::parse(&format!("drag_scroll_speed={bad}\n")).drag_scroll_speed,
+                1.0,
+                "{bad} was accepted"
+            );
+        }
+        let s = Settings { drag_scroll_speed: 1.75, ..Settings::default() };
+        assert_eq!(Settings::parse(&s.to_ini()).drag_scroll_speed, 1.75);
     }
 
     #[test]
@@ -489,6 +530,7 @@ mod tests {
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
             lock_gui: false,
+            drag_scroll_speed: 1.0,
         };
         fs::write(&path, s.to_ini()).unwrap();
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());
