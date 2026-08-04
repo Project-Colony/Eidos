@@ -751,40 +751,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // that is the whole difference: `mouse_area` cannot tell "left while
     // dragging" from "let go out there", so cancelling on exit meant dragging
     // upward past the header dropped the mod every time.
-    let scroller = scrollable(list)
-        .id(mod_scroll_id())
-        .height(Length::Fill)
-        // Remembered so the auto-scroll can move RELATIVE to where the user is.
-        .on_scroll(|v| Message::ModListScrolled(v.relative_offset().y));
-    let list_area = mouse_area(scroller).on_release(Message::DragCancel);
-    // Auto-scroll bands, and ONLY while a drag is live - the rest of the time
-    // they would swallow clicks on the first and last rows. Entering one starts
-    // a timer that keeps scrolling while the pointer rests there, which is what
-    // dragging to the top edge does in MO2.
-    // Only once the drag is REALLY under way. `DragStart` fires on press, so
-    // keying the bands off `dragging` made them appear under a stationary cursor
-    // on every click - and `mouse_area` publishes `on_enter` the first time it is
-    // laid out beneath the pointer, so pressing a row near either edge launched
-    // the list across itself. `aimed` means the pointer has actually crossed an
-    // insertion point, which no plain click does.
-    let list_area: Element<'a, Message> = if app.drag_state.is_some_and(|d| d.aimed) {
-        let band = |edge: ScrollEdge| {
-            mouse_area(container(Space::new().width(Length::Fill).height(Length::Fill)))
-                .on_enter(Message::DragScrollEdge(Some(edge)))
-                .on_exit(Message::DragScrollEdge(None))
-        };
-        Stack::new()
-            .push(list_area)
-            .push(
-                Column::new()
-                    .push(container(band(ScrollEdge::Up)).height(Length::Fixed(DRAG_SCROLL_BAND)))
-                    .push(Space::new().height(Length::Fill))
-                    .push(container(band(ScrollEdge::Down)).height(Length::Fixed(DRAG_SCROLL_BAND))),
-            )
-            .into()
-    } else {
-        list_area.into()
-    };
+    // `on_release` is the catch-all: a row or a strip that handles the release
+    // captures it and this never fires, but a release landing anywhere else in
+    // the list - a header, a gap the layout moved, empty space below the last
+    // row - disarms instead of leaving a drag live for the next click to commit.
+    //
+    // A release OUTSIDE the list is caught globally instead of by `on_exit`, and
+    // that is the whole difference: `mouse_area` cannot tell "left while
+    // dragging" from "let go out there", so cancelling on exit meant dragging
+    // upward past the header dropped the mod every time.
+    let list_area = mouse_area(
+        scrollable(list).id(mod_scroll_id()).width(Length::Fill).height(Length::Fill),
+    )
+    .on_release(Message::DragCancel);
     // The conflict marks sit immediately right of the scrollbar, at the same
     // fraction of the list, so the mod a tint refers to can be found without
     // reading every row on the way.

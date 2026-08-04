@@ -410,12 +410,6 @@ enum Message {
     /// The left button was released anywhere on screen. Commits a drag that has
     /// aimed at a gap, disarms one that has not.
     PointerReleased,
-    /// The pointer entered (or left) an auto-scroll edge while dragging.
-    DragScrollEdge(Option<ScrollEdge>),
-    /// One auto-scroll step. Fired on a timer while an edge is held.
-    DragScrollTick,
-    /// The mod list was scrolled; remembers where, for the auto-scroll.
-    ModListScrolled(f32),
     // ---- the same gesture in the plugin list (its own indices and rules) ----
     /// Begin a potential drag from plugin row `i`.
     PluginDragStart(usize),
@@ -699,25 +693,6 @@ struct DownloadRow {
     speed: Option<f64>,
 }
 
-/// How many ROWS one auto-scroll tick moves.
-///
-/// Rows, not a fraction of the list: a fraction scrolls a 250-mod list eighty
-/// times faster than a 10-mod one, which is how the first version of this
-/// teleported instead of scrolling.
-pub(crate) const DRAG_SCROLL_ROWS: f32 = 1.0;
-
-/// How tall the auto-scroll bands are at each end of the list. They sit OVER the
-/// list while a drag is under way, so every pixel of them is a gap that cannot be
-/// aimed at: deep enough to hit without aiming, no deeper.
-pub(crate) const DRAG_SCROLL_BAND: f32 = 20.0;
-
-/// Which end of the list an auto-scroll is heading for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ScrollEdge {
-    Up,
-    Down,
-}
-
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
 /// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
 /// move is only applied on release, and only when `from != hover_over`.
@@ -993,12 +968,6 @@ struct App {
     modifiers: iced::keyboard::Modifiers,
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
-    /// Which edge of the mod list the pointer is resting on mid-drag, if any.
-    /// Drives the auto-scroll tick; `None` stops it.
-    drag_scroll: Option<ScrollEdge>,
-    /// Where the mod list is scrolled, 0.0..1.0. Tracked because the auto-scroll
-    /// has to move RELATIVE to it and `snap_to` only speaks absolutes.
-    mod_scroll_at: f32,
     /// The plugin list's Shift anchor; see [`App::sel_anchor`].
     plugin_anchor: Option<usize>,
     /// The focused plugin row, and the multi-selection around it - the same
@@ -1327,14 +1296,6 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
         let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
-    }
-    // Auto-scroll while a drag rests on an edge band. Subscribed only then, so
-    // an idle drag - or no drag at all - schedules nothing.
-    if app.drag_scroll.is_some() {
-        subs.push(
-            iced::time::every(std::time::Duration::from_millis(60))
-                .map(|_| Message::DragScrollTick),
-        );
     }
     // While waiting on a launched game/tool, poll for its exit so we can unlock.
     if app.running.is_some() {
@@ -1804,53 +1765,6 @@ mod tests {
     }
 
     #[test]
-    fn the_auto_scroll_only_runs_while_a_drag_does() {
-        let mut app = nav_app(&["a", "b", "c"]);
-        // No drag: entering a band cannot start anything. The bands are not even
-        // rendered then, but a stale message must not be enough on its own.
-        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
-        assert!(app.drag_scroll.is_none());
-
-        let _ = update(&mut app, Message::DragStart(0));
-        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
-        assert_eq!(app.drag_scroll, Some(ScrollEdge::Down));
-
-        // Ticking moves the remembered offset toward that end.
-        app.mod_scroll_at = 0.5;
-        let _ = update(&mut app, Message::DragScrollTick);
-        assert!(app.mod_scroll_at > 0.5, "it did not scroll down");
-
-        // And the end of the drag stops it, so no timer outlives the gesture.
-        let _ = update(&mut app, Message::PointerReleased);
-        assert!(app.drag_scroll.is_none());
-    }
-
-    #[test]
-    fn one_auto_scroll_tick_is_one_row_whatever_the_list_length() {
-        // The regression this guards: the step used to be a fixed FRACTION of the
-        // list, so a 250-mod list moved five rows a tick where a 10-mod list moved
-        // a fifth of one. On a real list that read as teleporting, not scrolling.
-        let travelled = |count: usize| {
-            let names: Vec<String> = (0..count).map(|i| i.to_string()).collect();
-            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-            let mut app = nav_app(&refs);
-            let _ = update(&mut app, Message::DragStart(0));
-            let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
-            app.mod_scroll_at = 0.5;
-            let _ = update(&mut app, Message::DragScrollTick);
-            // Back into rows: the offset is a fraction of (len - 1) positions.
-            (app.mod_scroll_at - 0.5) * (count - 1) as f32
-        };
-        for count in [10usize, 50, 250] {
-            let rows = travelled(count);
-            assert!(
-                (rows - DRAG_SCROLL_ROWS).abs() < 0.01,
-                "a {count}-mod list moved {rows} rows per tick, not {DRAG_SCROLL_ROWS}"
-            );
-        }
-    }
-
-    #[test]
     fn a_press_alone_is_not_yet_a_drag() {
         // What the auto-scroll bands key off. `DragStart` fires on PRESS, so
         // keying them off "a drag exists" put them under the pointer on every
@@ -1863,16 +1777,6 @@ mod tests {
 
         let _ = update(&mut app, Message::DragOverGap(0));
         assert!(app.drag_state.is_some_and(|d| d.aimed), "crossing a gap is a real drag");
-    }
-
-    #[test]
-    fn the_auto_scroll_stops_at_the_ends_instead_of_ticking_forever() {
-        let mut app = nav_app(&["a", "b"]);
-        let _ = update(&mut app, Message::DragStart(0));
-        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
-        app.mod_scroll_at = 0.0;
-        let _ = update(&mut app, Message::DragScrollTick);
-        assert_eq!(app.mod_scroll_at, 0.0, "it scrolled past the top");
     }
 
     #[test]

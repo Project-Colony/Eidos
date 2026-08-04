@@ -2727,39 +2727,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragCancel => {
             app.drag_state = None;
         }
-        Message::ModListScrolled(y) => {
-            app.mod_scroll_at = y;
-        }
-        Message::DragScrollEdge(edge) => {
-            // Only meaningful mid-drag: the bands are not rendered otherwise, but
-            // a stale message must not start a scroll on its own.
-            app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
-        }
-        Message::DragScrollTick => {
-            let Some(edge) = app.drag_scroll else { return Task::none() };
-            if app.drag_state.is_none() {
-                app.drag_scroll = None;
-                return Task::none();
-            }
-            // One row per tick, whatever the list's length. Expressed as a
-            // fraction because `snap_to` speaks fractions, but derived from the
-            // row count so a long list does not scroll faster than a short one.
-            let rows = app.mods.len().max(2) as f32;
-            let per_row = 1.0 / (rows - 1.0);
-            let step = match edge {
-                ScrollEdge::Up => -DRAG_SCROLL_ROWS * per_row,
-                ScrollEdge::Down => DRAG_SCROLL_ROWS * per_row,
-            };
-            let next = (app.mod_scroll_at + step).clamp(0.0, 1.0);
-            if (next - app.mod_scroll_at).abs() < f32::EPSILON {
-                return Task::none(); // already at the end; stop asking
-            }
-            app.mod_scroll_at = next;
-            return operation::snap_to(
-                mod_scroll_id(),
-                operation::RelativeOffset { x: None, y: Some(next) },
-            );
-        }
         Message::PointerReleased => {
             // Letting go is a DROP wherever a gap is aimed, and a cancel
             // otherwise - regardless of where the pointer happens to be. A user
@@ -2773,7 +2740,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             app.drag_state = None;
             app.plugin_drag = None;
-            app.drag_scroll = None;
         }
         Message::SelectPlugin(i) => {
             if app.modifiers.control() || app.modifiers.command() {
