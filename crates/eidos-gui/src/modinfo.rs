@@ -1737,10 +1737,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         ));
     }
 
-    // Releasing outside the list drops nothing, as in the mod list.
-    let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill))
-        .on_exit(Message::PluginDragCancel)
-        .on_release(Message::PluginDragCancel);
+    // Same as the mod list: the global release listener decides, and nothing
+    // here second-guesses it. `on_exit` cancelled a drag that merely left the
+    // bounds - the gesture that reaches an earlier row - and `on_release` raced
+    // the listener to cancel what it was about to drop.
+    let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill));
 
     Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }

@@ -2801,8 +2801,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.plugin_drag.as_ref().is_some_and(|d| d.aimed) {
                 return update(app, Message::PluginDragDrop);
             }
-            app.drag_state = None;
-            app.plugin_drag = None;
+            // Through the cancel messages rather than clearing the fields here,
+            // so "what disarming means" has one definition and the keyboard path
+            // (Escape) and this one cannot drift apart.
+            let _ = update(app, Message::DragCancel);
+            return update(app, Message::PluginDragCancel);
         }
         Message::SelectPlugin(i) => {
             if app.modifiers.control() || app.modifiers.command() {

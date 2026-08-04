@@ -751,19 +751,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // that is the whole difference: `mouse_area` cannot tell "left while
     // dragging" from "let go out there", so cancelling on exit meant dragging
     // upward past the header dropped the mod every time.
-    // `on_release` is the catch-all: a row or a strip that handles the release
-    // captures it and this never fires, but a release landing anywhere else in
-    // the list - a header, a gap the layout moved, empty space below the last
-    // row - disarms instead of leaving a drag live for the next click to commit.
+    // No release handler here. Every release is decided in ONE place -
+    // `Message::PointerReleased`, from the global listener - which drops at the
+    // aimed gap or disarms if none was aimed.
     //
-    // A release OUTSIDE the list is caught globally instead of by `on_exit`, and
-    // that is the whole difference: `mouse_area` cannot tell "left while
-    // dragging" from "let go out there", so cancelling on exit meant dragging
-    // upward past the header dropped the mod every time.
+    // There used to be an `on_release(DragCancel)` as a catch-all, from before
+    // that listener existed. With both, a release that did not land exactly on a
+    // drop strip raced: this one cancelled the drag before the global one could
+    // commit it. Releasing over a row lost the drop, and once the auto-scroll
+    // bands existed - which are never drop strips - dragging any distance made
+    // it certain.
     let list_area = mouse_area(
         scrollable(list).id(mod_scroll_id()).width(Length::Fill).height(Length::Fill),
-    )
-    .on_release(Message::DragCancel);
+    );
     // The conflict marks go ON the scrollbar, at the same fraction of the list,
     // so the mod a tint refers to can be found without reading every row on the
     // way. Stacked rather than placed beside it: a strip in the flow pushed the

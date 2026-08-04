@@ -1850,6 +1850,28 @@ mod tests {
     }
 
     #[test]
+    fn a_long_drag_still_drops_after_the_list_has_scrolled_under_it() {
+        // The bug: dragging a block far enough that the auto-scroll took over
+        // put the pointer on a scroll band, which is not a drop strip. A second
+        // release handler on the list then cancelled the drag before the global
+        // one could commit it, so a long drag never landed. One handler decides
+        // now, and it only ever looks at where the drag was AIMED.
+        let mut app = nav_app(&["a", "b", "c", "d", "e"]);
+        app.selected_mods = [3usize, 4].into_iter().collect();
+        let _ = update(&mut app, Message::DragStart(3));
+        let _ = update(&mut app, Message::DragOverGap(0));
+
+        // The list scrolls under the pointer; the aim does not change.
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
+        let _ = update(&mut app, Message::DragScrollTick);
+        assert!(app.drag_state.is_some_and(|d| d.aimed), "the scroll disarmed the drag");
+
+        let _ = update(&mut app, Message::PointerReleased);
+        assert_eq!(names(&app.mods), vec!["d", "e", "a", "b", "c"], "the block did not land");
+        assert!(app.drag_scroll.is_none(), "the scroll timer outlived the drag");
+    }
+
+    #[test]
     fn a_release_that_aimed_at_nothing_is_a_click_not_a_move() {
         // A plain click arms a drag too. Releasing it must not reorder anything.
         let mut app = nav_app(&["a", "b", "c"]);
