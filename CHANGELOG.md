@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.3.0](https://github.com/Project-Colony/Eidos/compare/v1.2.0...v1.3.0) (2026-08-04)
+
+
+### Features
+
+* **gui:** MO2 parity for conflicts, dragging, and a Colony-shaped Settings ([#8](https://github.com/Project-Colony/Eidos/issues/8)) ([9aad5f7](https://github.com/Project-Colony/Eidos/commit/9aad5f749c31f9105923d41bd1c6f257f6056660))
+
+
+### Performance
+
+* **core:** index the overwrite, taking directory ops out of resolution ([#13](https://github.com/Project-Colony/Eidos/issues/13)) ([8ce6821](https://github.com/Project-Colony/Eidos/commit/8ce68211e23932798ca70022d6a089f64912011b))
+
+
+### Internals
+
+* **cli:** one module per subcommand ([#10](https://github.com/Project-Colony/Eidos/issues/10)) ([1a65d2f](https://github.com/Project-Colony/Eidos/commit/1a65d2f4f707dac7063c9b61a9f7959da89f777c))
+* **fuse:** split the daemon into modules by role ([#9](https://github.com/Project-Colony/Eidos/issues/9)) ([484b894](https://github.com/Project-Colony/Eidos/commit/484b894669c1e51e8b7e46e8f51653e744deb846))
+* **install:** make install.rs a directory module ([#11](https://github.com/Project-Colony/Eidos/issues/11)) ([808f36e](https://github.com/Project-Colony/Eidos/commit/808f36e4dda6c29e8af136e9ba6fc124068e9ec2))
+* **instance:** make profile.rs a directory module, split by method ([#12](https://github.com/Project-Colony/Eidos/issues/12)) ([730311d](https://github.com/Project-Colony/Eidos/commit/730311db961f2878ed2740104d8d99f96a3029ed))
+
 ## [1.2.0](https://github.com/Project-Colony/Eidos/compare/v1.1.0...v1.2.0) (2026-08-03)
 
 
