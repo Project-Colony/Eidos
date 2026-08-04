@@ -778,9 +778,18 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // time it is laid out beneath a stationary cursor. `aimed` means the pointer
     // has crossed an insertion point, which no plain click does.
     if app.drag_state.is_some_and(|d| d.aimed) {
+        // `on_move` gives the pointer's position INSIDE the band, so depth is
+        // just its height normalised - 1.0 hard against the edge of the list.
         let band = |edge: ScrollEdge| {
             mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
                 .on_enter(Message::DragScrollEdge(Some(edge)))
+                .on_move(move |p| {
+                    let t = (p.y / DRAG_SCROLL_BAND).clamp(0.0, 1.0);
+                    Message::DragScrollDepth(match edge {
+                        ScrollEdge::Up => 1.0 - t,
+                        ScrollEdge::Down => t,
+                    })
+                })
                 .on_exit(Message::DragScrollEdge(None))
         };
         layers = layers.push(

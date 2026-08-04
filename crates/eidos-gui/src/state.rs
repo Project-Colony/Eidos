@@ -141,6 +141,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         modifiers: iced::keyboard::Modifiers::default(),
         drag_state: None,
         drag_scroll: None,
+        drag_scroll_depth: 0.5,
         selected_plugin: None,
         selected_plugins: HashSet::new(),
         plugin_anchor: None,

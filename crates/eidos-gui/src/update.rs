@@ -2732,6 +2732,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Only meaningful mid-drag: the bands are not rendered otherwise, but
             // a stale message must not start a scroll on its own.
             app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
+            // Entering starts mid-range: `on_move` has not fired yet, and a band
+            // that began at full speed would lurch before the user had aimed.
+            if app.drag_scroll.is_some() {
+                app.drag_scroll_depth = 0.5;
+            }
+        }
+        Message::DragScrollDepth(d) => {
+            app.drag_scroll_depth = d.clamp(0.0, 1.0);
         }
         Message::DragScrollTick => {
             let Some(edge) = app.drag_scroll else { return Task::none() };
@@ -2741,9 +2749,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             // RELATIVE, so this never needs to know where the list already is -
             // which is exactly what the first version got wrong.
+            // Speed follows how deep into the band the pointer is: a nudge
+            // creeps a row at a time, the very edge crosses the list.
+            let px = DRAG_SCROLL_SLOW_PX
+                + (DRAG_SCROLL_FAST_PX - DRAG_SCROLL_SLOW_PX) * app.drag_scroll_depth;
             let y = match edge {
-                ScrollEdge::Up => -DRAG_SCROLL_PX,
-                ScrollEdge::Down => DRAG_SCROLL_PX,
+                ScrollEdge::Up => -px,
+                ScrollEdge::Down => px,
             };
             return operation::scroll_by(
                 mod_scroll_id(),

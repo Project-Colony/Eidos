@@ -412,6 +412,9 @@ enum Message {
     PointerReleased,
     /// The pointer entered (or left) an auto-scroll edge while dragging.
     DragScrollEdge(Option<ScrollEdge>),
+    /// How deep into the band the pointer sits, 0.0 at the inner lip to 1.0 at
+    /// the very edge of the list. Drives the speed.
+    DragScrollDepth(f32),
     /// One auto-scroll step, fired on a timer while an edge is held.
     DragScrollTick,
     // ---- the same gesture in the plugin list (its own indices and rules) ----
@@ -704,19 +707,25 @@ pub(crate) enum ScrollEdge {
     Down,
 }
 
-/// How far one auto-scroll tick moves, in pixels - about one row.
+/// How far one auto-scroll tick moves, in pixels, at the inner lip of the band
+/// and at the outer edge of the list.
 ///
 /// Pixels, and applied with `scroll_by`, which is RELATIVE. The first version of
 /// this mirrored the scroll offset in a field and wrote it back with `snap_to`,
 /// which is absolute: any staleness in the mirror became a jump to wherever the
 /// stale value pointed, usually the very top. There is no mirror now, so there
 /// is nothing to go stale.
-pub(crate) const DRAG_SCROLL_PX: f32 = 22.0;
+///
+/// The range is what makes the band aimable: one row a tick lets you creep to
+/// the row just off screen, and pushing to the edge crosses a long list without
+/// waiting. A single speed can do one or the other, never both.
+pub(crate) const DRAG_SCROLL_SLOW_PX: f32 = 6.0;
+pub(crate) const DRAG_SCROLL_FAST_PX: f32 = 46.0;
 
 /// How tall the auto-scroll bands are at each end of the list. They sit OVER the
 /// list while a drag is under way, so every pixel of them is an insertion point
 /// that cannot be aimed at: deep enough to hit without aiming, no deeper.
-pub(crate) const DRAG_SCROLL_BAND: f32 = 20.0;
+pub(crate) const DRAG_SCROLL_BAND: f32 = 28.0;
 
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
 /// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
@@ -996,6 +1005,9 @@ struct App {
     /// Which edge of the mod list the pointer rests on mid-drag, if any. Drives
     /// the auto-scroll tick; `None` stops it.
     drag_scroll: Option<ScrollEdge>,
+    /// How deep into that band the pointer is, 0.0..1.0. Speed follows it, so
+    /// nudging the edge creeps and pushing right against it flies.
+    drag_scroll_depth: f32,
     /// The plugin list's Shift anchor; see [`App::sel_anchor`].
     plugin_anchor: Option<usize>,
     /// The focused plugin row, and the multi-selection around it - the same
@@ -1815,6 +1827,42 @@ mod tests {
         // Ending the drag stops it, so no timer outlives the gesture.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_scroll.is_none());
+    }
+
+    #[test]
+    fn the_auto_scroll_speeds_up_toward_the_edge() {
+        // Depth 0 is the inner lip of the band, 1.0 hard against the edge of the
+        // list. The point of the range: one speed can creep to the row just off
+        // screen OR cross a 250-mod list, never both.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
+        // Entering starts mid-range rather than at full speed, since `on_move`
+        // has not fired yet and a lurch is worse than a slow start.
+        assert!((app.drag_scroll_depth - 0.5).abs() < f32::EPSILON);
+
+        let _ = update(&mut app, Message::DragScrollDepth(0.0));
+        assert_eq!(app.drag_scroll_depth, 0.0);
+        let _ = update(&mut app, Message::DragScrollDepth(1.0));
+        assert_eq!(app.drag_scroll_depth, 1.0);
+
+        // Out-of-range values are clamped, not trusted: the depth comes from a
+        // pointer position divided by a height, and both can surprise.
+        let _ = update(&mut app, Message::DragScrollDepth(4.2));
+        assert_eq!(app.drag_scroll_depth, 1.0);
+        let _ = update(&mut app, Message::DragScrollDepth(-1.0));
+        assert_eq!(app.drag_scroll_depth, 0.0);
+    }
+
+    #[test]
+    fn the_slow_end_is_still_slower_than_the_fast_end() {
+        // Guards the constants against being edited into each other's order,
+        // which would make the band feel arbitrary rather than aimable.
+        assert!(DRAG_SCROLL_SLOW_PX > 0.0, "the shallow end must still move");
+        assert!(
+            DRAG_SCROLL_FAST_PX > DRAG_SCROLL_SLOW_PX * 2.0,
+            "the range is too narrow to be worth having"
+        );
     }
 
     #[test]
