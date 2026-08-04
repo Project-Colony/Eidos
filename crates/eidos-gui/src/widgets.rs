@@ -24,6 +24,9 @@ use crate::{App, Message};
 /// the same fraction of the list as the scrollbar's. Runs of the same colour
 /// collapse into one widget - a list is mostly untinted, so this is a handful of
 /// containers rather than one per mod.
+///
+/// Meant to be stacked over the scrollbar, not placed next to it. Nothing here
+/// handles events, so the scrollbar underneath still takes the pointer.
 pub(crate) fn conflict_map<'a>(tints: &[Option<Color>]) -> Element<'a, Message> {
     // Nothing to point at: take no width at all rather than leave a dead gutter.
     if tints.is_empty() || tints.iter().all(Option::is_none) {
@@ -50,9 +53,11 @@ pub(crate) fn conflict_map<'a>(tints: &[Option<Color>]) -> Element<'a, Message> 
     col.into()
 }
 
-/// Width of the conflict strip. Wide enough to read as a mark at a glance,
-/// narrow enough not to be mistaken for a column.
-pub(crate) const CONFLICT_MAP_W: f32 = 6.0;
+/// Width of the conflict strip: iced's default scrollbar width, because the
+/// strip is laid OVER the scrollbar rather than beside it. Beside it, the marks
+/// pushed the whole list sideways to make room - visible, and ugly, for
+/// something that is meant to be a hint.
+pub(crate) const CONFLICT_MAP_W: f32 = 10.0;
 
 /// Place a floating card with one corner at `at`, growing away from the nearest
 /// window edge.

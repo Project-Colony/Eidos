@@ -410,6 +410,10 @@ enum Message {
     /// The left button was released anywhere on screen. Commits a drag that has
     /// aimed at a gap, disarms one that has not.
     PointerReleased,
+    /// The pointer entered (or left) an auto-scroll edge while dragging.
+    DragScrollEdge(Option<ScrollEdge>),
+    /// One auto-scroll step, fired on a timer while an edge is held.
+    DragScrollTick,
     // ---- the same gesture in the plugin list (its own indices and rules) ----
     /// Begin a potential drag from plugin row `i`.
     PluginDragStart(usize),
@@ -693,6 +697,27 @@ struct DownloadRow {
     speed: Option<f64>,
 }
 
+/// Which end of the list an auto-scroll is heading for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScrollEdge {
+    Up,
+    Down,
+}
+
+/// How far one auto-scroll tick moves, in pixels - about one row.
+///
+/// Pixels, and applied with `scroll_by`, which is RELATIVE. The first version of
+/// this mirrored the scroll offset in a field and wrote it back with `snap_to`,
+/// which is absolute: any staleness in the mirror became a jump to wherever the
+/// stale value pointed, usually the very top. There is no mirror now, so there
+/// is nothing to go stale.
+pub(crate) const DRAG_SCROLL_PX: f32 = 22.0;
+
+/// How tall the auto-scroll bands are at each end of the list. They sit OVER the
+/// list while a drag is under way, so every pixel of them is an insertion point
+/// that cannot be aimed at: deep enough to hit without aiming, no deeper.
+pub(crate) const DRAG_SCROLL_BAND: f32 = 20.0;
+
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
 /// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
 /// move is only applied on release, and only when `from != hover_over`.
@@ -968,6 +993,9 @@ struct App {
     modifiers: iced::keyboard::Modifiers,
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
+    /// Which edge of the mod list the pointer rests on mid-drag, if any. Drives
+    /// the auto-scroll tick; `None` stops it.
+    drag_scroll: Option<ScrollEdge>,
     /// The plugin list's Shift anchor; see [`App::sel_anchor`].
     plugin_anchor: Option<usize>,
     /// The focused plugin row, and the multi-selection around it - the same
@@ -1296,6 +1324,14 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
         let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
+    }
+    // Auto-scroll while a drag rests on an edge band. Subscribed only then, so an
+    // idle drag - or no drag at all - schedules nothing.
+    if app.drag_scroll.is_some() {
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(60))
+                .map(|_| Message::DragScrollTick),
+        );
     }
     // While waiting on a launched game/tool, poll for its exit so we can unlock.
     if app.running.is_some() {
@@ -1762,6 +1798,34 @@ mod tests {
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_state.is_none());
         assert_eq!(names(&app.mods), vec!["a", "b", "c"], "a click moved a row");
+    }
+
+    #[test]
+    fn the_auto_scroll_only_runs_while_a_drag_does() {
+        let mut app = nav_app(&["a", "b", "c"]);
+        // No drag: entering a band cannot start anything. The bands are not even
+        // rendered then, but a stale message must not be enough on its own.
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
+        assert!(app.drag_scroll.is_none());
+
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
+        assert_eq!(app.drag_scroll, Some(ScrollEdge::Down));
+
+        // Ending the drag stops it, so no timer outlives the gesture.
+        let _ = update(&mut app, Message::PointerReleased);
+        assert!(app.drag_scroll.is_none());
+    }
+
+    #[test]
+    fn a_tick_without_a_drag_does_nothing_and_disarms() {
+        // The shape that broke this before: the scroll must never act on state
+        // it kept about the list. A tick with no drag behind it does nothing at
+        // all rather than moving the view somewhere it remembered.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.drag_scroll = Some(ScrollEdge::Up);
+        let _ = update(&mut app, Message::DragScrollTick);
+        assert!(app.drag_scroll.is_none(), "a tick with no drag left the edge armed");
     }
 
     #[test]

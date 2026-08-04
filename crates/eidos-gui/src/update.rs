@@ -1110,6 +1110,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.selected_plugins.clear();
             app.drag_state = None;
             app.plugin_drag = None;
+            app.drag_scroll = None;
             app.menu_mod = None;
         }
         Message::OpenModMenu(i) => {
@@ -2727,11 +2728,37 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragCancel => {
             app.drag_state = None;
         }
+        Message::DragScrollEdge(edge) => {
+            // Only meaningful mid-drag: the bands are not rendered otherwise, but
+            // a stale message must not start a scroll on its own.
+            app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
+        }
+        Message::DragScrollTick => {
+            let Some(edge) = app.drag_scroll else { return Task::none() };
+            if app.drag_state.is_none() {
+                app.drag_scroll = None;
+                return Task::none();
+            }
+            // RELATIVE, so this never needs to know where the list already is -
+            // which is exactly what the first version got wrong.
+            let y = match edge {
+                ScrollEdge::Up => -DRAG_SCROLL_PX,
+                ScrollEdge::Down => DRAG_SCROLL_PX,
+            };
+            return operation::scroll_by(
+                mod_scroll_id(),
+                iced::widget::scrollable::AbsoluteOffset { x: 0.0, y },
+            );
+        }
         Message::PointerReleased => {
             // Letting go is a DROP wherever a gap is aimed, and a cancel
             // otherwise - regardless of where the pointer happens to be. A user
             // who dragged upward to scroll and released over the toolbar means
             // the gap they were aiming at, not "nowhere".
+            // Cleared FIRST, on every path: the drop branches below return
+            // early, so leaving it to the end meant a drag that ended on a gap
+            // kept its timer running with nothing left to scroll for.
+            app.drag_scroll = None;
             if app.drag_state.is_some_and(|d| d.aimed) {
                 return update(app, Message::DragDrop);
             }

@@ -764,10 +764,33 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         scrollable(list).id(mod_scroll_id()).width(Length::Fill).height(Length::Fill),
     )
     .on_release(Message::DragCancel);
-    // The conflict marks sit immediately right of the scrollbar, at the same
-    // fraction of the list, so the mod a tint refers to can be found without
-    // reading every row on the way.
-    let list_area = Row::new().push(list_area).push(conflict_map(&tints));
+    // The conflict marks go ON the scrollbar, at the same fraction of the list,
+    // so the mod a tint refers to can be found without reading every row on the
+    // way. Stacked rather than placed beside it: a strip in the flow pushed the
+    // whole list sideways to make room, which is a lot of shifted UI for a hint.
+    // Nothing in the strip handles events, so the scrollbar keeps the pointer.
+    let mut layers = Stack::new().push(list_area).push(
+        Row::new().push(Space::new().width(Length::Fill)).push(conflict_map(&tints)),
+    );
+    // Auto-scroll bands, and only once the drag is REALLY under way. `DragStart`
+    // fires on press, so keying these off "a drag exists" put them under the
+    // pointer on every click - and `mouse_area` publishes `on_enter` the first
+    // time it is laid out beneath a stationary cursor. `aimed` means the pointer
+    // has crossed an insertion point, which no plain click does.
+    if app.drag_state.is_some_and(|d| d.aimed) {
+        let band = |edge: ScrollEdge| {
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_enter(Message::DragScrollEdge(Some(edge)))
+                .on_exit(Message::DragScrollEdge(None))
+        };
+        layers = layers.push(
+            Column::new()
+                .push(container(band(ScrollEdge::Up)).height(Length::Fixed(DRAG_SCROLL_BAND)))
+                .push(Space::new().height(Length::Fill))
+                .push(container(band(ScrollEdge::Down)).height(Length::Fixed(DRAG_SCROLL_BAND))),
+        );
+    }
+    let list_area = layers;
 
     // ALWAYS in the flow, at a fixed height, even when it has nothing to say.
     // Appearing and disappearing moved every row below it by its own height, so
