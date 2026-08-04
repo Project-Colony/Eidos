@@ -626,6 +626,9 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
     let mut list = Column::new();
+    // One entry per row actually drawn, feeding the conflict strip beside the
+    // scrollbar. Filled in the same order the rows are pushed.
+    let mut tints: Vec<Option<Color>> = Vec::new();
     let mut shown = 0usize;
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
@@ -662,6 +665,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             // slot just before a group header would be unreachable.
             list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
             list = list.push(separator_row(i, m, color, collapsed, selected));
+            tints.push(None); // a separator has no conflict of its own
             continue;
         }
         if !vis[i] {
@@ -701,6 +705,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
+        tints.push(conflict);
         let bg = row_background(i % 2 == 0, selected, conflict);
         list = list.push(list_row(
             mod_row(i, m, meta, flag_icon, hidden_icon, bg),
@@ -737,16 +742,47 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     .on_press(Message::SelectTab(Tab::Overwrite))
     .style(button::text);
 
-    // Wrap the list so the pointer leaving its bounds during a drag cancels it
-    // (MO2 drops nothing when you release outside the list).
-    // `on_release` here is the catch-all: a row or a strip that handles the
-    // release captures it and this never fires, but a release landing anywhere
-    // else in the list - a header, a gap the layout moved, empty space below the
-    // last row - disarms instead of leaving a drag live for the next click to
-    // commit. `on_exit` covers releasing outside the list entirely.
-    let list_area = mouse_area(scrollable(list).id(mod_scroll_id()).height(Length::Fill))
-        .on_exit(Message::DragCancel)
-        .on_release(Message::DragCancel);
+    // `on_release` is the catch-all: a row or a strip that handles the release
+    // captures it and this never fires, but a release landing anywhere else in
+    // the list - a header, a gap the layout moved, empty space below the last
+    // row - disarms instead of leaving a drag live for the next click to commit.
+    //
+    // A release OUTSIDE the list is caught globally instead of by `on_exit`, and
+    // that is the whole difference: `mouse_area` cannot tell "left while
+    // dragging" from "let go out there", so cancelling on exit meant dragging
+    // upward past the header dropped the mod every time.
+    let scroller = scrollable(list)
+        .id(mod_scroll_id())
+        .height(Length::Fill)
+        // Remembered so the auto-scroll can move RELATIVE to where the user is.
+        .on_scroll(|v| Message::ModListScrolled(v.relative_offset().y));
+    let list_area = mouse_area(scroller).on_release(Message::DragCancel);
+    // Auto-scroll bands, and ONLY while a drag is live - the rest of the time
+    // they would swallow clicks on the first and last rows. Entering one starts
+    // a timer that keeps scrolling while the pointer rests there, which is what
+    // dragging to the top edge does in MO2.
+    let list_area: Element<'a, Message> = if dragging {
+        let band = |edge: ScrollEdge| {
+            mouse_area(container(Space::new().width(Length::Fill).height(Length::Fill)))
+                .on_enter(Message::DragScrollEdge(Some(edge)))
+                .on_exit(Message::DragScrollEdge(None))
+        };
+        Stack::new()
+            .push(list_area)
+            .push(
+                Column::new()
+                    .push(container(band(ScrollEdge::Up)).height(Length::Fixed(DRAG_SCROLL_BAND)))
+                    .push(Space::new().height(Length::Fill))
+                    .push(container(band(ScrollEdge::Down)).height(Length::Fixed(DRAG_SCROLL_BAND))),
+            )
+            .into()
+    } else {
+        list_area.into()
+    };
+    // The conflict marks sit immediately right of the scrollbar, at the same
+    // fraction of the list, so the mod a tint refers to can be found without
+    // reading every row on the way.
+    let list_area = Row::new().push(list_area).push(conflict_map(&tints));
 
     // ALWAYS in the flow, at a fixed height, even when it has nothing to say.
     // Appearing and disappearing moved every row below it by its own height, so

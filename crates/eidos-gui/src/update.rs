@@ -2727,6 +2727,51 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragCancel => {
             app.drag_state = None;
         }
+        Message::ModListScrolled(y) => {
+            app.mod_scroll_at = y;
+        }
+        Message::DragScrollEdge(edge) => {
+            // Only meaningful mid-drag: the bands are not rendered otherwise, but
+            // a stale message must not start a scroll on its own.
+            app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
+        }
+        Message::DragScrollTick => {
+            let Some(edge) = app.drag_scroll else { return Task::none() };
+            if app.drag_state.is_none() {
+                app.drag_scroll = None;
+                return Task::none();
+            }
+            // A fixed fraction per tick rather than a pixel count: the list is
+            // hundreds of rows long here and a pixel step would crawl.
+            let step = match edge {
+                ScrollEdge::Up => -DRAG_SCROLL_STEP,
+                ScrollEdge::Down => DRAG_SCROLL_STEP,
+            };
+            let next = (app.mod_scroll_at + step).clamp(0.0, 1.0);
+            if (next - app.mod_scroll_at).abs() < f32::EPSILON {
+                return Task::none(); // already at the end; stop asking
+            }
+            app.mod_scroll_at = next;
+            return operation::snap_to(
+                mod_scroll_id(),
+                operation::RelativeOffset { x: None, y: Some(next) },
+            );
+        }
+        Message::PointerReleased => {
+            // Letting go is a DROP wherever a gap is aimed, and a cancel
+            // otherwise - regardless of where the pointer happens to be. A user
+            // who dragged upward to scroll and released over the toolbar means
+            // the gap they were aiming at, not "nowhere".
+            if app.drag_state.is_some_and(|d| d.aimed) {
+                return update(app, Message::DragDrop);
+            }
+            if app.plugin_drag.as_ref().is_some_and(|d| d.aimed) {
+                return update(app, Message::PluginDragDrop);
+            }
+            app.drag_state = None;
+            app.plugin_drag = None;
+            app.drag_scroll = None;
+        }
         Message::SelectPlugin(i) => {
             if app.modifiers.control() || app.modifiers.command() {
                 return update(app, Message::SelectPluginToggle(i));

@@ -7,11 +7,52 @@
 
 use std::collections::HashMap;
 
-use iced::widget::{button, container, image, mouse_area, text, Row, Space};
+use iced::widget::{button, container, image, mouse_area, text, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::theme::{row_bg, CONFLICT_LOSES_BG, CONFLICT_WINS_BG, SEL_BG};
 use crate::{App, Message};
+
+/// A thin strip beside the scrollbar marking WHERE the conflicting mods are, in
+/// the same green/red as the row tints.
+///
+/// MO2 draws these marks on the scrollbar itself. The point is the same: with a
+/// few hundred mods, "this one is overwritten" is useless if finding the culprit
+/// means scrolling the whole list looking for a tinted row.
+///
+/// `tints` is one entry per DRAWN row, in order, so a position on the strip is
+/// the same fraction of the list as the scrollbar's. Runs of the same colour
+/// collapse into one widget - a list is mostly untinted, so this is a handful of
+/// containers rather than one per mod.
+pub(crate) fn conflict_map<'a>(tints: &[Option<Color>]) -> Element<'a, Message> {
+    // Nothing to point at: take no width at all rather than leave a dead gutter.
+    if tints.is_empty() || tints.iter().all(Option::is_none) {
+        return Space::new().width(Length::Fixed(0.0)).into();
+    }
+    let mut col = Column::new().width(Length::Fixed(CONFLICT_MAP_W)).height(Length::Fill);
+    let mut i = 0;
+    while i < tints.len() {
+        let tint = tints[i];
+        let start = i;
+        while i < tints.len() && tints[i] == tint {
+            i += 1;
+        }
+        let run = (i - start) as u16;
+        col = col.push(
+            container(Space::new().width(Length::Fill).height(Length::Fill))
+                .height(Length::FillPortion(run))
+                .style(move |_t: &Theme| container::Style {
+                    background: tint.map(Background::Color),
+                    ..Default::default()
+                }),
+        );
+    }
+    col.into()
+}
+
+/// Width of the conflict strip. Wide enough to read as a mark at a glance,
+/// narrow enough not to be mistaken for a column.
+pub(crate) const CONFLICT_MAP_W: f32 = 6.0;
 
 /// Place a floating card with one corner at `at`, growing away from the nearest
 /// window edge.
