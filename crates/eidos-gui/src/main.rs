@@ -719,8 +719,8 @@ pub(crate) enum ScrollEdge {
 /// The range is what makes the band aimable: one row a tick lets you creep to
 /// the row just off screen, and pushing to the edge crosses a long list without
 /// waiting. A single speed can do one or the other, never both.
-pub(crate) const DRAG_SCROLL_SLOW_PX: f32 = 6.0;
-pub(crate) const DRAG_SCROLL_FAST_PX: f32 = 46.0;
+pub(crate) const DRAG_SCROLL_SLOW_PX: f32 = 8.0;
+pub(crate) const DRAG_SCROLL_FAST_PX: f32 = 75.0;
 
 /// How tall the auto-scroll bands are at each end of the list. They sit OVER the
 /// list while a drag is under way, so every pixel of them is an insertion point
@@ -1341,7 +1341,10 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // idle drag - or no drag at all - schedules nothing.
     if app.drag_scroll.is_some() {
         subs.push(
-            iced::time::every(std::time::Duration::from_millis(60))
+            // 40ms rather than 60: the step is applied whole, so a slower tick
+            // buys the same speed only by jumping further each time, and a jump
+            // is what the user reads as the list misbehaving.
+            iced::time::every(std::time::Duration::from_millis(40))
                 .map(|_| Message::DragScrollTick),
         );
     }
