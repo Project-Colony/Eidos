@@ -105,11 +105,44 @@ enum InfoTab {
     Notes,
 }
 
-/// Tabs of the Preferences modal (MO2's Settings dialog).
+/// Sections of the Settings screen, in sidebar order.
+///
+/// A vertical rail rather than a row of tabs, matching Colony: five entries do
+/// not fit across a dialog, and the rail leaves room to add a sixth without
+/// re-laying anything out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
     General,
+    Appearance,
+    ModList,
     Nexus,
+    About,
+}
+
+impl SettingsTab {
+    /// Every section, in the order the sidebar lists them.
+    pub(crate) const ALL: [SettingsTab; 5] = [
+        SettingsTab::General,
+        SettingsTab::Appearance,
+        SettingsTab::ModList,
+        SettingsTab::Nexus,
+        SettingsTab::About,
+    ];
+
+    /// The sections open the first time Settings is shown - one per category, so
+    /// every page says something without a click.
+    pub(crate) const DEFAULT_OPEN: [&'static str; 5] =
+        ["startup", "theme", "dragging", "account", "paths"];
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            SettingsTab::General => "General",
+            SettingsTab::Appearance => "Appearance",
+            SettingsTab::ModList => "Mod list",
+            SettingsTab::Nexus => "Nexus",
+            SettingsTab::About => "About",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -281,6 +314,14 @@ enum Message {
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
     ToggleLockGui(bool),
+    /// Set how fast the mod list scrolls when a drag rests on an edge.
+    DragScrollSpeedChanged(f32),
+    /// Open or close one collapsible section of the Settings screen.
+    SettingsToggleSection(&'static str),
+    /// Toggle the conflict marks on the mod list's scrollbar.
+    ToggleConflictMarks(bool),
+    /// Toggle restoring the window to its last size.
+    ToggleRememberWindow(bool),
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,
@@ -407,6 +448,16 @@ enum Message {
     DragDrop,
     /// Abandon an in-flight drag (filter change / Escape).
     DragCancel,
+    /// The left button was released anywhere on screen. Commits a drag that has
+    /// aimed at a gap, disarms one that has not.
+    PointerReleased,
+    /// The pointer entered (or left) an auto-scroll edge while dragging.
+    DragScrollEdge(Option<ScrollEdge>),
+    /// How deep into the band the pointer sits, 0.0 at the inner lip to 1.0 at
+    /// the very edge of the list. Drives the speed.
+    DragScrollDepth(f32),
+    /// One auto-scroll step, fired on a timer while an edge is held.
+    DragScrollTick,
     // ---- the same gesture in the plugin list (its own indices and rules) ----
     /// Begin a potential drag from plugin row `i`.
     PluginDragStart(usize),
@@ -690,6 +741,33 @@ struct DownloadRow {
     speed: Option<f64>,
 }
 
+/// Which end of the list an auto-scroll is heading for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScrollEdge {
+    Up,
+    Down,
+}
+
+/// How far one auto-scroll tick moves, in pixels, at the inner lip of the band
+/// and at the outer edge of the list.
+///
+/// Pixels, and applied with `scroll_by`, which is RELATIVE. The first version of
+/// this mirrored the scroll offset in a field and wrote it back with `snap_to`,
+/// which is absolute: any staleness in the mirror became a jump to wherever the
+/// stale value pointed, usually the very top. There is no mirror now, so there
+/// is nothing to go stale.
+///
+/// The range is what makes the band aimable: one row a tick lets you creep to
+/// the row just off screen, and pushing to the edge crosses a long list without
+/// waiting. A single speed can do one or the other, never both.
+pub(crate) const DRAG_SCROLL_SLOW_PX: f32 = 8.0;
+pub(crate) const DRAG_SCROLL_FAST_PX: f32 = 75.0;
+
+/// How tall the auto-scroll bands are at each end of the list. They sit OVER the
+/// list while a drag is under way, so every pixel of them is an insertion point
+/// that cannot be aimed at: deep enough to hit without aiming, no deeper.
+pub(crate) const DRAG_SCROLL_BAND: f32 = 28.0;
+
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
 /// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
 /// move is only applied on release, and only when `from != hover_over`.
@@ -885,6 +963,9 @@ struct App {
     settings_open: bool,
     /// The active Preferences tab.
     settings_tab: SettingsTab,
+    /// Which collapsible sections of the Settings screen are open. Keyed by the
+    /// same `&'static str` the section is built with, so a rename cannot drift.
+    settings_expanded: HashSet<&'static str>,
     /// The editable Nexus API key field.
     settings_api_key: String,
     /// The validated Nexus account, if the stored key checked out (or was cached).
@@ -965,6 +1046,12 @@ struct App {
     modifiers: iced::keyboard::Modifiers,
     /// An in-flight drag-to-reorder (None = not dragging).
     drag_state: Option<DragState>,
+    /// Which edge of the mod list the pointer rests on mid-drag, if any. Drives
+    /// the auto-scroll tick; `None` stops it.
+    drag_scroll: Option<ScrollEdge>,
+    /// How deep into that band the pointer is, 0.0..1.0. Speed follows it, so
+    /// nudging the edge creeps and pushing right against it flies.
+    drag_scroll_depth: f32,
     /// The plugin list's Shift anchor; see [`App::sel_anchor`].
     plugin_anchor: Option<usize>,
     /// The focused plugin row, and the multi-selection around it - the same
@@ -1181,6 +1268,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::PointerAt(position))
         }
+        // A release ANYWHERE ends a drag. `mouse_area::on_release` only fires
+        // while the cursor is over its bounds, so without this a drag let go
+        // outside the list stayed armed and the next click moved the mod. It
+        // used to be handled by cancelling on pointer EXIT, which cost far more
+        // than it bought: dragging upward past the header to scroll dropped the
+        // mod every time, because leaving and letting go are indistinguishable
+        // to that callback.
+        iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+            Some(Message::PointerReleased)
+        }
         iced::Event::Window(iced::window::Event::Resized(size)) => {
             Some(Message::WindowResized(size))
         }
@@ -1283,6 +1380,17 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
         let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
+    }
+    // Auto-scroll while a drag rests on an edge band. Subscribed only then, so an
+    // idle drag - or no drag at all - schedules nothing.
+    if app.drag_scroll.is_some() {
+        subs.push(
+            // 40ms rather than 60: the step is applied whole, so a slower tick
+            // buys the same speed only by jumping further each time, and a jump
+            // is what the user reads as the list misbehaving.
+            iced::time::every(std::time::Duration::from_millis(40))
+                .map(|_| Message::DragScrollTick),
+        );
     }
     // While waiting on a launched game/tool, poll for its exit so we can unlock.
     if app.running.is_some() {
@@ -1722,6 +1830,170 @@ mod tests {
         assert!(app.data_expanded.is_empty(), "expanded paths from the old game survived");
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn releasing_outside_the_list_still_drops_where_you_aimed() {
+        // The bug this replaces: cancelling on pointer EXIT meant dragging up
+        // past the header - the only way to reach an earlier row - dropped the
+        // mod and cleared the selection every time. Leaving and letting go are
+        // indistinguishable to `on_exit`, so the release is caught globally.
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        let _ = update(&mut app, Message::DragStart(3));
+        let _ = update(&mut app, Message::DragOverGap(1));
+        assert!(app.drag_state.is_some_and(|d| d.aimed), "the gap was aimed at");
+
+        // Released with the pointer anywhere at all.
+        let _ = update(&mut app, Message::PointerReleased);
+        assert!(app.drag_state.is_none(), "the drag ended");
+        assert_eq!(names(&app.mods), vec!["a", "d", "b", "c"], "it moved where it aimed");
+    }
+
+    #[test]
+    fn a_long_drag_still_drops_after_the_list_has_scrolled_under_it() {
+        // The bug: dragging a block far enough that the auto-scroll took over
+        // put the pointer on a scroll band, which is not a drop strip. A second
+        // release handler on the list then cancelled the drag before the global
+        // one could commit it, so a long drag never landed. One handler decides
+        // now, and it only ever looks at where the drag was AIMED.
+        let mut app = nav_app(&["a", "b", "c", "d", "e"]);
+        app.selected_mods = [3usize, 4].into_iter().collect();
+        let _ = update(&mut app, Message::DragStart(3));
+        let _ = update(&mut app, Message::DragOverGap(0));
+
+        // The list scrolls under the pointer; the aim does not change.
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
+        let _ = update(&mut app, Message::DragScrollTick);
+        assert!(app.drag_state.is_some_and(|d| d.aimed), "the scroll disarmed the drag");
+
+        let _ = update(&mut app, Message::PointerReleased);
+        assert_eq!(names(&app.mods), vec!["d", "e", "a", "b", "c"], "the block did not land");
+        assert!(app.drag_scroll.is_none(), "the scroll timer outlived the drag");
+    }
+
+    #[test]
+    fn a_release_that_aimed_at_nothing_is_a_click_not_a_move() {
+        // A plain click arms a drag too. Releasing it must not reorder anything.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::DragStart(2));
+        let _ = update(&mut app, Message::PointerReleased);
+        assert!(app.drag_state.is_none());
+        assert_eq!(names(&app.mods), vec!["a", "b", "c"], "a click moved a row");
+    }
+
+    #[test]
+    fn the_auto_scroll_only_runs_while_a_drag_does() {
+        let mut app = nav_app(&["a", "b", "c"]);
+        // No drag: entering a band cannot start anything. The bands are not even
+        // rendered then, but a stale message must not be enough on its own.
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
+        assert!(app.drag_scroll.is_none());
+
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
+        assert_eq!(app.drag_scroll, Some(ScrollEdge::Down));
+
+        // Ending the drag stops it, so no timer outlives the gesture.
+        let _ = update(&mut app, Message::PointerReleased);
+        assert!(app.drag_scroll.is_none());
+    }
+
+    #[test]
+    fn every_settings_category_opens_with_something_to_read() {
+        // A page whose sections are all shut asks the user to click before it
+        // says anything, which is the failure mode of a sectioned settings
+        // screen. Each category ships one section open.
+        let app = nav_app(&[]);
+        assert_eq!(SettingsTab::DEFAULT_OPEN.len(), SettingsTab::ALL.len());
+        for key in SettingsTab::DEFAULT_OPEN {
+            assert!(app.settings_expanded.contains(key), "{key} did not start open");
+        }
+    }
+
+    #[test]
+    fn a_section_header_toggles_rather_than_only_opening() {
+        let mut app = nav_app(&[]);
+        assert!(app.settings_expanded.contains("startup"));
+        let _ = update(&mut app, Message::SettingsToggleSection("startup"));
+        assert!(!app.settings_expanded.contains("startup"), "it did not close");
+        let _ = update(&mut app, Message::SettingsToggleSection("startup"));
+        assert!(app.settings_expanded.contains("startup"), "it did not reopen");
+    }
+
+    #[test]
+    fn every_settings_toggle_persists_what_it_flipped() {
+        // Each of these writes settings.ini, so a flip that only changed the
+        // in-memory copy would look right and be gone next launch.
+        let mut app = nav_app(&[]);
+        let before = (app.prefs.conflict_marks, app.prefs.remember_window, app.prefs.lock_gui);
+        let _ = update(&mut app, Message::ToggleConflictMarks(!before.0));
+        let _ = update(&mut app, Message::ToggleRememberWindow(!before.1));
+        let _ = update(&mut app, Message::ToggleLockGui(!before.2));
+        assert_eq!(app.prefs.conflict_marks, !before.0);
+        assert_eq!(app.prefs.remember_window, !before.1);
+        assert_eq!(app.prefs.lock_gui, !before.2);
+    }
+
+    #[test]
+    fn the_auto_scroll_speeds_up_toward_the_edge() {
+        // Depth 0 is the inner lip of the band, 1.0 hard against the edge of the
+        // list. The point of the range: one speed can creep to the row just off
+        // screen OR cross a 250-mod list, never both.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::DragStart(0));
+        let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
+        // Entering starts mid-range rather than at full speed, since `on_move`
+        // has not fired yet and a lurch is worse than a slow start.
+        assert!((app.drag_scroll_depth - 0.5).abs() < f32::EPSILON);
+
+        let _ = update(&mut app, Message::DragScrollDepth(0.0));
+        assert_eq!(app.drag_scroll_depth, 0.0);
+        let _ = update(&mut app, Message::DragScrollDepth(1.0));
+        assert_eq!(app.drag_scroll_depth, 1.0);
+
+        // Out-of-range values are clamped, not trusted: the depth comes from a
+        // pointer position divided by a height, and both can surprise.
+        let _ = update(&mut app, Message::DragScrollDepth(4.2));
+        assert_eq!(app.drag_scroll_depth, 1.0);
+        let _ = update(&mut app, Message::DragScrollDepth(-1.0));
+        assert_eq!(app.drag_scroll_depth, 0.0);
+    }
+
+    #[test]
+    fn the_slow_end_is_still_slower_than_the_fast_end() {
+        // Guards the constants against being edited into each other's order,
+        // which would make the band feel arbitrary rather than aimable.
+        assert!(DRAG_SCROLL_SLOW_PX > 0.0, "the shallow end must still move");
+        assert!(
+            DRAG_SCROLL_FAST_PX > DRAG_SCROLL_SLOW_PX * 2.0,
+            "the range is too narrow to be worth having"
+        );
+    }
+
+    #[test]
+    fn a_tick_without_a_drag_does_nothing_and_disarms() {
+        // The shape that broke this before: the scroll must never act on state
+        // it kept about the list. A tick with no drag behind it does nothing at
+        // all rather than moving the view somewhere it remembered.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.drag_scroll = Some(ScrollEdge::Up);
+        let _ = update(&mut app, Message::DragScrollTick);
+        assert!(app.drag_scroll.is_none(), "a tick with no drag left the edge armed");
+    }
+
+    #[test]
+    fn a_press_alone_is_not_yet_a_drag() {
+        // What the auto-scroll bands key off. `DragStart` fires on PRESS, so
+        // keying them off "a drag exists" put them under the pointer on every
+        // click - and a `mouse_area` laid out beneath a stationary cursor
+        // publishes `on_enter` at once, which is what launched the list.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::DragStart(1));
+        assert!(app.drag_state.is_some(), "the press armed a drag");
+        assert!(!app.drag_state.is_some_and(|d| d.aimed), "but nothing is aimed at yet");
+
+        let _ = update(&mut app, Message::DragOverGap(0));
+        assert!(app.drag_state.is_some_and(|d| d.aimed), "crossing a gap is a real drag");
     }
 
     #[test]
