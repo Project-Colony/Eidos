@@ -761,7 +761,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // they would swallow clicks on the first and last rows. Entering one starts
     // a timer that keeps scrolling while the pointer rests there, which is what
     // dragging to the top edge does in MO2.
-    let list_area: Element<'a, Message> = if dragging {
+    // Only once the drag is REALLY under way. `DragStart` fires on press, so
+    // keying the bands off `dragging` made them appear under a stationary cursor
+    // on every click - and `mouse_area` publishes `on_enter` the first time it is
+    // laid out beneath the pointer, so pressing a row near either edge launched
+    // the list across itself. `aimed` means the pointer has actually crossed an
+    // insertion point, which no plain click does.
+    let list_area: Element<'a, Message> = if app.drag_state.is_some_and(|d| d.aimed) {
         let band = |edge: ScrollEdge| {
             mouse_area(container(Space::new().width(Length::Fill).height(Length::Fill)))
                 .on_enter(Message::DragScrollEdge(Some(edge)))

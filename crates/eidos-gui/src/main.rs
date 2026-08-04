@@ -699,14 +699,17 @@ struct DownloadRow {
     speed: Option<f64>,
 }
 
-/// How far one auto-scroll tick moves, as a fraction of the whole list. Chosen
-/// against a real 250-mod list: small enough to aim with, fast enough that
-/// crossing the list does not outlast the user's patience.
-pub(crate) const DRAG_SCROLL_STEP: f32 = 0.02;
+/// How many ROWS one auto-scroll tick moves.
+///
+/// Rows, not a fraction of the list: a fraction scrolls a 250-mod list eighty
+/// times faster than a 10-mod one, which is how the first version of this
+/// teleported instead of scrolling.
+pub(crate) const DRAG_SCROLL_ROWS: f32 = 1.0;
 
-/// How tall the auto-scroll bands are at each end of the list. Deep enough to
-/// hit without aiming, shallow enough to leave the list usable while dragging.
-pub(crate) const DRAG_SCROLL_BAND: f32 = 28.0;
+/// How tall the auto-scroll bands are at each end of the list. They sit OVER the
+/// list while a drag is under way, so every pixel of them is a gap that cannot be
+/// aimed at: deep enough to hit without aiming, no deeper.
+pub(crate) const DRAG_SCROLL_BAND: f32 = 20.0;
 
 /// Which end of the list an auto-scroll is heading for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1820,6 +1823,46 @@ mod tests {
         // And the end of the drag stops it, so no timer outlives the gesture.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_scroll.is_none());
+    }
+
+    #[test]
+    fn one_auto_scroll_tick_is_one_row_whatever_the_list_length() {
+        // The regression this guards: the step used to be a fixed FRACTION of the
+        // list, so a 250-mod list moved five rows a tick where a 10-mod list moved
+        // a fifth of one. On a real list that read as teleporting, not scrolling.
+        let travelled = |count: usize| {
+            let names: Vec<String> = (0..count).map(|i| i.to_string()).collect();
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let mut app = nav_app(&refs);
+            let _ = update(&mut app, Message::DragStart(0));
+            let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Down)));
+            app.mod_scroll_at = 0.5;
+            let _ = update(&mut app, Message::DragScrollTick);
+            // Back into rows: the offset is a fraction of (len - 1) positions.
+            (app.mod_scroll_at - 0.5) * (count - 1) as f32
+        };
+        for count in [10usize, 50, 250] {
+            let rows = travelled(count);
+            assert!(
+                (rows - DRAG_SCROLL_ROWS).abs() < 0.01,
+                "a {count}-mod list moved {rows} rows per tick, not {DRAG_SCROLL_ROWS}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_press_alone_is_not_yet_a_drag() {
+        // What the auto-scroll bands key off. `DragStart` fires on PRESS, so
+        // keying them off "a drag exists" put them under the pointer on every
+        // click - and a `mouse_area` laid out beneath a stationary cursor
+        // publishes `on_enter` at once, which is what launched the list.
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = update(&mut app, Message::DragStart(1));
+        assert!(app.drag_state.is_some(), "the press armed a drag");
+        assert!(!app.drag_state.is_some_and(|d| d.aimed), "but nothing is aimed at yet");
+
+        let _ = update(&mut app, Message::DragOverGap(0));
+        assert!(app.drag_state.is_some_and(|d| d.aimed), "crossing a gap is a real drag");
     }
 
     #[test]

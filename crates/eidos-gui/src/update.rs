@@ -2741,11 +2741,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.drag_scroll = None;
                 return Task::none();
             }
-            // A fixed fraction per tick rather than a pixel count: the list is
-            // hundreds of rows long here and a pixel step would crawl.
+            // One row per tick, whatever the list's length. Expressed as a
+            // fraction because `snap_to` speaks fractions, but derived from the
+            // row count so a long list does not scroll faster than a short one.
+            let rows = app.mods.len().max(2) as f32;
+            let per_row = 1.0 / (rows - 1.0);
             let step = match edge {
-                ScrollEdge::Up => -DRAG_SCROLL_STEP,
-                ScrollEdge::Down => DRAG_SCROLL_STEP,
+                ScrollEdge::Up => -DRAG_SCROLL_ROWS * per_row,
+                ScrollEdge::Down => DRAG_SCROLL_ROWS * per_row,
             };
             let next = (app.mod_scroll_at + step).clamp(0.0, 1.0);
             if (next - app.mod_scroll_at).abs() < f32::EPSILON {
