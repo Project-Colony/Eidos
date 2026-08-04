@@ -91,6 +91,11 @@ pub struct LayerStack {
     /// behaviour that existed before this field, kept reachable because it is
     /// the one that is never wrong.
     lower: Option<std::sync::Arc<LowerIndex>>,
+    /// The overwrite membership index; `None` means dirty, rebuilt on next use.
+    /// `Arc<Mutex<..>>` for the same reason as the locks and the stats above: a
+    /// cloned stack describes the SAME mount, so a mutation noted through one
+    /// clone must dirty the index every clone reads. See [`OwIndex`].
+    ow: std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<OwIndex>>>>,
 }
 
 /// What the read-only layers provide, resolved once at construction.
@@ -303,7 +308,14 @@ impl LayerStack {
         // any caller can ask. `None` is a complete answer: it means every query
         // walks the layers exactly as it did before this existed.
         let lower = LowerIndex::build(&layers);
-        Self { layers, overwrite, path_locks, resolve: Default::default(), lower }
+        Self {
+            layers,
+            overwrite,
+            path_locks,
+            resolve: Default::default(),
+            lower,
+            ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
+        }
     }
 
     /// Take the mutation lock for `vpath`. Folded, so the two spellings of one
@@ -408,6 +420,78 @@ impl LayerStack {
             }
         }
         false
+    }
+
+    /// The overwrite index to read from, building it if it is dirty. `None`
+    /// when the index is disabled (`EIDOS_NO_OW_INDEX`), which sends every
+    /// query down the walk - the code path that is never wrong.
+    fn ow_snapshot(&self) -> Option<std::sync::Arc<OwIndex>> {
+        if !*OW_INDEX_ON {
+            return None;
+        }
+        let mut slot = self.ow.lock().unwrap_or_else(|p| p.into_inner());
+        if slot.is_none() {
+            *slot = Some(std::sync::Arc::new(OwIndex::build(&self.overwrite)));
+        }
+        slot.clone()
+    }
+
+    /// Drop the overwrite index: something changed in a way not worth modelling
+    /// precisely (a rename, a delete, a raw prepare). The next resolve rebuilds
+    /// from disk, which is always right and cheap on a tree this small.
+    fn ow_dirty(&self) {
+        *self.ow.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// Note a CREATION in the overwrite: `vpath` now exists at `real`. The hot
+    /// mutation by far - a shader cache compiling writes hundreds of these in a
+    /// burst - so it updates the index in place instead of dropping it: the
+    /// whole chain of new ancestors is inserted, and any whiteout on the path
+    /// is forgotten (writing un-deletes).
+    fn ow_note_created(&self, vpath: &str, real: &Path) {
+        let mut slot = self.ow.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(arc) = slot.as_mut() else { return };
+        let idx = std::sync::Arc::make_mut(arc);
+        let norm = normalize(vpath);
+        let comps: Vec<String> =
+            norm.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+        // Real ancestors, aligned with the vpath components: real is the leaf,
+        // its parent the leaf's parent, and so on up to the overwrite root.
+        let mut reals: Vec<PathBuf> = Vec::with_capacity(comps.len());
+        let mut cur = real.to_path_buf();
+        for _ in 0..comps.len() {
+            reals.push(cur.clone());
+            cur = match cur.parent() {
+                Some(p) => p.to_path_buf(),
+                None => break,
+            };
+        }
+        reals.reverse();
+        let mut prefix = String::new();
+        for (i, comp) in comps.iter().enumerate() {
+            if !prefix.is_empty() {
+                prefix.push('/');
+            }
+            prefix.push_str(comp);
+            let key = fold_vpath(&prefix);
+            if let Some(r) = reals.get(i) {
+                if !idx.ambiguous.contains(&key) {
+                    idx.entries.insert(key.clone(), r.clone());
+                }
+            }
+            // Writing un-deletes, exactly as clear_whiteout did on disk - and the
+            // marker file's own entry goes with it.
+            if idx.wh.remove(&key) {
+                if let (Some(parent), Some(name)) = (normalize(&prefix).parent(), normalize(&prefix).file_name()) {
+                    let marker = if parent.as_os_str().is_empty() {
+                        format!("{WHITEOUT_PREFIX}{}", name.to_string_lossy())
+                    } else {
+                        format!("{}/{WHITEOUT_PREFIX}{}", parent.to_string_lossy(), name.to_string_lossy())
+                    };
+                    idx.entries.remove(&fold_vpath(&marker));
+                }
+            }
+        }
     }
 
     /// Resolve a virtual path to the real file that should serve reads.
@@ -533,7 +617,85 @@ impl LayerStack {
         if under_hidden(vpath) {
             return None;
         }
-        if let Some(p) = self.ci_lookup(&self.overwrite, vpath) {
+        if let Some(ow) = self.ow_snapshot() {
+            let folded = fold_vpath(vpath);
+            // The root itself. The walk resolves it to the overwrite root - a
+            // directory that always exists and is never an entry OF the index,
+            // since the index maps the overwrite's children, not the overwrite.
+            // Without this the mount's own root reads as a negative and readdir
+            // of `/` returns ENOENT, which the real-mount suite catches in
+            // seconds.
+            if folded.is_empty() {
+                return self.resolve_read_walk(vpath);
+            }
+            if ow.ambiguous.contains(&folded) {
+                // Case-colliding overwrite entries: only the walk's backtracking
+                // can pick correctly. Rare to the point of theoretical - our own
+                // write path reuses existing casing - but refusing is free.
+                return self.resolve_read_walk(vpath);
+            }
+            if let Some(real) = ow.entries.get(&folded) {
+                // The belt: an entry the disk no longer backs means a mutation
+                // slipped past the doors. Serve THIS query through the walk
+                // (always right) and rebuild for the next one - a stale index
+                // must cost one slow query, never a wrong answer.
+                // `symlink_metadata`, not `exists()`: the walk returns dangling
+                // symlinks too, and the index must not disagree with it.
+                if fs::symlink_metadata(real).is_ok() {
+                    return Some(real.clone());
+                }
+                self.ow_dirty();
+                return self.resolve_read_walk(vpath);
+            }
+            // The overwrite provably has nothing at this path: go straight to
+            // the layers, skipping the walk that used to cost every resolve its
+            // probes and scans.
+            let lower = match self.lower.as_ref().map(|i| i.get(&folded)) {
+                Some(Ok(Some(path))) => {
+                    self.resolve.idx_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    path.clone()
+                }
+                Some(Ok(None)) => {
+                    self.resolve.idx_negatives.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    return None;
+                }
+                verdict @ (Some(Err(())) | None) => {
+                    match verdict {
+                        Some(Err(())) => self
+                            .resolve
+                            .idx_fallbacks
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                        _ => self
+                            .resolve
+                            .idx_absent
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                    };
+                    self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?
+                }
+            };
+            if ow.hides(&folded) {
+                return None;
+            }
+            return Some(lower);
+        }
+        self.resolve_read_walk(vpath)
+    }
+
+    /// The pre-index body of [`Self::resolve_read_inner`], kept whole: it is the
+    /// path that is never wrong, the fallback for ambiguous keys and stale
+    /// entries, and the reference the equivalence tests compare the index
+    /// against.
+    fn resolve_read_walk(&self, vpath: &str) -> Option<PathBuf> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let (p0, s0) = (self.resolve.probes.load(Relaxed), self.resolve.scans.load(Relaxed));
+        let ow = self.ci_lookup(&self.overwrite, vpath);
+        self.resolve
+            .ow_probes
+            .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
+        self.resolve
+            .ow_scans
+            .fetch_add(self.resolve.scans.load(Relaxed).wrapping_sub(s0), Relaxed);
+        if let Some(p) = ow {
             return Some(p);
         }
         // Ask the layers BEFORE asking what the overwrite hides.
@@ -548,13 +710,32 @@ impl LayerStack {
         // when it cannot - an ambiguous key, or no index at all. Both fall to the
         // walk, which is the code this replaces and is never wrong.
         let lower = match self.lower.as_ref().map(|i| i.get(&fold_vpath(vpath))) {
-            Some(Ok(Some(path))) => path.clone(),
+            Some(Ok(Some(path))) => {
+                self.resolve.idx_hits.fetch_add(1, Relaxed);
+                path.clone()
+            }
             // A complete index saying "nothing has it" is as good as the walk
             // saying so, and this is the commonest answer by far: Wine probes
             // far more paths than exist.
-            Some(Ok(None)) => return None,
-            Some(Err(())) | None => {
-                self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?
+            Some(Ok(None)) => {
+                self.resolve.idx_negatives.fetch_add(1, Relaxed);
+                return None;
+            }
+            verdict @ (Some(Err(())) | None) => {
+                match verdict {
+                    Some(Err(())) => self.resolve.idx_fallbacks.fetch_add(1, Relaxed),
+                    _ => self.resolve.idx_absent.fetch_add(1, Relaxed),
+                };
+                let (p0, s0) =
+                    (self.resolve.probes.load(Relaxed), self.resolve.scans.load(Relaxed));
+                let found = self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath));
+                self.resolve
+                    .walk_probes
+                    .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
+                self.resolve
+                    .walk_scans
+                    .fetch_add(self.resolve.scans.load(Relaxed).wrapping_sub(s0), Relaxed);
+                found?
             }
         };
         if self.overwrite_hides(vpath) {
@@ -649,6 +830,7 @@ impl LayerStack {
             // (the classic "stop the launcher rewriting my INI") must survive.
             ensure_owner_writable(&dest);
         }
+        self.ow_note_created(vpath, &dest);
         Ok(dest)
     }
 
@@ -666,6 +848,11 @@ impl LayerStack {
         self.clear_whiteout(vpath);
         if was_deleted && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
             let _ = fs::write(dest.join(OPAQUE_MARKER), b"");
+            // Opacity changes what an ancestor HIDES, not just what exists:
+            // model it by rebuild rather than by surgery.
+            self.ow_dirty();
+        } else {
+            self.ow_note_created(vpath, &dest);
         }
         Ok(dest)
     }
@@ -689,25 +876,29 @@ impl LayerStack {
     /// creating or emptying a file, so resurrecting the bytes of a lower-layer
     /// file it is about to overwrite would be wrong.
     pub fn create_truncated(&self, vpath: &str) -> std::io::Result<(PathBuf, fs::File)> {
-        let dest = self.prepare_overwrite(vpath)?;
+        let dest = self.prepare_overwrite_inner(vpath)?;
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
             .open(&dest)?;
+        // In place, not a rebuild: this is the hot door - a shader cache
+        // compiling writes hundreds of these in a burst.
+        self.ow_note_created(vpath, &dest);
         Ok((dest, file))
     }
 
     /// Create `vpath` in the overwrite as a symlink to `target`, replacing any
     /// entry already there.
     pub fn create_symlink(&self, vpath: &str, target: &Path) -> std::io::Result<PathBuf> {
-        let dest = self.prepare_overwrite(vpath)?;
+        let dest = self.prepare_overwrite_inner(vpath)?;
         // An existing entry is replaced rather than failing EEXIST: the overwrite
         // is where a re-created path lands, and `symlink` has already been told
         // this name is theirs.
         let _ = fs::remove_file(&dest);
         std::os::unix::fs::symlink(target, &dest)?;
+        self.ow_note_created(vpath, &dest);
         Ok(dest)
     }
 
@@ -723,6 +914,15 @@ impl LayerStack {
     }
 
     pub fn prepare_overwrite(&self, vpath: &str) -> std::io::Result<PathBuf> {
+        let dest = self.prepare_overwrite_inner(vpath)?;
+        // The caller creates the entry itself AFTER this returns, through a door
+        // this layer cannot see - so the index cannot be updated in place, only
+        // scheduled for a rebuild that will read whatever they made.
+        self.ow_dirty();
+        Ok(dest)
+    }
+
+    fn prepare_overwrite_inner(&self, vpath: &str) -> std::io::Result<PathBuf> {
         let _guard = self.path_lock(vpath);
         let dest = self.resolve_write(vpath);
         if let Some(parent) = dest.parent() {
@@ -757,6 +957,7 @@ impl LayerStack {
             }
             fs::write(wh, b"")?;
         }
+        self.ow_dirty();
         Ok(())
     }
 
@@ -785,6 +986,7 @@ impl LayerStack {
             }
             fs::write(wh, b"")?;
         }
+        self.ow_dirty();
         Ok(())
     }
 
@@ -972,7 +1174,125 @@ pub struct ResolveStats {
     /// FUSE call sites because there are a dozen of those and one of them would
     /// eventually be added without its stopwatch.
     pub ns: AtomicU64,
+    // ---- attribution: where the probes and scans above actually go ----------
+    /// Probes/scans spent on the OVERWRITE pre-check. Measured as deltas around
+    /// that phase, so under concurrency they are approximate (another thread's
+    /// probes can land in the window); in a single-threaded bench they are
+    /// exact, and the bench is what they exist for.
+    pub ow_probes: AtomicU64,
+    pub ow_scans: AtomicU64,
+    /// Probes/scans spent walking layers because the index could not answer.
+    /// Same delta caveat as above.
+    pub walk_probes: AtomicU64,
+    pub walk_scans: AtomicU64,
+    /// Index verdicts, incremented directly: exact everywhere.
+    pub idx_hits: AtomicU64,
+    pub idx_negatives: AtomicU64,
+    /// The index existed but could not answer (ambiguous key): fell to the walk.
+    pub idx_fallbacks: AtomicU64,
+    /// No index at all (build declined or disabled): every query walks.
+    pub idx_absent: AtomicU64,
 }
+
+/// What the overwrite holds, as three folded-key sets, so the per-resolve
+/// question "does the overwrite affect this path?" is a hashmap look instead of
+/// a case-folding directory walk.
+///
+/// The overwrite is mutable - the game writes there - which is why the layer
+/// index never covered it. But every mutation flows through this type's own
+/// methods (`create_truncated`'s doc calls them the doors), so the index can be
+/// kept honest: creations insert, everything else drops it for a lazy rebuild.
+/// The rebuild walks a tree that is tiny in practice: a session writes INIs and
+/// shader caches, not mod trees.
+#[derive(Debug, Default, Clone)]
+struct OwIndex {
+    /// Folded vpath -> real path, files, dirs and symlinks alike. Byte keys,
+    /// the same shape `fold_vpath` gives the layer index.
+    entries: HashMap<Vec<u8>, PathBuf>,
+    /// Folded keys where two overwrite entries collide case-insensitively. The
+    /// index refuses these and the walk (with its backtracking) answers, the
+    /// same contract as the layer index's ambiguous keys.
+    ambiguous: HashSet<Vec<u8>>,
+    /// Folded vpaths hidden by a whiteout marker: the name itself and below.
+    wh: HashSet<Vec<u8>>,
+    /// Folded vpaths of opaque directories: lower content STRICTLY below is
+    /// hidden (the directory itself exists in the overwrite and resolves).
+    opaque: HashSet<Vec<u8>>,
+}
+
+impl OwIndex {
+    fn build(root: &Path) -> OwIndex {
+        fn walk(dir: &Path, vprefix: &str, out: &mut OwIndex) {
+            let Ok(rd) = fs::read_dir(dir) else { return };
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                let vpath =
+                    if vprefix.is_empty() { name.clone() } else { format!("{vprefix}/{name}") };
+                if name == OPAQUE_MARKER {
+                    out.opaque.insert(fold_vpath(vprefix));
+                    continue;
+                }
+                if let Some(target) = name.strip_prefix(WHITEOUT_PREFIX) {
+                    let tv = if vprefix.is_empty() {
+                        target.to_string()
+                    } else {
+                        format!("{vprefix}/{target}")
+                    };
+                    out.wh.insert(fold_vpath(&tv));
+                    // The marker file itself is an overwrite entry too; recording
+                    // it keeps the map a faithful mirror of the walk.
+                }
+                let key = fold_vpath(&vpath);
+                let real = e.path();
+                match out.entries.entry(key.clone()) {
+                    std::collections::hash_map::Entry::Vacant(v) => {
+                        v.insert(real.clone());
+                    }
+                    std::collections::hash_map::Entry::Occupied(_) => {
+                        out.ambiguous.insert(key);
+                    }
+                }
+                if real.is_dir() {
+                    walk(&real, &vpath, out);
+                }
+            }
+        }
+        let mut out = OwIndex::default();
+        walk(root, "", &mut out);
+        out
+    }
+
+    /// Whether a LOWER result at `vpath` is hidden - the indexed twin of
+    /// [`LayerStack::overwrite_hides`]: a whiteout hides the name and below, an
+    /// opaque directory hides proper descendants only.
+    fn hides(&self, folded: &[u8]) -> bool {
+        if self.wh.is_empty() && self.opaque.is_empty() {
+            return false;
+        }
+        let mut from = 0usize;
+        loop {
+            let end = folded[from..].iter().position(|&b| b == b'/').map(|i| from + i);
+            let prefix = &folded[..end.unwrap_or(folded.len())];
+            if self.wh.contains(prefix) {
+                return true;
+            }
+            match end {
+                // A proper ancestor: opacity applies.
+                Some(_) if self.opaque.contains(prefix) => return true,
+                Some(e) => from = e + 1,
+                // The leaf: opacity on the leaf itself says nothing about it.
+                None => return false,
+            }
+        }
+    }
+}
+
+/// Whether the overwrite membership index is on. `EIDOS_NO_OW_INDEX=1` turns it
+/// off, the same escape hatch shape as `EIDOS_NO_INDEX` for the layer index:
+/// when a stale-view bug is suspected, disabling the suspect is one env var.
+static OW_INDEX_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
+    !std::env::var("EIDOS_NO_OW_INDEX").is_ok_and(|v| v != "0")
+});
 
 /// Whether to time resolution. Same switch as the FUSE stats, read once: the
 /// counters above are two relaxed adds on a path that already syscalls, but a
@@ -1717,12 +2037,133 @@ mod tests {
             st.probes.load(Ordering::Relaxed) - p0,
             st.scans.load(Ordering::Relaxed) - s0,
         );
-        // One probe and one scan, and both belong to the OVERWRITE - the mutable
-        // layer, deliberately never indexed and still read live. Every layer
-        // below was answered from memory. Two layers here; the point is that
-        // this figure does not grow when there are twenty-seven.
-        assert_eq!(probes, 1, "only the overwrite may be probed, got {probes}");
-        assert_eq!(scans, 1, "and only its own miss may enumerate, got {scans}");
+        // ZERO of both. The layers answer from the lower index, and the
+        // overwrite - once "deliberately never indexed and still read live", at
+        // one probe and one scan per resolve - now answers from its membership
+        // index. This assertion is the whole point of that index: the cost of a
+        // resolve no longer contains a single directory operation.
+        assert_eq!(probes, 0, "nothing may be probed on a fully indexed resolve, got {probes}");
+        assert_eq!(scans, 0, "and nothing may enumerate, got {scans}");
+    }
+
+    #[test]
+    fn the_mount_root_still_resolves_with_the_index_on() {
+        // The regression the real-mount suite caught: the empty vpath is the
+        // mount root, the walk answers it with the overwrite root, and the
+        // index - which maps the overwrite's children, not the overwrite -
+        // read it as a negative. readdir("/") then returned ENOENT.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "a.dat", "x");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over.clone());
+        assert_eq!(stack.resolve_read(""), Some(over));
+        assert_eq!(stack.resolve_read(""), stack.resolve_read_walk(""));
+    }
+
+    #[test]
+    fn the_overwrite_index_agrees_with_the_walk_on_the_whole_matrix() {
+        // The walk is the reference implementation - the code that is never
+        // wrong. The index must give the same answer on every shape the
+        // overwrite can take, or it has no business existing.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Data/lower.esp", "L");
+        put(&l, "Data/Deleted.esp", "D");
+        put(&l, "Gone/inside.txt", "G");
+        put(&l, "Recreated/old.txt", "O");
+        put(&over, "Data/mine.ini", "M");
+        put(&over, "Nested/Deep/file.txt", "N");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over);
+
+        // Whiteout a file, delete a whole dir, and recreate another (opaque).
+        stack.remove("Data/Deleted.esp").unwrap();
+        stack.remove("Gone").unwrap();
+        stack.remove("Recreated").unwrap();
+        stack.make_dir("Recreated").unwrap();
+
+        for q in [
+            "Data/mine.ini",
+            "DATA/MINE.INI",
+            "Data/lower.esp",
+            "data/LOWER.esp",
+            "Data/Deleted.esp",
+            "data/deleted.ESP",
+            "Gone/inside.txt",
+            "Recreated",
+            "Recreated/old.txt",
+            "Nested/Deep/file.txt",
+            "nested/deep/FILE.txt",
+            "Data/absent.esp",
+            "nothing/at/all.bsa",
+        ] {
+            assert_eq!(
+                stack.resolve_read(q),
+                stack.resolve_read_walk(q),
+                "index and walk disagree on {q}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_mutation_door_keeps_the_index_honest() {
+        // Each door either updates the index in place or drops it; either way
+        // the very next resolve must see the truth WITHOUT anyone rebuilding by
+        // hand. A door that forgets its hook makes this fail.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Data/lower.esp", "L");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over);
+
+        // Warm the index first, so a missing hook cannot hide behind a rebuild.
+        assert!(stack.resolve_read("Data/lower.esp").is_some());
+
+        let (_, mut f) = stack.create_truncated("Data/new.ini").unwrap();
+        use std::io::Write as _;
+        writeln!(f, "x").unwrap();
+        assert!(stack.resolve_read("data/NEW.ini").is_some(), "create_truncated was invisible");
+
+        stack.make_dir("Fresh/Sub").unwrap();
+        assert!(stack.resolve_read("fresh/sub").is_some(), "make_dir was invisible");
+
+        stack.create_symlink("Data/link.esp", Path::new("/nonexistent")).unwrap();
+        assert!(stack.resolve_read("data/link.ESP").is_some(), "create_symlink was invisible");
+
+        let dest = stack.open_for_write("Data/lower.esp").unwrap();
+        assert_eq!(stack.resolve_read("DATA/lower.esp"), Some(dest), "copy-up was invisible");
+
+        stack.remove("Data/lower.esp").unwrap();
+        assert_eq!(stack.resolve_read("Data/lower.esp"), None, "remove was invisible");
+
+        stack.rename("Data/new.ini", "Data/renamed.ini").unwrap();
+        assert!(stack.resolve_read("Data/renamed.ini").is_some(), "rename target invisible");
+        assert_eq!(stack.resolve_read("Data/new.ini"), None, "rename source survived");
+    }
+
+    #[test]
+    fn a_creation_burst_updates_in_place_without_rebuilds() {
+        // The Community Shaders case: hundreds of files created mid-session.
+        // Each must be resolvable immediately, and the index must be updated
+        // rather than dropped - asserted by the resolve cost staying at zero
+        // directory operations right after each create.
+        let t = TempTree::new();
+        let (over, l) = (t.sub("ow"), t.sub("l"));
+        put(&l, "Data/base.esp", "B");
+        fs::create_dir_all(&over).unwrap();
+        let stack = LayerStack::new(vec![l], over);
+        assert!(stack.resolve_read("Data/base.esp").is_some()); // warm
+
+        let st = stack.resolve_stats();
+        for i in 0..50 {
+            let v = format!("ShaderCache/entry{i}.bin");
+            stack.create_truncated(&v).unwrap();
+            let (p0, s0) = (st.probes.load(Ordering::Relaxed), st.scans.load(Ordering::Relaxed));
+            assert!(stack.resolve_read(&v.to_ascii_uppercase()).is_some(), "{v} not visible");
+            assert_eq!(st.probes.load(Ordering::Relaxed) - p0, 0, "a resolve paid a probe after {v}");
+            assert_eq!(st.scans.load(Ordering::Relaxed) - s0, 0, "a resolve paid a scan after {v}");
+        }
     }
 
     #[test]
