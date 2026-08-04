@@ -109,7 +109,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         collapsed: HashSet::new(),
         category_filter: None,
         settings_open: false,
-        settings_tab: SettingsTab::Nexus,
+        settings_tab: SettingsTab::General,
+        // Open on first sight: a settings page whose sections are all shut asks
+        // the user to click five times before it says anything.
+        settings_expanded: SettingsTab::DEFAULT_OPEN.iter().copied().collect(),
         // Prefill the key field from the shared store (the same key `eidos nexus
         // key` writes), so it survives across sessions without a network round trip.
         settings_api_key: eidos_instance::settings::load_nexus_key().unwrap_or_default(),

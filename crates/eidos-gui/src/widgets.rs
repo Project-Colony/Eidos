@@ -13,6 +13,133 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 use crate::theme::{row_bg, CONFLICT_LOSES_BG, CONFLICT_WINS_BG, SEL_BG};
 use crate::{App, Message};
 
+/// A collapsible settings section: a title row that toggles, and its body when
+/// open. Colony's `view_collapsible_section`, in Eidos's palette.
+///
+/// Sections rather than one long column because a settings page is read by
+/// hunting: everything visible at once is everything to read past.
+pub(crate) fn settings_section<'a>(
+    key: &'static str,
+    title: &'a str,
+    expanded: bool,
+    content: Element<'a, Message>,
+) -> Element<'a, Message> {
+    let chevron = if expanded { "\u{25BE}" } else { "\u{25B8}" };
+    let head = button(
+        Row::new()
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .push(text(title).size(13.0).width(Length::Fill))
+            .push(text(chevron).size(10.0)),
+    )
+    .padding([7, 4])
+    .width(Length::Fill)
+    .on_press(Message::SettingsToggleSection(key))
+    .style(button::text);
+
+    if !expanded {
+        return head.into();
+    }
+    let rule = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).style(
+        |_t: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xC9, 0xB8, 0x90))),
+            ..Default::default()
+        },
+    );
+    Column::new()
+        .push(head)
+        .push(rule)
+        .push(container(content).padding([10, 4]).width(Length::Fill))
+        .into()
+}
+
+/// A labelled switch with a line of explanation under it, the whole row
+/// clickable. Colony's `view_functional_toggle`.
+///
+/// The description is not decoration: a settings page that only names its
+/// options makes the user guess what each one costs.
+pub(crate) fn settings_toggle<'a>(
+    title: &'a str,
+    desc: &'a str,
+    on: bool,
+    msg: Message,
+) -> Element<'a, Message> {
+    let knob = container(Space::new().width(Length::Fixed(13.0)).height(Length::Fixed(13.0)))
+        .style(|_t: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+            border: Border { radius: 7.0.into(), ..Default::default() },
+            ..Default::default()
+        });
+    let track = container(
+        Row::new()
+            .push(Space::new().width(Length::Fixed(if on { 16.0 } else { 2.0 })))
+            .push(knob),
+    )
+    .width(Length::Fixed(33.0))
+    .height(Length::Fixed(17.0))
+    .align_y(iced::alignment::Vertical::Center)
+    .style(move |_t: &Theme| container::Style {
+        background: Some(Background::Color(if on {
+            Color::from_rgb8(0x7A, 0x1F, 0x2B)
+        } else {
+            Color::from_rgb8(0xC9, 0xB8, 0x90)
+        })),
+        border: Border { radius: 9.0.into(), ..Default::default() },
+        ..Default::default()
+    });
+
+    button(
+        Row::new()
+            .spacing(10)
+            .align_y(iced::Alignment::Center)
+            .push(
+                Column::new()
+                    .spacing(1)
+                    .width(Length::Fill)
+                    .push(text(title).size(12.0))
+                    .push(text(desc).size(10.0)),
+            )
+            .push(track),
+    )
+    .padding([5, 4])
+    .width(Length::Fill)
+    .on_press(msg)
+    .style(button::text)
+    .into()
+}
+
+/// A named control with its own line of explanation - the pick-list and slider
+/// equivalent of [`settings_toggle`], so a section reads the same either way.
+pub(crate) fn settings_row<'a>(
+    title: &'a str,
+    desc: &'a str,
+    control: Element<'a, Message>,
+) -> Element<'a, Message> {
+    Row::new()
+        .spacing(10)
+        .align_y(iced::Alignment::Center)
+        .padding([5, 4])
+        .push(
+            Column::new()
+                .spacing(1)
+                .width(Length::Fill)
+                .push(text(title).size(12.0))
+                .push(text(desc).size(10.0)),
+        )
+        .push(control)
+        .into()
+}
+
+/// A read-only fact: a fixed-width label and its value. Colony's `info_row`.
+pub(crate) fn settings_info<'a>(label: &'a str, value: String) -> Element<'a, Message> {
+    Row::new()
+        .spacing(8)
+        .padding([2, 4])
+        .push(text(label).size(11.0).width(Length::Fixed(96.0)))
+        .push(text(value).size(11.0))
+        .into()
+}
+
 /// A thin strip beside the scrollbar marking WHERE the conflicting mods are, in
 /// the same green/red as the row tints.
 ///

@@ -770,7 +770,11 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // whole list sideways to make room, which is a lot of shifted UI for a hint.
     // Nothing in the strip handles events, so the scrollbar keeps the pointer.
     let mut layers = Stack::new().push(list_area).push(
-        Row::new().push(Space::new().width(Length::Fill)).push(conflict_map(&tints)),
+        Row::new().push(Space::new().width(Length::Fill)).push(if app.prefs.conflict_marks {
+            conflict_map(&tints)
+        } else {
+            Space::new().width(Length::Fixed(0.0)).into()
+        }),
     );
     // Auto-scroll bands, and only once the drag is REALLY under way. `DragStart`
     // fires on press, so keying these off "a drag exists" put them under the

@@ -129,6 +129,11 @@ impl SettingsTab {
         SettingsTab::About,
     ];
 
+    /// The sections open the first time Settings is shown - one per category, so
+    /// every page says something without a click.
+    pub(crate) const DEFAULT_OPEN: [&'static str; 5] =
+        ["startup", "theme", "dragging", "account", "paths"];
+
     pub(crate) fn label(self) -> &'static str {
         match self {
             SettingsTab::General => "General",
@@ -311,6 +316,12 @@ enum Message {
     ToggleLockGui(bool),
     /// Set how fast the mod list scrolls when a drag rests on an edge.
     DragScrollSpeedChanged(f32),
+    /// Open or close one collapsible section of the Settings screen.
+    SettingsToggleSection(&'static str),
+    /// Toggle the conflict marks on the mod list's scrollbar.
+    ToggleConflictMarks(bool),
+    /// Toggle restoring the window to its last size.
+    ToggleRememberWindow(bool),
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,
@@ -952,6 +963,9 @@ struct App {
     settings_open: bool,
     /// The active Preferences tab.
     settings_tab: SettingsTab,
+    /// Which collapsible sections of the Settings screen are open. Keyed by the
+    /// same `&'static str` the section is built with, so a rename cannot drift.
+    settings_expanded: HashSet<&'static str>,
     /// The editable Nexus API key field.
     settings_api_key: String,
     /// The validated Nexus account, if the stored key checked out (or was cached).
@@ -1860,6 +1874,42 @@ mod tests {
         // Ending the drag stops it, so no timer outlives the gesture.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_scroll.is_none());
+    }
+
+    #[test]
+    fn every_settings_category_opens_with_something_to_read() {
+        // A page whose sections are all shut asks the user to click before it
+        // says anything, which is the failure mode of a sectioned settings
+        // screen. Each category ships one section open.
+        let app = nav_app(&[]);
+        assert_eq!(SettingsTab::DEFAULT_OPEN.len(), SettingsTab::ALL.len());
+        for key in SettingsTab::DEFAULT_OPEN {
+            assert!(app.settings_expanded.contains(key), "{key} did not start open");
+        }
+    }
+
+    #[test]
+    fn a_section_header_toggles_rather_than_only_opening() {
+        let mut app = nav_app(&[]);
+        assert!(app.settings_expanded.contains("startup"));
+        let _ = update(&mut app, Message::SettingsToggleSection("startup"));
+        assert!(!app.settings_expanded.contains("startup"), "it did not close");
+        let _ = update(&mut app, Message::SettingsToggleSection("startup"));
+        assert!(app.settings_expanded.contains("startup"), "it did not reopen");
+    }
+
+    #[test]
+    fn every_settings_toggle_persists_what_it_flipped() {
+        // Each of these writes settings.ini, so a flip that only changed the
+        // in-memory copy would look right and be gone next launch.
+        let mut app = nav_app(&[]);
+        let before = (app.prefs.conflict_marks, app.prefs.remember_window, app.prefs.lock_gui);
+        let _ = update(&mut app, Message::ToggleConflictMarks(!before.0));
+        let _ = update(&mut app, Message::ToggleRememberWindow(!before.1));
+        let _ = update(&mut app, Message::ToggleLockGui(!before.2));
+        assert_eq!(app.prefs.conflict_marks, !before.0);
+        assert_eq!(app.prefs.remember_window, !before.1);
+        assert_eq!(app.prefs.lock_gui, !before.2);
     }
 
     #[test]

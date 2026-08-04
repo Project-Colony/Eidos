@@ -232,6 +232,11 @@ pub struct Settings {
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
     pub drag_scroll_speed: f32,
+    /// Draw the conflict marks on the mod list's scrollbar (on by default).
+    pub conflict_marks: bool,
+    /// Restore the window to its last size on launch (on by default). Off means
+    /// the size is neither read nor written, so the compositor decides.
+    pub remember_window: bool,
 }
 
 impl Default for Settings {
@@ -243,6 +248,8 @@ impl Default for Settings {
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
             drag_scroll_speed: 1.0,
+            conflict_marks: true,
+            remember_window: true,
         }
     }
 }
@@ -296,6 +303,14 @@ impl Settings {
                         }
                     }
                 }
+                "conflict_marks" => {
+                    s.conflict_marks =
+                        !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                }
+                "remember_window" => {
+                    s.remember_window =
+                        !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                }
                 "lock_gui" => {
                     s.lock_gui = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
                 }
@@ -314,10 +329,12 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\n",
+            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nconflict_marks={}\nremember_window={}\n",
             self.theme.as_str(),
             self.lock_gui,
-            self.drag_scroll_speed
+            self.drag_scroll_speed,
+            self.conflict_marks,
+            self.remember_window
         );
         if let Some(game) = &self.default_game {
             out.push_str("default_game=");
@@ -453,6 +470,8 @@ mod tests {
             window_size: Some((1280, 720)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
+            conflict_marks: false,
+            remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
@@ -531,6 +550,8 @@ mod tests {
             window_size: Some((1600, 900)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
+            conflict_marks: false,
+            remember_window: false,
         };
         fs::write(&path, s.to_ini()).unwrap();
         let loaded = Settings::parse(&fs::read_to_string(&path).unwrap());
