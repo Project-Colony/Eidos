@@ -452,6 +452,46 @@ fn post_form(url: &str, form: &[(&str, &str)]) -> Result<serde_json::Value, Stri
     resp.body_mut().read_json().map_err(|e| e.to_string())
 }
 
+/// Nexus's GraphQL endpoint. The account's content preferences live here and
+/// nowhere in the v1 REST API - `users/validate` does not carry them.
+pub const GRAPHQL_URL: &str = "https://api.nexusmods.com/v2/graphql";
+
+/// The account's "show adult content" setting, or `None` if it could not be read.
+///
+/// `None` is not a failure to report: it is the answer "we do not know", which
+/// the caller turns into [`crate::AdultPolicy::Unknown`] and therefore into
+/// hiding adult metadata. Every way this can go wrong - offline, the token
+/// rejected, the schema moved, a malformed body - lands there rather than
+/// granting permission by accident.
+///
+/// The query takes no arguments: the endpoint scopes `preferences` to whoever the
+/// bearer token belongs to. Unauthenticated it answers with an `errors` array and
+/// a null `preferences`, which parses to `None` here without special-casing.
+pub fn adult_preference(access_token: &str) -> Option<bool> {
+    let agent: ureq::Agent =
+        ureq::Agent::config_builder().http_status_as_error(false).build().into();
+    let body = serde_json::json!({
+        "query": "query preferences { preferences { adult adultBlurImages } }"
+    });
+    let mut resp = agent
+        .post(GRAPHQL_URL)
+        .header("Application-Name", "Eidos")
+        .header("Application-Version", env!("CARGO_PKG_VERSION"))
+        .header("Authorization", format!("Bearer {access_token}"))
+        .send_json(&body)
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let v: serde_json::Value = resp.body_mut().read_json().ok()?;
+    // A GraphQL error is reported inside a 200 body, so the status above is not
+    // enough: an errors array means the answer is not to be trusted.
+    if v.get("errors").is_some_and(|e| !e.is_null()) {
+        return None;
+    }
+    v.get("data")?.get("preferences")?.get("adult")?.as_bool()
+}
+
 /// Exchange the authorization code for tokens (the PKCE verifier proves we are
 /// the client that started the flow).
 pub fn exchange_code(cfg: &Config, code: &str, pkce: &Pkce) -> Result<Tokens, String> {

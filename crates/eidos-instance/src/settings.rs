@@ -48,13 +48,34 @@ pub struct NexusCreds {
     pub refresh_token: Option<String>,
     /// Unix seconds. Absolute, so it survives being written and read back.
     pub expires_at: u64,
+    /// The account's "show adult content" preference, as last read from Nexus.
+    /// `None` means "not known", which is NOT the same as `Some(false)`: unknown
+    /// hides adult metadata AND tells the user we could not check, where a known
+    /// `false` is the user's own setting. See `eidos_nexus::AdultPolicy`.
+    pub adult_ok: Option<bool>,
+    /// Unix seconds when [`Self::adult_ok`] was read. A stale answer decays back
+    /// to "unknown" rather than being trusted forever - the user can change the
+    /// setting on the site at any time, and we would never hear about it.
+    pub adult_checked_at: u64,
 }
+
+/// How long a cached adult-content preference is trusted before it decays to
+/// "unknown". A judgement call, not a documented requirement: long enough that a
+/// day's use costs one extra request, short enough that turning the setting off
+/// on the website takes effect the next day without signing in again.
+pub const ADULT_PREF_TTL: u64 = 24 * 3600;
 
 impl NexusCreds {
     /// Whether a stored sign-in is present at all. Says nothing about whether
     /// the access token is still fresh - that is `expires_at`'s job.
     pub fn has_oauth(&self) -> bool {
         self.access_token.as_ref().is_some_and(|t| !t.is_empty())
+    }
+
+    /// The cached adult-content preference, or `None` once it has aged out.
+    pub fn adult_pref(&self, now: u64) -> Option<bool> {
+        let fresh = now.saturating_sub(self.adult_checked_at) < ADULT_PREF_TTL;
+        self.adult_ok.filter(|_| fresh && self.adult_checked_at != 0)
     }
 }
 
@@ -91,13 +112,18 @@ pub fn clear_nexus_tokens() -> io::Result<()> {
     creds.access_token = None;
     creds.refresh_token = None;
     creds.expires_at = 0;
+    // The adult-content preference belongs to the account that just signed out.
+    // Keeping it would apply one person's setting to whoever signs in next.
+    creds.adult_ok = None;
+    creds.adult_checked_at = 0;
     save_nexus_creds(&creds)
 }
 
-/// The three fields this module owns; anything else in the file is passed
-/// through untouched by [`render_nexus_creds`] - including an `api_key=` line
-/// from a version that still had one, which is neither read nor deleted.
-const OWNED_KEYS: [&str; 3] = ["access_token", "refresh_token", "expires_at"];
+/// The fields this module owns; anything else in the file is passed through
+/// untouched by [`render_nexus_creds`] - including an `api_key=` line from a
+/// version that still had one, which is neither read nor deleted.
+const OWNED_KEYS: [&str; 5] =
+    ["access_token", "refresh_token", "expires_at", "adult_ok", "adult_checked_at"];
 
 fn parse_nexus_creds(text: &str) -> NexusCreds {
     let val = |want: &str| {
@@ -111,6 +137,14 @@ fn parse_nexus_creds(text: &str) -> NexusCreds {
         access_token: val("access_token"),
         refresh_token: val("refresh_token"),
         expires_at: val("expires_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        // Anything that is not a clean `1`/`0` reads as "unknown", which hides
+        // adult content: a corrupted line must not be able to grant permission.
+        adult_ok: val("adult_ok").and_then(|v| match v.as_str() {
+            "1" | "true" => Some(true),
+            "0" | "false" => Some(false),
+            _ => None,
+        }),
+        adult_checked_at: val("adult_checked_at").and_then(|v| v.parse().ok()).unwrap_or(0),
     }
 }
 
@@ -131,6 +165,10 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
     push("refresh_token", creds.refresh_token.as_deref().unwrap_or_default().trim());
     if creds.expires_at != 0 {
         push("expires_at", &creds.expires_at.to_string());
+    }
+    if let Some(ok) = creds.adult_ok {
+        push("adult_ok", if ok { "1" } else { "0" });
+        push("adult_checked_at", &creds.adult_checked_at.to_string());
     }
     for line in existing.lines() {
         let t = line.trim();
@@ -346,6 +384,51 @@ mod tests {
         assert_eq!(back.access_token.as_deref(), Some("at"));
         assert_eq!(back.refresh_token.as_deref(), Some("rt"));
         assert_eq!(back.expires_at, 999);
+    }
+
+    #[test]
+    fn the_adult_preference_survives_a_write_and_a_read() {
+        let mut creds = parse_nexus_creds("[Nexus]\naccess_token=at\n");
+        creds.adult_ok = Some(true);
+        creds.adult_checked_at = 1_000;
+        let back = parse_nexus_creds(&render_nexus_creds("", &creds));
+        assert_eq!(back.adult_ok, Some(true));
+        assert_eq!(back.adult_checked_at, 1_000);
+        assert_eq!(back.adult_pref(1_000), Some(true));
+    }
+
+    #[test]
+    fn a_cached_adult_preference_decays_to_unknown_once_it_is_stale() {
+        // The user can turn the setting off on the website at any time and we
+        // would never hear about it, so a cached "yes" has to expire.
+        let creds = NexusCreds { adult_ok: Some(true), adult_checked_at: 1_000, ..Default::default() };
+        assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL - 1), Some(true));
+        assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL), None, "stale must read as unknown");
+    }
+
+    #[test]
+    fn a_corrupted_adult_line_reads_as_unknown_rather_than_as_permission() {
+        // Anything that is not a clean 1/0 must not be able to grant permission.
+        for line in ["adult_ok=yes", "adult_ok=", "adult_ok=maybe", "adult_ok=2"] {
+            let creds = parse_nexus_creds(&format!("[Nexus]\n{line}\nadult_checked_at=1000\n"));
+            assert_eq!(creds.adult_ok, None, "{line}");
+            assert_eq!(creds.adult_pref(1_000), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn signing_out_forgets_the_adult_preference_with_the_session() {
+        // It belongs to the account that just signed out; keeping it would apply
+        // one person's setting to whoever signs in next.
+        let existing = "[Nexus]\naccess_token=at\nadult_ok=1\nadult_checked_at=1000\n";
+        let mut creds = parse_nexus_creds(existing);
+        assert_eq!(creds.adult_ok, Some(true));
+        creds.access_token = None;
+        creds.adult_ok = None;
+        creds.adult_checked_at = 0;
+        let back = parse_nexus_creds(&render_nexus_creds(existing, &creds));
+        assert_eq!(back.adult_ok, None);
+        assert_eq!(back.adult_pref(1_000), None);
     }
 
     #[test]

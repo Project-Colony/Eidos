@@ -55,17 +55,35 @@ fn nexus_client() -> eidos_nexus::Nexus {
 /// `eidos nexus key|status|update` - account + update checks.
 fn cmd_nexus(args: &[String]) {
     match args.first().map(String::as_str) {
-        Some("status") => match nexus_client().validate() {
-            Ok(acct) => println!(
-                "Connected as {} ({}).",
-                acct.name,
-                if acct.is_premium { "premium" } else { "free" }
-            ),
-            Err(e) => {
-                eprintln!("not connected: {e}");
-                exit(1);
+        Some("status") => {
+            let nexus = nexus_client();
+            match nexus.validate() {
+                Ok(acct) => {
+                    println!(
+                        "Connected as {} ({}).",
+                        acct.name,
+                        if acct.is_premium { "premium" } else { "free" }
+                    );
+                    // Say it out loud. When adult metadata is being withheld the
+                    // user needs to know it is a setting and where to change it,
+                    // not wonder why a mod page came back blank.
+                    println!(
+                        "Adult content: {}",
+                        match nexus.adult_policy() {
+                            eidos_nexus::AdultPolicy::Allowed => "shown (enabled on your account)",
+                            eidos_nexus::AdultPolicy::Denied =>
+                                "hidden (turned off on your account, at nexusmods.com)",
+                            eidos_nexus::AdultPolicy::Unknown =>
+                                "hidden (Eidos could not read your account setting)",
+                        }
+                    );
+                }
+                Err(e) => {
+                    eprintln!("not connected: {e}");
+                    exit(1);
+                }
             }
-        },
+        }
         Some("update") => {
             let Some(id) = args.get(1) else {
                 eprintln!("usage: eidos nexus update <game-id>");
@@ -116,6 +134,12 @@ fn cmd_nexus(args: &[String]) {
                 if stale {
                     individual += 1;
                 }
+                // Stop before the request is built, not after Nexus refuses it.
+                if nexus.would_block() {
+                    rate_limited = true;
+                    eprintln!("  Nexus request budget spent - stopping; remaining mods unchecked.");
+                    break;
+                }
                 match nexus.mod_info(game.def.nexus_game, mod_id) {
                     Ok(remote) => {
                         meta.set_newest_version(&remote.version);
@@ -132,10 +156,13 @@ fn cmd_nexus(args: &[String]) {
                         }
                     }
                     Err(e) => {
-                        // MO2 stops dispatching the moment the account is exhausted.
-                        if e.contains("429") {
+                        // The shared predicate, not a bare "429". This loop used
+                        // to test for the status code while the library tested
+                        // for the wording, so a pre-flight refusal - which has no
+                        // status code - stopped one and left this one hammering.
+                        if eidos_nexus::is_rate_limited(&e) {
                             rate_limited = true;
-                            eprintln!("  rate limited by Nexus - stopping; remaining mods unchecked.");
+                            eprintln!("  {e} - stopping; remaining mods unchecked.");
                             break;
                         }
                         eprintln!("  {}: {e}", m.name);
@@ -153,7 +180,7 @@ fn cmd_nexus(args: &[String]) {
                 println!("Nexus budget: {h} request(s) left this hour{daily}.");
             }
             if rate_limited {
-                eprintln!("Some mods were not checked (hourly limit reached). Re-run after the hour.");
+                eprintln!("Some mods were not checked (request budget spent). Re-run once it refills.");
             }
         }
         _ => {
