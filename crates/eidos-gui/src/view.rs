@@ -626,6 +626,9 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
     let mut list = Column::new();
+    // One entry per row actually drawn, feeding the conflict strip beside the
+    // scrollbar. Filled in the same order the rows are pushed.
+    let mut tints: Vec<Option<Color>> = Vec::new();
     let mut shown = 0usize;
     if app.mods.is_empty() {
         list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
@@ -662,6 +665,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             // slot just before a group header would be unreachable.
             list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
             list = list.push(separator_row(i, m, color, collapsed, selected));
+            tints.push(None); // a separator has no conflict of its own
             continue;
         }
         if !vis[i] {
@@ -701,6 +705,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
+        tints.push(conflict);
         let bg = row_background(i % 2 == 0, selected, conflict);
         list = list.push(list_row(
             mod_row(i, m, meta, flag_icon, hidden_icon, bg),
@@ -737,16 +742,68 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     .on_press(Message::SelectTab(Tab::Overwrite))
     .style(button::text);
 
-    // Wrap the list so the pointer leaving its bounds during a drag cancels it
-    // (MO2 drops nothing when you release outside the list).
-    // `on_release` here is the catch-all: a row or a strip that handles the
-    // release captures it and this never fires, but a release landing anywhere
-    // else in the list - a header, a gap the layout moved, empty space below the
-    // last row - disarms instead of leaving a drag live for the next click to
-    // commit. `on_exit` covers releasing outside the list entirely.
-    let list_area = mouse_area(scrollable(list).id(mod_scroll_id()).height(Length::Fill))
-        .on_exit(Message::DragCancel)
-        .on_release(Message::DragCancel);
+    // `on_release` is the catch-all: a row or a strip that handles the release
+    // captures it and this never fires, but a release landing anywhere else in
+    // the list - a header, a gap the layout moved, empty space below the last
+    // row - disarms instead of leaving a drag live for the next click to commit.
+    //
+    // A release OUTSIDE the list is caught globally instead of by `on_exit`, and
+    // that is the whole difference: `mouse_area` cannot tell "left while
+    // dragging" from "let go out there", so cancelling on exit meant dragging
+    // upward past the header dropped the mod every time.
+    // No release handler here. Every release is decided in ONE place -
+    // `Message::PointerReleased`, from the global listener - which drops at the
+    // aimed gap or disarms if none was aimed.
+    //
+    // There used to be an `on_release(DragCancel)` as a catch-all, from before
+    // that listener existed. With both, a release that did not land exactly on a
+    // drop strip raced: this one cancelled the drag before the global one could
+    // commit it. Releasing over a row lost the drop, and once the auto-scroll
+    // bands existed - which are never drop strips - dragging any distance made
+    // it certain.
+    let list_area = mouse_area(
+        scrollable(list).id(mod_scroll_id()).width(Length::Fill).height(Length::Fill),
+    );
+    // The conflict marks go ON the scrollbar, at the same fraction of the list,
+    // so the mod a tint refers to can be found without reading every row on the
+    // way. Stacked rather than placed beside it: a strip in the flow pushed the
+    // whole list sideways to make room, which is a lot of shifted UI for a hint.
+    // Nothing in the strip handles events, so the scrollbar keeps the pointer.
+    let mut layers = Stack::new().push(list_area).push(
+        Row::new().push(Space::new().width(Length::Fill)).push(if app.prefs.conflict_marks {
+            conflict_map(&tints)
+        } else {
+            Space::new().width(Length::Fixed(0.0)).into()
+        }),
+    );
+    // Auto-scroll bands, and only once the drag is REALLY under way. `DragStart`
+    // fires on press, so keying these off "a drag exists" put them under the
+    // pointer on every click - and `mouse_area` publishes `on_enter` the first
+    // time it is laid out beneath a stationary cursor. `aimed` means the pointer
+    // has crossed an insertion point, which no plain click does.
+    if app.drag_state.is_some_and(|d| d.aimed) {
+        // `on_move` gives the pointer's position INSIDE the band, so depth is
+        // just its height normalised - 1.0 hard against the edge of the list.
+        let band = |edge: ScrollEdge| {
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_enter(Message::DragScrollEdge(Some(edge)))
+                .on_move(move |p| {
+                    let t = (p.y / DRAG_SCROLL_BAND).clamp(0.0, 1.0);
+                    Message::DragScrollDepth(match edge {
+                        ScrollEdge::Up => 1.0 - t,
+                        ScrollEdge::Down => t,
+                    })
+                })
+                .on_exit(Message::DragScrollEdge(None))
+        };
+        layers = layers.push(
+            Column::new()
+                .push(container(band(ScrollEdge::Up)).height(Length::Fixed(DRAG_SCROLL_BAND)))
+                .push(Space::new().height(Length::Fill))
+                .push(container(band(ScrollEdge::Down)).height(Length::Fixed(DRAG_SCROLL_BAND))),
+        );
+    }
+    let list_area = layers;
 
     // ALWAYS in the flow, at a fixed height, even when it has nothing to say.
     // Appearing and disappearing moved every row below it by its own height, so

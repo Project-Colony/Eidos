@@ -1737,10 +1737,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         ));
     }
 
-    // Releasing outside the list drops nothing, as in the mod list.
-    let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill))
-        .on_exit(Message::PluginDragCancel)
-        .on_release(Message::PluginDragCancel);
+    // Same as the mod list: the global release listener decides, and nothing
+    // here second-guesses it. `on_exit` cancelled a drag that merely left the
+    // bounds - the gesture that reaches an earlier row - and `on_release` raced
+    // the listener to cancel what it was about to drop.
+    let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill));
 
     Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }
@@ -2029,9 +2030,17 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
 }
 
 pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
+    // The name is the way into Settings, as Colony's is. It was decoration
+    // before, and the only route in was the toolbar button - which is a long way
+    // to travel for the thing a window's own title usually opens.
     let header = Row::new()
         .spacing(10)
-        .push(text("Eidos").size(20.0))
+        .push(
+            button(text("Eidos").size(20.0))
+                .padding([2, 6])
+                .on_press(Message::OpenSettings)
+                .style(button::text),
+        )
         .push(Space::new().width(Length::Fill))
         .push(tool_btn("New instance", Message::Restart));
 

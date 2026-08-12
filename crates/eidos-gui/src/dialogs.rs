@@ -4,6 +4,8 @@
 //!
 //! Split out of `main.rs` unchanged.
 
+use iced::widget::slider;
+
 use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
@@ -36,26 +38,145 @@ impl std::fmt::Display for ThemeChoice {
     }
 }
 
-pub(crate) fn settings_tab_btn<'a>(label: &'a str, tab: SettingsTab, active: bool) -> Element<'a, Message> {
-    button(text(label).size(12.0))
-        .padding([4, 10])
-        .on_press(Message::SettingsTabSelected(tab))
-        .style(if active { button::primary } else { button::secondary })
-        .into()
-}
-
 pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
-        .push(text("Settings").size(16.0).width(Length::Fill))
-        .push(button(text("x").size(14.0)).padding([1, 8]).on_press(Message::CloseSettings).style(button::text));
+        .align_y(iced::Alignment::Center)
+        .push(text("Settings").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([5, 12])
+                .on_press(Message::CloseSettings)
+                .style(button::secondary),
+        );
 
-    let tabs = Row::new()
-        .spacing(4)
-        .push(settings_tab_btn("General", SettingsTab::General, app.settings_tab == SettingsTab::General))
-        .push(settings_tab_btn("Nexus", SettingsTab::Nexus, app.settings_tab == SettingsTab::Nexus));
+    // A vertical rail, as in Colony: five sections do not fit across a dialog,
+    // and a rail takes a sixth without re-laying anything out.
+    let mut rail = Column::new().spacing(2).width(Length::Fixed(132.0));
+    for tab in SettingsTab::ALL {
+        let active = app.settings_tab == tab;
+        rail = rail.push(
+            button(text(tab.label()).size(12.0).width(Length::Fill))
+                .padding([6, 10])
+                .width(Length::Fill)
+                .on_press(Message::SettingsTabSelected(tab))
+                .style(if active { button::primary } else { button::text }),
+        );
+    }
 
+    let open = |k: &'static str| app.settings_expanded.contains(k);
     let body: Element<'a, Message> = match app.settings_tab {
+        SettingsTab::General => {
+            let mut games = vec![DefaultGameChoice { id: None, label: "(none)".to_string() }];
+            for g in eidos_games::catalog() {
+                games.push(DefaultGameChoice { id: Some(g.id.to_string()), label: g.name.to_string() });
+            }
+            let selected_game = games
+                .iter()
+                .find(|c| c.id == app.prefs.default_game)
+                .cloned()
+                .unwrap_or_else(|| DefaultGameChoice { id: None, label: "(none)".to_string() });
+            let picker = pick_list(games, Some(selected_game), |c: DefaultGameChoice| {
+                Message::DefaultGameChanged(c.id)
+            })
+            .text_size(12.0)
+            .padding(6);
+
+            Column::new()
+                .spacing(2)
+                .push(settings_section(
+                    "startup",
+                    "Startup",
+                    open("startup"),
+                    Column::new()
+                        .spacing(2)
+                        .push(settings_row(
+                            "Default game",
+                            "Opened when Eidos starts without being told which.",
+                            picker.into(),
+                        ))
+                        .push(settings_toggle(
+                            "Remember the window size",
+                            "Restore the last size on launch instead of letting the compositor choose.",
+                            app.prefs.remember_window,
+                            Message::ToggleRememberWindow(!app.prefs.remember_window),
+                        ))
+                        .into(),
+                ))
+                .push(settings_section(
+                    "running",
+                    "Running a game",
+                    open("running"),
+                    settings_toggle(
+                        "Lock the window while a game runs",
+                        "Blocks the main window behind an overlay until the game exits, with an Unlock escape hatch.",
+                        app.prefs.lock_gui,
+                        Message::ToggleLockGui(!app.prefs.lock_gui),
+                    ),
+                ))
+                .into()
+        }
+        SettingsTab::Appearance => {
+            let themes = vec![
+                ThemeChoice(PrefTheme::System),
+                ThemeChoice(PrefTheme::Light),
+                ThemeChoice(PrefTheme::Dark),
+            ];
+            let picker = pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
+                Message::ThemeChanged(c.0)
+            })
+            .text_size(12.0)
+            .padding(6);
+            Column::new()
+                .spacing(2)
+                .push(settings_section(
+                    "theme",
+                    "Theme",
+                    open("theme"),
+                    settings_row(
+                        "Colour theme",
+                        "System follows your desktop's light/dark preference.",
+                        picker.into(),
+                    ),
+                ))
+                .into()
+        }
+        SettingsTab::ModList => {
+            let speed = app.prefs.drag_scroll_speed;
+            let slider_row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(
+                    slider(0.25..=4.0, speed, Message::DragScrollSpeedChanged)
+                        .step(0.25)
+                        .width(Length::Fixed(160.0)),
+                )
+                .push(text(format!("{speed:.2}x")).size(12.0).width(Length::Fixed(42.0)));
+            Column::new()
+                .spacing(2)
+                .push(settings_section(
+                    "dragging",
+                    "Dragging",
+                    open("dragging"),
+                    settings_row(
+                        "Auto-scroll speed",
+                        "How fast the list moves when a dragged mod rests on its top or bottom edge. Speed already rises the closer to the edge; this scales the whole range.",
+                        slider_row.into(),
+                    ),
+                ))
+                .push(settings_section(
+                    "conflicts",
+                    "Conflicts",
+                    open("conflicts"),
+                    settings_toggle(
+                        "Mark conflicts on the scrollbar",
+                        "Green where the selected mod wins, red where it loses, at the same place in the list.",
+                        app.prefs.conflict_marks,
+                        Message::ToggleConflictMarks(!app.prefs.conflict_marks),
+                    ),
+                ))
+                .into()
+        }
         SettingsTab::Nexus => {
             // Sign-in, and only sign-in. There is no personal-API-key field, on
             // purpose: Nexus requires personal keys absent from a distributed
@@ -72,108 +193,128 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
             if !app.nexus_signing_in {
                 action = action.on_press(Message::NexusSignInStart);
             }
-
-            let mut col = Column::new()
-                .spacing(8)
-                .push(text("Nexus Mods account").size(13.0))
-                .push(
-                    text(
-                        "Signing in opens your browser. The session is stored at \
-                         ~/.config/eidos/nexus.ini and shared with the CLI.",
-                    )
-                    .size(10.0),
-                );
-
-            let mut row = Row::new().spacing(8).push(action);
+            let mut controls = Row::new().spacing(8).push(action);
             if signed_in {
-                row = row.push(
+                controls = controls.push(
                     button(text("Sign out").size(12.0))
                         .padding([5, 12])
                         .on_press(Message::NexusSignOut)
                         .style(button::secondary),
                 );
             }
-            col = col.push(row);
 
-            if let Some(account) = &app.nexus_account {
-                let tier = if account.is_premium { "Premium" } else { "free" };
-                col = col.push(text(format!("Signed in as {} ({tier}).", account.name)).size(11.0));
-            } else {
-                col = col.push(text("Not signed in.").size(11.0));
+            let mut account = Column::new().spacing(6).push(controls);
+            match &app.nexus_account {
+                Some(a) => {
+                    let tier = if a.is_premium { "Premium" } else { "free" };
+                    account =
+                        account.push(text(format!("Signed in as {} ({tier}).", a.name)).size(11.0));
+                }
+                None => account = account.push(text("Not signed in.").size(11.0)),
             }
             if let Some(err) = &app.nexus_error {
-                col = col.push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
+                account = account
+                    .push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
             }
-            col.into()
-        }
-        SettingsTab::General => {
-            let themes = vec![
-                ThemeChoice(PrefTheme::System),
-                ThemeChoice(PrefTheme::Light),
-                ThemeChoice(PrefTheme::Dark),
-            ];
-            let theme_row = Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(text("Theme").size(12.0).width(Length::Fixed(120.0)))
-                .push(
-                    pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
-                        Message::ThemeChanged(c.0)
-                    })
-                    .text_size(12.0)
-                    .padding(6),
-                );
-
-            // Default-game dropdown: "(none)" plus every supported game.
-            let mut games = vec![DefaultGameChoice { id: None, label: "(none)".to_string() }];
-            for g in eidos_games::catalog() {
-                games.push(DefaultGameChoice { id: Some(g.id.to_string()), label: g.name.to_string() });
-            }
-            let selected_game = games
-                .iter()
-                .find(|c| c.id == app.prefs.default_game)
-                .cloned()
-                .unwrap_or_else(|| DefaultGameChoice { id: None, label: "(none)".to_string() });
-            let game_row = Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(text("Default game").size(12.0).width(Length::Fixed(120.0)))
-                .push(
-                    pick_list(games, Some(selected_game), |c: DefaultGameChoice| {
-                        Message::DefaultGameChanged(c.id)
-                    })
-                    .text_size(12.0)
-                    .padding(6),
-                );
-
-            // MO2's "lock GUI while an executable runs" toggle.
-            let lock_row = Row::new()
-                .spacing(8)
-                .align_y(iced::Alignment::Center)
-                .push(text("Run behaviour").size(12.0).width(Length::Fixed(120.0)))
-                .push(
-                    checkbox(app.prefs.lock_gui).label("Lock the window while a game or tool is running")
-                        .on_toggle(Message::ToggleLockGui)
-                        .size(16)
-                        .text_size(12.0),
-                );
 
             Column::new()
-                .spacing(10)
-                .push(theme_row)
-                .push(game_row)
-                .push(lock_row)
-                .push(text("Saved to ~/.config/eidos/settings.ini.").size(10.0))
+                .spacing(2)
+                .push(settings_section(
+                    "account",
+                    "Account",
+                    open("account"),
+                    Column::new()
+                        .spacing(6)
+                        .push(
+                            text("Signing in opens your browser. The session is stored in nexus.ini and shared with the CLI.")
+                                .size(10.0),
+                        )
+                        .push(account)
+                        .into(),
+                ))
+                .push(settings_section(
+                    "downloads",
+                    "Downloads",
+                    open("downloads"),
+                    Column::new()
+                        .spacing(2)
+                        .push(settings_info(
+                            "Folder",
+                            app.created
+                                .as_ref()
+                                .map(|i| i.downloads_dir().display().to_string())
+                                .unwrap_or_else(|| "(no instance open)".to_string()),
+                        ))
+                        .push(
+                            text("The site's Mod Manager Download button lands here once the nxm:// handler is registered (eidos nxm --register).")
+                                .size(10.0),
+                        )
+                        .into(),
+                ))
                 .into()
         }
+        SettingsTab::About => Column::new()
+            .spacing(2)
+            .push(settings_section(
+                "paths",
+                "Where things live",
+                open("paths"),
+                Column::new()
+                    .spacing(2)
+                    .push(settings_info(
+                        "Instance",
+                        app.created
+                            .as_ref()
+                            .map(|i| i.root.display().to_string())
+                            .unwrap_or_else(|| "(none open)".to_string()),
+                    ))
+                    .push(settings_info(
+                        "Settings",
+                        eidos_instance::settings::settings_path().display().to_string(),
+                    ))
+                    .push(settings_info(
+                        "Nexus",
+                        eidos_instance::settings::nexus_key_path().display().to_string(),
+                    ))
+                    .push(settings_info("Games", "~/.config/eidos/games/*.toml".to_string()))
+                    .into(),
+            ))
+            .push(settings_section(
+                "shortcuts",
+                "Shortcuts",
+                open("shortcuts"),
+                Column::new()
+                    .spacing(2)
+                    .push(settings_info("Run", "Ctrl+R".to_string()))
+                    .push(settings_info("Refresh", "F5".to_string()))
+                    .push(settings_info("Select", "Ctrl+click, Shift+click for a range".to_string()))
+                    .push(settings_info("Select all", "Ctrl+A".to_string()))
+                    .push(settings_info("Clear", "Esc".to_string()))
+                    .push(settings_info("Reorder", "drag a row, or Ctrl+Up/Down".to_string()))
+                    .into(),
+            ))
+            .push(settings_section(
+                "version",
+                "Version",
+                open("version"),
+                Column::new()
+                    .spacing(2)
+                    .push(settings_info("Eidos", env!("CARGO_PKG_VERSION").to_string()))
+                    .push(
+                        text("A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus integration.")
+                            .size(10.0),
+                    )
+                    .into(),
+            ))
+            .into(),
     };
 
-    let card = Column::new()
-        .spacing(12)
-        .push(header)
-        .push(tabs)
-        .push(container(body).width(Length::Fill).padding(4));
-    container(card).max_width(560.0).padding(16).style(card_style).into()
+    let panes = Row::new()
+        .spacing(14)
+        .push(rail)
+        .push(container(scrollable(body)).width(Length::Fill).height(Length::Fixed(240.0)));
+    let card = Column::new().spacing(12).push(header).push(panes);
+    container(card).max_width(620.0).padding(16).style(card_style).into()
 }
 
 // ---- Executables editor (MO2's Modify Executables) --------------------------

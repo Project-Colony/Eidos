@@ -1110,6 +1110,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.selected_plugins.clear();
             app.drag_state = None;
             app.plugin_drag = None;
+            app.drag_scroll = None;
             app.menu_mod = None;
         }
         Message::OpenModMenu(i) => {
@@ -1921,6 +1922,29 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Err(e) => app.nexus_error = Some(format!("could not sign out: {e}")),
             }
         }
+        Message::DragScrollSpeedChanged(v) => {
+            app.prefs.drag_scroll_speed = v.clamp(0.25, 4.0);
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        Message::SettingsToggleSection(key) => {
+            if !app.settings_expanded.remove(key) {
+                app.settings_expanded.insert(key);
+            }
+        }
+        Message::ToggleConflictMarks(on) => {
+            app.prefs.conflict_marks = on;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        Message::ToggleRememberWindow(on) => {
+            app.prefs.remember_window = on;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
         Message::ThemeChanged(t) => {
             app.prefs.theme = t;
             if let Err(e) = app.prefs.save() {
@@ -2713,6 +2737,62 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DragCancel => {
             app.drag_state = None;
+        }
+        Message::DragScrollEdge(edge) => {
+            // Only meaningful mid-drag: the bands are not rendered otherwise, but
+            // a stale message must not start a scroll on its own.
+            app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
+            // Entering starts mid-range: `on_move` has not fired yet, and a band
+            // that began at full speed would lurch before the user had aimed.
+            if app.drag_scroll.is_some() {
+                app.drag_scroll_depth = 0.5;
+            }
+        }
+        Message::DragScrollDepth(d) => {
+            app.drag_scroll_depth = d.clamp(0.0, 1.0);
+        }
+        Message::DragScrollTick => {
+            let Some(edge) = app.drag_scroll else { return Task::none() };
+            if app.drag_state.is_none() {
+                app.drag_scroll = None;
+                return Task::none();
+            }
+            // RELATIVE, so this never needs to know where the list already is -
+            // which is exactly what the first version got wrong.
+            // Speed follows how deep into the band the pointer is: a nudge
+            // creeps a row at a time, the very edge crosses the list.
+            let px = (DRAG_SCROLL_SLOW_PX
+                + (DRAG_SCROLL_FAST_PX - DRAG_SCROLL_SLOW_PX) * app.drag_scroll_depth)
+                * app.prefs.drag_scroll_speed;
+            let y = match edge {
+                ScrollEdge::Up => -px,
+                ScrollEdge::Down => px,
+            };
+            return operation::scroll_by(
+                mod_scroll_id(),
+                iced::widget::scrollable::AbsoluteOffset { x: 0.0, y },
+            );
+        }
+        Message::PointerReleased => {
+            // Letting go is a DROP wherever a gap is aimed, and a cancel
+            // otherwise - regardless of where the pointer happens to be. A user
+            // who dragged upward to scroll and released over the toolbar means
+            // the gap they were aiming at, not "nowhere".
+            // Cleared FIRST, on every path: the drop branches below return
+            // early, so leaving it to the end meant a drag that ended on a gap
+            // kept its timer running with nothing left to scroll for.
+            app.drag_scroll = None;
+            if app.drag_state.is_some_and(|d| d.aimed) {
+                return update(app, Message::DragDrop);
+            }
+            if app.plugin_drag.as_ref().is_some_and(|d| d.aimed) {
+                return update(app, Message::PluginDragDrop);
+            }
+            // Through the cancel messages rather than clearing the fields here,
+            // so "what disarming means" has one definition and the keyboard path
+            // (Escape) and this one cannot drift apart.
+            let _ = update(app, Message::DragCancel);
+            return update(app, Message::PluginDragCancel);
         }
         Message::SelectPlugin(i) => {
             if app.modifiers.control() || app.modifiers.command() {

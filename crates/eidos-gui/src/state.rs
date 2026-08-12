@@ -109,7 +109,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         collapsed: HashSet::new(),
         category_filter: None,
         settings_open: false,
-        settings_tab: SettingsTab::Nexus,
+        settings_tab: SettingsTab::General,
+        // Open on first sight: a settings page whose sections are all shut asks
+        // the user to click five times before it says anything.
+        settings_expanded: SettingsTab::DEFAULT_OPEN.iter().copied().collect(),
         // Prefill the key field from the shared store (the same key `eidos nexus
         // key` writes), so it survives across sessions without a network round trip.
         nexus_account: None,
@@ -139,6 +142,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_batch_remove: false,
         modifiers: iced::keyboard::Modifiers::default(),
         drag_state: None,
+        drag_scroll: None,
+        drag_scroll_depth: 0.5,
         selected_plugin: None,
         selected_plugins: HashSet::new(),
         plugin_anchor: None,
