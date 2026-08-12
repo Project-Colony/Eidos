@@ -38,6 +38,20 @@ impl std::fmt::Display for ThemeChoice {
     }
 }
 
+/// The cached "show adult content" answer for the signed-in account: `Some(true)`
+/// shown, `Some(false)` turned off by the user, `None` not known.
+///
+/// Read straight from the credential store rather than plumbed through app state,
+/// because that store IS what the client consults - a second copy in the UI could
+/// disagree with what is actually being withheld.
+fn adult_content_state() -> Option<bool> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    eidos_instance::settings::load_nexus_creds().adult_pref(now)
+}
+
 pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
@@ -209,6 +223,23 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                     let tier = if a.is_premium { "Premium" } else { "free" };
                     account =
                         account.push(text(format!("Signed in as {} ({tier}).", a.name)).size(11.0));
+                    // Say what is being withheld and why. Adult mods coming back
+                    // blank with no explanation reads as Eidos being broken, and
+                    // "could not check" is the case the user can actually act on.
+                    account = account.push(
+                        text(match adult_content_state() {
+                            Some(true) => "Adult content: shown (enabled on your Nexus account).",
+                            Some(false) => {
+                                "Adult content: hidden. It is turned off on your Nexus account; \
+                                 change it on nexusmods.com, then sign in again here."
+                            }
+                            None => {
+                                "Adult content: hidden. Eidos could not read your Nexus content \
+                                 settings, so it withholds adult mods until it can."
+                            }
+                        })
+                        .size(10.0),
+                    );
                 }
                 None => account = account.push(text("Not signed in.").size(11.0)),
             }
