@@ -183,6 +183,34 @@ pub(crate) fn run_through_view(
     // manifest - and a profile switched in the GUI mid-game then received the
     // PLAYED profile's captures, corrupting a profile that was never run.
     let prof = inst.active();
+
+    // The mod list is JUDGED before anything is prepared, and a bad verdict stops
+    // the launch here.
+    //
+    // `modlist_checked` computes exactly this verdict - "is the list safe to act
+    // on" - and every caller on this path used to take `.0` and drop it. That was
+    // not merely a silent vanilla launch: with `mods/` unreadable the enabled set
+    // is empty, plugin discovery then finds only the game's own masters, and
+    // `prepare_plugins` writes that vanilla-only set over the PROFILE's
+    // plugins.txt and loadorder.txt (`plugins_state_dir` is the profile
+    // directory, not the prefix) before snapshotting the result as the new
+    // restore point. One launch with the mod pool unreachable therefore replaced
+    // a curated load order with about ten vanilla entries and overwrote the
+    // snapshot that could have undone it.
+    //
+    // `ListTrust::judge` only says Suspect when the directory is unreadable, or
+    // when a non-empty list kept nothing, or on a loss past both its floors - so
+    // this cannot fire on a deliberate mass-disable.
+    let (_, trust) = prof.modlist_checked();
+    if let Some(why) = trust.reason() {
+        eprintln!(
+            "eidos play: refusing to start - the mod list cannot be trusted: {why}\n\
+             \x20 Nothing has been written. Fix the mods folder (permissions, a mount that is \
+             not mounted) and try again; the profile's load order is untouched."
+        );
+        exit(1);
+    }
+
     let inis = prepare_inis(id, game, inst, &prof);
     let plugin_bind = prepare_plugins(id, game, inst, &prof);
     let save_bind = prepare_saves(id, game, &prof);

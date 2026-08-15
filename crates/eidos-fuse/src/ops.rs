@@ -96,7 +96,17 @@ impl Filesystem for Eidos {
 
     fn forget(&self, _req: &Request, ino: INodeNo, nlookup: u64) {
         // The default batch_forget fans out to this, so both paths free inodes.
-        self.inodes.lock_recover().forget(ino.0, nlookup);
+        let freed = self.inodes.lock_recover().forget(ino.0, nlookup);
+        // And the tables keyed by that inode go with it. FORGET means the kernel
+        // has dropped every reference, so there is no dentry left for an alias or
+        // a negative entry to invalidate - they were provably dead and were kept
+        // anyway, for the life of a mount, growing with every distinct path the
+        // game ever touched rather than with the working set. Two uncontended
+        // locks on an op that is rare and off the latency path.
+        if freed {
+            self.aliases.lock_recover().remove(&ino.0);
+            self.negatives.lock_recover().remove(&ino.0);
+        }
     }
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {

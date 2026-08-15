@@ -109,6 +109,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         app.screen = Screen::Main;
                         load_tools(app);
                         app.conflicts = compute_conflicts(app);
+                        // BEFORE the refresh, not after: the cache is keyed by mod
+                        // FOLDER NAME with no instance in the key, so a name that
+                        // exists in both instances counted as already computed and
+                        // was never re-read - showing the other game's version,
+                        // category and content flags until the user pressed F5.
+                        // Refresh and UpdatesChecked already clear it here.
+                        app.meta_cache.clear();
                         refresh_meta_cache(app);
                         // Everything cached from a previously-open instance is
                         // stale for this one: plugin order, saves, downloads,

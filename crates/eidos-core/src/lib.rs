@@ -481,7 +481,17 @@ impl LayerStack {
             }
             // Writing un-deletes, exactly as clear_whiteout did on disk - and the
             // marker file's own entry goes with it.
-            if idx.wh.remove(&key) {
+            //
+            // THE LEAF ONLY. This used to run for every component, so creating
+            // one file under a deleted directory lifted that directory's
+            // whiteout and every sibling deleted with it came back: remove
+            // "Data", create "Data/new.ini", and "Data/old.esp" was visible
+            // again - with the index on, and only with it on. On disk the
+            // directory is re-established opaque, which keeps the lower contents
+            // hidden; the index modelled the un-delete but not the opacity, so it
+            // disagreed with the walk in the one direction that matters. Pinned
+            // by `a_create_must_not_resurrect_a_file_deleted_with_its_directory`.
+            if i + 1 == comps.len() && idx.wh.remove(&key) {
                 if let (Some(parent), Some(name)) = (normalize(&prefix).parent(), normalize(&prefix).file_name()) {
                     let marker = if parent.as_os_str().is_empty() {
                         format!("{WHITEOUT_PREFIX}{}", name.to_string_lossy())
@@ -804,7 +814,18 @@ impl LayerStack {
         self.clear_whiteout(vpath);
         if !dest.exists() {
             if let Some(src) = self.layers.iter().find_map(|l| self.ci_lookup(l, vpath)) {
-                if src.is_file() {
+                // A DIRECTORY that lives only in a lower layer is materialised,
+                // not skipped. It used to fall through both arms: nothing was
+                // created, yet the path was recorded in the overwrite index as if
+                // it had been. Two costs followed - the caller got a path that
+                // does not exist, so `ops.rs`'s `set_permissions` right after this
+                // returned ENOENT (a mode-only setattr is exactly how Wine clears
+                // FILE_ATTRIBUTE_READONLY on a directory), and the index was told
+                // about a path that was not there, which the next resolve had to
+                // undo with a full rebuild.
+                if src.is_dir() {
+                    fs::create_dir_all(&dest)?;
+                } else if src.is_file() {
                     fs::copy(&src, &dest)?;
                     // The point of a copy-up is that the result is WRITABLE, and
                     // `fs::copy` clones the source's mode - so a read-only lower
@@ -847,7 +868,15 @@ impl LayerStack {
         fs::create_dir_all(&dest)?;
         self.clear_whiteout(vpath);
         if was_deleted && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
-            let _ = fs::write(dest.join(OPAQUE_MARKER), b"");
+            // Propagated, not swallowed. At this point `clear_whiteout` has already
+            // removed the directory's own marker, so opacity is the ONLY thing
+            // still hiding the deleted lower contents. Ignoring a failed write
+            // here (ENOSPC on the overwrite volume, EROFS, a quota) returned Ok
+            // while every file the user had deleted became visible again, with
+            // nothing logged anywhere - this crate has no logging at all. An
+            // errno the caller can report beats a silently wrong view: `ops.rs`
+            // hands it straight to `reply.error`.
+            fs::write(dest.join(OPAQUE_MARKER), b"")?;
             // Opacity changes what an ancestor HIDES, not just what exists:
             // model it by rebuild rather than by surgery.
             self.ow_dirty();
@@ -2312,5 +2341,48 @@ mod tests {
         a.sort();
         b.sort();
         assert_eq!(a, b, "index and walk disagree on the listing");
+    }
+
+    /// A directory that exists only in a lower layer must be MATERIALISED when
+    /// it is opened for write, not merely recorded. It used to return a path
+    /// that did not exist while telling the index it did, so the caller's very
+    /// next `set_permissions` failed ENOENT - which is exactly how Wine clearing
+    /// the read-only attribute on a mod directory arrives.
+    #[test]
+    fn open_for_write_on_a_lower_only_directory_creates_it() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "meshes/actors/keep.nif", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        let dest = stack.open_for_write("meshes/actors").unwrap();
+        assert!(dest.exists(), "open_for_write handed back a path that does not exist");
+        assert!(dest.is_dir(), "a lower directory must copy up as a directory");
+        // And the lower file underneath it is still readable through the union.
+        assert!(stack.resolve_read("meshes/actors/keep.nif").is_some());
+    }
+
+    /// The audit's claim, run rather than argued: a delete, one resolve to WARM
+    /// the overwrite index, then a create under the deleted directory - and the
+    /// deleted lower file is claimed to come back.
+    #[test]
+    fn a_create_must_not_resurrect_a_file_deleted_with_its_directory() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/old.esp", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        stack.remove("Data").unwrap();
+        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden right after the delete");
+
+        // Warming matters: a live daemon resolves thousands of times a second, so
+        // the index is always built by the time a write arrives.
+        let _ = stack.resolve_read("Data/anything");
+        stack.open_for_write("Data/new.ini").unwrap();
+
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "RESURRECTED: creating a sibling re-exposed a file deleted with its directory"
+        );
     }
 }

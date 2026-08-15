@@ -105,20 +105,34 @@ pub(crate) fn overwrite_tree_rows(app: &App, entries: &[String], limit: usize) -
     out
 }
 
+/// Every file under `dir`, relative and sorted.
+///
+/// Capped at the same depth as its neighbours in this file, and it does not
+/// follow symlinks. `restore_hidden_files` and `data_tree_rows` both already
+/// guard this way - the latter saying "a symlink loop inside a mod would
+/// otherwise recurse until the stack gives out" - and this walk was the one that
+/// did not, in the crate that must never crash: it runs on the Mod Info dialog's
+/// General tab, so merely SELECTING a mod containing `link -> ..` was enough to
+/// take the whole GUI down. The install path can genuinely put a symlink into
+/// `mods/`, since `overlay_dir` recreates them.
 pub(crate) fn overwrite_entries(dir: &Path) -> Vec<String> {
-    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
+        if depth > 32 {
+            return;
+        }
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             let p = e.path();
-            if p.is_dir() {
-                walk(root, &p, out);
+            let is_real_dir = e.file_type().map(|t| t.is_dir() && !t.is_symlink()).unwrap_or(false);
+            if is_real_dir {
+                walk(root, &p, out, depth + 1);
             } else if let Ok(rel) = p.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
         }
     }
     let mut out = Vec::new();
-    walk(dir, dir, &mut out);
+    walk(dir, dir, &mut out, 0);
     out.sort();
     out
 }

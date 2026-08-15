@@ -134,13 +134,21 @@ impl Inodes {
 
     /// Drop `nlookup` kernel references from `ino`; free the mapping at zero.
     /// The root is pinned for the mount's lifetime and never freed.
-    pub(crate) fn forget(&mut self, ino: u64, nlookup: u64) {
+    /// Returns whether the inode was actually FREED (its count reached zero), so
+    /// the caller can drop the side tables keyed by it. Those entries are
+    /// provably dead once the kernel forgets an inode - it holds no dentry an
+    /// alias or negative invalidation could target - and they used to be kept
+    /// for the life of the mount, growing with every distinct path ever touched
+    /// in a daemon whose death takes the game with it.
+    pub(crate) fn forget(&mut self, ino: u64, nlookup: u64) -> bool {
         if ino == ROOT_INO {
-            return;
+            return false;
         }
+        let mut freed = false;
         if let Some(count) = self.counts.get_mut(&ino) {
             *count = count.saturating_sub(nlookup);
             if *count == 0 {
+                freed = true;
                 self.counts.remove(&ino);
                 if let Some(path) = self.by_ino.remove(&ino) {
                     // Only drop the reverse entry if it still points at US. After a
@@ -154,6 +162,7 @@ impl Inodes {
                 }
             }
         }
+        freed
     }
 
     /// Rebind the inode for `from` onto `to` after a rename, so the kernel's

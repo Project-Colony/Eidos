@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 
 use crate::{
-    ArchiveEntry,
+    ArchiveEntry, MAX_TREE_DEPTH,
     ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES,
 };
 
@@ -99,11 +99,39 @@ pub struct InstallReport {
 
 impl ArchiveTree {
     /// Build the tree by walking an extracted directory.
+    ///
+    /// Does NOT descend through symlinks, and stops at [`MAX_TREE_DEPTH`]. Both
+    /// guards are the ones every sibling walk in this crate already had and this
+    /// one did not: `overlay_dir` documents that "a symlink loop inside a crafted
+    /// archive cannot make this recurse forever", `flatten` caps at the same
+    /// depth, and `eidos-conflicts::collect_files` refuses to descend a symlink
+    /// for exactly this reason. An archive shipping `link -> ..` walked here
+    /// until the stack gave out, taking the whole GUI process with it - a hard
+    /// crash from untrusted input on a path the rest of the module treats as
+    /// hostile.
+    ///
+    /// Taking the kind from the dirent also drops one `stat(2)` per entry, which
+    /// on a 30k-entry archive is 30k syscalls saved.
     pub fn from_dir(root: &Path) -> io::Result<ArchiveTree> {
-        fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>) -> io::Result<()> {
+        fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>, depth: usize) -> io::Result<()> {
+            if depth > MAX_TREE_DEPTH {
+                return Ok(());
+            }
             for e in fs::read_dir(dir)?.flatten() {
                 let p = e.path();
-                let is_dir = p.is_dir();
+                let Ok(t) = e.file_type() else { continue };
+                if t.is_symlink() {
+                    // Recorded as a leaf, never followed. A mod that ships a
+                    // symlink is still described; it just cannot make us loop.
+                    if let Ok(rel) = p.strip_prefix(base) {
+                        out.push(ArchiveEntry {
+                            path: rel.to_string_lossy().replace('\\', "/"),
+                            is_dir: false,
+                        });
+                    }
+                    continue;
+                }
+                let is_dir = t.is_dir();
                 if let Ok(rel) = p.strip_prefix(base) {
                     out.push(ArchiveEntry {
                         path: rel.to_string_lossy().replace('\\', "/"),
@@ -111,13 +139,13 @@ impl ArchiveTree {
                     });
                 }
                 if is_dir {
-                    walk(base, &p, out)?;
+                    walk(base, &p, out, depth + 1)?;
                 }
             }
             Ok(())
         }
         let mut entries = Vec::new();
-        walk(root, root, &mut entries)?;
+        walk(root, root, &mut entries, 0)?;
         Ok(ArchiveTree::from_entries(&entries))
     }
 }

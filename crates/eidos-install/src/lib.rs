@@ -510,7 +510,7 @@ pub struct TreeRow {
 
 /// How deep [`ArchiveTree::flatten`] will descend. Deliberately generous for real
 /// mods and finite for hostile ones.
-const MAX_TREE_DEPTH: usize = 64;
+pub(crate) const MAX_TREE_DEPTH: usize = 64;
 
 /// Top-level folders a Wrye Bash package may ship that are never sub-packages
 /// (lowercased, to match [`ArchiveTree::entries`] keys) - MO2's

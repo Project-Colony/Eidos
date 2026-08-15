@@ -1128,3 +1128,21 @@ fn civil_from_unix_is_correct() {
     assert_eq!(civil_from_unix(1_700_000_000), (2023, 11, 14)); // 2023-11-14 UTC
     assert_eq!(civil_from_unix(0), (1970, 1, 1));
 }
+
+#[test]
+fn a_symlink_loop_in_an_archive_does_not_blow_the_stack() {
+    // An archive is untrusted input. `link -> ..` used to make this walk recurse
+    // until the process died, which for the GUI meant a SIGSEGV mid-install.
+    let dir = std::env::temp_dir().join(format!("eidos-loop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("Data/textures")).unwrap();
+    std::fs::write(dir.join("Data/a.esp"), b"x").unwrap();
+    std::os::unix::fs::symlink("..", dir.join("Data/textures/up")).unwrap();
+
+    let tree = ArchiveTree::from_dir(&dir).expect("walk must return, not recurse forever");
+    let all = tree.flatten();
+    assert!(all.iter().any(|e| e.path.ends_with("a.esp")), "real files still described");
+    // The link itself is listed, as a leaf, and never descended.
+    assert!(all.iter().any(|e| e.path.ends_with("up") && !e.is_dir), "{all:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
