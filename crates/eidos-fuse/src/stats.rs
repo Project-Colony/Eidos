@@ -82,6 +82,149 @@ pub(crate) struct Stats {
     /// Opens whose path did not fit under [`DIR_HISTOGRAM_CAP`], so the top-N
     /// stays honest about what it is not showing.
     pub(crate) dirs_overflow: AtomicU64,
+    /// The shape of the read traffic - see [`ReadShape`]. One mutex, taken once
+    /// per read and only while `EIDOS_FUSE_STATS` is set.
+    pub(crate) reads: Mutex<ReadShape>,
+    /// When the first read arrived, which is where the timeline starts.
+    ///
+    /// Outside the mutex on purpose: the slot index is computed from it BEFORE
+    /// the lock is taken, so waiting for the lock cannot push a read into a later
+    /// slot. It could - contention rises exactly during a burst, so the timeline
+    /// would have smeared the bursts it exists to find, biasing its own headline
+    /// downward by the thing being measured.
+    ///
+    /// Anchored at the first READ rather than at daemon construction, because a
+    /// launch spends 30-120 s in Proton and the main menu before the load order
+    /// streams, and that would have burned a chunk of the timeline on an idle
+    /// mount.
+    pub(crate) read_origin: std::sync::OnceLock<std::time::Instant>,
+}
+
+/// Upper bounds of the read-size buckets, in bytes; the last is the catch-all.
+///
+/// Every latency argument made about this filesystem so far has assumed 128 KiB
+/// requests, because that is what a synthetic sequential read produces and what
+/// the kernel's default readahead caps a stream at. Nobody has checked what the
+/// GAME asks for. It matters: a load order that turns out to issue 16 KiB
+/// archive-record reads has a different optimum, since the per-round-trip tax is
+/// fixed and would then dominate instead of amortising over a large payload.
+pub(crate) const READ_BUCKETS: [u32; 8] =
+    [4 << 10, 16 << 10, 32 << 10, 64 << 10, 128 << 10, 256 << 10, 1 << 20, u32::MAX];
+
+/// Width of one timeline slot, in milliseconds.
+pub(crate) const SLOT_MS: u64 = 100;
+
+/// Timeline slots kept: 100 ms x 36000 = ONE HOUR, and it is a prefix, not a
+/// ring - reads past the end are counted separately rather than wrapping, so a
+/// long session cannot quietly overwrite the peak it was run to find.
+///
+/// An hour rather than the ten minutes this started at, because the survey exists
+/// to catch bursts at a cell transition and in a real session those happen at
+/// minute 20 or 40, not minute 3 - past the end the timeline simply stopped
+/// recording while the other tables kept counting, which is the worst kind of
+/// silent gap. A `Slot` is 24 bytes, so an hour costs 864 KB in a daemon that
+/// already caches merged listings for the whole game tree.
+pub(crate) const TIMELINE_SLOTS: usize = 36_000;
+
+/// Distinct files the per-file survey learns before it stops taking new ones.
+pub(crate) const HOT_FILES_CAP: usize = 50_000;
+
+/// Distinct calling threads the survey learns. Same reasoning as
+/// [`HOT_FILES_CAP`]: Skyrim's thread count is bounded, but a caller that spawns
+/// a thread per read would otherwise grow this map without limit, and a
+/// diagnostic must not be able to OOM the daemon that is serving the game.
+pub(crate) const TID_CAP: usize = 4_096;
+
+/// One 100 ms slice of the session.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Slot {
+    pub(crate) reads: u32,
+    pub(crate) bytes: u64,
+    /// Handler nanoseconds spent in this slice, summed across worker threads.
+    pub(crate) ns: u64,
+}
+
+/// What the read traffic actually looks like, as opposed to what it averages to.
+///
+/// The totals already say a session spends N milliseconds in `read`. They cannot
+/// say whether that was a steady trickle or a wall arriving during a cell
+/// transition, and those two shapes mean opposite things: a trickle spread over
+/// idle threads cannot stall a frame, while a burst that saturates every worker
+/// can. An average of 170 reads a second hides both. This records the timeline,
+/// the request sizes, which files carry the traffic, and which threads issue it.
+pub(crate) struct ReadShape {
+    /// Counts per [`READ_BUCKETS`] bucket.
+    pub(crate) sizes: [u64; READ_BUCKETS.len()],
+    /// The timeline, allocated on first use so an unmeasured run pays nothing.
+    pub(crate) slots: Vec<Slot>,
+    /// Reads that arrived after the timeline's hour was up.
+    pub(crate) past_timeline: u64,
+    /// Reads and bytes per inode. Keyed by inode because that is free on the hot
+    /// path; the names are resolved once, at report time.
+    pub(crate) per_file: HashMap<u64, (u64, u64)>,
+    pub(crate) files_overflow: u64,
+    /// Reads per calling thread. FUSE reports the caller's TID in the request
+    /// header, so this says whether the traffic comes from one thread - a game
+    /// blocking its own render loop on I/O - or from a streaming pool.
+    pub(crate) per_tid: HashMap<u32, u64>,
+    pub(crate) tids_overflow: u64,
+    /// Bytes REQUESTED, summed. Not bytes delivered: the count is taken before
+    /// the read runs, so a request truncated by EOF is charged in full. The
+    /// difference only shows at file ends and never changes a ratio.
+    pub(crate) bytes: u64,
+}
+
+impl Default for ReadShape {
+    fn default() -> Self {
+        ReadShape {
+            sizes: [0; READ_BUCKETS.len()],
+            slots: Vec::new(),
+            past_timeline: 0,
+            per_file: HashMap::new(),
+            files_overflow: 0,
+            per_tid: HashMap::new(),
+            tids_overflow: 0,
+            bytes: 0,
+        }
+    }
+}
+
+/// Times a read AND surveys its shape, on the way out.
+///
+/// Separate from [`Timed`] because the survey must not pay into the number it
+/// exists to explain: the elapsed time is read FIRST, `ns_read` is credited with
+/// exactly that, and only then does the bookkeeping run. Measuring a thing must
+/// not be the reason the thing looks expensive.
+pub(crate) struct TimedRead<'a> {
+    stats: &'a Stats,
+    ino: u64,
+    size: u32,
+    tid: u32,
+    start: std::time::Instant,
+}
+
+impl<'a> TimedRead<'a> {
+    /// `None` when `EIDOS_FUSE_STATS` is unset, so a normal run pays one atomic
+    /// load for the whole survey and touches none of the maps.
+    pub(crate) fn start(stats: &'a Stats, ino: u64, size: u32, tid: u32) -> Option<TimedRead<'a>> {
+        STATS_ON.then(|| TimedRead { stats, ino, size, tid, start: std::time::Instant::now() })
+    }
+}
+
+impl Drop for TimedRead<'_> {
+    fn drop(&mut self) {
+        let ns = self.start.elapsed().as_nanos() as u64;
+        self.stats.ns_read.fetch_add(ns, Ordering::Relaxed);
+        // The slot is chosen from when this read STARTED, and computed here,
+        // outside the mutex. Both halves matter: charging a read to the slot it
+        // ended in let a read spanning several slices dump all its time into the
+        // last one, which can push a slot's total past its own wall-clock
+        // capacity and print an impossible percentage - the same family as the
+        // "960%" the comment in `timings` was written to prevent.
+        let origin = *self.stats.read_origin.get_or_init(|| self.start);
+        let idx = (self.start.saturating_duration_since(origin).as_millis() as u64 / SLOT_MS) as usize;
+        self.stats.note_read(self.ino, self.size, self.tid, ns, idx);
+    }
 }
 
 /// Distinct directories the histogram will hold before it stops learning new
@@ -137,6 +280,190 @@ impl Stats {
         }
     }
 
+    /// Record one read against the survey.
+    ///
+    /// No `STATS_ON` check here, deliberately: the only caller is
+    /// [`TimedRead::drop`], and [`TimedRead::start`] already returns `None` when
+    /// stats are off, so on a normal run this function does not exist at
+    /// runtime. Putting the gate at the construction site rather than here is
+    /// also what lets a test drive the survey directly.
+    pub(crate) fn note_read(&self, ino: u64, size: u32, tid: u32, ns: u64, slot: usize) {
+        let mut s = match self.reads.lock() {
+            Ok(s) => s,
+            Err(p) => p.into_inner(),
+        };
+        let b = READ_BUCKETS.iter().position(|&hi| size <= hi).unwrap_or(READ_BUCKETS.len() - 1);
+        s.sizes[b] += 1;
+        s.bytes += size as u64;
+
+        if s.slots.is_empty() {
+            s.slots = vec![Slot::default(); TIMELINE_SLOTS];
+        }
+        match s.slots.get_mut(slot) {
+            Some(slot) => {
+                slot.reads += 1;
+                slot.bytes += size as u64;
+                slot.ns += ns;
+            }
+            None => s.past_timeline += 1,
+        }
+
+        let room = s.per_file.len() < HOT_FILES_CAP;
+        match s.per_file.get_mut(&ino) {
+            Some(e) => {
+                e.0 += 1;
+                e.1 += size as u64;
+            }
+            None if room => {
+                s.per_file.insert(ino, (1, size as u64));
+            }
+            None => s.files_overflow += 1,
+        }
+
+        let tid_room = s.per_tid.len() < TID_CAP;
+        match s.per_tid.get_mut(&tid) {
+            Some(c) => *c += 1,
+            None if tid_room => {
+                s.per_tid.insert(tid, 1);
+            }
+            None => s.tids_overflow += 1,
+        }
+    }
+
+    /// The shape of the read traffic: sizes, bursts, threads, and which files
+    /// carry it.
+    ///
+    /// `path_of` resolves an inode to its virtual path. It is a closure rather
+    /// than a borrow of the inode table so this module keeps knowing nothing
+    /// about inodes, and it runs once per listed file at unmount - never on the
+    /// hot path.
+    pub(crate) fn read_shape(&self, path_of: &dyn Fn(u64) -> Option<String>) -> String {
+        let s = match self.reads.lock() {
+            Ok(s) => s,
+            Err(p) => p.into_inner(),
+        };
+        // Silent when nothing was surveyed, which is also what an unmeasured run
+        // looks like - so no gate on the environment is needed to stay quiet.
+        let total: u64 = s.sizes.iter().sum();
+        if total == 0 {
+            return String::new();
+        }
+        let mib = |b: u64| b as f64 / (1024.0 * 1024.0);
+        let pct = |n: u64| n as f64 * 100.0 / total as f64;
+
+        let label = |i: usize| -> String {
+            let hi = READ_BUCKETS[i];
+            if hi == u32::MAX {
+                format!(">{}K", READ_BUCKETS[i - 1] / 1024)
+            } else {
+                format!("<={}K", hi / 1024)
+            }
+        };
+        let sizes: Vec<String> = (0..READ_BUCKETS.len())
+            .filter(|&i| s.sizes[i] > 0)
+            .map(|i| format!("{} {:.1}%", label(i), pct(s.sizes[i])))
+            .collect();
+
+        // The peak slot, and how much of the available worker time it used. THIS
+        // is the burst answer: a slot at 5% cannot have stalled anything, while
+        // one approaching 100% means every worker was blocked for that tenth of
+        // a second and whoever was waiting on us waited too.
+        let threads = crate::config::fuse_threads() as f64;
+        let slot_capacity_ns = SLOT_MS as f64 * 1_000_000.0 * threads;
+        let non_empty = s.slots.iter().filter(|x| x.reads > 0).count();
+        let (peak_i, peak) = s
+            .slots
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, x)| x.ns)
+            .map(|(i, x)| (i, *x))
+            .unwrap_or((0, Slot::default()));
+        let busiest = s
+            .slots
+            .iter()
+            .map(|x| x.reads)
+            .max()
+            .unwrap_or(0);
+        let over = |n: u32| s.slots.iter().filter(|x| x.reads >= n).count();
+
+        let mut tids: Vec<(u32, u64)> = s.per_tid.iter().map(|(&t, &c)| (t, c)).collect();
+        tids.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        let top_tid = tids.first().map(|(_, c)| pct(*c)).unwrap_or(0.0);
+
+        let mut files: Vec<(u64, u64, u64)> =
+            s.per_file.iter().map(|(&i, &(c, b))| (i, c, b)).collect();
+        files.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let hottest: Vec<String> = files
+            .iter()
+            .take(20)
+            .map(|(ino, c, b)| {
+                let name = path_of(*ino).unwrap_or_else(|| format!("(inode {ino}, gone)"));
+                format!("  {c:>8}  {:>9.1} MiB  /{name}", mib(*b))
+            })
+            .collect();
+
+        let dropped = if s.files_overflow > 0 {
+            format!("\n  ({} reads of further files counted but not attributed)", s.files_overflow)
+        } else {
+            String::new()
+        };
+        // Say what the timeline did NOT see. Without this the peak line reads as
+        // if it covered the whole session, and on a session longer than the
+        // timeline it silently would not.
+        let past = if s.past_timeline > 0 {
+            format!(
+                "\n  ({} reads ({:.1}%) arrived after the timeline's {} minutes and are counted \
+                 everywhere EXCEPT the timeline)",
+                s.past_timeline,
+                pct(s.past_timeline),
+                TIMELINE_SLOTS as u64 * SLOT_MS / 60_000,
+            )
+        } else {
+            String::new()
+        };
+        let tid_note = if s.tids_overflow > 0 {
+            format!("\n  ({} reads from further threads not attributed)", s.tids_overflow)
+        } else {
+            String::new()
+        };
+
+        // Only print a peak when there IS one. With every read past the end of
+        // the timeline, the "peak" would be slot 0 of an empty table: 0 ms at
+        // t=+0.0s, which reads as "no bursts" when the truth is "not measured".
+        let timeline = if non_empty == 0 {
+            "\n  timeline: no reads landed inside it".to_string()
+        } else {
+            format!(
+                "\n  timeline: {non_empty} non-empty {SLOT_MS}ms slots; busiest {busiest} reads; \
+                 peak slot {:.0} ms of handler time at t=+{:.1}s = {:.1}% of {} worker-thread(s)\
+                 \n  slots at/over 50 reads: {}, over 200: {}, over 500: {}",
+                peak.ns as f64 / 1_000_000.0,
+                peak_i as f64 * SLOT_MS as f64 / 1000.0,
+                peak.ns as f64 * 100.0 / slot_capacity_ns,
+                threads,
+                over(50),
+                over(200),
+                over(500),
+            )
+        };
+
+        format!(
+            "\neidos-fuse read shape: {total} reads, {:.1} MiB requested, mean {:.1} KiB\
+             \n  sizes: {}{timeline}\
+             \n  threads issuing reads: {} distinct, busiest holds {:.1}%\
+             \n  files by read count:\n{}{}{}{}",
+            mib(s.bytes),
+            s.bytes as f64 / total as f64 / 1024.0,
+            sizes.join(", "),
+            tids.len(),
+            top_tid,
+            hottest.join("\n"),
+            dropped,
+            tid_note,
+            past,
+        )
+    }
+
     /// The shape of the directory opens: how many distinct directories, how
     /// concentrated they are, and which ones dominate.
     pub(crate) fn dir_shape(&self) -> String {
@@ -187,7 +514,11 @@ impl Stats {
         )
     }
 
-    pub(crate) fn report(&self, r: &eidos_core::ResolveStats) -> String {
+    pub(crate) fn report(
+        &self,
+        r: &eidos_core::ResolveStats,
+        path_of: &dyn Fn(u64) -> Option<String>,
+    ) -> String {
         let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
         let (hit, miss) = (g(&self.lookup_hit), g(&self.lookup_miss));
         let total = hit + miss;
@@ -210,6 +541,7 @@ impl Stats {
             g(&self.read),
             g(&self.write),
         ) + &self.timings(r)
+            + &self.read_shape(path_of)
             + &self.dir_shape()
     }
 }
@@ -244,10 +576,16 @@ impl Stats {
         // above - it also runs while listings are built. An earlier version
         // divided one by the other and printed "960%", which is what a ratio
         // between two things that do not nest looks like.
+        // The thread count is printed, not implied. It is the one thing an A/B run
+        // varies that the report otherwise cannot show (`EIDOS_FUSE_THREADS` is an
+        // environment variable, so it leaves no trace in the recorded command
+        // line), and without it two dumps from two arms are indistinguishable
+        // afterwards - which is exactly how one comparison was already lost.
         format!(
-            "\n  time in handlers: {:.0} ms, summed across threads ({})\
+            "\n  time in handlers: {:.0} ms, summed across {} thread(s) ({})\
              \n  path resolution: {} probes, {} directory scans, {:.0} ms (also summed)",
             ms(total),
+            crate::config::fuse_threads(),
             each.join(", "),
             r.probes.load(Ordering::Relaxed),
             r.scans.load(Ordering::Relaxed),

@@ -34,7 +34,11 @@ impl Filesystem for Eidos {
         // Unmount is the natural place to report: the run is over and the numbers
         // are final. Silent unless EIDOS_FUSE_STATS is set.
         if Stats::enabled() {
-            eprintln!("{}", self.stats.report(self.stack.resolve_stats()));
+            // Bound separately so the closure borrows the inode table while
+            // `report` borrows the counters - two disjoint fields of `self`.
+            let (stats, inodes) = (&self.stats, &self.inodes);
+            let path_of = |ino: u64| inodes.lock_recover().path(ino);
+            eprintln!("{}", stats.report(self.stack.resolve_stats(), &path_of));
         }
     }
 
@@ -332,7 +336,7 @@ impl Filesystem for Eidos {
 
     fn read(
         &self,
-        _req: &Request,
+        req: &Request,
         ino: INodeNo,
         fh: FileHandle,
         offset: u64,
@@ -342,7 +346,12 @@ impl Filesystem for Eidos {
         reply: ReplyData,
     ) {
         Stats::bump(&self.stats.read);
-        let _t = Timed::start(&self.stats.ns_read);
+        // Times the read and, when stats are on, records its shape: the request
+        // size, which file it hit, which thread asked, and where it lands on the
+        // session timeline. `req.pid()` is the CALLER's thread id, which is what
+        // says whether a game is blocking one thread on I/O or streaming across
+        // a pool. Off, this is one atomic load.
+        let _t = TimedRead::start(&self.stats, ino.0, size, req.pid());
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
