@@ -159,10 +159,10 @@ fn names(ino: u64) -> Option<String> {
 fn read_sizes_land_in_the_bucket_they_belong_to() {
     let s = Stats::default();
     // Exactly on a bound belongs to that bucket, not the next one up.
-    s.note_read(1, 4 * 1024, 10, 0, 0);
-    s.note_read(1, 4 * 1024 + 1, 10, 0, 0);
-    s.note_read(1, 128 * 1024, 10, 0, 0);
-    s.note_read(1, 4 * 1024 * 1024, 10, 0, 0);
+    s.note_read(1, 4 * 1024, 10, 0, 0, 0);
+    s.note_read(1, 4 * 1024 + 1, 10, 0, 0, 0);
+    s.note_read(1, 128 * 1024, 10, 0, 0, 0);
+    s.note_read(1, 4 * 1024 * 1024, 10, 0, 0, 0);
     let out = s.read_shape(&names);
     assert!(out.contains("<=4K 25.0%"), "{out}");
     assert!(out.contains("<=16K 25.0%"), "{out}");
@@ -180,7 +180,7 @@ fn the_timeline_reports_the_peak_slot_and_how_full_it_was() {
     // percentage is against the worker pool, because that is what decides
     // whether anyone actually waited on us.
     for _ in 0..300 {
-        s.note_read(1, 128 * 1024, 10, 100_000, 0); // 0.1 ms each, 30 ms total
+        s.note_read(1, 128 * 1024, 10, 100_000, 0, 0); // 0.1 ms each, 30 ms total
     }
     let out = s.read_shape(&names);
     assert!(out.contains("busiest 300 reads"), "{out}");
@@ -197,9 +197,9 @@ fn reads_are_attributed_to_files_and_named_only_at_report_time() {
     // Keyed by inode on the hot path - resolving a name per read would cost an
     // allocation and a lock on the very path being measured.
     for _ in 0..10 {
-        s.note_read(1, 64 * 1024, 10, 0, 0);
+        s.note_read(1, 64 * 1024, 10, 0, 0, 0);
     }
-    s.note_read(2, 8 * 1024, 10, 0, 0);
+    s.note_read(2, 8 * 1024, 10, 0, 0, 0);
     let out = s.read_shape(&names);
     let hot = out.find("Skyrim - Textures0.bsa").expect("named at report time");
     let cold = out.find("textures/armor/steel.dds").expect("second file listed");
@@ -207,7 +207,7 @@ fn reads_are_attributed_to_files_and_named_only_at_report_time() {
     assert!(out.contains("0.6 MiB"), "bytes per file reported: {out}");
     // An inode that has since been forgotten is still counted, and says so
     // rather than silently dropping its reads from the total.
-    s.note_read(99, 1024, 10, 0, 0);
+    s.note_read(99, 1024, 10, 0, 0, 0);
     assert!(s.read_shape(&names).contains("(inode 99, gone)"));
 }
 
@@ -217,9 +217,9 @@ fn the_survey_says_which_threads_issued_the_reads() {
     // The question this answers: is a game blocking ONE thread on I/O - the
     // shape that can stall a frame - or streaming across a pool?
     for _ in 0..9 {
-        s.note_read(1, 4096, 777, 0, 0);
+        s.note_read(1, 4096, 777, 0, 0, 0);
     }
-    s.note_read(1, 4096, 888, 0, 0);
+    s.note_read(1, 4096, 888, 0, 0, 0);
     let out = s.read_shape(&names);
     assert!(out.contains("2 distinct"), "{out}");
     assert!(out.contains("busiest holds 90.0%"), "{out}");
@@ -240,7 +240,7 @@ fn surveying_a_read_does_not_inflate_the_time_it_reports() {
     // read, the survey would show up inside ns_read and make reads look more
     // expensive the moment you started measuring them.
     let s = Stats::default();
-    s.note_read(1, 4096, 10, 5_000_000, 0); // 5 ms
+    s.note_read(1, 4096, 10, 5_000_000, 0, 0); // 5 ms
     assert_eq!(s.ns_read.load(Ordering::Relaxed), 0, "note_read must not touch the clock");
 }
 
@@ -301,4 +301,64 @@ fn this_crate_never_makes_a_name_appear_or_vanish_by_itself() {
          that one layer knows about every name in the overwrite:\n  {}",
         found.join("\n  ")
     );
+}
+
+#[test]
+fn a_slot_can_never_report_more_time_than_its_workers_could_spend() {
+    // The shapes that broke the two earlier attempts, all in one test.
+    //
+    // A read is charged to a slice by real OVERLAP. Charging its whole duration
+    // to the slice it started in printed 500% for four workers blocked 500 ms;
+    // spreading it evenly over the slices it spans fixed that and still printed
+    // 180% for two 90 ms reads per worker, because those straddle a boundary the
+    // even split cannot see. Each case below is checked at its own start offset.
+    let pct = |out: &str| -> f64 {
+        out.split("= ")
+            .nth(1)
+            .and_then(|x| x.split('%').next())
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(f64::NAN)
+    };
+    let threads = crate::config::fuse_threads() as u64;
+
+    // 1. Long reads, aligned: four workers blocked for five whole slices.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 128 * 1024, tid, 500_000_000, 0, 0);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "aligned long reads exceeded capacity: {p}");
+    assert!(p > 95.0, "blocked workers ARE saturation, got {p}");
+
+    // 2. Sub-slice reads starting mid-slice: they straddle, and the straddle is
+    //    the whole point - 50 ms into the slice, two 90 ms reads each.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 4096, tid, 90_000_000, 0, 50_000_000);
+        s.note_read(1, 4096, tid, 90_000_000, 0, 50_000_000);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "straddling reads exceeded capacity: {p}");
+
+    // 3. A duration just over one slice, from the slice boundary.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 4096, tid, 100_999_999, 0, 0);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "a barely-over-one-slice read exceeded capacity: {p}");
+}
+
+#[test]
+fn the_peak_points_at_a_slot_that_saw_reads() {
+    // With every duration zero, ranking slots by time alone is one long tie, and
+    // `max_by_key` keeps the LAST - so the report pointed at the end of the hour
+    // for traffic that all arrived in the first second.
+    let s = Stats::default();
+    for _ in 0..1000 {
+        s.note_read(1, 4096, 10, 0, 3, 0); // t = +0.3 s
+    }
+    let out = s.read_shape(&names);
+    assert!(out.contains("at t=+0.3s"), "peak must sit where the reads are: {out}");
+    assert!(out.contains("busiest 1000 reads"), "{out}");
 }

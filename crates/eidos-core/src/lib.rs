@@ -866,17 +866,26 @@ impl LayerStack {
         // resolve_read honour to keep the lower files hidden.
         let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
-        self.clear_whiteout(vpath);
-        if was_deleted && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
-            // Propagated, not swallowed. At this point `clear_whiteout` has already
-            // removed the directory's own marker, so opacity is the ONLY thing
-            // still hiding the deleted lower contents. Ignoring a failed write
-            // here (ENOSPC on the overwrite volume, EROFS, a quota) returned Ok
-            // while every file the user had deleted became visible again, with
-            // nothing logged anywhere - this crate has no logging at all. An
-            // errno the caller can report beats a silently wrong view: `ops.rs`
-            // hands it straight to `reply.error`.
+        let needs_opacity = was_deleted
+            && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir()));
+
+        // ORDER IS THE WHOLE POINT: opacity goes down while the whiteout is still
+        // standing, so a failure here leaves the delete intact.
+        //
+        // Doing it the other way round - clear, then write, then propagate the
+        // error - looks like the careful version and is worse than swallowing the
+        // error was. By the time the write is attempted, `clear_whiteout` has
+        // already removed the only thing hiding the deleted lower contents, and
+        // returning early also skips `ow_dirty()`, so an ENOSPC or EROFS on the
+        // overwrite volume left every deleted file visible AND the index
+        // disagreeing with the walk for the rest of the mount. This way the
+        // failure path changes nothing at all: the directory exists, the whiteout
+        // still hides what it hid, and the caller gets the errno.
+        if needs_opacity {
             fs::write(dest.join(OPAQUE_MARKER), b"")?;
+        }
+        self.clear_whiteout(vpath);
+        if needs_opacity {
             // Opacity changes what an ancestor HIDES, not just what exists:
             // model it by rebuild rather than by surgery.
             self.ow_dirty();
@@ -2341,6 +2350,46 @@ mod tests {
         a.sort();
         b.sort();
         assert_eq!(a, b, "index and walk disagree on the listing");
+    }
+
+    /// A mkdir that cannot establish opacity must change NOTHING.
+    ///
+    /// The failure path is the whole test: if the whiteout is cleared before the
+    /// opaque marker is written, an ENOSPC or EROFS on the overwrite volume
+    /// resurrects every file deleted under that directory - and skips the index
+    /// invalidation on the way out, so the index and the walk then disagree for
+    /// the rest of the mount.
+    #[test]
+    fn a_mkdir_that_cannot_establish_opacity_leaves_the_delete_standing() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/old.esp", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        stack.remove("Data").unwrap();
+        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden by the delete");
+        let _ = stack.resolve_read("Data/probe"); // warm the index
+
+        // Make the overwrite's Data directory unwritable so the marker cannot be
+        // written, which is what a full or read-only overwrite volume looks like.
+        let d = over.join("Data");
+        fs::create_dir_all(&d).unwrap();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let failed = stack.make_dir("Data").is_err();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(failed, "the mkdir must report the failure it hit");
+
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "RESURRECTED by a failed mkdir: the delete must survive an error"
+        );
+        assert!(
+            !stack.list_dir("Data").iter().any(|(n, _)| n == "old.esp"),
+            "the listing must not show it either: {:?}",
+            stack.list_dir("Data").iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
     }
 
     /// A directory that exists only in a lower layer must be MATERIALISED when

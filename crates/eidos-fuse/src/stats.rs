@@ -102,12 +102,20 @@ pub(crate) struct Stats {
 
 /// Upper bounds of the read-size buckets, in bytes; the last is the catch-all.
 ///
-/// Every latency argument made about this filesystem so far has assumed 128 KiB
-/// requests, because that is what a synthetic sequential read produces and what
-/// the kernel's default readahead caps a stream at. Nobody has checked what the
-/// GAME asks for. It matters: a load order that turns out to issue 16 KiB
-/// archive-record reads has a different optimum, since the per-round-trip tax is
-/// fixed and would then dominate instead of amortising over a large payload.
+/// THESE ARE FUSE REQUEST SIZES, NOT THE GAME'S. What arrives here is what the
+/// kernel decided to ask for after readahead, coalescing and serving whatever the
+/// page cache already held - so it is neither the size the game passed to
+/// `read()` nor the number of calls it made. Measured on a real mount: 192 preads
+/// of exactly 64 KiB arrived as 101 requests averaging 126 KiB, i.e. half the
+/// calls at twice the size, plus a little more data than was asked for.
+///
+/// The distinction is not pedantry. It is tempting to read a bucket full of 4 KiB
+/// entries as "the game issues tiny reads, so the per-round-trip tax dominates" -
+/// and that conclusion does not follow, because page-cache-miss granularity
+/// produces the same shape. What this histogram DOES answer is what this daemon
+/// is asked to serve, which is the right input for sizing buffers and judging the
+/// round-trip cost we actually pay. Seeing the game's own request sizes needs
+/// strace on the game side; the daemon structurally cannot.
 pub(crate) const READ_BUCKETS: [u32; 8] =
     [4 << 10, 16 << 10, 32 << 10, 64 << 10, 128 << 10, 256 << 10, 1 << 20, u32::MAX];
 
@@ -222,8 +230,9 @@ impl Drop for TimedRead<'_> {
         // capacity and print an impossible percentage - the same family as the
         // "960%" the comment in `timings` was written to prevent.
         let origin = *self.stats.read_origin.get_or_init(|| self.start);
-        let idx = (self.start.saturating_duration_since(origin).as_millis() as u64 / SLOT_MS) as usize;
-        self.stats.note_read(self.ino, self.size, self.tid, ns, idx);
+        let since = self.start.saturating_duration_since(origin).as_nanos() as u64;
+        let slot_ns = SLOT_MS * 1_000_000;
+        self.stats.note_read(self.ino, self.size, self.tid, ns, (since / slot_ns) as usize, since % slot_ns);
     }
 }
 
@@ -287,7 +296,7 @@ impl Stats {
     /// stats are off, so on a normal run this function does not exist at
     /// runtime. Putting the gate at the construction site rather than here is
     /// also what lets a test drive the survey directly.
-    pub(crate) fn note_read(&self, ino: u64, size: u32, tid: u32, ns: u64, slot: usize) {
+    pub(crate) fn note_read(&self, ino: u64, size: u32, tid: u32, ns: u64, slot: usize, offset_ns: u64) {
         let mut s = match self.reads.lock() {
             Ok(s) => s,
             Err(p) => p.into_inner(),
@@ -299,13 +308,39 @@ impl Stats {
         if s.slots.is_empty() {
             s.slots = vec![Slot::default(); TIMELINE_SLOTS];
         }
-        match s.slots.get_mut(slot) {
-            Some(slot) => {
-                slot.reads += 1;
-                slot.bytes += size as u64;
-                slot.ns += ns;
+        if slot >= TIMELINE_SLOTS {
+            s.past_timeline += 1;
+        } else {
+            // The count and the bytes belong to the slot the read STARTED in.
+            let start = &mut s.slots[slot];
+            start.reads += 1;
+            start.bytes += size as u64;
+
+            // The TIME is deposited by REAL OVERLAP: what this read occupied of
+            // the slice it began in, whole slices after that, and the remainder
+            // in the last one. `offset_ns` is where inside its first slice the
+            // read started, and it is what makes the sum honest.
+            //
+            // Two earlier attempts got this wrong in the same direction. Charging
+            // the whole duration to the starting slice printed "500% of 4
+            // worker-thread(s)" for four workers each blocked 500 ms - a number
+            // of the same family as the "960%" the comment in `timings` warns
+            // about. Spreading it evenly over `ceil(duration / slice)` slices
+            // fixed that case and still ignored the offset, so two 90 ms reads per
+            // worker - which really straddle two slices - printed 180%. Only
+            // overlap bounds a slice by its own wall clock, which is the property
+            // that makes the percentage mean "how much of the pool was busy".
+            let mut left = ns;
+            let mut k = 0usize;
+            let mut room = SLOT_MS * 1_000_000 - offset_ns.min(SLOT_MS * 1_000_000);
+            while left > 0 {
+                let Some(sl) = s.slots.get_mut(slot + k) else { break }; // off the end
+                let take = left.min(room);
+                sl.ns += take;
+                left -= take;
+                k += 1;
+                room = SLOT_MS * 1_000_000;
             }
-            None => s.past_timeline += 1,
         }
 
         let room = s.per_file.len() < HOT_FILES_CAP;
@@ -371,11 +406,17 @@ impl Stats {
         let threads = crate::config::fuse_threads() as f64;
         let slot_capacity_ns = SLOT_MS as f64 * 1_000_000.0 * threads;
         let non_empty = s.slots.iter().filter(|x| x.reads > 0).count();
+        // Only slots that actually SAW a read can be the peak. Ranking every slot
+        // by `ns` alone put the peak at the end of the hour whenever the durations
+        // were all zero, because `max_by_key` keeps the LAST maximum on a tie and
+        // an empty timeline is one long tie - the report then pointed at t=+3599.9s
+        // for traffic that all arrived in the first second.
         let (peak_i, peak) = s
             .slots
             .iter()
             .enumerate()
-            .max_by_key(|(_, x)| x.ns)
+            .filter(|(_, x)| x.reads > 0)
+            .max_by_key(|(_, x)| (x.ns, x.reads))
             .map(|(i, x)| (i, *x))
             .unwrap_or((0, Slot::default()));
         let busiest = s
@@ -449,7 +490,7 @@ impl Stats {
 
         format!(
             "\neidos-fuse read shape: {total} reads, {:.1} MiB requested, mean {:.1} KiB\
-             \n  sizes: {}{timeline}\
+             \n  request sizes (as the kernel issued them, not as the game asked): {}{timeline}\
              \n  threads issuing reads: {} distinct, busiest holds {:.1}%\
              \n  files by read count:\n{}{}{}{}",
             mib(s.bytes),
