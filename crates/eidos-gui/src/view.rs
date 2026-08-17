@@ -19,14 +19,20 @@ pub(crate) const C_CONTENT: Length = Length::Fixed(78.0);
 /// [`overwrite_entries`] memoised against the view generation: the Overwrite tab
 /// and the mod-info file tree re-render constantly, and each render used to walk
 /// the whole tree again. Rebuilds only after something changes on disk.
-pub(crate) fn cached_entries(app: &App, dir: &Path) -> Vec<String> {
+///
+/// Handed out as an `Rc`, because the memoisation used to be half of one: the
+/// walk was cached but every HIT still cloned the whole Vec - against the real
+/// 4902-file Overwrite this file documents, that was ~5k String allocations and
+/// ~300 KB of memcpy per redraw, per pointer event, with the tab open. A cache
+/// whose hit path allocates proportionally to the data is a cache in name only.
+pub(crate) fn cached_entries(app: &App, dir: &Path) -> std::rc::Rc<Vec<String>> {
     let gen = app.view_generation.get();
     if let Some((at, entries)) = app.listing_cache.borrow().get(dir) {
         if *at == gen {
-            return entries.clone();
+            return entries.clone(); // Rc bump, not a Vec copy
         }
     }
-    let entries = overwrite_entries(dir);
+    let entries = std::rc::Rc::new(overwrite_entries(dir));
     app.listing_cache.borrow_mut().insert(dir.to_path_buf(), (gen, entries.clone()));
     entries
 }
@@ -105,20 +111,34 @@ pub(crate) fn overwrite_tree_rows(app: &App, entries: &[String], limit: usize) -
     out
 }
 
+/// Every file under `dir`, relative and sorted.
+///
+/// Capped at the same depth as its neighbours in this file, and it does not
+/// follow symlinks. `restore_hidden_files` and `data_tree_rows` both already
+/// guard this way - the latter saying "a symlink loop inside a mod would
+/// otherwise recurse until the stack gives out" - and this walk was the one that
+/// did not, in the crate that must never crash: it runs on the Mod Info dialog's
+/// General tab, so merely SELECTING a mod containing `link -> ..` was enough to
+/// take the whole GUI down. The install path can genuinely put a symlink into
+/// `mods/`, since `overlay_dir` recreates them.
 pub(crate) fn overwrite_entries(dir: &Path) -> Vec<String> {
-    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
+        if depth > 32 {
+            return;
+        }
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             let p = e.path();
-            if p.is_dir() {
-                walk(root, &p, out);
+            let is_real_dir = e.file_type().map(|t| t.is_dir() && !t.is_symlink()).unwrap_or(false);
+            if is_real_dir {
+                walk(root, &p, out, depth + 1);
             } else if let Ok(rel) = p.strip_prefix(root) {
                 out.push(rel.to_string_lossy().replace('\\', "/"));
             }
         }
     }
     let mut out = Vec::new();
-    walk(dir, dir, &mut out);
+    walk(dir, dir, &mut out, 0);
     out.sort();
     out
 }

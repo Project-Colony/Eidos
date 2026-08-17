@@ -20,9 +20,15 @@ fn rename_over_an_interned_destination_keeps_the_survivor_mapped() {
     let mut inodes = Inodes::new();
     let victim = inodes.lookup("Skyrim.ini");
     let src = inodes.lookup("Skyrim.ini.tmp");
-    inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
+    let (_, clobbered) = inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
 
     assert_eq!(inodes.intern("Skyrim.ini"), src, "the renamed inode owns the path");
+    // The victim is REPORTED, because its FORGET can no longer do the reporting:
+    // discard removed its count, so forget() finds nothing and frees nothing,
+    // and the side tables keyed by it (aliases, negatives) would have been
+    // retained for the life of the mount - on the very pattern every INI and
+    // save write uses.
+    assert_eq!(clobbered, vec![victim], "the clobbered inode must be handed back for pruning");
     // Forgetting the clobbered inode must not unmap the survivor.
     inodes.forget(victim, 1);
     assert_eq!(inodes.intern("Skyrim.ini"), src, "forget() unmapped a live inode");
@@ -123,14 +129,125 @@ fn timings_report_milliseconds_and_a_total() {
     // The wording is load-bearing. Both totals are sums over concurrent
     // worker threads, and saying so is what stops the next reader treating
     // them as elapsed time - or dividing one by the other, which is how a
-    // "960%" got printed.
-    assert!(out.contains("summed across threads"), "{out}");
+    // "960%" got printed. The COUNT is there because it is what an A/B run
+    // varies and what the report could not otherwise show: EIDOS_FUSE_THREADS
+    // is an environment variable, so it leaves no trace in the recorded
+    // command line, and two dumps from two arms used to be indistinguishable.
+    assert!(out.contains("summed across"), "{out}");
+    assert!(
+        out.contains(&format!("across {} thread(s)", crate::config::fuse_threads())),
+        "the report must name the thread count it summed over: {out}"
+    );
     assert!(!out.contains('%'), "no ratio between two things that do not nest: {out}");
     assert!(out.contains("read 240"), "{out}");
     assert!(out.contains("lookup 60"), "{out}");
     // Handlers that never ran are still listed, at zero: their absence is
     // information too.
     assert!(out.contains("write 0"), "{out}");
+}
+
+// ---- The read-shape survey -------------------------------------------------
+//
+// The survey exists to answer four questions the totals cannot: what sizes the
+// game asks for, whether the traffic arrives in bursts, which files carry it,
+// and which threads issue it. These pin each answer.
+
+/// Names for the inodes the survey tests use.
+fn names(ino: u64) -> Option<String> {
+    match ino {
+        1 => Some("Skyrim - Textures0.bsa".into()),
+        2 => Some("textures/armor/steel.dds".into()),
+        _ => None,
+    }
+}
+
+#[test]
+fn read_sizes_land_in_the_bucket_they_belong_to() {
+    let s = Stats::default();
+    // Exactly on a bound belongs to that bucket, not the next one up.
+    s.note_read(1, 4 * 1024, 10, 0, 0, 0);
+    s.note_read(1, 4 * 1024 + 1, 10, 0, 0, 0);
+    s.note_read(1, 128 * 1024, 10, 0, 0, 0);
+    s.note_read(1, 4 * 1024 * 1024, 10, 0, 0, 0);
+    let out = s.read_shape(&names);
+    assert!(out.contains("<=4K 25.0%"), "{out}");
+    assert!(out.contains("<=16K 25.0%"), "{out}");
+    assert!(out.contains("<=128K 25.0%"), "{out}");
+    assert!(out.contains(">1024K 25.0%"), "{out}");
+    // Empty buckets are omitted rather than printed as zeroes: the shape is the
+    // point, and a row of "0.0%" hides it.
+    assert!(!out.contains("<=32K"), "{out}");
+}
+
+#[test]
+fn the_timeline_reports_the_peak_slot_and_how_full_it_was() {
+    let s = Stats::default();
+    // One slot carrying real handler time is the signature of a burst. The
+    // percentage is against the worker pool, because that is what decides
+    // whether anyone actually waited on us.
+    for _ in 0..300 {
+        s.note_read(1, 128 * 1024, 10, 100_000, 0, 0); // 0.1 ms each, 30 ms total
+    }
+    let out = s.read_shape(&names);
+    assert!(out.contains("busiest 300 reads"), "{out}");
+    assert!(out.contains("heaviest slot 30 ms"), "{out}");
+    assert!(out.contains("slots with >=50 reads: 1"), "{out}");
+    // 30 ms of handler time inside a 100 ms slot, over N worker threads.
+    let expect = 30.0 * 100.0 / (100.0 * crate::config::fuse_threads() as f64);
+    assert!(out.contains(&format!("= {expect:.1}% of")), "{out}");
+}
+
+#[test]
+fn reads_are_attributed_to_files_and_named_only_at_report_time() {
+    let s = Stats::default();
+    // Keyed by inode on the hot path - resolving a name per read would cost an
+    // allocation and a lock on the very path being measured.
+    for _ in 0..10 {
+        s.note_read(1, 64 * 1024, 10, 0, 0, 0);
+    }
+    s.note_read(2, 8 * 1024, 10, 0, 0, 0);
+    let out = s.read_shape(&names);
+    let hot = out.find("Skyrim - Textures0.bsa").expect("named at report time");
+    let cold = out.find("textures/armor/steel.dds").expect("second file listed");
+    assert!(hot < cold, "busiest file must lead: {out}");
+    assert!(out.contains("0.6 MiB"), "bytes per file reported: {out}");
+    // An inode that has since been forgotten is still counted, and says so
+    // rather than silently dropping its reads from the total.
+    s.note_read(99, 1024, 10, 0, 0, 0);
+    assert!(s.read_shape(&names).contains("(inode 99, gone)"));
+}
+
+#[test]
+fn the_survey_says_which_threads_issued_the_reads() {
+    let s = Stats::default();
+    // The question this answers: is a game blocking ONE thread on I/O - the
+    // shape that can stall a frame - or streaming across a pool?
+    for _ in 0..9 {
+        s.note_read(1, 4096, 777, 0, 0, 0);
+    }
+    s.note_read(1, 4096, 888, 0, 0, 0);
+    let out = s.read_shape(&names);
+    assert!(out.contains("2 distinct"), "{out}");
+    assert!(out.contains("busiest holds 90.0%"), "{out}");
+}
+
+#[test]
+fn an_unmeasured_run_reports_no_read_shape_at_all() {
+    // The guard is at TimedRead::start, so with stats off nothing is ever
+    // recorded and the report must stay silent rather than print empty tables.
+    let s = Stats::default();
+    assert_eq!(s.read_shape(&names), "");
+    assert!(TimedRead::start(&s, 1, 4096, 10).is_none() || *crate::stats::STATS_ON);
+}
+
+#[test]
+fn surveying_a_read_does_not_inflate_the_time_it_reports() {
+    // The trap this locks out: if the bookkeeping ran before the stopwatch was
+    // read, the survey would show up inside ns_read and make reads look more
+    // expensive the moment you started measuring them.
+    let s = Stats::default();
+    s.note_read(1, 4096, 10, 5_000_000, 0, 0); // 5 ms
+    assert_eq!(s.ns_read.load(Ordering::Relaxed), 0, "note_read must not touch the clock");
 }
 
 #[test]
@@ -190,4 +307,64 @@ fn this_crate_never_makes_a_name_appear_or_vanish_by_itself() {
          that one layer knows about every name in the overwrite:\n  {}",
         found.join("\n  ")
     );
+}
+
+#[test]
+fn a_slot_can_never_report_more_time_than_its_workers_could_spend() {
+    // The shapes that broke the two earlier attempts, all in one test.
+    //
+    // A read is charged to a slice by real OVERLAP. Charging its whole duration
+    // to the slice it started in printed 500% for four workers blocked 500 ms;
+    // spreading it evenly over the slices it spans fixed that and still printed
+    // 180% for two 90 ms reads per worker, because those straddle a boundary the
+    // even split cannot see. Each case below is checked at its own start offset.
+    let pct = |out: &str| -> f64 {
+        out.split("= ")
+            .nth(1)
+            .and_then(|x| x.split('%').next())
+            .and_then(|x| x.parse().ok())
+            .unwrap_or(f64::NAN)
+    };
+    let threads = crate::config::fuse_threads() as u64;
+
+    // 1. Long reads, aligned: four workers blocked for five whole slices.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 128 * 1024, tid, 500_000_000, 0, 0);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "aligned long reads exceeded capacity: {p}");
+    assert!(p > 95.0, "blocked workers ARE saturation, got {p}");
+
+    // 2. Sub-slice reads starting mid-slice: they straddle, and the straddle is
+    //    the whole point - 50 ms into the slice, two 90 ms reads each.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 4096, tid, 90_000_000, 0, 50_000_000);
+        s.note_read(1, 4096, tid, 90_000_000, 0, 50_000_000);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "straddling reads exceeded capacity: {p}");
+
+    // 3. A duration just over one slice, from the slice boundary.
+    let s = Stats::default();
+    for tid in 0..threads as u32 {
+        s.note_read(1, 4096, tid, 100_999_999, 0, 0);
+    }
+    let p = pct(&s.read_shape(&names));
+    assert!(p <= 100.5, "a barely-over-one-slice read exceeded capacity: {p}");
+}
+
+#[test]
+fn the_peak_points_at_a_slot_that_saw_reads() {
+    // With every duration zero, ranking slots by time alone is one long tie, and
+    // `max_by_key` keeps the LAST - so the report pointed at the end of the hour
+    // for traffic that all arrived in the first second.
+    let s = Stats::default();
+    for _ in 0..1000 {
+        s.note_read(1, 4096, 10, 0, 3, 0); // t = +0.3 s
+    }
+    let out = s.read_shape(&names);
+    assert!(out.contains("at t=+0.3s"), "peak must sit where the reads are: {out}");
+    assert!(out.contains("busiest 1000 reads"), "{out}");
 }

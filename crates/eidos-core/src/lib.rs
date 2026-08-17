@@ -481,7 +481,17 @@ impl LayerStack {
             }
             // Writing un-deletes, exactly as clear_whiteout did on disk - and the
             // marker file's own entry goes with it.
-            if idx.wh.remove(&key) {
+            //
+            // THE LEAF ONLY. This used to run for every component, so creating
+            // one file under a deleted directory lifted that directory's
+            // whiteout and every sibling deleted with it came back: remove
+            // "Data", create "Data/new.ini", and "Data/old.esp" was visible
+            // again - with the index on, and only with it on. On disk the
+            // directory is re-established opaque, which keeps the lower contents
+            // hidden; the index modelled the un-delete but not the opacity, so it
+            // disagreed with the walk in the one direction that matters. Pinned
+            // by `a_create_must_not_resurrect_a_file_deleted_with_its_directory`.
+            if i + 1 == comps.len() && idx.wh.remove(&key) {
                 if let (Some(parent), Some(name)) = (normalize(&prefix).parent(), normalize(&prefix).file_name()) {
                     let marker = if parent.as_os_str().is_empty() {
                         format!("{WHITEOUT_PREFIX}{}", name.to_string_lossy())
@@ -804,7 +814,32 @@ impl LayerStack {
         self.clear_whiteout(vpath);
         if !dest.exists() {
             if let Some(src) = self.layers.iter().find_map(|l| self.ci_lookup(l, vpath)) {
-                if src.is_file() {
+                // A DIRECTORY that lives only in a lower layer is materialised,
+                // not skipped. It used to fall through both arms: nothing was
+                // created, yet the path was recorded in the overwrite index as if
+                // it had been. Two costs followed - the caller got a path that
+                // does not exist, so `ops.rs`'s `set_permissions` right after this
+                // returned ENOENT (a mode-only setattr is exactly how Wine clears
+                // FILE_ATTRIBUTE_READONLY on a directory), and the index was told
+                // about a path that was not there, which the next resolve had to
+                // undo with a full rebuild.
+                // Classified WITHOUT following links. `src.is_dir()` follows, so
+                // a lower symlink-to-directory - which the install path itself
+                // creates via `overlay_dir` - was materialised as a REAL empty
+                // directory in the overwrite, and `getattr` switched from
+                // reporting S_IFLNK to S_IFDIR: a type change visible to the
+                // game, triggered by something as small as Wine clearing the
+                // read-only attribute. A symlink is declined instead: recreating
+                // the link here would be worse, because a RELATIVE target would
+                // re-resolve against the overwrite's location and point somewhere
+                // else entirely. (A symlink-to-FILE still copies up by content
+                // below, exactly as it always did: `is_file` follows too, and a
+                // content copy preserves what the vpath serves.)
+                let real_dir = src.is_dir()
+                    && fs::symlink_metadata(&src).is_ok_and(|m| !m.file_type().is_symlink());
+                if real_dir {
+                    fs::create_dir_all(&dest)?;
+                } else if src.is_file() {
                     fs::copy(&src, &dest)?;
                     // The point of a copy-up is that the result is WRITABLE, and
                     // `fs::copy` clones the source's mode - so a read-only lower
@@ -830,7 +865,13 @@ impl LayerStack {
             // (the classic "stop the launcher rewriting my INI") must survive.
             ensure_owner_writable(&dest);
         }
-        self.ow_note_created(vpath, &dest);
+        // Only what EXISTS is recorded. The declined branches above (a lower
+        // symlink, a lower entry that vanished mid-call) leave nothing at `dest`,
+        // and telling the index about a path that is not there was the original
+        // half of this bug - every later resolve paid a full rebuild to undo it.
+        if fs::symlink_metadata(&dest).is_ok() {
+            self.ow_note_created(vpath, &dest);
+        }
         Ok(dest)
     }
 
@@ -845,9 +886,26 @@ impl LayerStack {
         // resolve_read honour to keep the lower files hidden.
         let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
+        let needs_opacity = was_deleted
+            && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir()));
+
+        // ORDER IS THE WHOLE POINT: opacity goes down while the whiteout is still
+        // standing, so a failure here leaves the delete intact.
+        //
+        // Doing it the other way round - clear, then write, then propagate the
+        // error - looks like the careful version and is worse than swallowing the
+        // error was. By the time the write is attempted, `clear_whiteout` has
+        // already removed the only thing hiding the deleted lower contents, and
+        // returning early also skips `ow_dirty()`, so an ENOSPC or EROFS on the
+        // overwrite volume left every deleted file visible AND the index
+        // disagreeing with the walk for the rest of the mount. This way the
+        // failure path changes nothing at all: the directory exists, the whiteout
+        // still hides what it hid, and the caller gets the errno.
+        if needs_opacity {
+            fs::write(dest.join(OPAQUE_MARKER), b"")?;
+        }
         self.clear_whiteout(vpath);
-        if was_deleted && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir())) {
-            let _ = fs::write(dest.join(OPAQUE_MARKER), b"");
+        if needs_opacity {
             // Opacity changes what an ancestor HIDES, not just what exists:
             // model it by rebuild rather than by surgery.
             self.ow_dirty();
@@ -2083,7 +2141,17 @@ mod tests {
         stack.remove("Recreated").unwrap();
         stack.make_dir("Recreated").unwrap();
 
+        // And the shape that once slipped past this very matrix: create a file
+        // UNDER a deleted directory, with the index warm. The un-whiteout used to
+        // run for every ancestor instead of the leaf alone, so the walk hid
+        // Gone/inside.txt while the index resurrected it - and this test was
+        // green, because no query created anything between the deletes and the
+        // comparisons. The oracle is only as strong as the operations it covers.
+        let _ = stack.resolve_read("Gone/probe"); // warm
+        let _ = stack.create_truncated("Gone/new.ini").unwrap();
+
         for q in [
+            "Gone/new.ini",
             "Data/mine.ini",
             "DATA/MINE.INI",
             "Data/lower.esp",
@@ -2312,5 +2380,120 @@ mod tests {
         a.sort();
         b.sort();
         assert_eq!(a, b, "index and walk disagree on the listing");
+    }
+
+    /// A lower symlink-to-directory must never be materialised as a REAL
+    /// directory: that is a type change the game can see (S_IFLNK becomes
+    /// S_IFDIR), reachable from something as small as Wine clearing the
+    /// read-only attribute - and the install path itself ships symlinks.
+    #[test]
+    fn open_for_write_never_turns_a_lower_symlink_into_a_real_directory() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "real/inner.txt", "content");
+        std::os::unix::fs::symlink(game.join("real"), game.join("link")).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        // A mode-only setattr arrives as open_for_write of the path itself.
+        let dest = stack.open_for_write("link").unwrap();
+        assert!(
+            fs::symlink_metadata(&dest).is_err(),
+            "a symlink must be declined, not replaced by {:?}",
+            fs::symlink_metadata(&dest).map(|m| m.file_type())
+        );
+        // And the union still serves the symlink from the lower layer.
+        let served = stack.resolve_read("link").expect("still resolvable");
+        assert!(
+            fs::symlink_metadata(&served).unwrap().file_type().is_symlink(),
+            "the served entry must still BE the symlink"
+        );
+    }
+
+    /// A mkdir that cannot establish opacity must change NOTHING.
+    ///
+    /// The failure path is the whole test: if the whiteout is cleared before the
+    /// opaque marker is written, an ENOSPC or EROFS on the overwrite volume
+    /// resurrects every file deleted under that directory - and skips the index
+    /// invalidation on the way out, so the index and the walk then disagree for
+    /// the rest of the mount.
+    #[test]
+    fn a_mkdir_that_cannot_establish_opacity_leaves_the_delete_standing() {
+        use std::os::unix::fs::PermissionsExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/old.esp", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        stack.remove("Data").unwrap();
+        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden by the delete");
+        let _ = stack.resolve_read("Data/probe"); // warm the index
+
+        // Make the overwrite's Data directory unwritable so the marker cannot be
+        // written, which is what a full or read-only overwrite volume looks like.
+        let d = over.join("Data");
+        fs::create_dir_all(&d).unwrap();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o555)).unwrap();
+
+        let failed = stack.make_dir("Data").is_err();
+        fs::set_permissions(&d, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(failed, "the mkdir must report the failure it hit");
+
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "RESURRECTED by a failed mkdir: the delete must survive an error"
+        );
+        assert!(
+            !stack.list_dir("Data").iter().any(|(n, _)| n == "old.esp"),
+            "the listing must not show it either: {:?}",
+            stack.list_dir("Data").iter().map(|(n, _)| n).collect::<Vec<_>>()
+        );
+    }
+
+    /// A directory that exists only in a lower layer must be MATERIALISED when
+    /// it is opened for write, not merely recorded. It used to return a path
+    /// that did not exist while telling the index it did, so the caller's very
+    /// next `set_permissions` failed ENOENT - which is exactly how Wine clearing
+    /// the read-only attribute on a mod directory arrives.
+    #[test]
+    fn open_for_write_on_a_lower_only_directory_creates_it() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "meshes/actors/keep.nif", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        let dest = stack.open_for_write("meshes/actors").unwrap();
+        assert!(dest.exists(), "open_for_write handed back a path that does not exist");
+        assert!(dest.is_dir(), "a lower directory must copy up as a directory");
+        // And the lower file underneath it is still readable through the union.
+        assert!(stack.resolve_read("meshes/actors/keep.nif").is_some());
+    }
+
+    /// The audit's claim, run rather than argued: a delete, one resolve to WARM
+    /// the overwrite index, then a create under the deleted directory - and the
+    /// deleted lower file is claimed to come back.
+    #[test]
+    fn a_create_must_not_resurrect_a_file_deleted_with_its_directory() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/old.esp", "lower");
+        let stack = LayerStack::new(vec![game.clone()], over);
+
+        stack.remove("Data").unwrap();
+        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden right after the delete");
+
+        // Warming matters: a live daemon resolves thousands of times a second, so
+        // the index is always built by the time a write arrives. And the write
+        // must be a REAL creation: `create_truncated` makes the file exist, which
+        // is what routes it through `ow_note_created` - an `open_for_write` of a
+        // path with no lower source creates nothing, skips the note entirely
+        // since the existence gate, and left a first version of this test green
+        // against the very bug it was written for.
+        let _ = stack.resolve_read("Data/anything");
+        let _ = stack.create_truncated("Data/new.ini").unwrap();
+
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "RESURRECTED: creating a sibling re-exposed a file deleted with its directory"
+        );
     }
 }

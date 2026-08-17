@@ -887,3 +887,35 @@ fn the_legacy_top_level_plugin_files_migrate_into_the_plugins_dir() {
     assert!(p.has_plugin_state());
     let _ = fs::remove_dir_all(&root);
 }
+
+
+#[test]
+fn an_unreadable_modlist_is_suspect_but_an_absent_one_is_not() {
+    // The two look identical from inside the scan - `listed` stays 0 either way -
+    // and they mean opposite things. Absent is a fresh instance: nothing is lost.
+    // Unreadable means the order EXISTS and cannot be seen, and launching on that
+    // verdict rebuilds the load order from the game's masters and writes it over
+    // the profile.
+    use std::os::unix::fs::PermissionsExt;
+    let root = inst_with_mods(&["SomeMod"]);
+    let p = prof(&root, "Default");
+
+    // 1. No modlist.txt at all: a hand-filled fresh instance must still launch.
+    let (_, trust) = p.modlist_checked();
+    assert!(trust.is_good(), "an absent list must not block a launch: {trust:?}");
+
+    // 2. Present but truncated to nothing, with mods on disk: the order is lost.
+    fs::create_dir_all(p.dir()).unwrap();
+    fs::write(p.modlist_path(), "").unwrap();
+    let (_, trust) = p.modlist_checked();
+    assert!(!trust.is_good(), "an emptied list with mods present must be Suspect");
+
+    // 3. Present but unreadable.
+    fs::write(p.modlist_path(), "+SomeMod\n").unwrap();
+    fs::set_permissions(p.modlist_path(), fs::Permissions::from_mode(0o000)).unwrap();
+    let (_, trust) = p.modlist_checked();
+    fs::set_permissions(p.modlist_path(), fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!trust.is_good(), "an unreadable list must be Suspect, not silently empty");
+
+    let _ = fs::remove_dir_all(&root);
+}

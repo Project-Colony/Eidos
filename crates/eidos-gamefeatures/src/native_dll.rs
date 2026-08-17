@@ -138,6 +138,21 @@ fn parse<Pe: ImageNtHeaders>(data: &[u8]) -> Result<BTreeSet<String>, object::Er
             out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
         }
     }
+    // DELAY-LOADED imports count too: a plugin that binds d3dcompiler lazily
+    // needs the DLL present just the same - the bind simply happens at first
+    // call instead of at load, so missing it fails LATER and further from the
+    // cause. The table is optional and often absent (measured on this machine:
+    // 3 of 243 PEs have one at all); absence is not an error, and a malformed
+    // table must not discard the classic imports already collected.
+    if let Ok(Some(delay)) = file.delay_load_import_table() {
+        if let Ok(mut descriptors) = delay.descriptors() {
+            while let Ok(Some(descriptor)) = descriptors.next() {
+                if let Ok(name_bytes) = delay.name(descriptor.dll_name_rva.get(LE)) {
+                    out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
+                }
+            }
+        }
+    }
     Ok(out)
 }
 
@@ -455,7 +470,16 @@ mod tests {
         let dll = dir.join("native.dll");
         fs::write(&dll, blob("d3dcompiler_47", true)).unwrap();
         let set = imported_dlls(&dll).unwrap();
-        assert!(!set.is_empty(), "a real DLL imports at least one library");
+        // Named members, not just non-emptiness: a parser that returned a
+        // non-empty but WRONG set would sail through an is_empty check, and the
+        // caller this feeds (`ensure_d3dcompiler_47`) would silently stop
+        // matching - killing Community Shaders / ENB at load with a green test
+        // suite. These names are what the real blob imports (checked against the
+        // bytes, not assumed: the 64-bit build imports API sets and rpcrt4, and
+        // notably does NOT import kernel32.dll directly).
+        assert!(set.contains("rpcrt4.dll"), "{set:?}");
+        assert!(set.contains("api-ms-win-core-file-l1-1-0.dll"), "{set:?}");
+        assert!(set.len() >= 30, "the real import table has 33 entries: {set:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -465,7 +489,9 @@ mod tests {
         let dll = dir.join("native32.dll");
         fs::write(&dll, blob("d3dcompiler_47", false)).unwrap();
         let set = imported_dlls(&dll).unwrap();
-        assert!(!set.is_empty());
+        // Same reasoning as the 64-bit test; the 32-bit build links classically.
+        assert!(set.contains("kernel32.dll"), "{set:?}");
+        assert!(set.contains("msvcrt.dll"), "{set:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -591,3 +617,4 @@ mod tests {
         let _ = fs::remove_dir_all(&win);
     }
 }
+
