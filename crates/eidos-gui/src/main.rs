@@ -1152,6 +1152,13 @@ struct App {
     /// The report from the last LOOT sort, shown as a modal so the user sees
     /// missing masters / messages / dirty-plugin advice. `None` = no report open.
     loot_report: Option<eidos_loot::LootReport>,
+    /// Per-plugin LOOT metadata from the last sort (messages, dirty info, Bash
+    /// Tags), keyed by ASCII-lowercased plugin name - what the Plugins tab
+    /// draws its badges and tooltip lines from. SEPARATE from `loot_report`
+    /// deliberately: the report is dialog state, cleared the moment the modal
+    /// closes, while these badges must outlive it (MO2 keeps its flags until
+    /// the next sort). Cleared on profile/instance switch.
+    loot_meta: Option<HashMap<String, eidos_loot::PluginMetadataBundle>>,
 }
 
 /// A game/tool launched through Eidos that the GUI is waiting on. A detached
@@ -1376,6 +1383,27 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.menu_mod.is_none()
     {
         subs.push(shortcuts);
+    }
+    // While the LOOT report modal is up, the main shortcut stream above is
+    // deliberately off - nothing may walk the lists behind it. But two keys mean
+    // something OVER the report: Escape dismisses it and Ctrl+C copies it, and
+    // both were promised (the dialog footer says so) yet dead, because their
+    // only producer was the stream this modal switches off. A dedicated stream
+    // for exactly those two keys, mutually exclusive with the main one.
+    if app.screen == Screen::Main && app.loot_report.is_some() {
+        let report_keys = keyboard::listen().filter_map(|event| {
+            let keyboard::Event::KeyPressed { key, modifiers: mods, .. } = event else {
+                return None;
+            };
+            match key.as_ref() {
+                Key::Named(Named::Escape) => Some(Message::CloseLootReport),
+                Key::Character("c") if mods.control() || mods.command() => {
+                    Some(Message::CopyLootReport)
+                }
+                _ => None,
+            }
+        });
+        subs.push(report_keys);
     }
     // Watch the downloads directory while its tab is open. Polling is not a
     // shortcut taken for want of something better: the transfer runs in a
@@ -3167,10 +3195,18 @@ mod tests {
         let root = std::env::temp_dir().join(format!("eidos-debris-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let mods = root.join("mods");
-        for d in [".eidos-install-1-0", ".eidos-install-2-0"] {
+        // Dead pids (past the kernel's default pid_max, so /proc never has
+        // them): genuine debris from crashed installs.
+        for d in [".eidos-install-4194305-0", ".eidos-install-4194306-0"] {
             fs::create_dir_all(mods.join(d).join("00 Core")).unwrap();
             fs::write(mods.join(d).join("00 Core/a.esp"), b"x").unwrap();
         }
+        // A temp whose embedded pid is ALIVE (this very test process) is a
+        // running install's workspace - deleting it failed that install while
+        // the button called it safe debris.
+        let live = format!(".eidos-install-{}-0", std::process::id());
+        fs::create_dir_all(mods.join(&live)).unwrap();
+        fs::write(mods.join(&live).join("extracting.7z.part"), b"x").unwrap();
         // Everything that must survive: a real mod, a separator, and a dotfile
         // that is not ours.
         fs::create_dir_all(mods.join("A Real Mod/meshes")).unwrap();
@@ -3181,12 +3217,18 @@ mod tests {
 
         update_inner(&mut app, Message::CleanInstallDebris);
 
-        assert!(!mods.join(".eidos-install-1-0").exists());
-        assert!(!mods.join(".eidos-install-2-0").exists());
+        assert!(!mods.join(".eidos-install-4194305-0").exists());
+        assert!(!mods.join(".eidos-install-4194306-0").exists());
+        assert!(mods.join(&live).is_dir(), "a live install's temp is not debris");
         assert_eq!(fs::read(mods.join("A Real Mod/meshes/m.nif")).unwrap(), b"keep");
         assert!(mods.join("Group_separator").is_dir());
         assert!(mods.join(".git").is_dir(), "a dotfile that is not ours is not ours to delete");
         assert!(app.status.as_deref().unwrap_or("").contains('2'), "{:?}", app.status);
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("in use"),
+            "the skip must be said, not silent: {:?}",
+            app.status
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -3234,6 +3276,7 @@ mod tests {
     fn sample_report() -> eidos_loot::LootReport {
         use eidos_loot::{LootDirtyInfo, LootMessage, MessageType, PluginReport};
         eidos_loot::LootReport {
+            plugin_meta: Default::default(),
             general: vec![LootMessage {
                 kind: MessageType::Warn,
                 text: "Skyrim Script Extender scripts seem to be missing".into(),

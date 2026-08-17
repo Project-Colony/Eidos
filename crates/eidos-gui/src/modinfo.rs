@@ -136,6 +136,18 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
             );
         col = col.push(row);
     }
+    // Same honesty as the Data and Overwrite panels: a big texture pack blows
+    // past the cap routinely, and a list that stops without saying so reads as
+    // "the mod does not ship that file" to whoever scrolled looking for it.
+    if entries.len() > 2000 {
+        col = col.push(
+            text(format!(
+                "Showing the first 2000 of {} files - the rest exist but are not listed here.",
+                entries.len()
+            ))
+            .size(11.0),
+        );
+    }
     col.into()
 }
 
@@ -1568,6 +1580,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text("On").size(11.0).width(Length::Fixed(28.0)))
         .push(text("Plugin").size(11.0).width(Length::Fill))
         .push(text("Type").size(11.0).width(Length::Fixed(36.0)))
+        .push(text("LOOT").size(11.0).width(Length::Fixed(40.0)))
         .push(text("Pin").size(11.0).width(Length::Fixed(26.0)));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
@@ -1577,15 +1590,20 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut rows = Column::new();
     let total = list.plugins.len();
     let drag = app.plugin_drag.as_ref();
-    // A drop anywhere between the block's own first row and just past its last
-    // leaves it where it is, so no indicator is drawn there.
+    // The line draws iff releasing here would move the block - the exact
+    // refusal move_plugins_to applies: only a CONTIGUOUS block treats its own
+    // interior gaps as "already here". A non-contiguous selection is compacted
+    // by ANY drop, its own rows' gaps included, and hiding the line there let a
+    // release commit a move no indicator ever announced. `aimed` keeps a plain
+    // click from flashing a line at the grabbed row's own gap.
     let live_gap = drag
         .filter(|d| {
             let (lo, hi) = (
                 d.block.first().copied().unwrap_or(d.from),
                 d.block.last().copied().unwrap_or(d.from),
             );
-            d.gap < lo || d.gap > hi + 1
+            let contiguous = hi - lo + 1 == d.block.len();
+            d.aimed && !(contiguous && d.gap >= lo && d.gap <= hi + 1)
         })
         .map(|d| d.gap);
     // A strip is a target only inside the range the engine allows this plugin,
@@ -1688,6 +1706,48 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             tip.push_str("\nThis plugin must load after all of them.");
         }
+        // The LOOT verdicts from the last sort - MO2's plugin flags: a compact
+        // badge in its own column, the detail folded into the hover the row
+        // already carries. Absent until a sort has run, exactly like MO2.
+        let bundle =
+            app.loot_meta.as_ref().and_then(|m| m.get(&p.name.to_ascii_lowercase()));
+        if let Some(b) = bundle {
+            for msg in b.messages.iter().take(3) {
+                tip.push_str(&format!(
+                    "\nLOOT {}: {}",
+                    loot_severity_label(msg.kind),
+                    msg.text
+                ));
+            }
+            if b.messages.len() > 3 {
+                tip.push_str(&format!(
+                    "\n... {} more LOOT message(s) - see the sort report",
+                    b.messages.len() - 3
+                ));
+            }
+            for d in &b.dirty_info {
+                tip.push_str(&format!(
+                    "\nLOOT: needs cleaning with {} ({} ITM, {} deleted reference(s))",
+                    d.cleaning_utility, d.itm_count, d.deleted_reference_count
+                ));
+            }
+            if !b.bash_tags.is_empty() {
+                tip.push_str(&format!("\nBash Tags: {}", b.bash_tags.join(", ")));
+            }
+        }
+        // Worst thing first: a dirty plugin needs an action (xEdit QAC), which
+        // outranks reading a message.
+        let loot_badge = match bundle {
+            Some(b) if b.needs_cleaning() => "dirty",
+            Some(b) => match b.highest_severity() {
+                Some(eidos_loot::MessageType::Error) => "error",
+                Some(eidos_loot::MessageType::Warn) => "warn",
+                Some(eidos_loot::MessageType::Say) => "note",
+                None if !b.bash_tags.is_empty() => "tags",
+                None => "",
+            },
+            None => "",
+        };
         let name_cell = tooltip(
             text(p.name.clone()).size(12.0).width(Length::Fill),
             container(text(tip).size(11.0))
@@ -1706,6 +1766,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(toggle).width(Length::Fixed(28.0)))
             .push(container(name_cell).width(Length::Fill))
             .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
+            .push(text(loot_badge).size(10.0).width(Length::Fixed(40.0)))
             .push(container(pin).width(Length::Fixed(26.0)));
         // Grabbing the row arms the drag AND selects it, the same press doing
         // both exactly as in the mod list; hovering it during a drag means

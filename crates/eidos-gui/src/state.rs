@@ -170,6 +170,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         overwrite_expanded: HashSet::new(),
         listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
+        loot_meta: None,
     };
     // NEVER under test. This opens the REAL instance in the user's home and,
     // through ensure_manifest/ensure_profiles, writes to it - so any test that
@@ -684,10 +685,25 @@ pub(crate) fn planned_instance(app: &App) -> Option<Instance> {
     Some(match app.kind {
         InstanceKind::Global => Instance::global(game.def.id),
         InstanceKind::Portable => {
-            let root = if app.portable_path.trim().is_empty() {
+            // `~` expanded and relative paths anchored at home, BEFORE anything
+            // is created. The wizard's own placeholder suggests "~/Eidos/...",
+            // and taken literally that made a directory named `~` wherever the
+            // GUI's CWD happened to be (the game folder, under Steam) - with a
+            // summary screen echoing the tilde back so it looked right.
+            let typed = app.portable_path.trim();
+            let root = if typed.is_empty() {
                 home().join("Eidos").join(game.def.id)
+            } else if typed == "~" {
+                home()
+            } else if let Some(rest) = typed.strip_prefix("~/") {
+                home().join(rest)
             } else {
-                PathBuf::from(app.portable_path.trim())
+                let p = PathBuf::from(typed);
+                if p.is_absolute() {
+                    p
+                } else {
+                    home().join(p)
+                }
             };
             Instance::portable(root)
         }
@@ -756,6 +772,21 @@ pub(crate) fn visible_rows(
 /// actually was: a courtesy probe, since every write underneath takes its own.
 pub(crate) fn probe_lock(inst: &Instance) -> std::io::Result<()> {
     inst.try_lock("the Eidos window").map(drop)
+}
+
+/// Whether releasing the mod drag `d` right now would change nothing.
+///
+/// ONE predicate for two consumers that must never disagree: the view draws
+/// the insertion line iff this is false, and `DragDrop` commits iff this is
+/// false. Derived separately, they DID disagree - the view hid the line on the
+/// grabbed row's own edges for every drag, while the commit only treated those
+/// gaps as a no-op for a single row, so a multi-row drag released back on its
+/// own row moved (compacted) the block with no line on screen. `aimed` is what
+/// keeps a plain click - which arrives as a drop - from ever counting.
+pub(crate) fn mod_drop_is_noop(app: &App, d: &DragState) -> bool {
+    !d.aimed
+        || (selection_or(app, d.from).len() == 1
+            && (d.gap == d.from || d.gap == d.from + 1))
 }
 
 /// The rows a row-targeted action should act on: the whole multi-selection when
@@ -1398,7 +1429,10 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
     app.confirm_delete_save = None;
-    clear_save_selection(app);    true
+    // The LOOT badges were computed against the OLD profile's load order.
+    app.loot_meta = None;
+    clear_save_selection(app);
+    true
 }
 
 /// Recompute the profile-row Endorsed / Updated counts (MO2 surfaces these). Only

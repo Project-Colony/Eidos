@@ -264,8 +264,20 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                 //     click on a required option silently dropped its files.
                 //   - SelectAll: the handler's `SelectAll => {}` arm is a no-op, so
                 //     the row lit up on hover and answered nothing.
+                //   - and in a RADIO group holding a Required option, every OTHER
+                //     row: the radio arms clear the whole group before setting the
+                //     clicked one, so a click on an Optional sibling silently
+                //     unticked the Required row and dropped its files from the
+                //     plan - the exact failure the Required lock exists for, one
+                //     row over. The engine says the choice is forced; the view
+                //     has to say it too.
+                let group_forced = radio
+                    && types.get(gi).is_some_and(|g| {
+                        g.iter().any(|t| matches!(t, PluginType::Required))
+                    });
                 let locked = matches!(ptype, PluginType::Required)
-                    || matches!(group.group_type, GroupType::SelectAll);
+                    || matches!(group.group_type, GroupType::SelectAll)
+                    || group_forced;
                 let tag = match ptype {
                     PluginType::Required => "required",
                     PluginType::Recommended => "recommended",

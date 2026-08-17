@@ -659,11 +659,15 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let filtering = !query.is_empty() || app.category_filter.is_some();
     let vis = mod_row_visibility(app, cats);
     // The live drag's insertion point, if any, so exactly one gap draws the line.
-    // A drag that has not moved off its own row targets nothing visible: a plain
-    // click must never flash an indicator.
+    // Drawn iff releasing HERE would move the block - the SAME predicate the
+    // DragDrop commit uses, so the line and the drop cannot disagree. The old
+    // filter hid the line on the grabbed row's own edges unconditionally, while
+    // the commit only treats those gaps as a no-op for a SINGLE row: a
+    // multi-row drag released there moved the block with no line on screen.
+    // (`aimed` inside the predicate is what keeps a plain click from flashing.)
     let live_gap = app
         .drag_state
-        .filter(|d| d.gap != d.from && d.gap != d.from + 1)
+        .filter(|d| !mod_drop_is_noop(app, d))
         .map(|d| d.gap);
     let dragging = app.drag_state.is_some();
     for (i, m) in app.mods.iter().enumerate() {

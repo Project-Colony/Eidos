@@ -370,78 +370,6 @@ fn bundle_from_metadata(metadata: &PluginMetadata, crc: Option<u32>) -> PluginMe
     }
 }
 
-/// Load the LOOT metadata for each plugin: masterlist messages/warnings,
-/// dirty-plugin info (needs-cleaning / ITM-UDR), and Bash Tag suggestions.
-///
-/// Takes the same inputs as [`sort`] (game id, install + local paths, the plugin
-/// `(name, real-path)` set, and the masterlist/prelude/userlist paths) and loads
-/// the game exactly the same way, so the GUI can call this right after a sort
-/// with the identical arguments. Conditions are evaluated against the load order,
-/// so only condition-true messages/tags appear; user metadata is merged in.
-///
-/// Returns a map keyed by **lowercased** plugin name (LOOT name-matching is
-/// case-insensitive, so callers should look up by `name.to_lowercase()`). Plugins
-/// with no LOOT metadata are omitted from the map.
-pub fn metadata(
-    game_id: &str,
-    game_path: &Path,
-    game_local_path: &Path,
-    plugins: &[(String, PathBuf)],
-    masterlist: &Path,
-    prelude: &Path,
-    userlist: Option<&Path>,
-) -> Result<HashMap<String, PluginMetadataBundle>, LootError> {
-    let (game_type, _repo) =
-        loot_support(game_id).ok_or_else(|| LootError::Unsupported(game_id.to_string()))?;
-
-    let mut game = Game::with_local_path(game_type, game_path, game_local_path)
-        .map_err(|e| LootError::Loot(e.to_string()))?;
-
-    {
-        let db = game.database();
-        let mut db = db.write().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
-        db.load_masterlist_with_prelude(masterlist, prelude)
-            .map_err(|e| LootError::Loot(e.to_string()))?;
-        if let Some(ul) = userlist {
-            if ul.is_file() {
-                db.load_userlist(ul).map_err(|e| LootError::Loot(e.to_string()))?;
-            }
-        }
-    }
-
-    // Load headers + load-order state so condition evaluation (and CRCs) work the
-    // same way they do during a sort.
-    let paths: Vec<&Path> = plugins.iter().map(|(_, p)| p.as_path()).collect();
-    game.load_plugin_headers(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
-    game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
-
-    let mut out: HashMap<String, PluginMetadataBundle> = HashMap::new();
-    for (name, _) in plugins {
-        let crc = game.plugin(name).and_then(|p| p.crc());
-
-        let evaluated = {
-            let db = game.database();
-            let db = db.read().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
-            db.plugin_metadata(name, MergeMode::WithUserMetadata, EvalMode::Evaluate)
-                .map_err(|e| LootError::Loot(e.to_string()))?
-        };
-
-        let bundle = match evaluated {
-            Some(meta) => bundle_from_metadata(&meta, crc),
-            None => PluginMetadataBundle {
-                crc,
-                ..PluginMetadataBundle::default()
-            },
-        };
-
-        if !bundle.is_empty() {
-            out.insert(name.to_lowercase(), bundle);
-        }
-    }
-
-    Ok(out)
-}
-
 /// One plugin's entry in a [`LootReport`]: the problems LOOT found worth showing
 /// the user after a sort - missing masters, evaluated messages, and dirty-plugin
 /// (needs-cleaning) advisories. Only plugins with at least one of these appear in
@@ -471,10 +399,22 @@ pub struct LootReport {
     pub general: Vec<LootMessage>,
     /// Per-plugin problems, in load order. Only plugins with an issue are listed.
     pub plugins: Vec<PluginReport>,
+    /// Per-plugin LOOT metadata for the Plugins tab (evaluated messages, Bash Tag
+    /// suggestions, dirty-plugin info, CRC), keyed by ASCII-lowercased plugin
+    /// name - the same convention as `enabled_lower`. Enabled plugins only, like
+    /// the report rows, and plugins with nothing to say are omitted.
+    ///
+    /// Built inside [`report`] from the SAME loaded game as the problem rows, so
+    /// the icons and the report can never disagree - and so the tab costs no
+    /// second masterlist load (this map used to be a standalone `metadata()`
+    /// entry point that re-loaded everything and that nothing ever called).
+    pub plugin_meta: HashMap<String, PluginMetadataBundle>,
 }
 
 impl LootReport {
-    /// No general messages and no plugin has any issue (a clean report).
+    /// No general messages and no plugin has any ISSUE (a clean report).
+    /// Deliberately ignores [`Self::plugin_meta`]: bash tags or a CRC are
+    /// information, not problems, and must not stop the "all clear" dialog.
     pub fn is_empty(&self) -> bool {
         self.general.is_empty() && self.plugins.is_empty()
     }
@@ -579,6 +519,7 @@ pub fn report(
     };
 
     let mut plugin_reports = Vec::new();
+    let mut plugin_meta: HashMap<String, PluginMetadataBundle> = HashMap::new();
     for (name, _) in plugins {
         // MO2 only reports on enabled plugins; a disabled plugin's issues don't
         // matter because it won't load.
@@ -600,7 +541,7 @@ pub fn report(
                 .map_err(|e| LootError::Loot(e.to_string()))?
         };
 
-        let (messages, dirty) = match evaluated {
+        let (messages, dirty) = match &evaluated {
             Some(meta) => (
                 convert_messages(meta.messages()),
                 meta.dirty_info().iter().map(convert_dirty).collect(),
@@ -608,13 +549,25 @@ pub fn report(
             None => (Vec::new(), Vec::new()),
         };
 
+        // The Plugins-tab bundle, from the SAME evaluated metadata as the report
+        // row: bash tags on top of the messages/dirty above, plus the CRC libloot
+        // computed while loading the header.
+        let crc = game.plugin(name).and_then(|p| p.crc());
+        let bundle = match &evaluated {
+            Some(meta) => bundle_from_metadata(meta, crc),
+            None => PluginMetadataBundle { crc, ..PluginMetadataBundle::default() },
+        };
+        if !bundle.is_empty() {
+            plugin_meta.insert(name.to_ascii_lowercase(), bundle);
+        }
+
         let entry = PluginReport { name: name.clone(), missing_masters, messages, dirty };
         if entry.has_issues() {
             plugin_reports.push(entry);
         }
     }
 
-    Ok(LootReport { general, plugins: plugin_reports })
+    Ok(LootReport { general, plugins: plugin_reports, plugin_meta })
 }
 
 #[cfg(test)]
@@ -734,6 +687,7 @@ mod tests {
     fn loot_report_counts_aggregate_general_and_per_plugin() {
         let report = LootReport {
             general: vec![msg(MessageType::Warn, "g warn"), msg(MessageType::Say, "g note")],
+            plugin_meta: Default::default(),
             plugins: vec![
                 PluginReport {
                     name: "A.esp".into(),

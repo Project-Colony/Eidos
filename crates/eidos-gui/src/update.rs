@@ -103,6 +103,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             let _ = inst.ensure_manifest(id, kind);
                         }
                         app.created = Some(inst);
+                        // Another instance's LOOT verdicts must not decorate
+                        // this one's plugins.
+                        app.loot_meta = None;
                         reload_mods(app);
                         app.tab = Tab::Data;
                         app.error = None;
@@ -553,6 +556,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         }
                     }
                 }
+                // Defense in depth behind the view's locks: whatever the click
+                // just did, the step's hard rules (Required on, NotUsable off,
+                // radio groups single-ticked) are re-imposed immediately.
+                normalize_fomod_step(w);
             }
         }
         Message::FomodNext => {
@@ -569,6 +576,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 if s < vis.len() {
                     w.step = s;
                 }
+                normalize_fomod_step(w);
             }
         }
         Message::FomodBack => {
@@ -586,6 +594,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         break;
                     }
                 }
+                normalize_fomod_step(w);
             }
         }
         Message::FomodInstall => {
@@ -779,7 +788,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // armed state then hijacked the next right-click on that row.
             app.menu_mod = Some(i);
             app.send_separator = None;
-            app.send_priority = Some((i, i.to_string()));
+            // 1-BASED, because the number column is: the row the user reads as
+            // '#7' must prefill '7', and typing '3' must land on the row whose
+            // column says 3. The 0-based prefill contradicted the visible
+            // number on arming, and every send landed one slot below the row
+            // the user named, confirmed by a toast quoting a third numbering.
+            app.send_priority = Some((i, (i + 1).to_string()));
         }
         Message::SendToPriorityChanged(text) => {
             app.typing = true;
@@ -794,7 +808,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let targets = selection_or(app, i);
-            let dest = dest.min(app.mods.len());
+            // Display numbering -> insertion index: '3' means "become the row
+            // whose column reads 3", i.e. land at index 2.
+            let dest = dest.saturating_sub(1).min(app.mods.len());
             let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, dest);
             app.selected_mod = Some(at);
@@ -804,7 +820,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // click that armed it.
             app.menu_mod = None;
             mods_changed(app);
-            app.status = Some(format!("Moved to priority {at}."));
+            // The toast quotes the same 1-based numbering the column shows.
+            app.status = Some(format!("Moved to priority {}.", at + 1));
         }
         Message::SendToSeparatorStart(i) => {
             // Same as above: the chooser lives inside the menu card.
@@ -1220,6 +1237,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.confirm_remove == Some(i) {
                 app.confirm_remove = None;
                 app.menu_mod = None;
+                // The flock, BEFORE the deletion - not after, where mods_changed's
+                // own lock only refuses the save once the folder is already gone.
+                // The mod directory is a LAYER of a live union while a session runs
+                // (launched from a terminal, app.running knows nothing about it),
+                // and deleting it mid-session takes the playing game's meshes and
+                // scripts with it. Same guard, same wording as ToggleFileHidden.
+                let Some(inst) = app.created.as_ref() else { return Task::none() };
+                let _lock = match inst.try_lock("the Eidos window") {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Cannot remove a mod now: {e}."));
+                        return Task::none();
+                    }
+                };
                 if let Some(m) = app.mods.get(i).cloned() {
                     match fs::remove_dir_all(&m.path) {
                         Ok(()) => {
@@ -1278,6 +1309,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         if dest.exists() {
                             app.status = Some(format!("'{typed}' already exists."));
                         } else {
+                            // Same flock as every sibling mutation: renaming the
+                            // folder moves a live union layer out from under a
+                            // running session, and the refused save afterwards
+                            // would leave modlist.txt naming a folder that no
+                            // longer exists.
+                            let Some(inst) = app.created.as_ref() else {
+                                return Task::none();
+                            };
+                            let _lock = match inst.try_lock("the Eidos window") {
+                                Ok(l) => l,
+                                Err(e) => {
+                                    app.status =
+                                        Some(format!("Cannot rename a mod now: {e}."));
+                                    return Task::none();
+                                }
+                            };
                             match fs::rename(&old.path, &dest) {
                                 Ok(()) => {
                                     if let Some(m) = app.mods.get_mut(i) {
@@ -1687,7 +1734,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // The order was already applied above; a report failure only costs the
             // dialog, never the sort.
             match report_res {
-                Ok(report) => app.loot_report = Some(report),
+                Ok(mut report) => {
+                    // The per-plugin bundles feed the Plugins-tab badges and
+                    // outlive the dialog; the dialog keeps the rest.
+                    app.loot_meta = Some(std::mem::take(&mut report.plugin_meta));
+                    app.loot_report = Some(report);
+                }
                 Err(e) => {
                     let base = app.status.take().unwrap_or_default();
                     app.status = Some(format!("{base} (LOOT report unavailable: {e})"));
@@ -1816,7 +1868,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ToggleFileHidden(i, rel) => {
             let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
-            let target = m.path.join(&rel);
+            let hide = !path_is_hidden(&rel);
+            // What actually gets renamed. Unhiding a row that sits UNDER a
+            // hidden directory ("meshes.mohidden/foo.nif") must strip the
+            // suffix from the FIRST hidden component: the leaf carries none, so
+            // aiming set_hidden at it answered "not hidden" for every file the
+            // tab itself had just labelled Unhide. The directory comes back
+            // whole - the only rename that exists to make.
+            let subject: String = if hide {
+                rel.clone()
+            } else {
+                let mut parts: Vec<&str> = Vec::new();
+                for p in rel.split('/') {
+                    parts.push(p);
+                    if eidos_core::is_hidden_name(p) {
+                        break;
+                    }
+                }
+                parts.join("/")
+            };
+            let target = m.path.join(&subject);
             // The path came from a listing that may be a redraw old; a stale row
             // must report a miss, not act on whatever now sits at that path.
             if target.symlink_metadata().is_err() {
@@ -1837,16 +1908,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
-            let hide = !path_is_hidden(&rel);
             match set_hidden(&target, hide) {
                 Ok(_) => {
                     let verb = if hide { "Hid" } else { "Unhid" };
-                    app.status = Some(format!("{verb} '{rel}' in '{}'.", m.name));
-                    after_hidden_change(app, &m.name, &rel);
+                    app.status = Some(format!("{verb} '{subject}' in '{}'.", m.name));
+                    // A directory unhide brings back EVERYTHING under it, plugin
+                    // files included, whatever leaf the click came from - so
+                    // assume the worst, exactly as RestoreHiddenFiles does.
+                    if subject == rel {
+                        after_hidden_change(app, &m.name, &rel);
+                    } else {
+                        after_hidden_change(app, &m.name, "restored.esp");
+                    }
                 }
                 Err(e) => {
                     let verb = if hide { "hide" } else { "unhide" };
-                    app.status = Some(format!("Could not {verb} '{rel}': {e}"));
+                    app.status = Some(format!("Could not {verb} '{subject}': {e}"));
                 }
             }
         }
@@ -1876,6 +1953,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::RestoreHiddenFiles(i) => {
             app.menu_mod = None;
             let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
+            // The bulk twin of ToggleFileHidden's rename, behind the same flock:
+            // "Unhide all" strips dozens of .mohidden suffixes inside a layer of
+            // a live mount - the exact mutation the single-file handler's guard
+            // exists for, reachable one menu item away.
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot change hidden files: {e}."));
+                    return Task::none();
+                }
+            };
             match restore_hidden_files(&m.path) {
                 Ok(0) => app.status = Some(format!("'{}' has no hidden files.", m.name)),
                 Ok(n) => {
@@ -2404,7 +2493,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             mods_changed(app);
             // The plugin list changed shape, so the save's diff has to be redone
-            // against it rather than left showing the old answer.
+            // against it rather than left showing the old answer. But
+            // mods_changed just INVALIDATED that list, and on the Saves tab
+            // nothing recomputes it (invalidate_plugins only repopulates while
+            // the Plugins tab is open) - load_save_details reads "no list" as
+            // "nothing missing", so the recheck below always declared victory
+            // and the 'still need enabling' branch was unreachable. Recompute
+            // first, so the verdict is judged against the NEW plugin set.
+            if app.plugins.is_none() && app.created.is_some() {
+                app.plugins = compute_plugins(app);
+            }
             load_save_details(app);
             let left = app.save_missing.len();
             app.status = Some(if left == 0 {
@@ -2500,6 +2598,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(inst) = app.created.as_ref() else { return Task::none() };
             let dir = inst.mods_dir();
             let mut gone = 0usize;
+            let mut in_use = 0usize;
             let mut failed: Vec<String> = Vec::new();
             for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
                 let Ok(name) = e.file_name().into_string() else { continue };
@@ -2509,15 +2608,34 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 if !name.starts_with(".eidos-install") {
                     continue;
                 }
+                // The temp's name embeds the pid that made it
+                // (`.eidos-install-<pid>-<n>`), and a LIVE pid means a CLI
+                // install is extracting into it right now - deleting it out
+                // from under 7-Zip failed that install while this button
+                // called it safe debris. Alive = not debris; skip it.
+                let live = name
+                    .strip_prefix(".eidos-install-")
+                    .and_then(|r| r.split('-').next())
+                    .and_then(|p| p.parse::<u32>().ok())
+                    .is_some_and(|pid| std::path::Path::new(&format!("/proc/{pid}")).exists());
+                if live {
+                    in_use += 1;
+                    continue;
+                }
                 match fs::remove_dir_all(e.path()) {
                     Ok(()) => gone += 1,
                     Err(err) => failed.push(format!("{name}: {err}")),
                 }
             }
-            app.status = Some(if failed.is_empty() {
-                format!("Removed {gone} leftover extraction folder(s).")
+            let busy = if in_use > 0 {
+                format!(" ({in_use} in use by a running install, left alone)")
             } else {
-                format!("Removed {gone}; could not remove {}", failed.join(", "))
+                String::new()
+            };
+            app.status = Some(if failed.is_empty() {
+                format!("Removed {gone} leftover extraction folder(s).{busy}")
+            } else {
+                format!("Removed {gone}; could not remove {}{busy}", failed.join(", "))
             });
             app.diag_dirty = true;
             reload_mods(app);
@@ -2602,6 +2720,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::ConfirmBatchRemove => {
             app.confirm_batch_remove = false;
             app.menu_mod = None;
+            // Same flock as the single-row Remove, before the first deletion: a
+            // batch of remove_dir_all against layers of a live union is the same
+            // hazard multiplied, and refusing after the loop would protect nothing.
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot remove mods now: {e}."));
+                    return Task::none();
+                }
+            };
             // Delete from the highest index down so the lower indices stay valid.
             let mut targets = real_selection(app);
             targets.sort_unstable();
@@ -2725,8 +2854,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // row's own edges, so this was a click. `aimed` is what makes that
             // true for a MULTI-row selection too, which has no single edge - and
             // where committing would compact a non-contiguous set and save it.
-            let unchanged =
-                !d.aimed || (block.len() == 1 && (d.gap == block[0] || d.gap == block[0] + 1));
+            // THE SHARED PREDICATE, not a local re-derivation: the view draws
+            // the insertion line through the same function, so "no line" and
+            // "no move" can never disagree - they did, and a multi-row drag
+            // released back on its own row moved the block with no line shown.
+            let unchanged = mod_drop_is_noop(app, &d);
             if !unchanged {
                 let hidden = hidden_by_folds(app);
                 let at = move_block(&mut app.mods, &block, d.gap);
@@ -3073,7 +3205,13 @@ pub(crate) fn real_selection(app: &App) -> Vec<usize> {
         }
     }
     set.into_iter()
-        .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator()))
+        // Separators carry no toggle; unmanaged rows (the game's own DLCs and
+        // Creations) are not ours to toggle OR remove - `ToggleMod` refuses
+        // them one by one, and the batch paths must agree. Left in, a Ctrl+A
+        // batch-enable read the always-on DLC rows as "something is enabled"
+        // and disabled everything forever; a batch-remove aimed
+        // remove_dir_all at files inside the game's own Data.
+        .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator() && !m.is_unmanaged()))
         .collect()
 }
 
@@ -3091,4 +3229,54 @@ pub(crate) fn move_selection(app: &App) -> Vec<usize> {
         }
     }
     set.into_iter().filter(|&i| i < app.mods.len()).collect()
+}
+
+/// Reconcile the current FOMOD step's ticks with its EFFECTIVE types, on entry
+/// and after every click.
+///
+/// Earlier choices set condition flags that can flip an option's type after it
+/// was ticked. A tick left on a now-NotUsable option still installs that
+/// option's files (`build_plan` asks `on ||` before it ever looks at
+/// usability) while the view withholds the click that could untick it - a
+/// selection the user can see and not change. Required is the mirror image:
+/// the engine's own defaults force it on, so a stale un-tick must not survive
+/// either. Radio groups come out holding at most one tick, the Required one
+/// winning.
+fn normalize_fomod_step(w: &mut FomodWizard) {
+    use eidos_fomod::{GroupType, PluginType};
+    let si = w.step;
+    let types = eidos_fomod::step_types(&w.session.config, &w.selection, &w.ctx, si);
+    let gtypes: Vec<GroupType> = w
+        .session
+        .config
+        .steps
+        .get(si)
+        .map(|s| s.groups.iter().map(|g| g.group_type).collect())
+        .unwrap_or_default();
+    let Some(step_sel) = w.selection.get_mut(si) else { return };
+    for (gi, g) in step_sel.iter_mut().enumerate() {
+        let Some(ts) = types.get(gi) else { continue };
+        for (pi, on) in g.iter_mut().enumerate() {
+            match ts.get(pi) {
+                Some(PluginType::NotUsable) => *on = false,
+                Some(PluginType::Required) => *on = true,
+                _ => {}
+            }
+        }
+        // A radio group must not come out double-ticked (forcing a Required on
+        // above can collide with the user's earlier pick): the Required row
+        // keeps the tick, else the first ticked row does.
+        if matches!(
+            gtypes.get(gi),
+            Some(GroupType::SelectExactlyOne | GroupType::SelectAtMostOne)
+        ) && g.iter().filter(|&&on| on).count() > 1
+        {
+            let keep = (0..g.len())
+                .find(|&pi| matches!(ts.get(pi), Some(PluginType::Required)))
+                .or_else(|| g.iter().position(|&on| on));
+            for (pi, on) in g.iter_mut().enumerate() {
+                *on = Some(pi) == keep;
+            }
+        }
+    }
 }
