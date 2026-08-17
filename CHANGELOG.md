@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.1](https://github.com/Project-Colony/Eidos/compare/v1.4.0...v1.4.1) (2026-08-17)
+
+
+### Documentation
+
+* a Steam launch options section in the README ([cd6d35a](https://github.com/Project-Colony/Eidos/commit/cd6d35abf9bd63f0db3774e92c12df5bae80bed3))
+* Community Shaders DLSS and frame generation under Eidos ([61f414b](https://github.com/Project-Colony/Eidos/commit/61f414ba276ab06ca2019bab30a389db6f039a62))
+* name the final launch command for a CS/DLSS setup outright ([5aacaa1](https://github.com/Project-Colony/Eidos/commit/5aacaa1beb5f3ed29c3a40c9013a65a1ef6a6799))
+
 ## [1.4.0](https://github.com/Project-Colony/Eidos/compare/v1.3.0...v1.4.0) (2026-08-17)
 
 
