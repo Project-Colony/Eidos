@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.0](https://github.com/Project-Colony/Eidos/compare/v1.3.0...v1.4.0) (2026-08-17)
+
+
+### Features
+
+* **nexus:** remove personal API keys, sign in with OAuth only ([#7](https://github.com/Project-Colony/Eidos/issues/7)) ([cdd3219](https://github.com/Project-Colony/Eidos/commit/cdd321990e0bf9a81b5f4d846905125b42dc942b))
+
+
+### Fixes
+
+* correctness defects, a read-shape survey, and every dependency up to date ([#15](https://github.com/Project-Colony/Eidos/issues/15)) ([725d6d4](https://github.com/Project-Colony/Eidos/commit/725d6d4ed74639c0d6ef15757cb4deffb56d060b))
+* **gui:** eleven verified defects from a full read of the remaining GUI, and LOOT plugin flags ([46abd31](https://github.com/Project-Colony/Eidos/commit/46abd317185cbfeafdf871d9283da81251b72311))
+* thirteen defects found by a crate-by-crate sweep of all seventeen crates ([a4778c2](https://github.com/Project-Colony/Eidos/commit/a4778c2f4995e9acb4c638e3fc86d883e0c45d52))
+
 ## [1.3.0](https://github.com/Project-Colony/Eidos/compare/v1.2.0...v1.3.0) (2026-08-04)
 
 
