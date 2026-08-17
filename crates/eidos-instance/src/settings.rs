@@ -29,49 +29,53 @@ pub fn config_home() -> PathBuf {
         })
 }
 
-/// `$XDG_CONFIG_HOME/eidos/nexus.ini`, holding the personal Nexus API key. Same
-/// path the CLI uses, so the key is shared between the CLI and the GUI.
+/// `$XDG_CONFIG_HOME/eidos/nexus.ini`, holding the Nexus OAuth session. Same
+/// path the CLI uses, so a sign-in is shared between the CLI and the GUI.
 pub fn nexus_key_path() -> PathBuf {
     config_home().join("eidos").join("nexus.ini")
 }
 
-/// The stored Nexus API key, if any. Reads the `[Nexus]` `api_key=` line; an
-/// empty value reads as `None`.
-pub fn load_nexus_key() -> Option<String> {
-    let text = fs::read_to_string(nexus_key_path()).ok()?;
-    parse_nexus_key(&text)
-}
-
-/// Persist the Nexus API key so it survives across sessions.
+/// Everything `nexus.ini` can hold: the OAuth session, and nothing else.
 ///
-/// Merges rather than overwrites: `nexus.ini` also holds the OAuth tokens, and
-/// a plain `fs::write` of the key would sign the user out every time they
-/// re-pasted it.
-pub fn save_nexus_key(key: &str) -> io::Result<()> {
-    let mut creds = load_nexus_creds();
-    let key = key.trim();
-    creds.api_key = (!key.is_empty()).then(|| key.to_string());
-    save_nexus_creds(&creds)
-}
-
-/// Everything `nexus.ini` can hold. The personal API key and the OAuth tokens
-/// live in the same file because they answer the same question - how this
-/// machine talks to Nexus - and because a user who has both should not lose one
-/// by touching the other.
+/// It used to carry a personal API key beside the tokens. Nexus's API team
+/// requires personal keys removed from a distributed client entirely - not
+/// merely unused - so the field is gone rather than ignored, and an `api_key=`
+/// line left over from an older version is passed through untouched but never
+/// read.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NexusCreds {
-    pub api_key: Option<String>,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
     /// Unix seconds. Absolute, so it survives being written and read back.
     pub expires_at: u64,
+    /// The account's "show adult content" preference, as last read from Nexus.
+    /// `None` means "not known", which is NOT the same as `Some(false)`: unknown
+    /// hides adult metadata AND tells the user we could not check, where a known
+    /// `false` is the user's own setting. See `eidos_nexus::AdultPolicy`.
+    pub adult_ok: Option<bool>,
+    /// Unix seconds when [`Self::adult_ok`] was read. A stale answer decays back
+    /// to "unknown" rather than being trusted forever - the user can change the
+    /// setting on the site at any time, and we would never hear about it.
+    pub adult_checked_at: u64,
 }
+
+/// How long a cached adult-content preference is trusted before it decays to
+/// "unknown". A judgement call, not a documented requirement: long enough that a
+/// day's use costs one extra request, short enough that turning the setting off
+/// on the website takes effect the next day without signing in again.
+pub const ADULT_PREF_TTL: u64 = 24 * 3600;
 
 impl NexusCreds {
     /// Whether a stored sign-in is present at all. Says nothing about whether
     /// the access token is still fresh - that is `expires_at`'s job.
     pub fn has_oauth(&self) -> bool {
         self.access_token.as_ref().is_some_and(|t| !t.is_empty())
+    }
+
+    /// The cached adult-content preference, or `None` once it has aged out.
+    pub fn adult_pref(&self, now: u64) -> Option<bool> {
+        let fresh = now.saturating_sub(self.adult_checked_at) < ADULT_PREF_TTL;
+        self.adult_ok.filter(|_| fresh && self.adult_checked_at != 0)
     }
 }
 
@@ -108,12 +112,18 @@ pub fn clear_nexus_tokens() -> io::Result<()> {
     creds.access_token = None;
     creds.refresh_token = None;
     creds.expires_at = 0;
+    // The adult-content preference belongs to the account that just signed out.
+    // Keeping it would apply one person's setting to whoever signs in next.
+    creds.adult_ok = None;
+    creds.adult_checked_at = 0;
     save_nexus_creds(&creds)
 }
 
-/// The four fields this module owns; anything else in the file is passed through
-/// untouched by [`render_nexus_creds`].
-const OWNED_KEYS: [&str; 4] = ["api_key", "access_token", "refresh_token", "expires_at"];
+/// The fields this module owns; anything else in the file is passed through
+/// untouched by [`render_nexus_creds`] - including an `api_key=` line from a
+/// version that still had one, which is neither read nor deleted.
+const OWNED_KEYS: [&str; 5] =
+    ["access_token", "refresh_token", "expires_at", "adult_ok", "adult_checked_at"];
 
 fn parse_nexus_creds(text: &str) -> NexusCreds {
     let val = |want: &str| {
@@ -124,10 +134,17 @@ fn parse_nexus_creds(text: &str) -> NexusCreds {
             .filter(|v| !v.is_empty())
     };
     NexusCreds {
-        api_key: val("api_key"),
         access_token: val("access_token"),
         refresh_token: val("refresh_token"),
         expires_at: val("expires_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        // Anything that is not a clean `1`/`0` reads as "unknown", which hides
+        // adult content: a corrupted line must not be able to grant permission.
+        adult_ok: val("adult_ok").and_then(|v| match v.as_str() {
+            "1" | "true" => Some(true),
+            "0" | "false" => Some(false),
+            _ => None,
+        }),
+        adult_checked_at: val("adult_checked_at").and_then(|v| v.parse().ok()).unwrap_or(0),
     }
 }
 
@@ -144,11 +161,14 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
             out.push('\n');
         }
     };
-    push("api_key", creds.api_key.as_deref().unwrap_or_default().trim());
     push("access_token", creds.access_token.as_deref().unwrap_or_default().trim());
     push("refresh_token", creds.refresh_token.as_deref().unwrap_or_default().trim());
     if creds.expires_at != 0 {
         push("expires_at", &creds.expires_at.to_string());
+    }
+    if let Some(ok) = creds.adult_ok {
+        push("adult_ok", if ok { "1" } else { "0" });
+        push("adult_checked_at", &creds.adult_checked_at.to_string());
     }
     for line in existing.lines() {
         let t = line.trim();
@@ -163,16 +183,6 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
         }
     }
     out
-}
-
-/// The `[Nexus]` `api_key=` value from a `nexus.ini` body, if non-empty. Split
-/// out so it can be unit-tested without touching the filesystem.
-fn parse_nexus_key(text: &str) -> Option<String> {
-    text.lines()
-        .filter_map(|l| l.trim().split_once('='))
-        .find(|(k, _)| k.trim() == "api_key")
-        .map(|(_, v)| v.trim().to_string())
-        .filter(|v| !v.is_empty())
 }
 
 /// `$XDG_CONFIG_HOME/eidos/settings.ini`, holding the non-secret app-global
@@ -361,39 +371,85 @@ mod tests {
     }
 
     #[test]
-    fn saving_a_key_does_not_sign_the_user_out() {
-        // The regression this guards: `nexus.ini` holds the API key AND the
-        // OAuth tokens, so a write of one that overwrites the file destroys the
-        // other. Re-pasting a key must not log you out.
+    fn an_old_api_key_line_is_neither_read_nor_destroyed() {
+        // `nexus.ini` used to hold a personal API key beside the tokens. Nexus
+        // requires personal keys gone from the client, so the field is no longer
+        // parsed - but a user upgrading has that line on disk, and silently
+        // rewriting their file to drop it is not this module's call.
         let existing = "[Nexus]\napi_key=old\naccess_token=at\nrefresh_token=rt\nexpires_at=999\n";
-        let mut creds = parse_nexus_creds(existing);
-        creds.api_key = Some("new".into());
+        let creds = parse_nexus_creds(existing);
         let out = render_nexus_creds(existing, &creds);
+        assert!(out.contains("api_key=old"), "the line was destroyed: {out}");
         let back = parse_nexus_creds(&out);
-        assert_eq!(back.api_key.as_deref(), Some("new"));
-        assert_eq!(back.access_token.as_deref(), Some("at"), "the sign-in was destroyed");
+        assert_eq!(back.access_token.as_deref(), Some("at"));
         assert_eq!(back.refresh_token.as_deref(), Some("rt"));
         assert_eq!(back.expires_at, 999);
     }
 
     #[test]
-    fn signing_out_keeps_the_api_key() {
-        let existing = "[Nexus]\napi_key=abc\naccess_token=at\nrefresh_token=rt\nexpires_at=5\n";
+    fn the_adult_preference_survives_a_write_and_a_read() {
+        let mut creds = parse_nexus_creds("[Nexus]\naccess_token=at\n");
+        creds.adult_ok = Some(true);
+        creds.adult_checked_at = 1_000;
+        let back = parse_nexus_creds(&render_nexus_creds("", &creds));
+        assert_eq!(back.adult_ok, Some(true));
+        assert_eq!(back.adult_checked_at, 1_000);
+        assert_eq!(back.adult_pref(1_000), Some(true));
+    }
+
+    #[test]
+    fn a_cached_adult_preference_decays_to_unknown_once_it_is_stale() {
+        // The user can turn the setting off on the website at any time and we
+        // would never hear about it, so a cached "yes" has to expire.
+        let creds = NexusCreds { adult_ok: Some(true), adult_checked_at: 1_000, ..Default::default() };
+        assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL - 1), Some(true));
+        assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL), None, "stale must read as unknown");
+    }
+
+    #[test]
+    fn a_corrupted_adult_line_reads_as_unknown_rather_than_as_permission() {
+        // Anything that is not a clean 1/0 must not be able to grant permission.
+        for line in ["adult_ok=yes", "adult_ok=", "adult_ok=maybe", "adult_ok=2"] {
+            let creds = parse_nexus_creds(&format!("[Nexus]\n{line}\nadult_checked_at=1000\n"));
+            assert_eq!(creds.adult_ok, None, "{line}");
+            assert_eq!(creds.adult_pref(1_000), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn signing_out_forgets_the_adult_preference_with_the_session() {
+        // It belongs to the account that just signed out; keeping it would apply
+        // one person's setting to whoever signs in next.
+        let existing = "[Nexus]\naccess_token=at\nadult_ok=1\nadult_checked_at=1000\n";
+        let mut creds = parse_nexus_creds(existing);
+        assert_eq!(creds.adult_ok, Some(true));
+        creds.access_token = None;
+        creds.adult_ok = None;
+        creds.adult_checked_at = 0;
+        let back = parse_nexus_creds(&render_nexus_creds(existing, &creds));
+        assert_eq!(back.adult_ok, None);
+        assert_eq!(back.adult_pref(1_000), None);
+    }
+
+    #[test]
+    fn signing_out_clears_the_session_and_nothing_else() {
+        let existing = "[Nexus]\naccess_token=at\nrefresh_token=rt\nexpires_at=5\nkeep=me\n";
         let mut creds = parse_nexus_creds(existing);
         creds.access_token = None;
         creds.refresh_token = None;
         creds.expires_at = 0;
-        let back = parse_nexus_creds(&render_nexus_creds(existing, &creds));
-        assert_eq!(back.api_key.as_deref(), Some("abc"));
+        let out = render_nexus_creds(existing, &creds);
+        let back = parse_nexus_creds(&out);
         assert!(!back.has_oauth());
         assert_eq!(back.expires_at, 0);
+        assert!(out.contains("keep=me"), "an unrelated line was dropped: {out}");
     }
 
     #[test]
     fn unknown_keys_survive_a_rewrite() {
         // A newer Eidos may store a field this build knows nothing about;
         // dropping it on every save would corrupt their config by downgrade.
-        let existing = "[Nexus]\napi_key=abc\nsomething_new=keep-me\n";
+        let existing = "[Nexus]\naccess_token=at\nsomething_new=keep-me\n";
         let out = render_nexus_creds(existing, &parse_nexus_creds(existing));
         assert!(out.contains("something_new=keep-me"), "{out}");
         assert_eq!(out.matches("[Nexus]").count(), 1, "the header was duplicated: {out}");
@@ -407,34 +463,16 @@ mod tests {
     }
 
     #[test]
-    fn nexus_key_round_trips_via_parser() {
-        let text = "[Nexus]\napi_key=abc123\n";
-        assert_eq!(parse_nexus_key(text).as_deref(), Some("abc123"));
-    }
-
-    #[test]
-    fn nexus_key_trims_whitespace() {
-        let text = "[Nexus]\napi_key =   spaced-key   \n";
-        assert_eq!(parse_nexus_key(text).as_deref(), Some("spaced-key"));
-    }
-
-    #[test]
-    fn empty_nexus_key_is_none() {
-        assert_eq!(parse_nexus_key("[Nexus]\napi_key=\n"), None);
-        assert_eq!(parse_nexus_key("[Nexus]\napi_key=   \n"), None);
-        assert_eq!(parse_nexus_key("nothing here"), None);
-    }
-
-    #[test]
-    fn nexus_key_survives_a_disk_round_trip() {
-        // Save then load from a real file, proving the key persists.
+    fn the_session_survives_a_disk_round_trip() {
         let path = tmp("nexus");
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        fs::write(&path, format!("[Nexus]\napi_key={}\n", "persisted-key")).unwrap();
+        fs::write(&path, "[Nexus]\naccess_token=persisted\nexpires_at=42\n").unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        assert_eq!(parse_nexus_key(&text).as_deref(), Some("persisted-key"));
+        let c = parse_nexus_creds(&text);
+        assert_eq!(c.access_token.as_deref(), Some("persisted"));
+        assert_eq!(c.expires_at, 42);
         let _ = fs::remove_file(&path);
     }
 

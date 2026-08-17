@@ -58,13 +58,10 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             inst.create().ok();
 
             let nexus = nexus_client();
-            let file = match nexus.file_info(&nxm.game, nxm.mod_id, nxm.file_id) {
-                Ok(f) => f,
-                Err(e) => {
-                    eprintln!("file lookup failed: {e}");
-                    exit(1);
-                }
-            };
+            // The MOD is looked up first, before its file. That ordering is not
+            // stylistic: the lookup is what resolves the mod's content rating,
+            // and the token it returns is what the two calls below require. A
+            // mod Eidos may not describe is one it does not fetch files for.
             let remote_mod = match nexus.mod_info(&nxm.game, nxm.mod_id) {
                 Ok(m) => m,
                 Err(e) => {
@@ -72,7 +69,18 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                     exit(1);
                 }
             };
-            let link = match nexus.download_link(&nxm) {
+            if let Some(why) = remote_mod.hidden() {
+                eprintln!("{}", why.message());
+                exit(1);
+            }
+            let file = match nexus.file_info(&remote_mod.gate, &nxm.game, nxm.mod_id, nxm.file_id) {
+                Ok(f) => f,
+                Err(e) => {
+                    eprintln!("file lookup failed: {e}");
+                    exit(1);
+                }
+            };
+            let link = match nexus.download_link(&remote_mod.gate, &nxm) {
                 Ok(l) => l,
                 Err(e) => {
                     eprintln!("could not resolve the download: {e}");

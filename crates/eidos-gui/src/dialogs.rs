@@ -38,6 +38,20 @@ impl std::fmt::Display for ThemeChoice {
     }
 }
 
+/// The cached "show adult content" answer for the signed-in account: `Some(true)`
+/// shown, `Some(false)` turned off by the user, `None` not known.
+///
+/// Read straight from the credential store rather than plumbed through app state,
+/// because that store IS what the client consults - a second copy in the UI could
+/// disagree with what is actually being withheld.
+fn adult_content_state() -> Option<bool> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    eidos_instance::settings::load_nexus_creds().adult_pref(now)
+}
+
 pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
@@ -178,29 +192,58 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .into()
         }
         SettingsTab::Nexus => {
-            let connect_label = if app.api_key_validating { "Checking..." } else { "Validate & Save" };
-            let mut connect = button(text(connect_label).size(12.0)).padding([5, 12]).style(button::primary);
-            if !app.api_key_validating {
-                connect = connect.on_press(Message::ApiKeyValidateStart);
+            // Sign-in, and only sign-in. There is no personal-API-key field, on
+            // purpose: Nexus requires personal keys absent from a distributed
+            // client, not merely unused, so there is nothing here to enter.
+            let signed_in = app.nexus_account.is_some();
+            let label = if app.nexus_signing_in {
+                "Waiting for your browser..."
+            } else if signed_in {
+                "Sign in again"
+            } else {
+                "Sign in to Nexus Mods"
+            };
+            let mut action = button(text(label).size(12.0)).padding([5, 12]).style(button::primary);
+            if !app.nexus_signing_in {
+                action = action.on_press(Message::NexusSignInStart);
             }
-            // Masked. It is a credential, and this field sits in a window users
-            // screenshot to ask for help - which is one of the ways a key leaks.
-            let field = text_input("Personal API key", &app.settings_api_key)
-                .secure(true)
-                .on_input(Message::ApiKeyChanged)
-                .on_submit(Message::ApiKeyValidateStart)
-                .padding(6)
-                .size(12.0)
-                .width(Length::Fill);
+            let mut controls = Row::new().spacing(8).push(action);
+            if signed_in {
+                controls = controls.push(
+                    button(text("Sign out").size(12.0))
+                        .padding([5, 12])
+                        .on_press(Message::NexusSignOut)
+                        .style(button::secondary),
+                );
+            }
 
-            let mut account = Column::new()
-                .spacing(6)
-                .push(Row::new().spacing(8).push(field).push(connect));
-            if let Some(a) = &app.nexus_account {
-                let tier = if a.is_premium { "Premium" } else { "free" };
-                account = account.push(text(format!("Connected as {} ({tier}).", a.name)).size(11.0));
+            let mut account = Column::new().spacing(6).push(controls);
+            match &app.nexus_account {
+                Some(a) => {
+                    let tier = if a.is_premium { "Premium" } else { "free" };
+                    account =
+                        account.push(text(format!("Signed in as {} ({tier}).", a.name)).size(11.0));
+                    // Say what is being withheld and why. Adult mods coming back
+                    // blank with no explanation reads as Eidos being broken, and
+                    // "could not check" is the case the user can actually act on.
+                    account = account.push(
+                        text(match adult_content_state() {
+                            Some(true) => "Adult content: shown (enabled on your Nexus account).",
+                            Some(false) => {
+                                "Adult content: hidden. It is turned off on your Nexus account; \
+                                 change it on nexusmods.com, then sign in again here."
+                            }
+                            None => {
+                                "Adult content: hidden. Eidos could not read your Nexus content \
+                                 settings, so it withholds adult mods until it can."
+                            }
+                        })
+                        .size(10.0),
+                    );
+                }
+                None => account = account.push(text("Not signed in.").size(11.0)),
             }
-            if let Some(err) = &app.api_key_error {
+            if let Some(err) = &app.nexus_error {
                 account = account
                     .push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
             }
@@ -214,7 +257,7 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                     Column::new()
                         .spacing(6)
                         .push(
-                            text("From nexusmods.com -> Account -> API Keys. Stored in nexus.ini and shared with the CLI.")
+                            text("Signing in opens your browser. The session is stored in nexus.ini and shared with the CLI.")
                                 .size(10.0),
                         )
                         .push(account)

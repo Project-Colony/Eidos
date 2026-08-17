@@ -115,10 +115,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         settings_expanded: SettingsTab::DEFAULT_OPEN.iter().copied().collect(),
         // Prefill the key field from the shared store (the same key `eidos nexus
         // key` writes), so it survives across sessions without a network round trip.
-        settings_api_key: eidos_instance::settings::load_nexus_key().unwrap_or_default(),
         nexus_account: None,
-        api_key_validating: false,
-        api_key_error: None,
+        nexus_signing_in: false,
+        nexus_error: None,
         prefs: Settings::load(),
         executables: None,
         endorsing: None,
@@ -219,17 +218,15 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
     recompute_counts(&mut app);
-    // A stored key means the user IS connected: validate it in the background so
-    // the status bar shows the account instead of "not logged in" every session.
-    let startup = match load_nexus_api_key() {
-        Some(key) => Task::perform(
-            async move {
-                let result = eidos_nexus::Nexus::new(&key).validate();
-                (key, result)
-            },
-            |(key, result)| Message::ApiKeyValidateResult(key, result),
-        ),
-        None => Task::none(),
+    // A stored session means the user IS signed in: validate it in the background
+    // so the status bar shows the account instead of "not logged in" every session.
+    let startup = if eidos_nexus::Nexus::have_credentials() {
+        Task::perform(
+            async move { eidos_nexus::Nexus::connect().and_then(|n| n.validate()) },
+            Message::NexusSignInResult,
+        )
+    } else {
+        Task::none()
     };
     (app, startup)
 }
@@ -267,10 +264,38 @@ pub(crate) fn load_tools(app: &mut App) {
     app.tools = merged;
 }
 
-/// The stored Nexus API key (the same key the CLI's `eidos nexus key` writes),
-/// shared via `eidos-instance`'s settings store so the key never diverges.
-pub(crate) fn load_nexus_api_key() -> Option<String> {
-    eidos_instance::settings::load_nexus_key()
+/// Run the whole Nexus OAuth sign-in, blocking: build the PKCE challenge, hand
+/// the browser the authorize URL, wait on the loopback listener for the code,
+/// exchange it, and store the session.
+///
+/// Personal API keys are deliberately absent - Nexus requires them gone from a
+/// distributed client - so this is the ONLY way Eidos authenticates, and it
+/// needs a `client_id` registered with Nexus (`EIDOS_NEXUS_CLIENT_ID`).
+pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
+    use eidos_nexus::oauth;
+    let cfg = oauth::Config::from_env().ok_or_else(|| {
+        "no Nexus client_id configured: set EIDOS_NEXUS_CLIENT_ID (Eidos ships no \
+         default, so it cannot identify itself as another application)"
+            .to_string()
+    })?;
+    let pkce = oauth::Pkce::new().map_err(|e| e.to_string())?;
+    let state = oauth::random_token(32).map_err(|e| e.to_string())?;
+    let url = oauth::authorize_url(&cfg, &pkce, &state);
+    // Hand off to the browser BEFORE listening, so a failure to open is reported
+    // as itself rather than as a listener timeout two minutes later.
+    std::process::Command::new("xdg-open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("could not open your browser: {e}"))?;
+    let code = oauth::wait_for_code(cfg.redirect_port, &state, std::time::Duration::from_secs(300))?;
+    let tokens = oauth::exchange_code(&cfg, &code, &pkce)?;
+    let mut creds = eidos_instance::settings::load_nexus_creds();
+    creds.access_token = Some(tokens.access_token.clone());
+    creds.refresh_token = Some(tokens.refresh_token);
+    creds.expires_at = tokens.expires_at;
+    eidos_instance::settings::save_nexus_creds(&creds)
+        .map_err(|e| format!("signed in, but could not store the session: {e}"))?;
+    eidos_nexus::Nexus::with_bearer(&tokens.access_token).validate()
 }
 
 /// Build the Executables editor state for the open instance: the user's tools.ini

@@ -1,12 +1,17 @@
 //! Nexus Mods integration, mirroring Mod Organizer 2's client behaviour
 //! (`nxmaccessmanager.cpp` + `nexusinterface.cpp` + `downloadmanager.cpp`):
 //!
-//! - **Auth**: either credential Nexus accepts, chosen by [`Nexus::connect`] -
-//!   a personal API key as a raw `APIKEY` header (MO2's legacy-but-supported
-//!   path), or an OAuth access token as `Authorization: Bearer`. Both are
-//!   validated via `users/validate`; like MO2, no `.json` suffix on requests.
-//!   Signing in additionally needs a `client_id` registered with Nexus (see
-//!   [`oauth`]); until one exists, `connect` uses the API key.
+//! - **Auth**: an OAuth access token as `Authorization: Bearer`, and nothing
+//!   else. Validated via `users/validate`; like MO2, no `.json` suffix on
+//!   requests. Signing in needs a `client_id` registered with Nexus (see
+//!   [`oauth`]).
+//!
+//!   Personal API keys are NOT supported, deliberately and not as a fallback.
+//!   Nexus's API team requires their complete removal before issuing a
+//!   `client_id`: the personal key is documented on their side as being for
+//!   testing and personal use, not for a distributed application. Eidos
+//!   therefore has no Nexus access at all until a `client_id` is issued, which
+//!   is the intended state rather than an oversight.
 //! - **`nxm://` links** (the site's "Mod Manager Download" button):
 //!   `nxm://<game>/mods/<id>/files/<file_id>?key=..&expires=..&user_id=..` -
 //!   non-premium downloads REQUIRE that key/expires pair forwarded to the
@@ -14,6 +19,19 @@
 //! - **`.meta` sidecar**: each download gets `<archive>.meta` in MO2's exact
 //!   key set (gameName/modID/fileID/url/version/...), which `eidos-install`
 //!   already reads to seed the installed mod's `meta.ini`.
+//! - **Adult content** is gated INSIDE this crate, in
+//!   [`RemoteMod::from_payload`], and nowhere else. A mod the account may not be
+//!   shown has its descriptive fields blanked before the struct is built, so the
+//!   text never crosses the crate boundary and no display site can leak it by
+//!   forgetting to check. **Any field added to [`RemoteMod`] that comes from the
+//!   `games/{game}/mods/{id}` payload must be redacted there too** - there is no
+//!   second gate downstream to catch it. Fetching a file or a download link
+//!   requires the [`ModGate`] that lookup mints, so the ordering is enforced by
+//!   the compiler rather than by convention.
+//! - **The request budget** is enforced BEFORE a request is sent, not after
+//!   Nexus refuses one: [`Nexus::get`] and `send_with_version` both start with a
+//!   pre-flight check, so an exhausted account stops the whole client rather
+//!   than each loop that remembered to look. See [`RATE_LIMITED`].
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -86,7 +104,105 @@ pub struct Account {
     pub is_premium: bool,
 }
 
+/// Whether this account may be shown adult mod metadata.
+///
+/// Nexus keeps the answer on the account, not in the v1 API: it is
+/// `preferences { adult }` on their GraphQL v2 endpoint, scoped to the bearer
+/// token (see [`oauth::adult_preference`]). Vortex, Nexus's own manager, gates on
+/// that preference alone and leaves age verification to the website, so Eidos
+/// does the same rather than second-guessing who has verified what.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AdultPolicy {
+    /// The account has adult content switched on.
+    Allowed,
+    /// The account has it switched off.
+    Denied,
+    /// Not signed in, the preference could not be read, or the cached answer has
+    /// aged out. Hides, exactly like [`AdultPolicy::Denied`], but says something
+    /// different to the user: "we could not check" is not "you said no".
+    #[default]
+    Unknown,
+}
+
+impl AdultPolicy {
+    /// The single place permission is decided. Only `Allowed` shows.
+    pub fn shows_adult(self) -> bool {
+        matches!(self, AdultPolicy::Allowed)
+    }
+}
+
+/// Why a mod's metadata was withheld.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HiddenReason {
+    /// Adult mod; the account has adult content switched off.
+    AdultDenied,
+    /// Adult mod; the account's preference could not be read.
+    AdultUnknown,
+    /// The payload carried no content rating, so it is treated as adult. Kept
+    /// distinct because "we could not confirm this mod's rating" and "your
+    /// account hides adult content" have different fixes - and because if the
+    /// field ever moves, EVERY mod lands here, which is a signal worth reading.
+    RatingUnknown,
+    /// Nexus reports the mod as unavailable (hidden or deleted upstream).
+    Unavailable,
+}
+
+/// The title shown in place of a withheld mod. A constant, never anything
+/// derived from the payload.
+pub const HIDDEN_TITLE: &str = "Adult content (hidden)";
+
+impl HiddenReason {
+    /// What to tell the user, in words that leak nothing about the mod.
+    pub fn message(self) -> &'static str {
+        match self {
+            HiddenReason::AdultDenied => {
+                "Hidden because adult content is turned off on your Nexus account. Change it at \
+                 https://next.nexusmods.com/settings/content-blocking, then sign in again in Eidos."
+            }
+            HiddenReason::AdultUnknown => {
+                "Hidden: Eidos could not confirm your Nexus content settings. Sign in again to retry."
+            }
+            HiddenReason::RatingUnknown => "Hidden: Eidos could not confirm this mod's content rating.",
+            HiddenReason::Unavailable => "This mod is no longer available on Nexus Mods.",
+        }
+    }
+}
+
+/// Proof that a mod's rating has been resolved and found showable.
+///
+/// The fields are private and there is no public constructor, so the only way to
+/// hold one is to have called [`Nexus::mod_info`] - which is what makes it
+/// impossible to reach [`Nexus::file_info`] or [`Nexus::download_link`] without
+/// having passed the gate first. The compiler enforces the ordering that a
+/// convention would only describe.
+#[derive(Debug, Clone, Copy)]
+pub struct ModGate {
+    adult: bool,
+    hidden: Option<HiddenReason>,
+}
+
+impl ModGate {
+    /// Whether this mod's metadata may be shown.
+    pub fn visible(&self) -> bool {
+        self.hidden.is_none()
+    }
+    /// Why it may not be, if it may not.
+    pub fn reason(&self) -> Option<HiddenReason> {
+        self.hidden
+    }
+    /// Whether Nexus flags this mod as adult (independent of the account's setting).
+    pub fn is_adult(&self) -> bool {
+        self.adult
+    }
+}
+
 /// Remote mod metadata (subset of `games/{game}/mods/{id}`).
+///
+/// When [`Self::hidden`] is set, the descriptive fields have already been blanked
+/// inside [`Nexus::mod_info`]: a withheld mod's name and summary never leave this
+/// crate, so no display site can leak one by forgetting to check. Only `version`
+/// survives, because it is what the update check compares and a version string
+/// describes nothing.
 #[derive(Debug, Clone)]
 pub struct RemoteMod {
     pub name: String,
@@ -94,6 +210,69 @@ pub struct RemoteMod {
     pub summary: String,
     pub category_id: Option<u64>,
     pub available: bool,
+    /// Nexus's own rating: `Some(true)` adult, `Some(false)` not, `None` when the
+    /// payload said nothing - which is treated as adult.
+    pub adult: Option<bool>,
+    /// The capability token [`Nexus::file_info`] and [`Nexus::download_link`]
+    /// require, and the single answer to "was this withheld, and why"
+    /// ([`ModGate::visible`] / [`ModGate::reason`]).
+    pub gate: ModGate,
+}
+
+impl RemoteMod {
+    /// Apply the gate to a `games/{game}/mods/{id}` payload.
+    ///
+    /// Split out from [`Nexus::mod_info`], which is that one request followed by
+    /// this one decision, so the decision can be tested against real payloads
+    /// without a network - and so there is exactly one copy of it to audit.
+    ///
+    /// Fail closed at every step: a payload with no rating is treated as adult,
+    /// and an unreadable account preference hides rather than shows. Every way
+    /// this can be wrong ends with too little on screen, never too much.
+    pub(crate) fn from_payload(v: &serde_json::Value, policy: AdultPolicy) -> RemoteMod {
+        let adult = adult_flag(v);
+        let available = v.get("available").and_then(|x| x.as_bool()).unwrap_or(true);
+        let hidden = match (adult, policy, available) {
+            // Unavailable outranks the rest: Nexus has taken the page down, so
+            // there is nothing to show whatever the account allows.
+            (_, _, false) => Some(HiddenReason::Unavailable),
+            (Some(false), _, _) => None,
+            (Some(true), AdultPolicy::Allowed, _) => None,
+            (Some(true), AdultPolicy::Denied, _) => Some(HiddenReason::AdultDenied),
+            (Some(true), AdultPolicy::Unknown, _) => Some(HiddenReason::AdultUnknown),
+            (None, _, _) => Some(HiddenReason::RatingUnknown),
+        };
+
+        let redact = hidden.is_some();
+        RemoteMod {
+            // Blanked rather than replaced with the placeholder: a caller that
+            // prints this without checking shows nothing, not a wrong name.
+            name: if redact { String::new() } else { s(v, "name") },
+            // Kept either way. A version string describes nothing, and comparing
+            // it is the whole point of the update check - withholding it would
+            // break update detection for a mod the user already has installed.
+            version: s(v, "version"),
+            summary: if redact { String::new() } else { s(v, "summary") },
+            category_id: if redact { None } else { v.get("category_id").and_then(|x| x.as_u64()) },
+            available,
+            adult,
+            gate: ModGate { adult: adult.unwrap_or(true), hidden },
+        }
+    }
+
+    /// Whether this mod's metadata was withheld.
+    pub fn hidden(&self) -> Option<HiddenReason> {
+        self.gate.reason()
+    }
+    /// What to show in a list in place of the real name: the mod's name when it
+    /// may be shown, the neutral placeholder when it may not.
+    pub fn display_name(&self) -> &str {
+        if self.gate.visible() {
+            &self.name
+        } else {
+            HIDDEN_TITLE
+        }
+    }
 }
 
 /// Remote file metadata (subset of `.../files/{file_id}`).
@@ -112,12 +291,55 @@ pub struct RemoteFile {
     pub size_in_bytes: u64,
 }
 
-/// Nexus rate-limit budget from the `X-RL-*` response headers (MO2 surfaces these
-/// and stops dispatching when exhausted). Fields are `None` until a reply is seen.
+/// Nexus rate-limit budget from the `X-RL-*` response headers. Fields are `None`
+/// until a reply carrying them is seen, and `None` always means "go ahead": a
+/// fresh client has no headers yet, and the request that would teach it the
+/// budget must be allowed out or the client deadlocks before it ever starts.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RateLimits {
     pub hourly_remaining: Option<i64>,
     pub daily_remaining: Option<i64>,
+    /// Unix seconds at which a spent hourly budget refills. COMPUTED from the
+    /// UTC hour boundary, not parsed from `X-RL-Hourly-Reset`: the two reset
+    /// headers are documented in different formats (`2019-02-01T12:00:00+00:00`
+    /// against `2019-02-02 00:00:00 +0000`), and Nexus documents the rule itself
+    /// ("the hourly quota resets each hour", "daily at 00:00 GMT"), so deriving
+    /// the boundary needs no date parser and no new dependency.
+    pub hourly_reset: Option<u64>,
+    /// Unix seconds at which a spent daily budget refills (next 00:00 UTC).
+    pub daily_reset: Option<u64>,
+    /// Set by a 429 that arrived while the budget still showed requests left -
+    /// i.e. the separate burst guard in front of the API, not the quota. Short
+    /// back-off rather than idling until the next hour.
+    pub blocked_until: Option<u64>,
+}
+
+/// The next UTC hour boundary at or after `now`.
+fn next_hour_utc(now: u64) -> u64 {
+    (now / 3600 + 1) * 3600
+}
+
+/// The next UTC midnight at or after `now`.
+fn next_midnight_utc(now: u64) -> u64 {
+    (now / 86_400 + 1) * 86_400
+}
+
+/// How long to stand down after a 429 that the quota does not explain.
+const BURST_BACKOFF: u64 = 60;
+
+/// The one phrase every rate-limit refusal carries, whether it came from a 429
+/// or from the pre-flight check that stopped a request being sent at all.
+///
+/// It exists because the callers used to test for the condition themselves, and
+/// disagreed: `check_updates` matched `"rate limited"` while the CLI matched
+/// `"429"`, so a pre-flight refusal - which contains no status code - would have
+/// stopped one loop and left the other hammering an exhausted account. Both now
+/// route through [`is_rate_limited`], which cannot drift from the messages.
+pub const RATE_LIMITED: &str = "rate limited by Nexus";
+
+/// Whether an error string is one of ours meaning "the budget is spent".
+pub fn is_rate_limited(err: &str) -> bool {
+    err.contains(RATE_LIMITED)
 }
 
 /// What [`Nexus::connect`] decided to do, separated from doing it so the rule
@@ -128,9 +350,8 @@ enum CredentialChoice {
     Bearer,
     /// A stored session whose access token needs renewing first.
     Refresh,
-    /// No usable session; use the personal API key.
-    ApiKey,
-    /// Nothing stored at all.
+    /// No usable session. There is no fallback: without an OAuth session there
+    /// is no request Eidos is allowed to make.
     None,
 }
 
@@ -143,7 +364,6 @@ fn choose_credential(
     now: u64,
     can_refresh: bool,
 ) -> CredentialChoice {
-    let has_key = creds.api_key.as_deref().is_some_and(|k| !k.is_empty());
     if creds.has_oauth() {
         let stale = creds.expires_at <= now.saturating_add(TOKEN_SKEW.as_secs());
         if !stale {
@@ -156,20 +376,17 @@ fn choose_credential(
             return CredentialChoice::Refresh;
         }
     }
-    if has_key {
-        CredentialChoice::ApiKey
-    } else {
-        CredentialChoice::None
-    }
+    CredentialChoice::None
 }
 
-/// How a request proves who it is. Nexus accepts either on the v1 API, and the
-/// OAuth guide says the same token also works on v2 - so this is the ONLY thing
-/// that changes between the personal-key path and the signed-in path.
+/// How a request proves who it is.
+///
+/// One variant, on purpose. It was an enum over `{ApiKey, Bearer}` until Nexus
+/// required personal API keys gone from the client entirely; the shape is kept
+/// so the header logic stays in one named place rather than inlined at every
+/// call site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Credential {
-    /// A personal API key, in the `APIKEY` header (what MO2 sends).
-    ApiKey(String),
     /// An OAuth access token, as `Authorization: Bearer <token>`.
     Bearer(String),
 }
@@ -179,10 +396,27 @@ pub struct Nexus {
     agent: ureq::Agent,
     credential: Credential,
     limits: std::cell::Cell<RateLimits>,
+    /// Whether this account may be shown adult metadata. Defaults to
+    /// [`AdultPolicy::Unknown`], so a client built without stating a policy
+    /// hides adult content rather than leaking it - forgetting is safe.
+    adult: AdultPolicy,
 }
 
 fn s(v: &serde_json::Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+}
+
+/// Nexus's adult rating for a mod payload, or `None` when the payload says
+/// nothing - which the caller must read as "assume adult", not as "safe".
+///
+/// `contains_adult_content` is the v1 spelling (node-nexus-api's `IModInfo`, and
+/// what a captured v1 payload carries). The other two are how the newer APIs name
+/// the same thing; accepting them costs a comparison and means a payload in a
+/// slightly different shape still rates correctly instead of hiding every mod.
+fn adult_flag(v: &serde_json::Value) -> Option<bool> {
+    ["contains_adult_content", "adult_content", "adultContent"]
+        .iter()
+        .find_map(|k| v.get(*k).and_then(|x| x.as_bool()))
 }
 
 /// The `version` an endorsement request must carry: the mod's installed version,
@@ -198,11 +432,6 @@ fn endorse_version(version: &str) -> &str {
 }
 
 impl Nexus {
-    /// A client authenticating with a personal API key.
-    pub fn new(api_key: &str) -> Nexus {
-        Nexus::with_credential(Credential::ApiKey(api_key.trim().to_string()))
-    }
-
     /// A client authenticating with an OAuth access token.
     ///
     /// The caller is responsible for handing over a token that is still valid -
@@ -211,6 +440,18 @@ impl Nexus {
     /// worth retrying.
     pub fn with_bearer(access_token: &str) -> Nexus {
         Nexus::with_credential(Credential::Bearer(access_token.trim().to_string()))
+    }
+
+    /// The same client, told what the account allows. Adult metadata is withheld
+    /// unless this says [`AdultPolicy::Allowed`].
+    pub fn with_adult_policy(mut self, adult: AdultPolicy) -> Nexus {
+        self.adult = adult;
+        self
+    }
+
+    /// What this client believes the account allows.
+    pub fn adult_policy(&self) -> AdultPolicy {
+        self.adult
     }
 
     pub fn with_credential(credential: Credential) -> Nexus {
@@ -227,47 +468,79 @@ impl Nexus {
             .timeout_recv_body(Some(std::time::Duration::from_secs(30)))
             .timeout_send_body(Some(std::time::Duration::from_secs(30)))
             // A non-2xx reply comes back as a RESPONSE, not an error. Nexus puts
-            // the rate-limit budget in headers on EVERY reply including a 429,
-            // and that is the one we most need to read: ureq 2 handed us the
-            // response inside Error::Status, and 3 does not, so asking for the
-            // response directly is how the budget stays visible.
+            // the rate-limit budget in headers on a rejection too - a 429 above
+            // all, the one we most need to read - and ureq 2 handed us the
+            // response inside Error::Status where ureq 3 does not, so asking for
+            // the response directly is how the budget stays visible. (Not on
+            // EVERY reply, despite what this comment used to claim: a 401 from
+            // the v1 API carries no X-RL-* headers at all, which is why
+            // `capture_limits` merges instead of overwriting.)
             .http_status_as_error(false)
             .build()
             .into();
-        Nexus { agent, credential, limits: std::cell::Cell::new(RateLimits::default()) }
+        Nexus {
+            agent,
+            credential,
+            limits: std::cell::Cell::new(RateLimits::default()),
+            adult: AdultPolicy::Unknown,
+        }
     }
 
-    /// Which credential this client carries. Exposed so a caller can report
-    /// "signed in" versus "using an API key" without holding the secret itself.
+    /// Which credential this client carries. Exposed so a caller can report the
+    /// state without holding the secret itself.
     pub fn credential_kind(&self) -> &'static str {
         match self.credential {
-            Credential::ApiKey(_) => "api_key",
             Credential::Bearer(_) => "oauth",
         }
     }
 
-    /// Whether ANY credential is stored, without touching the network.
+    /// Whether a signed-in session is stored, without touching the network.
     ///
     /// Reads a file, so it is safe to call from a UI update handler - unlike
     /// [`Nexus::connect`], which may spend a round trip renewing a token and
     /// belongs in a background task.
     pub fn have_credentials() -> bool {
-        let creds = eidos_instance::settings::load_nexus_creds();
-        creds.has_oauth() || creds.api_key.as_deref().is_some_and(|k| !k.is_empty())
+        eidos_instance::settings::load_nexus_creds().has_oauth()
+    }
+
+    /// A signed-in client that knows what the account allows.
+    ///
+    /// The adult-content preference is cached in `nexus.ini` with a TTL rather
+    /// than fetched per request: it is one extra call a day, and the setting is
+    /// the user's own, changed rarely and on the website. A read that fails for
+    /// ANY reason leaves the policy `Unknown`, which hides - so being offline
+    /// costs the user adult metadata for that session, never the reverse.
+    fn signed_in(creds: &mut eidos_instance::settings::NexusCreds, token: &str) -> Nexus {
+        let now = oauth::now_unix();
+        let known = creds.adult_pref(now).or_else(|| {
+            let fetched = oauth::adult_preference(token)?;
+            creds.adult_ok = Some(fetched);
+            creds.adult_checked_at = now;
+            // A failed write only costs the next session another lookup.
+            let _ = eidos_instance::settings::save_nexus_creds(creds);
+            Some(fetched)
+        });
+        let policy = match known {
+            Some(true) => AdultPolicy::Allowed,
+            Some(false) => AdultPolicy::Denied,
+            None => AdultPolicy::Unknown,
+        };
+        Nexus::with_bearer(token).with_adult_policy(policy)
     }
 
     /// The client to use right now, from whatever is stored on this machine.
     ///
-    /// Prefers a signed-in OAuth session over a personal API key, refreshing the
-    /// access token first when it is stale. Falls back to the API key whenever
-    /// OAuth cannot be made to work - an expired session with no way to renew
-    /// it should degrade to the key the user already pasted, not to an error.
+    /// Uses the signed-in OAuth session, renewing the access token first when it
+    /// is stale. There is no personal-API-key fallback: a session that cannot be
+    /// renewed is an error saying so, because a distributed client is not allowed
+    /// to carry a personal key at all.
     pub fn connect() -> Result<Nexus, String> {
         let mut creds = eidos_instance::settings::load_nexus_creds();
         let cfg = oauth::Config::from_env();
         match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {
             CredentialChoice::Bearer => {
-                Ok(Nexus::with_bearer(creds.access_token.as_deref().unwrap_or_default()))
+                let token = creds.access_token.clone().unwrap_or_default();
+                Ok(Nexus::signed_in(&mut creds, &token))
             }
             CredentialChoice::Refresh => {
                 let cfg = cfg.expect("choose_credential only picks Refresh when a config exists");
@@ -280,23 +553,17 @@ impl Nexus {
                         // A failed write is not fatal: the token in hand still
                         // works, the user just signs in again next session.
                         let _ = eidos_instance::settings::save_nexus_creds(&creds);
-                        Ok(Nexus::with_bearer(&t.access_token))
+                        Ok(Nexus::signed_in(&mut creds, &t.access_token))
                     }
-                    // The refresh token is spent or revoked. Their API key, if
-                    // any, is still good - so try that before giving up.
-                    Err(e) => match creds.api_key.as_deref() {
-                        Some(key) if !key.is_empty() => Ok(Nexus::new(key)),
-                        _ => Err(format!("Nexus sign-in expired and could not be renewed: {e}")),
-                    },
+                    // The refresh token is spent or revoked, and there is
+                    // nothing to fall back to: signing in again is the only
+                    // route, which is what the message has to say.
+                    Err(e) => Err(format!("Nexus sign-in expired and could not be renewed: {e}")),
                 }
             }
-            CredentialChoice::ApiKey => {
-                Ok(Nexus::new(creds.api_key.as_deref().unwrap_or_default()))
+            CredentialChoice::None => {
+                Err("not connected to Nexus: sign in from Settings".to_string())
             }
-            CredentialChoice::None => Err(
-                "not connected to Nexus: sign in, or set a personal API key in Settings"
-                    .to_string(),
-            ),
         }
     }
 
@@ -305,55 +572,148 @@ impl Nexus {
         self.limits.get()
     }
 
+    /// Record the budget a reply carried.
+    ///
+    /// A field is only overwritten when its header is actually PRESENT. Not every
+    /// reply carries them - a 401 from the v1 API carries none at all - and the
+    /// earlier version rebuilt the whole struct from each reply, so one such
+    /// answer wiped a known-exhausted budget back to "unknown" and the pre-flight
+    /// check below would wave the next request straight through.
     fn capture_limits(&self, resp: &ureq::http::Response<ureq::Body>) {
         let parse = |h: &str| {
             resp.headers().get(h).and_then(|v| v.to_str().ok()).and_then(|x| x.trim().parse::<i64>().ok())
         };
-        self.limits.set(RateLimits {
-            hourly_remaining: parse("X-RL-Hourly-Remaining"),
-            daily_remaining: parse("X-RL-Daily-Remaining"),
-        });
+        let now = oauth::now_unix();
+        let mut lim = self.limits.get();
+        if let Some(h) = parse("X-RL-Hourly-Remaining") {
+            lim.hourly_remaining = Some(h);
+            lim.hourly_reset = (h <= 0).then(|| next_hour_utc(now));
+        }
+        if let Some(d) = parse("X-RL-Daily-Remaining") {
+            lim.daily_remaining = Some(d);
+            lim.daily_reset = (d <= 0).then(|| next_midnight_utc(now));
+        }
+        self.limits.set(lim);
     }
 
-    /// The MO2 status-code mapping shared by every request (401 = bad key,
-    /// 429 = rate limited, else a generic message with the code).
+    /// A 429 the quota does not explain is the burst guard sitting in front of
+    /// the API (it rejects sustained bursts regardless of budget). Stand down for
+    /// a minute rather than idling until the next hour, and never synthesise a
+    /// zero into the counters - they are what the server told us.
+    fn note_rejection(&self, code: u16) {
+        if code != 429 {
+            return;
+        }
+        let mut lim = self.limits.get();
+        let spent = |v: Option<i64>| v.is_some_and(|n| n <= 0);
+        if !spent(lim.hourly_remaining) && !spent(lim.daily_remaining) {
+            lim.blocked_until = Some(oauth::now_unix() + BURST_BACKOFF);
+            self.limits.set(lim);
+        }
+    }
+
+    /// Whether a request may be sent right now, or the reason it may not.
+    ///
+    /// Nexus's own rule is that an account is refused only once BOTH buckets are
+    /// spent, which is why MO2, node-nexus-api and Wabbajack all track the larger
+    /// of the two. Their reviewer asked for the stricter reading - stop as soon as
+    /// EITHER counter reaches zero - so that is what this implements, at the cost
+    /// of idling while the other bucket still has room.
+    ///
+    /// An exhausted bucket clears itself on the clock: past the boundary the
+    /// counter goes back to "unknown" and the next request re-learns the real
+    /// budget from its own headers. No probe request is needed, which is why
+    /// `users/validate` is not exempted from this check even though it is said
+    /// not to count against the hourly quota - issuing any request while we
+    /// believe the account is exhausted is the behaviour being corrected.
+    fn preflight(&self, now: u64) -> Option<String> {
+        let mut lim = self.limits.get();
+        let mut expired = false;
+
+        if lim.blocked_until.is_some_and(|t| now >= t) {
+            lim.blocked_until = None;
+            expired = true;
+        }
+        if lim.hourly_reset.is_some_and(|t| now >= t) {
+            (lim.hourly_remaining, lim.hourly_reset) = (None, None);
+            expired = true;
+        }
+        if lim.daily_reset.is_some_and(|t| now >= t) {
+            (lim.daily_remaining, lim.daily_reset) = (None, None);
+            expired = true;
+        }
+        if expired {
+            self.limits.set(lim);
+        }
+
+        if lim.blocked_until.is_some() {
+            return Some(format!("{RATE_LIMITED} - too many requests too quickly; retrying shortly"));
+        }
+        if lim.hourly_remaining.is_some_and(|n| n <= 0) {
+            return Some(format!(
+                "{RATE_LIMITED} - the hourly request budget is spent; it refills at the next hour (UTC)"
+            ));
+        }
+        if lim.daily_remaining.is_some_and(|n| n <= 0) {
+            return Some(format!(
+                "{RATE_LIMITED} - the daily request budget is spent; it refills at 00:00 UTC"
+            ));
+        }
+        None
+    }
+
+    /// Whether the next request would be refused by [`Nexus::preflight`]. For
+    /// loops that check before building a request, so they stop visibly instead
+    /// of relying on the choke point to reject each attempt in turn.
+    pub fn would_block(&self) -> bool {
+        self.preflight(oauth::now_unix()).is_some()
+    }
+
+    /// The MO2 status-code mapping shared by every request (401 = the session is
+    /// not accepted, 429 = rate limited, else a generic message with the code).
     fn status_err(code: u16) -> String {
         match code {
-            401 => "invalid API key (401)".to_string(),
-            429 => "rate limited by Nexus (429) - try again later".to_string(),
+            401 => "Nexus rejected the sign-in (401) - sign in again".to_string(),
+            429 => format!("{RATE_LIMITED} (429) - try again later"),
             other => format!("Nexus API error (HTTP {other})"),
         }
     }
 
     /// Attach the identifying headers MO2 sends on every v1 call
-    /// (nxmaccessmanager.cpp addAPIHeaders) plus whichever credential we hold.
+    /// (nxmaccessmanager.cpp addAPIHeaders) plus the bearer token.
     ///
     /// `Application-Name`/`Application-Version` are not decoration: the Nexus
-    /// API acceptable-use policy requires them so usage can be attributed, and
-    /// they ride on BOTH credential paths.
+    /// API acceptable-use policy requires them so usage can be attributed.
     fn with_headers<B>(&self, req: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
         let req = req
             .header("Protocol-Version", "1.0.0")
             .header("Application-Name", "Eidos")
             .header("Application-Version", env!("CARGO_PKG_VERSION"));
         match &self.credential {
-            Credential::ApiKey(key) => req.header("APIKEY", key),
             Credential::Bearer(token) => req.header("Authorization", format!("Bearer {token}")),
         }
     }
 
     fn get(&self, path: &str) -> Result<serde_json::Value, String> {
+        // Before anything is sent. Every read endpoint funnels through here, so
+        // this one line is what makes "stop as soon as the budget is spent" true
+        // of the whole client rather than of the loops that remembered to ask.
+        if let Some(stop) = self.preflight(oauth::now_unix()) {
+            return Err(stop);
+        }
         let url = format!("{API_BASE}/{path}");
-        // MO2 identifies the client on every v1 request (nxmaccessmanager.cpp
-        // addAPIHeaders): Protocol-Version + Application-Name/-Version with APIKEY.
-        // It also reads the X-RL-* budget from every reply (incl. a 429).
+        // Every v1 request identifies the client, as MO2 does
+        // (nxmaccessmanager.cpp addAPIHeaders): Protocol-Version plus
+        // Application-Name/-Version, alongside the bearer token.
         match self.with_headers(self.agent.get(&url)).call() {
             Ok(mut resp) => {
-                // Read the budget FIRST: it is present on a rejection too, and a
-                // 429 is exactly when the caller needs to know how long to wait.
+                // Read the budget FIRST: a rejection carries it too, and a 429 is
+                // exactly when the caller needs to know how long to wait. Not
+                // every reply has it, which is why capture_limits merges.
                 self.capture_limits(&resp);
                 let code = resp.status().as_u16();
                 if !resp.status().is_success() {
+                    self.note_rejection(code);
                     return Err(Nexus::status_err(code));
                 }
                 resp.body_mut().read_json().map_err(|e| e.to_string())
@@ -367,13 +727,18 @@ impl Nexus {
     /// reply body is ignored - only success/failure matters. Captures the X-RL-*
     /// budget on success and on a Status error, exactly like [`get`].
     fn send_with_version(&self, req: ureq::RequestBuilder<ureq::typestate::WithBody>, version: &str) -> Result<(), String> {
+        if let Some(stop) = self.preflight(oauth::now_unix()) {
+            return Err(stop);
+        }
         match self.with_headers(req).send_form([("version", version)]) {
             Ok(resp) => {
                 self.capture_limits(&resp);
                 if resp.status().is_success() {
                     Ok(())
                 } else {
-                    Err(Nexus::status_err(resp.status().as_u16()))
+                    let code = resp.status().as_u16();
+                    self.note_rejection(code);
+                    Err(Nexus::status_err(code))
                 }
             }
             Err(other) => Err(other.to_string()),
@@ -419,19 +784,28 @@ impl Nexus {
     }
 
     /// Mod metadata: `games/{game}/mods/{id}` (the update check reads `version`).
+    ///
+    /// THE GATE. This is the only place a mod's rating is known, so it is the
+    /// only place it can be enforced: the descriptive fields are blanked here,
+    /// before the struct exists, and the [`ModGate`] minted alongside them is what
+    /// every later call demands. Anything added to [`RemoteMod`] that comes from
+    /// this payload must be redacted in [`redact`] too - there is no second gate
+    /// downstream to catch it.
     pub fn mod_info(&self, game: &str, mod_id: u64) -> Result<RemoteMod, String> {
         let v = self.get(&format!("games/{game}/mods/{mod_id}"))?;
-        Ok(RemoteMod {
-            name: s(&v, "name"),
-            version: s(&v, "version"),
-            summary: s(&v, "summary"),
-            category_id: v.get("category_id").and_then(|x| x.as_u64()),
-            available: v.get("available").and_then(|x| x.as_bool()).unwrap_or(true),
-        })
+        Ok(RemoteMod::from_payload(&v, self.adult))
     }
 
     /// File metadata: `games/{game}/mods/{id}/files/{file_id}`.
-    pub fn file_info(&self, game: &str, mod_id: u64, file_id: u64) -> Result<RemoteFile, String> {
+    ///
+    /// Takes the [`ModGate`] minted by [`Nexus::mod_info`], so a file's name and
+    /// description cannot be fetched for a mod whose metadata is withheld: the
+    /// caller has to have looked the mod up first, and this refuses if that lookup
+    /// closed the gate.
+    pub fn file_info(&self, gate: &ModGate, game: &str, mod_id: u64, file_id: u64) -> Result<RemoteFile, String> {
+        if let Some(why) = gate.reason() {
+            return Err(why.message().to_string());
+        }
         let v = self.get(&format!("games/{game}/mods/{mod_id}/files/{file_id}"))?;
         Ok(RemoteFile {
             name: s(&v, "name"),
@@ -463,7 +837,14 @@ impl Nexus {
     /// Resolve the CDN download URI for an `nxm://` link: `download_link`
     /// (+`?key=..&expires=..` for non-premium, exactly like MO2). Returns the
     /// first mirror's URI.
-    pub fn download_link(&self, nxm: &NxmUrl) -> Result<String, String> {
+    pub fn download_link(&self, gate: &ModGate, nxm: &NxmUrl) -> Result<String, String> {
+        // Same token as `file_info`: a mod whose page Eidos may not describe is
+        // one whose files Eidos does not fetch either. The link itself carries no
+        // description, but resolving it is the first step of a flow that goes on
+        // to print the file name and write it into a `.meta` sidecar.
+        if let Some(why) = gate.reason() {
+            return Err(why.message().to_string());
+        }
         let mut path = format!(
             "games/{}/mods/{}/files/{}/download_link",
             nxm.game, nxm.mod_id, nxm.file_id
@@ -579,7 +960,16 @@ pub struct UpdateCheckResult {
 pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game: &str) -> Result<UpdateCheckResult, String> {
     // One "updated this month" query, then only fetch the intersection - stays
     // inside the API rate limits (MO2's approach).
-    let updated = nexus.updated_mod_ids(nexus_game, "1m")?;
+    let updated = match nexus.updated_mod_ids(nexus_game, "1m") {
+        Ok(v) => v,
+        // An exhausted budget is a state to report, not a failure: the caller
+        // shows "the budget is spent" rather than an error toast, and nothing
+        // about the mod list is wrong - it just could not be refreshed.
+        Err(e) if is_rate_limited(&e) => {
+            return Ok(UpdateCheckResult { rate_limited: true, ..Default::default() })
+        }
+        Err(e) => return Err(e),
+    };
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -601,6 +991,13 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
         if !stale && !updated.contains(&mod_id) {
             continue;
         }
+        // Stop before building the request, not after it is refused. The choke
+        // point in `get` would reject it anyway; checking here is what makes the
+        // loop visibly stop issuing requests once the budget is spent.
+        if nexus.would_block() {
+            result.rate_limited = true;
+            break;
+        }
         result.queried += 1;
 
         match nexus.mod_info(nexus_game, mod_id) {
@@ -619,10 +1016,11 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
                 }
             }
             Err(e) => {
-                // MO2 stops dispatching the moment the account is exhausted. Match
-                // our own status_err wording, not a bare "429" - a mod id or file
-                // size containing 429 in some other error text must not trip this.
-                if e.contains("rate limited") {
+                // Stop dispatching the moment the account is exhausted. The test
+                // is the shared predicate, not a bare "429": a pre-flight refusal
+                // carries no status code, and a mod id or file size that happens
+                // to contain "429" must not trip it.
+                if is_rate_limited(&e) {
                     result.rate_limited = true;
                     break;
                 }
@@ -770,6 +1168,15 @@ pub fn write_download_meta(
     file: &RemoteFile,
     remote_mod: &RemoteMod,
 ) -> io::Result<PathBuf> {
+    // Defence in depth, and the reason the gate had to sit upstream of this
+    // function rather than at the display sites: what goes in here is written to
+    // disk, and `modName` goes on to name the directory under `mods/`. A gate
+    // that only guarded the screen could not un-write either. Callers refuse a
+    // hidden mod long before reaching this point; if one ever does not, refuse
+    // rather than persisting a description that may not be shown.
+    if let Some(why) = remote_mod.hidden() {
+        return Err(io::Error::other(why.message()));
+    }
     let meta_path = PathBuf::from(format!("{}.meta", archive.display()));
     let mut out = String::from("[General]\n");
     out.push_str(&format!("gameName={game_short}\n"));
@@ -799,6 +1206,314 @@ pub fn write_download_meta(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A gate for a mod that may be shown, for fixtures whose subject is not the
+    /// gate itself.
+    fn shown_gate() -> ModGate {
+        ModGate { adult: false, hidden: None }
+    }
+
+    /// A mod payload as the v1 API returns it, with the adult flag under our
+    /// control. `adult: None` omits the field entirely, which is the case that
+    /// must be read as "assume adult".
+    fn mod_payload(adult: Option<bool>) -> serde_json::Value {
+        let mut v = serde_json::json!({
+            "name": "Ivy the Companion",
+            "version": "3.2",
+            "summary": "A summary that must not leak.",
+            "category_id": 42,
+            "available": true,
+        });
+        if let Some(a) = adult {
+            v["contains_adult_content"] = serde_json::Value::Bool(a);
+        }
+        v
+    }
+
+    /// The gate as the client applies it: the real function, on a real payload.
+    fn gated(payload: &serde_json::Value, policy: AdultPolicy) -> RemoteMod {
+        RemoteMod::from_payload(payload, policy)
+    }
+
+    // ---- The age gate ------------------------------------------------------
+
+    #[test]
+    fn an_adult_mod_is_redacted_when_the_account_has_not_opted_in() {
+        let m = gated(&mod_payload(Some(true)), AdultPolicy::Denied);
+        assert_eq!(m.hidden(), Some(HiddenReason::AdultDenied));
+        assert!(m.name.is_empty() && m.summary.is_empty() && m.category_id.is_none());
+        assert!(!m.gate.visible());
+    }
+
+    #[test]
+    fn an_adult_mod_is_returned_in_full_when_the_account_has_opted_in() {
+        let m = gated(&mod_payload(Some(true)), AdultPolicy::Allowed);
+        assert_eq!(m.hidden(), None);
+        assert_eq!(m.name, "Ivy the Companion");
+        assert_eq!(m.category_id, Some(42));
+        assert!(m.gate.visible() && m.gate.is_adult());
+    }
+
+    #[test]
+    fn a_non_adult_mod_is_untouched_by_the_gate() {
+        for policy in [AdultPolicy::Allowed, AdultPolicy::Denied, AdultPolicy::Unknown] {
+            let m = gated(&mod_payload(Some(false)), policy);
+            assert_eq!(m.hidden(), None, "{policy:?}");
+            assert_eq!(m.name, "Ivy the Companion");
+            assert!(!m.gate.is_adult());
+        }
+    }
+
+    #[test]
+    fn a_payload_with_no_rating_is_treated_as_adult() {
+        // The field absent must not read as "safe". Its own reason, because if
+        // the API ever moves the field EVERY mod lands here, and that has to be
+        // distinguishable from the user's own setting.
+        let m = gated(&mod_payload(None), AdultPolicy::Allowed);
+        assert_eq!(m.hidden(), Some(HiddenReason::RatingUnknown));
+        assert!(m.name.is_empty());
+    }
+
+    #[test]
+    fn an_unknown_account_preference_hides_rather_than_shows() {
+        let m = gated(&mod_payload(Some(true)), AdultPolicy::Unknown);
+        assert_eq!(m.hidden(), Some(HiddenReason::AdultUnknown));
+        assert!(m.name.is_empty());
+    }
+
+    #[test]
+    fn a_client_built_without_a_policy_hides_adult_content() {
+        // Forgetting to state a policy must fail closed, so the default is the
+        // one that hides - not the one that shows.
+        assert_eq!(Nexus::with_bearer("t").adult_policy(), AdultPolicy::Unknown);
+        assert!(!AdultPolicy::default().shows_adult());
+    }
+
+    #[test]
+    fn a_redacted_mod_keeps_its_version_so_the_update_check_still_works() {
+        // The one field that survives redaction. A user with an adult mod already
+        // installed must keep seeing that an update exists.
+        let m = gated(&mod_payload(Some(true)), AdultPolicy::Denied);
+        assert_eq!(m.version, "3.2");
+    }
+
+    #[test]
+    fn the_placeholder_and_the_explanations_contain_nothing_from_the_payload() {
+        let payload = mod_payload(Some(true));
+        let m = gated(&payload, AdultPolicy::Denied);
+        let shown = format!("{} {}", m.display_name(), m.hidden().unwrap().message());
+        for leak in ["Ivy", "Companion", "summary that must not leak", "42"] {
+            assert!(!shown.contains(leak), "{shown} leaked {leak}");
+        }
+        assert_eq!(m.display_name(), HIDDEN_TITLE);
+    }
+
+    #[test]
+    fn the_denied_explanation_points_at_the_setting_that_fixes_it() {
+        assert!(HiddenReason::AdultDenied
+            .message()
+            .contains("next.nexusmods.com/settings/content-blocking"));
+    }
+
+    #[test]
+    fn an_unavailable_mod_is_withheld_whatever_the_account_allows() {
+        let mut payload = mod_payload(Some(false));
+        payload["available"] = serde_json::Value::Bool(false);
+        let m = gated(&payload, AdultPolicy::Allowed);
+        assert_eq!(m.hidden(), Some(HiddenReason::Unavailable));
+        assert!(m.name.is_empty());
+    }
+
+    #[test]
+    fn a_hidden_mod_yields_no_download_sidecar() {
+        // The gate has to sit upstream of persistence: `modName` from this file
+        // becomes a directory name under mods/, which no display-side check
+        // could ever take back.
+        let dir = std::env::temp_dir().join(format!("eidos-gate-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let archive = dir.join("x.7z");
+        let nxm = NxmUrl {
+            game: "skyrimspecialedition".into(),
+            mod_id: 1,
+            file_id: 2,
+            key: None,
+            expires: None,
+            user_id: None,
+        };
+        let file = RemoteFile {
+            name: "Main file".into(),
+            file_name: "x.7z".into(),
+            version: "1.0".into(),
+            mod_version: "1.0".into(),
+            category_id: None,
+            description: String::new(),
+            size_in_bytes: 1,
+        };
+        let hidden = gated(&mod_payload(Some(true)), AdultPolicy::Denied);
+        assert!(write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &hidden).is_err());
+        assert!(!archive.with_extension("7z.meta").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_adult_preference_is_read_from_whichever_spelling_the_payload_uses() {
+        // v1 spells it contains_adult_content; the newer APIs use other names for
+        // the same thing. Accepting all three means a payload in a slightly
+        // different shape rates correctly instead of hiding every mod.
+        for key in ["contains_adult_content", "adult_content", "adultContent"] {
+            let v = serde_json::json!({ key: true });
+            assert_eq!(adult_flag(&v), Some(true), "{key}");
+        }
+        assert_eq!(adult_flag(&serde_json::json!({ "name": "x" })), None);
+    }
+
+    // ---- The request budget ------------------------------------------------
+
+    /// A client whose last-seen budget is whatever the test says it is.
+    fn client_with(limits: RateLimits) -> Nexus {
+        let n = Nexus::with_bearer("t");
+        n.limits.set(limits);
+        n
+    }
+
+    const NOON: u64 = 1_700_000_000; // a fixed instant; the maths is absolute
+
+    #[test]
+    fn a_spent_hourly_budget_blocks_the_next_request_before_it_is_sent() {
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(NOON)),
+            ..Default::default()
+        });
+        let stop = n.preflight(NOON).expect("must refuse");
+        assert!(is_rate_limited(&stop), "{stop}");
+        assert!(stop.contains("hourly"), "{stop}");
+    }
+
+    #[test]
+    fn a_spent_daily_budget_blocks_the_next_request_before_it_is_sent() {
+        let n = client_with(RateLimits {
+            daily_remaining: Some(0),
+            daily_reset: Some(next_midnight_utc(NOON)),
+            ..Default::default()
+        });
+        let stop = n.preflight(NOON).expect("must refuse");
+        assert!(is_rate_limited(&stop) && stop.contains("daily"), "{stop}");
+    }
+
+    #[test]
+    fn either_counter_reaching_zero_is_enough_to_stop() {
+        // Nexus's own rule refuses only once BOTH buckets are spent, which is why
+        // the reference clients track the larger of the two. Their reviewer asked
+        // for the stricter reading, so one empty bucket stops us even while the
+        // other still has room.
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(NOON)),
+            daily_remaining: Some(4_000),
+            ..Default::default()
+        });
+        assert!(n.preflight(NOON).is_some());
+    }
+
+    #[test]
+    fn an_unknown_budget_never_blocks_so_a_fresh_client_can_learn_it() {
+        // The deadlock this avoids: no headers seen yet, so if "unknown" blocked,
+        // the very request that would teach us the budget could never go out.
+        assert!(Nexus::with_bearer("t").preflight(NOON).is_none());
+    }
+
+    #[test]
+    fn an_account_with_no_budget_headers_at_all_is_never_blocked() {
+        // Whatever the account tier, absent headers mean "no budget stated".
+        let n = client_with(RateLimits { hourly_remaining: None, daily_remaining: None, ..Default::default() });
+        assert!(n.preflight(NOON).is_none());
+        assert!(!n.would_block());
+    }
+
+    #[test]
+    fn the_hourly_block_lifts_at_the_next_utc_hour_and_the_budget_goes_unknown() {
+        let reset = next_hour_utc(NOON);
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(reset),
+            ..Default::default()
+        });
+        assert!(n.preflight(reset - 1).is_some(), "still inside the hour");
+        assert!(n.preflight(reset).is_none(), "the boundary releases it");
+        // And it forgets the spent count, so the next reply re-teaches the truth
+        // instead of the client carrying a stale zero forever.
+        assert_eq!(n.rate_limits().hourly_remaining, None);
+    }
+
+    #[test]
+    fn the_daily_block_lifts_at_the_next_utc_midnight() {
+        let reset = next_midnight_utc(NOON);
+        let n = client_with(RateLimits {
+            daily_remaining: Some(0),
+            daily_reset: Some(reset),
+            ..Default::default()
+        });
+        assert!(n.preflight(reset - 1).is_some());
+        assert!(n.preflight(reset).is_none());
+    }
+
+    #[test]
+    fn the_reset_boundaries_are_the_next_ones_and_roll_over_cleanly() {
+        // 23:30 rolls to the next midnight, not to hour 24 of the same day - the
+        // off-by-one that a `(hour + 1) % 24` formulation invites.
+        let almost_midnight = next_midnight_utc(NOON) - 1_800;
+        assert_eq!(next_hour_utc(almost_midnight), next_midnight_utc(NOON));
+        assert_eq!(next_midnight_utc(almost_midnight), next_midnight_utc(NOON));
+        // Exactly on a boundary means the NEXT one, never "now".
+        let midnight = next_midnight_utc(NOON);
+        assert_eq!(next_midnight_utc(midnight), midnight + 86_400);
+        assert_eq!(next_hour_utc(midnight), midnight + 3_600);
+    }
+
+    #[test]
+    fn a_burst_guard_429_backs_off_briefly_rather_than_for_an_hour() {
+        // A 429 while the counters still show budget is the burst guard in front
+        // of the API, not the quota. Standing down until the next hour for that
+        // would idle the client for up to an hour over a one-second burst.
+        let n = client_with(RateLimits { hourly_remaining: Some(90), ..Default::default() });
+        n.note_rejection(429);
+        let until = n.rate_limits().blocked_until.expect("burst back-off recorded");
+        assert!(until <= oauth::now_unix() + BURST_BACKOFF);
+        assert!(n.would_block());
+        // And it is a back-off, not an invented zero: the counters still say what
+        // the server said.
+        assert_eq!(n.rate_limits().hourly_remaining, Some(90));
+    }
+
+    #[test]
+    fn a_429_that_the_spent_budget_explains_adds_no_extra_back_off() {
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(NOON)),
+            ..Default::default()
+        });
+        n.note_rejection(429);
+        assert_eq!(n.rate_limits().blocked_until, None);
+    }
+
+    #[test]
+    fn every_rate_limit_refusal_is_recognised_by_the_one_predicate() {
+        // The bug this locks out: the library tested for "rate limited" while the
+        // CLI tested for "429", so a pre-flight refusal - which carries no status
+        // code - stopped one loop and left the other hammering a spent account.
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(0),
+            hourly_reset: Some(next_hour_utc(NOON)),
+            ..Default::default()
+        });
+        assert!(is_rate_limited(&n.preflight(NOON).unwrap()));
+        assert!(is_rate_limited(&Nexus::status_err(429)));
+        assert!(!is_rate_limited(&Nexus::status_err(401)));
+        // A mod id or byte count that happens to contain "429" is not a budget
+        // refusal, which is exactly what the old substring test got wrong.
+        assert!(!is_rate_limited("Nexus API error (HTTP 500) for mod 42942"));
+    }
 
     #[test]
     fn parses_a_full_mod_manager_link() {
@@ -864,6 +1579,8 @@ mod tests {
             summary: "".into(),
             category_id: Some(42),
             available: true,
+            adult: Some(false),
+            gate: shown_gate(),
         };
         let meta = write_download_meta(&archive, "SkyrimSE", &nxm, "https://cdn/x.7z", &file, &rmod).unwrap();
         let text = fs::read_to_string(&meta).unwrap();
@@ -934,7 +1651,7 @@ mod tests {
 
     #[test]
     fn status_err_maps_the_mo2_codes() {
-        assert_eq!(Nexus::status_err(401), "invalid API key (401)");
+        assert_eq!(Nexus::status_err(401), "Nexus rejected the sign-in (401) - sign in again");
         assert!(Nexus::status_err(429).contains("429"));
         assert!(Nexus::status_err(429).contains("rate limited"));
         assert_eq!(Nexus::status_err(503), "Nexus API error (HTTP 503)");
@@ -1011,6 +1728,8 @@ mod tests {
             summary: String::new(),
             category_id: None,
             available: true,
+            adult: Some(false),
+            gate: shown_gate(),
         };
         let path = write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &m).unwrap();
         let body = fs::read_to_string(&path).unwrap();
@@ -1028,18 +1747,20 @@ mod tests {
     // ---- which credential a session actually uses -------------------------
     //
     // `Nexus::connect` reads the disk, the clock and the environment; the RULE
-    // it applies does not, so it is tested here directly. These are the cases
-    // that decide whether a user with both an API key and a lapsed sign-in can
-    // still download.
+    // it applies does not, so it is tested here directly. Since personal API keys
+    // were removed at Nexus's request, these cases are about one question: when
+    // there is no usable session, does the client say so rather than reach for
+    // something it is not allowed to use.
 
     use eidos_instance::settings::NexusCreds;
 
     fn signed_in(expires_at: u64) -> NexusCreds {
         NexusCreds {
-            api_key: None,
             access_token: Some("at".into()),
             refresh_token: Some("rt".into()),
             expires_at,
+            adult_ok: None,
+            adult_checked_at: 0,
         }
     }
 
@@ -1058,35 +1779,16 @@ mod tests {
     }
 
     #[test]
-    fn oauth_wins_over_a_key_that_is_also_present() {
-        let mut c = signed_in(10_000);
-        c.api_key = Some("abc".into());
-        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::Bearer);
-    }
-
-    #[test]
-    fn a_lapsed_session_falls_back_to_the_key_instead_of_failing() {
-        // No client_id registered yet, so no refresh is possible - exactly the
-        // state Eidos ships in today. A user with a key must still work.
-        let mut c = signed_in(500);
-        c.api_key = Some("abc".into());
-        assert_eq!(choose_credential(&c, 1_000, false), CredentialChoice::ApiKey);
+    fn a_lapsed_session_that_cannot_be_renewed_is_reported_not_worked_around() {
+        // No client_id registered, so no refresh is possible. There is nothing
+        // else to try: this used to fall back to a personal API key, which is
+        // exactly what Nexus requires a distributed client not to do.
+        assert_eq!(choose_credential(&signed_in(500), 1_000, false), CredentialChoice::None);
 
         // Same when the refresh token itself is gone.
+        let mut c = signed_in(500);
         c.refresh_token = None;
-        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::ApiKey);
-    }
-
-    #[test]
-    fn a_lapsed_session_with_no_key_is_not_silently_ok() {
-        assert_eq!(choose_credential(&signed_in(500), 1_000, false), CredentialChoice::None);
-    }
-
-    #[test]
-    fn a_key_alone_is_the_ordinary_case_today() {
-        let c = NexusCreds { api_key: Some("abc".into()), ..Default::default() };
-        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::ApiKey);
-        assert!(!c.has_oauth());
+        assert_eq!(choose_credential(&c, 1_000, true), CredentialChoice::None);
     }
 
     #[test]
@@ -1095,10 +1797,10 @@ mod tests {
     }
 
     #[test]
-    fn each_credential_rides_in_its_own_header() {
-        // The whole point of the Credential split: a Bearer request must NOT
-        // carry APIKEY, and vice versa.
-        assert_eq!(Nexus::new("k").credential_kind(), "api_key");
+    fn the_only_credential_is_a_bearer_token() {
+        // There is one way to authenticate and one header it rides in. If a
+        // second variant ever reappears here, it has to be a deliberate decision
+        // rather than a fallback that crept back in.
         assert_eq!(Nexus::with_bearer("t").credential_kind(), "oauth");
         assert_eq!(
             Nexus::with_credential(Credential::Bearer("t".into())).credential_kind(),
