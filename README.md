@@ -115,6 +115,7 @@ route: **[docs/guide/install.md](docs/guide/install.md)**.
 | install it | [guide/install.md](docs/guide/install.md) |
 | learn the CLI and the GUI | [guide/usage.md](docs/guide/usage.md) |
 | set up xEdit, BodySlide or DynDOLOD | [guide/tools.md](docs/guide/tools.md) |
+| get DLSS / frame generation working (Community Shaders) | [guide/graphics.md](docs/guide/graphics.md) |
 | fix something that looks wrong | [guide/troubleshooting.md](docs/guide/troubleshooting.md) |
 | know why it is fast, and check it yourself | [internals/performance.md](docs/internals/performance.md) |
 | understand how it works inside | [internals/architecture.md](docs/internals/architecture.md) |

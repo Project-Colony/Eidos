@@ -100,6 +100,12 @@ answers is the thing being debugged.
 
 ## Known issues
 
+### DLSS or frame generation silently does nothing
+
+Three separate causes, each without any error message: NVAPI not enabled in the
+launch options, exclusive fullscreen, or a stale Reflex FPS cap. The whole
+checklist lives in [graphics.md](graphics.md).
+
 **A mod that spells one directory two ways lost everything under the second.**
 Fixed. ext4 keeps `meshes/` and `Meshes/` apart; the merged view must not, and
 real mods ship both - XP32 Maximum Skeleton has its animations and its FNIS
