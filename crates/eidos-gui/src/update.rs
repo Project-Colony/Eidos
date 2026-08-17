@@ -96,61 +96,62 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::Finish => {
             if let Some(inst) = planned_instance(app) {
                 let game_id = selected_game(app).map(|g| g.def.id.to_string());
-                let kind = app.kind;
-                match inst.create() {
-                    Ok(()) => {
-                        if let Some(id) = &game_id {
-                            let _ = inst.ensure_manifest(id, kind);
+                // Adopting an EXISTING folder must not relabel it. A root whose
+                // manifest names another game is opened as that game or not at
+                // all - `ensure_manifest` would silently keep the old game id
+                // while everything else (mod list, plugins, launch) treated the
+                // folder as the wizard's selection.
+                let foreign = inst
+                    .read_manifest()
+                    .filter(|m| game_id.as_deref().is_some_and(|id| m.game_id != id));
+                if let Some(m) = foreign {
+                    app.error = Some(format!(
+                        "'{}' already holds a '{}' instance. Pick that game in the wizard, or choose another folder.",
+                        inst.root.display(),
+                        m.game_id
+                    ));
+                } else {
+                    let kind = app.kind;
+                    match inst.create() {
+                        Ok(()) => {
+                            if let Some(id) = &game_id {
+                                let _ = inst.ensure_manifest(id, kind);
+                                // Into the registry BEFORE opening: a portable
+                                // root that is never recorded is orphaned at
+                                // the next start - the original portable bug.
+                                remember_open(&inst, id);
+                            }
+                            open_instance(app, inst);
                         }
-                        app.created = Some(inst);
-                        // Another instance's LOOT verdicts must not decorate
-                        // this one's plugins.
-                        app.loot_meta = None;
-                        reload_mods(app);
-                        app.tab = Tab::Data;
-                        app.error = None;
-                        app.screen = Screen::Main;
-                        load_tools(app);
-                        app.conflicts = compute_conflicts(app);
-                        // BEFORE the refresh, not after: the cache is keyed by mod
-                        // FOLDER NAME with no instance in the key, so a name that
-                        // exists in both instances counted as already computed and
-                        // was never re-read - showing the other game's version,
-                        // category and content flags until the user pressed F5.
-                        // Refresh and UpdatesChecked already clear it here.
-                        app.meta_cache.clear();
-                        refresh_meta_cache(app);
-                        // Everything cached from a previously-open instance is
-                        // stale for this one: plugin order, saves, downloads,
-                        // selection and counts all belong to the old instance.
-                        app.plugins = None;
-                        app.saves = Vec::new();
-                        app.confirm_delete_save = None;
-                        app.downloads = Vec::new();
-                        app.confirm_delete_download = None;
-                        app.selected_mod = None;
-                        app.selected_mods.clear();
-                        app.drag_state = None;
-                        app.menu_mod = None;
-                        app.collapsed = load_collapsed(app);
-                        // The merged-view caches too, which the list above kept
-                        // missing: they are keyed by directory and validated
-                        // against `view_generation`, so without a bump the Data
-                        // tab answers every already-listed directory out of the
-                        // PREVIOUS instance. Switching from Skyrim to a game with
-                        // no mods at all still showed Skyrim's merged Data tree,
-                        // provenance labels and all.
-                        drop_files_cache(app, None);
-                        // And the tree's own navigation state, which names paths
-                        // that need not exist in this game at all.
-                        app.data_expanded.clear();
-                        recompute_counts(app);
+                        Err(e) => app.error = Some(e.to_string()),
                     }
-                    Err(e) => app.error = Some(e.to_string()),
+                }
+            }
+        }
+        Message::OpenKnown(i) => {
+            // The welcome screen's "open existing" list - the instance
+            // switcher. The entry was built from the registry at a different
+            // moment, so re-check the root before committing to it.
+            if let Some(k) = app.known.get(i).cloned() {
+                if let (true, Some(g)) = (k.inst.exists(), app.games.get(k.game_index)) {
+                    let id = g.def.id;
+                    app.selected = Some(k.game_index);
+                    let _ = k.inst.ensure_manifest(id, InstanceKind::Global);
+                    let _ = k.inst.ensure_profiles();
+                    remember_open(&k.inst, id);
+                    open_instance(app, k.inst);
+                } else {
+                    app.status = Some(format!(
+                        "'{}' is not reachable right now (moved folder, unmounted drive?).",
+                        k.inst.root.display()
+                    ));
                 }
             }
         }
         Message::Restart => {
+            // Restart IS the instance switcher: the welcome screen's known
+            // list must reflect instances created since the app started.
+            app.known = known_instances(&app.games);
             app.selected = None;
             app.name.clear();
             app.portable_path.clear();
@@ -656,9 +657,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 ));
             } else if let Some(title) = app.tool_choice.clone() {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
-                // `id` is Copy, so the immutable `game` borrow ends before `start_run`.
-                if let Some(id) = selected_game(app).map(|g| g.def.id) {
-                    let cmd = tool_command(id, &title);
+                // The owned arg ends the immutable borrow before `start_run`.
+                if let Some(arg) = instance_arg(app) {
+                    let cmd = tool_command(&arg, &title);
                     start_run(app, title, cmd);
                 } else {
                     app.status = Some("Create or open an instance first.".to_string());
@@ -691,9 +692,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     .map(|m| m.path)
                     .collect();
                 let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
+                // How the child names the instance: the portable folder when one
+                // is open, the game id otherwise.
+                let inst_arg = instance_arg(app).unwrap_or_else(|| id.to_string());
                 // `game`/`inst` are no longer used below; their borrows end here so
                 // `start_run` can take `&mut app`.
-                let (cmd, se_warning) = play_command(id, &app.launch_command);
+                let (cmd, se_warning) = play_command(id, &inst_arg, &app.launch_command);
                 start_run(app, game_name, cmd);
                 // Prepend advisories to whatever status start_run set.
                 for note in [se_warning, both_active.then(|| {
@@ -1797,10 +1801,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SetupPrereqs => {
-            let id = selected_game(app).map(|g| g.def.id);
+            let arg = instance_arg(app);
             let has_prefix = selected_game(app).and_then(|g| g.compatdata.as_ref()).is_some();
             let log = app.created.as_ref().map(|i| i.root.join("prereqs.log"));
-            match (id, log) {
+            match (arg, log) {
                 // A runtime needs no prefix and no Proton - it is a directory and
                 // an environment variable - so a missing prefix must not block it.
                 (Some(_), _) if !has_prefix && !any_runtime_pending(app) => {
@@ -1809,7 +1813,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             .to_string(),
                     );
                 }
-                (Some(id), Some(log)) => match run_prereqs_setup(id, &log) {
+                (Some(arg), Some(log)) => match run_prereqs_setup(&arg, &log) {
                     Ok(()) => {
                         app.status = Some(format!(
                             "Installing tool prerequisites: bundled DLLs copy now; .NET/vcrun download via winetricks. Progress + errors -> {}",
@@ -3279,4 +3283,51 @@ fn normalize_fomod_step(w: &mut FomodWizard) {
             }
         }
     }
+}
+
+/// Make `inst` the open instance and reset every piece of state and cache the
+/// previous one owned. Shared by the wizard's Finish and the welcome screen's
+/// open-existing path: the invalidation list below was learned defect by
+/// defect (stale meta rows, the other game's merged Data tree), so there must
+/// be exactly ONE copy of it.
+pub(crate) fn open_instance(app: &mut App, inst: Instance) {
+    app.created = Some(inst);
+    // Another instance's LOOT verdicts must not decorate this one's plugins.
+    app.loot_meta = None;
+    reload_mods(app);
+    app.tab = Tab::Data;
+    app.error = None;
+    app.screen = Screen::Main;
+    load_tools(app);
+    app.conflicts = compute_conflicts(app);
+    // BEFORE the refresh, not after: the cache is keyed by mod FOLDER NAME with
+    // no instance in the key, so a name that exists in both instances counted
+    // as already computed and was never re-read - showing the other game's
+    // version, category and content flags until the user pressed F5. Refresh
+    // and UpdatesChecked already clear it here.
+    app.meta_cache.clear();
+    refresh_meta_cache(app);
+    // Everything cached from a previously-open instance is stale for this one:
+    // plugin order, saves, downloads, selection and counts all belong to the
+    // old instance.
+    app.plugins = None;
+    app.saves = Vec::new();
+    app.confirm_delete_save = None;
+    app.downloads = Vec::new();
+    app.confirm_delete_download = None;
+    app.selected_mod = None;
+    app.selected_mods.clear();
+    app.drag_state = None;
+    app.menu_mod = None;
+    app.collapsed = load_collapsed(app);
+    // The merged-view caches too, which the list above kept missing: they are
+    // keyed by directory and validated against `view_generation`, so without a
+    // bump the Data tab answers every already-listed directory out of the
+    // PREVIOUS instance. Switching from Skyrim to a game with no mods at all
+    // still showed Skyrim's merged Data tree, provenance labels and all.
+    drop_files_cache(app, None);
+    // And the tree's own navigation state, which names paths that need not
+    // exist in this game at all.
+    app.data_expanded.clear();
+    recompute_counts(app);
 }

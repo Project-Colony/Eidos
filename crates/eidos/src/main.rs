@@ -1,17 +1,17 @@
 //! `eidos`: the front end that ties detection, instances, and launching together.
 //!
 //!   eidos games                       list supported games installed on this system
-//!   eidos init <game-id>              create a (global) modding instance
-//!   eidos play <game-id>              show how to launch / what is mounted
-//!   eidos play <game-id> -- <cmd...>  run <cmd> with the mods mounted over the game
+//!   eidos init <game-id> [folder]     create a modding instance (global, or portable at <folder>)
+//!   eidos play <instance>             show how to launch / what is mounted
+//!   eidos play <instance> -- <cmd...> run <cmd> with the mods mounted over the game
 //!
+//! `<instance>` is a game id (the central instance) or a portable instance's
+//! folder - see `resolve.rs` for how the two are told apart.
 //! Instances (global vs portable, layout, load order) live in `eidos-instance`.
 //! `play` mounts the instance's mods over the game's own Data directory (via a
 //! bind-stash) inside a private namespace, then runs the command through it.
 
 use std::process::exit;
-
-use eidos_instance::Instance;
 
 mod export;
 mod games;
@@ -20,6 +20,7 @@ mod launch;
 mod nxm;
 mod prepare;
 mod prereqs;
+mod resolve;
 mod sort;
 mod tools;
 #[cfg(test)]
@@ -32,6 +33,7 @@ use launch::*;
 use nxm::*;
 use prepare::*;
 use prereqs::*;
+use resolve::*;
 use sort::*;
 use tools::*;
 
@@ -86,14 +88,15 @@ fn cmd_nexus(args: &[String]) {
         }
         Some("update") => {
             let Some(id) = args.get(1) else {
-                eprintln!("usage: eidos nexus update <game-id>");
+                eprintln!("usage: eidos nexus update <game-id-or-instance-path>");
                 exit(2);
             };
-            let Some(game) = find_game(id) else {
-                eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+            let target = resolve(id);
+            let Some(game) = find_game(&target.game_id) else {
+                eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
                 exit(1);
             };
-            let inst = Instance::global(id);
+            let inst = target.inst;
             let nexus = nexus_client();
 
             // MO2's approach: one "updated this month" query, then only fetch
@@ -200,16 +203,19 @@ fn usage() -> ! {
          \n\
          usage:\n\
          \x20 eidos games                       list supported games installed here\n\
-         \x20 eidos init <game-id>              create a modding instance\n\
-         \x20 eidos play <game-id>              show what would be mounted\n\
-         \x20 eidos play <game-id> -- <cmd...>  run <cmd> with mods mounted over the game\n\
-         \x20 eidos install <id> <archive>      install a downloaded mod archive (.7z/.zip/.rar)\n\
-         \x20 eidos tool <id> [...]             manage + run tools (xEdit/FNIS/...) through the view\n\
+         \x20 eidos init <game-id> [folder]     create a modding instance (with a folder: portable, there)\n\
+         \x20 eidos play <instance>             show what would be mounted\n\
+         \x20 eidos play <instance> -- <cmd...> run <cmd> with mods mounted over the game\n\
+         \x20 eidos install <instance> <archive> install a downloaded mod archive (.7z/.zip/.rar)\n\
+         \x20 eidos tool <instance> [...]       manage + run tools (xEdit/FNIS/...) through the view\n\
          \x20 eidos nexus status|update         check the Nexus sign-in / check for mod updates\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
-         \x20 eidos export <id> [-o file]       export the mod list to CSV (MO2 format; --active = enabled only)\n\
-         \x20 eidos sort <id> [--dry-run]       LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
-         \x20 eidos import <id> <mo2-profile>   take over an MO2 profile's mod order + plugin state"
+         \x20 eidos export <instance> [-o file] export the mod list to CSV (MO2 format; --active = enabled only)\n\
+         \x20 eidos sort <instance> [--dry-run] LOOT-sort the plugin load order (--update-masterlist to refresh)\n\
+         \x20 eidos import <instance> <mo2-profile> take over an MO2 profile's mod order + plugin state\n\
+         \n\
+         <instance> is a game id (skyrimse - the central instance) or the path of a\n\
+         portable instance folder. EIDOS_INSTANCE=<folder> redirects a game id there."
     );
     exit(2);
 }
@@ -219,7 +225,7 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("games") => cmd_games(),
         Some("init") => match args.get(1) {
-            Some(id) => cmd_init(id),
+            Some(id) => cmd_init(id, args.get(2).map(String::as_str)),
             None => usage(),
         },
         Some("play") => cmd_play(&args[1..]),

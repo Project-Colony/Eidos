@@ -7,6 +7,38 @@ use eidos_instance::Instance;
 
 use crate::*;
 
+/// The instance a browser-initiated download should land in. The browser
+/// carries no instance context at all - this process is spawned by
+/// xdg-open - so the answer comes from the registry: the LAST instance the
+/// user actually used, when it belongs to one of the candidate games, then
+/// each candidate's known instances (portables first, per the registry's
+/// preference order), then the first candidate's global path as the
+/// create-on-demand fallback. Before the registry existed this hardwired
+/// `Instance::global`, which sent every download to the XDG folder no matter
+/// which portable instance the user was playing.
+fn pick_instance<'a>(candidates: &[&'a DetectedGame]) -> (&'a DetectedGame, Instance) {
+    let reg = eidos_instance::Registry::load();
+    if let Some(last) = &reg.last {
+        let inst = last.instance();
+        if inst.exists() {
+            let gid = match last {
+                eidos_instance::InstanceRef::Global(id) => Some(id.clone()),
+                eidos_instance::InstanceRef::Portable(_) => inst.read_manifest().map(|m| m.game_id),
+            };
+            if let Some(game) = gid.and_then(|gid| candidates.iter().find(|g| g.def.id == gid)) {
+                return (game, inst);
+            }
+        }
+    }
+    for g in candidates {
+        if let Some(inst) = reg.candidates_for(g.def.id).into_iter().find(|i| i.exists()) {
+            return (g, inst);
+        }
+    }
+    let first = candidates[0];
+    (first, Instance::global(first.def.id))
+}
+
 /// `eidos nxm <url>` - download a "Mod Manager Download" link into the game's
 /// downloads dir (with its MO2-format .meta). `--register` installs the
 /// x-scheme-handler so the site's button opens Eidos.
@@ -43,19 +75,25 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 }
             };
             // Which detected game does this link belong to? (VR editions share
-            // their parent's Nexus; prefer the one with an existing instance.)
+            // their parent's Nexus.)
             let games = detect(&home());
-            let mut candidates: Vec<&DetectedGame> = games
+            let candidates: Vec<&DetectedGame> = games
                 .iter()
                 .filter(|g| g.def.nexus_game.eq_ignore_ascii_case(&nxm.game))
                 .collect();
-            candidates.sort_by_key(|g| !Instance::global(g.def.id).exists());
-            let Some(game) = candidates.first() else {
+            if candidates.is_empty() {
                 eprintln!("No detected game matches the Nexus domain '{}'.", nxm.game);
                 exit(1);
-            };
-            let inst = Instance::global(game.def.id);
+            }
+            let (game, inst) = pick_instance(&candidates);
             inst.create().ok();
+            // How the follow-up `eidos install` should NAME this instance: the
+            // id when it is the global one, the folder when it is portable.
+            let inst_arg = if inst.root == Instance::global(game.def.id).root {
+                game.def.id.to_string()
+            } else {
+                inst.root.display().to_string()
+            };
 
             let nexus = nexus_client();
             // The MOD is looked up first, before its file. That ordering is not
@@ -110,7 +148,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 let meta = std::fs::read_to_string(format!("{}.meta", existing.display())).unwrap_or_default();
                 if meta.contains(&format!("fileID={}", nxm.file_id)) {
                     println!("Already downloaded: {}", existing.display());
-                    println!("Install it:  eidos install {} \"{}\"", game.def.id, existing.display());
+                    println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", existing.display());
                     return;
                 }
             }
@@ -142,7 +180,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             match nexus.download(&link, &dest) {
                 Ok(bytes) => {
                     println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
-                    println!("Install it:  eidos install {} \"{}\"", game.def.id, dest.display());
+                    println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", dest.display());
                 }
                 Err(e) => {
                     eprintln!("download failed: {e}");

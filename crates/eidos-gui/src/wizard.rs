@@ -41,12 +41,32 @@ pub(crate) fn frame<'a>(
         .into()
 }
 
-pub(crate) fn welcome<'a>() -> Element<'a, Message> {
-    let content = Column::new()
+pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
+    let mut content = Column::new()
         .spacing(10)
         .push(text("Eidos creates an isolated modding setup for your game,").size(15.0))
         .push(text("mounting your mods over the game without touching its files.").size(15.0))
         .push(text("Let's set up an instance.").size(13.0));
+    // Existing instances open with one click - this doubles as the instance
+    // switcher (the toolbar's switch action lands here via Restart). Portable
+    // roots come from the registry; without this list they were orphaned the
+    // moment the app closed.
+    if !app.known.is_empty() {
+        let mut list = Column::new().spacing(6);
+        for (i, k) in app.known.iter().enumerate() {
+            list = list.push(
+                button(text(k.label.clone()).size(13.0))
+                    .width(Length::Fill)
+                    .padding(8)
+                    .on_press(Message::OpenKnown(i))
+                    .style(button::secondary),
+            );
+        }
+        content = content
+            .push(Space::new().height(Length::Fixed(6.0)))
+            .push(text("Or open an existing instance:").size(13.0))
+            .push(scrollable(list).height(Length::Fixed(160.0)));
+    }
     frame("Step 1 of 5", "Welcome", content.into(), None, "Next", Some(Message::Next))
 }
 
@@ -135,8 +155,22 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(g) = game {
         content = content.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
     }
+    // Say when Finish will ADOPT rather than create: the folder already
+    // declares this game, and nothing in it will be overwritten. (A folder
+    // declaring ANOTHER game is refused by the Finish handler, which puts the
+    // reason in `app.error` below.)
+    let adopts = planned_instance(app)
+        .and_then(|i| i.read_manifest())
+        .is_some_and(|m| game.map(|g| g.def.id) == Some(m.game_id.as_str()));
+    if adopts {
+        content = content.push(
+            text("This folder already holds an instance for this game - it will be opened as-is.")
+                .size(12.0),
+        );
+    }
     if let Some(err) = &app.error {
         content = content.push(text(format!("Error: {err}")).size(13.0));
     }
-    frame("Step 5 of 5", "Review and create", content.into(), Some(Message::Back), "Create instance", Some(Message::Finish))
+    let next_label = if adopts { "Open instance" } else { "Create instance" };
+    frame("Step 5 of 5", "Review and create", content.into(), Some(Message::Back), next_label, Some(Message::Finish))
 }

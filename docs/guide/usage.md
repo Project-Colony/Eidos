@@ -9,7 +9,8 @@ wrong, see [troubleshooting.md](troubleshooting.md).
 ```sh
 eidos games                       # supported games installed here (like MO2's list)
 eidos init skyrimse               # create a modding instance
-# ...drop each mod as a folder into ~/.local/share/eidos/skyrimse/mods/...
+# ...drop each mod as a folder into <instance>/mods/ (the global instance lives
+#    at ~/.local/share/eidos/skyrimse; `eidos init` prints yours)...
 eidos install skyrimse mod.7z     # or install a downloaded archive (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + plugin state
 eidos sort skyrimse               # LOOT-sort the plugin load order
@@ -19,6 +20,33 @@ eidos play skyrimse -- <command>  # run <command> with the mods mounted over the
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` and `eidos export` round
 out the set; run `eidos` with no arguments for the full list.
+
+### Instances: global and portable
+
+Every command above addresses an instance. `skyrimse` names the **global** one -
+stored centrally at `~/.local/share/eidos/skyrimse`, managed by Eidos. The other
+kind is **portable**: a self-contained folder wherever you want it (a second
+drive, a games partition), movable and isolated, exactly like MO2's portable
+instances. Wherever a command takes a game id it also takes a portable
+instance's folder:
+
+```sh
+eidos init skyrimse /mnt/games/EidosSkyrim   # create a portable instance there
+eidos install /mnt/games/EidosSkyrim mod.7z  # every command accepts the folder
+eidos play /mnt/games/EidosSkyrim -- %command%
+```
+
+The folder is self-describing (its `eidos-instance.ini` names the game), so
+nothing else is needed - and `EIDOS_INSTANCE=<folder>` in the environment
+redirects a game id to that folder, which is handy in Steam launch options.
+Portable instances you have created or opened are remembered (most recently
+used first) in `~/.config/eidos/instances.ini`; the GUI's welcome screen lists
+them to open with one click, the Steam launch lands on the one you last played,
+and the `nxm://` handler downloads into it. Two caveats worth knowing: moving a
+portable folder keeps everything except tool entries you registered with
+absolute paths into the old location (re-add those), and the shared runtime
+cache (`~/.local/share/eidos/runtimes/`) deliberately stays machine-global -
+a 78 MB .NET host is not per-instance.
 
 `play` mounts the instance's mods over the game's own `Data` directory (via a
 bind-stash, so the daemon still reads the pristine files) inside a private
@@ -48,7 +76,11 @@ cargo run -p eidos-gui
 
 An MO2-style first-launch wizard in the Colony parchment / burgundy look:
 welcome -> instance type (portable / global) -> game -> name & location ->
-summary -> create -> main screen.
+summary -> create -> main screen. The welcome screen also lists every known
+existing instance (global and portable, last-used first) to open with one
+click - it doubles as the instance switcher - and pointing the wizard at a
+folder that already holds an instance ADOPTS it as-is instead of creating over
+it (refusing outright if the folder belongs to another game).
 
 The two-pane main window is built too: a profile picker (switch, or create a new
 one by copying the current), a mod list you filter, select, reorder, group with
@@ -101,9 +133,10 @@ binary's absolute path (Steam doesn't see `~/.cargo/bin` on PATH):
 ~/.cargo/bin/eidos-gui %command%
 ```
 
-Eidos opens on the game's instance; click Run to launch it through the merged
-view. (The Run button shows this exact line, with the running binary's real
-path, if you press it outside Steam.)
+Eidos opens on the game's instance - the one you last used, so a portable
+instance is found again just like the global one; click Run to launch it
+through the merged view. (The Run button shows this exact line, with the
+running binary's real path, if you press it outside Steam.)
 
 Steam's `%command%` for the Bethesda titles usually points at
 `<Game>Launcher.exe`. Eidos never runs it: the launcher is a separate settings

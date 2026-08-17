@@ -13,7 +13,7 @@ use crate::*;
 
 pub(crate) fn cmd_play(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!("usage: eidos play <game-id> [-- <command>...]");
+        eprintln!("usage: eidos play <game-id-or-instance-path> [-- <command>...]");
         exit(2);
     };
     let command: Vec<String> = match args.iter().position(|a| a == "--") {
@@ -21,14 +21,16 @@ pub(crate) fn cmd_play(args: &[String]) {
         None => Vec::new(),
     };
 
-    let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+    let target = resolve(id);
+    let Some(game) = find_game(&target.game_id) else {
+        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
 
-    let inst = Instance::global(id);
+    let game_id = target.game_id;
+    let inst = target.inst;
     inst.create().ok();
-    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_manifest(&game_id, InstanceKind::Global);
 
     if command.is_empty() {
         let layers = inst.load_order();
@@ -62,9 +64,13 @@ pub(crate) fn cmd_play(args: &[String]) {
             );
         }
     }
+    // Playing is the strongest "this is my instance" signal there is: record
+    // it (dry listings above deliberately don't) so the GUI welcome screen and
+    // the nxm:// handler follow the user here.
+    remember_use(&inst, &game_id);
     let mut command = command;
-    swap_script_extender(id, &mut command);
-    run_through_view(id, &game, &inst, command, Vec::new(), None, &[]);
+    swap_script_extender(&game_id, &mut command);
+    run_through_view(&game_id, &game, &inst, command, Vec::new(), None, &[]);
 }
 
 /// Warn when the resolved Proton belongs to the Flatpak Steam install.

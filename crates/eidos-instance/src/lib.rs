@@ -27,10 +27,12 @@ mod categories;
 mod manifest;
 mod meta;
 mod profile;
+mod registry;
 pub mod settings;
 mod tools;
 pub use categories::{parse_primary, CategoryFactory};
 pub use manifest::Manifest;
+pub use registry::{registry_path, InstanceRef, Registry};
 pub use meta::ModMeta;
 pub use profile::{
     cosave_siblings, is_save_data, is_save_listing, read_text_lossy, untweak_ini, write_text,
@@ -318,6 +320,32 @@ impl Instance {
             return Ok(());
         }
         Manifest::new(game_id, kind).write(&self.manifest_path())
+    }
+
+    /// Open an existing folder as an instance, requiring it to be
+    /// self-describing: the manifest names the game, so the caller needs
+    /// nothing but the path. This is the resolution behind `eidos <cmd> <path>`
+    /// and behind reopening a registered portable root - guessing the game
+    /// from a folder the user named freely is exactly the mistake the manifest
+    /// exists to prevent.
+    ///
+    /// The errors are user-facing sentences: every caller is one `eprintln!`
+    /// or status line away from the person who typed the path.
+    pub fn open_at(root: &Path) -> Result<(Instance, Manifest), String> {
+        if !root.is_dir() {
+            return Err(format!("'{}' is not a directory.", root.display()));
+        }
+        let inst = Instance::portable(root.to_path_buf());
+        match inst.read_manifest() {
+            Some(m) => Ok((inst, m)),
+            None if inst.exists() => Err(format!(
+                "'{}' looks like an instance (it has a mods/ folder) but has no readable \
+                 eidos-instance.ini naming its game. Open it once via the GUI wizard \
+                 (pick its game and this folder) to adopt it.",
+                root.display()
+            )),
+            None => Err(format!("'{}' is not an Eidos instance folder.", root.display())),
+        }
     }
 
     /// The instance's game id: from the manifest, else the last path component

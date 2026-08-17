@@ -68,6 +68,107 @@ pub(crate) fn invalidate_meta(app: &mut App, name: &str) {
 /// The run-target picker entry meaning "the game itself".
 pub(crate) const RUN_GAME: &str = "Game (Steam command)";
 
+/// An instance the welcome screen can offer to OPEN: something that exists on
+/// disk and whose game is detected on this machine. Built from the registry
+/// (portable roots + last used) and the detected games' global paths.
+#[derive(Debug, Clone)]
+pub(crate) struct KnownInstance {
+    /// What the button says: game name + where the instance lives.
+    pub label: String,
+    pub inst: Instance,
+    /// Index into `app.games`.
+    pub game_index: usize,
+}
+
+/// Every existing instance worth offering on the welcome screen, most recently
+/// used first. Portable roots come from the registry; the global path of each
+/// detected game is appended. Roots that no longer exist are skipped, not
+/// forgotten - an unmounted drive is not a deleted instance.
+pub(crate) fn known_instances(games: &[DetectedGame]) -> Vec<KnownInstance> {
+    // NEVER under test: the real registry lives in the user's config dir, and
+    // a test whose assertions depend on which instances THIS machine happens
+    // to know is not a test (same rule as the real-instance guard in `new`).
+    // The building logic is `known_instances_from`, which tests feed directly.
+    if cfg!(test) {
+        return Vec::new();
+    }
+    known_instances_from(&eidos_instance::Registry::load(), games)
+}
+
+/// The construction behind [`known_instances`], with the registry injected.
+pub(crate) fn known_instances_from(
+    reg: &eidos_instance::Registry,
+    games: &[DetectedGame],
+) -> Vec<KnownInstance> {
+    let mut out: Vec<KnownInstance> = Vec::new();
+    let mut push = |inst: Instance, game_index: usize, portable: bool, games: &[DetectedGame]| {
+        if !inst.exists() || out.iter().any(|k| k.inst.root == inst.root) {
+            return;
+        }
+        let name = games[game_index].def.name;
+        let label = if portable {
+            format!("{name}  -  {}", inst.root.display())
+        } else {
+            format!("{name}  -  global")
+        };
+        out.push(KnownInstance { label, inst, game_index });
+    };
+    // The last-used instance first: it is what the user means by "my setup".
+    if let Some(last) = reg.last.clone() {
+        let inst = last.instance();
+        let gid = match &last {
+            eidos_instance::InstanceRef::Global(id) => Some(id.clone()),
+            eidos_instance::InstanceRef::Portable(_) => inst.read_manifest().map(|m| m.game_id),
+        };
+        if let Some(i) = gid.and_then(|gid| games.iter().position(|g| g.def.id == gid)) {
+            let portable = matches!(last, eidos_instance::InstanceRef::Portable(_));
+            push(inst, i, portable, games);
+        }
+    }
+    for root in &reg.portables {
+        let inst = Instance::portable(root.clone());
+        let Some(m) = inst.read_manifest() else { continue };
+        if let Some(i) = games.iter().position(|g| g.def.id == m.game_id) {
+            push(inst, i, true, games);
+        }
+    }
+    for (i, g) in games.iter().enumerate() {
+        push(Instance::global(g.def.id), i, false, games);
+    }
+    out
+}
+
+/// Record that an instance was just opened, so the next start - and the
+/// browser-spawned `eidos nxm` handler - land here rather than on the
+/// XDG-global default. Registry trouble must never block the open itself.
+pub(crate) fn remember_open(inst: &Instance, game_id: &str) {
+    // NEVER under test: this writes the USER'S registry file, and a test open
+    // must not rewire which instance their next real session lands on.
+    if cfg!(test) {
+        return;
+    }
+    let mut reg = eidos_instance::Registry::load();
+    let r = if inst.root == Instance::global(game_id).root {
+        eidos_instance::InstanceRef::Global(game_id.to_string())
+    } else {
+        eidos_instance::InstanceRef::Portable(inst.root.clone())
+    };
+    reg.set_last(r);
+    let _ = reg.save();
+}
+
+/// How a spawned `eidos` child should NAME the open instance: the game id for
+/// the global one, the folder for a portable one. The id alone sends the child
+/// to the XDG-global root no matter which instance is open here - which is
+/// exactly how a portable user's Run button used to mount the wrong mods.
+pub(crate) fn instance_arg(app: &App) -> Option<String> {
+    let id = selected_game(app)?.def.id;
+    Some(match &app.created {
+        Some(inst) if inst.root != Instance::global(id).root => inst.root.display().to_string(),
+        _ => id.to_string(),
+    })
+}
+
 pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     let games = detect(&home());
     // If Steam launched us with the game's command (`eidos-gui %command%`),
@@ -171,6 +272,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         listing_cache: std::cell::RefCell::new(HashMap::new()),
         loot_report: None,
         loot_meta: None,
+        known: Vec::new(),
     };
     // NEVER under test. This opens the REAL instance in the user's home and,
     // through ensure_manifest/ensure_profiles, writes to it - so any test that
@@ -182,35 +284,67 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     if cfg!(test) {
         return (app, Task::none());
     }
-    if let Some(i) = auto {
+    // The welcome screen's "open an existing instance" list (also the in-app
+    // switcher, via Restart). Built before the auto-open below so it is ready
+    // whichever screen the app lands on.
+    app.known = known_instances(&app.games);
+    // Which existing instance of a game to open: the registry decides
+    // (last-used first, then known portables, then the global path). Before
+    // the registry, both branches below probed ONLY `Instance::global`, so a
+    // portable instance could never be rediscovered after a restart.
+    let reg = eidos_instance::Registry::load();
+    // `EIDOS_INSTANCE` pins the instance outright - the same variable the CLI
+    // honors, so one Steam launch option works for both faces of Eidos. One
+    // sanity rule: under a Steam launch the folder must belong to the game
+    // Steam is launching, else the variable is ignored and the normal
+    // resolution runs (a stale pin must not mount one game's mods over
+    // another).
+    let pinned: Option<(usize, Instance)> = std::env::var_os("EIDOS_INSTANCE")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .and_then(|root| {
+            let inst = Instance::portable(root);
+            let m = inst.read_manifest()?;
+            let i = app.games.iter().position(|g| g.def.id == m.game_id)?;
+            if auto.is_some_and(|auto_i| auto_i != i) {
+                return None;
+            }
+            inst.exists().then_some((i, inst))
+        });
+    let open_existing = |app: &mut App, i: usize, inst: Instance| {
+        let id = app.games[i].def.id;
+        // No-op when a manifest exists (every registry-found portable has
+        // one); stamps the legacy manifest-less global otherwise.
+        let _ = inst.ensure_manifest(id, InstanceKind::Global);
+        let _ = inst.ensure_profiles();
+        remember_open(&inst, id);
         app.selected = Some(i);
-        let inst = Instance::global(app.games[i].def.id);
-        if inst.exists() {
-            let _ = inst.ensure_manifest(app.games[i].def.id, InstanceKind::Global);
-            let _ = inst.ensure_profiles();
-            app.mods = modlist_with_unmanaged(&inst, app.games.get(i));
-            app.categories = Some(inst.category_factory());
-            app.created = Some(inst);
-            app.screen = Screen::Main;
+        app.mods = modlist_with_unmanaged(&inst, app.games.get(i));
+        app.categories = Some(inst.category_factory());
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+    };
+    if let Some((i, inst)) = pinned {
+        open_existing(&mut app, i, inst);
+        if auto.is_some() {
             app.status =
                 Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
         }
-    } else {
-        // Standalone: open the first detected game that already has an instance,
-        // so `eidos-gui` lands on your existing setup instead of the wizard.
-        for (i, g) in app.games.iter().enumerate() {
-            let inst = Instance::global(g.def.id);
-            if inst.exists() {
-                let _ = inst.ensure_manifest(g.def.id, InstanceKind::Global);
-                let _ = inst.ensure_profiles();
-                app.selected = Some(i);
-                app.mods = modlist_with_unmanaged(&inst, Some(g));
-                app.categories = Some(inst.category_factory());
-                app.created = Some(inst);
-                app.screen = Screen::Main;
-                break;
-            }
+    } else if let Some(i) = auto {
+        app.selected = Some(i);
+        let found = reg.candidates_for(app.games[i].def.id).into_iter().find(|c| c.exists());
+        if let Some(inst) = found {
+            open_existing(&mut app, i, inst);
+            app.status =
+                Some("Launched from Steam. Click Run to start the game through Eidos.".to_string());
         }
+    } else if let Some(k) = app.known.first() {
+        // Standalone: open the last-used instance if it still exists, else the
+        // first known one - `known_instances` puts last-used first and lists
+        // only existing roots of detected games, which is exactly the reopen
+        // rule. Nothing known lands on the wizard, as before.
+        let (i, inst) = (k.game_index, k.inst.clone());
+        open_existing(&mut app, i, inst);
     }
     load_tools(&mut app);
     // Conflicts feed the mod-list emblems, so compute them as soon as the
@@ -331,12 +465,13 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
     Some(state)
 }
 
-/// The `eidos tool <id> run <title>` command: the CLI resolves the tool + Proton
-/// and runs it through the merged view (same single-process requirement as
-/// `play`). Returned unspawned so `start_run` can route its output to a log.
-pub(crate) fn tool_command(game_id: &str, title: &str) -> std::process::Command {
+/// The `eidos tool <instance> run <title>` command: the CLI resolves the tool +
+/// Proton and runs it through the merged view (same single-process requirement
+/// as `play`). Returned unspawned so `start_run` can route its output to a log.
+/// `inst_arg` is [`instance_arg`]'s output: the id or the portable folder.
+pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command {
     let mut cmd = std::process::Command::new(find_eidos_binary());
-    cmd.arg("tool").arg(game_id).arg("run").arg(title);
+    cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
     cmd
 }
 
@@ -344,12 +479,12 @@ pub(crate) fn tool_command(game_id: &str, title: &str) -> std::process::Command 
 /// --install`). The Tier-2 winetricks step downloads from Microsoft and can take a
 /// while; its output is redirected to `log` (the GUI has no terminal when launched
 /// from Steam) so the user can follow progress and read any error.
-pub(crate) fn run_prereqs_setup(game_id: &str, log: &Path) -> std::io::Result<()> {
+pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<()> {
     let out = std::fs::File::create(log)?;
     let err = out.try_clone()?;
     std::process::Command::new(find_eidos_binary())
         .arg("prereqs")
-        .arg(game_id)
+        .arg(inst_arg)
         .arg("--install")
         .stdout(std::process::Stdio::from(out))
         .stderr(std::process::Stdio::from(err))
@@ -467,14 +602,23 @@ pub(crate) fn find_eidos_binary() -> PathBuf {
     PathBuf::from("eidos")
 }
 
-/// Launch the game through Eidos: spawn `eidos play <id> -- <command>` (with the
-/// script-extender swap applied), which mounts the merged mods over the game's
-/// Data dir in a private namespace and runs the command through it.
+/// Launch the game through Eidos: spawn `eidos play <instance> -- <command>`
+/// (with the script-extender swap applied), which mounts the merged mods over
+/// the game's Data dir in a private namespace and runs the command through it.
 /// Build the `eidos play` command, swapping the vanilla launcher for the script
 /// extender's loader - but only if the loader actually exists on disk (a swap to
 /// a missing skse64_loader.exe would just make Proton fail cryptically). Returns
 /// the command plus a warning to surface when the extender is not installed.
-pub(crate) fn play_command(game_id: &str, command: &[String]) -> (std::process::Command, Option<String>) {
+///
+/// `game_id` drives the script-extender swap (a real game id, always);
+/// `inst_arg` is what the child is told to open ([`instance_arg`]: the id, or
+/// the portable folder). Conflating the two sent portable users' launches to
+/// the XDG-global instance.
+pub(crate) fn play_command(
+    game_id: &str,
+    inst_arg: &str,
+    command: &[String],
+) -> (std::process::Command, Option<String>) {
     let mut swapped: Vec<String> = command.to_vec();
     let mut warning = None;
     if let Some((from, prefer)) = launch_targets(game_id) {
@@ -509,7 +653,7 @@ pub(crate) fn play_command(game_id: &str, command: &[String]) -> (std::process::
         }
     }
     let mut cmd = std::process::Command::new(find_eidos_binary());
-    cmd.arg("play").arg(game_id).arg("--").args(&swapped);
+    cmd.arg("play").arg(inst_arg).arg("--").args(&swapped);
     (cmd, warning)
 }
 

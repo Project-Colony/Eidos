@@ -54,6 +54,13 @@ and categories, and an MO2 profile importer.
 computes them, missing-master warnings, and your DLC and Creation Club content
 shown as the unmanaged rows they are.
 
+**Instances.** Global - managed centrally under `~/.local/share/eidos` - or
+portable: a self-contained folder anywhere you want (a second drive, a games
+partition), movable and isolated, like MO2's. Portable instances are remembered
+across sessions; the GUI, the Steam launch and every CLI command follow the one
+you last used, and any command takes the folder wherever it takes a game id.
+Details in [usage.md](docs/guide/usage.md#instances-global-and-portable).
+
 **Profiles.** Per-profile mod order, plugin state, INIs and saves. Saves are
 parsed, diffed against your current plugins - with a button that enables what a
 save needs - and synced back for Steam Cloud after every session.
@@ -127,6 +134,7 @@ combine freely:
 | verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/state/eidos/logs/`) |
 | a per-session I/O report from the mount | `EIDOS_FUSE_STATS=1` |
 | a different FUSE worker count | `EIDOS_FUSE_THREADS=8` (default 4; `1` is the first thing to try when chasing a concurrency bug) |
+| this launch pinned to one portable instance | `EIDOS_INSTANCE=/path/to/folder` - without it Eidos opens the instance you last used, which is usually what you want |
 
 The line to keep for a modern modded setup (Community Shaders, DLSS, frame
 generation) - this is the final command, not an example:

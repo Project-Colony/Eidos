@@ -2,7 +2,6 @@
 
 use std::process::exit;
 
-use eidos_instance::Instance;
 
 use crate::*;
 
@@ -49,11 +48,12 @@ pub(crate) fn cmd_export(args: &[String]) {
     };
     let active_only = args.iter().any(|a| a == "--active");
     let out_path = args.iter().position(|a| a == "-o").and_then(|i| args.get(i + 1)).cloned();
-    let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+    let target = resolve(id);
+    let Some(game) = find_game(&target.game_id) else {
+        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
-    let inst = Instance::global(id);
+    let inst = target.inst;
     let _ = inst.ensure_profiles();
     let factory = inst.category_factory();
     let domain = game.def.nexus_game;

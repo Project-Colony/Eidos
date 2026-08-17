@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::process::exit;
 
-use eidos_instance::{Instance, ModEntry};
+use eidos_instance::ModEntry;
 
 use crate::*;
 
@@ -19,6 +19,8 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let dry_run = args.iter().any(|a| a == "--dry-run");
     let update = args.iter().any(|a| a == "--update-masterlist");
 
+    let target = resolve(id);
+    let id = &target.game_id;
     if !eidos_loot::is_supported(id) {
         eprintln!("LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game).");
         exit(1);
@@ -38,7 +40,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let prefix = compatdata.join("pfx");
     let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
 
-    let inst = Instance::global(id);
+    let inst = target.inst;
     let _ = inst.ensure_profiles();
     // The PROFILE owns the plugin state; the prefix copy is a shadow for
     // external tools. This command once wrote only the prefix, and the next

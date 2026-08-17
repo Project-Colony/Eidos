@@ -153,6 +153,9 @@ enum Message {
     PickGame(usize),
     NameChanged(String),
     PortableChanged(String),
+    /// Open an existing instance from the welcome screen's known list (index
+    /// into `app.known`).
+    OpenKnown(usize),
     Finish,
     Restart,
     ToolPicked(String),
@@ -1159,6 +1162,10 @@ struct App {
     /// closes, while these badges must outlive it (MO2 keeps its flags until
     /// the next sort). Cleared on profile/instance switch.
     loot_meta: Option<HashMap<String, eidos_loot::PluginMetadataBundle>>,
+    /// Existing instances the welcome screen offers to open: registry
+    /// portables + detected globals, last-used first. Refreshed on Restart,
+    /// so the welcome screen doubles as the instance switcher.
+    known: Vec<KnownInstance>,
 }
 
 /// A game/tool launched through Eidos that the GUI is waiting on. A detached
@@ -1232,12 +1239,12 @@ fn view(app: &App) -> Element<'_, Message> {
         return main_screen(app);
     }
     let inner = match app.screen {
-        Screen::Welcome => welcome(),
+        Screen::Welcome => welcome(app),
         Screen::Kind => kind_screen(app),
         Screen::Game => game_screen(app),
         Screen::NameLoc => nameloc_screen(app),
         Screen::Summary => summary_screen(app),
-        Screen::Main => welcome(),
+        Screen::Main => welcome(app),
     };
     container(inner).width(Length::Fill).height(Length::Fill).padding(20).into()
 }
@@ -1646,7 +1653,7 @@ mod tests {
 
     /// The args `play_command` will hand to `eidos play`, i.e. everything after `--`.
     fn played(game_id: &str, command: &[String]) -> (Vec<String>, Option<String>) {
-        let (cmd, warning) = play_command(game_id, command);
+        let (cmd, warning) = play_command(game_id, game_id, command);
         let args: Vec<String> =
             cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
         let after = args.iter().position(|a| a == "--").map(|i| args[i + 1..].to_vec());
@@ -1830,6 +1837,124 @@ mod tests {
         }];
         app.selected = Some(0);
         app
+    }
+
+    /// A real portable instance in a temp dir: manifest + the minimum layout.
+    fn temp_portable(game_id: &str) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "eidos-portable-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("mods")).unwrap();
+        eidos_instance::Manifest::new(game_id, InstanceKind::Portable)
+            .write(&root.join("eidos-instance.ini"))
+            .unwrap();
+        root
+    }
+
+    #[test]
+    fn open_known_switches_to_the_chosen_portable_instance() {
+        // The reported gap: a portable instance existed on disk but nothing
+        // could ever OPEN it again. The welcome list entry must actually open.
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Welcome;
+        app.known = vec![KnownInstance {
+            label: "Skyrim SE - portable".into(),
+            inst: Instance::portable(root.clone()),
+            game_index: 0,
+        }];
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert_eq!(app.created.as_ref().map(|i| i.root.clone()), Some(root.clone()));
+        assert!(matches!(app.screen, Screen::Main), "opening must land on the main screen");
+        assert_eq!(app.selected, Some(0));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn open_known_on_a_missing_root_says_so_instead_of_wedging() {
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Welcome;
+        app.known = vec![KnownInstance {
+            label: "gone".into(),
+            inst: Instance::portable(PathBuf::from("/nonexistent/eidos-test-root")),
+            game_index: 0,
+        }];
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert!(app.created.is_none(), "a dead root must not fake an open");
+        assert!(matches!(app.screen, Screen::Welcome));
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("not reachable"),
+            "the skip must be said, not silent: {:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn finish_refuses_to_relabel_a_foreign_portable_folder() {
+        // ensure_manifest keeps an existing manifest, so before this check a
+        // fallout4 folder adopted under a skyrimse wizard kept its old game id
+        // while everything else treated it as Skyrim - a silent mislabel.
+        let root = temp_portable("fallout4");
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Summary;
+        app.kind = InstanceKind::Portable;
+        app.name = "Mine".into();
+        app.portable_path = root.display().to_string();
+        let _ = update_inner(&mut app, Message::Finish);
+        assert!(app.created.is_none(), "adoption must refuse, not relabel");
+        assert!(
+            app.error.as_deref().unwrap_or("").contains("fallout4"),
+            "the refusal must name the folder's real game: {:?}",
+            app.error
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn finish_adopts_a_matching_portable_folder() {
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(root.join("mods/Existing Mod")).unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Summary;
+        app.kind = InstanceKind::Portable;
+        app.name = "Mine".into();
+        app.portable_path = root.display().to_string();
+        let _ = update_inner(&mut app, Message::Finish);
+        assert_eq!(app.created.as_ref().map(|i| i.root.clone()), Some(root.clone()));
+        assert!(matches!(app.screen, Screen::Main));
+        assert!(
+            app.mods.iter().any(|m| m.name == "Existing Mod"),
+            "adoption must see the folder's own mods"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn known_instances_list_last_used_first_and_skips_missing_roots() {
+        let a = temp_portable("skyrimse");
+        let b = temp_portable("skyrimse");
+        let mut reg = eidos_instance::Registry::default();
+        reg.remember_portable(&a);
+        reg.remember_portable(&b);
+        reg.portables.push(PathBuf::from("/nonexistent/eidos-x"));
+        reg.set_last(eidos_instance::InstanceRef::Portable(a.clone()));
+        let app = app_for_game("skyrimse");
+        let known = known_instances_from(&reg, &app.games);
+        let roots: Vec<PathBuf> = known.iter().map(|k| k.inst.root.clone()).collect();
+        assert_eq!(roots.first(), Some(&a), "last-used first");
+        assert!(roots.contains(&b));
+        assert!(
+            !roots.iter().any(|r| r.starts_with("/nonexistent")),
+            "a missing root is skipped (not offered), never listed dead"
+        );
+        assert_eq!(roots.iter().filter(|r| **r == a).count(), 1, "last + MRU must not duplicate");
+        let _ = fs::remove_dir_all(&a);
+        let _ = fs::remove_dir_all(&b);
     }
 
     #[test]

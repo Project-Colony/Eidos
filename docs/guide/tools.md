@@ -28,6 +28,10 @@ mod, that is inside the mod folder:
 ~/.local/share/eidos/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
 ```
 
+(that is the global instance's path - for a portable instance the same rule
+applies under its own folder, `<instance>/mods/...`; note an absolute path like
+this is the one thing that does not survive MOVING a portable folder later).
+
 Eidos rewrites that path to the merged one before launching, so the tool runs
 from `<game>/Data/CalienteTools/BodySlide/` and sees every other mod's files
 there too. This matters more than it sounds: BodySlide ships an **empty**

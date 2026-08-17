@@ -2,22 +2,23 @@
 
 use std::process::exit;
 
-use eidos_instance::{Instance, InstanceKind, ModEntry};
+use eidos_instance::{InstanceKind, ModEntry};
 
 use crate::*;
 
 pub(crate) fn cmd_install(args: &[String]) {
     let (Some(id), Some(archive)) = (args.first(), args.get(1)) else {
-        eprintln!("usage: eidos install <game-id> <archive> [name]");
+        eprintln!("usage: eidos install <game-id-or-instance-path> <archive> [name]");
         exit(2);
     };
-    let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+    let target = resolve(id);
+    let Some(game) = find_game(&target.game_id) else {
+        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
-    let inst = Instance::global(id);
+    let inst = target.inst;
     inst.create().ok();
-    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_manifest(&target.game_id, InstanceKind::Global);
 
     // Optional overwrite policy; the positional name is the first non-flag arg.
     let policy = if args.iter().any(|a| a == "--replace") {
@@ -46,7 +47,7 @@ pub(crate) fn cmd_install(args: &[String]) {
         std::path::Path::new(archive),
         &inst.mods_dir(),
         &name,
-        id,
+        &target.game_id,
         policy,
         &ctx,
     ) {
@@ -92,7 +93,8 @@ pub(crate) fn cmd_install(args: &[String]) {
 /// profile's mod order, enabled states and load order.
 pub(crate) fn cmd_import(args: &[String]) -> ! {
     let (Some(id), Some(dir)) = (args.first(), args.get(1)) else { usage() };
-    let inst = Instance::global(id);
+    let target = resolve(id);
+    let inst = target.inst;
     if !inst.exists() {
         eprintln!("eidos import: no instance for '{id}' - run `eidos init {id}` first.");
         exit(1);

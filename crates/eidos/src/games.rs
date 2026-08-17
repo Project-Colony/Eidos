@@ -24,14 +24,37 @@ pub(crate) fn cmd_games() {
     println!("\nNext: `eidos init <id>` to create a modding instance.");
 }
 
-pub(crate) fn cmd_init(id: &str) {
+pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
     let Some(game) = find_game(id) else {
         eprintln!("Game '{id}' is not detected. Run `eidos games` to see what's available.");
         exit(1);
     };
-    let inst = Instance::global(id);
+    // With a folder the instance is PORTABLE: self-contained there, movable,
+    // and remembered in the registry so the GUI and later commands find it.
+    let (inst, kind) = match folder {
+        Some(f) => {
+            let root = crate::resolve::expand(f);
+            if let Some(m) = Instance::portable(root.clone()).read_manifest() {
+                if m.game_id != id {
+                    eprintln!(
+                        "'{}' already holds a '{}' instance - not stamping it as '{id}'.",
+                        root.display(),
+                        m.game_id
+                    );
+                    exit(1);
+                }
+            }
+            (Instance::portable(root), InstanceKind::Portable)
+        }
+        None => (Instance::global(id), InstanceKind::Global),
+    };
     inst.create().expect("create instance");
-    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_manifest(id, kind);
+    if kind == InstanceKind::Portable {
+        let mut reg = eidos_instance::Registry::load();
+        reg.set_last(eidos_instance::InstanceRef::Portable(inst.root.clone()));
+        let _ = reg.save();
+    }
     // The old text promised a `../load_order.txt` that NOTHING has ever read
     // since profiles arrived: a user following it created a file with no effect
     // and believed their order applied. Describe the mechanism that exists.
@@ -43,9 +66,14 @@ pub(crate) fn cmd_init(id: &str) {
          profiles/<name>/modlist.txt: one +Name/-Name per line, top = highest\n\
          priority, wins file conflicts - MO2's format).\n",
     );
-    println!("Created instance for {} ({id}).", game.def.name);
+    println!("Created {} instance for {} ({id}).", if kind == InstanceKind::Portable { "portable" } else { "global" }, game.def.name);
     println!("  instance : {}", inst.root.display());
     println!("  game data: {}", game.data_path.display());
     println!("  add mods : {}", inst.mods_dir().display());
-    println!("\nThen: `eidos play {id} -- %command%` (as a Steam launch option).");
+    // A portable instance is addressed by its folder from here on.
+    let inst_arg = match kind {
+        InstanceKind::Global => id.to_string(),
+        InstanceKind::Portable => inst.root.display().to_string(),
+    };
+    println!("\nThen: `eidos play {inst_arg} -- %command%` (as a Steam launch option).");
 }

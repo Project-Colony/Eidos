@@ -56,13 +56,15 @@ Use the absolute path - Steam does not read your shell's `PATH`.
 ### If you prefer the terminal
 
 ```sh
-eidos init skyrimse               # create an instance
+eidos init skyrimse               # create an instance (add a folder to make it portable)
 eidos install skyrimse mod.7z     # Simple / FOMOD / BAIN / root mods
 eidos sort skyrimse               # LOOT-sort the load order
 eidos play skyrimse -- %command%  # run anything through the merged view
 ```
 
-The full tour is in [usage.md](usage.md).
+Every command that takes a game id also takes a portable instance's folder -
+see [usage.md](usage.md#instances-global-and-portable). The full tour is in
+[usage.md](usage.md).
 
 ## Optional: FUSE passthrough
 

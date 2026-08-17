@@ -42,13 +42,14 @@ pub(crate) fn cmd_tool(args: &[String]) {
         );
         exit(2);
     };
-    let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+    let target = resolve(id);
+    let Some(game) = find_game(&target.game_id) else {
+        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
-    let inst = Instance::global(id);
+    let inst = target.inst;
     inst.create().ok();
-    let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    let _ = inst.ensure_manifest(&target.game_id, InstanceKind::Global);
 
     match args.get(1).map(String::as_str) {
         None | Some("list") => {
