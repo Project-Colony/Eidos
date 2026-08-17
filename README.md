@@ -108,6 +108,36 @@ and press Play.
 Arch packages and release tarballs, what you need installed first, and the CLI
 route: **[docs/guide/install.md](docs/guide/install.md)**.
 
+## Steam launch options
+
+The base line is all most setups need:
+
+```
+~/.local/bin/eidos-gui %command%
+```
+
+Everything else is environment variables stacked in front of it, and they
+combine freely:
+
+| You want... | Put in front |
+|---|---|
+| DLSS with Community Shaders | `PROTON_ENABLE_NVAPI=1` - without it DLSS silently never initialises; the full checklist is [guide/graphics.md](docs/guide/graphics.md) |
+| an FPS counter on screen | `DXVK_HUD=fps` |
+| driver-level frame interpolation, zero mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - never together with Community Shaders' own frame generation |
+| verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/state/eidos/logs/`) |
+| a per-session I/O report from the mount | `EIDOS_FUSE_STATS=1` |
+| a different FUSE worker count | `EIDOS_FUSE_THREADS=8` (default 4; `1` is the first thing to try when chasing a concurrency bug) |
+
+A fully loaded example:
+
+```
+PROTON_ENABLE_NVAPI=1 DXVK_HUD=fps ~/.local/bin/eidos-gui %command%
+```
+
+The deeper diagnostic switches (`EIDOS_FUSE_TRACE`, the cache and index
+bisection toggles, why `EIDOS_FUSE_PASSTHROUGH` is off by default) live in
+[guide/troubleshooting.md](docs/guide/troubleshooting.md).
+
 ## Where to go next
 
 | If you want to... | |
