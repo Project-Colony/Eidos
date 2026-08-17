@@ -19,14 +19,20 @@ pub(crate) const C_CONTENT: Length = Length::Fixed(78.0);
 /// [`overwrite_entries`] memoised against the view generation: the Overwrite tab
 /// and the mod-info file tree re-render constantly, and each render used to walk
 /// the whole tree again. Rebuilds only after something changes on disk.
-pub(crate) fn cached_entries(app: &App, dir: &Path) -> Vec<String> {
+///
+/// Handed out as an `Rc`, because the memoisation used to be half of one: the
+/// walk was cached but every HIT still cloned the whole Vec - against the real
+/// 4902-file Overwrite this file documents, that was ~5k String allocations and
+/// ~300 KB of memcpy per redraw, per pointer event, with the tab open. A cache
+/// whose hit path allocates proportionally to the data is a cache in name only.
+pub(crate) fn cached_entries(app: &App, dir: &Path) -> std::rc::Rc<Vec<String>> {
     let gen = app.view_generation.get();
     if let Some((at, entries)) = app.listing_cache.borrow().get(dir) {
         if *at == gen {
-            return entries.clone();
+            return entries.clone(); // Rc bump, not a Vec copy
         }
     }
-    let entries = overwrite_entries(dir);
+    let entries = std::rc::Rc::new(overwrite_entries(dir));
     app.listing_cache.borrow_mut().insert(dir.to_path_buf(), (gen, entries.clone()));
     entries
 }

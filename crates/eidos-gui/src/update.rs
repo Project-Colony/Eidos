@@ -455,8 +455,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     } else {
                         format!("BAIN installer: choose the sub-packages to install for '{name}'.")
                     });
+                    let archive_tree = parsed_tree(&tree);
                     app.picker = Some(InstallPicker {
-                        rows: tree_rows(&tree),
+                        rows: archive_tree.flatten(),
+                        archive_tree,
                         archive: path,
                         name,
                         game_id: gid,
@@ -470,8 +472,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Ok(eidos_install::Opened::Manual(tree)) => {
                     app.status =
                         Some(format!("'{name}': pick the folder that holds the game data."));
+                    let archive_tree = parsed_tree(&tree);
                     app.picker = Some(InstallPicker {
-                        rows: tree_rows(&tree),
+                        rows: archive_tree.flatten(),
+                        archive_tree,
                         archive: path,
                         name,
                         game_id: gid,

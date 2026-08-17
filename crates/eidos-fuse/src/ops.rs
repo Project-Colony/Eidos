@@ -222,12 +222,16 @@ impl Filesystem for Eidos {
             }
         };
         let mut files = self.open_files.lock_recover();
-        files.insert(
-            fh,
-            OpenFile { _real: real, file: Arc::new(file), _backing: backing },
-        );
+        // One entry operation, not an insert followed by a lookup-and-unwrap: the
+        // handle is freshly allocated so the slot is provably vacant, but "provably"
+        // was doing that work as a panic site inside a handler - and a panic here
+        // does not return an errno, it kills a daemon thread out from under the
+        // game. The entry both inserts and hands back the reference.
         let flags = file_open_flags();
-        match files.get(&fh).unwrap()._backing.as_ref() {
+        let of = files
+            .entry(fh)
+            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        match of._backing.as_ref() {
             Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
             None => reply.opened(FileHandle(fh), flags),
         }
@@ -592,11 +596,12 @@ impl Filesystem for Eidos {
         let backing =
             if passthrough_enabled() { reply.open_backing(file.as_fd()).ok() } else { None };
         let mut files = self.open_files.lock_recover();
-        files.insert(
-            fh,
-            OpenFile { _real: real, file: Arc::new(file), _backing: backing },
-        );
-        match files.get(&fh).unwrap()._backing.as_ref() {
+        // Same shape as open(): entry instead of insert-then-unwrap, because an
+        // unwrap in a handler is a panic site and a panic takes the daemon down.
+        let of = files
+            .entry(fh)
+            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        match of._backing.as_ref() {
             Some(b) => reply.created_passthrough(
                 &TTL,
                 &attr,

@@ -662,6 +662,13 @@ struct InstallPicker {
     name: String,
     game_id: String,
     tree: eidos_install::ExtractedTree,
+    /// The parsed archive tree, computed ONCE at construction. The Manual mode's
+    /// validity label used to rebuild it from disk inside view() - a full
+    /// recursive walk of the extraction, stat per entry, per redraw - while this
+    /// struct's own `rows` comment explains why that must not happen. The tree
+    /// cannot change while the dialog is open, so both `rows` and the validity
+    /// check read this one.
+    archive_tree: eidos_install::ArchiveTree,
     /// The archive's contents as flat depth-first rows, computed once - the tree
     /// does not change while the dialog is open.
     rows: Vec<eidos_install::TreeRow>,
@@ -1136,7 +1143,7 @@ struct App {
     overwrite_expanded: HashSet<String>,
     /// Memoised recursive file listings per directory (the Overwrite tab and the
     /// mod-info file tree), each with the generation it was built at.
-    listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, Vec<String>)>>,
+    listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, std::rc::Rc<Vec<String>>)>>,
     // ---- LOOT report (MO2's post-sort report dialog) ----
     /// The report from the last LOOT sort, shown as a modal so the user sees
     /// missing masters / messages / dirty-plugin advice. `None` = no report open.
@@ -1817,7 +1824,7 @@ mod tests {
             .insert(String::new(), (app.view_generation.get(), vec![("SKSE".into(), "[skyrimse]".into(), true)]));
         app.listing_cache
             .borrow_mut()
-            .insert(PathBuf::from("/old"), (app.view_generation.get(), vec!["stale".to_string()]));
+            .insert(PathBuf::from("/old"), (app.view_generation.get(), std::rc::Rc::new(vec!["stale".to_string()])));
         app.files_cache.borrow_mut().insert("OldMod".into(), (vec!["a.esp".into()], false));
         app.data_expanded.insert("meshes".to_string());
 
