@@ -64,6 +64,19 @@ fn apply_order<T>(items: &mut [T], order: Option<&str>, key: impl Fn(&T) -> Stri
 impl ModuleConfig {
     /// Parse decoded `ModuleConfig.xml` text.
     pub fn parse(xml: &str) -> Result<ModuleConfig, String> {
+        // BEFORE the parser sees it. A ModuleConfig.xml is untrusted input from
+        // a downloaded archive, and roxmltree's own limits cover entity
+        // references, not element nesting - `Document::parse` on a crafted file
+        // with a hundred thousand nested elements aborts the whole process on
+        // stack overflow (demonstrated against roxmltree 0.21 in isolation, three
+        // lines of code). No guard of ours downstream can run if the parser never
+        // returns, so the depth is checked by a linear pre-scan first. Real
+        // ModuleConfigs nest ten-ish levels.
+        if let Some(d) = nesting_depth_over(xml, MAX_XML_DEPTH) {
+            return Err(format!(
+                "ModuleConfig.xml nests deeper than {MAX_XML_DEPTH} elements (gave up at {d}) - refusing a hostile or corrupt file"
+            ));
+        }
         let doc = Document::parse(strip_decl(xml)).map_err(|e| e.to_string())?;
         let root = doc.root_element();
         if root.tag_name().name() != "config" {
@@ -210,16 +223,84 @@ fn parse_conditional_installs(node: Node, seq: &mut u32) -> Vec<ConditionalInsta
 
 /// Parse a composite-dependency node (`<dependencies>` or `<visible>`): its element
 /// children are conditions, combined by the node's `operator` (default `And`).
+/// How deep a `<dependencies>` tree may nest. Real FOMODs nest two or three
+/// levels; the cap exists because a ModuleConfig.xml is UNTRUSTED input from a
+/// downloaded archive, `parse_composite` and `parse_condition` recurse into each
+/// other, and roxmltree's own limits cover entity references, not element
+/// nesting - so a crafted file with a hundred thousand nested `<dependencies>`
+/// aborted the whole process on stack overflow (demonstrated, not supposed).
+/// Same defence as the archive walker's MAX_TREE_DEPTH.
+/// Element-nesting bound enforced BEFORE the XML parser runs - see
+/// [`ModuleConfig::parse`] for why the parser cannot be trusted to survive
+/// hostile nesting on its own.
+const MAX_XML_DEPTH: usize = 256;
+
+/// `Some(depth_reached)` if the element nesting of `xml` exceeds `limit`.
+///
+/// A deliberately small scanner, not a parser: it only needs to bound nesting,
+/// so it tracks `<name`/`</name`/`/>` and SKIPS the three constructs whose
+/// bodies may legally contain `<` - comments, CDATA, and `<?`/`<!` directives.
+/// Anything it misreads errs toward counting, i.e. toward refusing, which for
+/// untrusted input is the safe direction.
+fn nesting_depth_over(xml: &str, limit: usize) -> Option<usize> {
+    let b = xml.as_bytes();
+    let (mut i, mut depth) = (0usize, 0usize);
+    while i < b.len() {
+        if b[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        if b[i..].starts_with(b"<!--") {
+            i = xml[i..].find("-->").map(|j| i + j + 3).unwrap_or(b.len());
+        } else if b[i..].starts_with(b"<![CDATA[") {
+            i = xml[i..].find("]]>").map(|j| i + j + 3).unwrap_or(b.len());
+        } else if b[i..].starts_with(b"<?") || b[i..].starts_with(b"<!") {
+            i = xml[i..].find('>').map(|j| i + j + 1).unwrap_or(b.len());
+        } else if b[i..].starts_with(b"</") {
+            depth = depth.saturating_sub(1);
+            i = xml[i..].find('>').map(|j| i + j + 1).unwrap_or(b.len());
+        } else {
+            // An opening tag; `/>` self-closes and does not add depth.
+            let end = xml[i..].find('>').map(|j| i + j).unwrap_or(b.len());
+            let self_closing = end > i && b.get(end.wrapping_sub(1)) == Some(&b'/');
+            if !self_closing {
+                depth += 1;
+                if depth > limit {
+                    return Some(depth);
+                }
+            }
+            i = end.saturating_add(1);
+        }
+    }
+    None
+}
+
+const MAX_CONDITION_DEPTH: usize = 64;
+
 fn parse_composite(node: Node) -> Condition {
+    parse_composite_at(node, 0)
+}
+
+fn parse_composite_at(node: Node, depth: usize) -> Condition {
     let op = match node.attribute("operator") {
         Some("Or") => Operator::Or,
         _ => Operator::And,
     };
-    let conditions = node.children().filter(|n| n.is_element()).filter_map(parse_condition).collect();
+    let conditions = if depth >= MAX_CONDITION_DEPTH {
+        // Hostile territory: no legitimate mod nests here. Dropping the branch
+        // (rather than aborting the parse) keeps the file installable exactly as
+        // MO2 would treat a malformed condition - and cannot crash.
+        Vec::new()
+    } else {
+        node.children()
+            .filter(|n| n.is_element())
+            .filter_map(|n| parse_condition_at(n, depth + 1))
+            .collect()
+    };
     Condition::Sub { op, conditions }
 }
 
-fn parse_condition(node: Node) -> Option<Condition> {
+fn parse_condition_at(node: Node, depth: usize) -> Option<Condition> {
     match node.tag_name().name() {
         "fileDependency" => Some(Condition::File {
             file: norm_path(node.attribute("file").unwrap_or("")),
@@ -241,7 +322,7 @@ fn parse_condition(node: Node) -> Option<Condition> {
             kind: "Fose".to_string(),
             version: node.attribute("version").unwrap_or("").to_string(),
         }),
-        "dependencies" => Some(parse_composite(node)),
+        "dependencies" => Some(parse_composite_at(node, depth)),
         _ => None,
     }
 }
@@ -410,5 +491,49 @@ mod tests {
         // Only the entry with a non-blank source survives.
         assert_eq!(mc.required_files.len(), 1);
         assert_eq!(mc.required_files[0].source, "Core/real.esp");
+    }
+}
+
+
+#[cfg(test)]
+mod hostile_depth {
+    /// A crafted ModuleConfig with a hundred thousand nested `<dependencies>`
+    /// aborted the whole process on stack overflow before the depth cap - a
+    /// crash from untrusted archive input, in the code path the install dialog
+    /// runs the moment an archive is opened. The parse must return, and the
+    /// document must still be usable.
+    #[test]
+    fn a_hostile_dependency_nest_cannot_blow_the_stack() {
+        let n = 100_000;
+        let xml = format!(
+            "<config><moduleName>x</moduleName><moduleDependencies operator=\"And\">{}{}</moduleDependencies></config>",
+            "<dependencies>".repeat(n),
+            "</dependencies>".repeat(n),
+        );
+        // The contract is RETURNING - with an error, not a document. Without the
+        // pre-scan this call never returns at all: roxmltree itself aborts the
+        // process on stack overflow, so no downstream cap can save it.
+        let err = crate::ModuleConfig::parse(&xml).expect_err("hostile nesting must be refused");
+        assert!(err.contains("nests deeper"), "{err}");
+    }
+
+    /// The pre-scan must not misfire on things that legally contain `<`:
+    /// comments, CDATA, the XML declaration, self-closing tags. A legitimate
+    /// config with all of them still parses.
+    #[test]
+    fn the_depth_prescan_does_not_misfire_on_legitimate_xml() {
+        let xml = r#"<?xml version="1.0"?>
+            <!-- a comment with <fake> <tags> <that> <do> <not> <count> -->
+            <config>
+              <moduleName><![CDATA[Name with <brackets>]]></moduleName>
+              <moduleImage path="x.png"/>
+              <moduleDependencies operator="And">
+                <dependencies><dependencies><dependencies>
+                  <fileDependency file="a.esp" state="Active"/>
+                </dependencies></dependencies></dependencies>
+              </moduleDependencies>
+            </config>"#;
+        let mc = crate::ModuleConfig::parse(xml).expect("legitimate file must parse");
+        assert!(mc.module_dependencies.is_some());
     }
 }

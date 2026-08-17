@@ -1128,3 +1128,49 @@ fn civil_from_unix_is_correct() {
     assert_eq!(civil_from_unix(1_700_000_000), (2023, 11, 14)); // 2023-11-14 UTC
     assert_eq!(civil_from_unix(0), (1970, 1, 1));
 }
+
+#[test]
+fn a_symlink_loop_in_an_archive_does_not_blow_the_stack() {
+    // An archive is untrusted input. `link -> ..` used to make this walk recurse
+    // until the process died, which for the GUI meant a SIGSEGV mid-install.
+    let dir = std::env::temp_dir().join(format!("eidos-loop-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("Data/textures")).unwrap();
+    std::fs::write(dir.join("Data/a.esp"), b"x").unwrap();
+    std::os::unix::fs::symlink("..", dir.join("Data/textures/up")).unwrap();
+
+    let tree = ArchiveTree::from_dir(&dir).expect("walk must return, not recurse forever");
+    let all = tree.flatten();
+    assert!(all.iter().any(|e| e.path.ends_with("a.esp")), "real files still described");
+    // The loop is BOUNDED, not banned: symlinked directories are followed - an
+    // archive may legitimately ship `Data` as a symlink, and a first version of
+    // this guard that refused to descend reclassified such archives as Manual -
+    // so the defence is the depth cap, and the proof is that this returned.
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+
+#[test]
+fn an_archive_shipping_data_as_a_symlink_still_classifies_by_its_contents() {
+    // The regression a symlink-refusing loop guard introduced: `Data -> payload`
+    // made simple_archive_base() blind to the whole payload, so a perfectly
+    // ordinary archive fell through to the manual picker.
+    let dir = std::env::temp_dir().join(format!("eidos-symdata-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("payload/textures")).unwrap();
+    std::fs::write(dir.join("payload/mod.esp"), b"x").unwrap();
+    std::fs::write(dir.join("payload/textures/a.dds"), b"x").unwrap();
+    std::os::unix::fs::symlink(dir.join("payload"), dir.join("Data")).unwrap();
+
+    let tree = ArchiveTree::from_dir(&dir).unwrap();
+    let all = tree.flatten();
+    assert!(
+        all.iter().any(|e| e.path == "Data" && e.is_dir),
+        "the symlinked Data must read as a directory: {all:?}"
+    );
+    assert!(
+        all.iter().any(|e| e.path == "Data/mod.esp"),
+        "its contents must be described: {all:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

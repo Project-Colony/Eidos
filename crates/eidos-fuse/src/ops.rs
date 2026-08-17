@@ -34,7 +34,11 @@ impl Filesystem for Eidos {
         // Unmount is the natural place to report: the run is over and the numbers
         // are final. Silent unless EIDOS_FUSE_STATS is set.
         if Stats::enabled() {
-            eprintln!("{}", self.stats.report(self.stack.resolve_stats()));
+            // Bound separately so the closure borrows the inode table while
+            // `report` borrows the counters - two disjoint fields of `self`.
+            let (stats, inodes) = (&self.stats, &self.inodes);
+            let path_of = |ino: u64| inodes.lock_recover().path(ino);
+            eprintln!("{}", stats.report(self.stack.resolve_stats(), &path_of));
         }
     }
 
@@ -96,7 +100,17 @@ impl Filesystem for Eidos {
 
     fn forget(&self, _req: &Request, ino: INodeNo, nlookup: u64) {
         // The default batch_forget fans out to this, so both paths free inodes.
-        self.inodes.lock_recover().forget(ino.0, nlookup);
+        let freed = self.inodes.lock_recover().forget(ino.0, nlookup);
+        // And the tables keyed by that inode go with it. FORGET means the kernel
+        // has dropped every reference, so there is no dentry left for an alias or
+        // a negative entry to invalidate - they were provably dead and were kept
+        // anyway, for the life of a mount, growing with every distinct path the
+        // game ever touched rather than with the working set. Two uncontended
+        // locks on an op that is rare and off the latency path.
+        if freed {
+            self.aliases.lock_recover().remove(&ino.0);
+            self.negatives.lock_recover().remove(&ino.0);
+        }
     }
 
     fn open(&self, _req: &Request, ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
@@ -208,12 +222,16 @@ impl Filesystem for Eidos {
             }
         };
         let mut files = self.open_files.lock_recover();
-        files.insert(
-            fh,
-            OpenFile { _real: real, file: Arc::new(file), _backing: backing },
-        );
+        // One entry operation, not an insert followed by a lookup-and-unwrap: the
+        // handle is freshly allocated so the slot is provably vacant, but "provably"
+        // was doing that work as a panic site inside a handler - and a panic here
+        // does not return an errno, it kills a daemon thread out from under the
+        // game. The entry both inserts and hands back the reference.
         let flags = file_open_flags();
-        match files.get(&fh).unwrap()._backing.as_ref() {
+        let of = files
+            .entry(fh)
+            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        match of._backing.as_ref() {
             Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
             None => reply.opened(FileHandle(fh), flags),
         }
@@ -322,7 +340,7 @@ impl Filesystem for Eidos {
 
     fn read(
         &self,
-        _req: &Request,
+        req: &Request,
         ino: INodeNo,
         fh: FileHandle,
         offset: u64,
@@ -332,7 +350,12 @@ impl Filesystem for Eidos {
         reply: ReplyData,
     ) {
         Stats::bump(&self.stats.read);
-        let _t = Timed::start(&self.stats.ns_read);
+        // Times the read and, when stats are on, records its shape: the request
+        // size, which file it hit, which thread asked, and where it lands on the
+        // session timeline. `req.pid()` is the CALLER's thread id, which is what
+        // says whether a game is blocking one thread on I/O or streaming across
+        // a pool. Off, this is one atomic load.
+        let _t = TimedRead::start(&self.stats, ino.0, size, req.pid());
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
         let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
@@ -573,11 +596,12 @@ impl Filesystem for Eidos {
         let backing =
             if passthrough_enabled() { reply.open_backing(file.as_fd()).ok() } else { None };
         let mut files = self.open_files.lock_recover();
-        files.insert(
-            fh,
-            OpenFile { _real: real, file: Arc::new(file), _backing: backing },
-        );
-        match files.get(&fh).unwrap()._backing.as_ref() {
+        // Same shape as open(): entry instead of insert-then-unwrap, because an
+        // unwrap in a handler is a panic site and a panic takes the daemon down.
+        let of = files
+            .entry(fh)
+            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        match of._backing.as_ref() {
             Some(b) => reply.created_passthrough(
                 &TTL,
                 &attr,
@@ -844,7 +868,15 @@ impl Filesystem for Eidos {
         }
         match self.stack.rename(&from, &to) {
             Ok(()) => {
-                let moved = self.inodes.lock_recover().rename(&from, &to);
+                let (moved, clobbered) = self.inodes.lock_recover().rename(&from, &to);
+                // The clobbered inodes' side-table entries die with them: their
+                // FORGET will find no count and prune nothing, so pruning here is
+                // the only chance - and atomic replace (INIs, saves) clobbers on
+                // every single write-through, which made this the fastest leak.
+                for dead in clobbered {
+                    self.aliases.lock_recover().remove(&dead);
+                    self.negatives.lock_recover().remove(&dead);
+                }
                 if let Some(ino) = moved {
                     self.invalidate_stale_aliases(ino, newparent.0, &newname.to_string_lossy());
                     self.record_alias(ino, newparent.0, &newname.to_string_lossy());

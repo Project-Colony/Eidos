@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 
 use crate::{
-    ArchiveEntry,
+    ArchiveEntry, MAX_TREE_DEPTH,
     ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES,
 };
 
@@ -99,11 +99,28 @@ pub struct InstallReport {
 
 impl ArchiveTree {
     /// Build the tree by walking an extracted directory.
+    ///
+    /// Symlinked directories ARE followed - an archive may legitimately ship
+    /// `Data` as a symlink, and refusing to descend reclassified such archives
+    /// from Simple to Manual and dropped whole subtrees from BAIN and root
+    /// detection (a first version of the loop guard did exactly that). What makes
+    /// following safe is the [`MAX_TREE_DEPTH`] cap alone: a crafted `link -> ..`
+    /// used to recurse until the stack gave out and took the GUI with it - a
+    /// SIGSEGV from untrusted input - and the cap turns that into a bounded,
+    /// harmless walk, the same defence `flatten` and `overlay_dir` already use.
+    ///
+    /// The kind comes from the dirent (no `stat(2)` per entry, which on a
+    /// 30k-entry archive is 30k syscalls); only an actual symlink pays the extra
+    /// stat to learn what it points at.
     pub fn from_dir(root: &Path) -> io::Result<ArchiveTree> {
-        fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>) -> io::Result<()> {
+        fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>, depth: usize) -> io::Result<()> {
+            if depth > MAX_TREE_DEPTH {
+                return Ok(());
+            }
             for e in fs::read_dir(dir)?.flatten() {
                 let p = e.path();
-                let is_dir = p.is_dir();
+                let Ok(t) = e.file_type() else { continue };
+                let is_dir = if t.is_symlink() { p.is_dir() } else { t.is_dir() };
                 if let Ok(rel) = p.strip_prefix(base) {
                     out.push(ArchiveEntry {
                         path: rel.to_string_lossy().replace('\\', "/"),
@@ -111,13 +128,13 @@ impl ArchiveTree {
                     });
                 }
                 if is_dir {
-                    walk(base, &p, out)?;
+                    walk(base, &p, out, depth + 1)?;
                 }
             }
             Ok(())
         }
         let mut entries = Vec::new();
-        walk(root, root, &mut entries)?;
+        walk(root, root, &mut entries, 0)?;
         Ok(ArchiveTree::from_entries(&entries))
     }
 }

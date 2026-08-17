@@ -219,7 +219,21 @@ impl Profile {
         let mut seen: HashSet<String> = HashSet::new();
         let mut listed = 0usize;
 
-        if let Ok(content) = fs::read_to_string(self.modlist_source()) {
+        // A modlist.txt that EXISTS but cannot be read is not the same thing as one
+        // that was never written, and the difference decides whether a launch is
+        // safe. Absent is the fresh instance: no list yet, every folder gets
+        // appended disabled, nothing is lost. Unreadable - a truncated file from an
+        // interrupted write, a sync tool mid-copy, EACCES after a restore - looks
+        // identical from here (`listed` stays 0, so `judge` computes no loss and
+        // says Good) while meaning the opposite: the order EXISTS and we just
+        // cannot see it. Launching on that verdict rebuilds the load order from the
+        // game's own masters and writes it over the profile.
+        let src = self.modlist_source();
+        let content = fs::read_to_string(&src);
+        let list_lost = matches!(&content, Err(e) if e.kind() != io::ErrorKind::NotFound)
+            || matches!(&content, Ok(text) if text.trim().is_empty() && src.is_file() && !present.is_empty());
+
+        if let Ok(content) = content {
             for line in content.lines() {
                 let line = line.trim();
                 if line.is_empty() || line.starts_with('#') {
@@ -266,7 +280,15 @@ impl Profile {
                 out.push(ModEntry { path: mods_dir.join(&name), name, enabled: false, unmanaged: false });
             }
         }
-        let trust = ListTrust::judge(readable, listed, out.len());
+        let trust = if list_lost {
+            ListTrust::Suspect(
+                "modlist.txt exists but could not be read (truncated, or permissions) - \
+                 the load order it holds is unknown"
+                    .to_string(),
+            )
+        } else {
+            ListTrust::judge(readable, listed, out.len())
+        };
         // `out` is built highest-priority-first (file order). MO2 DISPLAYS the list
         // the other way up - lowest priority at the top - so reverse for the return.
         // (This preserves every entry's priority; only the vec orientation flips.)

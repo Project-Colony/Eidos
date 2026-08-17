@@ -61,32 +61,45 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         return text("Conflicts not computed yet.").size(12.0).into();
     };
     let origin = (i + 1) as u32;
+    // Only what will be DRAWN is materialised. This runs in view(), once per
+    // redraw, over every file in the conflict map - and it used to clone a path
+    // String (plus a joined loser list) for every match while the panel shows at
+    // most 300 of each. A texture pack winning 50k paths allocated 100k Strings
+    // per pointer event; now it allocates 300 and counts the rest.
+    const SHOWN: usize = 300;
     let mut wins: Vec<(String, String)> = Vec::new();
     let mut loses: Vec<(String, String)> = Vec::new();
+    let (mut wins_n, mut loses_n) = (0usize, 0usize);
     for node in cmap.files.values() {
         if node.winner == origin && node.is_conflicted() {
-            let losers: Vec<&str> =
-                node.alternatives.iter().filter(|&&a| a != 0).map(|&a| cmap.name(a)).collect();
-            wins.push((node.display_path.clone(), losers.join(", ")));
+            wins_n += 1;
+            if wins.len() < SHOWN {
+                let losers: Vec<&str> =
+                    node.alternatives.iter().filter(|&&a| a != 0).map(|&a| cmap.name(a)).collect();
+                wins.push((node.display_path.clone(), losers.join(", ")));
+            }
         } else if node.winner != origin && node.winner != 0 && node.alternatives.contains(&origin) {
-            loses.push((node.display_path.clone(), cmap.name(node.winner).to_string()));
+            loses_n += 1;
+            if loses.len() < SHOWN {
+                loses.push((node.display_path.clone(), cmap.name(node.winner).to_string()));
+            }
         }
     }
     let mut col = Column::new().spacing(2);
-    col = col.push(text(format!("Overrides ({}):", wins.len())).size(13.0));
+    col = col.push(text(format!("Overrides ({wins_n}):")).size(13.0));
     if wins.is_empty() {
         col = col.push(text("  (none)").size(11.0));
     }
-    for (p, who) in wins.iter().take(300) {
+    for (p, who) in &wins {
         col = col.push(text(format!("  {p}   >   {who}")).size(11.0));
     }
     col = col
         .push(Space::new().height(Length::Fixed(8.0)))
-        .push(text(format!("Overridden by ({}):", loses.len())).size(13.0));
+        .push(text(format!("Overridden by ({loses_n}):")).size(13.0));
     if loses.is_empty() {
         col = col.push(text("  (none)").size(11.0));
     }
-    for (p, who) in loses.iter().take(300) {
+    for (p, who) in &loses {
         col = col.push(text(format!("  {p}   <   {who}")).size(11.0));
     }
     col.into()
@@ -108,8 +121,8 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     if hidden > 0 {
         col = col.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
     }
-    for e in entries.into_iter().take(2000) {
-        let is_hidden = path_is_hidden(&e);
+    for e in entries.iter().take(2000) {
+        let is_hidden = path_is_hidden(e);
         let label = if is_hidden { "Unhide" } else { "Hide" };
         let row = Row::new()
             .spacing(6)
@@ -118,7 +131,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
             .push(
                 button(text(label).size(10.0))
                     .padding([1, 5])
-                    .on_press(Message::ToggleFileHidden(i, e))
+                    .on_press(Message::ToggleFileHidden(i, e.clone()))
                     .style(if is_hidden { button::primary } else { button::secondary }),
             );
         col = col.push(row);
@@ -1884,9 +1897,14 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
     let mut rows = Column::new().spacing(1);
     let mut n = 0usize;
     for node in map.files.values() {
-        let providers: Vec<u32> =
-            std::iter::once(node.winner).chain(node.alternatives.iter().copied()).collect();
-        if !providers.contains(&origin) || !node.is_conflicted() {
+        // No Vec: this loop visits every file in the conflict map on every
+        // redraw, and materialising a heap-allocated provider list per node made
+        // each pointer event allocate and free once per file in the instance -
+        // several hundred thousand times for a real load order. Two comparisons
+        // answer the same question.
+        let contested = node.is_conflicted()
+            && (node.winner == origin || node.alternatives.contains(&origin));
+        if !contested {
             continue;
         }
         n += 1;
@@ -2356,11 +2374,12 @@ pub(crate) fn suggest_free_name(mods_dir: &std::path::Path, name: &str) -> Strin
 /// Retry the pending collision install under `policy`. Reuses the same discovery as
 /// a normal install (rebuilds the FOMOD context in case the archive turns out to be
 /// a FOMOD). A Rename that collides again re-opens the prompt.
-/// The extracted archive as flat rows for the picker's tree view. Built once when
-/// the picker opens: the extraction does not change while it is on screen, and
-/// re-walking it on every redraw would stutter a large pack.
-pub(crate) fn tree_rows(tree: &eidos_install::ExtractedTree) -> Vec<eidos_install::TreeRow> {
-    eidos_install::ArchiveTree::from_dir(tree.path()).map(|t| t.flatten()).unwrap_or_default()
+/// The extracted archive parsed once for the picker: the extraction does not
+/// change while the dialog is on screen, and re-walking it on every redraw would
+/// stutter a large pack - which is also why the picker keeps the TREE and not
+/// just its rows: the Manual mode's validity label needs it too.
+pub(crate) fn parsed_tree(tree: &eidos_install::ExtractedTree) -> eidos_install::ArchiveTree {
+    eidos_install::ArchiveTree::from_dir(tree.path()).unwrap_or_default()
 }
 
 /// Install what the manual / BAIN picker currently has selected.
@@ -2977,10 +2996,10 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             )
         }
         PickerMode::Manual { root } => {
-            // Re-derived on every pick, like MO2's live green/red label.
-            let tree = eidos_install::ArchiveTree::from_dir(p.tree.path()).ok();
+            // Like MO2's live green/red label - but against the tree parsed at
+            // construction, never a re-walk of the extraction inside view().
             let rules = eidos_install::LayoutRules::for_game(&p.game_id);
-            let valid = tree.as_ref().is_some_and(|t| t.root_looks_valid(root, rules));
+            let valid = p.archive_tree.root_looks_valid(root, rules);
             let chosen = if root.is_empty() { "<archive root>" } else { root.as_str() };
 
             let mut list = Column::new().spacing(1).push(
