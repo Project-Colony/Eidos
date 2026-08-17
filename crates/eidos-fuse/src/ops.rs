@@ -868,7 +868,15 @@ impl Filesystem for Eidos {
         }
         match self.stack.rename(&from, &to) {
             Ok(()) => {
-                let moved = self.inodes.lock_recover().rename(&from, &to);
+                let (moved, clobbered) = self.inodes.lock_recover().rename(&from, &to);
+                // The clobbered inodes' side-table entries die with them: their
+                // FORGET will find no count and prune nothing, so pruning here is
+                // the only chance - and atomic replace (INIs, saves) clobbers on
+                // every single write-through, which made this the fastest leak.
+                for dead in clobbered {
+                    self.aliases.lock_recover().remove(&dead);
+                    self.negatives.lock_recover().remove(&dead);
+                }
                 if let Some(ino) = moved {
                     self.invalidate_stale_aliases(ino, newparent.0, &newname.to_string_lossy());
                     self.record_alias(ino, newparent.0, &newname.to_string_lossy());

@@ -823,7 +823,21 @@ impl LayerStack {
                 // FILE_ATTRIBUTE_READONLY on a directory), and the index was told
                 // about a path that was not there, which the next resolve had to
                 // undo with a full rebuild.
-                if src.is_dir() {
+                // Classified WITHOUT following links. `src.is_dir()` follows, so
+                // a lower symlink-to-directory - which the install path itself
+                // creates via `overlay_dir` - was materialised as a REAL empty
+                // directory in the overwrite, and `getattr` switched from
+                // reporting S_IFLNK to S_IFDIR: a type change visible to the
+                // game, triggered by something as small as Wine clearing the
+                // read-only attribute. A symlink is declined instead: recreating
+                // the link here would be worse, because a RELATIVE target would
+                // re-resolve against the overwrite's location and point somewhere
+                // else entirely. (A symlink-to-FILE still copies up by content
+                // below, exactly as it always did: `is_file` follows too, and a
+                // content copy preserves what the vpath serves.)
+                let real_dir = src.is_dir()
+                    && fs::symlink_metadata(&src).is_ok_and(|m| !m.file_type().is_symlink());
+                if real_dir {
                     fs::create_dir_all(&dest)?;
                 } else if src.is_file() {
                     fs::copy(&src, &dest)?;
@@ -851,7 +865,13 @@ impl LayerStack {
             // (the classic "stop the launcher rewriting my INI") must survive.
             ensure_owner_writable(&dest);
         }
-        self.ow_note_created(vpath, &dest);
+        // Only what EXISTS is recorded. The declined branches above (a lower
+        // symlink, a lower entry that vanished mid-call) leave nothing at `dest`,
+        // and telling the index about a path that is not there was the original
+        // half of this bug - every later resolve paid a full rebuild to undo it.
+        if fs::symlink_metadata(&dest).is_ok() {
+            self.ow_note_created(vpath, &dest);
+        }
         Ok(dest)
     }
 
@@ -2121,7 +2141,17 @@ mod tests {
         stack.remove("Recreated").unwrap();
         stack.make_dir("Recreated").unwrap();
 
+        // And the shape that once slipped past this very matrix: create a file
+        // UNDER a deleted directory, with the index warm. The un-whiteout used to
+        // run for every ancestor instead of the leaf alone, so the walk hid
+        // Gone/inside.txt while the index resurrected it - and this test was
+        // green, because no query created anything between the deletes and the
+        // comparisons. The oracle is only as strong as the operations it covers.
+        let _ = stack.resolve_read("Gone/probe"); // warm
+        let _ = stack.create_truncated("Gone/new.ini").unwrap();
+
         for q in [
+            "Gone/new.ini",
             "Data/mine.ini",
             "DATA/MINE.INI",
             "Data/lower.esp",
@@ -2352,6 +2382,33 @@ mod tests {
         assert_eq!(a, b, "index and walk disagree on the listing");
     }
 
+    /// A lower symlink-to-directory must never be materialised as a REAL
+    /// directory: that is a type change the game can see (S_IFLNK becomes
+    /// S_IFDIR), reachable from something as small as Wine clearing the
+    /// read-only attribute - and the install path itself ships symlinks.
+    #[test]
+    fn open_for_write_never_turns_a_lower_symlink_into_a_real_directory() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "real/inner.txt", "content");
+        std::os::unix::fs::symlink(game.join("real"), game.join("link")).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        // A mode-only setattr arrives as open_for_write of the path itself.
+        let dest = stack.open_for_write("link").unwrap();
+        assert!(
+            fs::symlink_metadata(&dest).is_err(),
+            "a symlink must be declined, not replaced by {:?}",
+            fs::symlink_metadata(&dest).map(|m| m.file_type())
+        );
+        // And the union still serves the symlink from the lower layer.
+        let served = stack.resolve_read("link").expect("still resolvable");
+        assert!(
+            fs::symlink_metadata(&served).unwrap().file_type().is_symlink(),
+            "the served entry must still BE the symlink"
+        );
+    }
+
     /// A mkdir that cannot establish opacity must change NOTHING.
     ///
     /// The failure path is the whole test: if the whiteout is cleared before the
@@ -2425,9 +2482,14 @@ mod tests {
         assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden right after the delete");
 
         // Warming matters: a live daemon resolves thousands of times a second, so
-        // the index is always built by the time a write arrives.
+        // the index is always built by the time a write arrives. And the write
+        // must be a REAL creation: `create_truncated` makes the file exist, which
+        // is what routes it through `ow_note_created` - an `open_for_write` of a
+        // path with no lower source creates nothing, skips the note entirely
+        // since the existence gate, and left a first version of this test green
+        // against the very bug it was written for.
         let _ = stack.resolve_read("Data/anything");
-        stack.open_for_write("Data/new.ini").unwrap();
+        let _ = stack.create_truncated("Data/new.ini").unwrap();
 
         assert!(
             stack.resolve_read("Data/old.esp").is_none(),

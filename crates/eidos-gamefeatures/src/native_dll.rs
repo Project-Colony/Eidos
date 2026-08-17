@@ -455,7 +455,16 @@ mod tests {
         let dll = dir.join("native.dll");
         fs::write(&dll, blob("d3dcompiler_47", true)).unwrap();
         let set = imported_dlls(&dll).unwrap();
-        assert!(!set.is_empty(), "a real DLL imports at least one library");
+        // Named members, not just non-emptiness: a parser that returned a
+        // non-empty but WRONG set would sail through an is_empty check, and the
+        // caller this feeds (`ensure_d3dcompiler_47`) would silently stop
+        // matching - killing Community Shaders / ENB at load with a green test
+        // suite. These names are what the real blob imports (checked against the
+        // bytes, not assumed: the 64-bit build imports API sets and rpcrt4, and
+        // notably does NOT import kernel32.dll directly).
+        assert!(set.contains("rpcrt4.dll"), "{set:?}");
+        assert!(set.contains("api-ms-win-core-file-l1-1-0.dll"), "{set:?}");
+        assert!(set.len() >= 30, "the real import table has 33 entries: {set:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -465,7 +474,9 @@ mod tests {
         let dll = dir.join("native32.dll");
         fs::write(&dll, blob("d3dcompiler_47", false)).unwrap();
         let set = imported_dlls(&dll).unwrap();
-        assert!(!set.is_empty());
+        // Same reasoning as the 64-bit test; the 32-bit build links classically.
+        assert!(set.contains("kernel32.dll"), "{set:?}");
+        assert!(set.contains("msvcrt.dll"), "{set:?}");
         let _ = fs::remove_dir_all(&dir);
     }
 

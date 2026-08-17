@@ -100,18 +100,18 @@ pub struct InstallReport {
 impl ArchiveTree {
     /// Build the tree by walking an extracted directory.
     ///
-    /// Does NOT descend through symlinks, and stops at [`MAX_TREE_DEPTH`]. Both
-    /// guards are the ones every sibling walk in this crate already had and this
-    /// one did not: `overlay_dir` documents that "a symlink loop inside a crafted
-    /// archive cannot make this recurse forever", `flatten` caps at the same
-    /// depth, and `eidos-conflicts::collect_files` refuses to descend a symlink
-    /// for exactly this reason. An archive shipping `link -> ..` walked here
-    /// until the stack gave out, taking the whole GUI process with it - a hard
-    /// crash from untrusted input on a path the rest of the module treats as
-    /// hostile.
+    /// Symlinked directories ARE followed - an archive may legitimately ship
+    /// `Data` as a symlink, and refusing to descend reclassified such archives
+    /// from Simple to Manual and dropped whole subtrees from BAIN and root
+    /// detection (a first version of the loop guard did exactly that). What makes
+    /// following safe is the [`MAX_TREE_DEPTH`] cap alone: a crafted `link -> ..`
+    /// used to recurse until the stack gave out and took the GUI with it - a
+    /// SIGSEGV from untrusted input - and the cap turns that into a bounded,
+    /// harmless walk, the same defence `flatten` and `overlay_dir` already use.
     ///
-    /// Taking the kind from the dirent also drops one `stat(2)` per entry, which
-    /// on a 30k-entry archive is 30k syscalls saved.
+    /// The kind comes from the dirent (no `stat(2)` per entry, which on a
+    /// 30k-entry archive is 30k syscalls); only an actual symlink pays the extra
+    /// stat to learn what it points at.
     pub fn from_dir(root: &Path) -> io::Result<ArchiveTree> {
         fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>, depth: usize) -> io::Result<()> {
             if depth > MAX_TREE_DEPTH {
@@ -120,18 +120,7 @@ impl ArchiveTree {
             for e in fs::read_dir(dir)?.flatten() {
                 let p = e.path();
                 let Ok(t) = e.file_type() else { continue };
-                if t.is_symlink() {
-                    // Recorded as a leaf, never followed. A mod that ships a
-                    // symlink is still described; it just cannot make us loop.
-                    if let Ok(rel) = p.strip_prefix(base) {
-                        out.push(ArchiveEntry {
-                            path: rel.to_string_lossy().replace('\\', "/"),
-                            is_dir: false,
-                        });
-                    }
-                    continue;
-                }
-                let is_dir = t.is_dir();
+                let is_dir = if t.is_symlink() { p.is_dir() } else { t.is_dir() };
                 if let Ok(rel) = p.strip_prefix(base) {
                     out.push(ArchiveEntry {
                         path: rel.to_string_lossy().replace('\\', "/"),

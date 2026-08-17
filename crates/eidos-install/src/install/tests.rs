@@ -1142,7 +1142,35 @@ fn a_symlink_loop_in_an_archive_does_not_blow_the_stack() {
     let tree = ArchiveTree::from_dir(&dir).expect("walk must return, not recurse forever");
     let all = tree.flatten();
     assert!(all.iter().any(|e| e.path.ends_with("a.esp")), "real files still described");
-    // The link itself is listed, as a leaf, and never descended.
-    assert!(all.iter().any(|e| e.path.ends_with("up") && !e.is_dir), "{all:?}");
+    // The loop is BOUNDED, not banned: symlinked directories are followed - an
+    // archive may legitimately ship `Data` as a symlink, and a first version of
+    // this guard that refused to descend reclassified such archives as Manual -
+    // so the defence is the depth cap, and the proof is that this returned.
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+
+#[test]
+fn an_archive_shipping_data_as_a_symlink_still_classifies_by_its_contents() {
+    // The regression a symlink-refusing loop guard introduced: `Data -> payload`
+    // made simple_archive_base() blind to the whole payload, so a perfectly
+    // ordinary archive fell through to the manual picker.
+    let dir = std::env::temp_dir().join(format!("eidos-symdata-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("payload/textures")).unwrap();
+    std::fs::write(dir.join("payload/mod.esp"), b"x").unwrap();
+    std::fs::write(dir.join("payload/textures/a.dds"), b"x").unwrap();
+    std::os::unix::fs::symlink(dir.join("payload"), dir.join("Data")).unwrap();
+
+    let tree = ArchiveTree::from_dir(&dir).unwrap();
+    let all = tree.flatten();
+    assert!(
+        all.iter().any(|e| e.path == "Data" && e.is_dir),
+        "the symlinked Data must read as a directory: {all:?}"
+    );
+    assert!(
+        all.iter().any(|e| e.path == "Data/mod.esp"),
+        "its contents must be described: {all:?}"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -174,16 +174,26 @@ impl Inodes {
     /// up. Leaving those mapped under the old prefix would make the next
     /// `getattr`/`read` on a kernel-held child resolve to a path that the rename
     /// just whited out, i.e. a spurious ENOENT on a file that is right there.
-    /// Returns the inode that was moved, if the kernel had one for `from`.
-    pub(crate) fn rename(&mut self, from: &str, to: &str) -> Option<u64> {
+    /// Returns the inode that was moved (if the kernel had one for `from`) plus
+    /// every inode the rename CLOBBERED - the destination of an atomic replace.
+    ///
+    /// The clobbered list exists for the caller's side tables: `discard` removes
+    /// a clobbered inode from `counts`, so the later FORGET for it finds no
+    /// count, reports nothing freed, and the `aliases`/`negatives` entries keyed
+    /// by it were retained for the life of the mount. Renaming over an existing
+    /// file is the atomic-replace pattern every INI and save write uses, so that
+    /// was the leak that grew fastest.
+    pub(crate) fn rename(&mut self, from: &str, to: &str) -> (Option<u64>, Vec<u64>) {
         let (from_key, to_key) = (ikey(from), ikey(to));
+        let mut clobbered_out: Vec<u64> = Vec::new();
 
         // Drop an inode that the rename has made unreachable, so a later `forget`
         // on it cannot unmap whoever owns its path now.
-        fn discard(this: &mut Inodes, ino: u64, survivor: u64) {
+        fn discard(this: &mut Inodes, ino: u64, survivor: u64, out: &mut Vec<u64>) {
             if ino != survivor {
                 this.by_ino.remove(&ino);
                 this.counts.remove(&ino);
+                out.push(ino);
             }
         }
 
@@ -195,7 +205,7 @@ impl Inodes {
             // The destination may already be interned - renaming over an existing
             // file is the standard atomic-replace pattern for INIs and saves.
             if let Some(clobbered) = self.by_path.remove(&to_key) {
-                discard(self, clobbered, ino);
+                discard(self, clobbered, ino, &mut clobbered_out);
             }
             self.by_ino.insert(ino, to.to_string());
             self.by_path.insert(to_key, ino);
@@ -214,7 +224,7 @@ impl Inodes {
             self.by_path.remove(&old_key);
             let new_key = format!("{}/{}", ikey(to), &old_key[prefix.len()..]);
             if let Some(clobbered) = self.by_path.insert(new_key, child_ino) {
-                discard(self, clobbered, child_ino);
+                discard(self, clobbered, child_ino, &mut clobbered_out);
             }
             // Keep the display path in step, preserving the child's own casing.
             if let Some(old_display) = self.by_ino.get(&child_ino).cloned() {
@@ -223,7 +233,7 @@ impl Inodes {
                 }
             }
         }
-        moved_ino
+        (moved_ino, clobbered_out)
     }
 }
 

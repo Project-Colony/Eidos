@@ -474,11 +474,21 @@ impl Stats {
         let timeline = if non_empty == 0 {
             "\n  timeline: no reads landed inside it".to_string()
         } else {
+            // Two honesty rules in the wording. The percentage names READ time,
+            // because that is all `note_read` ever feeds it: a slice saturated
+            // by lookups or readdirs would print a low figure here, and an
+            // unlabelled number would read as "nothing waited on the daemon" -
+            // an inference this timeline cannot support on its own. And the
+            // heaviest slot carries its OWN read count, because it need not be
+            // the busiest-by-count slot: sharing one line let a 1000-read burst
+            // at t=+0s print beside the timestamp of a different slot entirely.
             format!(
                 "\n  timeline: {non_empty} non-empty {SLOT_MS}ms slots; busiest {busiest} reads; \
-                 peak slot {:.0} ms of handler time at t=+{:.1}s = {:.1}% of {} worker-thread(s)\
-                 \n  slots at/over 50 reads: {}, over 200: {}, over 500: {}",
+                 heaviest slot {:.0} ms of READ-handler time ({} read(s)) at t=+{:.1}s \
+                 = {:.1}% of the {}-thread pool's capacity for that slice\
+                 \n  slots with >=50 reads: {}, >=200: {}, >=500: {}",
                 peak.ns as f64 / 1_000_000.0,
+                peak.reads,
                 peak_i as f64 * SLOT_MS as f64 / 1000.0,
                 peak.ns as f64 * 100.0 / slot_capacity_ns,
                 threads,

@@ -20,9 +20,15 @@ fn rename_over_an_interned_destination_keeps_the_survivor_mapped() {
     let mut inodes = Inodes::new();
     let victim = inodes.lookup("Skyrim.ini");
     let src = inodes.lookup("Skyrim.ini.tmp");
-    inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
+    let (_, clobbered) = inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
 
     assert_eq!(inodes.intern("Skyrim.ini"), src, "the renamed inode owns the path");
+    // The victim is REPORTED, because its FORGET can no longer do the reporting:
+    // discard removed its count, so forget() finds nothing and frees nothing,
+    // and the side tables keyed by it (aliases, negatives) would have been
+    // retained for the life of the mount - on the very pattern every INI and
+    // save write uses.
+    assert_eq!(clobbered, vec![victim], "the clobbered inode must be handed back for pruning");
     // Forgetting the clobbered inode must not unmap the survivor.
     inodes.forget(victim, 1);
     assert_eq!(inodes.intern("Skyrim.ini"), src, "forget() unmapped a live inode");
@@ -184,8 +190,8 @@ fn the_timeline_reports_the_peak_slot_and_how_full_it_was() {
     }
     let out = s.read_shape(&names);
     assert!(out.contains("busiest 300 reads"), "{out}");
-    assert!(out.contains("peak slot 30 ms"), "{out}");
-    assert!(out.contains("slots at/over 50 reads: 1"), "{out}");
+    assert!(out.contains("heaviest slot 30 ms"), "{out}");
+    assert!(out.contains("slots with >=50 reads: 1"), "{out}");
     // 30 ms of handler time inside a 100 ms slot, over N worker threads.
     let expect = 30.0 * 100.0 / (100.0 * crate::config::fuse_threads() as f64);
     assert!(out.contains(&format!("= {expect:.1}% of")), "{out}");
