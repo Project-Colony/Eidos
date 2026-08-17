@@ -128,11 +128,15 @@ combine freely:
 | a per-session I/O report from the mount | `EIDOS_FUSE_STATS=1` |
 | a different FUSE worker count | `EIDOS_FUSE_THREADS=8` (default 4; `1` is the first thing to try when chasing a concurrency bug) |
 
-A fully loaded example:
+The line to keep for a modern modded setup (Community Shaders, DLSS, frame
+generation) - this is the final command, not an example:
 
 ```
-PROTON_ENABLE_NVAPI=1 DXVK_HUD=fps ~/.local/bin/eidos-gui %command%
+PROTON_ENABLE_NVAPI=1 ~/.local/bin/eidos-gui %command%
 ```
+
+Add `DXVK_HUD=fps` in front while verifying the setup works, drop it once it
+does.
 
 The deeper diagnostic switches (`EIDOS_FUSE_TRACE`, the cache and index
 bisection toggles, why `EIDOS_FUSE_PASSTHROUGH` is off by default) live in
