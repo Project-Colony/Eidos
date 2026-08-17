@@ -138,6 +138,21 @@ fn parse<Pe: ImageNtHeaders>(data: &[u8]) -> Result<BTreeSet<String>, object::Er
             out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
         }
     }
+    // DELAY-LOADED imports count too: a plugin that binds d3dcompiler lazily
+    // needs the DLL present just the same - the bind simply happens at first
+    // call instead of at load, so missing it fails LATER and further from the
+    // cause. The table is optional and often absent (measured on this machine:
+    // 3 of 243 PEs have one at all); absence is not an error, and a malformed
+    // table must not discard the classic imports already collected.
+    if let Ok(Some(delay)) = file.delay_load_import_table() {
+        if let Ok(mut descriptors) = delay.descriptors() {
+            while let Ok(Some(descriptor)) = descriptors.next() {
+                if let Ok(name_bytes) = delay.name(descriptor.dll_name_rva.get(LE)) {
+                    out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
+                }
+            }
+        }
+    }
     Ok(out)
 }
 
@@ -602,3 +617,4 @@ mod tests {
         let _ = fs::remove_dir_all(&win);
     }
 }
+
