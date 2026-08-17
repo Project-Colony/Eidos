@@ -889,6 +889,12 @@ struct PluginDrag {
 /// folder (the merged view as the FUSE union would serve it).
 type DataRow = (String, String, bool);
 
+/// One memoised recursive listing: the view generation it was built at, and the
+/// entries behind an `Rc` so a cache HIT hands out a pointer bump instead of
+/// cloning ~5k Strings per redraw (which is what it did, and what made the
+/// "cache" allocate proportionally to its own payload).
+type CachedListing = (u64, std::rc::Rc<Vec<String>>);
+
 struct App {
     screen: Screen,
     games: Vec<DetectedGame>,
@@ -1143,7 +1149,7 @@ struct App {
     overwrite_expanded: HashSet<String>,
     /// Memoised recursive file listings per directory (the Overwrite tab and the
     /// mod-info file tree), each with the generation it was built at.
-    listing_cache: std::cell::RefCell<HashMap<PathBuf, (u64, std::rc::Rc<Vec<String>>)>>,
+    listing_cache: std::cell::RefCell<HashMap<PathBuf, CachedListing>>,
     // ---- LOOT report (MO2's post-sort report dialog) ----
     /// The report from the last LOOT sort, shown as a modal so the user sees
     /// missing masters / messages / dirty-plugin advice. `None` = no report open.
