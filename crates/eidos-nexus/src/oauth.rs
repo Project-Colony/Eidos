@@ -186,6 +186,33 @@ fn urldecode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The recognisable query values of a callback request line.
+#[derive(Default)]
+struct CallbackParams {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_desc: Option<String>,
+}
+
+/// Parse the query out of a request line, or `None` when it has no target.
+fn callback_params(request_line: &str) -> Option<CallbackParams> {
+    let target = request_line.split_whitespace().nth(1)?;
+    let query = target.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut p = CallbackParams::default();
+    for pair in query.split('&').filter(|p| !p.is_empty()) {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        match k {
+            "code" => p.code = Some(urldecode(v)),
+            "state" => p.state = Some(urldecode(v)),
+            "error" => p.error = Some(urldecode(v)),
+            "error_description" => p.error_desc = Some(urldecode(v)),
+            _ => {}
+        }
+    }
+    Some(p)
+}
+
 /// Pull the authorization code out of the browser's request line, refusing
 /// anything whose `state` is not the one we sent.
 ///
@@ -193,25 +220,10 @@ fn urldecode(s: &str) -> String {
 /// 127.0.0.1, so any page the user has open could navigate to our callback with
 /// a code of its own choosing; comparing state is what makes that fail.
 pub fn parse_callback(request_line: &str, expected_state: &str) -> Result<String, String> {
-    let target = request_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| "malformed request from the browser".to_string())?;
-    let query = target.split_once('?').map(|(_, q)| q).unwrap_or("");
-    let mut code = None;
-    let mut state = None;
-    let mut error = None;
-    let mut error_desc = None;
-    for pair in query.split('&').filter(|p| !p.is_empty()) {
-        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
-        match k {
-            "code" => code = Some(urldecode(v)),
-            "state" => state = Some(urldecode(v)),
-            "error" => error = Some(urldecode(v)),
-            "error_description" => error_desc = Some(urldecode(v)),
-            _ => {}
-        }
-    }
+    let Some(CallbackParams { code, state, error, error_desc }) = callback_params(request_line)
+    else {
+        return Err("malformed request from the browser".to_string());
+    };
     // Report the refusal before anything else: "access_denied" is the ordinary
     // outcome of the user pressing Cancel, and it deserves its own words.
     if let Some(e) = error {
@@ -230,6 +242,47 @@ pub fn parse_callback(request_line: &str, expected_state: &str) -> Result<String
     }
 }
 
+/// What one connection to the loopback listener turned out to be.
+enum Callback {
+    /// The genuine redirect: a code whose `state` is this attempt's.
+    Code(String),
+    /// A definitive refusal from Nexus - the user pressed Cancel - carrying our
+    /// `state` as RFC 6749 requires on error redirects. Final: report it.
+    Refused(String),
+    /// Everything else: a speculative browser preconnect that sends no request
+    /// at all (Chrome opens those against an origin it is about to navigate
+    /// to), a favicon fetch, a stray local probe, or a redirect whose `state`
+    /// is not ours. None of these is the reply this attempt is waiting for, so
+    /// none of them may end it - the listener keeps listening.
+    Noise,
+}
+
+/// Classify a request line for [`wait_for_code`]'s accept loop. Stricter than
+/// [`parse_callback`]: even a refusal only counts when it carries our `state`,
+/// so a hostile local page cannot end the real sign-in by navigating to the
+/// callback with a forged `error`. The worst case of that strictness is a
+/// genuine denial with no state, which times out instead of reporting - the
+/// safe direction.
+fn classify_callback(request_line: &str, expected_state: &str) -> Callback {
+    let Some(CallbackParams { code, state, error, error_desc }) = callback_params(request_line)
+    else {
+        return Callback::Noise;
+    };
+    if state.as_deref() != Some(expected_state) {
+        return Callback::Noise;
+    }
+    if let Some(e) = error {
+        return Callback::Refused(match error_desc {
+            Some(d) if !d.is_empty() => format!("Nexus refused the sign-in: {e} ({d})"),
+            _ => format!("Nexus refused the sign-in: {e}"),
+        });
+    }
+    match code {
+        Some(c) => Callback::Code(c),
+        None => Callback::Noise,
+    }
+}
+
 /// What the browser is left looking at once the code is captured.
 const DONE_PAGE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><meta charset=utf-8><title>Eidos</title><body style=\"font-family:system-ui;background:#ECDFC2;color:#2B2018;display:grid;place-items:center;height:100vh;margin:0\"><div style=\"text-align:center\"><h1 style=\"font-weight:600\">Eidos is connected.</h1><p>You can close this tab and go back to Eidos.</p></div>";
 
@@ -238,6 +291,14 @@ const DONE_PAGE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf
 /// Binds 127.0.0.1 explicitly - never `0.0.0.0`, which would put an
 /// authorization endpoint on the local network - and gives up after `timeout`
 /// so an abandoned sign-in cannot leave a listener and a thread behind.
+///
+/// Connections are ACCEPTED IN A LOOP, not once: the first thing to reach the
+/// port is routinely not the redirect. Chrome opens a speculative preconnect -
+/// a TCP connection that sends nothing - against an origin it is about to
+/// navigate to, and returning its emptiness as the flow's verdict failed the
+/// whole sign-in while the genuine callback found the listener gone. Noise is
+/// answered (or dropped) and the wait continues; only this attempt's own
+/// `state` can end it, one way or the other.
 pub fn wait_for_code(port: u16, expected_state: &str, timeout: Duration) -> Result<String, String> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let listener = TcpListener::bind(addr).map_err(|e| {
@@ -246,15 +307,21 @@ pub fn wait_for_code(port: u16, expected_state: &str, timeout: Duration) -> Resu
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = SystemTime::now() + timeout;
     loop {
+        if SystemTime::now() > deadline {
+            return Err("timed out waiting for the Nexus sign-in".to_string());
+        }
         match listener.accept() {
             Ok((stream, _)) => {
-                stream.set_nonblocking(false).map_err(|e| e.to_string())?;
-                return handle_callback(stream, expected_state);
+                if stream.set_nonblocking(false).is_err() {
+                    continue; // one broken connection must not end the wait
+                }
+                match handle_callback(stream, expected_state) {
+                    Callback::Code(code) => return Ok(code),
+                    Callback::Refused(why) => return Err(why),
+                    Callback::Noise => {} // keep listening for the real redirect
+                }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                if SystemTime::now() > deadline {
-                    return Err("timed out waiting for the Nexus sign-in".to_string());
-                }
                 std::thread::sleep(Duration::from_millis(120));
             }
             Err(e) => return Err(e.to_string()),
@@ -262,18 +329,22 @@ pub fn wait_for_code(port: u16, expected_state: &str, timeout: Duration) -> Resu
     }
 }
 
-fn handle_callback(mut stream: TcpStream, expected_state: &str) -> Result<String, String> {
+fn handle_callback(mut stream: TcpStream, expected_state: &str) -> Callback {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut line = String::new();
-    BufReader::new(stream.try_clone().map_err(|e| e.to_string())?)
-        .read_line(&mut line)
-        .map_err(|e| e.to_string())?;
-    let result = parse_callback(&line, expected_state);
-    // Answer either way, so the user sees a page instead of a dead tab. On
-    // failure the browser still gets a 200 - the error belongs in Eidos, which
-    // is where they are about to look.
-    let _ = stream.write_all(DONE_PAGE.as_bytes());
-    let _ = stream.flush();
+    let Ok(reader) = stream.try_clone() else { return Callback::Noise };
+    if BufReader::new(reader).read_line(&mut line).is_err() {
+        return Callback::Noise; // a hung or aborted connection is not the reply
+    }
+    let result = classify_callback(&line, expected_state);
+    // Answer the real outcomes so the user sees a page instead of a dead tab -
+    // on a refusal too, because the error belongs in Eidos, which is where they
+    // are about to look. Noise gets nothing: a preconnect never reads the
+    // response, and a favicon fetch survives a dropped connection.
+    if !matches!(result, Callback::Noise) {
+        let _ = stream.write_all(DONE_PAGE.as_bytes());
+        let _ = stream.flush();
+    }
     result
 }
 
@@ -696,6 +767,64 @@ mod tests {
         let err = wait_for_code(28938, "st4te", Duration::from_millis(300)).unwrap_err();
         assert!(err.contains("timed out"), "{err}");
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_wait_survives_preconnects_and_noise_before_the_real_redirect() {
+        // What actually reaches the port during a Chrome sign-in, in order: a
+        // speculative preconnect that sends NOTHING, a favicon fetch, and - if a
+        // hostile local page is trying - a callback with somebody else's state.
+        // The single-accept version returned the preconnect's emptiness as the
+        // flow's verdict and the genuine redirect found the listener gone.
+        let port = 28939;
+        let waiter = std::thread::spawn(move || {
+            wait_for_code(port, "st4te", Duration::from_secs(10))
+        });
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        let connect = || loop {
+            match TcpStream::connect(addr) {
+                Ok(s) => break s,
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        };
+        // 1. The empty preconnect: open, send nothing, close.
+        drop(connect());
+        // 2. A favicon fetch: a real request that is not the callback.
+        let mut s = connect();
+        s.write_all(b"GET /favicon.ico HTTP/1.1\r\n\r\n").unwrap();
+        drop(s);
+        // 3. A forged refusal WITHOUT our state: must not end the real flow.
+        let mut s = connect();
+        s.write_all(b"GET /callback?error=access_denied&state=forged HTTP/1.1\r\n\r\n").unwrap();
+        drop(s);
+        // 4. The genuine redirect.
+        let mut s = connect();
+        s.write_all(b"GET /callback?code=the-real-code&state=st4te HTTP/1.1\r\n\r\n").unwrap();
+        drop(s);
+
+        let got = waiter.join().unwrap();
+        assert_eq!(got.as_deref(), Ok("the-real-code"), "{got:?}");
+    }
+
+    #[test]
+    fn a_refusal_carrying_our_state_still_ends_the_wait() {
+        // Pressing Cancel is an ordinary outcome and must be reported, not
+        // waited past: Nexus echoes our state on the error redirect (RFC 6749).
+        let port = 28941;
+        let waiter = std::thread::spawn(move || {
+            wait_for_code(port, "st4te", Duration::from_secs(10))
+        });
+        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        let mut s = loop {
+            match TcpStream::connect(addr) {
+                Ok(s) => break s,
+                Err(_) => std::thread::sleep(Duration::from_millis(20)),
+            }
+        };
+        s.write_all(b"GET /callback?error=access_denied&state=st4te HTTP/1.1\r\n\r\n").unwrap();
+        drop(s);
+        let err = waiter.join().unwrap().unwrap_err();
+        assert!(err.contains("access_denied"), "{err}");
     }
 
     // ---- access-token claims -------------------------------------------------

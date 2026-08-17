@@ -71,7 +71,16 @@ pub fn set_key(text: &str, section: &str, key: &str, value: &str) -> String {
     let mut lines: Vec<String> = text.lines().map(String::from).collect();
 
     let header = format!("[{section}]");
-    let section_at = lines.iter().position(|l| l.trim().eq_ignore_ascii_case(&header));
+    // Matched through `section_header`, the same primitive `get_key` reads with -
+    // never by comparing the raw line to `[name]`. The raw comparison missed a
+    // header written `[ Archive ]` (inner spaces), so a set created a SECOND
+    // `[Archive]` section at the end while get_key kept reading the first one:
+    // write "1", read back "0", demonstrated before it was fixed. One matching
+    // rule for the whole crate, or the primitives disagree about which sections
+    // exist.
+    let section_at = lines
+        .iter()
+        .position(|l| section_header(l).is_some_and(|s| s.eq_ignore_ascii_case(section)));
     let new_line = format!("{key}={value}");
 
     match section_at {
@@ -115,14 +124,15 @@ pub fn set_key(text: &str, section: &str, key: &str, value: &str) -> String {
 /// the whole point of that tweak, for instance).
 pub fn delete_key(text: &str, section: &str, key: &str) -> String {
     let nl = newline_style(text);
-    let header = format!("[{section}]");
     let mut in_section = false;
     let mut out: Vec<&str> = Vec::new();
     let mut removed = false;
 
     for line in text.lines() {
-        if section_header(line).is_some() {
-            in_section = line.trim().eq_ignore_ascii_case(&header);
+        // Same matching rule as `get_key` and `set_key`: the section NAME via
+        // `section_header`, never the raw line - see the comment in `set_key`.
+        if let Some(s) = section_header(line) {
+            in_section = s.eq_ignore_ascii_case(section);
             out.push(line);
             continue;
         }
@@ -206,6 +216,21 @@ mod tests {
         assert_eq!(get_key(src, "Archive", ""), None); // the `=orphanvalue` line is in no section
         // A duplicated key keeps the first, like the engine's parser.
         assert_eq!(get_key("[A]\nk=1\nk=2\n", "A", "k"), Some("1"));
+    }
+
+    #[test]
+    fn all_three_primitives_agree_on_which_sections_exist() {
+        // `[ Archive ]` with inner spaces: get_key always matched it (it trims
+        // the extracted name), while set_key and delete_key compared the raw
+        // line to `[Archive]` and missed - so a set created a DUPLICATE section
+        // at the end and get_key kept answering from the first one. Write "1",
+        // read back "0". One matching rule for the whole crate.
+        let text = "[ Archive ]\nbInvalidateOlderFiles=0\n";
+        let out = set_key(text, "Archive", "bInvalidateOlderFiles", "1");
+        assert_eq!(get_key(&out, "Archive", "bInvalidateOlderFiles"), Some("1"), "{out}");
+        assert_eq!(out.matches("Archive").count(), 1, "no duplicate section: {out}");
+        let gone = delete_key(text, "Archive", "bInvalidateOlderFiles");
+        assert_eq!(get_key(&gone, "Archive", "bInvalidateOlderFiles"), None, "{gone}");
     }
 
     #[test]

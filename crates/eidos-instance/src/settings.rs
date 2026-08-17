@@ -94,16 +94,40 @@ pub fn save_nexus_creds(creds: &NexusCreds) -> io::Result<()> {
         fs::create_dir_all(parent)?;
     }
     let existing = fs::read_to_string(&path).unwrap_or_default();
-    fs::write(&path, render_nexus_creds(&existing, creds))?;
-    // These are credentials: keep them out of other users' reach (0600), the
-    // same as ssh does. Applied after the write so a pre-existing 0644 file from
-    // an older Eidos gets tightened too.
+    let body = render_nexus_creds(&existing, creds);
+    // These are credentials: 0600 from the very first byte, like ssh. The old
+    // write-then-chmod left a window - and, if the process died between the
+    // two, a permanent state - where a FRESH nexus.ini sat at the umask default
+    // with the tokens inside. Written to a sibling temp born 0600 and renamed
+    // over, which also tightens a pre-existing looser file (the rename replaces
+    // its inode, permissions and all) and makes the write atomic.
+    let tmp = path.with_extension("ini.tmp");
+    {
+        use std::io::Write;
+        let mut opts = fs::OpenOptions::new();
+        opts.create(true).truncate(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
+        f.write_all(body.as_bytes())?;
+    }
+    // `mode` only applies when the temp is CREATED; a leftover from a crashed
+    // attempt keeps its old bits, so tighten explicitly before publishing.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
+        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))?;
     }
-    Ok(())
+    match fs::rename(&tmp, &path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 /// Forget the OAuth sign-in, keeping any API key. What "Sign out" does.

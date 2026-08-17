@@ -533,9 +533,6 @@ fn convert_messages(messages: &[libloot::metadata::Message]) -> Vec<LootMessage>
 /// reported (MO2 drops disabled ones), and a master is "missing" when a plugin
 /// declares it but it is not enabled - matching Eidos's own crash predictor, since
 /// a disabled master is a guaranteed CTD. Plugins with no issues are omitted.
-// Mirrors `sort`/`metadata`'s input list (game id + paths + masterlist set) plus the
-// enabled set; splitting these into a struct would only obscure the call site.
-#[allow(clippy::too_many_arguments)]
 pub fn report(
     view: &GameView<'_>,
     enabled_lower: &std::collections::HashSet<String>,

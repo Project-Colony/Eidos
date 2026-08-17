@@ -34,12 +34,17 @@ pub fn read_text_lossy(path: &Path) -> Option<(String, bool)> {
 }
 
 /// Write `text` back in the encoding [`read_text_lossy`] found it in.
+///
+/// Atomic (temp + rename), like every other writer in this module: the untweak
+/// pass runs this against the PROFILE's INI copy - the only durable one - and a
+/// crash mid-`fs::write` there would truncate the very file `capture_inis` just
+/// took pains to capture safely.
 pub fn write_text(path: &Path, text: &str, cp1252: bool) -> io::Result<()> {
     if cp1252 {
         let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode(text);
-        fs::write(path, &bytes)
+        copy_atomic_bytes(path, &bytes)
     } else {
-        fs::write(path, text)
+        copy_atomic_bytes(path, text.as_bytes())
     }
 }
 

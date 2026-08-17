@@ -110,7 +110,18 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(path, s)
+    // Atomic (tmp + rename), like the profile writers: this rewrites the WHOLE
+    // list on every save, and a crash mid-write would take the user's custom
+    // arguments and workdirs with it.
+    let tmp = path.with_extension("ini.tmp");
+    fs::write(&tmp, s)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 /// Merge per-game defaults with the user's tools: user entries first and they

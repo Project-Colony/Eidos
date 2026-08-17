@@ -222,7 +222,24 @@ pub fn register_morrowind_archives(ini: &Path, mod_bsas: &[String]) -> io::Resul
     if let Some(parent) = ini.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(ini, text)
+    write_atomic(ini, text.as_bytes())
+}
+
+/// Atomically replace `path`: write a sibling `.tmp` then rename over it, the
+/// same pattern `eidos-plugins` uses for `plugins.txt` and for the same reason -
+/// these are the USER'S game INIs, and a crash mid-write must not leave half a
+/// `Skyrim.ini` behind (settings gone, invalidation gone, every loose-file mod
+/// silently off).
+fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, bytes)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
 }
 
 /// The ordered `[Archives] Archive N=` values from INI text.
@@ -493,9 +510,9 @@ pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Re
         // inserted section/key/value text is ASCII. Guard anyway.
         let bytes: Vec<u8> =
             out.chars().map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' }).collect();
-        fs::write(path, bytes)
+        write_atomic(path, &bytes)
     } else {
-        fs::write(path, out)
+        write_atomic(path, out.as_bytes())
     }
 }
 

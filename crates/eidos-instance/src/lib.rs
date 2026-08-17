@@ -796,13 +796,23 @@ fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     for e in fs::read_dir(from)?.flatten() {
         let src = e.path();
         let dst = to.join(e.file_name());
-        if src.is_dir() && dst.exists() {
+        // Merging only makes sense dir-into-dir. On a TYPE conflict the source -
+        // what the game just wrote into the Overwrite, the top layer of the
+        // union - wins the name: recursing a file-occupied `dst` hit ENOTDIR
+        // and `remove_file` on a dir-occupied one hit EISDIR, either way
+        // aborting "move to mod" half-done with the Overwrite part-emptied.
+        // `symlink_metadata` so a dangling link still counts as an occupant.
+        let dst_is_dir =
+            fs::symlink_metadata(&dst).map(|m| m.file_type().is_dir()).unwrap_or(false);
+        if src.is_dir() && dst_is_dir {
             // Merge rather than clobber, then drop the now-empty source dir.
             move_tree(&src, &dst)?;
             let _ = fs::remove_dir(&src);
         } else {
-            if dst.exists() {
-                fs::remove_file(&dst)?;
+            match fs::symlink_metadata(&dst).map(|m| m.file_type()) {
+                Ok(t) if t.is_dir() => fs::remove_dir_all(&dst)?,
+                Ok(_) => fs::remove_file(&dst)?,
+                Err(_) => {}
             }
             fs::rename(&src, &dst)?;
         }
@@ -1030,6 +1040,30 @@ mod tests {
         // An existing mod keeps its own metadata.
         assert_eq!(fs::read(target.join("meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
         assert!(inst.overwrite_is_empty());
+    }
+
+    #[test]
+    fn overwrite_into_mod_survives_type_conflicts_in_both_directions() {
+        // The game regenerated as a FILE what the mod ships as a DIRECTORY, and
+        // vice versa. Both used to abort the move half-done (EISDIR / ENOTDIR)
+        // with the Overwrite part-emptied; the Overwrite is the union's top
+        // layer, so its shape wins the name.
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let target = inst.mods_dir().join("MyMod");
+        fs::create_dir_all(target.join("docs")).unwrap();
+        fs::write(target.join("docs/readme.txt"), b"old").unwrap();
+        fs::write(target.join("SKSE"), b"was a file").unwrap();
+
+        let ow = inst.overwrite_dir();
+        fs::write(ow.join("docs"), b"now a file").unwrap();
+        fs::create_dir_all(ow.join("SKSE/Plugins")).unwrap();
+        fs::write(ow.join("SKSE/Plugins/gen.json"), b"gen").unwrap();
+
+        inst.overwrite_into_mod("MyMod").unwrap();
+        assert_eq!(fs::read(target.join("docs")).unwrap(), b"now a file");
+        assert_eq!(fs::read(target.join("SKSE/Plugins/gen.json")).unwrap(), b"gen");
+        assert!(inst.overwrite_is_empty(), "nothing may be left behind");
     }
 
     #[test]

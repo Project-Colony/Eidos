@@ -111,7 +111,7 @@ fn make_root_private() -> std::io::Result<()> {
 
 /// Enter a private user + mount namespace, mount the union, run the command
 /// through it, then unmount on exit. Returns the command's exit status.
-pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
+pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // SAFETY: getuid/getgid always succeed.
     let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
 
@@ -148,7 +148,7 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     }
     make_root_private()?;
 
-    let mut layers = spec.layers;
+    let mut layers = std::mem::take(&mut spec.layers);
     if let Some((src, stash)) = &spec.base_bind {
         std::fs::create_dir_all(stash)?;
         bind_mount(src, stash)?;
@@ -191,6 +191,40 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
         }
     }
 
+    // Everything from here to the run lives behind one call so the bind cleanup
+    // below executes on EVERY exit path. The `?`s on the union spawns used to
+    // return straight out of `launch` with the saves/plugins binds still
+    // standing, and the caller's post-run steps then read the profile through
+    // its own bind - the exact lie the fail-closed loop above guards against,
+    // reintroduced a few lines later. That loop's rollback only ever covered
+    // failures of the binds themselves, not of anything after them.
+    let result = launch_mounted(&spec, layers);
+
+    // Unmount the extra binds NOW, not at process exit: this process stays inside
+    // the namespace, and the caller's post-run steps need the REAL prefix back.
+    // The Steam Cloud save sync read "the prefix Saves dir" through the still-
+    // mounted bind - its own source - and no-op'd on every run while looking like
+    // it worked. Detach-style, loudly on failure: a bind that stays up silently
+    // turns that sync back into a lie. This runs whether `launch_mounted`
+    // succeeded or not - a failed mount is exactly when a stranded bind would
+    // lie the longest.
+    for (_src, dst) in &spec.binds {
+        if let Err(e) = unmount_detach(dst) {
+            eprintln!(
+                "eidos: WARNING - could not unmount {} after the run ({e}); \
+                 post-run steps may read the profile through it instead of the prefix",
+                dst.display()
+            );
+        }
+    }
+
+    result
+}
+
+/// The mount-and-run half of [`launch`]: the union spawns and the command
+/// itself. Split out so its `?`s land back in [`launch`], which unmounts the
+/// profile binds no matter how this half exits.
+fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<ExitStatus> {
     // ROOT UNION FIRST, if any mod ships a `Root/`. Order matters: this union
     // covers the game install root, and the Data union below then mounts INSIDE
     // it. Mounting Data first would leave it shadowed by the root mount.
@@ -228,7 +262,7 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     };
 
     std::fs::create_dir_all(&spec.mountpoint)?;
-    let session = Eidos::new(layers, spec.overwrite).spawn(&spec.mountpoint)?;
+    let session = Eidos::new(layers, spec.overwrite.clone()).spawn(&spec.mountpoint)?;
 
     // Run from the game root (the directory that contains Data), exactly like MO2
     // (modorganizer processrunner sets the child's CWD to the game's base dir).
@@ -265,22 +299,6 @@ pub fn launch(spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // the caller's capture_inis runs only once the real workload is gone). The direct
     // child has already been reaped by `Command::status`.
     reap_descendants();
-
-    // Unmount the extra binds NOW, not at process exit: this process stays inside
-    // the namespace, and the caller's post-run steps need the REAL prefix back.
-    // The Steam Cloud save sync read "the prefix Saves dir" through the still-
-    // mounted bind - its own source - and no-op'd on every run while looking like
-    // it worked. Detach-style, loudly on failure: a bind that stays up silently
-    // turns that sync back into a lie.
-    for (_src, dst) in &spec.binds {
-        if let Err(e) = unmount_detach(dst) {
-            eprintln!(
-                "eidos: WARNING - could not unmount {} after the run ({e}); \
-                 post-run steps may read the profile through it instead of the prefix",
-                dst.display()
-            );
-        }
-    }
 
     drop(session); // unmount
     status

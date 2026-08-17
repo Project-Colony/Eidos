@@ -217,10 +217,16 @@ pub fn install_extracted(
             fs::remove_dir_all(&dest)?;
         }
         fs::create_dir_all(&dest)?;
-        // A merge installs over existing files (recursive copy); otherwise the dest
-        // is empty/wiped, so a fast top-level rename suffices.
+        // A merge installs over existing files; otherwise the dest is empty/wiped,
+        // so a fast top-level rename suffices. `overlay_dir`, not `copy_dir_all`:
+        // the BAIN and root paths already merge through `place_sources` ->
+        // `overlay_dir`, and the plain copy aborted with EISDIR the moment the
+        // archive shipped a FILE where the existing mod had a DIRECTORY (or the
+        // reverse, via `create_dir_all` onto a file) - half-merging the mod with
+        // no cleanup, since a merge target is not `fresh`. Same policy, one
+        // semantics: the incoming archive wins the name, both types included.
         if merging {
-            copy_dir_all(&src, &dest)?;
+            overlay_dir(&src, &dest)?;
         } else {
             move_dir_contents(&src, &dest)?;
         }

@@ -132,7 +132,10 @@ pub(crate) fn resolve_root_split(tmp: &Path, split: &RootSplit) -> Result<RootSo
 pub(crate) fn place_root_split(src: &RootSources, dest: &Path, merging: bool) -> io::Result<()> {
     if let Some(data) = &src.data {
         if merging {
-            copy_dir_all(data, dest)?;
+            // `overlay_dir`, matching the simple path and `place_sources`: a
+            // plain copy aborts with EISDIR on a type conflict with the existing
+            // mod, and the incoming archive is supposed to win the name.
+            overlay_dir(data, dest)?;
         } else {
             move_dir_contents(data, dest)?;
         }

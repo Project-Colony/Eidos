@@ -32,11 +32,16 @@ pub(crate) fn cmd_init(id: &str) {
     let inst = Instance::global(id);
     inst.create().expect("create instance");
     let _ = inst.ensure_manifest(id, InstanceKind::Global);
+    // The old text promised a `../load_order.txt` that NOTHING has ever read
+    // since profiles arrived: a user following it created a file with no effect
+    // and believed their order applied. Describe the mechanism that exists.
     let _ = std::fs::write(
         inst.mods_dir().join("README.txt"),
         "Drop each mod here as its own folder.\n\
-         Load order is alphabetical unless a ../load_order.txt lists folder\n\
-         names (top line = highest priority, wins file conflicts).\n",
+         A folder added by hand appears DISABLED at the bottom of the mod list;\n\
+         enable and order it in the Eidos GUI (or edit the active profile's\n\
+         profiles/<name>/modlist.txt: one +Name/-Name per line, top = highest\n\
+         priority, wins file conflicts - MO2's format).\n",
     );
     println!("Created instance for {} ({id}).", game.def.name);
     println!("  instance : {}", inst.root.display());

@@ -902,6 +902,46 @@ fn a_ue4ss_mod_lands_in_all_three_places_it_shipped_for() {
 }
 
 #[test]
+fn a_merge_survives_a_type_conflict_with_the_existing_mod() {
+    // A mod update replaces a directory with a file of the same name (or the
+    // reverse). Merge used to copy with `copy_dir_all`, which aborted with
+    // EISDIR mid-way - leaving the mod half old, half new, with no cleanup
+    // because a merge target is not "fresh". The archive must win the name in
+    // both directions, like the BAIN and root merge paths already do.
+    let (t, mods, tmp) = bain_layout("mergetype");
+    write_at(&tmp, "MyMod.esp", b"v2");
+    write_at(&tmp, "docs", b"now a file"); // was a directory in v1
+    write_at(&tmp, "SKSE/Plugins/foo.dll/keep.txt", b"now a dir"); // was a file in v1
+
+    let dest = mods.join("MyMod");
+    fs::create_dir_all(dest.join("docs")).unwrap();
+    fs::write(dest.join("docs/readme.txt"), b"old dir content").unwrap();
+    fs::create_dir_all(dest.join("SKSE/Plugins")).unwrap();
+    fs::write(dest.join("SKSE/Plugins/foo.dll"), b"was a file").unwrap();
+    fs::write(dest.join("untouched.esp"), b"stays").unwrap();
+
+    let archive = t.path().join("MyMod-2-0.7z");
+    fs::write(&archive, b"x").unwrap();
+    let r = install_extracted(
+        &extracted(&tmp),
+        &archive,
+        &mods,
+        "MyMod",
+        "skyrimse",
+        OverwritePolicy::Merge,
+        &eidos_fomod::Context::default(),
+    )
+    .expect("a type conflict must not abort a merge");
+
+    // Both directions: the archive's file replaced the dir, its dir replaced the file.
+    assert_eq!(fs::read(r.dest.join("docs")).unwrap(), b"now a file");
+    assert!(r.dest.join("SKSE/Plugins/foo.dll/keep.txt").is_file());
+    // And merge semantics are intact: files the archive does not ship survive.
+    assert_eq!(fs::read(r.dest.join("untouched.esp")).unwrap(), b"stays");
+    assert_eq!(fs::read(r.dest.join("MyMod.esp")).unwrap(), b"v2");
+}
+
+#[test]
 fn a_root_entry_can_land_on_a_file_of_the_same_name() {
     let (t, mods, tmp) = bain_layout("rootocc");
     write_at(&tmp, "Data/MyMod.esp", b"esp");

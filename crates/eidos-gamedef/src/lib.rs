@@ -521,7 +521,19 @@ fn parse_load_order(s: &str) -> LoadOrder {
         "asterisk" => LoadOrder::Asterisk,
         "plainlist" => LoadOrder::PlainList,
         "filetime" => LoadOrder::FileTime,
-        _ => LoadOrder::None,
+        "none" | "" => LoadOrder::None,
+        _ => {
+            // Say so. This crate's contract is "invalid definitions are ignored
+            // WITH a warning", and a typo here ("Asterisks") is the one field
+            // that used to degrade silently: the game loaded as generic, the
+            // whole plugin system stayed off, and nothing said why.
+            eprintln!(
+                "eidos: unknown load_order \"{}\" in a game definition; \
+                 treating it as \"None\" (no plugin system)",
+                s.trim()
+            );
+            LoadOrder::None
+        }
     }
 }
 
@@ -552,8 +564,15 @@ mod tests {
 
     #[test]
     fn ids_are_unique() {
+        // Case-insensitively, because that is how `for_id` matches: two ids
+        // differing only in case would pass an exact-match check here and then
+        // shadow each other at every lookup.
         for (i, g) in GAMES.iter().enumerate() {
-            assert!(GAMES.iter().skip(i + 1).all(|o| o.id != g.id), "duplicate id {}", g.id);
+            assert!(
+                GAMES.iter().skip(i + 1).all(|o| !o.id.eq_ignore_ascii_case(g.id)),
+                "duplicate id {}",
+                g.id
+            );
         }
     }
 
@@ -664,6 +683,20 @@ mod tests {
     fn invalid_definition_is_skipped() {
         // Missing the required id / steam_app_id / data_dir -> not parsed.
         assert!(parse_game("name = \"incomplete\"").is_none());
+    }
+
+    #[test]
+    fn a_misspelled_load_order_degrades_to_none_but_keeps_the_game() {
+        // "Asterisks" is not a mechanism; the definition still loads (dropping a
+        // whole game over one field would be harsher than the typo), it just
+        // loads as generic - and parse_load_order warns, where it used to say
+        // nothing at all.
+        let g = parse_game(
+            "id = \"typo\"\nname = \"Typo\"\nsteam_app_id = 1\ndata_dir = \"Data\"\n\
+             load_order = \"Asterisks\"\n",
+        )
+        .unwrap();
+        assert_eq!(g.load_order, LoadOrder::None);
     }
 
     #[test]
