@@ -23,8 +23,9 @@
 //! Set `EIDOS_NEXUS_CLIENT_ID` (MO2 has the same escape hatch,
 //! `MO2_NEXUS_CLIENT_ID`) and the flow works unchanged.
 //!
-//! The personal API key path stays: it needs no registration, it is what the
-//! `[Nexus]` section already holds, and MO2 keeps its equivalent too.
+//! There is no personal-API-key fallback: Nexus requires personal keys absent
+//! from a distributed client - absent, not merely unused - so until a
+//! `client_id` exists this build has no Nexus access at all, and says so.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
