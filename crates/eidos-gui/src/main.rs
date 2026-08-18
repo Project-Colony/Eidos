@@ -1916,6 +1916,26 @@ mod tests {
     }
 
     #[test]
+    fn finish_refuses_a_root_inside_the_game_install() {
+        // The MO2-veteran reflex: put the manager in the game folder. Steam
+        // owns that tree and Eidos mounts over it - the wizard must say no.
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Summary;
+        app.kind = InstanceKind::Portable;
+        app.name = "Mine".into();
+        // app_for_game's install_path is /nowhere.
+        app.portable_path = "/nowhere/Eidos".into();
+        let _ = update_inner(&mut app, Message::Finish);
+        assert!(app.created.is_none(), "an instance inside the install must not be created");
+        assert!(
+            app.error.as_deref().unwrap_or("").contains("own folder"),
+            "the refusal must explain itself: {:?}",
+            app.error
+        );
+        assert!(!Path::new("/nowhere/Eidos").exists(), "nothing may be created on refusal");
+    }
+
+    #[test]
     fn finish_adopts_a_matching_portable_folder() {
         let root = temp_portable("skyrimse");
         fs::create_dir_all(root.join("mods/Existing Mod")).unwrap();

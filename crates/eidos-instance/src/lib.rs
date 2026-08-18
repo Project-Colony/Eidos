@@ -322,6 +322,34 @@ impl Instance {
         Manifest::new(game_id, kind).write(&self.manifest_path())
     }
 
+    /// Whether a prospective instance root lives inside (or is) a game's
+    /// install directory - the one place an instance must never live, however
+    /// natural it feels to MO2 veterans. Two reasons, both fatal:
+    ///
+    /// - Steam owns that tree: updates, "verify integrity" and uninstalls
+    ///   rewrite or delete it, and an uninstall would take the entire modding
+    ///   setup with it.
+    /// - Eidos mounts over the game root (Root/ files beside the exe, the
+    ///   pristine tree bind-stashed into `<root>/.base`). An instance inside
+    ///   the install sits inside its own mount target: the union would be
+    ///   serving layers through itself.
+    ///
+    /// Symlinks are resolved before comparing, so `/mnt/link-to-game/Eidos`
+    /// cannot sneak past a lexical check.
+    pub fn root_inside_game(root: &Path, install: &Path) -> bool {
+        // A root being CREATED does not exist yet: resolve its parent then
+        // reattach the final component, so a symlinked parent still counts.
+        let canon = |p: &Path| {
+            fs::canonicalize(p).unwrap_or_else(|_| match (p.parent(), p.file_name()) {
+                (Some(parent), Some(name)) => fs::canonicalize(parent)
+                    .map(|c| c.join(name))
+                    .unwrap_or_else(|_| p.to_path_buf()),
+                _ => p.to_path_buf(),
+            })
+        };
+        canon(root).starts_with(canon(install))
+    }
+
     /// Open an existing folder as an instance, requiring it to be
     /// self-describing: the manifest names the game, so the caller needs
     /// nothing but the path. This is the resolution behind `eidos <cmd> <path>`
@@ -846,6 +874,38 @@ fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod guard_tests {
+    use super::*;
+
+    #[test]
+    fn an_instance_root_inside_or_at_the_game_install_is_refused() {
+        let game = Path::new("/games/Skyrim Special Edition");
+        assert!(Instance::root_inside_game(Path::new("/games/Skyrim Special Edition/Eidos"), game));
+        assert!(Instance::root_inside_game(game, game), "the install itself counts");
+        assert!(!Instance::root_inside_game(Path::new("/games/Eidos-Skyrim"), game), "a sibling is the recommended layout");
+        assert!(
+            !Instance::root_inside_game(Path::new("/games/Skyrim Special Edition2"), game),
+            "a shared name PREFIX is not containment - starts_with is per component"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_parent_cannot_sneak_an_instance_into_the_install() {
+        let base = std::env::temp_dir().join(format!("eidos-guard-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let game = base.join("game");
+        fs::create_dir_all(&game).unwrap();
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&game, &link).unwrap();
+        // The typed root does not exist yet (creation-time check) and its
+        // lexical path shares nothing with the install - only resolving the
+        // symlinked parent reveals the containment.
+        assert!(Instance::root_inside_game(&link.join("Eidos"), &game));
+        let _ = fs::remove_dir_all(&base);
+    }
 }
 
 #[cfg(test)]

@@ -96,6 +96,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::Finish => {
             if let Some(inst) = planned_instance(app) {
                 let game_id = selected_game(app).map(|g| g.def.id.to_string());
+                // Never inside a game's install - ANY detected game's, not just
+                // the selected one. Steam owns those trees (an update, a
+                // "verify integrity" or an uninstall rewrites or deletes them,
+                // taking the whole modding setup along), and Eidos mounts over
+                // the game root, so an instance in there would sit inside its
+                // own mount target. MO2 veterans reflexively put the manager
+                // in the game folder; this is the place to stop them.
+                let inside = app
+                    .games
+                    .iter()
+                    .find(|g| Instance::root_inside_game(&inst.root, &g.install_path));
                 // Adopting an EXISTING folder must not relabel it. A root whose
                 // manifest names another game is opened as that game or not at
                 // all - `ensure_manifest` would silently keep the old game id
@@ -104,7 +115,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let foreign = inst
                     .read_manifest()
                     .filter(|m| game_id.as_deref().is_some_and(|id| m.game_id != id));
-                if let Some(m) = foreign {
+                if let Some(g) = inside {
+                    app.error = Some(format!(
+                        "'{}' is inside {}'s own folder. Steam owns that tree (an update or \
+                         uninstall can wipe it) and Eidos mounts over the game root, so the \
+                         instance would live inside its own mount target. Put it NEXT to the \
+                         game instead - a sibling folder on the same drive works great.",
+                        inst.root.display(),
+                        g.def.name
+                    ));
+                } else if let Some(m) = foreign {
                     app.error = Some(format!(
                         "'{}' already holds a '{}' instance. Pick that game in the wizard, or choose another folder.",
                         inst.root.display(),

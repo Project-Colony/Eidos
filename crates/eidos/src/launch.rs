@@ -26,6 +26,19 @@ pub(crate) fn cmd_play(args: &[String]) {
         eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
+    // The wizard and `eidos init` refuse to CREATE an instance inside the
+    // game's install; this is the same guard at the moment that actually
+    // hurts - mounting. A hand-made folder in there must not reach the union.
+    if Instance::root_inside_game(&target.inst.root, &game.install_path) {
+        eprintln!(
+            "eidos: this instance lives inside the game's own folder ({}).\n\
+             eidos: Eidos mounts over the game root, so the instance would sit inside\n\
+             eidos: its own mount target - refusing to mount. Move the folder out\n\
+             eidos: (a sibling of the game folder works) and open it again.",
+            target.inst.root.display()
+        );
+        exit(1);
+    }
 
     let game_id = target.game_id;
     let inst = target.inst;

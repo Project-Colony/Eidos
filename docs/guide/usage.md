@@ -48,6 +48,14 @@ absolute paths into the old location (re-add those), and the shared runtime
 cache (`~/.local/share/eidos/runtimes/`) deliberately stays machine-global -
 a 78 MB .NET host is not per-instance.
 
+One place is refused outright: **inside a game's install folder** (the MO2
+veteran reflex). Steam owns that tree - an update, a "verify integrity" or an
+uninstall can rewrite or delete it, taking your whole setup along - and Eidos
+mounts over the game root, so an instance in there would sit inside its own
+mount target. The wizard, `eidos init` and `eidos play` all say no; put the
+folder NEXT to the game instead (a sibling on the same drive gives you the
+same convenience).
+
 `play` mounts the instance's mods over the game's own `Data` directory (via a
 bind-stash, so the daemon still reads the pristine files) inside a private
 namespace, then runs the command through that view. Writes (saves, regenerated

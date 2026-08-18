@@ -34,6 +34,23 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
     let (inst, kind) = match folder {
         Some(f) => {
             let root = crate::resolve::expand(f);
+            // Never inside a game's install - any detected game's. Steam owns
+            // those trees (updates/uninstalls rewrite or delete them) and
+            // Eidos mounts over the game root, so an instance there would sit
+            // inside its own mount target.
+            if let Some(g) =
+                detect(&home()).into_iter().find(|g| Instance::root_inside_game(&root, &g.install_path))
+            {
+                eprintln!(
+                    "'{}' is inside {}'s own folder - an instance cannot live there.\n\
+                     Steam owns that tree (an update or uninstall can wipe it), and Eidos\n\
+                     mounts over the game root, so the instance would live inside its own\n\
+                     mount target. Put it NEXT to the game instead, e.g. a sibling folder.",
+                    root.display(),
+                    g.def.name
+                );
+                exit(1);
+            }
             if let Some(m) = Instance::portable(root.clone()).read_manifest() {
                 if m.game_id != id {
                     eprintln!(
