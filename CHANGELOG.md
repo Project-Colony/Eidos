@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/Project-Colony/Eidos/compare/v1.4.1...v1.5.0) (2026-08-18)
+
+
+### Features
+
+* portable instances are first-class - registry, CLI paths, GUI reopen ([3ebf75e](https://github.com/Project-Colony/Eidos/commit/3ebf75e592db2137c0ed44f3e6d4e96b2011b184))
+* refuse an instance inside a game's install folder ([9f88404](https://github.com/Project-Colony/Eidos/commit/9f884049be8696d3a0e4db3652decc98f3afbe00))
+
 ## [1.4.1](https://github.com/Project-Colony/Eidos/compare/v1.4.0...v1.4.1) (2026-08-17)
 
 
