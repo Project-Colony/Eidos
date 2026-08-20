@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/Project-Colony/Eidos/compare/v1.5.0...v1.6.0) (2026-08-20)
+
+
+### Features
+
+* read Fallout 4 saves, and stop shifting every save's timestamp ([0d473fa](https://github.com/Project-Colony/Eidos/commit/0d473fa990ac633bfa06b00d7f6ce23da93b8844))
+
 ## [1.5.0](https://github.com/Project-Colony/Eidos/compare/v1.4.1...v1.5.0) (2026-08-18)
 
 
