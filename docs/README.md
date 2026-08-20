@@ -9,6 +9,7 @@ Sorted by who is reading, not by subject.
 | [guide/install.md](guide/install.md) | getting it on your machine and pointing Steam at it |
 | [guide/usage.md](guide/usage.md) | the CLI and the GUI, end to end |
 | [guide/tools.md](guide/tools.md) | xEdit, BodySlide, DynDOLOD: adding them, and the runtimes their name selects |
+| [guide/fallout4.md](guide/fallout4.md) | Fallout 4: why it needs no launch hack, the version branches, the NVIDIA weapon-debris crash |
 | [guide/graphics.md](guide/graphics.md) | Community Shaders, DLSS, frame generation: the launch option and the silent killers |
 | [guide/troubleshooting.md](guide/troubleshooting.md) | when something looks wrong: switches, counters, known issues |
 

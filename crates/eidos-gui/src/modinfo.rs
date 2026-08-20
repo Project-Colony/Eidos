@@ -584,6 +584,12 @@ pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> E
         facts.push(("Played", format!("{d}d {h}h {m}m")));
     }
     facts.push(("Save", format!("#{}", info.save_number)));
+    // Fallout writes the runtime it was saved by; Skyrim does not, and leaves this
+    // empty. Worth a row of its own: "this save came from another game build" is
+    // the answer to a whole class of "my DLL plugins stopped loading" sessions.
+    if !info.game_version.is_empty() {
+        facts.push(("Game build", info.game_version.clone()));
+    }
     facts.push(("Plugins", format!("{} + {} light", info.plugins.len(), info.light_plugins.len())));
     for (k, v) in facts {
         col = col.push(info_kv(k, v));
@@ -2668,7 +2674,7 @@ pub(crate) fn load_save_details(app: &mut App) {
         return;
     };
     let path = save.path.clone();
-    let parsed = eidos_gamefeatures::parse_sse_save(&path).map_err(|e| e.to_string());
+    let parsed = eidos_gamefeatures::parse_save(&path).map_err(|e| e.to_string());
     app.save_missing = match (&parsed, app.plugins.as_ref()) {
         (Ok(info), Some(list)) => {
             let known: Vec<eidos_gamefeatures::KnownPlugin> = list

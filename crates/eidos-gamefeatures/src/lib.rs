@@ -46,8 +46,8 @@ pub use runtime::{
 
 mod savegame;
 pub use savegame::{
-    missing_plugins, parse_sse_save, KnownPlugin, MissingPlugin, ModFolder, SaveCompression,
-    SaveInfo, SaveParseError, SavePluginState,
+    missing_plugins, parse_save, KnownPlugin, MissingPlugin, ModFolder, SaveCompression,
+    SaveEngine, SaveInfo, SaveParseError, SavePluginState,
 };
 
 /// The game INI that holds the `[Archive]` section: the first of the per-profile

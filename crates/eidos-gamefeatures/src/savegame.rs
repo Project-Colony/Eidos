@@ -1,12 +1,13 @@
-//! Skyrim SE save-game header parsing: who the save belongs to and - the part that
-//! actually matters - the plugin list it was created with.
+//! Bethesda save-game header parsing: who the save belongs to and - the part that
+//! actually matters - the plugin list it was created with. Covers the Skyrim
+//! family (`.ess`) and Fallout 4 (`.fos`); see [`SaveEngine`] for how they differ.
 //!
 //! Eidos keeps saves per profile, so a save routinely outlives the mod list that
 //! produced it. A save that references a plugin the profile no longer loads is
 //! precisely the setup that produces a mid-playthrough crash or a silently dead
 //! quest, and the only way to warn about it is to read the save's own plugin table.
 //! This is a port of MO2's `GamebryoSaveGame` / `GamebryoSaveGameInfo`
-//! (`libs/game_bethesda`), narrowed to the one engine Eidos verifies against.
+//! (`libs/game_bethesda`), narrowed to the engines Eidos verifies against.
 //!
 //! Everything here is read-only and cheap: the parse stops at the end of the plugin
 //! table and never touches the multi-megabyte object graph behind it. The screenshot
@@ -41,6 +42,32 @@
 //!   u8   pluginCount              then that many ws
 //!   u16  lightPluginCount         only when formVersion >= 78, then that many ws
 //! ```
+//!
+//! Wire layout (Fallout 4, and identically Fallout 4 VR). Same shape, three
+//! differences, each of which shifts everything after it if missed:
+//!
+//! ```text
+//!   12   magic "FO4_SAVEGAME"      one byte shorter than Skyrim's
+//!   u32  headerSize
+//!   u32  version                  15 on the builds seen in the wild
+//!   u32  saveNumber
+//!   ws   playerName
+//!   u32  playerLevel
+//!   ws   playerLocation
+//!   ws   playtime                 localised, e.g. "0j.22h.20m.0 jours..."
+//!   ws   playerRaceEditorId
+//!   u16  playerSex
+//!   f32  playerCurExp, f32 playerLvlUpExp
+//!   u64  FILETIME
+//!   u32  shotWidth, u32 shotHeight
+//!   ..   screenshot               width*height*4 (RGBA); NO compressionType word,
+//!                                 and the payload is never compressed
+//!   u8   formVersion
+//!   ws   gameVersion              Fallout only, e.g. "1.10.163.0"
+//!   u32  pluginInfoSize           spans the WHOLE block, ESL table included
+//!   u8   pluginCount              then that many ws
+//!   u16  lightPluginCount         when pluginInfoSize says bytes remain
+//! ```
 
 use std::collections::HashMap;
 use std::fmt;
@@ -50,6 +77,10 @@ use std::path::Path;
 
 /// The 13-byte file id every Skyrim (LE and SE) save opens with.
 const MAGIC: &[u8; 13] = b"TESV_SAVEGAME";
+
+/// The 12-byte file id of a Fallout 4 save (`.fos`). One byte shorter than
+/// Skyrim's, which is why the magic is matched before anything else is read.
+const FO4_MAGIC: &[u8; 12] = b"FO4_SAVEGAME";
 
 /// Header `version` for the Special Edition engine. SE alone carries the
 /// `compressionType` field and an alpha channel in the screenshot.
@@ -75,13 +106,21 @@ const COMPRESSED_WINDOW: u64 = 1024 * 1024;
 /// plugin table needs a few kilobytes at most.
 const DECOMPRESS_CAP: usize = 4 * 1024 * 1024;
 
-/// Six hours in 100 ns units. Skyrim writes a FILETIME that is offset by exactly
-/// this much; MO2 subtracts it too (skyrimsesavegame.cpp:64-69) and we match, so the
-/// timestamp Eidos shows agrees with the one the user sees in MO2 and in-game.
-const FILETIME_SKEW_100NS: u64 = 216_000_000_000;
-
 /// Seconds between the FILETIME epoch (1601-01-01) and the Unix epoch.
 const FILETIME_TO_UNIX_SECS: i64 = 11_644_473_600;
+
+/// Which engine wrote the save. The two layouts share their shape but differ in
+/// three concrete places (magic length, the SE-only `compressionType`, and the
+/// Fallout-only `gameVersion` string), so the parser carries this rather than
+/// re-deriving it from the header version at each fork.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SaveEngine {
+    /// Skyrim LE/SE, Enderal SE, Skyrim VR - `TESV_SAVEGAME`.
+    #[default]
+    Skyrim,
+    /// Fallout 4 and Fallout 4 VR - `FO4_SAVEGAME`.
+    Fallout4,
+}
 
 /// How the payload holding the plugin table is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -95,9 +134,16 @@ pub enum SaveCompression {
     Lz4,
 }
 
-/// Everything `parse_sse_save` extracts from a save header.
+/// Everything [`parse_save`] extracts from a save header.
 #[derive(Debug, Clone, Default)]
 pub struct SaveInfo {
+    /// Which engine wrote it, from the file magic.
+    pub engine: SaveEngine,
+    /// The runtime version string the save was written by, e.g. `1.10.163.0`.
+    /// Fallout 4 writes this next to `formVersion`; Skyrim has no such field and
+    /// leaves it empty. Worth surfacing: a save from a different game build is
+    /// exactly what a "why did my DLL plugins stop loading" session looks like.
+    pub game_version: String,
     pub player_name: String,
     pub level: u32,
     pub location: String,
@@ -122,7 +168,8 @@ pub struct SaveInfo {
     pub screenshot_height: u32,
     /// Full-index plugins, in the save's own load order.
     pub plugins: Vec<String>,
-    /// Light (ESL) plugins, present only from `formVersion` 78 on.
+    /// Light (ESL) plugins. Present from `formVersion` 78 on for Skyrim, and
+    /// whenever `pluginInfoSize` says the block has bytes left for Fallout 4.
     pub light_plugins: Vec<String>,
     /// True when the plugin list is known to be INCOMPLETE: the save announced a
     /// light-plugin block that ran off the end of the data. A missing-plugin diff
@@ -140,18 +187,37 @@ impl SaveInfo {
 
     /// The in-game clock as `(days, hours, minutes)`.
     ///
-    /// Skyrim writes `game_date` as three dot-separated integers. Anything else
-    /// (a localised string from a different engine, a garbled field) yields `None`
-    /// rather than a guess - the raw string is still available for display.
+    /// Skyrim writes `game_date` as three dot-separated integers (`"5.3.42"`).
+    /// Fallout 4 writes the same three numbers with localised unit suffixes and
+    /// then repeats them spelled out - a French save reads
+    /// `"0j.22h.20m.0 jours.22 heures.20 minutes"` - so the leading digits of the
+    /// first three segments are the common denominator. A segment that does not
+    /// begin with a digit yields `None` rather than a guess; the raw string stays
+    /// available for display either way.
     pub fn playtime(&self) -> Option<(u32, u32, u32)> {
-        let mut parts = self.game_date.split('.');
-        let d = parts.next()?.trim().parse().ok()?;
-        let h = parts.next()?.trim().parse().ok()?;
-        let m = parts.next()?.trim().parse().ok()?;
-        if parts.next().is_some() {
-            return None;
+        // Digits up to the first non-digit: "5" -> 5, "22h" -> 22. Empty (or a
+        // segment starting with a letter) is a parse failure, not a zero.
+        fn leading_number(part: &str) -> Option<u32> {
+            let digits: String = part.trim().chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
         }
-        Some((d, h, m))
+        // Skyrim's field is pure integers, and it stays parsed that way: loosening
+        // it for both engines would turn a garbled Skyrim date like "12abc.5.3"
+        // from an honest None into a confident wrong answer.
+        let lenient = self.engine == SaveEngine::Fallout4;
+        let number = |part: &str| if lenient { leading_number(part) } else { part.trim().parse().ok() };
+        let mut parts = self.game_date.split('.');
+        let d = number(parts.next()?)?;
+        let h = number(parts.next()?)?;
+        let m = number(parts.next()?)?;
+        // Skyrim's field is exactly three segments; Fallout's spelled-out tail adds
+        // more. Anything else with a 4th purely-numeric segment is a format this
+        // parser does not know, so refuse it rather than report two thirds of it.
+        match parts.next() {
+            None => Some((d, h, m)),
+            Some(_) if self.engine == SaveEngine::Fallout4 => Some((d, h, m)),
+            Some(_) => None,
+        }
     }
 }
 
@@ -162,7 +228,8 @@ impl SaveInfo {
 pub enum SaveParseError {
     /// The file could not be opened, seeked or read.
     Io(io::Error),
-    /// Not a Skyrim save at all: the `TESV_SAVEGAME` magic is missing or wrong.
+    /// Not a save at all: neither the `TESV_SAVEGAME` nor the `FO4_SAVEGAME`
+    /// magic is present.
     NotASave,
     /// The file ends inside the named field - truncated, or still being written.
     Truncated(&'static str),
@@ -177,7 +244,9 @@ impl fmt::Display for SaveParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SaveParseError::Io(e) => write!(f, "{e}"),
-            SaveParseError::NotASave => write!(f, "not a Skyrim save (bad TESV_SAVEGAME magic)"),
+            SaveParseError::NotASave => {
+                write!(f, "not a save file (no TESV_SAVEGAME or FO4_SAVEGAME magic)")
+            }
             SaveParseError::Truncated(field) => write!(f, "save ends inside {field}"),
             SaveParseError::Corrupt(what) => write!(f, "save is corrupt: {what}"),
             SaveParseError::UnknownCompression(t) => write!(f, "unknown save compression type {t}"),
@@ -193,14 +262,15 @@ impl From<io::Error> for SaveParseError {
     }
 }
 
-/// Parse the header of a Skyrim SE save, up to and including the plugin table.
+/// Parse the header of a save, up to and including the plugin table.
 ///
 /// Reads three bounded windows out of the file (fixed header, block sizes, first
 /// slice of the payload) and stops - the object graph after the plugin table is
 /// never touched, which is what makes this affordable to run over a whole saves
-/// directory. Also handles LE-engine saves (`version` 9, uncompressed, 3-byte
-/// screenshot pixels) and Enderal SE / Skyrim VR, which share this layout.
-pub fn parse_sse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
+/// directory. Handles Skyrim SE, LE-engine saves (`version` 9, uncompressed,
+/// 3-byte screenshot pixels), Enderal SE / Skyrim VR, and Fallout 4 / Fallout 4
+/// VR - the engine is taken from the file magic, not from the caller.
+pub fn parse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     let mut file = fs::File::open(path)?;
     let file_len = file.metadata()?.len();
 
@@ -208,14 +278,25 @@ pub fn parse_sse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     file.by_ref().take(HEADER_WINDOW).read_to_end(&mut head)?;
     let mut cur = Cur::new(&head);
 
-    match cur.take(MAGIC.len(), "magic") {
-        Ok(m) if m == MAGIC.as_slice() => {}
+    // The magic decides the engine AND how many bytes it occupied, so it is
+    // matched before the cursor moves: Fallout's is 12 bytes, Skyrim's 13, and
+    // consuming the wrong count shifts every field that follows by one.
+    let engine = if head.starts_with(MAGIC.as_slice()) {
+        SaveEngine::Skyrim
+    } else if head.starts_with(FO4_MAGIC.as_slice()) {
+        SaveEngine::Fallout4
+    } else {
         // Covers the empty file and the "someone renamed a .txt" case alike: both
         // are "this is not a save", not "this save is broken".
-        _ => return Err(SaveParseError::NotASave),
-    }
+        return Err(SaveParseError::NotASave);
+    };
+    let magic_len = match engine {
+        SaveEngine::Skyrim => MAGIC.len(),
+        SaveEngine::Fallout4 => FO4_MAGIC.len(),
+    };
+    cur.skip(magic_len, "magic")?;
 
-    let mut info = SaveInfo::default();
+    let mut info = SaveInfo { engine, ..SaveInfo::default() };
     // headerSize is read but not used to seek: the two published readings of it
     // disagree on whether the screenshot dimensions are inside the header, and both
     // leave the sequential cursor in the same place, so sequential reads (what MO2
@@ -234,12 +315,17 @@ pub fn parse_sse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
     info.screenshot_width = cur.u32("shotWidth")?;
     info.screenshot_height = cur.u32("shotHeight")?;
 
-    // SE is the only engine with a compressionType word, and the only one whose
-    // screenshot carries an alpha channel. Both hang off the same version check.
-    let (compression_raw, bytes_per_pixel) = if info.header_version == SE_HEADER_VERSION {
-        (cur.u16("compressionType")?, 4u64)
-    } else {
-        (0, 3u64)
+    // SE is the only engine with a compressionType word. Alpha in the screenshot
+    // is a separate question: SE has it (gated on the header version), and so does
+    // Fallout 4 - whose payload is nonetheless never compressed. Conflating the two
+    // would either mis-size the screenshot or read a compression word that is not
+    // there, and both shift the plugin table out of reach.
+    let (compression_raw, bytes_per_pixel) = match info.engine {
+        SaveEngine::Fallout4 => (0, 4u64),
+        SaveEngine::Skyrim if info.header_version == SE_HEADER_VERSION => {
+            (cur.u16("compressionType")?, 4u64)
+        }
+        SaveEngine::Skyrim => (0, 3u64),
     };
     info.compression = match compression_raw {
         0 => SaveCompression::None,
@@ -335,17 +421,53 @@ fn read_up_to(file: &mut fs::File, buf: &mut [u8]) -> io::Result<usize> {
 fn read_plugin_table(payload: &[u8], info: &mut SaveInfo) -> Result<(), SaveParseError> {
     let mut cur = Cur::new(payload);
     info.form_version = cur.u8("formVersion")?;
+    // Fallout 4 writes the runtime version here, between formVersion and the block
+    // size; Skyrim does not. Miss it and every subsequent field is read out of the
+    // middle of that string.
+    if info.engine == SaveEngine::Fallout4 {
+        info.game_version = cur.wstring("gameVersion")?;
+    }
     // MO2 reads this u32 as u8 + u16 + a 1-byte skip (skyrimsesavegame.cpp:145-149
     // plus readPlugins(1)); it is one field, the byte size of the plugin block, and
-    // the count that follows is authoritative - so skip it rather than trust it.
-    cur.skip(4, "pluginInfoSize")?;
+    // the count that follows is authoritative - so the count wins for the normal
+    // table. The SIZE still earns its keep on Fallout, below.
+    let info_size = cur.u32("pluginInfoSize")?;
+    let block_start = cur.pos;
 
     let count = cur.u8("pluginCount")?;
     info.plugins = read_names(&mut cur, usize::from(count), "plugin name")?;
 
-    // The ESL block only exists from formVersion 78 on. Reading it unconditionally
-    // on an older save would consume whatever record happens to follow the table.
-    if info.form_version >= LIGHT_PLUGIN_FORM_VERSION {
+    // Where the light (ESL) block is, and whether there is one at all, is decided
+    // differently by the two engines:
+    //
+    // - Skyrim: by `formVersion` (78+, SSE 1.5.39). There is no size to lean on.
+    // - Fallout 4: by `pluginInfoSize`, which measures the WHOLE block - normal
+    //   table plus ESL table. Verified against 40 real saves: 3064 bytes announced,
+    //   2527 consumed by the 105 normal plugins, and the remaining 537 are exactly
+    //   the 22 ESLs. Using the size means never guessing a formVersion threshold
+    //   for an engine whose ESL support arrived mid-life, and it self-corrects on a
+    //   save that has no ESL block: nothing is left over, so nothing is read.
+    let has_light = match info.engine {
+        SaveEngine::Skyrim => info.form_version >= LIGHT_PLUGIN_FORM_VERSION,
+        SaveEngine::Fallout4 => {
+            // The size does more than say "there is an ESL block": it also says
+            // where that block ENDS, so the buffer is clamped to it. An overstated
+            // size would otherwise pull whatever follows the table in as plugin
+            // names, and a missing-plugin diff built from those is worse than none.
+            let consumed = cur.pos - block_start;
+            match usize::try_from(info_size) {
+                Ok(size) if consumed < size => {
+                    let end = block_start.saturating_add(size).min(cur.buf.len());
+                    cur.buf = &cur.buf[..end];
+                    true
+                }
+                // A size too large for usize is a corrupt field, not an invitation
+                // to read: the ESL list is simply not reported on such a save.
+                _ => false,
+            }
+        }
+    };
+    if has_light {
         // A save cut short right after the normal table is normal, not fatal: keep
         // the plugins we already have and flag the result as partial.
         match cur.u16("lightPluginCount") {
@@ -374,12 +496,21 @@ fn read_names(
     Ok(names)
 }
 
-/// Convert a Skyrim header FILETIME to a Unix timestamp, undoing the engine's
-/// six-hour offset. `None` for a zero or pre-1970 value, so a blank field shows up
-/// as "no timestamp" instead of a date in 1601.
+/// Convert a header FILETIME to a timestamp. `None` for a zero or pre-1970 value,
+/// so a blank field shows up as "no timestamp" instead of a date in 1601.
+///
+/// No correction is applied. An earlier version subtracted six hours, citing MO2 -
+/// but measured against 53 real saves (13 Skyrim, 40 Fallout 4) the raw value
+/// already equals the save's own timestamp, on the nose, in every single one; the
+/// subtraction was wrong by exactly that much and only survived because the test
+/// fixture added the same offset before parsing it back.
+///
+/// What the engines actually write is their LOCAL wall clock into a UTC-shaped
+/// field - which is why the raw decode matches the local time baked into the file
+/// name. Consumers must therefore format this as UTC to reproduce what the game
+/// and the file name show; formatting it as local time re-introduces an offset.
 fn filetime_to_unix(raw: u64) -> Option<i64> {
-    let adjusted = raw.checked_sub(FILETIME_SKEW_100NS)?;
-    let secs = i64::try_from(adjusted / 10_000_000).ok()?;
+    let secs = i64::try_from(raw / 10_000_000).ok()?;
     let unix = secs.checked_sub(FILETIME_TO_UNIX_SECS)?;
     (unix > 0).then_some(unix)
 }
@@ -724,19 +855,40 @@ mod tests {
 
     /// The payload that lives behind the (optional) compression: form version,
     /// plugin info size, then the two tables.
-    fn payload(form_version: u8, plugins: &[&str], light: &[&str]) -> Vec<u8> {
+    ///
+    /// `game_version` is `Some` for a Fallout 4 payload - the extra string the
+    /// engine writes there - and `None` for Skyrim. On Fallout the plugin info
+    /// size is emitted for real, because that is what the parser bounds the ESL
+    /// table with; Skyrim ignores the field, so a zero keeps the old behaviour.
+    fn payload(
+        form_version: u8,
+        game_version: Option<&str>,
+        plugins: &[&str],
+        light: &[&str],
+    ) -> Vec<u8> {
         let mut p = vec![form_version];
-        p.extend_from_slice(&0u32.to_le_bytes()); // pluginInfoSize, unused by us
-        p.push(plugins.len() as u8);
-        for name in plugins {
-            p.extend_from_slice(&ws(name));
+        if let Some(gv) = game_version {
+            p.extend_from_slice(&ws(gv));
         }
-        if form_version >= LIGHT_PLUGIN_FORM_VERSION {
-            p.extend_from_slice(&(light.len() as u16).to_le_bytes());
+        let mut block = vec![plugins.len() as u8];
+        for name in plugins {
+            block.extend_from_slice(&ws(name));
+        }
+        let want_light = match game_version {
+            // Fallout: the block simply ends after the normal table when there is
+            // no ESL list, which is exactly what the size then says.
+            Some(_) => !light.is_empty(),
+            None => form_version >= LIGHT_PLUGIN_FORM_VERSION,
+        };
+        if want_light {
+            block.extend_from_slice(&(light.len() as u16).to_le_bytes());
             for name in light {
-                p.extend_from_slice(&ws(name));
+                block.extend_from_slice(&ws(name));
             }
         }
+        let size = if game_version.is_some() { block.len() as u32 } else { 0 };
+        p.extend_from_slice(&size.to_le_bytes());
+        p.extend_from_slice(&block);
         p
     }
 
@@ -772,6 +924,12 @@ mod tests {
         plugins: Vec<String>,
         light: Vec<String>,
         magic: Vec<u8>,
+        /// The in-game clock string. Skyrim's terse form by default; Fallout's is
+        /// localised, which is why the fixture can be given either.
+        game_date: String,
+        /// `Some` builds a Fallout 4 save: shorter magic, no compression word,
+        /// 4-byte pixels, and the extra `gameVersion` string in the payload.
+        game_version: Option<String>,
         /// Replaces the generated payload, for tests that need a malformed table.
         payload_override: Option<Vec<u8>>,
     }
@@ -788,6 +946,29 @@ mod tests {
                     .collect(),
                 light: vec!["Tiny.esl".to_string()],
                 magic: MAGIC.to_vec(),
+                game_date: "196.21.31".to_string(),
+                game_version: None,
+                payload_override: None,
+            }
+        }
+
+        /// The same save as written by Fallout 4: uncompressed, `FO4_SAVEGAME`,
+        /// and a `gameVersion` the parser must consume before the block size.
+        fn fallout4() -> Self {
+            Build {
+                version: 15,
+                compression: 0,
+                form_version: 68,
+                plugins: ["Fallout4.esm", "DLCRobot.esm", "MyMod.esp"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                light: vec!["Tiny.esl".to_string()],
+                magic: FO4_MAGIC.to_vec(),
+                // What a French Fallout 4 actually writes: compact form, then the
+                // same numbers spelled out.
+                game_date: "0j.22h.20m.0 jours.22 heures.20 minutes".to_string(),
+                game_version: Some("1.10.163.0".to_string()),
                 payload_override: None,
             }
         }
@@ -797,7 +978,7 @@ mod tests {
             let light: Vec<&str> = self.light.iter().map(String::as_str).collect();
             let inner = match &self.payload_override {
                 Some(p) => p.clone(),
-                None => payload(self.form_version, &plugins, &light),
+                None => payload(self.form_version, self.game_version.as_deref(), &plugins, &light),
             };
 
             let mut header = Vec::new();
@@ -806,24 +987,31 @@ mod tests {
             header.extend_from_slice(&ws("Lyra"));
             header.extend_from_slice(&42u32.to_le_bytes()); // level
             header.extend_from_slice(&ws("Whiterun"));
-            header.extend_from_slice(&ws("196.21.31"));
+            header.extend_from_slice(&ws(&self.game_date));
             header.extend_from_slice(&ws("BretonRace"));
             header.extend_from_slice(&0u16.to_le_bytes()); // sex
             header.extend_from_slice(&0f32.to_le_bytes());
             header.extend_from_slice(&0f32.to_le_bytes());
-            // 2024-01-01T00:00:00Z as FILETIME, plus the 6h skew the engine adds.
-            let ft = (1_704_067_200u64 + 11_644_473_600u64) * 10_000_000 + FILETIME_SKEW_100NS;
+            // 2024-01-01T00:00:00Z as a FILETIME, verbatim - the engines apply no
+            // offset, so neither may the fixture (it used to add one and thereby
+            // assert the parser's own error back at itself).
+            let ft = (1_704_067_200u64 + 11_644_473_600u64) * 10_000_000;
             header.extend_from_slice(&ft.to_le_bytes());
             header.extend_from_slice(&2u32.to_le_bytes()); // shot width
             header.extend_from_slice(&2u32.to_le_bytes()); // shot height
-            if self.version == SE_HEADER_VERSION {
+            // Fallout has no compressionType word at all; Skyrim SE alone does.
+            if self.game_version.is_none() && self.version == SE_HEADER_VERSION {
                 header.extend_from_slice(&self.compression.to_le_bytes());
             }
 
             let mut save = self.magic.clone();
             save.extend_from_slice(&(header.len() as u32).to_le_bytes());
             save.extend_from_slice(&header);
-            let bpp = if self.version == SE_HEADER_VERSION { 4 } else { 3 };
+            let bpp = if self.game_version.is_some() || self.version == SE_HEADER_VERSION {
+                4
+            } else {
+                3
+            };
             save.extend_from_slice(&vec![SHOT_FILL; 2 * 2 * bpp]);
 
             match self.compression {
@@ -844,16 +1032,207 @@ mod tests {
         }
 
         fn write(&self) -> PathBuf {
-            let p = tmp("ess");
+            let p = tmp(if self.game_version.is_some() { "fos" } else { "ess" });
             fs::write(&p, self.bytes()).unwrap();
             p
         }
     }
 
     #[test]
+    fn a_fallout4_save_parses_with_its_own_magic_and_game_version() {
+        let p = Build::fallout4().write();
+        let info = parse_save(&p).unwrap();
+        assert_eq!(info.engine, SaveEngine::Fallout4);
+        // The whole point: the 12-byte magic and the extra gameVersion string are
+        // consumed exactly, so every later field lands where it should. A one-byte
+        // slip here shows up as garbage names, not as an error.
+        assert_eq!(info.game_version, "1.10.163.0");
+        assert_eq!(info.player_name, "Lyra");
+        assert_eq!(info.level, 42);
+        assert_eq!(info.location, "Whiterun");
+        assert_eq!(info.save_number, 7);
+        assert_eq!(info.plugins, ["Fallout4.esm", "DLCRobot.esm", "MyMod.esp"]);
+        assert_eq!(info.light_plugins, ["Tiny.esl"]);
+        // Fallout never compresses and always has an alpha channel, unlike the
+        // LE engine it shares "no compressionType word" with.
+        assert_eq!(info.compression, SaveCompression::None);
+        assert!(!info.truncated);
+    }
+
+    #[test]
+    fn a_skyrim_save_reports_no_game_version() {
+        // The field is Fallout-only: reading one on Skyrim would mean the parser
+        // had consumed four bytes of the plugin block as a string length.
+        let info = parse_save(&Build::new().write()).unwrap();
+        assert_eq!(info.engine, SaveEngine::Skyrim);
+        assert_eq!(info.game_version, "");
+    }
+
+    #[test]
+    fn a_fallout4_save_without_esls_reads_no_light_table() {
+        // formVersion 68 is well under Skyrim's 78 threshold, so the ESL block on
+        // Fallout is decided by the block SIZE. With no ESLs the size stops right
+        // after the normal table, and nothing further may be consumed - reading a
+        // phantom u16 there would invent light plugins out of the next record.
+        let mut b = Build::fallout4();
+        b.light.clear();
+        let info = parse_save(&b.write()).unwrap();
+        assert_eq!(info.plugins, ["Fallout4.esm", "DLCRobot.esm", "MyMod.esp"]);
+        assert!(info.light_plugins.is_empty());
+        assert!(!info.truncated, "an absent ESL block is not a truncated one");
+    }
+
+    #[test]
+    fn a_fallout4_esl_block_is_read_even_at_a_form_version_skyrim_would_reject() {
+        // Guards the actual defect this replaced: gating Fallout on Skyrim's
+        // formVersion >= 78 silently dropped every ESL, because real saves report
+        // 68. The 22 ESLs of a real load order would have vanished from the diff.
+        let mut b = Build::fallout4();
+        assert!(b.form_version < LIGHT_PLUGIN_FORM_VERSION, "the premise of this test");
+        b.light = ["A.esl", "B.esm", "C.esp"].iter().map(|s| s.to_string()).collect();
+        let info = parse_save(&b.write()).unwrap();
+        // Extensions are meaningless here - the ESL flag lives in the plugin
+        // header, so an .esm and an .esp legitimately appear in the light table.
+        assert_eq!(info.light_plugins, ["A.esl", "B.esm", "C.esp"]);
+    }
+
+    #[test]
+    fn a_fallout4_playtime_survives_its_localised_suffixes() {
+        // A French save writes "0j.22h.20m.0 jours.22 heures.20 minutes"; the
+        // numeric parse must not choke on the units or on the spelled-out tail.
+        let mut info = SaveInfo { engine: SaveEngine::Fallout4, ..SaveInfo::default() };
+        info.game_date = "0j.22h.20m.0 jours.22 heures.20 minutes".to_string();
+        assert_eq!(info.playtime(), Some((0, 22, 20)));
+        info.game_date = "12d.7h.5m.12 days.7 hours.5 minutes".to_string();
+        assert_eq!(info.playtime(), Some((12, 7, 5)));
+        // Skyrim's terse form still works, on either engine.
+        info.game_date = "196.21.31".to_string();
+        assert_eq!(info.playtime(), Some((196, 21, 31)));
+        // A segment that is not a number at all stays refused rather than zeroed.
+        info.game_date = "many.hours.here".to_string();
+        assert_eq!(info.playtime(), None);
+    }
+
+    #[test]
+    fn a_skyrim_save_with_a_fourth_segment_is_still_refused() {
+        // The old strictness must survive for Skyrim: an unexpected 4th segment
+        // means a format this parser does not know, not two thirds of an answer.
+        let mut info = SaveInfo::default();
+        info.game_date = "1.2.3.4".to_string();
+        assert_eq!(info.playtime(), None);
+    }
+
+    #[test]
+    fn a_lying_light_count_cannot_read_past_the_announced_block() {
+        // What `pluginInfoSize` buys, precisely: the ESL *count* is file-controlled
+        // too, and a save that claims more ESLs than its block holds must not go
+        // fishing in the records that follow. Everything after a Fallout plugin
+        // table is a binary form graph, and decoding it as names yields garbage
+        // that a missing-plugin diff would then present as real missing mods.
+        //
+        // (An OVERSTATED size is a different matter and deliberately not tested
+        // here: if the file lies about where the block ends, bytes past the real
+        // table are inside the announced one by definition. The guarantee is that
+        // no read leaves the announced block - never that a lying file is repaired.)
+        let mut b = Build::fallout4();
+        let gv = "1.10.163.0";
+        let mut inner = vec![68u8];
+        inner.extend_from_slice(&ws(gv));
+        let mut block = vec![1u8]; // one normal plugin
+        block.extend_from_slice(&ws("Fallout4.esm"));
+        // Claims four ESLs and holds exactly one. The three that follow live
+        // OUTSIDE the block - enough to satisfy the count, which is what makes
+        // this dangerous: without the clamp the read succeeds and the phantoms
+        // are reported as real, with truncated=false to vouch for them.
+        block.extend_from_slice(&4u16.to_le_bytes());
+        block.extend_from_slice(&ws("Real.esl"));
+        inner.extend_from_slice(&(block.len() as u32).to_le_bytes());
+        inner.extend_from_slice(&block);
+        // Bytes beyond the block that would parse as more names if anything read
+        // them - the stand-in for the form graph a real save has here.
+        for name in ["Ghost.esl", "Phantom.esl", "Wraith.esl"] {
+            inner.extend_from_slice(&ws(name));
+        }
+        b.payload_override = Some(inner);
+        let p = b.write();
+        let info = parse_save(&p).unwrap();
+        assert_eq!(info.plugins, ["Fallout4.esm"]);
+        assert!(
+            !info.light_plugins.iter().any(|n| n.starts_with("Ghost") || n.starts_with("Phantom")),
+            "read past the announced block: {:?}",
+            info.light_plugins
+        );
+        assert!(info.truncated, "a count that outruns its block makes the list advisory");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn the_header_timestamp_is_taken_verbatim() {
+        // Anchored on a value chosen OUTSIDE the parser, which is the whole point:
+        // the previous fixture added the same six-hour offset the parser then
+        // subtracted, so a wrong constant round-tripped cleanly and the error only
+        // showed up against real saves (53 of 53 disagreed with their own
+        // filenames). Both engines write the timestamp with no correction.
+        for save in [Build::new().write(), Build::fallout4().write()] {
+            let info = parse_save(&save).unwrap();
+            assert_eq!(
+                info.created_unix,
+                Some(1_704_067_200),
+                "2024-01-01T00:00:00Z must survive the round trip unshifted"
+            );
+            let _ = fs::remove_file(&save);
+        }
+    }
+
+    #[test]
+    fn a_fallout4_localised_playtime_survives_a_full_parse() {
+        // The localised string has to make it through the real byte path, not just
+        // through a hand-built SaveInfo: it is a header wstring like any other.
+        let mut b = Build::fallout4();
+        b.game_date = "3j.4h.5m.3 jours.4 heures.5 minutes".to_string();
+        let p = b.write();
+        let info = parse_save(&p).unwrap();
+        assert_eq!(info.playtime(), Some((3, 4, 5)));
+        assert_eq!(info.game_date, "3j.4h.5m.3 jours.4 heures.5 minutes");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_garbled_skyrim_playtime_is_still_refused() {
+        // The Fallout leniency must not leak onto Skyrim: "12abc" is not 12 there.
+        let mut info = SaveInfo::default();
+        info.game_date = "12abc.5.3".to_string();
+        assert_eq!(info.playtime(), None, "Skyrim's field is strict integers");
+        info.engine = SaveEngine::Fallout4;
+        assert_eq!(info.playtime(), Some((12, 5, 3)), "Fallout writes unit suffixes");
+    }
+
+    #[test]
+    fn a_fallout_save_is_recognised_by_magic_not_by_header_version() {
+        // Header version 12 is Skyrim SE's marker. A Fallout save that happens to
+        // carry it must still be read as Fallout - no compression word, 4-byte
+        // pixels - because the magic is what decides.
+        let mut b = Build::fallout4();
+        b.version = SE_HEADER_VERSION;
+        let p = b.write();
+        let info = parse_save(&p).unwrap();
+        assert_eq!(info.engine, SaveEngine::Fallout4);
+        assert_eq!(info.compression, SaveCompression::None);
+        assert_eq!(info.plugins, ["Fallout4.esm", "DLCRobot.esm", "MyMod.esp"]);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_file_with_neither_magic_is_not_a_save_of_either_engine() {
+        let mut b = Build::new();
+        b.magic = b"FO4_SAVEGAMX".to_vec(); // one byte off the Fallout magic
+        assert!(matches!(parse_save(&b.write()), Err(SaveParseError::NotASave)));
+    }
+
+    #[test]
     fn well_formed_lz4_save_yields_header_and_both_plugin_tables() {
         let p = Build::new().write();
-        let info = parse_sse_save(&p).unwrap();
+        let info = parse_save(&p).unwrap();
         assert_eq!(info.player_name, "Lyra");
         assert_eq!(info.level, 42);
         assert_eq!(info.location, "Whiterun");
@@ -875,7 +1254,7 @@ mod tests {
             let mut b = Build::new();
             b.compression = compression;
             let p = b.write();
-            let info = parse_sse_save(&p).unwrap();
+            let info = parse_save(&p).unwrap();
             assert_eq!(info.compression, want);
             assert_eq!(info.plugins, ["Skyrim.esm", "Update.esm", "MyMod.esp"]);
             assert_eq!(info.light_plugins, ["Tiny.esl"]);
@@ -888,9 +1267,10 @@ mod tests {
         let mut b = Build::new();
         b.form_version = 74; // pre-1.5.39: no ESL block at all
         let p = b.write();
-        let info = parse_sse_save(&p).unwrap();
+        let info = parse_save(&p).unwrap();
         assert_eq!(info.plugins, ["Skyrim.esm", "Update.esm", "MyMod.esp"]);
         assert!(info.light_plugins.is_empty());
+        assert!(!info.truncated, "a pre-78 save has no ESL block to be short of");
         let _ = fs::remove_file(&p);
     }
 
@@ -901,7 +1281,7 @@ mod tests {
         b.compression = 0;
         b.form_version = 74;
         let p = b.write();
-        let info = parse_sse_save(&p).unwrap();
+        let info = parse_save(&p).unwrap();
         assert_eq!(info.header_version, 9);
         assert_eq!(info.compression, SaveCompression::None);
         assert_eq!(info.plugins, ["Skyrim.esm", "Update.esm", "MyMod.esp"]);
@@ -912,7 +1292,7 @@ mod tests {
     fn a_light_block_that_runs_off_the_end_keeps_the_plugins_and_flags_the_save() {
         // The save the game is halfway through writing: the normal table landed, the
         // ESL block claims three names and only one is there.
-        let mut inner = payload(82, &["Skyrim.esm"], &[]);
+        let mut inner = payload(82, None, &["Skyrim.esm"], &[]);
         inner.truncate(inner.len() - 2); // drop the lightPluginCount payload() wrote
         inner.extend_from_slice(&3u16.to_le_bytes());
         inner.extend_from_slice(&ws("Tiny.esl"));
@@ -921,7 +1301,7 @@ mod tests {
         b.compression = 0;
         b.payload_override = Some(inner);
         let p = b.write();
-        let info = parse_sse_save(&p).unwrap();
+        let info = parse_save(&p).unwrap();
         assert_eq!(info.plugins, ["Skyrim.esm"]);
         assert!(info.light_plugins.is_empty(), "a partial ESL block must not be half-trusted");
         assert!(info.truncated, "the caller has to know this list is short");
@@ -934,7 +1314,7 @@ mod tests {
             let mut b = Build::new();
             b.compression = compression;
             let p = b.write();
-            assert!(!parse_sse_save(&p).unwrap().truncated, "compression {compression}");
+            assert!(!parse_save(&p).unwrap().truncated, "compression {compression}");
             let _ = fs::remove_file(&p);
         }
     }
@@ -943,7 +1323,7 @@ mod tests {
     fn empty_file_is_rejected_as_not_a_save() {
         let p = tmp("ess");
         fs::write(&p, b"").unwrap();
-        assert!(matches!(parse_sse_save(&p), Err(SaveParseError::NotASave)));
+        assert!(matches!(parse_save(&p), Err(SaveParseError::NotASave)));
         let _ = fs::remove_file(&p);
     }
 
@@ -952,13 +1332,13 @@ mod tests {
         let mut b = Build::new();
         b.magic = b"NOT_A_SAVEGAM".to_vec();
         let p = b.write();
-        assert!(matches!(parse_sse_save(&p), Err(SaveParseError::NotASave)));
+        assert!(matches!(parse_save(&p), Err(SaveParseError::NotASave)));
         let _ = fs::remove_file(&p);
 
         // Shorter than the magic itself: same answer, no panic on the short slice.
         let q = tmp("ess");
         fs::write(&q, b"TESV").unwrap();
-        assert!(matches!(parse_sse_save(&q), Err(SaveParseError::NotASave)));
+        assert!(matches!(parse_save(&q), Err(SaveParseError::NotASave)));
         let _ = fs::remove_file(&q);
     }
 
@@ -966,14 +1346,21 @@ mod tests {
     fn every_truncation_of_a_valid_save_degrades_without_panicking() {
         // The exact case the audit calls out: the game is mid-write. Every prefix of
         // a good save must come back as Ok or Err, never a panic.
+        // Both engines: Fallout's uncompressed path, shorter magic, gameVersion
+        // string and size-bounded ESL block are all new places to fall over.
+        let mut cases: Vec<Build> = Vec::new();
         for compression in [0u16, 1, 2] {
             let mut b = Build::new();
             b.compression = compression;
+            cases.push(b);
+        }
+        cases.push(Build::fallout4());
+        for b in cases {
             let full = b.bytes();
             for cut in 0..full.len() {
                 let p = tmp("ess");
                 fs::write(&p, &full[..cut]).unwrap();
-                if let Ok(info) = parse_sse_save(&p) {
+                if let Ok(info) = parse_save(&p) {
                     // Whatever it managed to read must be self-consistent: a short
                     // read may only ever produce a prefix of the real table.
                     assert!(info.plugins.len() <= 3, "cut {cut} invented plugins");
@@ -1002,7 +1389,7 @@ mod tests {
         full[shot - 6..shot - 2].copy_from_slice(&0x1000_0000u32.to_le_bytes());
         let p = tmp("ess");
         fs::write(&p, &full).unwrap();
-        assert!(matches!(parse_sse_save(&p), Err(SaveParseError::Truncated("screenshot"))));
+        assert!(matches!(parse_save(&p), Err(SaveParseError::Truncated("screenshot"))));
         let _ = fs::remove_file(&p);
 
         // And the pair whose product does not even fit in a u64.
@@ -1010,7 +1397,7 @@ mod tests {
         full[shot - 6..shot - 2].copy_from_slice(&u32::MAX.to_le_bytes());
         let q = tmp("ess");
         fs::write(&q, &full).unwrap();
-        assert!(matches!(parse_sse_save(&q), Err(SaveParseError::Corrupt(_))));
+        assert!(matches!(parse_save(&q), Err(SaveParseError::Corrupt(_))));
         let _ = fs::remove_file(&q);
     }
 
@@ -1021,7 +1408,7 @@ mod tests {
         full[shot - 2..shot].copy_from_slice(&9u16.to_le_bytes());
         let p = tmp("ess");
         fs::write(&p, &full).unwrap();
-        assert!(matches!(parse_sse_save(&p), Err(SaveParseError::UnknownCompression(9))));
+        assert!(matches!(parse_save(&p), Err(SaveParseError::UnknownCompression(9))));
         let _ = fs::remove_file(&p);
     }
 
@@ -1030,7 +1417,7 @@ mod tests {
         // Truncation is one failure mode; a save damaged in place (a bad sector, a
         // half-flushed write) is the other. Every byte of a good save, set to each of
         // the values most likely to break a length or count field.
-        let full = Build::new().bytes();
+        for full in [Build::new().bytes(), Build::fallout4().bytes()] {
         for at in 0..full.len() {
             for value in [0x00u8, 0x01, 0x7f, 0xff] {
                 let mut bad = full.clone();
@@ -1039,9 +1426,10 @@ mod tests {
                 fs::write(&p, &bad).unwrap();
                 // The only requirement is that it returns. A corrupt length field may
                 // legitimately still parse into nonsense - it must not abort.
-                let _ = parse_sse_save(&p);
+                let _ = parse_save(&p);
                 let _ = fs::remove_file(&p);
             }
+        }
         }
     }
 

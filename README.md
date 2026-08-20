@@ -157,6 +157,7 @@ bisection toggles, why `EIDOS_FUSE_PASSTHROUGH` is off by default) live in
 | install it | [guide/install.md](docs/guide/install.md) |
 | learn the CLI and the GUI | [guide/usage.md](docs/guide/usage.md) |
 | set up xEdit, BodySlide or DynDOLOD | [guide/tools.md](docs/guide/tools.md) |
+| play Fallout 4 (F4SE, versions, the NVIDIA debris crash) | [guide/fallout4.md](docs/guide/fallout4.md) |
 | get DLSS / frame generation working (Community Shaders) | [guide/graphics.md](docs/guide/graphics.md) |
 | fix something that looks wrong | [guide/troubleshooting.md](docs/guide/troubleshooting.md) |
 | know why it is fast, and check it yourself | [internals/performance.md](docs/internals/performance.md) |
@@ -169,7 +170,9 @@ to report a vulnerability at [SECURITY.md](SECURITY.md).
 
 ## Supported games
 
-**Skyrim SE/AE** - proven in real play. Wired per the shared game descriptor and
+**Skyrim SE/AE** - proven in real play. **Fallout 4** is wired end to end too
+(F4SE swapped in automatically, archive invalidation, asterisk load order, LOOT,
+`.fos` saves) - see [guide/fallout4.md](docs/guide/fallout4.md). Wired per the shared game descriptor and
 looking for testers: Skyrim LE, Skyrim VR, Enderal SE, Fallout 3, Fallout NV,
 Fallout 4 (+ VR), Starfield, Oblivion and Morrowind (the last two mount and
 manage mods; their timestamp-ordered plugin lists are not managed yet).
