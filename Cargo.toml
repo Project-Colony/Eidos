@@ -7,7 +7,7 @@ members = ["crates/eidos-core", "crates/eidos-fuse", "crates/eidos-games", "crat
 # About dialog, the `Application-Version` header every Nexus API call carries,
 # and the log header - so a release that left it at 0.0.0 would be telling Nexus
 # something untrue about who is calling.
-version = "1.5.0" # x-release-please-version
+version = "1.6.0" # x-release-please-version
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/Eidos"
 edition = "2021"
