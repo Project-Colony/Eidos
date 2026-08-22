@@ -431,7 +431,18 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
     creds.expires_at = tokens.expires_at;
     eidos_instance::settings::save_nexus_creds(&creds)
         .map_err(|e| format!("signed in, but could not store the session: {e}"))?;
-    eidos_nexus::Nexus::with_bearer(&tokens.access_token).validate()
+    // The account comes from the token, NOT from `users/validate`. That endpoint
+    // belongs to the personal-API-key era and answers 401 to a Bearer, so calling
+    // it here failed every OAuth sign-in at the last step - after the browser had
+    // said "connected" and the session had been stored, which is exactly the
+    // confusing shape the bug had. Everything Eidos shows about the user is in
+    // the token's own claims, signed by Nexus and verified before use.
+    let claims = eidos_nexus::oauth::claims(&tokens.access_token)?;
+    Ok(eidos_nexus::Account {
+        name: claims.username,
+        user_id: claims.user_id,
+        is_premium: claims.is_premium,
+    })
 }
 
 /// Build the Executables editor state for the open instance: the user's tools.ini

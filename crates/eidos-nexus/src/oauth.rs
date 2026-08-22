@@ -29,7 +29,12 @@
 //! mechanism that replaces one. The authorization code is bound to a verifier
 //! this process generated and never transmitted, so intercepting the code buys
 //! an attacker nothing. Neither `authorize_url` nor `exchange_code` sends a
-//! secret, and nothing here should ever start.
+//! secret, and nothing here should ever start by default.
+//!
+//! A 401 right after a successful browser approval is NOT a missing secret,
+//! however much it looks like one: adding a `client_secret` to the exchange
+//! changes nothing, because the exchange was already succeeding. See
+//! `claims` - the failure is the API call that used to follow it.
 //!
 //! There is no personal-API-key fallback either: Nexus requires personal keys
 //! absent from a distributed client - absent, not merely unused.
@@ -698,10 +703,11 @@ mod tests {
     }
 
     #[test]
-    fn there_is_no_default_client_id() {
-        // The point of the whole module doc: with nothing registered, a sign-in
-        // must refuse rather than borrow another application's identity.
+    fn the_registration_is_eidos_own_and_carries_no_secret_by_default() {
+        // Eidos signs in as itself, never as another application, and the
+        // built-in configuration authenticates with PKCE alone.
         assert!(!AUTHORIZE_URL.contains("modorganizer"));
+        assert_eq!(CLIENT_ID, "eidos");
         let cfg = Config {
             client_id: "eidos-test".into(),
             redirect_port: 28638,
