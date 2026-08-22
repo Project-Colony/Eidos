@@ -13,19 +13,26 @@
 //! scope      openid profile email
 //! ```
 //!
-//! # The client id is not ours to invent
+//! # The client id, and why there is no secret next to it
 //!
-//! Nexus issues `client_id` per application, by mail to support@nexusmods.com,
-//! and ties rate limits and abuse handling to it. MO2's is `modorganizer2`;
-//! using it would be passing Eidos off as MO2 to a third party. So there is no
-//! default here: with no id configured, [`Config::from_env`] returns `None` and
-//! a sign-in refuses with an explanation rather than sending something wrong.
-//! Set `EIDOS_NEXUS_CLIENT_ID` (MO2 has the same escape hatch,
-//! `MO2_NEXUS_CLIENT_ID`) and the flow works unchanged.
+//! Nexus issues `client_id` per application and ties rate limits and abuse
+//! handling to it. Eidos is registered as `eidos`; MO2's is `modorganizer2`,
+//! and borrowing it would be passing Eidos off as MO2 to a third party.
+//! `EIDOS_NEXUS_CLIENT_ID` still overrides, for anyone testing against their
+//! own registration (MO2 has the same escape hatch, `MO2_NEXUS_CLIENT_ID`).
 //!
-//! There is no personal-API-key fallback: Nexus requires personal keys absent
-//! from a distributed client - absent, not merely unused - so until a
-//! `client_id` exists this build has no Nexus access at all, and says so.
+//! The id is public by construction - it travels in the authorize URL, in
+//! plain sight in the user's own browser - so shipping it in the source is not
+//! a leak. A client SECRET would be a different matter, and there is none here
+//! on purpose: Eidos is a public client (an installed application), it cannot
+//! keep a secret that ships inside its own binary, and PKCE is precisely the
+//! mechanism that replaces one. The authorization code is bound to a verifier
+//! this process generated and never transmitted, so intercepting the code buys
+//! an attacker nothing. Neither `authorize_url` nor `exchange_code` sends a
+//! secret, and nothing here should ever start.
+//!
+//! There is no personal-API-key fallback either: Nexus requires personal keys
+//! absent from a distributed client - absent, not merely unused.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -60,18 +67,24 @@ pub struct Config {
     pub scopes: String,
 }
 
+/// The `client_id` Nexus issued for Eidos. Public by design - it is a name, not
+/// a credential, and the browser shows it to the user on every sign-in.
+const CLIENT_ID: &str = "eidos";
+
 impl Config {
-    /// The configured client, or `None` when Nexus has not issued one yet.
+    /// The client configuration: Eidos's own registration, or the override in
+    /// `EIDOS_NEXUS_CLIENT_ID` for anyone testing against a different one.
     ///
-    /// `None` is a real answer, not a failure to read: it is what "we have not
-    /// been registered" looks like, and every caller has to say so out loud
-    /// instead of falling back to somebody else's identifier.
+    /// Still an `Option` rather than an infallible constructor: an override set
+    /// to blank means "I meant to configure something and it did not take", and
+    /// answering that with the built-in id would sign the user in as Eidos when
+    /// they had asked for something else. Callers already handle `None`.
     pub fn from_env() -> Option<Config> {
-        let client_id = std::env::var("EIDOS_NEXUS_CLIENT_ID").ok()?;
-        let client_id = client_id.trim().to_string();
-        if client_id.is_empty() {
-            return None;
-        }
+        let client_id = match std::env::var("EIDOS_NEXUS_CLIENT_ID") {
+            Ok(id) if id.trim().is_empty() => return None,
+            Ok(id) => id.trim().to_string(),
+            Err(_) => CLIENT_ID.to_string(),
+        };
         Some(Config {
             client_id,
             redirect_port: std::env::var("EIDOS_NEXUS_REDIRECT_PORT")
@@ -604,6 +617,63 @@ pub fn refresh(cfg: &Config, refresh_token: &str) -> Result<Tokens, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_flow_never_carries_a_client_secret() {
+        // Eidos is a public client: whatever secret it shipped would ship inside
+        // the binary, where any user can read it - which is why PKCE exists and
+        // why the authorization server must not be handed one. This pins that no
+        // future edit quietly adds a `client_secret` parameter to either leg of
+        // the flow, and that the id itself is what the registration says.
+        let cfg = Config {
+            client_id: CLIENT_ID.to_string(),
+            redirect_port: DEFAULT_REDIRECT_PORT,
+            authorize_url: AUTHORIZE_URL.to_string(),
+            token_url: TOKEN_URL.to_string(),
+            scopes: SCOPES.to_string(),
+        };
+        let url = authorize_url(&cfg, &Pkce::from_verifier("v".repeat(43).as_str()), "state");
+        assert!(url.contains("client_id=eidos"), "{url}");
+        assert!(url.contains("code_challenge"), "PKCE must be on the wire: {url}");
+        assert!(!url.to_ascii_lowercase().contains("secret"), "{url}");
+        // The redirect Nexus has on file for this registration. Changing it
+        // breaks sign-in for everyone until Nexus is told, so it is pinned here.
+        assert_eq!(cfg.redirect_uri(), "http://127.0.0.1:28638/callback");
+    }
+
+    #[test]
+    fn an_empty_client_id_override_is_refused_rather_than_falling_back() {
+        // "I set the variable and it did not take" must not silently sign the
+        // user in as Eidos - they asked for a different identity.
+        temp_env_var("EIDOS_NEXUS_CLIENT_ID", Some("   "), || {
+            assert!(Config::from_env().is_none());
+        });
+        temp_env_var("EIDOS_NEXUS_CLIENT_ID", Some("someone-else"), || {
+            assert_eq!(Config::from_env().unwrap().client_id, "someone-else");
+        });
+        temp_env_var("EIDOS_NEXUS_CLIENT_ID", None, || {
+            assert_eq!(Config::from_env().unwrap().client_id, CLIENT_ID);
+        });
+    }
+
+    /// Run `f` with an environment variable set (or removed), then restore it.
+    /// Serialised because the environment is process-wide and Rust runs tests on
+    /// threads - two of these racing would read each other's value.
+    fn temp_env_var(key: &str, value: Option<&str>, f: impl FnOnce()) {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = std::env::var(key).ok();
+        match value {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+        f();
+        match previous {
+            Some(v) => std::env::set_var(key, v),
+            None => std::env::remove_var(key),
+        }
+    }
 
     #[test]
     fn pkce_matches_the_rfc_test_vector() {

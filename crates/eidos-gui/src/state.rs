@@ -404,13 +404,14 @@ pub(crate) fn load_tools(app: &mut App) {
 /// exchange it, and store the session.
 ///
 /// Personal API keys are deliberately absent - Nexus requires them gone from a
-/// distributed client - so this is the ONLY way Eidos authenticates, and it
-/// needs a `client_id` registered with Nexus (`EIDOS_NEXUS_CLIENT_ID`).
+/// distributed client - so this is the ONLY way Eidos authenticates. It signs
+/// in under Eidos's own registered `client_id`; `EIDOS_NEXUS_CLIENT_ID`
+/// overrides it for testing against another registration.
 pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
     use eidos_nexus::oauth;
     let cfg = oauth::Config::from_env().ok_or_else(|| {
-        "no Nexus client_id configured: set EIDOS_NEXUS_CLIENT_ID (Eidos ships no \
-         default, so it cannot identify itself as another application)"
+        "EIDOS_NEXUS_CLIENT_ID is set but empty: unset it to use Eidos's own \
+         registration, or give it the client id you want to sign in with"
             .to_string()
     })?;
     let pkce = oauth::Pkce::new().map_err(|e| e.to_string())?;
