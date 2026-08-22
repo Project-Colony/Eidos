@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/Project-Colony/Eidos/compare/v1.6.0...v1.7.0) (2026-08-22)
+
+
+### Features
+
+* **nexus:** sign in under Eidos's own registered client id ([df494cd](https://github.com/Project-Colony/Eidos/commit/df494cdf5dd0de78db834a9964575a8cbb86b3f3))
+
 ## [1.6.0](https://github.com/Project-Colony/Eidos/compare/v1.5.0...v1.6.0) (2026-08-20)
 
 
