@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/Project-Colony/Eidos/compare/v1.7.0...v1.7.1) (2026-08-22)
+
+
+### Fixes
+
+* **nexus:** read the account from the token, not from users/validate ([fad3c1f](https://github.com/Project-Colony/Eidos/commit/fad3c1fb3c0edb1a6a5fda87717b2bd9429b7f93))
+
 ## [1.7.0](https://github.com/Project-Colony/Eidos/compare/v1.6.0...v1.7.0) (2026-08-22)
 
 
