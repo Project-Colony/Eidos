@@ -18,7 +18,10 @@
 //!   not precious", which is exactly a log). Appending to one growing file
 //!   would force the reader to guess where the interesting run starts.
 //! * **Rotation.** Only the last [`DEFAULT_KEEP`] sessions per instance survive,
-//!   so an unattended machine cannot fill its home partition with logs.
+//!   so an unattended machine cannot fill its home partition with logs. Per
+//!   instance is not enough on its own - a bucket nobody writes to again is
+//!   never pruned by it - so anything older than [`DEFAULT_MAX_AGE_DAYS`] is
+//!   swept too, whatever its bucket, down to a floor of [`DEFAULT_KEEP`] files.
 //! * **Redaction.** Users paste these into GitHub issues. `/home/alice/...`
 //!   renders as `~/...` and a bare `alice` as `<user>`, via a pure function
 //!   ([`Redactor::apply`]) that is unit-tested rather than trusted.
@@ -51,6 +54,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// the user was about to attach to a bug report. Ten is roughly a week of
 /// evening play sessions, and a session log is a few kilobytes.
 pub const DEFAULT_KEEP: usize = 10;
+
+/// How old a session log may get before it is swept, regardless of which bucket
+/// it belongs to.
+///
+/// Per-bucket retention alone does not bound the directory: it only ever deletes
+/// files sharing the CURRENT run's prefix, so a bucket nobody writes to again -
+/// an instance since renamed or deleted, or the per-link buckets `eidos nxm`
+/// used to open before it was taught not to - keeps its files forever. One
+/// collection's "fetch missing" left one such file per member.
+///
+/// Thirty days: a log nobody has attached to a bug report in a month is not
+/// going to be. The sweep never takes the directory below [`DEFAULT_KEEP`]
+/// files in total, so somebody who runs Eidos twice a year still has their last
+/// ten sessions.
+pub const DEFAULT_MAX_AGE_DAYS: u64 = 30;
 
 /// Severity of one record. Ordered, so a threshold is a simple `>=`.
 ///
@@ -114,6 +132,9 @@ pub struct Config {
     pub dir: PathBuf,
     /// Session files to keep in `dir` for this instance, oldest deleted first.
     pub keep: usize,
+    /// Sweep any session file in `dir` older than this many days, whatever its
+    /// bucket - see [`DEFAULT_MAX_AGE_DAYS`]. `0` disables the sweep.
+    pub max_age_days: u64,
     /// Minimum level written to the file.
     pub file_level: Level,
     /// Minimum level echoed to stderr.
@@ -136,6 +157,7 @@ impl Config {
             instance: instance.to_string(),
             dir: log_dir(),
             keep: DEFAULT_KEEP,
+            max_age_days: DEFAULT_MAX_AGE_DAYS,
             file_level: Level::Debug,
             stderr_level: Level::Info,
             stderr: true,
@@ -310,7 +332,7 @@ struct Logger {
 
 impl Logger {
     fn open(cfg: &Config) -> Logger {
-        match open_session(&cfg.dir, &cfg.instance, cfg.keep) {
+        match open_session(&cfg.dir, &cfg.instance, cfg.keep, cfg.max_age_days) {
             Ok((file, path)) => {
                 let logger = Logger {
                     file: Some(Mutex::new(file)),
@@ -422,12 +444,18 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 /// Create this run's log file in `dir` and drop older ones for the same
 /// instance, keeping `keep` in total. Returns the open file and its path.
-fn open_session(dir: &Path, instance: &str, keep: usize) -> std::io::Result<(File, PathBuf)> {
+fn open_session(
+    dir: &Path,
+    instance: &str,
+    keep: usize,
+    max_age_days: u64,
+) -> std::io::Result<(File, PathBuf)> {
     fs::create_dir_all(dir)?;
     let slug = slug(instance);
     let (secs, _) = now_parts();
     let offset = local_utc_offset(secs);
-    let name = session_file_name(&slug, secs + i64::from(offset), std::process::id());
+    let local = secs + i64::from(offset);
+    let name = session_file_name(&slug, local, std::process::id());
     let path = dir.join(name);
 
     // Second plus pid makes a name collision practically impossible, and append
@@ -443,7 +471,28 @@ fn open_session(dir: &Path, instance: &str, keep: usize) -> std::io::Result<(Fil
         let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
     }
 
-    rotate(dir, &format!("{slug}."), keep, &path);
+    // Both stamps are local time, so comparing them compares two instants -
+    // except across a DST change, where an hour of local time repeats and two
+    // files inside it can order backwards. That costs at most an hour of
+    // ordering once or twice a year, against a cutoff measured in days.
+    //
+    // Clamped before the cast, not after: `u64::MAX as i64` is -1, which would
+    // put the cutoff TOMORROW and sweep every log on the machine down to the
+    // floor. A century is more than any retention policy needs.
+    let days = max_age_days.min(365 * 100) as i64;
+    let cutoff = (days > 0).then(|| stamp(local - days * 86_400));
+    let now = stamp(local);
+    rotate(
+        dir,
+        &Sweep {
+            prefix: &format!("{slug}."),
+            keep,
+            current: &path,
+            older_than: cutoff.as_deref(),
+            now: &now,
+            live: &pid_is_live,
+        },
+    );
     Ok((file, path))
 }
 
@@ -453,8 +502,65 @@ fn open_session(dir: &Path, instance: &str, keep: usize) -> std::io::Result<(Fil
 /// (see [`slug`]), so instances `skyrim` and `skyrim-2` never rotate each other
 /// away. Timestamp before pid means a plain name sort is a chronological sort.
 fn session_file_name(slug: &str, local_secs: i64, pid: u32) -> String {
+    format!("{slug}.{}.{pid}.log", stamp(local_secs))
+}
+
+/// The `YYYYMMDD-HHMMSS` field of a session file name.
+///
+/// Fixed width on purpose: two stamps compare lexicographically exactly as the
+/// instants they name compare, so both the rotation sort and the age sweep work
+/// on names alone - no `stat`, no date arithmetic beyond this one call.
+fn stamp(local_secs: i64) -> String {
     let (y, m, d, hh, mm, ss) = civil_from_unix(local_secs);
-    format!("{slug}.{y:04}{m:02}{d:02}-{hh:02}{mm:02}{ss:02}.{pid}.log")
+    format!("{y:04}{m:02}{d:02}-{hh:02}{mm:02}{ss:02}")
+}
+
+/// The stamp and pid of a session file name, if the name has that shape.
+///
+/// `None` for anything else in the directory - a foreign file, or a name from
+/// some future format. Retention acts only on what it can positively identify:
+/// an unrecognised name is neither deleted nor counted towards the floor. Both
+/// halves of that matter - twenty game crash logs dropped into this folder used
+/// to satisfy the floor on their own and let the sweep take every real session
+/// log underneath them.
+fn session_parts(name: &str) -> Option<(&str, u32)> {
+    let mut parts = name.strip_suffix(".log")?.split('.');
+    let (_slug, stamp, pid) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() {
+        return None;
+    }
+    let pid: u32 = pid.parse().ok()?;
+    let (date, time) = stamp.split_once('-')?;
+    let shaped = date.len() == 8
+        && time.len() == 6
+        && date.bytes().chain(time.bytes()).all(|b| b.is_ascii_digit());
+    shaped.then_some((stamp, pid))
+}
+
+/// Whether `pid` still names a running *Eidos* process.
+///
+/// Retention must never unlink a log another Eidos process is still writing to,
+/// and the pid is right there in the name. Linux only, which is what Eidos
+/// targets; anywhere else this says no and retention behaves as it did before
+/// the check existed.
+///
+/// The name check is not decoration. Pids are recycled - Linux wraps at
+/// `pid_max`, often 32768 - so "a process with this pid exists" is true for a
+/// great many stale logs, and low pids are worse than random: 1 is init and 2
+/// upwards are kernel threads, alive on every machine forever. Sparing those
+/// files would leave the directory exactly as unbounded as before.
+///
+/// A pid recycled by ANOTHER Eidos process still answers yes, which spares a
+/// file that could have gone. That direction is free: its own bucket's rotation
+/// will reach it.
+fn pid_is_live(pid: u32) -> bool {
+    if !cfg!(target_os = "linux") {
+        return false;
+    }
+    // `comm` is the binary name, truncated to 15 bytes - long enough for both
+    // `eidos` and `eidos-gui`.
+    fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("comm"))
+        .is_ok_and(|c| c.trim_end().starts_with("eidos"))
 }
 
 /// Reduce an instance name to something safe in a file name: lowercase ASCII
@@ -483,41 +589,115 @@ fn slug(name: &str) -> String {
     }
 }
 
-/// Delete session files in `dir` whose name starts with `prefix`, keeping the
-/// `keep` newest by name. Returns how many were removed.
+/// What one run's retention pass is allowed to do.
+struct Sweep<'a> {
+    /// `<slug>.` of the run doing the sweeping.
+    prefix: &'a str,
+    /// Session files to keep for that bucket, and the floor the age sweep stops at.
+    keep: usize,
+    /// The file this run is writing to. Never a candidate under either rule.
+    current: &'a Path,
+    /// Stamps strictly before this are old enough to sweep, whatever the bucket.
+    /// `None` disables the age rule entirely.
+    older_than: Option<&'a str>,
+    /// This run's own stamp. Anything stamped AFTER it was written under a clock
+    /// that was wrong, and is swept too - otherwise a file dated 2099 is immune
+    /// to both rules for good and the directory is still unbounded.
+    now: &'a str,
+    /// Whether a pid still names a running process. Injected rather than called
+    /// directly so tests can pin it instead of depending on what happens to be
+    /// running on the machine.
+    live: &'a dyn Fn(u32) -> bool,
+}
+
+/// Prune the log directory. Returns how many files were removed.
+///
+/// Two rules, over ONE listing, and both act only on files this crate wrote -
+/// a name [`session_parts`] cannot read is neither deleted nor counted:
+///
+/// * **This bucket, by count.** Keep the `keep` newest files whose name starts
+///   with `prefix`. Per bucket, not global, because launching Skyrim must not
+///   delete the Fallout log the user was about to attach to a bug report.
+/// * **Everything, by age.** Delete anything stamped outside
+///   `older_than..=now`, whatever its bucket, oldest first. This rule exists
+///   because the first cannot bound the directory: it only ever touches files
+///   sharing the CURRENT run's prefix, so a bucket nobody writes to again keeps
+///   its files forever. The sweep stops before the count of session logs would
+///   drop below `keep`, so a rare user still keeps their last sessions however
+///   old those are.
+///
+/// Ordering is on the STAMP, not the whole name. The whole name begins with the
+/// slug, so once candidates span buckets a name sort is an alphabetical sort:
+/// with 250 stale `nxm---*` orphans beside ten real `gui.*` logs, "oldest
+/// first" deleted every log of every instance the user actually runs and left
+/// the floor filled with junk twenty days older.
 ///
 /// Best effort: a file we cannot delete is not worth failing a launch over.
-/// `current` is never deleted even if it sorts last, which it can if the clock
-/// jumped backwards between runs (dual-boot with a Windows RTC does exactly
-/// that) - losing the log of the run in progress would be the worst outcome.
-fn rotate(dir: &Path, prefix: &str, keep: usize, current: &Path) -> usize {
-    let keep = keep.max(1);
+fn rotate(dir: &Path, s: &Sweep) -> usize {
+    let keep = s.keep.max(1);
     let Ok(entries) = fs::read_dir(dir) else {
         return 0;
     };
-    let mut mine: Vec<PathBuf> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(prefix) && n.ends_with(".log"))
+
+    // Only files this crate wrote take part. A foreign `.log` is never deleted,
+    // and - the half that bit - never counts towards the floor either: the GUI
+    // itself drops a `resume.log` here, and its "Open logs folder" button
+    // invites a user to park game crash logs beside it. Files that can never be
+    // swept were filling the floor, so the sweep went on deleting real session
+    // logs until the count of EVERYTHING reached `keep`.
+    let mut sessions: Vec<(PathBuf, String, u32)> = Vec::new();
+    for e in entries.flatten() {
+        let p = e.path();
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some((st, pid)) = session_parts(name) else { continue };
+        let st = st.to_string();
+        sessions.push((p, st, pid));
+    }
+
+    // Never a file another Eidos process is still writing to. Both rules need
+    // it: five `eidos nxm` children now share ONE bucket, so past `keep` of them
+    // the newest would otherwise unlink the oldest's live log - and a machine
+    // whose clock jumps forward after NTP makes an already-open session look
+    // ancient to the next process that starts.
+    let spared = |p: &Path, pid: u32| p == s.current || (s.live)(pid);
+
+    // Rule one: this bucket, by count. One prefix means the next field is the
+    // stamp, so here a whole-name sort IS chronological. `current` takes part in
+    // the sort and is then spared, so a backwards clock jump costs a slot rather
+    // than the live session.
+    let mut mine: Vec<&(PathBuf, String, u32)> = sessions
+        .iter()
+        .filter(|(p, _, _)| {
+            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(s.prefix))
         })
         .collect();
-    // Newest first. Same prefix means the next field is the timestamp, so a
-    // lexicographic sort is chronological without stat()ing anything.
-    mine.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+    mine.sort_by(|a, b| b.0.file_name().cmp(&a.0.file_name()));
+    let mut doomed: std::collections::HashSet<PathBuf> = mine
+        .into_iter()
+        .skip(keep)
+        .filter(|(p, _, pid)| !spared(p, *pid))
+        .map(|(p, _, _)| p.clone())
+        .collect();
 
-    let mut removed = 0;
-    for p in mine.into_iter().skip(keep) {
-        if p == current {
-            continue;
-        }
-        if fs::remove_file(&p).is_ok() {
-            removed += 1;
+    // Rule two: every bucket, by age, ordered on the stamp field.
+    if let Some(cutoff) = s.older_than {
+        let mut aged: Vec<&(PathBuf, String, u32)> = sessions
+            .iter()
+            .filter(|(p, _, pid)| !spared(p, *pid) && !doomed.contains(p))
+            .filter(|(_, st, _)| st.as_str() < cutoff || st.as_str() > s.now)
+            .collect();
+        aged.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.file_name().cmp(&b.0.file_name())));
+        let mut surviving = sessions.len() - doomed.len();
+        for (p, _, _) in aged {
+            if surviving <= keep {
+                break;
+            }
+            doomed.insert(p.clone());
+            surviving -= 1;
         }
     }
-    removed
+
+    doomed.iter().filter(|p| fs::remove_file(p).is_ok()).count()
 }
 
 // ---------------------------------------------------------------------------
@@ -945,6 +1125,17 @@ mod tests {
 
     /// Create `n` plausible session files for `slug`, one per minute, oldest
     /// first. Returns their paths in creation order.
+    /// A sweep with nothing running: tests must not depend on whether some pid
+    /// they invented happens to exist on the machine running them.
+    fn sweep<'a>(
+        prefix: &'a str,
+        keep: usize,
+        current: &'a Path,
+        older_than: Option<&'a str>,
+    ) -> Sweep<'a> {
+        Sweep { prefix, keep, current, older_than, now: "99999999-999999", live: &|_| false }
+    }
+
     fn seed(dir: &Path, slug: &str, n: usize) -> Vec<PathBuf> {
         let base = 1_700_000_000; // 2023-11-14, an arbitrary fixed instant
         (0..n)
@@ -963,7 +1154,7 @@ mod tests {
         let files = seed(t.path(), "skyrimse", 8);
         let current = files.last().unwrap();
 
-        let removed = rotate(t.path(), "skyrimse.", 3, current);
+        let removed = rotate(t.path(), &sweep("skyrimse.", 3, current, None));
 
         assert_eq!(removed, 5);
         let left = names(t.path());
@@ -978,6 +1169,203 @@ mod tests {
     }
 
     #[test]
+    fn an_abandoned_bucket_is_swept_by_age() {
+        // The defect this exists for. Per-bucket retention only ever touches
+        // files sharing the CURRENT run's prefix, so a bucket nobody writes to
+        // again keeps its files forever - and `eidos nxm` used to open a bucket
+        // per download LINK, one per mod ever fetched. Nothing on the machine
+        // would ever have deleted them.
+        let t = TempDir::new();
+        let orphans: Vec<PathBuf> = (0..8)
+            .map(|i| seed(t.path(), &format!("nxm---skyrim-mods-{i}"), 1).remove(0))
+            .collect();
+        let live = seed(t.path(), "skyrimse", 4);
+        let current = &live[3];
+
+        // Everything above is stamped 2023-11-14; a run a year later sweeps it.
+        let cutoff = stamp(1_700_000_000 + 365 * 86_400);
+        let removed = rotate(t.path(), &sweep("skyrimse.", 10, current, Some(&cutoff)));
+
+        assert!(current.exists(), "never the live session");
+        // Twelve files, a floor of ten: two go, and the sweep stops there.
+        assert_eq!(removed, 2, "down to the floor and no further");
+        assert_eq!(names(t.path()).len(), 10);
+        // Oldest first, so the orphans go before any of the live bucket.
+        assert!(!orphans[0].exists() && !orphans[1].exists());
+        assert!(orphans[2].exists(), "the floor stopped the sweep here");
+        assert!(live.iter().all(|p| p.exists()), "and never at a live bucket's expense");
+    }
+
+    #[test]
+    fn the_age_sweep_orders_by_stamp_not_by_bucket_name() {
+        // The defect this exists for, measured: the candidate list spans every
+        // bucket, so sorting it by whole file name sorts by SLUG. With 250 stale
+        // `nxm---*` orphans beside the user's own `gui.*` logs, "oldest first"
+        // deleted every log of every instance they actually run and left the
+        // floor filled with junk twenty days older.
+        let t = TempDir::new();
+        let day = 86_400i64;
+        let base = 1_700_000_000;
+        let mk = |slug: &str, at: i64, pid: u32| {
+            let p = t.path().join(session_file_name(slug, at, pid));
+            fs::write(&p, b"x").unwrap();
+            p
+        };
+        // `gui` sorts BEFORE `nxm---`, and is the newer of the two by 20 days.
+        let gui: Vec<PathBuf> = (0..6).map(|i| mk("gui", base + 20 * day + i, 100 + i as u32)).collect();
+        let orphans: Vec<PathBuf> =
+            (0..8).map(|i| mk(&format!("nxm---mods-{i}"), base + i, 200 + i as u32)).collect();
+        let current = mk("gui", base + 400 * day, 999);
+
+        let cutoff = stamp(base + 300 * day);
+        let removed = rotate(t.path(), &sweep("gui.", 10, &current, Some(&cutoff)));
+
+        assert_eq!(removed, 5, "fifteen files, a floor of ten");
+        assert!(current.exists());
+        // The five that went are the five OLDEST - orphans - not the five that
+        // happen to sort first.
+        assert!(orphans[..5].iter().all(|p| !p.exists()), "the oldest went");
+        assert!(gui.iter().all(|p| p.exists()), "the user's own logs survived");
+    }
+
+    #[test]
+    fn foreign_logs_do_not_fill_the_retention_floor() {
+        // Reachable with no user action: eidos-gui writes a `resume.log` here,
+        // and its "Open logs folder" button invites a user to park game crash
+        // logs beside it. Counting files the sweep can never delete let the
+        // floor be satisfied by them alone, and every real session log went.
+        let t = TempDir::new();
+        for foreign in ["resume.log", "crash-0.log", "crash-1.log", "notes.log"] {
+            fs::write(t.path().join(foreign), b"x").unwrap();
+        }
+        let old = seed(t.path(), "skyrimse", 11);
+        let current = old.last().unwrap();
+
+        let cutoff = stamp(1_700_000_000 + 365 * 86_400);
+        let removed = rotate(t.path(), &sweep("skyrimse.", 10, current, Some(&cutoff)));
+
+        assert_eq!(removed, 1, "eleven SESSION logs, a floor of ten");
+        assert_eq!(
+            names(t.path()).iter().filter(|n| n.starts_with("skyrimse.")).count(),
+            10,
+            "the promised ten survived, not six"
+        );
+        for foreign in ["resume.log", "crash-0.log", "crash-1.log", "notes.log"] {
+            assert!(t.path().join(foreign).exists(), "{foreign} is not ours to delete");
+        }
+    }
+
+    #[test]
+    fn a_log_another_eidos_process_is_writing_is_never_deleted() {
+        // Two ways this bites. Five `eidos nxm` children share ONE bucket since
+        // the link stopped being its own, so past `keep` of them the newest
+        // would unlink the oldest's live file. And a machine whose clock jumps
+        // forward after NTP makes an already-open session look ancient to the
+        // next process that starts.
+        let t = TempDir::new();
+        let running = seed(t.path(), "nxm", 6);
+        let current = t.path().join(session_file_name("nxm", 1_700_000_000 + 999, 4242));
+        fs::write(&current, b"x").unwrap();
+
+        // Pretend every seeded pid is a live Eidos process, which is what five
+        // concurrent children look like.
+        let live = |_: u32| true;
+        let now = stamp(1_700_000_000 + 999);
+        let cutoff = stamp(1_700_000_000 + 365 * 86_400);
+        let removed = rotate(
+            t.path(),
+            &Sweep {
+                prefix: "nxm.",
+                keep: 2,
+                current: &current,
+                older_than: Some(&cutoff),
+                now: &now,
+                live: &live,
+            },
+        );
+
+        assert_eq!(removed, 0, "not one line of another run's log");
+        assert!(running.iter().all(|p| p.exists()));
+    }
+
+    #[test]
+    fn a_stamp_from_a_broken_clock_is_swept_rather_than_immune() {
+        // A dead CMOS battery makes one session land in 2099. It is never older
+        // than any cutoff, so without this it would outlive every real log and
+        // the directory would still be unbounded.
+        let t = TempDir::new();
+        let future = t.path().join("nxm---mods-1.20991231-235959.7.log");
+        fs::write(&future, b"x").unwrap();
+        let mine = seed(t.path(), "skyrimse", 3);
+        let current = mine.last().unwrap();
+
+        let now = stamp(1_700_000_000 + 400);
+        let removed = rotate(
+            t.path(),
+            &Sweep {
+                prefix: "skyrimse.",
+                keep: 3,
+                current,
+                older_than: Some("20000101-000000"),
+                now: &now,
+                live: &|_| false,
+            },
+        );
+
+        assert_eq!(removed, 1);
+        assert!(!future.exists(), "a stamp after this very run is a clock that was wrong");
+        assert!(mine.iter().all(|p| p.exists()));
+    }
+
+    #[test]
+    fn an_absurd_max_age_cannot_sweep_everything() {
+        // `u64::MAX as i64` is -1, which would put the cutoff TOMORROW and take
+        // every log on the machine down to the floor. Clamped before the cast.
+        let t = TempDir::new();
+        let fresh = seed(t.path(), "skyrimse", 4);
+        let (_f, path) = open_session(t.path(), "skyrimse", 10, u64::MAX).unwrap();
+
+        assert!(fresh.iter().all(|p| p.exists()), "four fresh logs, nothing to sweep");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn the_age_sweep_never_empties_the_directory() {
+        // Somebody who runs Eidos twice a year must still have their last
+        // sessions, however old every one of them is.
+        let t = TempDir::new();
+        let old = seed(t.path(), "skyrimse", 4);
+        let current = &old[3];
+        let cutoff = stamp(1_700_000_000 + 365 * 86_400);
+
+        assert_eq!(rotate(t.path(), &sweep("skyrimse.", 10, current, Some(&cutoff))), 0);
+        assert!(old.iter().all(|p| p.exists()), "all four are older than the cutoff");
+    }
+
+    #[test]
+    fn the_age_sweep_only_dates_names_it_recognises() {
+        let t = TempDir::new();
+        let mine = seed(t.path(), "skyrimse", 2);
+        // Not session logs, or not shaped like one. The sweep deletes only what
+        // it can positively date, so these are left alone rather than guessed at.
+        for odd in ["notes.log", "skyrimse.log", "a.b.c.d.log", "sse.20231114-.1000.log"] {
+            fs::write(t.path().join(odd), b"x").unwrap();
+        }
+        let cutoff = stamp(1_700_000_000 + 365 * 86_400);
+        rotate(t.path(), &sweep("skyrimse.", 1, &mine[1], Some(&cutoff)));
+
+        assert!(t.path().join("notes.log").exists());
+        assert!(t.path().join("skyrimse.log").exists());
+        assert!(t.path().join("a.b.c.d.log").exists());
+        assert!(t.path().join("sse.20231114-.1000.log").exists());
+
+        assert_eq!(session_parts("sse.20231114-215544.1000.log"), Some(("20231114-215544", 1000)));
+        assert_eq!(session_parts("sse.20231114-215544.pid.log"), None, "pid must be a number");
+        assert_eq!(session_parts("sse.2023111-215544.1000.log"), None, "date is eight digits");
+        assert_eq!(session_parts("sse.20231114-21554.1000.log"), None, "time is six");
+    }
+
+    #[test]
     fn rotation_never_deletes_the_file_being_written() {
         let t = TempDir::new();
         let files = seed(t.path(), "sse", 5);
@@ -985,7 +1373,7 @@ mod tests {
         // (dual boot, bad RTC) looks like from here.
         let current = &files[0];
 
-        rotate(t.path(), "sse.", 2, current);
+        rotate(t.path(), &sweep("sse.", 2, current, None));
 
         assert!(current.exists(), "the live session log must survive rotation");
         assert!(files[4].exists());
@@ -1001,7 +1389,7 @@ mod tests {
         let other = seed(t.path(), "skyrim-2", 4);
         fs::write(t.path().join("skyrim.notes.txt"), b"x").unwrap();
 
-        rotate(t.path(), "skyrim.", 1, mine.last().unwrap());
+        rotate(t.path(), &sweep("skyrim.", 1, mine.last().unwrap(), None));
 
         assert_eq!(mine.iter().filter(|p| p.exists()).count(), 1);
         assert!(other.iter().all(|p| p.exists()), "another instance was rotated away");
@@ -1012,7 +1400,7 @@ mod tests {
     fn rotation_with_keep_zero_still_keeps_the_current_session() {
         let t = TempDir::new();
         let files = seed(t.path(), "fo4", 3);
-        rotate(t.path(), "fo4.", 0, files.last().unwrap());
+        rotate(t.path(), &sweep("fo4.", 0, files.last().unwrap(), None));
         let live = files[2].file_name().unwrap().to_string_lossy().into_owned();
         assert_eq!(names(t.path()), vec![live]);
     }
@@ -1022,7 +1410,7 @@ mod tests {
         let t = TempDir::new();
         // Pre-fill the bucket so the very first real session already rotates.
         let old = seed(t.path(), "sse", 6);
-        let (mut f, path) = open_session(t.path(), "SSE", 3).unwrap();
+        let (mut f, path) = open_session(t.path(), "SSE", 3, 0).unwrap();
         f.write_all(b"hello\n").unwrap();
 
         assert!(path.starts_with(t.path()));
