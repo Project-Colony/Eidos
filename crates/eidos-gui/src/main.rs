@@ -87,6 +87,8 @@ enum Tab {
     Plugins,
     Conflicts,
     Overwrite,
+    /// The BSA/BA2 archives the enabled mods ship, and whether each one loads.
+    Archives,
     Saves,
     Downloads,
     /// Live health checks for this setup (MO2's problems/diagnostics panel, plus
@@ -3961,6 +3963,58 @@ mod tests {
         app.screen = Screen::Main;
         load_saves(&mut app);
         (app, root)
+    }
+
+    #[test]
+    fn an_unknown_plugin_set_makes_the_archives_tab_say_so_rather_than_condemn_everything() {
+        // Without this the tab renders every archive red: "we have not looked"
+        // would be indistinguishable from "no plugin is active", which is the
+        // exact bug the orphan diagnostic already had once.
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        assert!(app.plugins.is_none());
+        assert!(archive_rows(&app, "skyrimse").is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_archives_tab_says_why_each_archive_does_or_does_not_load() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mods = root.join("mods");
+        // Named after an active plugin, the " - suffix" form, and an orphan.
+        fs::create_dir_all(mods.join("Good")).unwrap();
+        fs::write(mods.join("Good/Mine.bsa"), b"").unwrap();
+        fs::write(mods.join("Good/Mine - Textures.bsa"), b"").unwrap();
+        fs::create_dir_all(mods.join("Dead")).unwrap();
+        fs::write(mods.join("Dead/Nobody.bsa"), b"").unwrap();
+
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = vec![
+            ModEntry { name: "Good".into(), enabled: true, path: mods.join("Good"), unmanaged: false },
+            ModEntry { name: "Dead".into(), enabled: true, path: mods.join("Dead"), unmanaged: false },
+        ];
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Mine.esp", "Good"));
+        list.plugins[0].enabled = true;
+        app.plugins = Some(list);
+        app.screen = Screen::Main;
+
+        let rows = archive_rows(&app, "skyrimse").expect("the plugin set is known");
+        let by = |a: &str| rows.iter().find(|r| r.archive == a).expect(a);
+        assert_eq!(by("Mine.bsa").by_plugin.as_deref(), Some("Mine.esp"));
+        assert!(by("Mine.bsa").loaded());
+        // The engine's " - <suffix>" rule, not MO2's looser starts-with.
+        assert_eq!(by("Mine - Textures.bsa").by_plugin.as_deref(), Some("Mine.esp"));
+        assert!(!by("Nobody.bsa").loaded(), "nothing names it");
+        assert_eq!(by("Nobody.bsa").by_plugin, None);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

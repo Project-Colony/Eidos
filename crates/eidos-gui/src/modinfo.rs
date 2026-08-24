@@ -1453,6 +1453,109 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
 ///
 /// Advice, never a problem: a mod can ship an archive deliberately for a plugin
 /// the user has not enabled yet.
+/// Which plugins the next launch will treat as ACTIVE.
+///
+/// `app.plugins` is a CACHE - dropped whenever the mod list changes, only rebuilt
+/// while the Plugins tab is open - so most of the time it is `None`. Treating
+/// that as "nothing is active" is the bug this exists to avoid: it makes every
+/// archive an orphan. An absent list is not an empty one, so the profile's own
+/// plugins.txt is read instead, and if even that is unreadable the answer is
+/// `None` - "we do not know", which is not evidence of anything.
+pub(crate) fn active_plugin_names(app: &App, game_id: &str) -> Option<Vec<String>> {
+    let inst = app.created.as_ref()?;
+    let names: Vec<String> = match app.plugins.as_ref() {
+        Some(l) => l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect(),
+        None => {
+            let spec = GameSpec::for_id(game_id)?;
+            let prof = inst.active();
+            let dir = if prof.has_plugin_state() {
+                prof.plugins_state_dir()
+            } else {
+                plugins_txt_dir(&selected_game(app)?.compatdata.clone()?.join("pfx"), &spec)
+            };
+            PluginList::read_active(&dir, &spec)
+                .into_iter()
+                .filter(|(_, on)| *on)
+                .map(|(n, _)| n)
+                .collect()
+        }
+    };
+    (!names.is_empty()).then_some(names)
+}
+
+/// One row of the Archives tab: an archive a mod ships, and why it will or will
+/// not be loaded.
+pub(crate) struct ArchiveRow {
+    pub(crate) mod_name: String,
+    pub(crate) archive: String,
+    /// The plugin whose name pulls it in, if any.
+    pub(crate) by_plugin: Option<String>,
+    /// Whether the profile's INI registers it explicitly.
+    pub(crate) registered: bool,
+}
+
+impl ArchiveRow {
+    /// Whether the engine will load it at all.
+    pub(crate) fn loaded(&self) -> bool {
+        self.registered || self.by_plugin.is_some()
+    }
+}
+
+/// Every archive the enabled mods ship, with the reason each one loads.
+///
+/// `None` when the active plugin set is unknown - the same distinction the
+/// diagnostic makes, for the same reason: without it, "we have not looked" would
+/// render as a tab full of red.
+pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> {
+    let inst = app.created.as_ref()?;
+    let mods: Vec<(String, PathBuf)> = app
+        .mods
+        .iter()
+        .filter(|m| m.enabled && !m.is_separator())
+        .map(|m| (m.name.clone(), m.path.clone()))
+        .collect();
+    let archives = eidos_gamefeatures::mod_archives(&mods);
+    let active = active_plugin_names(app, game_id)?;
+    // The profile's own INI copy is the one that gets deployed, so it is what
+    // the next launch will actually register.
+    let registered = eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
+    let orphans = eidos_gamefeatures::orphan_archives(&archives, &active, &registered);
+
+    Some(
+        archives
+            .into_iter()
+            .map(|(mod_name, archive)| {
+                let is_registered =
+                    registered.iter().any(|r| r.trim().eq_ignore_ascii_case(&archive));
+                // An orphan is exactly "no active plugin names it and the INI does
+                // not register it", so anything NOT an orphan is loaded - and the
+                // plugin responsible is the one whose base name matches. Asked of
+                // the same function the diagnostic uses, so the tab and the health
+                // check can never disagree about what loads.
+                let orphan = orphans.iter().any(|(m, a)| *m == mod_name && *a == archive);
+                let by_plugin = (!orphan && !is_registered)
+                    .then(|| {
+                        let stem = archive
+                            .rsplit_once('.')
+                            .map_or(archive.as_str(), |(s, _)| s)
+                            .to_ascii_lowercase();
+                        active.iter().find(|p| {
+                            let base = p
+                                .rsplit_once('.')
+                                .map_or(p.as_str(), |(s, _)| s)
+                                .to_ascii_lowercase();
+                            stem == base
+                                || stem.strip_prefix(base.as_str()).is_some_and(|r| r.starts_with(" - "))
+                        })
+                    })
+                    .flatten()
+                    .cloned();
+                ArchiveRow { mod_name, archive, by_plugin, registered: is_registered }
+            })
+            .collect(),
+    )
+}
+
 pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
     let Some(inst) = app.created.as_ref() else { return Vec::new() };
     let mods: Vec<(String, PathBuf)> = app
@@ -2304,6 +2407,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let tabs = tabs
         .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, tab == Tab::Conflicts))
         .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, tab == Tab::Overwrite))
+        .push(tab_btn("Archives".to_string(), Tab::Archives, tab == Tab::Archives))
         .push(tab_btn("Saves".to_string(), Tab::Saves, tab == Tab::Saves))
         .push(tab_btn("Downloads".to_string(), Tab::Downloads, tab == Tab::Downloads))
         .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, tab == Tab::Diagnostics));
@@ -2313,6 +2417,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
         Tab::Plugins => plugins_panel(app),
         Tab::Conflicts => conflicts_panel(app),
         Tab::Overwrite => overwrite_panel(app),
+        Tab::Archives => archives_panel(app),
         Tab::Saves => saves_panel(app),
         Tab::Downloads => downloads_panel(app),
         Tab::Diagnostics => diagnostics_panel(app),
@@ -3625,4 +3730,91 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
 /// file-drop events exist in the type system and never fire.
 pub(crate) fn on_wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
+}
+
+
+/// The Archives tab: every BSA/BA2 the enabled mods ship, and whether the engine
+/// will actually load it.
+///
+/// MO2 lists archives and leaves you to work out which are dead weight. Eidos
+/// already computes that for the Health tab; this shows the same answer per mod,
+/// with the reason attached - loaded because a plugin names it, loaded because
+/// the INI registers it, or not loaded at all.
+pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
+    let Some(game) = selected_game(app) else {
+        return text("Open a game instance to see its archives.").into();
+    };
+    let Some(rows) = archive_rows(app, game.def.id) else {
+        return Column::new()
+            .spacing(6)
+            .push(text("Archives").size(13.0))
+            .push(
+                text(
+                    "The active plugin list is not known yet, and without it Eidos cannot say \
+                     which archives load - every one would look dead. Open the Plugins tab once, \
+                     or launch the game, and come back.",
+                )
+                .size(12.0),
+            )
+            .into();
+    };
+
+    let orphans = rows.iter().filter(|r| !r.loaded()).count();
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text(format!("{} archive(s) across your enabled mods", rows.len())).size(13.0))
+        .push(Space::new().width(Length::Fill))
+        .push(
+            text(if orphans == 0 {
+                "all of them load".to_string()
+            } else {
+                format!("{orphans} will not load")
+            })
+            .size(11.0)
+            .color(if orphans == 0 { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+        );
+
+    let col_header = Row::new()
+        .spacing(8)
+        .push(text("Archive").size(11.0).width(Length::FillPortion(3)))
+        .push(text("From mod").size(11.0).width(Length::FillPortion(2)))
+        .push(text("Loaded because").size(11.0).width(Length::FillPortion(3)));
+
+    let mut list = Column::new();
+    if rows.is_empty() {
+        list = list.push(text("None of your enabled mods ships a BSA or BA2.").size(12.0));
+    }
+    for (i, r) in rows.iter().enumerate() {
+        let why: Element<'a, Message> = match (&r.by_plugin, r.registered) {
+            (_, true) => text("the INI registers it").size(11.0).into(),
+            (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
+            (None, false) => text("nothing loads it - it is dead weight")
+                .size(11.0)
+                .color(CONFLICT_LOSES_FG)
+                .into(),
+        };
+        let row = Row::new()
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .push(text(r.archive.clone()).size(12.0).width(Length::FillPortion(3)))
+            .push(text(r.mod_name.clone()).size(11.0).width(Length::FillPortion(2)))
+            .push(container(why).width(Length::FillPortion(3)));
+        list = list.push(list_row(container(row).padding(3).into(), i % 2 == 0, false, None, None));
+    }
+
+    Column::new()
+        .spacing(6)
+        .push(header)
+        .push(col_header)
+        .push(scrollable(list).height(Length::Fill))
+        .push(
+            text(
+                "An engine loads an archive named after an ACTIVE plugin (<plugin>.bsa, or \
+                 \"<plugin> - Textures.bsa\"), or one the INI registers explicitly. Anything else \
+                 is on disk and never read.",
+            )
+            .size(10.0),
+        )
+        .into()
 }
