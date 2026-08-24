@@ -238,9 +238,13 @@ impl ModMeta {
             .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
     }
 
-    /// Set both halves together: a profile URL with no name to attach it to is
-    /// a link with nothing to label it, and a name with no URL is not clickable
-    /// - neither is useful alone, so neither is settable alone.
+    /// Set both halves together, because a profile URL with no name to attach
+    /// it to is a link with nothing to label it.
+    ///
+    /// The reverse is allowed: a name with no usable URL is still worth
+    /// recording, and it is what the info panel shows as plain text. So a URL
+    /// that is not an http(s) address is dropped and the name is kept, rather
+    /// than both being refused.
     pub fn set_uploader(&mut self, name: &str, profile_url: &str) {
         self.set_quoted("uploader", name);
         let url = profile_url.trim();
