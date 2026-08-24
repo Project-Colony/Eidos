@@ -1758,10 +1758,15 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 .width(Length::Fill),
         );
         if missing > 0 {
+            let label = if state.confirm_fetch {
+                "Click again to start them".to_string()
+            } else {
+                format!("Try to fetch {missing} missing")
+            };
             summary = summary.push(
-                button(text(format!("Try to fetch {missing} missing")).size(11.0))
+                button(text(label).size(11.0))
                     .padding([3, 10])
-                    .style(button::secondary)
+                    .style(if state.confirm_fetch { button::danger } else { button::secondary })
                     .on_press(Message::CollectionFetchMissing),
             );
         }

@@ -860,6 +860,14 @@ struct CollectionState {
     /// True while the one GraphQL request is in flight.
     loading: bool,
     error: Option<String>,
+    /// Two clicks before "fetch missing" spawns anything. Same idiom as every
+    /// other bulk action here, and this one starts real transfers.
+    confirm_fetch: bool,
+    /// File ids this pane has already spawned a transfer for. Batches are taken
+    /// from what is NOT in here, so clicking again advances instead of
+    /// restarting the same few - a member stays `missing` for as long as its
+    /// download runs, so the state alone cannot tell the two apart.
+    asked: std::collections::HashSet<u64>,
 }
 
 /// The Export dialog (MO2's Export to csv).
@@ -1794,7 +1802,19 @@ fn view(app: &App) -> Element<'_, Message> {
         Screen::Summary => summary_screen(app),
         Screen::Main => welcome(app),
     };
-    container(inner).width(Length::Fill).height(Length::Fill).padding(20).into()
+    let base: Element<'_, Message> =
+        container(inner).width(Length::Fill).height(Length::Fill).padding(20).into();
+    // The collection pane also belongs here, not only on the main screen.
+    // `eidos-gui --collection` opens it before anything else, and with no
+    // instance yet the window lands on the welcome screen - where a pane drawn
+    // only by `main_screen` is a link that silently does nothing.
+    if let Some(state) = &app.collection {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseCollection);
+        let dialog = container(collection_dialog(state)).center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(dialog).into();
+    }
+    base
 }
 
 /// Keyboard subscription: surface global shortcuts and keep the live modifier state
@@ -4209,7 +4229,7 @@ mod tests {
             file_id,
             domain: "skyrimspecialedition".to_string(),
             version: "2.1".to_string(),
-            file_name: format!("{name}.7z"),
+            file_title: format!("{name}.7z"),
             size_in_bytes: 1024,
             optional: false,
         };
@@ -4245,6 +4265,8 @@ mod tests {
             states: Vec::new(),
             loading: false,
             error: None,
+            confirm_fetch: false,
+            asked: std::collections::HashSet::new(),
         });
         recompute_collection_states(&mut app);
 
@@ -4252,6 +4274,103 @@ mod tests {
         assert_eq!(st[0], MemberState::Installed, "matched on the Nexus mod id");
         assert_eq!(st[1], MemberState::Downloaded, "matched on the exact file id");
         assert!(st[2..].iter().all(|s| *s == MemberState::Missing));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn one_click_asks_for_a_capped_batch_not_the_whole_collection() {
+        use crate::update::{next_fetch_batch, FETCH_BATCH};
+        let mut rev = captured_revision();
+        // Twenty missing members - a modest collection by Nexus standards, and
+        // twenty `eidos nxm` children would be twenty processes at once.
+        let one = rev.mods[0].clone();
+        rev.mods = (0..20u64)
+            .map(|i| eidos_nexus::collections::CollectionMod {
+                mod_id: 1000 + i,
+                file_id: 2000 + i,
+                ..one.clone()
+            })
+            .collect();
+        let states = vec![MemberState::Missing; rev.mods.len()];
+        let mut asked = std::collections::HashSet::new();
+
+        let (batch, left) = next_fetch_batch(&rev, &states, &asked, FETCH_BATCH);
+        assert_eq!(batch.len(), FETCH_BATCH, "capped");
+        assert_eq!(left, 20 - FETCH_BATCH, "and it says how many are behind them");
+
+        // Clicking again advances instead of restarting the same few: the first
+        // batch is still `Missing` (its downloads are running), so only `asked`
+        // can tell them apart.
+        asked.extend(batch.iter().map(|(_, f, _)| *f));
+        let (second, _) = next_fetch_batch(&rev, &states, &asked, FETCH_BATCH);
+        assert_eq!(second.len(), FETCH_BATCH);
+        assert!(
+            second.iter().all(|(_, f, _)| !batch.iter().any(|(_, g, _)| g == f)),
+            "no overlap with the first batch"
+        );
+
+        // And the tail is short rather than wrapping.
+        asked.extend(rev.mods.iter().map(|m| m.file_id).take(18));
+        let (tail, left) = next_fetch_batch(&rev, &states, &asked, FETCH_BATCH);
+        assert_eq!(tail.len(), 2);
+        assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn fetching_the_missing_members_takes_two_clicks() {
+        let (mut app, root) = collection_app(&[], &[]);
+        let rev = captured_revision();
+        app.collection = Some(CollectionState {
+            link: String::new(),
+            revision: Some(rev),
+            states: Vec::new(),
+            loading: false,
+            error: None,
+            confirm_fetch: false,
+            asked: std::collections::HashSet::new(),
+        });
+        recompute_collection_states(&mut app);
+        assert!(
+            app.collection.as_ref().unwrap().states.iter().all(|s| *s == MemberState::Missing),
+            "the fixture instance has none of them"
+        );
+
+        // First click arms and spawns nothing.
+        let _ = update_inner(&mut app, Message::CollectionFetchMissing);
+        assert!(app.collection.as_ref().unwrap().confirm_fetch);
+        assert!(app.collection.as_ref().unwrap().asked.is_empty(), "nothing started yet");
+
+        // And any other action disarms it, so a stray click cannot start a
+        // dozen transfers a minute later.
+        let _ = update_inner(&mut app, Message::CollectionLinkChanged("x".to_string()));
+        assert!(!app.collection.as_ref().unwrap().confirm_fetch);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_member_already_asked_for_is_not_asked_for_twice() {
+        let (mut app, root) = collection_app(&[], &[]);
+        let rev = captured_revision();
+        let all: Vec<u64> = rev.mods.iter().map(|m| m.file_id).collect();
+        app.collection = Some(CollectionState {
+            link: String::new(),
+            revision: Some(rev),
+            states: Vec::new(),
+            loading: false,
+            error: None,
+            confirm_fetch: false,
+            // Every member already started. A download in flight leaves its
+            // member `missing` until the sidecar lands, so without this set the
+            // pane would spawn the same transfers again on the next click.
+            asked: all.into_iter().collect(),
+        });
+        recompute_collection_states(&mut app);
+
+        let _ = update_inner(&mut app, Message::CollectionFetchMissing);
+        assert!(!app.collection.as_ref().unwrap().confirm_fetch, "nothing to confirm");
+        let s = app.status.clone().unwrap_or_default();
+        assert!(s.contains("already started"), "{s}");
+        assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
     }
 

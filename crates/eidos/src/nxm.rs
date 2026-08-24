@@ -101,6 +101,12 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                         exit(1);
                     }
                     let (game, inst) = pick_instance(&candidates);
+                    // Created before the pin is handed over: the window ignores
+                    // `EIDOS_INSTANCE` when the folder has no manifest, and a
+                    // first-ever collection link for a game whose instance does
+                    // not exist yet would then fall back to whatever was last
+                    // open - the very mismatch this branch exists to prevent.
+                    inst.create().ok();
                     println!(
                         "Collection {} (revision {}) for {} - opening it in Eidos.",
                         c.slug,

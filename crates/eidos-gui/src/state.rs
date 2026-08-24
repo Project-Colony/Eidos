@@ -691,6 +691,10 @@ pub(crate) fn reload_mods(app: &mut App) {
     // Same moment the list is rebuilt: a category could have been added by an
     // install, and this is the only place that would notice.
     app.categories = Some(inst.category_factory());
+    // An open collection pane joins its members against this list, so it goes
+    // stale the moment a member is installed. Recomputed here rather than in the
+    // view, which runs every frame and this reads every mod's meta.ini.
+    crate::update::recompute_collection_states(app);
 }
 
 /// Find the `eidos` CLI that drives the namespaced launch. The GUI is

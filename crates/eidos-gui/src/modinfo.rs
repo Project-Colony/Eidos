@@ -3433,6 +3433,13 @@ pub(crate) fn load_downloads(app: &mut App) {
     // Only in-flight rows are kept, so the map cannot grow without bound.
     app.download_samples = samples;
     app.downloads = rows;
+    // A collection member turns from "missing" to "downloaded" when its archive
+    // lands, and "Try to fetch missing" produces exactly that - without this the
+    // pane keeps saying "missing" for files that are already on disk, and the
+    // asked-set means clicking again does nothing.
+    if app.collection.is_some() {
+        crate::update::recompute_collection_states(app);
+    }
 }
 
 /// Recursively copy the CONTENTS of `src` into `dst` (creating `dst`), MO2's

@@ -125,6 +125,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::SavesDeleteSelected) {
             app.confirm_saves_delete = false;
         }
+        if !matches!(message, Message::CollectionFetchMissing) {
+            if let Some(c) = app.collection.as_mut() {
+                c.confirm_fetch = false;
+            }
+        }
     }
     // Anything that can create, rename, delete or switch a profile drops the
     // chip row's memo. Done centrally rather than in each handler: those have
@@ -3676,6 +3681,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 states: Vec::new(),
                 loading: false,
                 error: None,
+                confirm_fetch: false,
+                asked: std::collections::HashSet::new(),
             });
             if app.collection.as_ref().is_some_and(|c| !c.link.trim().is_empty()) {
                 return update(app, Message::CollectionFetch);
@@ -3739,6 +3746,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             c.error = None;
             c.revision = None;
             c.states.clear();
+            // A different revision is a different member list; what the previous
+            // one asked for says nothing about this one.
+            c.asked.clear();
             return Task::perform(
                 async move {
                     let nexus = eidos_nexus::Nexus::connect()?;
@@ -3783,22 +3793,33 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CollectionFetchMissing => {
             let Some(c) = app.collection.as_ref() else { return Task::none() };
             let Some(rev) = c.revision.as_ref() else { return Task::none() };
-            let missing: Vec<(u64, u64, String)> = rev
-                .mods
-                .iter()
-                .zip(&c.states)
-                .filter(|(_, s)| **s == MemberState::Missing)
-                .map(|(m, _)| (m.mod_id, m.file_id, m.domain.clone()))
-                .collect();
+            // The pane's instance, not whatever `eidos nxm` would resolve on its
+            // own. The handler picks by game domain, so with two instances of
+            // one game it can send a collection's downloads somewhere other than
+            // the window that asked for them.
+            let Some(inst) = app.created.as_ref().map(|i| i.root.clone()) else {
+                app.status = Some("Open an instance first.".to_string());
+                return Task::none();
+            };
+            let (batch, left) = next_fetch_batch(rev, &c.states, &c.asked, FETCH_BATCH);
+            let missing = batch;
             if missing.is_empty() {
-                app.status = Some("Nothing missing.".to_string());
+                // The escape hatch matters: a transfer that failed leaves its
+                // member missing AND already-asked, so without saying this the
+                // pane looks stuck.
+                app.status = Some(
+                    "Nothing left to ask for - the rest were already started. Look up again to \
+                     retry any that did not land."
+                        .to_string(),
+                );
                 return Task::none();
             }
-            // One child per mod, spawned in order. Each is the same `eidos nxm`
-            // the browser would launch, so nothing here re-implements the
-            // download - and each one either works (a premium account can mint
-            // a link from the ids alone) or fails with the message that already
-            // explains why a free account needs the site's own button.
+            // Two clicks, like every other action here that does something real.
+            if !c.confirm_fetch {
+                let c = app.collection.as_mut().expect("checked above");
+                c.confirm_fetch = true;
+                return Task::none();
+            }
             let bin = find_eidos_binary();
             let mut started = 0usize;
             for (mod_id, file_id, domain) in &missing {
@@ -3806,22 +3827,42 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 match std::process::Command::new(&bin)
                     .arg("nxm")
                     .arg(&link)
+                    .env("EIDOS_INSTANCE", &inst)
                     .stdin(std::process::Stdio::null())
                     .stdout(std::process::Stdio::null())
                     .stderr(std::process::Stdio::null())
                     .spawn()
                 {
-                    Ok(_) => started += 1,
+                    Ok(_) => {
+                        started += 1;
+                        if let Some(c) = app.collection.as_mut() {
+                            c.asked.insert(*file_id);
+                        }
+                    }
                     Err(e) => {
                         app.status = Some(format!("Could not start the downloads: {e}"));
+                        if let Some(c) = app.collection.as_mut() {
+                            c.confirm_fetch = false;
+                        }
                         return Task::none();
                     }
                 }
             }
-            app.status = Some(format!(
-                "Asked for {started} download(s). A free Nexus account cannot mint links without \
-                 the site's own button - if they do not start, use Get on each row."
-            ));
+            if let Some(c) = app.collection.as_mut() {
+                c.confirm_fetch = false;
+            }
+            app.status = Some(if left > 0 {
+                format!(
+                    "Started {started}, {left} still to go. Click again for the next batch. A \
+                     free Nexus account cannot mint links without the site's own button - if \
+                     they do not start, use Open on each row."
+                )
+            } else {
+                format!(
+                    "Started {started} download(s). A free Nexus account cannot mint links \
+                     without the site's own button - if they do not start, use Open on each row."
+                )
+            });
         }
         // ---- Instance manager (MO2's Manage Instances) -----------------------
         Message::ShowInstanceManager => {
@@ -5575,6 +5616,42 @@ fn set_file_mtime(path: &Path, when: std::time::SystemTime) -> std::io::Result<(
 /// not that exact file. That is deliberate: a collection pins a version, and
 /// having a different version of the same mod is a different situation from not
 /// having it at all, which the row says separately.
+/// How many `eidos nxm` children one click may start.
+///
+/// Capped rather than fanned out over the whole list: each child is a process
+/// holding its own connection, so a hundred-mod collection would otherwise be a
+/// hundred processes at once, all racing the same hourly rate budget and all
+/// writing into one downloads directory.
+pub(crate) const FETCH_BATCH: usize = 5;
+
+/// The next members to ask for, and how many are still queued behind them.
+///
+/// Split out of the handler so the cap is tested rather than read: the handler
+/// itself spawns processes, which a test must not do.
+///
+/// `asked` is what this pane already started. It is needed because a member
+/// stays `Missing` for the whole of its download - the state only turns
+/// `Downloaded` once the sidecar lands - so the state alone cannot tell
+/// "not started" from "running", and a second click would restart the same
+/// first few forever.
+pub(crate) fn next_fetch_batch(
+    rev: &eidos_nexus::collections::CollectionRevision,
+    states: &[MemberState],
+    asked: &std::collections::HashSet<u64>,
+    limit: usize,
+) -> (Vec<(u64, u64, String)>, usize) {
+    let queued: Vec<(u64, u64, String)> = rev
+        .mods
+        .iter()
+        .zip(states)
+        .filter(|(_, s)| **s == MemberState::Missing)
+        .filter(|(m, _)| !asked.contains(&m.file_id))
+        .map(|(m, _)| (m.mod_id, m.file_id, m.domain.clone()))
+        .collect();
+    let left = queued.len().saturating_sub(limit);
+    (queued.into_iter().take(limit).collect(), left)
+}
+
 pub(crate) fn recompute_collection_states(app: &mut App) {
     let Some(state) = app.collection.as_ref() else { return };
     let Some(rev) = state.revision.as_ref() else { return };

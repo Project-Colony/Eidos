@@ -41,7 +41,10 @@ pub struct CollectionMod {
     /// necessarily the collection's domain.
     pub domain: String,
     pub version: String,
-    pub file_name: String,
+    /// The file's DISPLAY title, which v2 spells `file.name`. Not the archive
+    /// name: that is v1's `file_name`, and nothing in the v2 revision carries
+    /// it - so this must never be joined against a path in `downloads/`.
+    pub file_title: String,
     pub size_in_bytes: u64,
     /// Optional members are offered by the collection, not required by it.
     pub optional: bool,
@@ -184,7 +187,7 @@ pub(crate) fn from_payload(
                     let v = str_at(Some(m), "version");
                     if v.is_empty() { str_at(file, "version") } else { v }
                 },
-                file_name: if redact { String::new() } else { str_at(file, "name") },
+                file_title: if redact { String::new() } else { str_at(file, "name") },
                 size_in_bytes: file
                     .and_then(|f| f.get("sizeInBytes"))
                     .and_then(serde_json::Value::as_u64)
@@ -276,7 +279,7 @@ mod tests {
         // The whole point: the revision carries ONE rating for the collection,
         // so withholding only its title while listing every mod inside it by
         // name would defeat the gate through the door it was built for.
-        assert!(r.mods.iter().all(|m| m.name.is_empty() && m.file_name.is_empty()));
+        assert!(r.mods.iter().all(|m| m.name.is_empty() && m.file_title.is_empty()));
         // Ids and versions survive - they describe nothing on their own, and
         // they are what lets the list still say "you already have this one".
         assert_eq!(r.mods[0].mod_id, 37471);
