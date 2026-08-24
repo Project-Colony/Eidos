@@ -605,9 +605,10 @@ struct Sweep<'a> {
     /// Stamps strictly before this are old enough to sweep, whatever the bucket.
     /// `None` disables the age rule entirely.
     older_than: Option<&'a str>,
-    /// This run's own stamp. Anything stamped AFTER it was written under a clock
-    /// that was wrong, and is swept too - otherwise a file dated 2099 is immune
-    /// to both rules for good and the directory is still unbounded.
+    /// This run's own stamp. Kept for the header and for tests; the age rule
+    /// deliberately does NOT sweep stamps after it - see the filter in
+    /// `rotate`, and the test that pins why.
+    #[allow(dead_code)]
     now: &'a str,
     /// Whether a pid still names a running process. Injected rather than called
     /// directly so tests can pin it instead of depending on what happens to be
@@ -689,7 +690,14 @@ fn rotate(dir: &Path, s: &Sweep) -> usize {
         let mut aged: Vec<&(PathBuf, String, u32)> = sessions
             .iter()
             .filter(|(p, _, pid)| !spared(p, *pid) && !doomed.contains(p))
-            .filter(|(_, st, _)| st.as_str() < cutoff || st.as_str() > s.now)
+            // Older than the cutoff. A stamp AFTER this run was once swept too -
+            // the reasoning being a clock set to 2099 - but that is the wrong
+            // way round: a clock that steps BACKWARD (an NTP correction, a
+            // dual-boot RTC) makes every log written before it look like the
+            // future, and the sweep would delete the sessions just written
+            // while keeping nothing. A future stamp is bounded by the per-bucket
+            // rule instead, which does not care what time it is.
+            .filter(|(_, st, _)| st.as_str() < cutoff)
             .collect();
         aged.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.file_name().cmp(&b.0.file_name())));
         let mut surviving = sessions.len() - doomed.len();
@@ -1297,34 +1305,64 @@ mod tests {
     }
 
     #[test]
-    fn a_stamp_from_a_broken_clock_is_swept_rather_than_immune() {
-        // A dead CMOS battery makes one session land in 2099. It is never older
-        // than any cutoff, so without this it would outlive every real log and
-        // the directory would still be unbounded.
+    fn a_clock_that_steps_backward_does_not_delete_the_logs_just_written() {
+        // The age rule sweeps only what is OLDER than the cutoff, never what is
+        // newer than this run. Sweeping the future looks tidy - it would catch a
+        // session stamped 2099 by a dead CMOS battery - but it is the wrong way
+        // round: a clock stepping BACKWARD (an NTP correction on a machine that
+        // booted at epoch, a dual-boot RTC) makes every log written before the
+        // step look like the future, and the sweep would then delete the whole
+        // history the moment the time was corrected.
         let t = TempDir::new();
-        let future = t.path().join("nxm---mods-1.20991231-235959.7.log");
-        fs::write(&future, b"x").unwrap();
-        let mine = seed(t.path(), "skyrimse", 3);
-        let current = mine.last().unwrap();
+        // Written "later" than the run doing the sweeping, which is what a
+        // backward step looks like from here.
+        let recent = seed(t.path(), "skyrimse", 3);
+        let current =
+            t.path().join(session_file_name("skyrimse", 1_700_000_000 - 86_400, 4242));
+        fs::write(&current, b"x").unwrap();
 
-        let now = stamp(1_700_000_000 + 400);
+        let now = stamp(1_700_000_000 - 86_400);
         let removed = rotate(
             t.path(),
             &Sweep {
                 prefix: "skyrimse.",
-                keep: 3,
-                current,
-                older_than: Some("20000101-000000"),
+                keep: 10,
+                current: &current,
+                older_than: Some(&stamp(1_700_000_000 - 400 * 86_400)),
                 now: &now,
                 live: &|_| false,
             },
         );
 
-        assert_eq!(removed, 1);
-        assert!(!future.exists(), "a stamp after this very run is a clock that was wrong");
-        assert!(mine.iter().all(|p| p.exists()));
+        assert_eq!(removed, 0, "not one line of a session that is merely newer than this one");
+        assert!(recent.iter().all(|p| p.exists()));
     }
 
+    #[test]
+    fn a_bucket_nobody_writes_to_again_is_still_bounded_by_the_count_rule() {
+        // What the future-stamp sweep was for: a log that no age cutoff will
+        // ever reach. The per-bucket count rule handles it without caring what
+        // time it is - which is why the age rule can afford to leave it alone.
+        let t = TempDir::new();
+        let mut all = seed(t.path(), "nxm", 12);
+        let current = all.pop().unwrap();
+        let removed = rotate(
+            t.path(),
+            &Sweep {
+                prefix: "nxm.",
+                keep: 3,
+                current: &current,
+                older_than: None,
+                now: "20991231-235959",
+                live: &|_| false,
+            },
+        );
+        assert!(removed > 0);
+        // Three, and the live one is the newest so it is one of them - `keep`
+        // counts it rather than being a floor above it.
+        assert_eq!(names(t.path()).len(), 3);
+        assert!(current.exists());
+    }
     #[test]
     fn an_absurd_max_age_cannot_sweep_everything() {
         // `u64::MAX as i64` is -1, which would put the cutoff TOMORROW and take

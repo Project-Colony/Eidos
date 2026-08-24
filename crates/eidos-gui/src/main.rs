@@ -236,6 +236,9 @@ enum Message {
     ToggleModColumn(ModColumn),
     /// Group the list under synthetic headers, or stop.
     SetGroupBy(Option<GroupBy>),
+    /// Drop the sort AND the grouping in one go - the way back to load order,
+    /// which is the only order in which the list can be reordered.
+    ClearListOrder,
     /// Fold or unfold one synthetic group header.
     ToggleGroupFold(String),
     /// Preview a file from a tree, in a pane over the window.
@@ -243,6 +246,7 @@ enum Message {
     ClosePreview,
     /// Executables editor: the AppID field, the two flags, and the shortcut.
     ExecAppIdChanged(String),
+    ToolArgsAction(iced::widget::text_editor::Action),
     ExecToggleHidden,
     ExecTogglePinned,
     ExecMakeShortcut,
@@ -264,7 +268,9 @@ enum Message {
     /// The mod's NAME, not its index: see `tree_delete_armed`.
     ConfirmFiletreeDelete(String, String),
     /// Filetree: make a directory beside the entries shown.
-    FiletreeNewFolderStart,
+    /// Carries the mod, so the folder lands in the tree it was started from
+    /// even if the panel has moved on.
+    FiletreeNewFolderStart(usize),
     FiletreeNewFolderChanged(String),
     FiletreeNewFolderCommit,
     /// Click a heading: ascending, then descending, then back to load order.
@@ -484,7 +490,6 @@ enum Message {
     ToolTitleChanged(String),
     ToolExeChanged(String),
     ToolWorkdirChanged(String),
-    ToolArgsChanged(String),
     ToolPrereqsChanged(String),
     /// Open a native file picker for the tool's executable (Browse button).
     BrowseToolExe,
@@ -846,8 +851,9 @@ struct ExecutablesDialogState {
     title: String,
     exe: String,
     workdir: String,
-    /// Arguments, one per line in the editor (filtered for blanks on save).
-    args: String,
+    /// Arguments, one per line. A `text_editor` rather than a String, because
+    /// the field has to hold a newline for the label to be true.
+    args_editor: iced::widget::text_editor::Content,
     /// Prerequisite verbs, comma-separated in the editor.
     prereqs: String,
     /// The mod this tool's output is captured into (empty = the Overwrite).
@@ -866,7 +872,8 @@ impl ExecutablesDialogState {
                 self.title = t.title.clone();
                 self.exe = t.exe.display().to_string();
                 self.workdir = t.workdir.as_ref().map(|w| w.display().to_string()).unwrap_or_default();
-                self.args = t.args.join("\n");
+                self.args_editor =
+                    iced::widget::text_editor::Content::with_text(&t.args.join("\n"));
                 self.prereqs = t.prereqs.join(", ");
                 self.output_mod = t.output_mod.clone().unwrap_or_default();
                 self.app_id = t.app_id.map(|n| n.to_string()).unwrap_or_default();
@@ -875,7 +882,7 @@ impl ExecutablesDialogState {
                 self.title.clear();
                 self.exe.clear();
                 self.workdir.clear();
-                self.args.clear();
+                self.args_editor = iced::widget::text_editor::Content::new();
                 self.prereqs.clear();
                 self.output_mod.clear();
                 self.app_id.clear();
@@ -901,7 +908,13 @@ impl ExecutablesDialogState {
             let w = self.workdir.trim();
             if w.is_empty() { None } else { Some(PathBuf::from(w)) }
         };
-        t.args = self.args.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
+        t.args = self
+            .args_editor
+            .text()
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
         t.prereqs =
             self.prereqs.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
         // Only a name that still names a mod. The list is read when the dialog
@@ -1670,14 +1683,18 @@ struct App {
     servers_edit: String,
     /// Filetree: the entry being renamed and what has been typed, the entry
     /// armed for deletion, and the new-folder box.
-    tree_rename: Option<(usize, String)>,
+    /// The mod NAME and the entry being renamed. By name for the same reason
+    /// the delete is: an index outlives nothing, and a reload between opening
+    /// the box and pressing Enter would aim the rename into another mod.
+    tree_rename: Option<(String, String)>,
     tree_rename_text: String,
     /// The filetree entry armed for deletion: the MOD'S NAME and the relative
     /// path. By name for the same reason as `confirm_restore` - a reload
     /// between the clicks would otherwise aim the delete into another mod's
     /// folder, where the same relative path may well exist.
     tree_delete_armed: Option<(String, String)>,
-    tree_new_folder: Option<String>,
+    /// The mod the new-folder box belongs to, and what has been typed.
+    tree_new_folder: Option<(String, String)>,
     /// The backup armed for restoring over its original, BY NAME.
     ///
     /// Not by index: an index is a position in a list that anything can reload
@@ -2345,6 +2362,12 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.export.is_none()
         && !app.instances_open
         && !app.file_menu_open
+        // And the two newest overlays. Both own the whole screen behind a scrim,
+        // and Delete is the key that matters: two presses through a preview pane
+        // arm and then commit a removal, which takes a mod OFF DISK, with the
+        // list it happened to hidden behind the pane.
+        && app.preview.is_none()
+        && app.collection.is_none()
     {
         subs.push(shortcuts);
     }
@@ -2478,7 +2501,20 @@ pub const APP_ID: &str = "eidos";
 /// rather than the transparent mark: the mark is pale ink, which disappears
 /// against a light panel. A decode failure costs the icon, never the launch.
 fn window_settings() -> iced::window::Settings {
+    // The size the user left it at, when they asked for that. Read here rather
+    // than passed in, because the window is built before the App exists.
+    let prefs = Settings::load();
+    let size = prefs
+        .remember_window
+        .then_some(prefs.window_size)
+        .flatten()
+        // A stored size larger than any plausible screen, or smaller than the
+        // toolbar, is a size the window cannot be used at - fall back rather
+        // than open something the user has to fix before they can fix it.
+        .filter(|&(w, h)| (480..=16384).contains(&w) && (360..=16384).contains(&h))
+        .map(|(w, h)| iced::Size::new(w as f32, h as f32));
     iced::window::Settings {
+        size: size.unwrap_or(iced::window::Settings::default().size),
         platform_specific: iced::window::settings::PlatformSpecific {
             application_id: APP_ID.to_string(),
             ..Default::default()
@@ -4887,7 +4923,7 @@ mod tests {
         // state somebody took a backup to keep.
         let i = app.mods.iter().position(|m| m.name == "Armour").unwrap();
         let _ = update_inner(&mut app, Message::ModBackup(i));
-        assert!(root.join("mods").join("Armour_backup2").is_dir());
+        assert!(root.join("mods").join("Armour_backup2").is_dir(), "status={:?}", app.status);
 
         // Now break the mod, and restore.
         fs::write(modd.join("Meshes").join("a.nif"), b"broken").unwrap();
@@ -4896,7 +4932,13 @@ mod tests {
         assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"broken", "one click arms");
         let _ =
             update_inner(&mut app, Message::ConfirmModRestoreBackup("Armour_backup".to_string()));
-        assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"original");
+        assert_eq!(
+            fs::read(modd.join("Meshes").join("a.nif")).unwrap(),
+            b"original",
+            "status={:?} error={:?}",
+            app.status,
+            app.error
+        );
         // And the scratch directory the restore used is gone.
         assert!(!root.join("mods").join("Armour.eidos-restoring").exists());
         let _ = fs::remove_dir_all(&root);
@@ -4998,7 +5040,12 @@ mod tests {
 
         let _ = update_inner(&mut app, Message::FiletreeRenameChanged("b.nif".to_string()));
         let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
-        assert!(modd.join("Meshes").join("b.nif").is_file());
+        assert!(
+            modd.join("Meshes").join("b.nif").is_file(),
+            "status={:?} error={:?}",
+            app.status,
+            app.error
+        );
         assert!(!modd.join("Meshes").join("a.nif").exists());
 
         // Never over something already there: fs::rename would replace it in
@@ -5112,7 +5159,9 @@ mod tests {
         assert_eq!(
             fs::read(root.join("mods").join("A").join("f.txt")).unwrap(),
             b"a",
-            "A was restored"
+            "A was restored (status={:?} error={:?})",
+            app.status,
+            app.error
         );
         assert_eq!(
             fs::read(root.join("mods").join("B").join("f.txt")).unwrap(),

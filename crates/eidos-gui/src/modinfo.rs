@@ -153,9 +153,9 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     if hidden > 0 {
         tools = tools.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
     }
-    tools = tools.push(tool_btn("New folder", Message::FiletreeNewFolderStart));
+    tools = tools.push(tool_btn("New folder", Message::FiletreeNewFolderStart(i)));
     col = col.push(tools);
-    if let Some(name) = &app.tree_new_folder {
+    if let Some((_, name)) = app.tree_new_folder.as_ref().filter(|(n, _)| *n == m.name) {
         col = col.push(
             Row::new()
                 .spacing(6)
@@ -179,7 +179,8 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         let is_hidden = path_is_hidden(e);
         let label = if is_hidden { "Unhide" } else { "Hide" };
         // Renaming replaces the last component only, so the box holds the NAME.
-        let renaming = app.tree_rename.as_ref().is_some_and(|(mi, r)| *mi == i && r == e);
+        let renaming =
+            app.tree_rename.as_ref().is_some_and(|(mn, r)| *mn == m.name && r == e);
         let armed =
             app.tree_delete_armed.as_ref().is_some_and(|(mn, r)| *mn == m.name && r == e);
         let name_cell: Element<'a, Message> = if renaming {
@@ -290,7 +291,7 @@ pub(crate) fn resolve_in_mod(base: &Path, rel: &str) -> Option<PathBuf> {
         return None;
     }
     let mut out = base.to_path_buf();
-    for part in rel.split('/') {
+    for (n, part) in rel.split('/').enumerate() {
         if part.is_empty() || part == "." || part == ".." || part.contains('\\') {
             return None;
         }
@@ -298,12 +299,22 @@ pub(crate) fn resolve_in_mod(base: &Path, rel: &str) -> Option<PathBuf> {
         if Path::new(part).components().count() != 1 {
             return None;
         }
-        // The prefix so far must not be a link out of the tree. Checked on the
-        // way down, so a link at any depth stops the walk.
-        if out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+        // Every component BELOW the base must not be a link. `base` itself is
+        // skipped on purpose: a mod folder is very often a symlink (a pool on
+        // another disk, a stow tree), and refusing there disabled every action
+        // in this tab for those mods rather than protecting anything - the
+        // question is whether the path leaves the mod, and the mod's own root
+        // cannot.
+        if n > 0 && out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
             return None;
         }
         out.push(part);
+    }
+    // The LAST component too. Without this the walk checked every ancestor and
+    // then handed back a path whose final element is a link - which a preview
+    // reads through, and a delete unlinks (harmlessly) while a rename moves.
+    if out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+        return None;
     }
     out.starts_with(base).then_some(out)
 }
@@ -1223,7 +1234,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // check and no Nexus page - and every archive copied in by hand
             // arrives that way. Nexus can identify it from its MD5, which is the
             // only route back (MO2 calls this Query Metadata).
-            if row.state == DownloadState::Untracked {
+            // On the ID, not on the STATE: hiding a hand-copied archive writes a
+            // sidecar, which stops it being Untracked - and took the only route
+            // back to a mod id with it. What Identify is for is an archive
+            // nobody has identified, which is exactly "no mod id".
+            if row.mod_id.is_none() {
                 actions = actions.push(
                     button(text(if identifying { "..." } else { "Identify" }).size(11.0))
                         .padding(4)

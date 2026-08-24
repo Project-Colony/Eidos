@@ -279,6 +279,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.screen = Screen::Welcome;
         }
         Message::ToggleMod(i) => {
+            // A backup contributes nothing to the game whatever modlist.txt
+            // says, so ticking one would write `+X_backup` into a file that
+            // then disagrees with the inert checkbox it was drawn as - and a
+            // bulk toggle reaches this same arm.
+            if app.mods.get(i).is_some_and(|m| m.is_backup()) {
+                return Task::none();
+            }
             // A separator is a group divider, not content - it has no toggle (MO2's
             // canBeEnabled() == false). Unmanaged rows are the game's own DLC and
             // Creation Club content: they are not in modlist.txt, so a flipped
@@ -1247,10 +1254,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
-            // Only in load order: under a sort or a grouping the gaps address
-            // the real list while the rows are somewhere else, so a drop moves
-            // a mod to a position nobody aimed at. The view hides the strips;
-            // this stops the drag a row's own press would otherwise arm.
+            // Only in load order. Under a sort or a grouping the insertion gaps
+            // address the REAL list while the rows on screen are somewhere
+            // else, so a drop moves a mod nobody aimed at - and an armed drag
+            // also hijacks the edge auto-scroll on its way to being refused.
+            // Here, at the press, because this is where a row actually arms one:
+            // a mod row's `on_press` is `DragStart`, never `SelectMod`.
             if !can_reorder(app) {
                 return Task::none();
             }
@@ -3373,11 +3382,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 state.workdir = s;
             }
         }
-        Message::ToolArgsChanged(s) => {
-            if let Some(state) = &mut app.executables {
-                state.args = s;
-            }
-        }
         Message::ToolPrereqsChanged(s) => {
             if let Some(state) = &mut app.executables {
                 state.prereqs = s;
@@ -3421,7 +3425,31 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some("Every tool needs a non-empty, single-line title.".to_string());
                     return Task::none();
                 }
-                let user_tools: Vec<Tool> = state.merged[..state.user_len].to_vec();
+                // A tool with no executable is a row that write_tools drops on
+                // the way out - the entry looks saved, and is gone next time.
+                let blank = state.merged[..state.user_len]
+                    .iter()
+                    .find(|t| t.exe.as_os_str().is_empty())
+                    .map(|t| t.title.clone());
+                if let Some(title) = blank {
+                    app.status = Some(format!("'{title}' has no executable - it would not save."));
+                    return Task::none();
+                }
+                let mut user_tools: Vec<Tool> = state.merged[..state.user_len].to_vec();
+                // Hide and pin are about the PICKER, so they apply to a per-game
+                // default too - and a default is not in the user's list, so
+                // setting one on it was silently discarded on save. A default
+                // that carries a flag is written out as a user entry holding
+                // nothing but that flag; `merge_tools` gives a user entry
+                // precedence over the default of the same title, so the tool
+                // itself still comes from the default.
+                for d in &state.merged[state.user_len..] {
+                    if (d.hidden || d.pinned)
+                        && !user_tools.iter().any(|t| t.title.eq_ignore_ascii_case(&d.title))
+                    {
+                        user_tools.push(d.clone());
+                    }
+                }
                 if let Some(inst) = &app.created {
                     match inst.save_tools(&user_tools) {
                         Ok(()) => {
@@ -4823,6 +4851,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.menu_mod = None;
                 app.rename = None;
                 app.confirm_remove = None;
+            // Only in load order. Under a sort or a grouping the insertion gaps
+            // address the REAL list while the rows on screen are somewhere
+            // else, so a drop moves a mod nobody aimed at - and an armed drag
+            // also hijacks the edge auto-scroll on its way to being refused.
+            // Here, at the press, because this is where a row actually arms one:
+            // a mod row's `on_press` is `DragStart`, never `SelectMod`.
+            if !can_reorder(app) {
+                return Task::none();
+            }
                 app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
                 return Task::none();
             }
@@ -4844,6 +4881,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
+            // Only in load order. Under a sort or a grouping the insertion gaps
+            // address the REAL list while the rows on screen are somewhere
+            // else, so a drop moves a mod nobody aimed at - and an armed drag
+            // also hijacks the edge auto-scroll on its way to being refused.
+            // Here, at the press, because this is where a row actually arms one:
+            // a mod row's `on_press` is `DragStart`, never `SelectMod`.
+            if !can_reorder(app) {
+                return Task::none();
+            }
             app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
         }
         Message::ModDoubleClick(i) => {
@@ -4863,6 +4909,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.preview = Some(build_preview(&path));
         }
         Message::ClosePreview => app.preview = None,
+        Message::ToolArgsAction(action) => {
+            app.typing = true;
+            if let Some(state) = app.executables.as_mut() {
+                state.args_editor.perform(action);
+                state.commit_buffers();
+            }
+        }
         Message::ExecAppIdChanged(t) => {
             app.typing = true;
             if let Some(state) = app.executables.as_mut() {
@@ -4885,15 +4938,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ExecMakeShortcut => {
+            // The buffers hold what has been TYPED; `merged` holds what was
+            // committed. Without this the shortcut names the previous title,
+            // because a field commits on the next keystroke, not on this click.
+            if let Some(state) = app.executables.as_mut() {
+                state.commit_buffers();
+            }
             let (Some(state), Some(inst), Some(game)) =
                 (app.executables.as_ref(), app.created.as_ref(), selected_game(app))
             else {
                 return Task::none();
             };
-            let Some(tool) = state.selected.and_then(|i| state.merged.get(i)) else {
+            let Some(tool) = state.selected.and_then(|i| state.merged.get(i)).cloned() else {
                 return Task::none();
             };
-            match write_desktop_entry(inst, game.def.id, tool) {
+            match write_desktop_entry(inst, game.def.id, &tool) {
                 Ok(path) => {
                     app.status = Some(format!("Shortcut written to {}", path.display()));
                 }
@@ -4923,20 +4982,46 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             let src = m.path.clone();
+            let name = m.name.clone();
             let label = dest.file_name().unwrap_or_default().to_string_lossy().into_owned();
-            match copy_dir_contents(&src, &dest) {
-                Ok(()) => {
-                    // Inserted right after the mod it copies, so it is next to
-                    // what it belongs to rather than at the end of the list.
-                    reload_mods(app);
-                    refresh_meta_cache(app);
-                    bump_views(app);
-                    app.status = Some(format!("Saved a copy as {label}."));
+            // The lock covers the WRITE and nothing else. Held across the
+            // refresh below it would deadlock this very handler: `flock` denies
+            // a second descriptor even to the process that already holds one,
+            // so the plugin refresh inside `reload_mods` would fail against a
+            // lock we are holding ourselves.
+            let copied = {
+                let _lock = match inst.try_lock("the Eidos window") {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Busy: {e}."));
+                        return Task::none();
+                    }
+                };
+                // Claimed BEFORE the copy, so the cleanup below can only ever
+                // remove a directory this handler brought into existence.
+                // Removing `dest` unconditionally on failure would delete
+                // whatever was already at that name if the loop above raced
+                // another process.
+                if let Err(e) = std::fs::create_dir(&dest) {
+                    app.error = Some(format!("Could not back up {name}: {e}"));
+                    return Task::none();
                 }
-                Err(e) => {
-                    let _ = std::fs::remove_dir_all(&dest);
-                    app.error = Some(format!("Could not back up {}: {e}", m.name));
+                match copy_dir_contents(&src, &dest) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        // Ours, so safe to take back whole.
+                        let _ = std::fs::remove_dir_all(&dest);
+                        app.error = Some(format!("Could not back up {name}: {e}"));
+                        false
+                    }
                 }
+            };
+            if copied {
+                reload_mods(app);
+                refresh_meta_cache(app);
+                bump_views(app);
+                app.conflicts = compute_conflicts(app);
+                app.status = Some(format!("Saved a copy as {label}."));
             }
         }
         Message::ModRestoreBackup(i) => {
@@ -4974,25 +5059,44 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // once the copy succeeded: restoring over a half-copied folder is
             // how a restore loses both versions.
             let stash = inst.mods_dir().join(format!("{orig}.eidos-restoring"));
-            let _ = std::fs::remove_dir_all(&stash);
-            if let Err(e) = std::fs::rename(&target, &stash) {
-                app.error = Some(format!("Could not restore {orig}: {e}"));
-                return Task::none();
-            }
-            match copy_dir_contents(&src, &target) {
-                Ok(()) => {
-                    let _ = std::fs::remove_dir_all(&stash);
-                    reload_mods(app);
-                    refresh_meta_cache(app);
-                    bump_views(app);
-                    app.status = Some(format!("{orig} restored from its backup."));
+            // Again: the lock spans the write, and is released before anything
+            // reads the instance back - see the note in `ModBackup`.
+            let restored = {
+                let _lock = match inst.try_lock("the Eidos window") {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Busy: {e}."));
+                        return Task::none();
+                    }
+                };
+                let _ = std::fs::remove_dir_all(&stash);
+                if let Err(e) = std::fs::rename(&target, &stash) {
+                    app.error = Some(format!("Could not restore {orig}: {e}"));
+                    return Task::none();
                 }
-                Err(e) => {
-                    // Put it back exactly as it was.
-                    let _ = std::fs::remove_dir_all(&target);
-                    let _ = std::fs::rename(&stash, &target);
-                    app.error = Some(format!("Could not restore {orig}: {e} - nothing changed."));
+                match copy_dir_contents(&src, &target) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_dir_all(&stash);
+                        true
+                    }
+                    Err(e) => {
+                        // Put it back exactly as it was.
+                        let _ = std::fs::remove_dir_all(&target);
+                        let _ = std::fs::rename(&stash, &target);
+                        app.error =
+                            Some(format!("Could not restore {orig}: {e} - nothing changed."));
+                        false
+                    }
                 }
+            };
+            if restored {
+                reload_mods(app);
+                refresh_meta_cache(app);
+                bump_views(app);
+                // The restored mod's files are different ones now.
+                app.conflicts = compute_conflicts(app);
+                app.plugins = None;
+                app.status = Some(format!("{orig} restored from its backup."));
             }
         }
         Message::FiletreeOpen(i, rel) => {
@@ -5009,7 +5113,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // which is a move, which is not what this is.
             app.tree_rename_text =
                 rel.rsplit('/').next().unwrap_or(&rel).to_string();
-            app.tree_rename = Some((i, rel));
+            app.tree_rename = app.mods.get(i).map(|m| (m.name.clone(), rel));
             app.tree_delete_armed = None;
         }
         Message::FiletreeRenameChanged(t) => {
@@ -5021,10 +5125,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.tree_rename_text.clear();
         }
         Message::FiletreeRenameCommit => {
-            let Some((i, rel)) = app.tree_rename.take() else { return Task::none() };
+            let Some((mod_name, rel)) = app.tree_rename.take() else { return Task::none() };
             let name = app.tree_rename_text.trim().to_string();
             app.tree_rename_text.clear();
-            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            // By name, resolved now: an index would have been read against a
+            // list anything could have reloaded while the box was open.
+            let Some(base) = app.mods.iter().find(|m| m.name == mod_name).map(|m| m.path.clone())
+            else {
+                return Task::none();
+            };
             // The new name replaces the LAST component and nothing else, so a
             // rename can never become a move out of its directory.
             let parent = rel.rsplit_once('/').map(|(p, _)| p.to_string());
@@ -5047,12 +5156,30 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.error = Some(format!("{name} already exists in that folder."));
                 return Task::none();
             }
-            match std::fs::rename(&from, &to) {
-                Ok(()) => {
-                    bump_views(app);
-                    app.status = Some(format!("Renamed to {name}."));
+            let done = {
+                let _lock = match app
+                    .created
+                    .as_ref()
+                    .expect("checked above")
+                    .try_lock("the Eidos window")
+                {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Busy: {e}."));
+                        return Task::none();
+                    }
+                };
+                match std::fs::rename(&from, &to) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        app.error = Some(format!("Could not rename: {e}"));
+                        false
+                    }
                 }
-                Err(e) => app.error = Some(format!("Could not rename: {e}")),
+            };
+            if done {
+                refresh_after_tree_change(app);
+                app.status = Some(format!("Renamed to {name}."));
             }
         }
         Message::FiletreeDelete(i, rel) => {
@@ -5072,52 +5199,97 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.error = Some(format!("Refused to delete {rel}: not a path inside this mod."));
                 return Task::none();
             };
-            // A directory goes whole, which is why this needed two clicks.
-            let md = match path.symlink_metadata() {
-                Ok(md) => md,
-                Err(e) => {
-                    app.error = Some(format!("Could not delete {rel}: {e}"));
-                    return Task::none();
+            // The instance lock spans the delete and nothing else - see
+            // `refresh_after_tree_change` for why the refresh must be outside it.
+            let r = {
+                let _lock = match app
+                    .created
+                    .as_ref()
+                    .expect("checked above")
+                    .try_lock("the Eidos window")
+                {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Busy: {e}."));
+                        return Task::none();
+                    }
+                };
+                // A directory goes whole, which is why this needed two clicks.
+                let md = match path.symlink_metadata() {
+                    Ok(md) => md,
+                    Err(e) => {
+                        app.error = Some(format!("Could not delete {rel}: {e}"));
+                        return Task::none();
+                    }
+                };
+                if md.is_dir() && !md.file_type().is_symlink() {
+                    std::fs::remove_dir_all(&path)
+                } else {
+                    std::fs::remove_file(&path)
                 }
-            };
-            let r = if md.is_dir() && !md.file_type().is_symlink() {
-                std::fs::remove_dir_all(&path)
-            } else {
-                std::fs::remove_file(&path)
             };
             match r {
                 Ok(()) => {
-                    bump_views(app);
+                    refresh_after_tree_change(app);
                     app.status = Some(format!("Deleted {rel}."));
                 }
                 Err(e) => app.error = Some(format!("Could not delete {rel}: {e}")),
             }
         }
-        Message::FiletreeNewFolderStart => {
-            app.tree_new_folder = Some(String::new());
+        Message::FiletreeNewFolderStart(i) => {
+            // The mod is captured HERE. Reading `app.info_mod` at commit time
+            // put the folder in whichever mod the panel happened to be showing
+            // by then, which is not the one the button was pressed in.
+            let Some(name) = app.mods.get(i).map(|m| m.name.clone()) else { return Task::none() };
+            app.tree_new_folder = Some((name, String::new()));
             app.tree_rename = None;
             app.tree_delete_armed = None;
         }
         Message::FiletreeNewFolderChanged(t) => {
             app.typing = true;
-            app.tree_new_folder = Some(t);
+            if let Some((mod_name, _)) = app.tree_new_folder.take() {
+                app.tree_new_folder = Some((mod_name, t));
+            }
         }
         Message::FiletreeNewFolderCommit => {
-            let Some(name) = app.tree_new_folder.take() else { return Task::none() };
+            let Some((mod_name, name)) = app.tree_new_folder.take() else { return Task::none() };
             let name = name.trim().to_string();
-            let Some(i) = app.info_mod else { return Task::none() };
-            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            let Some(base) = app.mods.iter().find(|m| m.name == mod_name).map(|m| m.path.clone())
+            else {
+                return Task::none();
+            };
             let Some(path) = resolve_in_mod(&base, &name) else {
                 app.error = Some(format!("Refused to create {name}: not a folder name."));
                 return Task::none();
             };
-            match std::fs::create_dir_all(&path) {
+            let r = {
+                let _lock = match app
+                    .created
+                    .as_ref()
+                    .expect("checked above")
+                    .try_lock("the Eidos window")
+                {
+                    Ok(l) => l,
+                    Err(e) => {
+                        app.status = Some(format!("Busy: {e}."));
+                        return Task::none();
+                    }
+                };
+                std::fs::create_dir_all(&path)
+            };
+            match r {
                 Ok(()) => {
-                    bump_views(app);
+                    refresh_after_tree_change(app);
                     app.status = Some(format!("Created {name}/."));
                 }
                 Err(e) => app.error = Some(format!("Could not create {name}: {e}")),
             }
+        }
+        Message::ClearListOrder => {
+            app.mod_sort = None;
+            app.group_by = None;
+            app.groups_collapsed.clear();
+            app.view_menu_open = false;
         }
         Message::SetGroupBy(by) => {
             app.group_by = by;
@@ -5133,6 +5305,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if !app.groups_collapsed.remove(&label) {
                 app.groups_collapsed.insert(label);
             }
+            // Whatever the fold just hid stops being selected. A focus on a row
+            // nobody can see is a Delete away from removing a mod off screen,
+            // and the same rule already applies to the filter.
+            forget_hidden_rows(app);
         }
         Message::ToggleModColumn(col) => {
             if let Some(pos) = app.mod_columns.iter().position(|c| *c == col) {
@@ -5327,6 +5503,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // aimed at - the separator's own index - still means what it meant.
             app.collapsed.remove(&name);
             save_collapsed(app);
+        }
+        Message::DragOverGap(_) if !can_reorder(app) => {
+            // Belt and braces: without this a drag_state left over from before
+            // a sort was applied would still aim, and aiming is what turns the
+            // edge auto-scroll bands on.
+            app.drag_state = None;
+            app.drag_hover_group = None;
         }
         Message::DragOverGap(gap) => {
             // Resting on a collapsed group opens it, so a mod can be dropped
@@ -5795,7 +5978,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             commit_plugin_order(app, &spec);
         }
         Message::PointerAt(p) => app.cursor = p,
-        Message::WindowResized(s) => app.window = s,
+        Message::WindowResized(s) => {
+            app.window = s;
+            // "Remember the window size" is a real setting now: it was stored,
+            // and neither written nor applied, so the toggle did nothing at all.
+            // Written on resize rather than at exit, because a window manager
+            // can take the window away without an exit anybody sees.
+            if app.prefs.remember_window {
+                let want = Some((s.width.max(1.0) as u32, s.height.max(1.0) as u32));
+                if app.prefs.window_size != want {
+                    app.prefs.window_size = want;
+                    // A failed write costs the next launch its size, nothing
+                    // more - not worth an error banner over a resize.
+                    let _ = app.prefs.save();
+                }
+            }
+        }
         Message::FomodHover(at) => {
             if let Some(w) = app.fomod.as_mut() {
                 w.hover = at;
@@ -5823,18 +6021,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // own terms (`real_selection`), so a Select All followed by
                 // Remove does not delete the headers.
                 //
-                // Intersected with the visible set, because "all" has to mean
-                // what is on screen: under a filter or a fold, `0..mods.len()`
+                // What the list is DRAWING, because "all" has to mean what is on
+                // screen: under a filter, a fold or a grouping, a wider set
                 // swept in rows the user could not see, and the batch Remove
-                // then aimed `remove_dir_all` at every one of them.
-                let vis = mod_row_visibility(app, app.categories.as_ref());
-                app.selected_mods =
-                    vis.iter().enumerate().filter(|(_, &v)| v).map(|(i, _)| i).collect();
+                // then aimed `remove_dir_all` at every one of them. Asking
+                // `mod_row_visibility` was not enough - it knows the separator
+                // folds and the filter, and nothing about a folded GROUP.
+                app.selected_mods = drawn_mod_rows(app).into_iter().collect();
                 let first = app.selected_mods.iter().min().copied();
-                app.selected_mod = app
-                    .selected_mod
-                    .filter(|i| vis.get(*i).copied().unwrap_or(false))
-                    .or(first);
+                // The focus stays only if it is one of the rows just selected.
+                app.selected_mod =
+                    app.selected_mod.filter(|i| app.selected_mods.contains(i)).or(first);
             }
             Pane::Plugins => {
                 let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
@@ -5889,16 +6086,36 @@ fn nexus_category_of(inst: &eidos_instance::Instance, mod_name: &str) -> Option<
 ///
 /// A focus that is still visible is KEPT - narrowing the list around the row you
 /// are working on should not cost you your place.
+/// What has to be recomputed after a mod's files change on disk.
+///
+/// The conflict map and the plugin list were both computed from a tree that has
+/// just changed: a deleted `.esp` still shows in Plugins, and a conflict emblem
+/// still points at a file that is gone.
+///
+/// Deliberately NOT called while the instance lock is held. `flock` denies a
+/// second descriptor even to the process that already owns one, so a refresh
+/// inside a locked block deadlocks the handler against itself - which is
+/// exactly what happened, and what the flake in `a_backup_is_inert...` was.
+fn refresh_after_tree_change(app: &mut App) {
+    bump_views(app);
+    app.conflicts = compute_conflicts(app);
+    app.plugins = None;
+}
+
 fn forget_hidden_rows(app: &mut App) {
     app.menu_mod = None;
     app.rename = None;
     app.drag_state = None;
-    // The catalog MUST be passed: with a category filter set and `None` here,
-    // `mod_row_visibility` finds nothing to resolve the id against and reports
-    // every row hidden - which would drop the selection on every keystroke in
-    // the name box.
-    let visible = mod_row_visibility(app, app.categories.as_ref());
-    let shown = |i: &usize| visible.get(*i).copied().unwrap_or(false);
+    // What the list is DRAWING, not what passes the filter: a folded GROUP
+    // hides rows the filter never touched, and a focus left on one is a Delete
+    // away from removing a mod off screen.
+    //
+    // (`drawn_mod_rows` passes the category catalog through for us. It has to
+    // be passed: with a category filter set and `None` there, nothing resolves
+    // the id against it and every row reports hidden - which would drop the
+    // selection on every keystroke in the name box.)
+    let visible: std::collections::HashSet<usize> = drawn_mod_rows(app).into_iter().collect();
+    let shown = |i: &usize| visible.contains(i);
     if !app.selected_mod.as_ref().is_some_and(shown) {
         app.selected_mod = None;
         // An armed removal aimed at the row that just vanished has to disarm with

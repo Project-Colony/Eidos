@@ -608,7 +608,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         title: String::new(),
         exe: String::new(),
         workdir: String::new(),
-        args: String::new(),
+        args_editor: iced::widget::text_editor::Content::new(),
         prereqs: String::new(),
         output_mod: String::new(),
         app_id: String::new(),
@@ -774,6 +774,15 @@ pub(crate) fn build_preview(path: &Path) -> Preview {
     // here - see `Preview`.
     const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
     if IMAGES.contains(&ext.as_str()) {
+        // Checked, because `Handle::from_path` is lazy: a path that is not there
+        // decodes to nothing at draw time and the pane comes up blank with no
+        // reason on it, which is the one thing this function exists to avoid.
+        if !path.is_file() {
+            return Preview::Unsupported {
+                path: path.to_path_buf(),
+                why: format!("{name} is not there any more."),
+            };
+        }
         return Preview::Image {
             path: path.to_path_buf(),
             handle: iced::widget::image::Handle::from_path(path),
@@ -783,8 +792,9 @@ pub(crate) fn build_preview(path: &Path) -> Preview {
         return Preview::Unsupported {
             path: path.to_path_buf(),
             why: format!(
-                "{name} is a {} file. Eidos has no decoder for those yet - open it in a tool                  from the Run list, or use Reveal to find it on disk.",
-                ext.to_uppercase()
+                "{name} is a {kind} file. Eidos has no decoder for those yet - open it in a \
+                 tool from the Run list, or use Reveal to find it on disk.",
+                kind = ext.to_uppercase()
             ),
         };
     }
@@ -866,12 +876,47 @@ pub(crate) fn write_desktop_entry(
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
         .collect();
-    let path = dir.join(format!("eidos-{}-{}.desktop", clean(game_id), slug.trim_matches('-')));
+    let slug = slug.trim_matches('-').to_string();
+    // A title of nothing but punctuation - or two titles that differ only by
+    // it - collapse to the same slug, and the second shortcut would silently
+    // replace the first. A short hash of the real title separates them, and
+    // gives an empty slug something to be.
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in title.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    // The INSTANCE is in the hash too, not just the title: two instances of one
+    // game routinely carry the same tool, and without it the second shortcut
+    // silently replaced the first - and then launched the wrong profile.
+    let mut h2: u64 = h;
+    for b in inst.root.display().to_string().as_bytes() {
+        h2 ^= u64::from(*b);
+        h2 = h2.wrapping_mul(0x100000001b3);
+    }
+    let path = dir.join(format!(
+        "eidos-{}-{}{:08x}.desktop",
+        clean(game_id),
+        if slug.is_empty() { String::new() } else { format!("{slug}-") },
+        (h2 & 0xffff_ffff) as u32
+    ));
     // Exec arguments are quoted per the Desktop Entry spec, where a literal
     // quote and a backslash both need escaping - an instance path with a space
     // in it is ordinary (`/mnt/Jeux/Eidos Skyrim`) and would otherwise arrive
     // as two arguments.
-    let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    // Desktop Entry quoting: backslash and quote are escaped, and a literal `%`
+    // is doubled - a single one introduces a field code, so a path containing
+    // `%20` would reach the program as something else entirely. `$` is escaped
+    // too, since the spec has the string parsed by a shell-like reader.
+    let q = |s: &str| {
+        format!(
+            "\"{}\"",
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('$', "\\$")
+                .replace('%', "%%")
+        )
+    };
     let body = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
@@ -1320,7 +1365,12 @@ pub(crate) fn mods_visible_for_bulk(app: &App) -> Vec<usize> {
     drawn_mod_rows(app)
         .into_iter()
         .filter(|&i| {
-            app.mods.get(i).is_some_and(|m| !m.is_separator() && !m.is_unmanaged())
+            app.mods
+                .get(i)
+                // A backup is inert, so a bulk enable must not tick one: it
+                // would write `+X_backup` into modlist.txt, disagreeing with
+                // the checkbox the row is drawn with.
+                .is_some_and(|m| !m.is_separator() && !m.is_unmanaged() && !m.is_backup())
         })
         .collect()
 }
@@ -1401,7 +1451,17 @@ pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidd
 /// sorted list is a label attached to whatever happened to land under it.
 pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
     let Some(_) = app.group_by else {
-        return display_order(app).into_iter().map(ListEntry::Row).collect();
+        // The filter applies here too. `display_order` is an ORDER, not a
+        // selection - it returns every row - and the view drops the hidden ones
+        // in its own loop. Leaving that out here made the one source of truth
+        // disagree with the screen in exactly the configuration it was written
+        // for: sorted, with a filter on, Delete could remove a mod never drawn.
+        let vis = mod_row_visibility(app, app.categories.as_ref());
+        return display_order(app)
+            .into_iter()
+            .filter(|&i| vis.get(i).copied().unwrap_or(false))
+            .map(ListEntry::Row)
+            .collect();
     };
     // Grouping and the user's separators cannot both be true at once: a
     // separator heads the rows that FOLLOW it in load order, and a grouped list
@@ -1720,7 +1780,9 @@ pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::Catego
     // are under a filter, and more strongly: a grouped list has moved the rows
     // out from under their separators, and the separator that would unfold them
     // is not drawn at all - so a fold left standing hides mods with no way back.
-    let suspend_folds = is_filtering(app) || app.group_by.is_some();
+    // A SORT does not draw separators either, so a fold left standing there
+    // hides mods with no header to unfold them - the same trap as grouping.
+    let suspend_folds = is_filtering(app) || app.group_by.is_some() || app.mod_sort.is_some();
     visible_rows(&app.mods, &app.collapsed, suspend_folds, |i, m| {
         if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             return false;

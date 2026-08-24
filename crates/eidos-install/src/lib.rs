@@ -580,9 +580,15 @@ pub fn folder_looks_valid(dir: &std::path::Path, rules: LayoutRules) -> bool {
             if rules.folder_matches(&name) || name.eq_ignore_ascii_case("Root") {
                 return true;
             }
-        } else if let Some((_, ext)) = name.rsplit_once('.') {
-            if rules.suffix_matches(ext) {
-                return true;
+        } else if !name.eq_ignore_ascii_case("meta.ini") {
+            // `meta.ini` is EIDOS'S OWN file, written into every installed mod -
+            // and `ini` is a data suffix for several games, so counting it made
+            // the check pass for every mod that has one, which is all of them.
+            // The flag could never fire.
+            if let Some((_, ext)) = name.rsplit_once('.') {
+                if rules.suffix_matches(ext) {
+                    return true;
+                }
             }
         }
     }

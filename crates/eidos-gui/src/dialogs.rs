@@ -275,11 +275,26 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                              first one Nexus offers today. Only a premium account is given more \
                              than one to choose between; for everyone else Nexus picks, and this \
                              changes nothing.",
-                            text_input("Nexus CDN, Paris, Chicago", &app.servers_edit)
-                                .on_input(Message::PreferredServersChanged)
-                                .on_submit(Message::PreferredServersSave)
-                                .padding(5)
-                                .size(12.0)
+                            Row::new()
+                                .spacing(6)
+                                .align_y(iced::Alignment::Center)
+                                .push(
+                                    text_input("Nexus CDN, Paris, Chicago", &app.servers_edit)
+                                        .on_input(Message::PreferredServersChanged)
+                                        .on_submit(Message::PreferredServersSave)
+                                        .padding(5)
+                                        .size(12.0),
+                                )
+                                // Enter is not discoverable, and the field
+                                // showed a preference that had never been
+                                // stored - the one state a settings box must
+                                // never be in.
+                                .push(
+                                    button(text("Save").size(11.0))
+                                        .padding([4, 10])
+                                        .style(button::secondary)
+                                        .on_press(Message::PreferredServersSave),
+                                )
                                 .into(),
                         ))
                         .into(),
@@ -454,7 +469,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .into()
 }
 
-pub(crate) fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, Message> {
+pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogState) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
         .push(text("Executables").size(16.0).width(Length::Fill))
@@ -521,13 +536,16 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) 
                 Message::ToolWorkdirChanged,
                 Message::BrowseToolWorkdir,
             ))
+            // One argument per line, and the widget has to be able to HOLD a
+            // newline: a `text_input` drops them, so the label promised
+            // something the field refused, and a tool needing two arguments
+            // could not be created through this dialog at all.
             .push(text("Arguments (one per line)").size(11.0))
             .push(
-                text_input("", &state.args)
-                    .on_input(Message::ToolArgsChanged)
+                iced::widget::text_editor::TextEditor::new(&state.args_editor)
+                    .on_action(Message::ToolArgsAction)
                     .padding(6)
-                    .size(12.0)
-                    .width(Length::Fill),
+                    .height(Length::Fixed(72.0)),
             )
             .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
             .push(prereq_status_rows(app, &state.prereqs))

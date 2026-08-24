@@ -519,13 +519,13 @@ pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
     if app.mod_sort.is_some() || app.group_by.is_some() {
         // Say it, and offer the way out. A sorted or grouped list refuses drags,
         // and a user who does not know why cannot fix it.
-        col = col.push(menu_sep()).push(menu_item_owned(
-            "Back to load order (drag needs it)".to_string(),
-            if app.group_by.is_some() {
-                Message::SetGroupBy(None)
-            } else {
-                Message::CycleModSort(SortKey::Name)
-            },
+        col = col.push(menu_sep()).push(menu_item(
+            "Back to load order (drag needs it)",
+            // Clears BOTH, in one message. Cycling the sort was wrong: from
+            // descending it goes to off, but from ascending it goes to
+            // descending - so the entry re-sorted the list instead of undoing
+            // it, on the click of a line that says "back".
+            Message::ClearListOrder,
         ));
     }
     let col = col
