@@ -52,9 +52,13 @@ fn nexus_client() -> eidos_nexus::Nexus {
             eidos_log::info!("{e}");
             exit(1);
         }
-        Err(_) => {
+        Err(e) => {
+            // The reason, not a guess at it. "Not signed in" was printed for
+            // every failure, including a stored session that was rejected for
+            // some quite different cause - which is exactly the kind of wrong
+            // hint that sends somebody round a loop of signing in again.
             eidos_log::info!(
-                "Not signed in to Nexus. Sign in from the GUI (Settings -> Nexus); \
+                "Not connected to Nexus: {e}\nSign in from the GUI (Settings -> Nexus); \
                  personal API keys are not supported."
             );
             exit(1);
@@ -67,7 +71,7 @@ fn cmd_nexus(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("status") => {
             let nexus = nexus_client();
-            match nexus.validate() {
+            match nexus.account() {
                 Ok(acct) => {
                     println!(
                         "Connected as {} ({}).",

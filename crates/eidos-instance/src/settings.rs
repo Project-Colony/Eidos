@@ -85,7 +85,27 @@ pub fn load_nexus_creds() -> NexusCreds {
 
 /// Write the credentials back, preserving any key we do not know about so a
 /// newer Eidos writing a field an older one drops does not lose it.
+///
+/// **A save cannot erase a stored sign-in.** If `creds` carries no OAuth token
+/// and the file on disk does, the write is skipped and `Ok(())` returned. Only
+/// [`clear_nexus_tokens`] - what the Sign out button calls - is allowed to empty
+/// the file.
+///
+/// That guard exists because the cost is so lopsided. Every caller here loads,
+/// mutates and saves; a load that came back empty for any reason - a transient
+/// read error, a half-written file, a path that resolved somewhere unexpected -
+/// would then write that emptiness over a real session, and the user signs in
+/// again with no idea why. Nothing legitimate needs to blank these fields except
+/// signing out, so refusing costs nothing and removes the whole class.
 pub fn save_nexus_creds(creds: &NexusCreds) -> io::Result<()> {
+    if !creds.has_oauth() && load_nexus_creds().has_oauth() {
+        return Ok(());
+    }
+    save_nexus_creds_unguarded(creds)
+}
+
+/// [`save_nexus_creds`] without the erase guard. Signing out, and nothing else.
+fn save_nexus_creds_unguarded(creds: &NexusCreds) -> io::Result<()> {
     let path = nexus_key_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -149,7 +169,9 @@ pub fn clear_nexus_tokens() -> io::Result<()> {
     // Keeping it would apply one person's setting to whoever signs in next.
     creds.adult_ok = None;
     creds.adult_checked_at = 0;
-    save_nexus_creds(&creds)
+    // The one caller allowed past the guard - signing out is the only thing that
+    // legitimately empties this file.
+    save_nexus_creds_unguarded(&creds)
 }
 
 /// The fields this module owns; anything else in the file is passed through
@@ -591,6 +613,51 @@ mod tests {
         let c = parse_nexus_creds("");
         assert_eq!(c, NexusCreds::default());
         assert!(!c.has_oauth());
+    }
+
+    #[test]
+    fn a_save_cannot_erase_a_stored_sign_in() {
+        // The defect this guards: every caller loads, mutates and saves, so a
+        // load that came back empty for ANY reason would write that emptiness
+        // over a real session - and the user signs in again with no idea why.
+        // Nothing legitimate blanks these fields except signing out.
+        let dir = std::env::temp_dir().join(format!(
+            "eidos-guard-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Colony").join("Eidos")).unwrap();
+        // SAFETY: the variable is restored below, and this test does not run
+        // concurrently with another that reads it.
+        let prev = std::env::var_os("XDG_CONFIG_HOME");
+        unsafe { std::env::set_var("XDG_CONFIG_HOME", &dir) };
+
+        let signed_in = NexusCreds {
+            access_token: Some("token".into()),
+            refresh_token: Some("refresh".into()),
+            expires_at: 42,
+            ..Default::default()
+        };
+        save_nexus_creds(&signed_in).unwrap();
+        assert!(load_nexus_creds().has_oauth());
+
+        // An empty struct saved over it changes nothing.
+        save_nexus_creds(&NexusCreds::default()).unwrap();
+        assert!(load_nexus_creds().has_oauth(), "the stored sign-in survives");
+
+        // Signing out still works - it is the one caller past the guard.
+        clear_nexus_tokens().unwrap();
+        assert!(!load_nexus_creds().has_oauth());
+        // And with nothing stored, an empty save is not refused into a loop.
+        save_nexus_creds(&NexusCreds::default()).unwrap();
+
+        match prev {
+            // SAFETY: as above.
+            Some(v) => unsafe { std::env::set_var("XDG_CONFIG_HOME", v) },
+            None => unsafe { std::env::remove_var("XDG_CONFIG_HOME") },
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

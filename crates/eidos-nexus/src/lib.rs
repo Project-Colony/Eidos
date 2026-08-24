@@ -949,14 +949,23 @@ impl Nexus {
         Ok(endorse)
     }
 
-    /// Validate the key: `users/validate`.
-    pub fn validate(&self) -> Result<Account, String> {
-        let v = self.get("users/validate")?;
-        Ok(Account {
-            name: s(&v, "name"),
-            user_id: v.get("user_id").and_then(|x| x.as_u64()).unwrap_or(0),
-            is_premium: v.get("is_premium").and_then(|x| x.as_bool()).unwrap_or(false),
-        })
+    /// Who this client is signed in as, read from the token itself.
+    ///
+    /// No request. `users/validate` is what this used to call, and it is an
+    /// API-key-era endpoint that answers **401 to a Bearer token** - which was
+    /// fixed once, for the sign-in flow, and left in place on the path every
+    /// LAUNCH takes. The result was that a perfectly good stored session was
+    /// reported as rejected on every start, and the only way out that appeared
+    /// to work was signing in again - which succeeded, because the sign-in read
+    /// the claims and never made the call.
+    ///
+    /// The signature is verified against Nexus's published key, which is what
+    /// makes this trustworthy for a token that has been sitting on disk since
+    /// the last session rather than arriving over TLS a moment ago.
+    pub fn account(&self) -> Result<Account, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let c = oauth::claims(token)?;
+        Ok(Account { name: c.username, user_id: c.user_id, is_premium: c.is_premium })
     }
 
     /// Mod metadata: `games/{game}/mods/{id}` (the update check reads `version`).

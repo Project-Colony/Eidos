@@ -463,7 +463,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // so the status bar shows the account instead of "not logged in" every session.
     let startup = if eidos_nexus::Nexus::have_credentials() {
         Task::perform(
-            async move { eidos_nexus::Nexus::connect().and_then(|n| n.validate()) },
+            async move { eidos_nexus::Nexus::connect().and_then(|n| n.account()) },
             Message::NexusSignInResult,
         )
     } else {
