@@ -282,6 +282,10 @@ pub struct Settings {
     /// network, and the parts of the window that would have asked say why
     /// rather than failing with a connection error.
     pub offline: bool,
+    /// Mod-list columns the user keeps, by key, in display order. `None` means
+    /// "never chosen", which is NOT the same as "all off": an empty list is a
+    /// deliberate choice and has to survive a restart.
+    pub mod_columns: Option<Vec<String>>,
     /// CDN node names, best first, one per line in the file. Empty means
     /// "whatever Nexus offers first". Only a premium account is ever given more
     /// than one mirror to choose between.
@@ -305,6 +309,7 @@ impl Default for Settings {
             drag_scroll_speed: 1.0,
             remember_window: true,
             offline: false,
+            mod_columns: None,
             preferred_servers: Vec::new(),
             // Nowhere. A default that could save itself over the real file is
             // exactly the defect this field exists to remove.
@@ -400,6 +405,17 @@ impl Settings {
                 }
                 // Comma-separated so one line holds an ordering, which is what
                 // this is - a list where position means something.
+                // An EMPTY value is meaningful here - every column off - which is
+                // why the key's presence is what matters rather than its content.
+                "mod_columns" => {
+                    s.mod_columns = Some(
+                        v.split(',')
+                            .map(str::trim)
+                            .filter(|x| !x.is_empty())
+                            .map(str::to_string)
+                            .collect(),
+                    );
+                }
                 "preferred_servers" => {
                     s.preferred_servers = v
                         .split(',')
@@ -438,6 +454,9 @@ impl Settings {
         );
         if self.offline {
             out.push_str("offline=true\n");
+        }
+        if let Some(cols) = &self.mod_columns {
+            out.push_str(&format!("mod_columns={}\n", cols.join(",")));
         }
         if !self.preferred_servers.is_empty() {
             out.push_str(&format!("preferred_servers={}\n", self.preferred_servers.join(",")));
@@ -618,6 +637,7 @@ mod tests {
             path: None,
             offline: false,
             preferred_servers: Vec::new(),
+            mod_columns: None,
             theme: Theme::Dark,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
@@ -700,6 +720,7 @@ mod tests {
             path: None,
             offline: false,
             preferred_servers: Vec::new(),
+            mod_columns: None,
             theme: Theme::Dark,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),

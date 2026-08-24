@@ -10,10 +10,10 @@ use crate::*;
 
 pub(crate) const C_CHECK: Length = Length::Fixed(36.0);
 pub(crate) const C_PRIO: Length = Length::Fixed(26.0);
+/// The flags cell's width. The other columns carry their own (see
+/// [`ModColumn::width`]); this one is built before the loop that lays them out,
+/// so it needs the number here too - and the two must agree.
 pub(crate) const C_FLAGS: Length = Length::Fixed(46.0);
-pub(crate) const C_VERSION: Length = Length::Fixed(64.0);
-pub(crate) const C_CATEGORY: Length = Length::Fixed(96.0);
-pub(crate) const C_CONTENT: Length = Length::Fixed(78.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
 /// [`overwrite_entries`] memoised against the view generation: the Overwrite tab
@@ -485,7 +485,7 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
     let toolbar_label = if app.ui_toolbar_visible { "Hide toolbar" } else { "Show toolbar" };
     let status_label = if app.ui_statusbar_visible { "Hide status bar" } else { "Show status bar" };
-    let col = Column::new()
+    let mut col = Column::new()
         .spacing(1)
         .push(menu_item(toolbar_label, Message::ToggleToolbar))
         .push(menu_item(status_label, Message::ToggleStatusBar))
@@ -493,6 +493,25 @@ pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(menu_item("INI editor...", Message::ShowIniEditor))
         .push(menu_item("Log...", Message::ShowLogPane))
         .push(menu_item("Extensions...", Message::ShowAddons))
+        .push(menu_sep());
+    // The columns, each a tick. Not a submenu: eight items is a short list, and
+    // a submenu here would hide the one thing somebody opens this menu to find.
+    for c in ModColumn::ALL {
+        let on = app.mod_columns.contains(&c);
+        col = col.push(menu_item_owned(
+            format!("{} {}", if on { "\u{2713}" } else { "\u{2007}" }, c.title()),
+            Message::ToggleModColumn(c),
+        ));
+    }
+    if app.mod_sort.is_some() {
+        // Say it, and offer the way out. A sorted list refuses drags, and a user
+        // who does not know why cannot fix it.
+        col = col.push(menu_sep()).push(menu_item(
+            "Back to load order (drag needs it)",
+            Message::CycleModSort(SortKey::Name),
+        ));
+    }
+    let col = col
         .push(menu_sep())
         .push(menu_item("Collapse all groups", Message::CollapseAllGroups))
         .push(menu_item("Expand all groups", Message::ExpandAllGroups))
@@ -611,6 +630,7 @@ pub(crate) fn mod_row<'a>(
     flag_icon: Option<&'static [u8]>,
     hidden_icon: Option<&'static [u8]>,
     bg: Color,
+    columns: &[ModColumn],
 ) -> Element<'a, Message> {
     // Unmanaged content - the game's own DLCs and Creation Club plugins - is
     // listed so the mod list matches what will actually load, but none of it is
@@ -717,21 +737,50 @@ pub(crate) fn mod_row<'a>(
     // MO2's Content column: a compact letters summary of what the mod ships.
     let content = meta.map(|r| r.content_tags.clone()).unwrap_or_default();
 
-    let row = Row::new()
+    let mut row = Row::new()
         .spacing(6)
         .height(Length::Fixed(MOD_ROW_H))
         .align_y(iced::Alignment::Center)
         .push(container(toggle).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
-        .push(name_cell(m.name.clone(), bg))
-        .push(
-            text(if m.unmanaged { "Game content".to_string() } else { category })
-                .size(11.0)
-                .width(C_CATEGORY),
-        )
-        .push(text(content).size(10.0).width(C_CONTENT))
-        .push(text(version).size(11.0).width(C_VERSION))
-        .push(flag_cell);
+        .push(name_cell(m.name.clone(), bg));
+    let mut flag_cell = Some(flag_cell);
+    for col in columns {
+        let w = Length::Fixed(col.width());
+        row = match col {
+            ModColumn::Category => row.push(
+                text(if m.unmanaged { "Game content".to_string() } else { category.clone() })
+                    .size(11.0)
+                    .width(w),
+            ),
+            ModColumn::Content => row.push(text(content.clone()).size(10.0).width(w)),
+            ModColumn::Version => row.push(text(version.clone()).size(11.0).width(w)),
+            ModColumn::Author => row.push(
+                text(meta.and_then(|r| r.author.clone()).unwrap_or_default()).size(11.0).width(w),
+            ),
+            ModColumn::Installed => row.push(
+                text(meta.and_then(|r| r.installed_at).map(fmt_day).unwrap_or_default())
+                    .size(11.0)
+                    .width(w),
+            ),
+            ModColumn::ModId => row.push(
+                text(meta.and_then(|r| r.mod_id).map(|n| n.to_string()).unwrap_or_default())
+                    .size(11.0)
+                    .width(w),
+            ),
+            ModColumn::Game => row.push(
+                text(meta.and_then(|r| r.game_name.clone()).unwrap_or_default())
+                    .size(11.0)
+                    .width(w),
+            ),
+            // Taken rather than cloned: the flags cell is built once above and
+            // there is exactly one of it.
+            ModColumn::Flags => match flag_cell.take() {
+                Some(cell) => row.push(cell),
+                None => row,
+            },
+        };
+    }
 
     // Left-press selects + arms a drag, entering during a drag retargets the drop,
     // release commits it; right-click opens the action menu (MO2's context menu).
@@ -752,6 +801,14 @@ pub(crate) fn mod_row<'a>(
         .on_double_click(Message::ModDoubleClick(i))
         .on_right_press(Message::OpenModMenu(i))
         .into()
+}
+
+/// A date with no time: an install date is read as "which week was this", and a
+/// clock on every row is width spent on a precision nobody wants.
+fn fmt_day(t: std::time::SystemTime) -> String {
+    let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let (y, m, d, ..) = eidos_log::civil_from_unix(secs);
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 /// Default separator bar colour when its `meta.ini` carries none (a parchment tan,
@@ -892,16 +949,36 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(tool_btn("+ Empty mod", Message::CreateEmptyMod))
         .push(tool_btn("Install folder", Message::InstallFromFolder));
 
-    let header = Row::new()
+    // A heading that can be clicked to sort by it. The arrow says which way, and
+    // its absence says "load order", which is the state that matters most: it is
+    // the only one where dragging works.
+    let head = |label: &str, key: Option<SortKey>, width: Length| -> Element<'a, Message> {
+        let Some(key) = key else {
+            return text(label.to_string()).size(11.0).width(width).into();
+        };
+        let arrow = match app.mod_sort {
+            Some(s) if s.by == key && s.ascending => " \u{25B2}",
+            Some(s) if s.by == key => " \u{25BC}",
+            _ => "",
+        };
+        button(text(format!("{label}{arrow}")).size(11.0))
+            .padding(0)
+            .width(width)
+            .style(button::text)
+            .on_press(Message::CycleModSort(key))
+            .into()
+    };
+    let mut header = Row::new()
         .spacing(6)
         .push(text("").width(C_CHECK))
-        .push(text("#").size(11.0).width(C_PRIO))
-        .push(text("Mod Name").size(11.0).width(Length::Fill))
-        .push(text("Category").size(11.0).width(C_CATEGORY))
-        .push(text("Content").size(11.0).width(C_CONTENT))
-        .push(text("Version").size(11.0).width(C_VERSION))
-        .push(text("Flags").size(11.0).width(C_FLAGS))
-        ;
+        .push(head("#", None, C_PRIO))
+        .push(head("Mod Name", Some(SortKey::Name), Length::Fill));
+    for col in &app.mod_columns {
+        // Flags is a row of glyphs with no order anybody would want; every other
+        // column sorts.
+        let key = (*col != ModColumn::Flags).then_some(SortKey::Column(*col));
+        header = header.push(head(col.title(), key, Length::Fixed(col.width())));
+    }
 
     let query = app.search.trim().to_lowercase();
     // No spacing: the insertion strips below provide the separation, and they
@@ -942,7 +1019,14 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     } else {
         (Message::DragOverGap, Message::DragDrop)
     };
-    for (i, m) in app.mods.iter().enumerate() {
+    // Load order is `0..len`, so the common path is exactly what it was. Any
+    // other order disables the insertion strips: a drop in a sorted list has no
+    // meaning to give the row it lands on, which is why MO2 disables it too.
+    let order = display_order(app);
+    let reorderable = app.mod_sort.is_none();
+    let dragging = dragging && reorderable;
+    for &i in &order {
+        let m = &app.mods[i];
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
         // A separator renders as a full-width group header - no checkbox, version,
@@ -959,7 +1043,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
-            list = list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+            if reorderable {
+                list = list
+                    .push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+            }
             list = list.push(separator_row(i, m, color, collapsed, selected));
             tints.push(None); // a separator has no conflict of its own
             continue;
@@ -997,7 +1084,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // targetable during a drag. Every gap is a target, the very top included:
         // the game's own content is written to modlist.txt now, so a row landing
         // above it keeps its place.
-        list = list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+        if reorderable {
+            list =
+                list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+        }
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
@@ -1008,7 +1098,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         let tint = meta.and_then(|r| r.color).map(|rgb| mod_tint(rgb, i % 2 == 0));
         let bg = row_background(i % 2 == 0, selected, conflict, tint);
         list = list.push(list_row(
-            mod_row(i, m, meta, flag_icon, hidden_icon, bg),
+            mod_row(i, m, meta, flag_icon, hidden_icon, bg, &app.mod_columns),
             i % 2 == 0,
             selected,
             conflict,
@@ -1021,7 +1111,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // release would install nothing, silently - the one case where there is
     // nothing else on screen to aim at.
     let end = app.mods.len();
-    list = list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
+    if reorderable {
+        list =
+            list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
+    }
     // `shown` counts mods only, so this cannot fire on a list that is all folded
     // groups - and it only speaks when something was actually asked.
     if !app.mods.is_empty() && shown == 0 && filtering {

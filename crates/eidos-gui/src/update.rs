@@ -4812,6 +4812,46 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             return update(app, Message::ShowModInfo(i));
         }
+        Message::ToggleModColumn(col) => {
+            if let Some(pos) = app.mod_columns.iter().position(|c| *c == col) {
+                app.mod_columns.remove(pos);
+                // Ordering a list by a column nobody can see is a list that
+                // looks shuffled for no reason.
+                if app.mod_sort.is_some_and(|s| s.by == SortKey::Column(col)) {
+                    app.mod_sort = None;
+                }
+            } else {
+                app.mod_columns.push(col);
+                // Redrawn in the canonical order, so toggling one on twice
+                // cannot move another.
+                app.mod_columns = ModColumn::ALL
+                    .into_iter()
+                    .filter(|c| app.mod_columns.contains(c))
+                    .collect();
+            }
+            app.prefs.mod_columns =
+                Some(app.mod_columns.iter().map(|c| c.key().to_string()).collect());
+            if let Err(e) = app.prefs.save() {
+                app.error = Some(format!("Could not save settings: {e}"));
+            }
+            app.view_menu_open = false;
+        }
+        Message::CycleModSort(key) => {
+            // Ascending, descending, then off. Getting BACK to load order has to
+            // be one click away: it is the only order in which dragging works,
+            // and a list somebody cannot un-sort is a list they cannot reorder.
+            app.mod_sort = match app.mod_sort {
+                Some(s) if s.by == key && s.ascending => {
+                    Some(ModSort { by: key, ascending: false })
+                }
+                Some(s) if s.by == key => None,
+                _ => Some(ModSort { by: key, ascending: true }),
+            };
+            // A drag armed under the old order would drop somewhere that no
+            // longer means what the user aimed at.
+            app.drag_state = None;
+            app.drag_hover_group = None;
+        }
         Message::HideDownload(name) => {
             // MO2's `removed=` in the sidecar, so hiding here hides there too -
             // and, crucially, the ARCHIVE stays. That is the whole point: the

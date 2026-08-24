@@ -6,6 +6,7 @@
 //! it. main.rs is left with the types they all share and the iced wiring.
 
 use crate::*;
+use std::time::UNIX_EPOCH;
 
 /// Build the per-mod metadata cache for the open instance's mod list.
 /// Bring `app.meta_cache` in step with `app.mods`, computing ONLY the rows it does
@@ -62,6 +63,9 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 color: meta.color(),
                 notes: meta.notes(),
                 nexus_gone: meta.nexus_available() == Some(false),
+                author: meta.author().or_else(|| meta.uploader()),
+                game_name: meta.game_name().filter(|g| !g.is_empty()),
+                installed_at: std::fs::metadata(&path).and_then(|m| m.modified()).ok(),
                 // A mod the user vouched for is silent under both rules. That
                 // is what MO2's `validated=` is for, and honouring it means a
                 // mod already vouched for in MO2 arrives here quiet.
@@ -275,6 +279,15 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         dl_sort: DownloadSort::default(),
         dl_show_hidden: false,
         confirm_purge_installed: false,
+        // Derived from prefs, but computed HERE rather than after the cfg(test)
+        // early return below - a test App whose columns differ from a real one
+        // is a test that cannot see a column bug.
+        mod_columns: columns_from_settings(&if cfg!(test) {
+            Settings::default()
+        } else {
+            Settings::load()
+        }),
+        mod_sort: None,
         instance_rename: None,
         confirm_forget: None,
         confirm_sync: false,
@@ -436,6 +449,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // The field shows what is stored, so opening Settings does not present an
     // empty box beside a preference that is actually set.
     app.servers_edit = app.prefs.preferred_servers.join(", ");
+
     recompute_counts(&mut app);
     // A stored session means the user IS signed in: validate it in the background
     // so the status bar shows the account instead of "not logged in" every session.
@@ -1225,6 +1239,78 @@ pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidd
 ///
 /// `scrollable::Id` became the shared `widget::Id` in iced 0.14 - the same type
 /// every operation addresses a widget by.
+/// The order the mod list is DRAWN in, as indices into `app.mods`.
+///
+/// In load order this is simply `0..len`, which is what keeps the drag machinery
+/// valid: the insertion strips address gaps in the real list, and they only mean
+/// anything while the two orders agree.
+///
+/// Under any other sort, separators come out of the list entirely rather than
+/// floating to one end. A separator is a HEADING for the rows beneath it; ordered
+/// by author or by date it heads nothing, and leaving one in the middle of a
+/// sorted list is a label attached to whatever happened to land under it.
+pub(crate) fn display_order(app: &App) -> Vec<usize> {
+    let Some(sort) = app.mod_sort else { return (0..app.mods.len()).collect() };
+    let mut rows: Vec<usize> =
+        (0..app.mods.len()).filter(|&i| !app.mods[i].is_separator()).collect();
+    let meta = |i: usize| app.meta_cache.get(&app.mods[i].name);
+    match sort.by {
+        SortKey::Name => rows.sort_by_key(|&i| app.mods[i].display_name().to_lowercase()),
+        SortKey::Column(ModColumn::Category) => rows.sort_by_key(|&i| {
+            meta(i).and_then(|r| r.category_name.clone()).unwrap_or_default().to_lowercase()
+        }),
+        SortKey::Column(ModColumn::Content) => {
+            rows.sort_by_key(|&i| meta(i).map(|r| r.content_tags.clone()).unwrap_or_default())
+        }
+        SortKey::Column(ModColumn::Version) => {
+            rows.sort_by_key(|&i| meta(i).and_then(|r| r.version.clone()).unwrap_or_default())
+        }
+        SortKey::Column(ModColumn::Author) => rows.sort_by_key(|&i| {
+            meta(i).and_then(|r| r.author.clone()).unwrap_or_default().to_lowercase()
+        }),
+        SortKey::Column(ModColumn::Installed) => rows
+            .sort_by_key(|&i| meta(i).and_then(|r| r.installed_at).unwrap_or(UNIX_EPOCH)),
+        SortKey::Column(ModColumn::ModId) => {
+            rows.sort_by_key(|&i| meta(i).and_then(|r| r.mod_id).unwrap_or(0))
+        }
+        SortKey::Column(ModColumn::Game) => rows.sort_by_key(|&i| {
+            meta(i).and_then(|r| r.game_name.clone()).unwrap_or_default().to_lowercase()
+        }),
+        // Not offered as a sort - the header does not make it clickable - but
+        // the match has to be total, and load order is the honest answer.
+        SortKey::Column(ModColumn::Flags) => {}
+    }
+    if !sort.ascending {
+        rows.reverse();
+    }
+    rows
+}
+
+/// Which columns to draw, from what the user saved.
+///
+/// The default - never chosen - is the four MO2 shows out of the box, not all
+/// eight: a list with every column on has no room left for the name, which is
+/// the column somebody is actually reading.
+pub(crate) fn columns_from_settings(prefs: &Settings) -> Vec<ModColumn> {
+    match &prefs.mod_columns {
+        Some(keys) => {
+            // Drawn in ModColumn::ALL order regardless of how the file lists
+            // them, so a hand-edited settings file cannot produce a header that
+            // disagrees with the rows.
+            ModColumn::ALL
+                .into_iter()
+                .filter(|c| keys.iter().any(|k| k == c.key()))
+                .collect()
+        }
+        None => vec![
+            ModColumn::Category,
+            ModColumn::Content,
+            ModColumn::Version,
+            ModColumn::Flags,
+        ],
+    }
+}
+
 /// The filter box, so Ctrl+F can put the caret in it.
 pub(crate) fn filter_input_id() -> widget::Id {
     widget::Id::new("mod-filter")

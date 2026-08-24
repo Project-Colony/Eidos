@@ -232,6 +232,12 @@ enum Message {
     ConfirmPurgeInstalled,
     DownloadFilterChanged(String),
     DownloadSortChanged(DownloadSort),
+    /// Show or hide one mod-list column. Saved immediately.
+    ToggleModColumn(ModColumn),
+    /// Click a heading: ascending, then descending, then back to load order.
+    /// Three states rather than two, because getting BACK to load order has to
+    /// be one click away - it is the only order in which dragging works.
+    CycleModSort(SortKey),
     /// A letter typed with the mod list focused: jump to the next row whose
     /// name starts with it.
     JumpToLetter(char),
@@ -1048,6 +1054,103 @@ enum PickerChoice {
     Manual(String),
 }
 
+/// A column of the mod list.
+///
+/// Priority and Name are not here: they are structural rather than optional.
+/// Priority IS the load order, which is the thing the list exists to show, and a
+/// list of nameless rows is not a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ModColumn {
+    Category,
+    Content,
+    Version,
+    /// MO2's Author column. Blank until a mod has been downloaded or
+    /// update-checked, which is where the name comes from.
+    Author,
+    /// When the mod folder was last written.
+    Installed,
+    /// The Nexus mod id, for finding a mod's page by hand.
+    ModId,
+    /// The game the mod says it was downloaded for.
+    Game,
+    Flags,
+}
+
+impl ModColumn {
+    /// In display order, left to right. This is also the order the settings
+    /// file stores, so the toggles read the way the header does.
+    pub(crate) const ALL: [ModColumn; 8] = [
+        ModColumn::Category,
+        ModColumn::Content,
+        ModColumn::Version,
+        ModColumn::Author,
+        ModColumn::Installed,
+        ModColumn::ModId,
+        ModColumn::Game,
+        ModColumn::Flags,
+    ];
+    /// What the header says.
+    pub(crate) fn title(self) -> &'static str {
+        match self {
+            ModColumn::Category => "Category",
+            ModColumn::Content => "Content",
+            ModColumn::Version => "Version",
+            ModColumn::Author => "Author",
+            ModColumn::Installed => "Installed",
+            ModColumn::ModId => "Nexus id",
+            ModColumn::Game => "Game",
+            ModColumn::Flags => "Flags",
+        }
+    }
+    /// The key in `settings.ini`. Stable, and separate from the title so a
+    /// heading can be reworded without silently resetting everybody's columns.
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            ModColumn::Category => "category",
+            ModColumn::Content => "content",
+            ModColumn::Version => "version",
+            ModColumn::Author => "author",
+            ModColumn::Installed => "installed",
+            ModColumn::ModId => "modid",
+            ModColumn::Game => "game",
+            ModColumn::Flags => "flags",
+        }
+    }
+    /// How wide the cell is.
+    pub(crate) fn width(self) -> f32 {
+        match self {
+            ModColumn::Category => 96.0,
+            ModColumn::Content => 60.0,
+            ModColumn::Version => 64.0,
+            ModColumn::Author => 96.0,
+            ModColumn::Installed => 86.0,
+            ModColumn::ModId => 60.0,
+            ModColumn::Game => 84.0,
+            ModColumn::Flags => 46.0,
+        }
+    }
+}
+
+/// What the mod list is ordered by, when it is not in load order.
+///
+/// `None` - the default - is the real order: priority, which is what the list is
+/// FOR. Any other ordering is a view of it, and dragging is disabled while one
+/// is on, exactly as MO2 does: a drop in a sorted list has no meaning to give
+/// the row it lands on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ModSort {
+    pub(crate) by: SortKey,
+    pub(crate) ascending: bool,
+}
+
+/// What a sort orders by. `Name` and `Priority` are here even though they are
+/// not optional columns - they are the two most useful things to sort on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SortKey {
+    Name,
+    Column(ModColumn),
+}
+
 /// The install status of a downloaded archive, derived from its `.meta` sidecar
 /// (MO2's downloads-list state column).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1473,6 +1576,10 @@ struct App {
     dl_sort: DownloadSort,
     dl_show_hidden: bool,
     confirm_purge_installed: bool,
+    /// Mod-list columns currently drawn, in display order.
+    mod_columns: Vec<ModColumn>,
+    /// What the list is ordered by. `None` is load order - the real one.
+    mod_sort: Option<ModSort>,
     /// The instance row being renamed, and the pending name.
     instance_rename: Option<(usize, String)>,
     /// Two-click guard for forgetting an instance.
@@ -1847,6 +1954,15 @@ struct RowMeta {
     /// The mod's top level looks like nothing this game loads - MO2's "no valid
     /// game data". Never set for a mod the user has marked valid.
     invalid_data: bool,
+    /// Who made it (`author=`), for the Author column.
+    author: Option<String>,
+    /// The game the `meta.ini` names, whatever it is - the Source game column.
+    /// Distinct from `other_game`, which is only set when it DIFFERS.
+    game_name: Option<String>,
+    /// When the mod folder was last written, for the Installed column and for
+    /// sorting by it. MO2 shows the install date; a mod directory's mtime is
+    /// the closest thing on disk that costs nothing extra to read.
+    installed_at: Option<std::time::SystemTime>,
     /// The game this mod's `meta.ini` says it was downloaded for, when that is
     /// NOT the instance's game. `None` covers both "same game" and "does not
     /// say", which have to look identical: a mod installed from a folder never
@@ -4498,6 +4614,78 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sorting_leaves_the_real_order_alone_and_takes_the_separators_out() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["Zeta", "01 CITIES_separator", "Alpha", "Mid"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+
+        // Load order is 0..len, which is what keeps the drag strips valid.
+        assert_eq!(display_order(&app), vec![0, 1, 2, 3]);
+
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        // A separator is a HEADING; ordered by name it heads nothing, so it
+        // leaves the list rather than floating into the middle of it.
+        assert_eq!(display_order(&app), vec![2, 3, 0], "Alpha, Mid, Zeta - no separator");
+        // And the underlying list is untouched: sorting is a view, not a move.
+        assert_eq!(app.mods[0].name, "Zeta");
+
+        // Second click reverses, third returns to load order - which has to be
+        // one click away, because it is the only order where dragging works.
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        assert_eq!(display_order(&app), vec![0, 3, 2]);
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        assert!(app.mod_sort.is_none());
+        assert_eq!(display_order(&app), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn hiding_a_column_that_the_list_is_sorted_by_returns_it_to_load_order() {
+        // Ordering a list by a column nobody can see is a list that looks
+        // shuffled for no reason.
+        let mut app = app_for_game("skyrimse");
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Column(ModColumn::Version)));
+        assert!(app.mod_sort.is_some());
+        assert!(app.mod_columns.contains(&ModColumn::Version));
+
+        let _ = update_inner(&mut app, Message::ToggleModColumn(ModColumn::Version));
+        assert!(!app.mod_columns.contains(&ModColumn::Version));
+        assert!(app.mod_sort.is_none());
+    }
+
+    #[test]
+    fn columns_are_saved_and_come_back_in_the_headers_order() {
+        let mut app = app_for_game("skyrimse");
+        // Turned on in a deliberately awkward order.
+        let _ = update_inner(&mut app, Message::ToggleModColumn(ModColumn::Game));
+        let _ = update_inner(&mut app, Message::ToggleModColumn(ModColumn::Author));
+
+        // Redrawn canonically, so toggling one on cannot move another.
+        let after: Vec<&str> = app.mod_columns.iter().map(|c| c.title()).collect();
+        assert_eq!(after, vec!["Category", "Content", "Version", "Author", "Game", "Flags"]);
+
+        // And a hand-edited settings file cannot produce a header that
+        // disagrees with the rows either.
+        let mut prefs = eidos_instance::settings::Settings::default();
+        prefs.mod_columns = Some(vec!["game".into(), "category".into()]);
+        let back: Vec<&str> = columns_from_settings(&prefs).iter().map(|c| c.title()).collect();
+        assert_eq!(back, vec!["Category", "Game"]);
+
+        // An EMPTY list is a choice, not "never chosen" - it has to survive a
+        // restart rather than springing back to the defaults.
+        prefs.mod_columns = Some(Vec::new());
+        assert!(columns_from_settings(&prefs).is_empty());
+        assert!(!columns_from_settings(&eidos_instance::settings::Settings::default()).is_empty());
     }
 
     fn downloads_instance(files: &[(&str, &str)]) -> (App, PathBuf) {

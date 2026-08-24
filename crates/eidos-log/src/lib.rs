@@ -921,7 +921,10 @@ fn format_civil(secs: i64, millis: Option<u32>) -> String {
 /// calendar conversion is Howard Hinnant's `civil_from_days` (public domain,
 /// "chrono-Compatible Low-Level Date Algorithms"), valid for any year in range
 /// and small enough that pulling in a date crate was not worth it.
-fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+///
+/// Public because the window needs it too - a mod's install date is one of its
+/// columns - and two copies of a calendar algorithm is exactly one too many.
+pub fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);
