@@ -894,6 +894,54 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
         .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshDownloads));
 
+    // MO2 treats this tab as an archive library rather than a transfer queue,
+    // and a library needs to be searchable and orderable to be worth keeping.
+    let installed_here =
+        app.downloads.iter().filter(|r| r.state == DownloadState::Installed).count();
+    let mut tools = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text_input("Filter by name...", &app.dl_filter)
+                .on_input(Message::DownloadFilterChanged)
+                .padding(4)
+                .size(11.0)
+                .width(Length::Fill),
+        )
+        .push(
+            pick_list(DownloadSort::ALL.to_vec(), Some(app.dl_sort), Message::DownloadSortChanged)
+                .text_size(11.0)
+                .padding(4),
+        )
+        .push(
+            button(text(if app.dl_show_hidden { "Hide hidden" } else { "Show hidden" }).size(11.0))
+                .padding(4)
+                .style(button::secondary)
+                .on_press(Message::ToggleShowHiddenDownloads),
+        );
+    // Offered only when it would do something, and it names the count rather
+    // than saying "installed" - a bulk delete has to say how many.
+    if installed_here > 0 {
+        let armed = app.confirm_purge_installed;
+        tools = tools.push(
+            button(
+                text(if armed {
+                    format!("Delete {installed_here}?")
+                } else {
+                    format!("Remove {installed_here} installed")
+                })
+                .size(11.0),
+            )
+            .padding(4)
+            .style(if armed { button::danger } else { button::secondary })
+            .on_press(if armed {
+                Message::ConfirmPurgeInstalled
+            } else {
+                Message::PurgeInstalledDownloads
+            }),
+        );
+    }
+
     let col_header = Row::new()
         .spacing(8)
         .push(text("Name").size(11.0).width(Length::Fill))
@@ -1065,7 +1113,14 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                         ))),
                 );
             }
-            actions.push(install).push(del).into()
+            // Hiding is not deleting, which is why both are offered: an archive
+            // somebody is done with but does not want to lose is the common case
+            // this list had no answer for.
+            let hide = button(text(if row.hidden { "Unhide" } else { "Hide" }).size(11.0))
+                .padding(4)
+                .style(button::text)
+                .on_press(Message::HideDownload(row.name.clone()));
+            actions.push(hide).push(install).push(del).into()
         };
         // Prefer the friendly Nexus mod name when present, else the file name.
         let display = row.mod_name.clone().unwrap_or_else(|| row.name.clone());
@@ -1108,6 +1163,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .push(header)
         .push(text(dir.display().to_string()).size(10.0))
+        .push(tools)
         .push(col_header)
         .push(scrollable(rows).height(Length::Fill))
         .into()
@@ -3310,7 +3366,7 @@ pub(crate) fn load_downloads(app: &mut App) {
         return;
     };
     let dir = inst.downloads_dir();
-    let mut entries: Vec<(DownloadRow, std::time::SystemTime)> = std::fs::read_dir(&dir)
+    let entries: Vec<(DownloadRow, std::time::SystemTime)> = std::fs::read_dir(&dir)
         .into_iter()
         .flatten()
         .flatten()
@@ -3405,13 +3461,39 @@ pub(crate) fn load_downloads(app: &mut App) {
                 downloaded: md.len(),
                 total,
                 speed: None,
+                hidden: meta.removed(),
+                modified,
             };
             Some((row, modified))
         })
         .collect();
-    entries.sort_by_key(|e| std::cmp::Reverse(e.1));
-    let mut rows: Vec<DownloadRow> =
-        entries.into_iter().map(|(r, _)| r).take(SAVES_LIST_CAP).collect();
+    let mut rows: Vec<DownloadRow> = entries.into_iter().map(|(r, _)| r).collect();
+    // Hidden rows are dropped BEFORE the cap, so hiding a hundred stale archives
+    // actually reveals the ones underneath rather than shortening the list.
+    if !app.dl_show_hidden {
+        rows.retain(|r| !r.hidden);
+    }
+    let q = app.dl_filter.trim().to_lowercase();
+    if !q.is_empty() {
+        // The friendly mod name too, not just the file name: an archive called
+        // `SkyUI_5_2_SE-12604-5-2SE.7z` is found by typing "skyui" only if the
+        // sidecar's modName is searched as well.
+        rows.retain(|r| {
+            r.name.to_lowercase().contains(&q)
+                || r.mod_name.as_deref().is_some_and(|m| m.to_lowercase().contains(&q))
+        });
+    }
+    match app.dl_sort {
+        DownloadSort::Newest => rows.sort_by_key(|r| std::cmp::Reverse(r.modified)),
+        DownloadSort::Name => rows.sort_by_key(|r| r.name.to_lowercase()),
+        DownloadSort::Size => rows.sort_by_key(|r| std::cmp::Reverse(r.size)),
+        // Within a state, newest first - so the secondary order is the one the
+        // list has always had rather than whatever read_dir happened to return.
+        DownloadSort::State => {
+            rows.sort_by_key(|r| (r.state as u8, std::cmp::Reverse(r.modified)))
+        }
+    }
+    rows.truncate(SAVES_LIST_CAP);
 
     // Speed is a derivative: compare each in-flight row against the previous
     // sample. A first sighting has no rate yet and says so rather than showing a

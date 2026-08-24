@@ -129,6 +129,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::SavesDeleteSelected) {
             app.confirm_saves_delete = false;
         }
+        if !matches!(message, Message::PurgeInstalledDownloads | Message::ConfirmPurgeInstalled) {
+            app.confirm_purge_installed = false;
+        }
         if !matches!(message, Message::CollectionFetchMissing) {
             if let Some(c) = app.collection.as_mut() {
                 c.confirm_fetch = false;
@@ -4808,6 +4811,88 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return update(app, Message::ModVisitNexus(i));
             }
             return update(app, Message::ShowModInfo(i));
+        }
+        Message::HideDownload(name) => {
+            // MO2's `removed=` in the sidecar, so hiding here hides there too -
+            // and, crucially, the ARCHIVE stays. That is the whole point: the
+            // list is a library, and putting a book away is not burning it.
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let archive = inst.downloads_dir().join(&name);
+            // Toggle, so the same button brings it back - a one-way hide with no
+            // visible undo is how a library loses things.
+            let hiding = !app.downloads.iter().any(|r| r.name == name && r.hidden);
+            match eidos_nexus::set_download_meta_key(
+                &archive,
+                "removed",
+                if hiding { "true" } else { "false" },
+            ) {
+                Ok(()) => {
+                    load_downloads(app);
+                    app.status = Some(if hiding {
+                        format!("{name} hidden. Show hidden to bring it back.")
+                    } else {
+                        format!("{name} is back in the list.")
+                    });
+                }
+                Err(e) => app.error = Some(format!("Could not update {name}: {e}")),
+            }
+        }
+        Message::ToggleShowHiddenDownloads => {
+            app.dl_show_hidden = !app.dl_show_hidden;
+            load_downloads(app);
+        }
+        Message::DownloadFilterChanged(t) => {
+            app.typing = true;
+            app.dl_filter = t;
+            load_downloads(app);
+        }
+        Message::DownloadSortChanged(sort) => {
+            app.dl_sort = sort;
+            load_downloads(app);
+        }
+        Message::PurgeInstalledDownloads => {
+            // Two clicks, like every other action here that removes something -
+            // and this one removes many at once.
+            app.confirm_purge_installed = true;
+        }
+        Message::ConfirmPurgeInstalled => {
+            app.confirm_purge_installed = false;
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let dir = inst.downloads_dir();
+            // Only what is on screen AND installed. Not every installed archive
+            // in the folder: the filter is how the user said which ones they
+            // meant, and a bulk delete that ignores it deletes things they were
+            // not looking at.
+            let doomed: Vec<String> = app
+                .downloads
+                .iter()
+                .filter(|r| r.state == DownloadState::Installed)
+                .map(|r| r.name.clone())
+                .collect();
+            if doomed.is_empty() {
+                app.status = Some("Nothing installed in this list to remove.".to_string());
+                return Task::none();
+            }
+            let (mut gone, mut failed) = (0usize, 0usize);
+            for name in &doomed {
+                let archive = dir.join(name);
+                // The sidecar goes with it. Leaving one behind would make the
+                // archive reappear as a ghost row with no file.
+                let sidecar = PathBuf::from(format!("{}.meta", archive.display()));
+                match std::fs::remove_file(&archive) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_file(&sidecar);
+                        gone += 1;
+                    }
+                    Err(_) => failed += 1,
+                }
+            }
+            load_downloads(app);
+            app.status = Some(if failed == 0 {
+                format!("Removed {gone} installed archive(s).")
+            } else {
+                format!("Removed {gone}; {failed} could not be deleted.")
+            });
         }
         Message::ModMarkValid(i) => {
             app.menu_mod = None;

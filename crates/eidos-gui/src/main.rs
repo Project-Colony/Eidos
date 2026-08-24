@@ -223,6 +223,15 @@ enum Message {
     /// MO2's "Mark as valid": silence this mod's state flags for good, by
     /// writing MO2's own `validated=true` into its meta.ini.
     ModMarkValid(usize),
+    /// Hide a download from the list without deleting the archive.
+    HideDownload(String),
+    /// Show the hidden ones again.
+    ToggleShowHiddenDownloads,
+    /// Delete every archive already installed, in one go. Two clicks.
+    PurgeInstalledDownloads,
+    ConfirmPurgeInstalled,
+    DownloadFilterChanged(String),
+    DownloadSortChanged(DownloadSort),
     /// A letter typed with the mod list focused: jump to the next row whose
     /// name starts with it.
     JumpToLetter(char),
@@ -1092,6 +1101,43 @@ struct DownloadRow {
     /// Bytes per second, measured between two ticks. `None` on the first tick of
     /// a download, when there is nothing to compare against yet.
     speed: Option<f64>,
+    /// MO2's `removed=` in the sidecar: hidden from the list without the archive
+    /// being deleted. The field was modelled and nothing read it.
+    hidden: bool,
+    /// When the archive was last written, for sorting by date.
+    modified: std::time::SystemTime,
+}
+
+/// How the Downloads list is ordered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum DownloadSort {
+    /// Newest first. What the list always did, and still the default: the
+    /// archive somebody wants is nearly always the one that just arrived.
+    #[default]
+    Newest,
+    Name,
+    Size,
+    /// Groups by install state, so "everything not installed yet" is one run.
+    State,
+}
+
+impl DownloadSort {
+    const ALL: [DownloadSort; 4] =
+        [DownloadSort::Newest, DownloadSort::Name, DownloadSort::Size, DownloadSort::State];
+    fn label(self) -> &'static str {
+        match self {
+            DownloadSort::Newest => "Newest",
+            DownloadSort::Name => "Name",
+            DownloadSort::Size => "Size",
+            DownloadSort::State => "State",
+        }
+    }
+}
+
+impl std::fmt::Display for DownloadSort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
 }
 
 /// Which end of the list an auto-scroll is heading for.
@@ -1421,6 +1467,12 @@ struct App {
     /// What is typed in the preferred-servers field, which is not the saved
     /// value until it is submitted - the same shape as the mod URL field.
     servers_edit: String,
+    /// Downloads list: the name filter, the ordering, whether hidden rows are
+    /// shown, and the two-click guard on the bulk purge.
+    dl_filter: String,
+    dl_sort: DownloadSort,
+    dl_show_hidden: bool,
+    confirm_purge_installed: bool,
     /// The instance row being renamed, and the pending name.
     instance_rename: Option<(usize, String)>,
     /// Two-click guard for forgetting an instance.
@@ -4049,6 +4101,8 @@ mod tests {
             downloaded: 1,
             total: 1,
             speed: None,
+            hidden: false,
+            modified: std::time::SystemTime::UNIX_EPOCH,
         }
     }
 
@@ -4443,6 +4497,95 @@ mod tests {
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn downloads_instance(files: &[(&str, &str)]) -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let dl = inst.downloads_dir();
+        fs::create_dir_all(&dl).unwrap();
+        for (name, sidecar) in files {
+            fs::write(dl.join(name), b"xxxx").unwrap();
+            if !sidecar.is_empty() {
+                fs::write(dl.join(format!("{name}.meta")), sidecar).unwrap();
+            }
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        load_downloads(&mut app);
+        (app, root)
+    }
+
+    #[test]
+    fn hiding_a_download_keeps_the_archive_and_can_be_undone() {
+        let (mut app, root) = downloads_instance(&[
+            ("Keep.7z", "[General]\nmodID=1\ninstalled=true\n"),
+            ("Stale.7z", "[General]\nmodID=2\ninstalled=true\n"),
+        ]);
+        assert_eq!(app.downloads.len(), 2);
+
+        let _ = update_inner(&mut app, Message::HideDownload("Stale.7z".to_string()));
+        assert_eq!(app.downloads.len(), 1, "hidden rows are dropped from the list");
+        // The whole point: putting a book away is not burning it.
+        assert!(
+            root.join("downloads").join("Stale.7z").is_file(),
+            "the archive must still be there"
+        );
+
+        // Show hidden brings it back, and the same button unhides it.
+        let _ = update_inner(&mut app, Message::ToggleShowHiddenDownloads);
+        assert_eq!(app.downloads.len(), 2);
+        let _ = update_inner(&mut app, Message::HideDownload("Stale.7z".to_string()));
+        let _ = update_inner(&mut app, Message::ToggleShowHiddenDownloads);
+        assert_eq!(app.downloads.len(), 2, "unhidden again");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_bulk_purge_takes_two_clicks_and_only_what_is_on_screen() {
+        let (mut app, root) = downloads_instance(&[
+            ("Done.7z", "[General]\nmodID=1\ninstalled=true\n"),
+            ("AlsoDone.7z", "[General]\nmodID=2\ninstalled=true\n"),
+            ("NotYet.7z", "[General]\nmodID=3\n"),
+        ]);
+
+        // The filter is how the user said which ones they meant. A bulk delete
+        // that ignores it deletes things they were not looking at.
+        let _ = update_inner(&mut app, Message::DownloadFilterChanged("also".to_string()));
+        assert_eq!(app.downloads.len(), 1);
+
+        // One click only arms.
+        let _ = update_inner(&mut app, Message::PurgeInstalledDownloads);
+        assert!(app.confirm_purge_installed);
+        assert!(root.join("downloads").join("AlsoDone.7z").is_file());
+
+        let _ = update_inner(&mut app, Message::ConfirmPurgeInstalled);
+        assert!(!root.join("downloads").join("AlsoDone.7z").exists(), "the filtered one went");
+        assert!(root.join("downloads").join("Done.7z").is_file(), "the one off screen did not");
+        assert!(root.join("downloads").join("NotYet.7z").is_file(), "and nor did the uninstalled");
+        // The sidecar goes with the archive, or the row comes back as a ghost.
+        assert!(!root.join("downloads").join("AlsoDone.7z.meta").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_downloads_list_sorts_by_what_was_asked_for() {
+        let (mut app, root) = downloads_instance(&[
+            ("bbb.7z", "[General]\nmodID=1\nmodName=Zebra\n"),
+            ("aaa.7z", "[General]\nmodID=2\nmodName=Apple\n"),
+        ]);
+        let _ = update_inner(&mut app, Message::DownloadSortChanged(DownloadSort::Name));
+        let names: Vec<&str> = app.downloads.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["aaa.7z", "bbb.7z"]);
+
+        // The friendly mod name is searched too: an archive called
+        // `SkyUI_5_2_SE-12604.7z` is found by typing "skyui" only if it is.
+        let _ = update_inner(&mut app, Message::DownloadFilterChanged("zebra".to_string()));
+        assert_eq!(app.downloads.len(), 1);
+        assert_eq!(app.downloads[0].name, "bbb.7z");
         let _ = fs::remove_dir_all(&root);
     }
 
