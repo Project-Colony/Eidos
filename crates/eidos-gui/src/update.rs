@@ -112,6 +112,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::InstanceForget(_)) {
             app.confirm_forget = None;
         }
+        if !matches!(message, Message::OverwriteSyncToMods) {
+            app.confirm_sync = false;
+        }
     }
     match message {
         Message::Next => {
@@ -3498,6 +3501,57 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.view_menu_open = true;
         }
         Message::CloseViewMenu => app.view_menu_open = false,
+        Message::OverwriteSyncToMods => {
+            if !app.confirm_sync {
+                app.confirm_sync = true;
+                return Task::none();
+            }
+            app.confirm_sync = false;
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            // The instance lock, like every other mutation: this moves files the
+            // mount is serving from.
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot sync now: {e}."));
+                    return Task::none();
+                }
+            };
+            let Some(owners) = overwrite_owners(app) else {
+                app.status = Some(
+                    "Open the Conflicts tab once so Eidos knows which mod provides what."
+                        .to_string(),
+                );
+                return Task::none();
+            };
+            if owners.is_empty() {
+                app.status = Some(
+                    "Nothing in the Overwrite is provided by a mod - there is nowhere to send it \
+                     back to. Use Create mod... instead."
+                        .to_string(),
+                );
+                return Task::none();
+            }
+            match inst.sync_overwrite_to_mods(&owners) {
+                Ok((moved, failures)) => {
+                    drop(_lock);
+                    // Every touched mod's tree changed, and so did the merged
+                    // view and the conflict map derived from it.
+                    drop_files_cache(app, None);
+                    reload_mods(app);
+                    app.conflicts = compute_conflicts(app);
+                    app.status = Some(match (moved, failures.len()) {
+                        (0, 0) => "Nothing to send back.".to_string(),
+                        (n, 0) => format!("Sent {n} file(s) back to the mods that provide them."),
+                        (n, f) => format!(
+                            "Sent {n} file(s) back; {f} could not be moved, e.g. {}",
+                            failures[0]
+                        ),
+                    });
+                }
+                Err(e) => app.status = Some(format!("Sync failed: {e}")),
+            }
+        }
         // ---- Instance manager (MO2's Manage Instances) -----------------------
         Message::ShowInstanceManager => {
             app.file_menu_open = false;
@@ -4990,4 +5044,36 @@ pub(crate) fn load_log_pane(
         }
     }
     LogPaneState { files, current, lines, level, total, truncated }
+}
+
+
+/// Which mod should take each Overwrite file back, keyed by lowercased relative
+/// path.
+///
+/// Read straight off the conflict map the window already keeps: for a path the
+/// Overwrite wins, the highest-priority ALTERNATIVE that is a real mod is the one
+/// that provides it underneath. Deriving it again here would be a second answer
+/// to a question that already has one, and the two could disagree.
+///
+/// `None` when there is no conflict map yet - that is not "nothing to do", it is
+/// "the question has not been asked", and the two must not look the same.
+pub(crate) fn overwrite_owners(app: &App) -> Option<HashMap<String, String>> {
+    let map = app.conflicts.as_ref()?;
+    let mut out = HashMap::new();
+    for (rel, node) in &map.files {
+        if node.winner != u32::MAX {
+            continue; // not the Overwrite's file
+        }
+        // Descending priority: the first real mod under it wins the file back.
+        // BASE_ORIGIN (the game's own Data) is skipped - Eidos never writes there.
+        let Some(&origin) = node.alternatives.iter().find(|&&o| o != 0 && o != u32::MAX) else {
+            continue;
+        };
+        let Some(m) = app.mods.get((origin as usize).saturating_sub(1)) else { continue };
+        if m.is_separator() || m.is_unmanaged() {
+            continue;
+        }
+        out.insert(rel.clone(), m.name.clone());
+    }
+    Some(out)
 }

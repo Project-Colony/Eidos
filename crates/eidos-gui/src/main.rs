@@ -680,6 +680,9 @@ enum Message {
     PluginSendToPriorityStart,
     PluginSendToPriorityChanged(String),
     PluginSendToPriorityCommit,
+    /// Push every Overwrite file back to the mod that already provides that path
+    /// (MO2's "Sync to Mods"). Two clicks: the first arms.
+    OverwriteSyncToMods,
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,
@@ -1331,6 +1334,8 @@ struct App {
     instance_rename: Option<(usize, String)>,
     /// Two-click guard for forgetting an instance.
     confirm_forget: Option<usize>,
+    /// Two-click guard for the Overwrite sync.
+    confirm_sync: bool,
     /// The plugin row whose "Send to priority" field is open, and what is typed
     /// in it. Mirrors `send_priority` for mods; kept separate because the two
     /// lists are indexed independently and one menu must not aim the other.
@@ -3898,6 +3903,66 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    #[test]
+    fn no_conflict_map_is_not_the_same_as_nothing_to_send_back() {
+        // "The question has not been asked" and "the answer is none" must not
+        // look the same: one is fixed by opening a tab, the other by doing
+        // something else entirely.
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = mods(&["a"]);
+        app.screen = Screen::Main;
+
+        assert!(app.conflicts.is_none());
+        assert!(overwrite_owners(&app).is_none());
+        let _ = update_inner(&mut app, Message::OverwriteSyncToMods);
+        assert!(app.confirm_sync, "the first click only arms");
+        let _ = update_inner(&mut app, Message::OverwriteSyncToMods);
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("Conflicts tab"),
+            "{:?}",
+            app.status
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_owner_of_an_overwrite_file_is_the_best_mod_under_it() {
+        use eidos_conflicts::{ConflictMap, FileNode};
+        let mut app = nav_app(&["Low", "High"]);
+        let mut map = ConflictMap::default();
+        // The Overwrite wins; under it, mod index 1 ("High", origin 2) beats
+        // index 0 ("Low", origin 1), and the game's own Data (origin 0) is never
+        // a destination - Eidos does not write there.
+        map.files.insert(
+            "meshes/a.nif".to_string(),
+            FileNode {
+                winner: u32::MAX,
+                alternatives: vec![2, 1, 0],
+                display_path: "meshes/a.nif".to_string(),
+            },
+        );
+        // A file only the game provides underneath: nowhere to send it.
+        map.files.insert(
+            "vanilla.esm".to_string(),
+            FileNode { winner: u32::MAX, alternatives: vec![0], display_path: "vanilla.esm".into() },
+        );
+        // A file the Overwrite does NOT win is not its business at all.
+        map.files.insert(
+            "other.txt".to_string(),
+            FileNode { winner: 2, alternatives: vec![1], display_path: "other.txt".into() },
+        );
+        app.conflicts = Some(map);
+
+        let owners = overwrite_owners(&app).unwrap();
+        assert_eq!(owners.get("meshes/a.nif").map(String::as_str), Some("High"));
+        assert!(!owners.contains_key("vanilla.esm"), "the game's Data is not a destination");
+        assert!(!owners.contains_key("other.txt"));
     }
 
     #[test]

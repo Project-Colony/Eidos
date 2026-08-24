@@ -565,6 +565,56 @@ impl Instance {
         Ok(moved)
     }
 
+    /// Move Overwrite files back into the mods that already provide that path
+    /// (MO2's "Sync to Mods"). Returns how many moved.
+    ///
+    /// `owners` maps a relative path, lowercased, to the mod folder that should
+    /// take it. The caller supplies it because the "who provides this path"
+    /// question is already answered by the conflict map the window keeps for its
+    /// own columns - recomputing it here would be a second, divergent answer to
+    /// a question that already has one.
+    ///
+    /// This is how you clean up after a tool run without creating a junk mod:
+    /// the files a generator regenerated go back to the mod they came from, and
+    /// only what nothing else provides is left in the Overwrite for the user to
+    /// decide about.
+    pub fn sync_overwrite_to_mods(
+        &self,
+        owners: &HashMap<String, String>,
+    ) -> std::io::Result<(usize, Vec<String>)> {
+        let src = self.overwrite_dir();
+        let mut snapshot = OverwriteSnapshot::default();
+        snapshot_into(&src, Path::new(""), &mut snapshot);
+
+        // Sorted, so a partial failure is reproducible rather than hash-ordered.
+        let mut rels: Vec<&PathBuf> = snapshot.files.keys().collect();
+        rels.sort();
+
+        let mut moved = 0usize;
+        let mut failures: Vec<String> = Vec::new();
+        for rel in rels {
+            let key = rel.to_string_lossy().to_ascii_lowercase();
+            // Only paths some mod already provides. Anything else is genuinely
+            // new output with no home to go back to, and inventing one would be
+            // the junk mod this exists to avoid.
+            let Some(owner) = owners.get(&key) else { continue };
+            if !crate::tools::is_mod_folder_name(owner) {
+                failures.push(format!("{}: '{owner}' is not a mod folder name", rel.display()));
+                continue;
+            }
+            let dest = self.mods_dir().join(owner).join(rel);
+            if let Err(e) = move_one_into(&src.join(rel), &dest) {
+                failures.push(format!("{}: {e}", rel.display()));
+                continue;
+            }
+            moved += 1;
+        }
+        if moved > 0 {
+            prune_empty_dirs(&src, &snapshot);
+        }
+        Ok((moved, failures))
+    }
+
     /// Bind-stash mountpoint for the pristine game files (used at launch).
     pub fn base_dir(&self) -> PathBuf {
         self.root.join(".base")
@@ -1448,6 +1498,68 @@ mod tests {
         assert_eq!(fs::read(dest.join("loose.txt")).unwrap(), b"x");
         assert!(dest.join("meta.ini").is_file(), "a fresh mod gets a meta.ini");
         assert!(inst.overwrite_is_empty(), "the Overwrite must be left empty");
+    }
+
+    #[test]
+    fn sync_sends_a_file_back_only_to_a_mod_that_already_provides_it() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        // Two mods, one of which owns meshes/a.nif.
+        let owner = inst.mods_dir().join("Meshes Mod");
+        fs::create_dir_all(owner.join("meshes")).unwrap();
+        fs::write(owner.join("meshes/a.nif"), b"original").unwrap();
+
+        let ow = inst.overwrite_dir();
+        fs::create_dir_all(ow.join("meshes")).unwrap();
+        fs::write(ow.join("meshes/a.nif"), b"regenerated").unwrap();
+        // Genuinely new output: nothing else provides it, so it must STAY.
+        fs::write(ow.join("brand-new.json"), b"{}").unwrap();
+
+        let mut owners = HashMap::new();
+        owners.insert("meshes/a.nif".to_string(), "Meshes Mod".to_string());
+
+        let (moved, failures) = inst.sync_overwrite_to_mods(&owners).unwrap();
+        assert_eq!((moved, failures.len()), (1, 0));
+        assert_eq!(fs::read(owner.join("meshes/a.nif")).unwrap(), b"regenerated");
+        assert!(!ow.join("meshes").exists(), "the emptied directory is swept up");
+        // The whole point of sending files BACK rather than bundling them: what
+        // no mod claims is left for the user to decide about.
+        assert_eq!(fs::read(ow.join("brand-new.json")).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn sync_refuses_an_owner_that_is_not_a_mod_folder_name() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        fs::write(ow.join("x.txt"), b"x").unwrap();
+        // The map comes from the window, but a bad name must never become a
+        // path join that escapes mods/.
+        let mut owners = HashMap::new();
+        owners.insert("x.txt".to_string(), "../escape".to_string());
+        let (moved, failures) = inst.sync_overwrite_to_mods(&owners).unwrap();
+        assert_eq!(moved, 0);
+        assert_eq!(failures.len(), 1);
+        assert!(ow.join("x.txt").is_file(), "nothing moved");
+    }
+
+    #[test]
+    fn sync_keeps_a_directory_that_was_already_empty() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        // A tool's own scratch folder, empty before the sync and expected to
+        // still be there after it.
+        fs::create_dir_all(ow.join("Nemesis_Engine/temp")).unwrap();
+        fs::write(ow.join("moved.txt"), b"x").unwrap();
+        let target = inst.mods_dir().join("Target");
+        fs::create_dir_all(&target).unwrap();
+
+        let mut owners = HashMap::new();
+        owners.insert("moved.txt".to_string(), "Target".to_string());
+        let (moved, _) = inst.sync_overwrite_to_mods(&owners).unwrap();
+        assert_eq!(moved, 1);
+        assert!(ow.join("Nemesis_Engine/temp").is_dir());
     }
 
     #[test]

@@ -243,6 +243,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         registry_path: eidos_instance::registry_path(),
         instance_rename: None,
         confirm_forget: None,
+        confirm_sync: false,
         pending_note: None,
         categories_dialog: None,
         ini_editor: None,

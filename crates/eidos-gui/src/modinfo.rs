@@ -430,6 +430,17 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         // MO2's central Overwrite workflow: turn what the game/tools generated into
         // a real, orderable mod instead of only being able to delete it.
         .push(tool_btn("Create mod...", Message::OverwriteToModStart))
+        // MO2's "Sync to Mods": send each file back to the mod that already
+        // provides that path, instead of bundling everything into a new one.
+        .push(
+            button(
+                text(if app.confirm_sync { "Confirm send back?" } else { "Send back to mods" })
+                    .size(12.0),
+            )
+            .padding(5)
+            .on_press(Message::OverwriteSyncToMods)
+            .style(if app.confirm_sync { button::danger } else { button::secondary }),
+        )
         .push(tool_btn("Open folder", Message::OpenFolder(dir.clone())))
         .push(
             button(text(if app.confirm_clear { "Confirm clear?" } else { "Clear" }).size(12.0))
