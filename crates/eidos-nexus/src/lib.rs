@@ -40,6 +40,7 @@ use std::time::Duration;
 
 pub const API_BASE: &str = "https://api.nexusmods.com/v1";
 
+pub mod collections;
 pub mod oauth;
 
 /// A parsed `nxm://` mod-file link (MO2's `NXMUrl`).
@@ -68,7 +69,9 @@ impl NxmUrl {
         };
         let segs: Vec<&str> = path.trim_end_matches('/').split('/').collect();
         if segs.len() >= 2 && segs[1].eq_ignore_ascii_case("collections") {
-            return Err("collection links are not supported yet (Nexus v2 API)".to_string());
+            // Not a mod file. Callers that want one still get an error here;
+            // `NxmLink::parse` is what routes a collection to the right place.
+            return Err("that is a collection link, not a mod file".to_string());
         }
         // game / mods / <id> / files / <fid>
         if segs.len() != 5
@@ -93,6 +96,83 @@ impl NxmUrl {
             }
         }
         Ok(NxmUrl { game: segs[0].to_ascii_lowercase(), mod_id, file_id, key, expires, user_id })
+    }
+}
+
+/// A `nxm://<game>/collections/<slug>/revisions/<n|latest>` link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NxmCollection {
+    /// The Nexus game domain from the URL host, e.g. `skyrimspecialedition`.
+    pub game: String,
+    /// The collection's slug - six alphanumerics in every observed link, but no
+    /// grammar is published, so the length is not pinned.
+    pub slug: String,
+    /// The revision number, or `None` for `latest`. `None` is not an absence:
+    /// it is what the API's `revision: null` means, and it dominates the links
+    /// the site actually emits.
+    pub revision: Option<u32>,
+}
+
+/// What an `nxm://` link points at.
+///
+/// Two shapes with the same skeleton - `<noun>/<id>/<noun>/<id>` - and entirely
+/// different destinations, so the handler dispatches on this rather than on a
+/// failed parse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NxmLink {
+    Mod(NxmUrl),
+    Collection(NxmCollection),
+}
+
+impl NxmLink {
+    /// Parse either shape.
+    ///
+    /// The collection grammar is `nxm://<domain>/collections/<slug>/revisions/<n|latest>`,
+    /// taken from Vortex's own regex (`/\/collections\/(\w+)\/revisions\/(\d+|latest)/i`)
+    /// because no grammar is published and Vortex is what the site's buttons
+    /// actually feed.
+    ///
+    /// `latest` is accepted deliberately. Two other third-party clients reject
+    /// it, and they are wrong to: it is what the majority of real links carry,
+    /// and the API expresses it as `revision: null` rather than as a number.
+    pub fn parse(url: &str) -> Result<NxmLink, String> {
+        let rest = url
+            .strip_prefix("nxm://")
+            .ok_or_else(|| format!("not an nxm:// link: {url}"))?;
+        let path = rest.split_once('?').map_or(rest, |(p, _)| p);
+        let segs: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+        if segs.len() < 2 || !segs[1].eq_ignore_ascii_case("collections") {
+            return NxmUrl::parse(url).map(NxmLink::Mod);
+        }
+        // <domain> / collections / <slug> / revisions / <n|latest>
+        if segs.len() != 5 || !segs[3].eq_ignore_ascii_case("revisions") {
+            return Err(format!("unrecognized collection link shape: {url}"));
+        }
+        let slug = segs[2];
+        if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(format!("bad collection slug in {url}"));
+        }
+        // The alpha-era form put a numeric collection ID here instead of a slug.
+        // Refused by name rather than mis-parsed as a slug: nothing downstream
+        // has a collection-ID code path, so accepting it would fail later and
+        // less clearly.
+        if slug.len() < 6 && slug.chars().all(|c| c.is_ascii_digit()) {
+            return Err(
+                "that is an old numeric collection link; open the collection page and use its \
+                 current link instead"
+                    .to_string(),
+            );
+        }
+        let revision = if segs[4].eq_ignore_ascii_case("latest") {
+            None
+        } else {
+            Some(segs[4].parse::<u32>().map_err(|_| format!("bad revision in {url}"))?)
+        };
+        Ok(NxmLink::Collection(NxmCollection {
+            game: segs[0].to_ascii_lowercase(),
+            slug: slug.to_string(),
+            revision,
+        }))
     }
 }
 
@@ -977,6 +1057,33 @@ impl Nexus {
                  from the site's Mod Manager Download button)"
                     .to_string()
             })
+    }
+
+    /// Read a collection revision and its member list (Nexus GraphQL v2).
+    ///
+    /// ONE request for the whole list, which is what makes showing a collection
+    /// cheap enough to be worth doing at all - the v1 route would be three calls
+    /// per member.
+    ///
+    /// Deliberately outside `preflight`: the v2 endpoint returns no `X-RL-*`
+    /// headers, so it neither spends nor reports the v1 budget, and refusing this
+    /// because a v1 counter is low would block a request that costs nothing on
+    /// that ledger. It still goes through the bearer token, so an expired session
+    /// is reported as such rather than silently answering as a stranger.
+    ///
+    /// `viewAdultContent` is sent as what the ACCOUNT allows, not as `true`. Ask
+    /// for adult content the account has turned off and Nexus answers with data
+    /// this crate would then have to withhold - which is the same result by a
+    /// worse route, and one that puts the metadata on this machine first.
+    pub fn collection_revision(
+        &self,
+        c: &NxmCollection,
+    ) -> Result<collections::CollectionRevision, String> {
+        let Credential::Bearer(token) = &self.credential;
+        let view_adult = self.adult == AdultPolicy::Allowed;
+        let body = collections::query_body(c, view_adult);
+        let v = oauth::graphql(Some(token), &body)?;
+        collections::from_payload(&v, &c.slug, self.adult)
     }
 
     /// Stream a (non-API) CDN URL to `dest`. Returns the total byte count.
@@ -2093,9 +2200,80 @@ mod tests {
 
         assert!(NxmUrl::parse("https://nexusmods.com/whatever").is_err());
         assert!(NxmUrl::parse("nxm://skyrim/mods/notanumber/files/1").is_err());
-        // Collections are explicitly unsupported for now (v2 API).
+        // A collection link is not a mod file, and `NxmUrl` still says so.
         let err = NxmUrl::parse("nxm://skyrim/collections/abcd/revisions/3").unwrap_err();
-        assert!(err.contains("collection"));
+        assert!(err.contains("collection"), "{err}");
+    }
+
+    #[test]
+    fn a_collection_link_parses_including_latest() {
+        // The shape the site actually emits. `latest` dominates real links, and
+        // two other third-party clients reject it - wrongly: the API expresses
+        // it as `revision: null`, not as a number.
+        let NxmLink::Collection(c) =
+            NxmLink::parse("nxm://skyrimspecialedition/collections/qdurkx/revisions/latest").unwrap()
+        else {
+            panic!("expected a collection")
+        };
+        assert_eq!(c.game, "skyrimspecialedition");
+        assert_eq!(c.slug, "qdurkx");
+        assert_eq!(c.revision, None);
+
+        let NxmLink::Collection(c) =
+            NxmLink::parse("nxm://stardewvalley/collections/g14kxi/revisions/2").unwrap()
+        else {
+            panic!("expected a collection")
+        };
+        assert_eq!(c.revision, Some(2));
+        assert_eq!(c.game, "stardewvalley");
+
+        // A query string is tolerated - no observed collection link carries one,
+        // but another client's serialiser preserves them, so refusing would be
+        // a guess about a format nobody published.
+        assert!(matches!(
+            NxmLink::parse("nxm://skyrim/collections/abcdef/revisions/1?key=x&expires=9"),
+            Ok(NxmLink::Collection(_))
+        ));
+        // Case on the literals, like every other nxm parser.
+        assert!(matches!(
+            NxmLink::parse("nxm://Skyrim/Collections/abcdef/Revisions/latest"),
+            Ok(NxmLink::Collection(_))
+        ));
+    }
+
+    #[test]
+    fn a_mod_link_still_routes_to_the_mod_shape() {
+        let NxmLink::Mod(m) =
+            NxmLink::parse("nxm://skyrimspecialedition/mods/266/files/1234?key=abc&expires=99")
+                .unwrap()
+        else {
+            panic!("expected a mod")
+        };
+        assert_eq!((m.mod_id, m.file_id), (266, 1234));
+        assert_eq!(m.key.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn a_legacy_numeric_collection_link_is_refused_by_name() {
+        // The alpha-era form put a numeric collection ID where the slug goes.
+        // Nothing downstream has a collection-ID path, so mis-parsing it as a
+        // slug would fail later and less clearly.
+        let err = NxmLink::parse("nxm://skyrim/collections/123/revisions/4").unwrap_err();
+        assert!(err.contains("old numeric"), "{err}");
+    }
+
+    #[test]
+    fn a_malformed_collection_link_is_refused_rather_than_guessed_at() {
+        for bad in [
+            "nxm://skyrim/collections/abcdef",
+            "nxm://skyrim/collections/abcdef/revisions",
+            "nxm://skyrim/collections/abcdef/revs/1",
+            "nxm://skyrim/collections//revisions/1",
+            "nxm://skyrim/collections/ab-cd/revisions/1",
+            "nxm://skyrim/collections/abcdef/revisions/notanumber",
+        ] {
+            assert!(NxmLink::parse(bad).is_err(), "{bad} should not parse");
+        }
     }
 
     #[test]

@@ -558,28 +558,60 @@ pub const GRAPHQL_URL: &str = "https://api.nexusmods.com/v2/graphql";
 /// bearer token belongs to. Unauthenticated it answers with an `errors` array and
 /// a null `preferences`, which parses to `None` here without special-casing.
 pub fn adult_preference(access_token: &str) -> Option<bool> {
-    let agent: ureq::Agent =
-        ureq::Agent::config_builder().http_status_as_error(false).build().into();
     let body = serde_json::json!({
         "query": "query preferences { preferences { adult adultBlurImages } }"
     });
-    let mut resp = agent
-        .post(GRAPHQL_URL)
-        .header("Application-Name", "Eidos")
-        .header("Application-Version", env!("CARGO_PKG_VERSION"))
-        .header("Authorization", format!("Bearer {access_token}"))
-        .send_json(&body)
-        .ok()?;
-    if !resp.status().is_success() {
-        return None;
-    }
-    let v: serde_json::Value = resp.body_mut().read_json().ok()?;
-    // A GraphQL error is reported inside a 200 body, so the status above is not
-    // enough: an errors array means the answer is not to be trusted.
-    if v.get("errors").is_some_and(|e| !e.is_null()) {
-        return None;
-    }
+    let v = graphql(Some(access_token), &body).ok()?;
     v.get("data")?.get("preferences")?.get("adult")?.as_bool()
+}
+
+/// POST one GraphQL query and return its `data`-bearing body.
+///
+/// Two rules are baked in because getting either wrong is silent.
+///
+/// EXACTLY ONE credential. The endpoint accepts a bearer token or a personal
+/// `apikey` header, and a stale one of either rejects the whole request with 401
+/// even when the query itself needs no authentication at all - so `None` sends
+/// nothing rather than sending an empty header.
+///
+/// AN ERRORS ARRAY IS A FAILURE. GraphQL reports errors inside a 200, so the
+/// status alone says nothing: `{"errors": [...], "data": null}` is what an
+/// unauthorised field looks like, and reading `data` out of it would take
+/// "you may not see this" for "there is nothing here".
+pub fn graphql(
+    access_token: Option<&str>,
+    body: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let agent: ureq::Agent =
+        ureq::Agent::config_builder().http_status_as_error(false).build().into();
+    let mut req = agent
+        .post(GRAPHQL_URL)
+        // Attribution, as Nexus's own client sends on every call.
+        .header("Application-Name", "Eidos")
+        .header("Application-Version", env!("CARGO_PKG_VERSION"));
+    if let Some(t) = access_token {
+        req = req.header("Authorization", format!("Bearer {t}"));
+    }
+    let mut resp = req.send_json(body).map_err(|e| e.to_string())?;
+    let status = resp.status();
+    let v: serde_json::Value = resp
+        .body_mut()
+        .read_json()
+        .map_err(|_| format!("Nexus answered {} with something that is not JSON", status.as_u16()))?;
+    if let Some(errs) = v.get("errors").filter(|e| !e.is_null()) {
+        // The first message is the useful one; the rest are usually locations.
+        let first = errs
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+            .unwrap_or("the query was refused");
+        return Err(first.to_string());
+    }
+    if !status.is_success() {
+        return Err(format!("Nexus answered {}", status.as_u16()));
+    }
+    Ok(v)
 }
 
 /// Exchange the authorization code for tokens (the PKCE verifier proves we are

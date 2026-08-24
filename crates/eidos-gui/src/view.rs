@@ -471,6 +471,7 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(entry("Game Data", game.map(|g| g.data_path.clone()), false))
         .push(entry("Game INIs (in the Proton prefix)", prefix_inis, false))
         .push(menu_sep())
+        .push(menu_item_owned("Open a Nexus collection...".to_string(), Message::ShowCollection(String::new())))
         .push(menu_item("Instances...", Message::ShowInstanceManager))
         .push(menu_item("Export the mod list...", Message::ShowExportDialog))
         .push(menu_sep())

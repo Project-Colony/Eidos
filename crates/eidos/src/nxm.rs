@@ -74,8 +74,42 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             );
         }
         Some(url) => {
-            let nxm = match eidos_nexus::NxmUrl::parse(url) {
-                Ok(n) => n,
+            let nxm = match eidos_nexus::NxmLink::parse(url) {
+                Ok(eidos_nexus::NxmLink::Mod(n)) => n,
+                Ok(eidos_nexus::NxmLink::Collection(c)) => {
+                    // A collection is not something this process installs, so it
+                    // is handed to the window - which is where the mod list it
+                    // has to be compared against lives.
+                    //
+                    // The INSTANCE is resolved here, by the same domain match a
+                    // mod link gets. Launching the window bare opened whatever
+                    // instance was last used, so a Skyrim collection clicked
+                    // while Fallout 4 was the last instance came up compared
+                    // against Fallout 4's mods - every "installed" and every
+                    // "missing" wrong, and wrong in a way that looks like an
+                    // answer.
+                    let games = detect(&home());
+                    let candidates: Vec<&DetectedGame> = games
+                        .iter()
+                        .filter(|g| g.def.nexus_game.eq_ignore_ascii_case(&c.game))
+                        .collect();
+                    if candidates.is_empty() {
+                        eidos_log::info!(
+                            "That collection is for '{}', which is not a game Eidos found here.",
+                            c.game
+                        );
+                        exit(1);
+                    }
+                    let (game, inst) = pick_instance(&candidates);
+                    println!(
+                        "Collection {} (revision {}) for {} - opening it in Eidos.",
+                        c.slug,
+                        c.revision.map_or_else(|| "latest".to_string(), |r| r.to_string()),
+                        game.def.name
+                    );
+                    show_collection_in_gui(url, &inst);
+                    return;
+                }
                 Err(e) => {
                     eidos_log::info!("bad nxm link: {e}");
                     exit(1);
@@ -306,4 +340,36 @@ fn resume(archive: &std::path::Path) {
     let _ = eidos_nexus::set_download_meta_key(archive, "paused", "false");
     println!("Resuming {} ...", archive.display());
     run_transfer(&nexus, &link, archive, "<instance>");
+}
+
+
+/// Hand a collection link to the window, pinned to `inst`.
+///
+/// The GUI is where a collection is read: it holds the mod list this has to be
+/// joined against, and the answer is a list to look at rather than a thing to
+/// do. Launched detached, like every other GUI hand-off here - the browser is
+/// waiting on this process, and it should not wait for a window.
+fn show_collection_in_gui(link: &str, inst: &Instance) {
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("eidos-gui")))
+        .filter(|p| p.is_file())
+        .unwrap_or_else(|| std::path::PathBuf::from("eidos-gui"));
+    match std::process::Command::new(&exe)
+        .arg("--collection")
+        .arg(link)
+        // Pinned to the instance resolved above, through the same variable the
+        // CLI uses - so the window opens the collection's own game rather than
+        // whichever instance happened to be last.
+        .env("EIDOS_INSTANCE", &inst.root)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(_) => {}
+        Err(e) => {
+            eidos_log::warn!("could not open the Eidos window ({e}); the link was {link}");
+        }
+    }
 }

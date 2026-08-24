@@ -697,6 +697,20 @@ enum Message {
     /// Push every Overwrite file back to the mod that already provides that path
     /// (MO2's "Sync to Mods"). Two clicks: the first arms.
     OverwriteSyncToMods,
+    // ---- Nexus collections ----
+    /// Open the collection view. The string is an `nxm://` collection link.
+    ShowCollection(String),
+    CloseCollection,
+    /// The link the user pasted.
+    CollectionLinkChanged(String),
+    /// Fetch the revision named by the pasted link.
+    CollectionFetch,
+    /// The revision came back.
+    CollectionFetched(Result<eidos_nexus::collections::CollectionRevision, String>),
+    /// Open one member's Nexus page at the exact file the collection pins.
+    CollectionOpenMod(usize),
+    /// Ask the nxm handler to fetch every missing member, one at a time.
+    CollectionFetchMissing,
     // ---- Instance manager (MO2's Manage Instances) ----
     ShowInstanceManager,
     CloseInstanceManager,
@@ -822,6 +836,30 @@ impl ExecutablesDialogState {
         t.output_mod = Some(self.output_mod.trim().to_string())
             .filter(|m| self.mod_names.iter().any(|n| n == m));
     }
+}
+
+/// One member of a collection, joined against what the instance already has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MemberState {
+    /// A mod with this Nexus id is in the mod list.
+    Installed,
+    /// The exact file is in downloads/, ready to install.
+    Downloaded,
+    /// Neither. This is what the collection is asking you to get.
+    Missing,
+}
+
+/// The collection browser.
+struct CollectionState {
+    /// What the user pasted, kept so the field survives a failed fetch.
+    link: String,
+    /// The fetched revision, once it arrives.
+    revision: Option<eidos_nexus::collections::CollectionRevision>,
+    /// Per member, in the revision's order. Computed locally - no requests.
+    states: Vec<MemberState>,
+    /// True while the one GraphQL request is in flight.
+    loading: bool,
+    error: Option<String>,
 }
 
 /// The Export dialog (MO2's Export to csv).
@@ -1342,6 +1380,8 @@ struct App {
     file_menu_open: bool,
     /// The open Export dialog: which rows, and which columns are ticked.
     export: Option<ExportDialogState>,
+    /// The open collection view, if any.
+    collection: Option<CollectionState>,
     /// Whether the instance manager is showing.
     instances_open: bool,
     /// Where the instance registry lives. A field rather than a global so the
@@ -4120,6 +4160,180 @@ mod tests {
         assert!(!by("Nobody.bsa").loaded(), "nothing names it");
         assert_eq!(by("Nobody.bsa").by_plugin, None);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A collection state holding a revision built from the captured payload.
+    fn collection_app(mods: &[(&str, u64)], downloads: &[u64]) -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for (name, mod_id) in mods {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("meta.ini"), format!("[General]\nmodid={mod_id}\n")).unwrap();
+        }
+        let dl = inst.downloads_dir();
+        fs::create_dir_all(&dl).unwrap();
+        for file_id in downloads {
+            fs::write(dl.join(format!("a{file_id}.7z")), b"x").unwrap();
+            fs::write(
+                dl.join(format!("a{file_id}.7z.meta")),
+                format!("[General]\nmodID=1\nfileID={file_id}\n"),
+            )
+            .unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.mods = mods
+            .iter()
+            .map(|(n, _)| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+        (app, root)
+    }
+
+    /// A revision with three members. Built by hand rather than parsed: the
+    /// PARSE is already tested against a captured real payload in eidos-nexus,
+    /// and what these tests exercise is the local join, which only needs ids.
+    fn captured_revision() -> eidos_nexus::collections::CollectionRevision {
+        use eidos_nexus::collections::{CollectionMod, CollectionRevision};
+        let member = |name: &str, mod_id: u64, file_id: u64| CollectionMod {
+            name: name.to_string(),
+            mod_id,
+            file_id,
+            domain: "skyrimspecialedition".to_string(),
+            version: "2.1".to_string(),
+            file_name: format!("{name}.7z"),
+            size_in_bytes: 1024,
+            optional: false,
+        };
+        CollectionRevision {
+            slug: "rqhcxy".to_string(),
+            revision_number: 1,
+            name: "The Great Cities Collection".to_string(),
+            summary: String::new(),
+            author: "HookerHeels".to_string(),
+            game_domain: "skyrimspecialedition".to_string(),
+            mod_count: 3,
+            total_size: 3072,
+            instructions: String::new(),
+            mods: vec![
+                member("Karthwasten", 37471, 232153),
+                member("Mixwater Mill", 37414, 232146),
+                member("Shors Stone", 36462, 234034),
+            ],
+            hidden: None,
+        }
+    }
+
+    #[test]
+    fn a_collection_member_is_matched_against_what_the_instance_already_has() {
+        let rev = captured_revision();
+        // First member installed by mod id, second downloaded by file id, the
+        // rest missing.
+        let (first, second) = (rev.mods[0].mod_id, rev.mods[1].file_id);
+        let (mut app, root) = collection_app(&[("Karthwasten", first)], &[second]);
+        app.collection = Some(CollectionState {
+            link: String::new(),
+            revision: Some(rev),
+            states: Vec::new(),
+            loading: false,
+            error: None,
+        });
+        recompute_collection_states(&mut app);
+
+        let st = &app.collection.as_ref().unwrap().states;
+        assert_eq!(st[0], MemberState::Installed, "matched on the Nexus mod id");
+        assert_eq!(st[1], MemberState::Downloaded, "matched on the exact file id");
+        assert!(st[2..].iter().all(|s| *s == MemberState::Missing));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_collection_for_another_game_is_refused_by_name() {
+        // The failure this exists for: a Skyrim collection opened while a
+        // Fallout 4 instance is loaded would join its members against Fallout 4's
+        // mods and downloads, so every "installed" and every "missing" is noise
+        // shaped like an answer.
+        let root = temp_portable("fallout4");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("fallout4");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+
+        let _ = update_inner(
+            &mut app,
+            Message::ShowCollection(
+                "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest".to_string(),
+            ),
+        );
+        let c = app.collection.as_ref().unwrap();
+        let err = c.error.clone().unwrap_or_default();
+        assert!(err.contains("skyrimspecialedition"), "it names the collection's game: {err}");
+        assert!(err.contains("Fallout"), "and the one that is open: {err}");
+        assert!(!c.loading, "and no request was dispatched");
+        assert!(c.revision.is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_collection_for_the_open_game_gets_past_the_guard() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+
+        let _ = update_inner(
+            &mut app,
+            Message::ShowCollection(
+                "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest".to_string(),
+            ),
+        );
+        let c = app.collection.as_ref().unwrap();
+        // It gets as far as the credential check, which is the next gate - the
+        // game guard is not what stopped it.
+        assert!(
+            c.error.as_deref().is_none_or(|e| !e.contains("instance is")),
+            "{:?}",
+            c.error
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_link_pasted_into_the_collection_box_says_what_it_is() {
+        let mut app = nav_app(&[]);
+        let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionLinkChanged(
+                "nxm://skyrimspecialedition/mods/266/files/1234".to_string(),
+            ),
+        );
+        let _ = update_inner(&mut app, Message::CollectionFetch);
+        let err = app.collection.as_ref().unwrap().error.clone().unwrap_or_default();
+        // Not "bad link": it IS a valid link, to the wrong kind of thing, and
+        // saying which sends the user to the button that handles it.
+        assert!(err.contains("single mod"), "{err}");
+    }
+
+    #[test]
+    fn a_malformed_collection_link_is_reported_without_a_request() {
+        let mut app = nav_app(&[]);
+        let _ = update_inner(&mut app, Message::ShowCollection("not a link".to_string()));
+        let c = app.collection.as_ref().unwrap();
+        assert!(c.error.is_some());
+        assert!(!c.loading, "nothing was dispatched");
+        assert!(c.revision.is_none());
     }
 
     #[test]

@@ -3667,6 +3667,162 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Err(e) => app.status = Some(format!("Sync failed: {e}")),
             }
         }
+        // ---- Nexus collections ------------------------------------------------
+        Message::ShowCollection(link) => {
+            app.file_menu_open = false;
+            app.collection = Some(CollectionState {
+                link,
+                revision: None,
+                states: Vec::new(),
+                loading: false,
+                error: None,
+            });
+            if app.collection.as_ref().is_some_and(|c| !c.link.trim().is_empty()) {
+                return update(app, Message::CollectionFetch);
+            }
+        }
+        Message::CloseCollection => app.collection = None,
+        Message::CollectionLinkChanged(t) => {
+            app.typing = true;
+            if let Some(c) = &mut app.collection {
+                c.link = t;
+                c.error = None;
+            }
+        }
+        Message::CollectionFetch => {
+            let Some(c) = &mut app.collection else { return Task::none() };
+            let parsed = match eidos_nexus::NxmLink::parse(c.link.trim()) {
+                Ok(eidos_nexus::NxmLink::Collection(c)) => c,
+                Ok(eidos_nexus::NxmLink::Mod(_)) => {
+                    c.error = Some(
+                        "That is a link to a single mod, not a collection. Use the Install button \
+                         for one mod."
+                            .to_string(),
+                    );
+                    return Task::none();
+                }
+                Err(e) => {
+                    c.error = Some(e);
+                    return Task::none();
+                }
+            };
+            // The collection's game must be the OPEN instance's game. Without
+            // this the member list is joined against a different game's mods and
+            // downloads, so every "installed" and every "missing" is noise
+            // wearing the shape of an answer - and "Try to fetch missing" would
+            // send the downloads to a third place again, since the nxm handler
+            // routes by domain and the window does not.
+            let here = selected_game(app).map(|g| (g.def.nexus_game, g.def.name));
+            match here {
+                Some((domain, _)) if domain.eq_ignore_ascii_case(&parsed.game) => {}
+                Some((_, name)) => {
+                    let c = app.collection.as_mut().expect("checked above");
+                    c.error = Some(format!(
+                        "That collection is for '{}', but the open instance is {name}. Open a {} \
+                         instance first - a collection can only be compared against its own game.",
+                        parsed.game, name
+                    ));
+                    return Task::none();
+                }
+                None => {
+                    let c = app.collection.as_mut().expect("checked above");
+                    c.error = Some("Open a game instance first.".to_string());
+                    return Task::none();
+                }
+            }
+            let c = app.collection.as_mut().expect("checked above");
+            if !eidos_nexus::Nexus::have_credentials() {
+                c.error = Some("Connect a Nexus account first (Settings).".to_string());
+                return Task::none();
+            }
+            c.loading = true;
+            c.error = None;
+            c.revision = None;
+            c.states.clear();
+            return Task::perform(
+                async move {
+                    let nexus = eidos_nexus::Nexus::connect()?;
+                    nexus.collection_revision(&parsed)
+                },
+                Message::CollectionFetched,
+            );
+        }
+        Message::CollectionFetched(result) => {
+            let Some(c) = &mut app.collection else { return Task::none() };
+            c.loading = false;
+            match result {
+                Ok(rev) => {
+                    c.revision = Some(rev);
+                    c.error = None;
+                }
+                Err(e) => {
+                    c.error = Some(e);
+                    c.revision = None;
+                }
+            }
+            // Joined against the instance HERE rather than in the view: the view
+            // runs every frame and this reads every mod's meta.ini once.
+            recompute_collection_states(app);
+        }
+        Message::CollectionOpenMod(i) => {
+            let Some(c) = app.collection.as_ref() else { return Task::none() };
+            let Some(m) = c.revision.as_ref().and_then(|r| r.mods.get(i)) else {
+                return Task::none();
+            };
+            // The mod's FILES tab, at the exact file the collection pins - not
+            // the mod's front page, which shows whatever is newest. Clicking the
+            // Mod Manager Download button there fires the nxm:// link that the
+            // registered handler already knows how to service, so the existing
+            // download, sidecar and install pipeline runs unchanged.
+            let url = format!(
+                "https://www.nexusmods.com/{}/mods/{}?tab=files&file_id={}",
+                m.domain, m.mod_id, m.file_id
+            );
+            return update(app, Message::OpenUrl(url));
+        }
+        Message::CollectionFetchMissing => {
+            let Some(c) = app.collection.as_ref() else { return Task::none() };
+            let Some(rev) = c.revision.as_ref() else { return Task::none() };
+            let missing: Vec<(u64, u64, String)> = rev
+                .mods
+                .iter()
+                .zip(&c.states)
+                .filter(|(_, s)| **s == MemberState::Missing)
+                .map(|(m, _)| (m.mod_id, m.file_id, m.domain.clone()))
+                .collect();
+            if missing.is_empty() {
+                app.status = Some("Nothing missing.".to_string());
+                return Task::none();
+            }
+            // One child per mod, spawned in order. Each is the same `eidos nxm`
+            // the browser would launch, so nothing here re-implements the
+            // download - and each one either works (a premium account can mint
+            // a link from the ids alone) or fails with the message that already
+            // explains why a free account needs the site's own button.
+            let bin = find_eidos_binary();
+            let mut started = 0usize;
+            for (mod_id, file_id, domain) in &missing {
+                let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
+                match std::process::Command::new(&bin)
+                    .arg("nxm")
+                    .arg(&link)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn()
+                {
+                    Ok(_) => started += 1,
+                    Err(e) => {
+                        app.status = Some(format!("Could not start the downloads: {e}"));
+                        return Task::none();
+                    }
+                }
+            }
+            app.status = Some(format!(
+                "Asked for {started} download(s). A free Nexus account cannot mint links without \
+                 the site's own button - if they do not start, use Get on each row."
+            ));
+        }
         // ---- Instance manager (MO2's Manage Instances) -----------------------
         Message::ShowInstanceManager => {
             app.file_menu_open = false;
@@ -5406,5 +5562,52 @@ fn set_file_mtime(path: &Path, when: std::time::SystemTime) -> std::io::Result<(
         Ok(())
     } else {
         Err(std::io::Error::last_os_error())
+    }
+}
+
+
+/// Join a fetched collection's members against what the instance already holds.
+///
+/// Entirely local: no request, one pass over the mod list and one over the
+/// downloads. Computed on arrival rather than in `view`, which runs every frame.
+///
+/// A mod counts as INSTALLED when some mod in the list carries that Nexus id -
+/// not that exact file. That is deliberate: a collection pins a version, and
+/// having a different version of the same mod is a different situation from not
+/// having it at all, which the row says separately.
+pub(crate) fn recompute_collection_states(app: &mut App) {
+    let Some(state) = app.collection.as_ref() else { return };
+    let Some(rev) = state.revision.as_ref() else { return };
+
+    let installed: std::collections::HashSet<u64> =
+        app.meta_cache.values().filter_map(|r| r.mod_id).collect();
+    // Every downloaded archive's file id, from the sidecars.
+    let downloaded: std::collections::HashSet<u64> = match app.created.as_ref() {
+        Some(inst) => std::fs::read_dir(inst.downloads_dir())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "meta"))
+            .filter_map(|p| eidos_instance::ModMeta::read(&p).file_id())
+            .collect(),
+        None => std::collections::HashSet::new(),
+    };
+
+    let states: Vec<MemberState> = rev
+        .mods
+        .iter()
+        .map(|m| {
+            if installed.contains(&m.mod_id) {
+                MemberState::Installed
+            } else if downloaded.contains(&m.file_id) {
+                MemberState::Downloaded
+            } else {
+                MemberState::Missing
+            }
+        })
+        .collect();
+    if let Some(state) = app.collection.as_mut() {
+        state.states = states;
     }
 }

@@ -2734,6 +2734,14 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(banner);
     }
 
+    // The collection browser.
+    if let Some(state) = &app.collection {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseCollection);
+        let dialog = container(collection_dialog(state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     // The instance manager (MO2's Manage Instances).
     if app.instances_open {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))

@@ -176,6 +176,9 @@ pub(crate) fn instance_arg(app: &App) -> Option<String> {
 }
 
 pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
+    // Kept whole for the flag scan below; `identify_game` reads the same list
+    // and ignores anything that is not a Proton command.
+    let launch_args = launch_command.clone();
     let games = detect(&home());
     // If Steam launched us with the game's command (`eidos-gui %command%`),
     // identify the game and open straight to its instance, like MO2 does.
@@ -240,6 +243,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         file_menu_open: false,
         plugin_send_priority: None,
         export: None,
+        collection: None,
         instances_open: false,
         registry_path: eidos_instance::registry_path(),
         instance_rename: None,
@@ -409,6 +413,18 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         )
     } else {
         Task::none()
+    };
+    // `eidos-gui --collection <nxm://...>`: the nxm handler hands a collection
+    // link here rather than trying to install one itself, because reading it
+    // needs the mod list this window holds.
+    let collection = launch_args
+        .iter()
+        .position(|a| a == "--collection")
+        .and_then(|i| launch_args.get(i + 1))
+        .cloned();
+    let startup = match collection {
+        Some(link) => Task::batch([startup, Task::done(Message::ShowCollection(link))]),
+        None => startup,
     };
     (app, startup)
 }

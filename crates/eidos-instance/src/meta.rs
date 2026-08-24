@@ -330,6 +330,12 @@ impl ModMeta {
         self.string("name").map(|s| strip_html(&s)).filter(|s| !s.is_empty())
     }
 
+    /// The download sidecar's `fileID` - which exact file of a mod this archive
+    /// is. Absent from a mod's own `meta.ini`; only a download carries it.
+    pub fn file_id(&self) -> Option<u64> {
+        self.raw("fileid").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+    }
+
     /// The sidecar's `fileCategory` (the Nexus file category id).
     pub fn file_category(&self) -> Option<String> {
         self.string("fileCategory")

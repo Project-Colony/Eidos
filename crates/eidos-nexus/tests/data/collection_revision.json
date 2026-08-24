@@ -1,0 +1,98 @@
+{
+ "data": {
+  "collectionRevision": {
+   "revisionNumber": 1,
+   "adultContent": false,
+   "modCount": 12,
+   "totalSize": "22342118",
+   "installationInfo": null,
+   "modFiles": [
+    {
+     "fileId": 232153,
+     "optional": false,
+     "version": "2.1",
+     "file": {
+      "name": "The Great Town of Karthwasten Patch Collection",
+      "version": "2.1",
+      "sizeInBytes": "3609261",
+      "mod": {
+       "modId": 37471,
+       "name": "The Great Town of Karthwasten Patch Collection",
+       "game": {
+        "domainName": "skyrimspecialedition"
+       }
+      }
+     }
+    },
+    {
+     "fileId": 232146,
+     "optional": false,
+     "version": "2.1",
+     "file": {
+      "name": "The Great Village of Mixwater Mill Patch Collection",
+      "version": "2.1",
+      "sizeInBytes": "1100767",
+      "mod": {
+       "modId": 37414,
+       "name": "The Great Village of Mixwater Mill Patch Collection",
+       "game": {
+        "domainName": "skyrimspecialedition"
+       }
+      }
+     }
+    },
+    {
+     "fileId": 234034,
+     "optional": false,
+     "version": "2.0.3",
+     "file": {
+      "name": "Great Town of Shor's Stone Patch Collection",
+      "version": "2.0.3",
+      "sizeInBytes": "4877361",
+      "mod": {
+       "modId": 36462,
+       "name": "The Great Town of Shor's Stone Patch Collection",
+       "game": {
+        "domainName": "skyrimspecialedition"
+       }
+      }
+     }
+    },
+    {
+     "fileId": 213426,
+     "optional": false,
+     "version": "1.1",
+     "file": {
+      "name": "The Great Village of Mixwater Mill 1.1",
+      "version": "1.1",
+      "sizeInBytes": "1767102",
+      "mod": {
+       "modId": 36350,
+       "name": "The Great Village of Mixwater Mill SSE",
+       "game": {
+        "domainName": "skyrimspecialedition"
+       }
+      }
+     }
+    },
+    {
+     "fileId": 999999,
+     "optional": true,
+     "version": "1.0",
+     "file": null
+    }
+   ],
+   "collection": {
+    "slug": "rqhcxy",
+    "name": "The Great Cities Collection",
+    "summary": "This is a collection of the Great Towns and Cities mods by Archinatic.",
+    "user": {
+     "name": "HookerHeels"
+    },
+    "game": {
+     "domainName": "skyrimspecialedition"
+    }
+   }
+  }
+ }
+}

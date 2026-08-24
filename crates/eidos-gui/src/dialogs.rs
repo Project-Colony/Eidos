@@ -1685,3 +1685,158 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 
     container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
 }
+
+/// The collection browser.
+///
+/// It lists what a published collection contains and what you already have. It
+/// deliberately does not INSTALL one, and the card says so rather than leaving
+/// the user to discover it: a collection's members are ordinary mod files, and
+/// without a per-file key from the site's own button only a premium account can
+/// fetch them - so a progress bar here would stall on the first mod for most
+/// people. What it can do exactly, it does exactly.
+pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Message> {
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Nexus collection").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseCollection),
+        );
+
+    let field = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text_input("nxm://<game>/collections/<slug>/revisions/latest", &state.link)
+                .on_input(Message::CollectionLinkChanged)
+                .on_submit(Message::CollectionFetch)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(
+            button(text(if state.loading { "..." } else { "Look up" }).size(12.0))
+                .padding([4, 12])
+                .style(button::primary)
+                .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
+        );
+
+    let mut card = Column::new().spacing(10).push(header).push(field);
+
+    if let Some(e) = &state.error {
+        card = card.push(text(e.clone()).size(12.0).color(CONFLICT_LOSES_FG));
+    }
+
+    if let Some(rev) = &state.revision {
+        if !rev.visible() {
+            // The gate answered. Say which rule, not "no".
+            let why = rev.hidden.map(|h| h.message()).unwrap_or("");
+            card = card.push(text(why.to_string()).size(12.0));
+            return container(card).width(Length::Fixed(720.0)).padding(18).style(card_style).into();
+        }
+
+        let installed = state.states.iter().filter(|s| **s == MemberState::Installed).count();
+        let downloaded = state.states.iter().filter(|s| **s == MemberState::Downloaded).count();
+        let missing = state.states.iter().filter(|s| **s == MemberState::Missing).count();
+
+        let mut title = Column::new()
+            .spacing(2)
+            .push(text(format!("{}  ·  revision {}", rev.name, rev.revision_number)).size(15.0));
+        if !rev.author.is_empty() {
+            title = title.push(text(format!("by {}", rev.author)).size(11.0));
+        }
+        if !rev.summary.is_empty() {
+            title = title.push(text(rev.summary.clone()).size(11.0));
+        }
+        card = card.push(title);
+
+        let mut summary = Row::new().spacing(10).align_y(iced::Alignment::Center).push(
+            text(format!("{installed} installed  ·  {downloaded} downloaded  ·  {missing} missing"))
+                .size(12.0)
+                .width(Length::Fill),
+        );
+        if missing > 0 {
+            summary = summary.push(
+                button(text(format!("Try to fetch {missing} missing")).size(11.0))
+                    .padding([3, 10])
+                    .style(button::secondary)
+                    .on_press(Message::CollectionFetchMissing),
+            );
+        }
+        card = card.push(summary);
+
+        // The collection author's own notes. Worth showing precisely because
+        // Eidos is not applying them: they are the part a person still has to do.
+        if !rev.instructions.trim().is_empty() {
+            card = card.push(
+                container(
+                    Column::new()
+                        .spacing(3)
+                        .push(text("The collection's own instructions").size(10.0))
+                        .push(text(rev.instructions.clone()).size(11.0)),
+                )
+                .padding(8)
+                .style(card_style),
+            );
+        }
+
+        let mut rows = Column::new().spacing(1);
+        for (i, (m, st)) in rev.mods.iter().zip(&state.states).enumerate() {
+            let (label, colour) = match st {
+                MemberState::Installed => ("installed", Some(CONFLICT_WINS_FG)),
+                MemberState::Downloaded => ("downloaded", None),
+                MemberState::Missing => ("missing", Some(CONFLICT_LOSES_FG)),
+            };
+            let mut status = text(label.to_string()).size(11.0).width(Length::Fixed(84.0));
+            if let Some(c) = colour {
+                status = status.color(c);
+            }
+            let name = if m.optional {
+                format!("{}  (optional)", m.name)
+            } else {
+                m.name.clone()
+            };
+            let row = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text(name).size(12.0).width(Length::Fill))
+                .push(text(m.version.clone()).size(11.0).width(Length::Fixed(70.0)))
+                .push(status)
+                .push(
+                    button(text("Open").size(10.0))
+                        .padding([2, 8])
+                        .style(button::text)
+                        .on_press(Message::CollectionOpenMod(i)),
+                );
+            rows = rows.push(striped(container(row).padding(3).into(), i % 2 == 0));
+        }
+        // The API's own count, said separately: a member whose mod has since
+        // been deleted comes back with nothing to show, so the two numbers
+        // disagreeing is information rather than an error.
+        if rev.mods.len() < rev.mod_count as usize {
+            rows = rows.push(
+                text(format!(
+                    "{} of the {} members are no longer on Nexus and cannot be listed.",
+                    rev.mod_count as usize - rev.mods.len(),
+                    rev.mod_count
+                ))
+                .size(11.0),
+            );
+        }
+        card = card.push(scrollable(rows).height(Length::Fixed(320.0)));
+    }
+
+    card = card.push(
+        text(
+            "Eidos reads a collection; it does not install one. Its mods are ordinary Nexus \
+             files, so without the site's own download button only a premium account can fetch \
+             them - and the load order rules, FOMOD answers and patches a collection carries are \
+             not applied here. Open takes you to the exact file the collection pins.",
+        )
+        .size(10.0),
+    );
+
+    container(card).width(Length::Fixed(720.0)).padding(18).style(card_style).into()
+}
