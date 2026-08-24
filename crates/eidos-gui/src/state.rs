@@ -225,6 +225,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         prefs: Settings::load(),
         executables: None,
         backups: None,
+        dropped: Vec::new(),
+        files_hovering: false,
+        download_drag: None,
+        install_at: None,
         categories_dialog: None,
         endorsing: None,
         endorsed_count: 0,
@@ -812,6 +816,7 @@ pub(crate) fn finish_run(app: &mut App) {
         recompute_counts(app);
         app.selected_mods.clear();
         app.drag_state = None;
+        app.download_drag = None;
         // The run just wrote the script extender's log, which is one of the
         // health checks - and reading it is exactly what the cache defers.
         app.diag_dirty = true;
@@ -1776,6 +1781,7 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
     app.selected_mod = None;
     app.selected_mods.clear();
     app.drag_state = None;
+    app.download_drag = None;
     app.menu_mod = None;
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();

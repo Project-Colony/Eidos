@@ -15,8 +15,24 @@ use crate::*;
 /// is worse than none - the tab count would be right or wrong depending on which
 /// branch ran.
 pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
+    // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
+    // popped the last item must not re-arm itself off its own empty queue.
+    let draining = !app.dropped.is_empty();
     let task = update_inner(app, message);
     refresh_diagnostics(app);
+    // A multi-file drop is walked one file at a time, because each install can
+    // open a modal that has to be answered before the next archive is touched.
+    // Re-armed here rather than at the end of every install path, because the
+    // ones that matter - FOMOD, the manual picker, the collision prompt - finish
+    // in six different places and would each have to remember.
+    if draining
+        && !app.dropped.is_empty()
+        && app.fomod.is_none()
+        && app.picker.is_none()
+        && app.collision.is_none()
+    {
+        return Task::batch([task, Task::done(Message::DrainDrops)]);
+    }
     task
 }
 
@@ -47,7 +63,11 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // PointerReleased alone fixed nothing - it simply handed the job to the
         // two messages it emits.
         | Message::DragCancel
-        | Message::PluginDragCancel => true,
+        | Message::PluginDragCancel
+        | Message::DownloadDragCancel
+        // A file merely hovering over the window is the mouse being somewhere,
+        // not a decision. (Never fires on Wayland - see the subscription.)
+        | Message::FilesHovering(_) => true,
         // Letting go of the very click that armed a confirmation is the END of
         // that click, not a new decision - and EVERY left release publishes
         // this, so treating it as an action made the confirmation live exactly
@@ -58,7 +78,8 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // an action, and must cancel like any other.
         Message::PointerReleased => {
             !(app.drag_state.is_some_and(|d| d.aimed)
-                || app.plugin_drag.as_ref().is_some_and(|d| d.aimed))
+                || app.plugin_drag.as_ref().is_some_and(|d| d.aimed)
+                || app.download_drag.as_ref().is_some_and(|d| d.aimed))
         }
         _ => false,
     }
@@ -566,8 +587,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::PickerCancel => {
             // Dropping the picker drops the ExtractedTree, which removes the temp.
             app.picker = None;
+            // A cancelled install must not leave its target priority behind for
+            // the NEXT one to pick up.
+            app.install_at = None;
             app.status = Some("Install cancelled.".to_string());
-        }
+                }
         Message::FomodToggle(gi, pi) => {
             if let Some(w) = &mut app.fomod {
                 let si = w.step;
@@ -681,8 +705,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FomodCancel => {
             app.fomod = None;
+            app.install_at = None;
             app.status = Some("FOMOD install cancelled.".to_string());
-        }
+                }
         Message::ToolPicked(choice) => {
             app.tool_choice = (choice != RUN_GAME).then_some(choice);
         }
@@ -1791,8 +1816,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
-        Message::CollisionMerge => run_collision_install(app, eidos_install::OverwritePolicy::Merge),
-        Message::CollisionReplace => run_collision_install(app, eidos_install::OverwritePolicy::Replace),
+        // Merge and Replace land on a mod that ALREADY has a place in the load
+        // order. Honouring a drop's target priority there would yank an
+        // established mod out of its slot and silently flip every conflict it is
+        // in - so the aim is discarded, not consumed. (Rename keeps it: that
+        // really does create a new folder.) MO2 guards the same case.
+        Message::CollisionMerge => {
+            app.install_at = None;
+            run_collision_install(app, eidos_install::OverwritePolicy::Merge)
+        }
+        Message::CollisionReplace => {
+            app.install_at = None;
+            run_collision_install(app, eidos_install::OverwritePolicy::Replace)
+        }
         Message::CollisionRenameChanged(s) => {
             if let Some(c) = &mut app.collision {
                 c.rename_to = s;
@@ -1809,8 +1845,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::CollisionCancel => {
             app.collision = None;
+            app.install_at = None;
             app.status = Some("Install cancelled.".to_string());
-        }
+                }
         Message::ChangeGame => {
             // Re-open the game picker; keep detection and any selection.
             app.menu_mod = None;
@@ -3482,7 +3519,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DragScrollTick => {
             let Some(edge) = app.drag_scroll else { return Task::none() };
-            if app.drag_state.is_none() {
+            if app.drag_state.is_none() && app.download_drag.is_none() {
                 app.drag_scroll = None;
                 return Task::none();
             }
@@ -3502,6 +3539,114 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 iced::widget::scrollable::AbsoluteOffset { x: 0.0, y },
             );
         }
+        // ---- Files dropped in from a file manager ----------------------------
+        Message::FilesHovering(on) => app.files_hovering = on,
+        Message::FileDropped(path) => {
+            app.files_hovering = false;
+            // One message PER FILE. Handling each inline would run several
+            // blocking extractions back to back and let each one clobber the
+            // previous one's modal - the user answers a FOMOD and the answer
+            // vanishes when the next file lands. Queue, then drain serially.
+            app.dropped.push(path);
+            return Task::done(Message::DrainDrops);
+        }
+        Message::DrainDrops => {
+            // A modal is open: the current install is still being answered. The
+            // queue is drained again from `after_install` and from every cancel.
+            if app.fomod.is_some() || app.picker.is_some() || app.collision.is_some() {
+                return Task::none();
+            }
+            let Some(path) = app.dropped.first().cloned() else { return Task::none() };
+            app.dropped.remove(0);
+            if app.created.is_none() {
+                app.dropped.clear();
+                app.status = Some("Open a game instance before installing anything.".to_string());
+                return Task::none();
+            }
+            // Refuse anything already inside the instance. Installing a mod from
+            // mods/ would copy it onto itself, and from the overwrite would move
+            // live output out from under a running game.
+            if let Some(inst) = &app.created {
+                let inside = |dir: std::path::PathBuf| {
+                    std::fs::canonicalize(&path)
+                        .ok()
+                        .zip(std::fs::canonicalize(&dir).ok())
+                        .is_some_and(|(p, d)| p.starts_with(&d))
+                };
+                if inside(inst.mods_dir()) || inside(inst.overwrite_dir()) {
+                    app.status = Some(
+                        "That is already inside this instance - nothing to install.".to_string(),
+                    );
+                    return Task::done(Message::DrainDrops);
+                }
+            }
+            // A folder is an unpacked mod; an archive goes through the installer.
+            // Anything else is something the user meant for another window.
+            if path.is_dir() {
+                return update(app, Message::FolderPicked(Some(path)));
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            if matches!(ext.as_str(), "7z" | "zip" | "rar") {
+                return update(app, Message::ModPicked(Some(path)));
+            }
+            app.status = Some(format!(
+                "Not a mod archive: {}. Drop a .7z, .zip or .rar, or a folder.",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ));
+            return Task::done(Message::DrainDrops);
+        }
+        // ---- Installing a download AT a priority (MO2's drop onto the list) --
+        Message::DownloadDragStart(row) => {
+            let Some(d) = app.downloads.get(row) else { return Task::none() };
+            // A partial has nothing to install; MO2 refuses the same gesture.
+            if d.state == DownloadState::Downloading {
+                return Task::none();
+            }
+            app.download_drag =
+                Some(DownloadDrag { path: d.path.clone(), gap: app.mods.len(), aimed: false });
+        }
+        Message::DownloadDragOverGap(gap) => {
+            if let Some(d) = &mut app.download_drag {
+                d.gap = gap.min(app.mods.len());
+                // Unlike a reorder there is no "own edge": the archive is not in
+                // the list yet, so every gap is a real target.
+                d.aimed = true;
+            }
+        }
+        Message::DownloadDragCancel => {
+            app.download_drag = None;
+            app.drag_scroll = None;
+        }
+        Message::DownloadDragDrop => {
+            app.drag_scroll = None;
+            let Some(d) = app.download_drag.take() else { return Task::none() };
+            if !d.aimed {
+                return Task::none();
+            }
+            // Under a filter or a fold the strip between two visible rows is an
+            // insertion index with an unknown number of hidden rows behind it,
+            // so "here" would land somewhere the user cannot see. MO2 refuses
+            // the gesture outright when the list is not in priority order; this
+            // installs at the end instead and says so, which is the same
+            // promise kept honestly rather than a silent wrong answer.
+            if is_filtering(app) {
+                app.install_at = None;
+                app.status = Some(
+                    "Installing at the end of the list: a filtered list cannot say what a gap means."
+                        .to_string(),
+                );
+            } else {
+                app.install_at = Some(d.gap);
+            }
+            // Straight into the ordinary installer, so the FOMOD wizard, the
+            // BAIN picker, the manual picker and the collision dialog all work
+            // from a drop exactly as they do from the Install button.
+            return update(app, Message::ModPicked(Some(d.path)));
+        }
         Message::PointerReleased => {
             // Letting go is a DROP wherever a gap is aimed, and a cancel
             // otherwise - regardless of where the pointer happens to be. A user
@@ -3517,10 +3662,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.plugin_drag.as_ref().is_some_and(|d| d.aimed) {
                 return update(app, Message::PluginDragDrop);
             }
+            if app.download_drag.as_ref().is_some_and(|d| d.aimed) {
+                return update(app, Message::DownloadDragDrop);
+            }
             // Through the cancel messages rather than clearing the fields here,
             // so "what disarming means" has one definition and the keyboard path
             // (Escape) and this one cannot drift apart.
             let _ = update(app, Message::DragCancel);
+            let _ = update(app, Message::DownloadDragCancel);
             return update(app, Message::PluginDragCancel);
         }
         Message::SelectPlugin(i) => {

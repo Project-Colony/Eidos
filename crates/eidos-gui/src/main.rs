@@ -347,6 +347,22 @@ enum Message {
     CloseBackupsDialog,
     CreateBackup(eidos_instance::BackupKind),
     RestoreBackup(eidos_instance::BackupKind, u64),
+    // ---- Files dropped onto the window from a file manager -----------------
+    /// A file is hovering over the window (one message per file).
+    FilesHovering(bool),
+    /// A file was dropped. Arrives once PER FILE, so this queues rather than acts.
+    FileDropped(PathBuf),
+    /// Install the next queued drop, one at a time so each modal is answered.
+    DrainDrops,
+    // ---- Install a download AT a priority (MO2's drop onto the mod list) ----
+    /// Press on a download row: arms the drag.
+    DownloadDragStart(usize),
+    /// The pointer crossed an insertion strip.
+    DownloadDragOverGap(usize),
+    /// Released over a strip: install there.
+    DownloadDragDrop,
+    /// Released anywhere else, or cancelled.
+    DownloadDragCancel,
     // ---- Categories dialog (MO2's Change Categories + the category editor) ----
     /// Open the dialog on a mod row (or, with a multi-selection, on all of them).
     ShowCategoriesDialog(usize),
@@ -833,9 +849,26 @@ pub(crate) const DRAG_SCROLL_FAST_PX: f32 = 75.0;
 /// that cannot be aimed at: deep enough to hit without aiming, no deeper.
 pub(crate) const DRAG_SCROLL_BAND: f32 = 28.0;
 
+/// A download row being dragged onto the mod list, to install it AT a priority.
+///
+/// Deliberately not folded into [`DragState`]: that one moves a row that is
+/// already in the list, so it has a `from` and its own edges are no-ops. This one
+/// has no row in the list yet, so every gap is a genuine target and the commit
+/// runs the installer rather than a reorder.
+#[derive(Debug, Clone)]
+struct DownloadDrag {
+    /// The archive to install.
+    path: PathBuf,
+    /// Where it should land, as an INSERTION index into `app.mods`.
+    gap: usize,
+    /// Whether the pointer ever reached an insertion strip. A press arms the
+    /// drag, so a plain click on a download row arrives here as a drop.
+    aimed: bool,
+}
+
 /// An in-flight mod-row drag (MO2's drag-to-reorder). `from` is the grabbed row's
-/// index in `app.mods`; `hover_over` is the row the pointer is currently over. The
-/// move is only applied on release, and only when `from != hover_over`.
+/// index in `app.mods`; the move is only applied on release, and only when the
+/// aimed gap is not one of the block's own edges.
 #[derive(Debug, Clone, Copy)]
 struct DragState {
     from: usize,
@@ -1059,6 +1092,18 @@ struct App {
     /// The Backups dialog: the restore points of both lists, read when it opens
     /// so the list cannot go stale behind an open dialog.
     backups: Option<BackupsDialogState>,
+    /// Files dropped from a file manager, waiting to be installed. A drop of
+    /// several archives arrives as several messages, and each install can open a
+    /// modal, so they are drained one at a time rather than handled inline.
+    dropped: Vec<PathBuf>,
+    /// Whether a file is currently hovering over the window (for the hint).
+    files_hovering: bool,
+    /// A download being dragged onto the mod list (MO2's drop-to-priority).
+    download_drag: Option<DownloadDrag>,
+    /// Where the install now in flight should land, if it was aimed at a gap.
+    /// Survives the FOMOD wizard and the manual picker, which is why it is not
+    /// carried on the drag itself.
+    install_at: Option<usize>,
     /// The Categories dialog: which mods it applies to and the pending choice.
     categories_dialog: Option<CategoriesDialogState>,
     // ---- Endorse / update in-flight + counts ----
@@ -1424,6 +1469,22 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         }
         iced::Event::Window(iced::window::Event::Resized(size)) => {
             Some(Message::WindowResized(size))
+        }
+        // Files dragged in from a file manager. NOT AVAILABLE ON WAYLAND: winit
+        // 0.30 implements XDND for X11 and has no `wl_data_device` at all, so
+        // these never fire on a native Wayland session (they do under XWayland).
+        // Wired anyway - it costs three arms, it works on X11 today, and it
+        // starts working on Wayland the day winit grows the protocol. The
+        // Downloads-to-priority drag above is the path that works everywhere,
+        // and it is the one the UI points at.
+        iced::Event::Window(iced::window::Event::FileHovered(_)) => {
+            Some(Message::FilesHovering(true))
+        }
+        iced::Event::Window(iced::window::Event::FilesHoveredLeft) => {
+            Some(Message::FilesHovering(false))
+        }
+        iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+            Some(Message::FileDropped(path))
         }
         _ => None,
     });
@@ -3432,6 +3493,125 @@ mod tests {
         assert_eq!(app.selected_mod, Some(0), "the focus lands on a row that is drawn");
     }
 
+    /// A download row dragged onto an insertion strip.
+    fn dl_row(name: &str) -> DownloadRow {
+        DownloadRow {
+            name: name.to_string(),
+            path: PathBuf::from("/tmp").join(name),
+            size: 1,
+            version: String::new(),
+            mod_name: None,
+            state: DownloadState::Ready,
+            downloaded: 1,
+            total: 1,
+            speed: None,
+        }
+    }
+
+    #[test]
+    fn dragging_a_download_aims_at_a_gap_and_a_plain_click_does_not() {
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.downloads = vec![dl_row("Mod.7z")];
+
+        // A press ARMS the drag - it does not commit anything, because the same
+        // press is how the row is clicked.
+        let _ = update_inner(&mut app, Message::DownloadDragStart(0));
+        let d = app.download_drag.as_ref().expect("armed");
+        assert!(!d.aimed, "a press alone is not an aim");
+        assert_eq!(d.gap, 3, "unaimed, it would land at the end");
+
+        // Releasing without ever crossing a strip is a plain click: no install.
+        let _ = update_inner(&mut app, Message::PointerReleased);
+        assert!(app.download_drag.is_none());
+        assert_eq!(app.install_at, None, "a click on a download row installs nothing");
+
+        // Now with an aim.
+        let _ = update_inner(&mut app, Message::DownloadDragStart(0));
+        let _ = update_inner(&mut app, Message::DownloadDragOverGap(1));
+        assert!(app.download_drag.as_ref().unwrap().aimed);
+        let _ = update_inner(&mut app, Message::DownloadDragDrop);
+        assert_eq!(app.install_at, Some(1), "the drop remembers where it was aimed");
+        assert!(app.download_drag.is_none(), "and the drag is over");
+    }
+
+    #[test]
+    fn a_partial_download_cannot_be_dragged() {
+        let mut app = nav_app(&["a"]);
+        let mut row = dl_row("Half.7z");
+        row.state = DownloadState::Downloading;
+        app.downloads = vec![row];
+        let _ = update_inner(&mut app, Message::DownloadDragStart(0));
+        assert!(app.download_drag.is_none(), "there is nothing to install out of a partial");
+    }
+
+    #[test]
+    fn a_gap_means_nothing_under_a_filter_so_the_drop_says_so() {
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.downloads = vec![dl_row("Mod.7z")];
+        app.search = "a".to_string();
+        let _ = update_inner(&mut app, Message::DownloadDragStart(0));
+        let _ = update_inner(&mut app, Message::DownloadDragOverGap(1));
+        let _ = update_inner(&mut app, Message::DownloadDragDrop);
+        // The strip between two VISIBLE rows can have any number of hidden rows
+        // behind it, so "here" would be a lie. It installs at the end and says so.
+        assert_eq!(app.install_at, None);
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("end of the list"),
+            "{:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn merging_onto_an_existing_mod_never_moves_it() {
+        // The mod already has a place in the load order; honouring a drop's
+        // target priority would yank it out and flip every conflict it is in.
+        let mut app = nav_app(&["a", "b"]);
+        app.install_at = Some(0);
+        let _ = update_inner(&mut app, Message::CollisionMerge);
+        assert_eq!(app.install_at, None, "the aim is discarded, not applied");
+    }
+
+    #[test]
+    fn a_cancelled_install_does_not_leave_its_target_for_the_next_one() {
+        let mut app = nav_app(&["a"]);
+        for cancel in [Message::FomodCancel, Message::PickerCancel, Message::CollisionCancel] {
+            app.install_at = Some(0);
+            let _ = update_inner(&mut app, cancel);
+            assert_eq!(app.install_at, None);
+        }
+    }
+
+    #[test]
+    fn a_multi_file_drop_is_drained_one_file_at_a_time() {
+        let mut app = nav_app(&["a"]);
+        // Three files arrive as three messages, not one.
+        for n in ["one.7z", "two.zip", "three.rar"] {
+            let _ = update_inner(&mut app, Message::FileDropped(PathBuf::from("/tmp").join(n)));
+        }
+        assert_eq!(app.dropped.len(), 3, "queued, not handled inline");
+
+        // With no instance open, the queue is dropped with one explanation
+        // rather than three.
+        assert!(app.created.is_none());
+        let _ = update_inner(&mut app, Message::DrainDrops);
+        assert!(app.dropped.is_empty());
+        assert!(app.status.as_deref().unwrap_or("").contains("game instance"));
+    }
+
+    #[test]
+    fn a_dropped_file_that_is_not_a_mod_archive_is_named_and_skipped() {
+        let mut app = app_for_game("skyrimse");
+        let root = temp_portable("skyrimse");
+        app.created = Some(Instance::portable(root.clone()));
+        let _ = update_inner(&mut app, Message::FileDropped(root.join("notes.txt")));
+        let _ = update_inner(&mut app, Message::DrainDrops);
+        let msg = app.status.clone().unwrap_or_default();
+        assert!(msg.contains("notes.txt"), "{msg}");
+        assert!(msg.contains(".7z"), "and it says what IS accepted: {msg}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn one_definition_decides_whether_a_filter_is_running() {
         // Two copies of this predicate drifted: the view's never learned about
@@ -3645,6 +3825,22 @@ mod tests {
         update_inner(&mut app, Message::DeleteSave(0));
         update_inner(&mut app, Message::PointerReleased);
         assert!(app.confirm_delete_save.is_some(), "saves too");
+
+        // Every drag the release ladder can cancel has to be exempt. Adding one
+        // and forgetting it here reintroduces the exact bug above, through a
+        // different door: the release emits the cancel, the cancel counts as an
+        // action, and the confirmation is gone before the second click lands.
+        let mut app = nav_app(&[]);
+        for cancel in [Message::DragCancel, Message::PluginDragCancel, Message::DownloadDragCancel]
+        {
+            app.confirm_delete_download = Some("a.zip".into());
+            update_inner(&mut app, cancel.clone());
+            assert_eq!(
+                app.confirm_delete_download.as_deref(),
+                Some("a.zip"),
+                "cancelling a drag is the absence of an action"
+            );
+        }
     }
 
     #[test]

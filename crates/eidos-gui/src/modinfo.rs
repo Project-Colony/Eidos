@@ -872,7 +872,17 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                     })
             })
             .push(actions);
-        rows = rows.push(striped(container(r).padding(3).into(), i % 2 == 0));
+        // Pressing the row arms a drag onto the mod list, so a download can be
+        // installed AT a priority instead of always landing at the end. The
+        // Install / Delete buttons swallow their own presses, exactly as the mod
+        // rows do, so this never steals a click meant for them. A partial has
+        // nothing to install, and the handler refuses it.
+        let r: Element<'a, Message> = if arriving {
+            container(r).padding(3).into()
+        } else {
+            mouse_area(container(r).padding(3)).on_press(Message::DownloadDragStart(i)).into()
+        };
+        rows = rows.push(striped(r, i % 2 == 0));
     }
 
     Column::new()
@@ -2982,12 +2992,28 @@ pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: boo
     if !app.downloads.is_empty() {
         load_downloads(app);
     }
+    let mut where_to = String::new();
+    // A drop aimed at a gap says WHERE, not just whether. Consumed here, after
+    // `reload_mods`, because that is when the new row exists to be moved - and
+    // this is MO2's own ordering too (install first, reposition after).
+    if let Some(dest) = app.install_at.take() {
+        if let Some(at) = app.mods.iter().position(|m| m.name == name) {
+            let dest = dest.min(app.mods.len());
+            let hidden = hidden_by_folds(app);
+            let landed = move_block(&mut app.mods, &[at], dest);
+            settle_folds_after_move(app, landed, 1, &hidden);
+            mods_changed(app);
+            app.selected_mod = Some(landed);
+            where_to = format!(" at priority {landed}");
+        }
+    }
     app.status = Some(if fomod {
-        format!("Installed '{name}' via FOMOD.")
+        format!("Installed '{name}' via FOMOD{where_to}.")
     } else {
-        format!("Installed '{name}'.")
+        format!("Installed '{name}'{where_to}.")
     });
 }
+
 
 /// The install-collision chooser card (MO2's QueryOverwriteDialog): Merge / Replace
 /// / Rename / Cancel for an already-existing `mods/<name>/`.

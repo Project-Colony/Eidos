@@ -670,8 +670,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let live_gap = app
         .drag_state
         .filter(|d| !mod_drop_is_noop(app, d))
-        .map(|d| d.gap);
-    let dragging = app.drag_state.is_some();
+        .map(|d| d.gap)
+        // A download being dropped in has no row in the list yet, so it has no
+        // "own edge" to suppress: every aimed gap really would install there.
+        .or_else(|| app.download_drag.as_ref().filter(|d| d.aimed).map(|d| d.gap));
+    let dragging = app.drag_state.is_some() || app.download_drag.is_some();
+    // Which drag the strips answer to. Only one can be live - a press on a
+    // download row cancels a mod drag through the same release ladder - so this
+    // is a choice, not a merge.
+    let (over_gap, drop_msg): (fn(usize) -> Message, Message) = if app.download_drag.is_some() {
+        (Message::DownloadDragOverGap, Message::DownloadDragDrop)
+    } else {
+        (Message::DragOverGap, Message::DragDrop)
+    };
     for (i, m) in app.mods.iter().enumerate() {
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);
@@ -689,7 +700,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             let color = app.meta_cache.get(&m.name).and_then(|r| r.color);
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
-            list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
+            list = list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
             list = list.push(separator_row(i, m, color, collapsed, selected));
             tints.push(None); // a separator has no conflict of its own
             continue;
@@ -727,7 +738,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // targetable during a drag. Every gap is a target, the very top included:
         // the game's own content is written to modlist.txt now, so a row landing
         // above it keeps its place.
-        list = list.push(drop_gap(i, live_gap == Some(i), dragging, Message::DragOverGap, Message::DragDrop));
+        list = list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
@@ -744,7 +755,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // hovering a row always means "above it".
     if !app.mods.is_empty() {
         let end = app.mods.len();
-        list = list.push(drop_gap(end, live_gap == Some(end), dragging, Message::DragOverGap, Message::DragDrop));
+        list = list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
     }
     // `shown` counts mods only, so this cannot fire on a list that is all folded
     // groups - and it only speaks when something was actually asked.
@@ -810,7 +821,9 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // pointer on every click - and `mouse_area` publishes `on_enter` the first
     // time it is laid out beneath a stationary cursor. `aimed` means the pointer
     // has crossed an insertion point, which no plain click does.
-    if app.drag_state.is_some_and(|d| d.aimed) {
+    if app.drag_state.is_some_and(|d| d.aimed)
+        || app.download_drag.as_ref().is_some_and(|d| d.aimed)
+    {
         // `on_move` gives the pointer's position INSIDE the band, so depth is
         // just its height normalised - 1.0 hard against the edge of the list.
         let band = |edge: ScrollEdge| {
