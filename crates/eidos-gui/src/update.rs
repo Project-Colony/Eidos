@@ -132,6 +132,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::PurgeInstalledDownloads | Message::ConfirmPurgeInstalled) {
             app.confirm_purge_installed = false;
         }
+        if !matches!(message, Message::FiletreeDelete(..) | Message::ConfirmFiletreeDelete(..)) {
+            app.tree_delete_armed = None;
+        }
         if !matches!(message, Message::CollectionFetchMissing) {
             if let Some(c) = app.collection.as_mut() {
                 c.confirm_fetch = false;
@@ -4811,6 +4814,124 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return update(app, Message::ModVisitNexus(i));
             }
             return update(app, Message::ShowModInfo(i));
+        }
+        Message::FiletreeOpen(i, rel) => {
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            let Some(path) = resolve_in_mod(&base, &rel) else {
+                app.error = Some(format!("Refused to open {rel}: not a path inside this mod."));
+                return Task::none();
+            };
+            return update(app, Message::OpenFolder(path));
+        }
+        Message::FiletreeRenameStart(i, rel) => {
+            // Prefill with the NAME, not the path: a rename box holding
+            // `Meshes/armour/x.nif` invites somebody to edit the directories,
+            // which is a move, which is not what this is.
+            app.tree_rename_text =
+                rel.rsplit('/').next().unwrap_or(&rel).to_string();
+            app.tree_rename = Some((i, rel));
+            app.tree_delete_armed = None;
+        }
+        Message::FiletreeRenameChanged(t) => {
+            app.typing = true;
+            app.tree_rename_text = t;
+        }
+        Message::FiletreeRenameCancel => {
+            app.tree_rename = None;
+            app.tree_rename_text.clear();
+        }
+        Message::FiletreeRenameCommit => {
+            let Some((i, rel)) = app.tree_rename.take() else { return Task::none() };
+            let name = app.tree_rename_text.trim().to_string();
+            app.tree_rename_text.clear();
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            // The new name replaces the LAST component and nothing else, so a
+            // rename can never become a move out of its directory.
+            let parent = rel.rsplit_once('/').map(|(p, _)| p.to_string());
+            let dest_rel = match &parent {
+                Some(p) => format!("{p}/{name}"),
+                None => name.clone(),
+            };
+            let (Some(from), Some(to)) =
+                (resolve_in_mod(&base, &rel), resolve_in_mod(&base, &dest_rel))
+            else {
+                app.error = Some(format!("Refused to rename to {name}: not a name."));
+                return Task::none();
+            };
+            if from == to {
+                return Task::none();
+            }
+            // Never over something that is already there. `fs::rename` would
+            // replace a file silently, and this is a mod's own contents.
+            if to.symlink_metadata().is_ok() {
+                app.error = Some(format!("{name} already exists in that folder."));
+                return Task::none();
+            }
+            match std::fs::rename(&from, &to) {
+                Ok(()) => {
+                    bump_views(app);
+                    app.status = Some(format!("Renamed to {name}."));
+                }
+                Err(e) => app.error = Some(format!("Could not rename: {e}")),
+            }
+        }
+        Message::FiletreeDelete(i, rel) => {
+            app.tree_delete_armed = Some((i, rel));
+            app.tree_rename = None;
+        }
+        Message::ConfirmFiletreeDelete(i, rel) => {
+            app.tree_delete_armed = None;
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            let Some(path) = resolve_in_mod(&base, &rel) else {
+                app.error = Some(format!("Refused to delete {rel}: not a path inside this mod."));
+                return Task::none();
+            };
+            // A directory goes whole, which is why this needed two clicks.
+            let md = match path.symlink_metadata() {
+                Ok(md) => md,
+                Err(e) => {
+                    app.error = Some(format!("Could not delete {rel}: {e}"));
+                    return Task::none();
+                }
+            };
+            let r = if md.is_dir() && !md.file_type().is_symlink() {
+                std::fs::remove_dir_all(&path)
+            } else {
+                std::fs::remove_file(&path)
+            };
+            match r {
+                Ok(()) => {
+                    bump_views(app);
+                    app.status = Some(format!("Deleted {rel}."));
+                }
+                Err(e) => app.error = Some(format!("Could not delete {rel}: {e}")),
+            }
+        }
+        Message::FiletreeNewFolderStart => {
+            app.tree_new_folder = Some(String::new());
+            app.tree_rename = None;
+            app.tree_delete_armed = None;
+        }
+        Message::FiletreeNewFolderChanged(t) => {
+            app.typing = true;
+            app.tree_new_folder = Some(t);
+        }
+        Message::FiletreeNewFolderCommit => {
+            let Some(name) = app.tree_new_folder.take() else { return Task::none() };
+            let name = name.trim().to_string();
+            let Some(i) = app.info_mod else { return Task::none() };
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            let Some(path) = resolve_in_mod(&base, &name) else {
+                app.error = Some(format!("Refused to create {name}: not a folder name."));
+                return Task::none();
+            };
+            match std::fs::create_dir_all(&path) {
+                Ok(()) => {
+                    bump_views(app);
+                    app.status = Some(format!("Created {name}/."));
+                }
+                Err(e) => app.error = Some(format!("Could not create {name}: {e}")),
+            }
         }
         Message::SetGroupBy(by) => {
             app.group_by = by;

@@ -149,22 +149,98 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         format!("{} file(s), {hidden} hidden:", entries.len())
     };
     let mut col = Column::new().spacing(1).push(text(summary).size(12.0));
+    let mut tools = Row::new().spacing(6).align_y(iced::Alignment::Center);
     if hidden > 0 {
-        col = col.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
+        tools = tools.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
+    }
+    tools = tools.push(tool_btn("New folder", Message::FiletreeNewFolderStart));
+    col = col.push(tools);
+    if let Some(name) = &app.tree_new_folder {
+        col = col.push(
+            Row::new()
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .push(
+                    text_input("folder name", name)
+                        .on_input(Message::FiletreeNewFolderChanged)
+                        .on_submit(Message::FiletreeNewFolderCommit)
+                        .padding(4)
+                        .size(11.0),
+                )
+                .push(
+                    button(text("Create").size(10.0))
+                        .padding([1, 5])
+                        .style(button::primary)
+                        .on_press(Message::FiletreeNewFolderCommit),
+                ),
+        );
     }
     for e in entries.iter().take(2000) {
         let is_hidden = path_is_hidden(e);
         let label = if is_hidden { "Unhide" } else { "Hide" };
-        let row = Row::new()
-            .spacing(6)
-            .align_y(iced::Alignment::Center)
-            .push(text(e.clone()).size(11.0).width(Length::Fill))
-            .push(
-                button(text(label).size(10.0))
-                    .padding([1, 5])
-                    .on_press(Message::ToggleFileHidden(i, e.clone()))
-                    .style(if is_hidden { button::primary } else { button::secondary }),
-            );
+        // Renaming replaces the last component only, so the box holds the NAME.
+        let renaming = app.tree_rename.as_ref().is_some_and(|(mi, r)| *mi == i && r == e);
+        let armed = app.tree_delete_armed.as_ref().is_some_and(|(mi, r)| *mi == i && r == e);
+        let name_cell: Element<'a, Message> = if renaming {
+            text_input("new name", &app.tree_rename_text)
+                .on_input(Message::FiletreeRenameChanged)
+                .on_submit(Message::FiletreeRenameCommit)
+                .padding(2)
+                .size(11.0)
+                .width(Length::Fill)
+                .into()
+        } else {
+            text(e.clone()).size(11.0).width(Length::Fill).into()
+        };
+        let mut row = Row::new().spacing(6).align_y(iced::Alignment::Center).push(name_cell);
+        if renaming {
+            row = row
+                .push(
+                    button(text("Rename").size(10.0))
+                        .padding([1, 5])
+                        .style(button::primary)
+                        .on_press(Message::FiletreeRenameCommit),
+                )
+                .push(
+                    button(text("Cancel").size(10.0))
+                        .padding([1, 5])
+                        .style(button::secondary)
+                        .on_press(Message::FiletreeRenameCancel),
+                );
+        } else {
+            row = row
+                .push(
+                    button(text("Open").size(10.0))
+                        .padding([1, 5])
+                        .style(button::text)
+                        .on_press(Message::FiletreeOpen(i, e.clone())),
+                )
+                .push(
+                    button(text("Rename").size(10.0))
+                        .padding([1, 5])
+                        .style(button::text)
+                        .on_press(Message::FiletreeRenameStart(i, e.clone())),
+                )
+                .push(
+                    button(text(label).size(10.0))
+                        .padding([1, 5])
+                        .on_press(Message::ToggleFileHidden(i, e.clone()))
+                        .style(if is_hidden { button::primary } else { button::secondary }),
+                )
+                // Deleting a mod's own file is the one action here that cannot
+                // be undone by clicking again - hiding renames, and renaming
+                // renames back. Two clicks, like everything else that removes.
+                .push(
+                    button(text(if armed { "Delete?" } else { "Delete" }).size(10.0))
+                        .padding([1, 5])
+                        .style(if armed { button::danger } else { button::secondary })
+                        .on_press(if armed {
+                            Message::ConfirmFiletreeDelete(i, e.clone())
+                        } else {
+                            Message::FiletreeDelete(i, e.clone())
+                        }),
+                );
+        }
         col = col.push(row);
     }
     // Same honesty as the Data and Overwrite panels: a big texture pack blows
@@ -180,6 +256,47 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         );
     }
     col.into()
+}
+
+/// Resolve a `/`-joined relative path INSIDE a mod folder, or refuse.
+///
+/// Everything in the Filetree tab that writes goes through this, and it is the
+/// only thing standing between a rename box and the rest of the disk. The rules
+/// are all refusals, because the safe answer to anything unusual here is "no":
+///
+/// * No empty path, no absolute path, no Windows drive or UNC prefix.
+/// * No `..` and no `.`, at any depth. Not normalised away - refused. A path
+///   that needed normalising is not one this tab produced.
+/// * No component that is a SYMLINK. A mod may legitimately contain one, and
+///   following it would put a delete or a rename outside the mod folder
+///   entirely - which is exactly how `create_dirs_no_symlinks` went wrong
+///   earlier in this tree, on a symlinked `mods/`.
+/// * The result must still be under `base` after joining, checked rather than
+///   assumed.
+///
+/// Returns the absolute path, which may or may not exist yet - a new folder's
+/// does not.
+pub(crate) fn resolve_in_mod(base: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.trim().is_empty() {
+        return None;
+    }
+    let mut out = base.to_path_buf();
+    for part in rel.split('/') {
+        if part.is_empty() || part == "." || part == ".." || part.contains('\\') {
+            return None;
+        }
+        // A path component is a NAME, never a path.
+        if Path::new(part).components().count() != 1 {
+            return None;
+        }
+        // The prefix so far must not be a link out of the tree. Checked on the
+        // way down, so a link at any depth stops the walk.
+        if out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+            return None;
+        }
+        out.push(part);
+    }
+    out.starts_with(base).then_some(out)
 }
 
 /// Whether a `/`-joined relative path names a hidden entry, or lies under one.

@@ -238,6 +238,20 @@ enum Message {
     SetGroupBy(Option<GroupBy>),
     /// Fold or unfold one synthetic group header.
     ToggleGroupFold(String),
+    /// Filetree: open the entry with the desktop's handler.
+    FiletreeOpen(usize, String),
+    /// Filetree: start renaming an entry (mod index, relative path).
+    FiletreeRenameStart(usize, String),
+    FiletreeRenameChanged(String),
+    FiletreeRenameCommit,
+    FiletreeRenameCancel,
+    /// Filetree: delete an entry. Two clicks, like everything else that removes.
+    FiletreeDelete(usize, String),
+    ConfirmFiletreeDelete(usize, String),
+    /// Filetree: make a directory beside the entries shown.
+    FiletreeNewFolderStart,
+    FiletreeNewFolderChanged(String),
+    FiletreeNewFolderCommit,
     /// Click a heading: ascending, then descending, then back to load order.
     /// Three states rather than two, because getting BACK to load order has to
     /// be one click away - it is the only order in which dragging works.
@@ -1597,6 +1611,12 @@ struct App {
     /// What is typed in the preferred-servers field, which is not the saved
     /// value until it is submitted - the same shape as the mod URL field.
     servers_edit: String,
+    /// Filetree: the entry being renamed and what has been typed, the entry
+    /// armed for deletion, and the new-folder box.
+    tree_rename: Option<(usize, String)>,
+    tree_rename_text: String,
+    tree_delete_armed: Option<(usize, String)>,
+    tree_new_folder: Option<String>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
     /// shown, and the two-click guard on the bulk purge.
     dl_filter: String,
@@ -4646,6 +4666,134 @@ mod tests {
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_filetree_path_resolver_refuses_everything_that_is_not_inside_the_mod() {
+        use crate::modinfo::resolve_in_mod;
+        let base = PathBuf::from("/tmp/mods/Armour");
+        // The ordinary case works.
+        assert_eq!(
+            resolve_in_mod(&base, "Meshes/armour/x.nif"),
+            Some(base.join("Meshes/armour/x.nif"))
+        );
+        // And everything else is refused rather than normalised. A path that
+        // needed normalising is not one this tab produced.
+        for bad in [
+            "",
+            "   ",
+            "..",
+            "../../etc/passwd",
+            "Meshes/../../..",
+            "./x",
+            "/etc/passwd",
+            "Meshes//x",
+            "C:\\Windows",
+            "Meshes\\x",
+        ] {
+            assert_eq!(resolve_in_mod(&base, bad), None, "{bad:?} must be refused");
+        }
+    }
+
+    #[test]
+    fn the_filetree_resolver_will_not_walk_through_a_symlink() {
+        use crate::modinfo::resolve_in_mod;
+        let root = temp_portable("skyrimse");
+        let modd = root.join("mods").join("Armour");
+        let outside = root.join("elsewhere");
+        fs::create_dir_all(modd.join("Meshes")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("secret"), b"not ours").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, modd.join("Away")).unwrap();
+
+        // A real path inside still resolves.
+        assert!(resolve_in_mod(&modd, "Meshes").is_some());
+        // Through the link does not - which is how a delete or a rename would
+        // otherwise reach outside the mod folder entirely.
+        #[cfg(unix)]
+        assert_eq!(resolve_in_mod(&modd, "Away/secret"), None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn renaming_a_file_replaces_the_name_and_never_overwrites() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let modd = root.join("mods").join("Armour");
+        fs::create_dir_all(modd.join("Meshes")).unwrap();
+        fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+        fs::write(modd.join("Meshes").join("taken.nif"), b"b").unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = vec![ModEntry {
+            name: "Armour".to_string(),
+            enabled: true,
+            path: modd.clone(),
+            unmanaged: false,
+        }];
+        app.screen = Screen::Main;
+
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeRenameStart(0, "Meshes/a.nif".to_string()),
+        );
+        // The box holds the NAME, not the path - editing directories in a rename
+        // box is a move, which this is not.
+        assert_eq!(app.tree_rename_text, "a.nif");
+
+        let _ = update_inner(&mut app, Message::FiletreeRenameChanged("b.nif".to_string()));
+        let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
+        assert!(modd.join("Meshes").join("b.nif").is_file());
+        assert!(!modd.join("Meshes").join("a.nif").exists());
+
+        // Never over something already there: fs::rename would replace it in
+        // silence, and this is a mod's own contents.
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeRenameStart(0, "Meshes/b.nif".to_string()),
+        );
+        let _ = update_inner(&mut app, Message::FiletreeRenameChanged("taken.nif".to_string()));
+        let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
+        assert!(modd.join("Meshes").join("b.nif").is_file(), "the rename was refused");
+        assert_eq!(fs::read(modd.join("Meshes").join("taken.nif")).unwrap(), b"b");
+        assert!(app.error.is_some());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn deleting_from_the_filetree_takes_two_clicks() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let modd = root.join("mods").join("Armour");
+        fs::create_dir_all(modd.join("Meshes")).unwrap();
+        fs::write(modd.join("Meshes").join("a.nif"), b"a").unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = vec![ModEntry {
+            name: "Armour".to_string(),
+            enabled: true,
+            path: modd.clone(),
+            unmanaged: false,
+        }];
+        app.screen = Screen::Main;
+
+        let _ = update_inner(&mut app, Message::FiletreeDelete(0, "Meshes/a.nif".to_string()));
+        assert!(modd.join("Meshes").join("a.nif").is_file(), "one click only arms");
+        assert!(app.tree_delete_armed.is_some());
+
+        // And any other action disarms it, like every other confirmation here.
+        let _ = update_inner(&mut app, Message::Refresh);
+        assert!(app.tree_delete_armed.is_none());
+        assert!(modd.join("Meshes").join("a.nif").is_file());
+
+        let _ = update_inner(&mut app, Message::FiletreeDelete(0, "Meshes/a.nif".to_string()));
+        let _ =
+            update_inner(&mut app, Message::ConfirmFiletreeDelete(0, "Meshes/a.nif".to_string()));
+        assert!(!modd.join("Meshes").join("a.nif").exists());
         let _ = fs::remove_dir_all(&root);
     }
 
