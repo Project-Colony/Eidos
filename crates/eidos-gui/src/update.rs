@@ -3485,6 +3485,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         "Update check: {} mods checked, {} update(s) found.",
                         r.checked, r.updates_found
                     );
+                    if !r.unavailable.is_empty() {
+                        // Said out loud rather than left to a glyph: an
+                        // unavailable mod never shows an update, so nothing else
+                        // in this check would ever mention it.
+                        msg.push_str(&format!(
+                            " {} mod(s) are no longer on Nexus: {}.",
+                            r.unavailable.len(),
+                            r.unavailable.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                        ));
+                    }
                     if r.rate_limited {
                         msg.push_str(" Hourly Nexus limit reached - some mods were left unchecked.");
                     }

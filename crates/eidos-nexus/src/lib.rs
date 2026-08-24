@@ -1041,6 +1041,11 @@ pub struct UpdateCheckResult {
     pub hourly_remaining: Option<i64>,
     /// The Nexus daily request budget remaining after the check, if a reply set it.
     pub daily_remaining: Option<i64>,
+    /// Mods whose Nexus page has been taken down. Worth surfacing on its own:
+    /// an unavailable mod will never show an update, so it would otherwise pass
+    /// through a check silently and only be noticed when someone went looking
+    /// for its page.
+    pub unavailable: Vec<String>,
 }
 
 /// Run a Nexus update check across every mod in `inst` (the GUI-callable port of
@@ -1105,6 +1110,14 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
             Ok(remote) => {
                 meta.set_newest_version(&remote.version);
                 meta.set_last_nexus_update(now);
+                // Free: the payload this request already returned says whether
+                // Nexus still serves the page. A mod taken down is the one file
+                // status that matters most and the only one obtainable without a
+                // second request per mod.
+                meta.set_nexus_available(remote.available);
+                if !remote.available {
+                    result.unavailable.push(m.name.clone());
+                }
                 // A failed write is not fatal: the in-memory result is still correct,
                 // the GUI just won't see the `^` marker persist across a restart.
                 let _ = meta.write(&inst.meta_path(&m.name));

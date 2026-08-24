@@ -54,6 +54,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 update: meta.update_available(),
                 color: meta.color(),
                 notes: meta.notes(),
+                nexus_gone: meta.nexus_available() == Some(false),
             },
         );
     }

@@ -628,6 +628,25 @@ pub(crate) fn mod_row<'a>(
     // A note rides here rather than taking a column of its own. Notes are long
     // and read on demand; a column would cost width off the NAME on every row to
     // show the first six characters of something most rows do not have.
+    // The mod's Nexus page is gone. It rides here rather than in the Version
+    // column because an unavailable mod will never show an update - it would
+    // otherwise pass through every check invisibly and only be noticed by
+    // someone going looking for the page.
+    if meta.is_some_and(|r| r.nexus_gone) {
+        flags = flags.push(
+            tooltip(
+                text("\u{2298}").size(12.0).color(CONFLICT_LOSES_FG),
+                container(
+                    text("Nexus no longer serves this mod's page. Keep your archive: you will not be able to download it again.")
+                        .size(11.0),
+                )
+                .padding(6)
+                .style(card_style),
+                tooltip::Position::Left,
+            )
+            .gap(4),
+        );
+    }
     if let Some(note) = meta.and_then(|r| r.notes.clone()).filter(|n| !n.trim().is_empty()) {
         flags = flags.push(
             tooltip(

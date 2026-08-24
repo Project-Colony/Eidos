@@ -213,6 +213,25 @@ impl ModMeta {
         self.set("category", &format!("\"{raw}\""));
     }
 
+    /// Whether Nexus still serves this mod's page, as of the last update check.
+    ///
+    /// `None` means never checked - which is NOT the same as "available", and the
+    /// row must not draw a warning for a mod nobody has asked about yet.
+    pub fn nexus_available(&self) -> Option<bool> {
+        match self.raw("nexusAvailable").map(str::trim) {
+            Some("1") | Some("true") => Some(true),
+            Some("0") | Some("false") => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Record what the last update check saw. Not an MO2 field: MO2 tracks file
+    /// status per FILE, which costs a second request per mod; this is the
+    /// mod-level answer that the update check already receives for free.
+    pub fn set_nexus_available(&mut self, available: bool) {
+        self.set("nexusAvailable", if available { "1" } else { "0" });
+    }
+
     pub fn installation_file(&self) -> Option<String> {
         self.string("installationFile")
     }
@@ -801,6 +820,24 @@ mod tests {
 
         let expected = SAMPLE.replace("newestVersion=0.139.2.0", "newestVersion=d2026.4.3.0");
         assert_eq!(fs::read_to_string(&p).unwrap(), expected);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn never_checked_is_not_the_same_as_available() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        // A mod nobody has asked about must not draw a warning, and must not be
+        // claimed to be fine either.
+        assert_eq!(m.nexus_available(), None);
+
+        m.set_nexus_available(false);
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).nexus_available(), Some(false));
+        let mut m = ModMeta::read(&p);
+        m.set_nexus_available(true);
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).nexus_available(), Some(true));
         let _ = fs::remove_file(&p);
     }
 

@@ -1683,6 +1683,9 @@ struct RowMeta {
     /// The row's display colour (MO2's `color=@Variant(...)`), if set. Stored per
     /// mod, not only per separator.
     color: Option<[u8; 3]>,
+    /// `Some(false)` when the last update check found the Nexus page gone.
+    /// `None` means nobody has checked, which must NOT draw a warning.
+    nexus_gone: bool,
     /// The user's note, shown as a glyph with the text on hover. MO2 gives it a
     /// column; here it rides the Flags cell, because every column costs width off
     /// the name and a note is read on demand rather than scanned.
@@ -4312,6 +4315,7 @@ mod tests {
             rate_limited: false,
             hourly_remaining: Some(1388),
             daily_remaining: Some(2100),
+            unavailable: Vec::new(),
         };
         let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
         // It arrived in the result and used to be dropped on the floor.
