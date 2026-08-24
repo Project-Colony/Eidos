@@ -238,6 +238,9 @@ enum Message {
     SetGroupBy(Option<GroupBy>),
     /// Fold or unfold one synthetic group header.
     ToggleGroupFold(String),
+    /// Preview a file from a tree, in a pane over the window.
+    PreviewFile(PathBuf),
+    ClosePreview,
     /// Executables editor: the AppID field, the two flags, and the shortcut.
     ExecAppIdChanged(String),
     ExecToggleHidden,
@@ -1090,6 +1093,40 @@ enum PickerChoice {
     Manual(String),
 }
 
+/// What a preview managed to make of a file.
+///
+/// Images and text, and nothing else - which is a decision rather than a first
+/// step. A DDS is a container for block-compressed data that needs a BC decoder
+/// this tree does not have, and a NIF is a scene graph that needs a renderer;
+/// both are real work, and neither is what somebody opens this for. What they
+/// open it for is "which of these two textures is the one with the seam" and
+/// "what does this config actually say", and those are a PNG and a text file.
+#[derive(Debug, Clone)]
+pub(crate) enum Preview {
+    Image { path: PathBuf, handle: iced::widget::image::Handle },
+    /// The head of a text file, and whether there was more.
+    Text { path: PathBuf, body: String, truncated: bool },
+    /// Nothing could be shown, and this says why rather than showing an empty
+    /// box - "no preview" with no reason reads as the feature being broken.
+    Unsupported { path: PathBuf, why: String },
+}
+
+impl Preview {
+    pub(crate) fn path(&self) -> &Path {
+        match self {
+            Preview::Image { path, .. }
+            | Preview::Text { path, .. }
+            | Preview::Unsupported { path, .. } => path,
+        }
+    }
+}
+
+/// How much of a text file a preview reads.
+///
+/// A preview is a glance, and a log can be a hundred megabytes - reading one
+/// whole to show its first screen is how a file browser freezes.
+pub(crate) const PREVIEW_TEXT_CAP: usize = 64 * 1024;
+
 /// A column of the mod list.
 ///
 /// Priority and Name are not here: they are structural rather than optional.
@@ -1637,6 +1674,8 @@ struct App {
     tree_new_folder: Option<String>,
     /// The backup row armed for restoring over its original.
     confirm_restore: Option<usize>,
+    /// The file being previewed, and what could be made of it.
+    preview: Option<Preview>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
     /// shown, and the two-click guard on the bulk purge.
     dl_filter: String,
@@ -4686,6 +4725,67 @@ mod tests {
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_preview_says_why_when_it_cannot_show_something() {
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(&root).unwrap();
+
+        // Text, shown lossily: a Windows-1252 INI is common in this world and
+        // refusing one because a byte is not valid UTF-8 helps nobody.
+        let ini = root.join("Skyrim.ini");
+        fs::write(&ini, b"[Display]\niSize=1920\nname=Andr\xe9\n").unwrap();
+        match build_preview(&ini) {
+            Preview::Text { body, truncated, .. } => {
+                assert!(body.contains("iSize=1920"));
+                assert!(!truncated);
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+
+        // A NUL byte means binary whatever the extension claims - an .esp is a
+        // record file, and printing one as text fills the pane with mojibake.
+        let esp = root.join("Mod.esp");
+        fs::write(&esp, b"TES4\0\0\0garbage").unwrap();
+        assert!(matches!(build_preview(&esp), Preview::Unsupported { .. }));
+
+        // DDS and NIF say what they are and what to do instead, rather than
+        // showing an empty box - "no preview" with no reason reads as broken.
+        let dds = root.join("skin.dds");
+        fs::write(&dds, b"DDS ").unwrap();
+        match build_preview(&dds) {
+            Preview::Unsupported { why, .. } => {
+                assert!(why.contains("DDS"), "{why}");
+                assert!(why.contains("Reveal"), "and what to do instead: {why}");
+            }
+            other => panic!("expected unsupported, got {other:?}"),
+        }
+
+        // A folder is not a file.
+        assert!(matches!(build_preview(&root), Preview::Unsupported { .. }));
+        // And something that is not there at all.
+        assert!(matches!(build_preview(&root.join("nope.txt")), Preview::Unsupported { .. }));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_huge_text_file_is_read_as_far_as_the_cap_and_says_so() {
+        // A preview is a glance, and a log can be a hundred megabytes: reading
+        // one whole to show its first screen is how a file browser freezes.
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(&root).unwrap();
+        let log = root.join("big.log");
+        fs::write(&log, "x".repeat(PREVIEW_TEXT_CAP * 2)).unwrap();
+
+        match build_preview(&log) {
+            Preview::Text { body, truncated, .. } => {
+                assert_eq!(body.len(), PREVIEW_TEXT_CAP);
+                assert!(truncated, "and it says the rest is there");
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

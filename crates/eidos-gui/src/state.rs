@@ -280,6 +280,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tree_delete_armed: None,
         tree_new_folder: None,
         confirm_restore: None,
+        preview: None,
         dl_filter: String::new(),
         dl_sort: DownloadSort::default(),
         dl_show_hidden: false,
@@ -756,6 +757,83 @@ pub(crate) fn reload_mods(app: &mut App) {
 /// multi-threaded, so it cannot enter a user namespace itself; the single-process
 /// `eidos` binary can. Prefer a sibling of this binary, then `~/.cargo/bin`, then
 /// `PATH`.
+/// Read a file into whatever a preview can make of it.
+///
+/// Split out and pure-ish so the decision - image, text, or neither - is tested
+/// without a window. Every failure ends in `Unsupported` with a reason, because
+/// an empty preview pane with no explanation reads as the feature being broken
+/// rather than as the file being unreadable.
+pub(crate) fn build_preview(path: &Path) -> Preview {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    // What iced's image feature can decode. DDS and NIF are deliberately not
+    // here - see `Preview`.
+    const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
+    if IMAGES.contains(&ext.as_str()) {
+        return Preview::Image {
+            path: path.to_path_buf(),
+            handle: iced::widget::image::Handle::from_path(path),
+        };
+    }
+    if ext == "dds" || ext == "nif" {
+        return Preview::Unsupported {
+            path: path.to_path_buf(),
+            why: format!(
+                "{name} is a {} file. Eidos has no decoder for those yet - open it in a tool                  from the Run list, or use Reveal to find it on disk.",
+                ext.to_uppercase()
+            ),
+        };
+    }
+    let Ok(md) = std::fs::metadata(path) else {
+        return Preview::Unsupported {
+            path: path.to_path_buf(),
+            why: format!("{name} could not be read."),
+        };
+    };
+    if md.is_dir() {
+        return Preview::Unsupported {
+            path: path.to_path_buf(),
+            why: format!("{name} is a folder."),
+        };
+    }
+    // Read a bounded head rather than the file: a preview is a glance, and a
+    // log can be a hundred megabytes.
+    let mut buf = vec![0u8; PREVIEW_TEXT_CAP];
+    let read = {
+        use std::io::Read;
+        match std::fs::File::open(path).and_then(|mut f| f.read(&mut buf)) {
+            Ok(n) => n,
+            Err(e) => {
+                return Preview::Unsupported {
+                    path: path.to_path_buf(),
+                    why: format!("{name} could not be read: {e}"),
+                }
+            }
+        }
+    };
+    buf.truncate(read);
+    // A NUL byte means binary, whatever the extension claims - an `.esp` is a
+    // record file and a `.bsa` is an archive, and printing either as text fills
+    // the pane with mojibake.
+    if buf.contains(&0) {
+        return Preview::Unsupported {
+            path: path.to_path_buf(),
+            why: format!("{name} is a binary file, so there is nothing to show as text."),
+        };
+    }
+    // Lossy on purpose: a Windows-1252 INI is common in this world, and refusing
+    // to show one because a byte is not valid UTF-8 helps nobody.
+    Preview::Text {
+        path: path.to_path_buf(),
+        body: String::from_utf8_lossy(&buf).into_owned(),
+        truncated: md.len() as usize > read,
+    }
+}
+
 /// Write a `.desktop` launcher for one tool, and return where it went.
 ///
 /// The Linux translation of MO2's "create shortcut", and more useful than the

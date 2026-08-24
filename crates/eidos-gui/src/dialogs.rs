@@ -1759,6 +1759,60 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 /// without a per-file key from the site's own button only a premium account can
 /// fetch them - so a progress bar here would stall on the first mod for most
 /// people. What it can do exactly, it does exactly.
+/// The preview pane: one file, shown as far as it can be.
+pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
+    let name = p.path().file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text(name).size(15.0).width(Length::Fill))
+        .push(
+            button(text("Reveal").size(11.0))
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::DataReveal(p.path().to_path_buf())),
+        )
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::ClosePreview),
+        );
+    let body: Element<'a, Message> = match p {
+        Preview::Image { handle, .. } => container(
+            iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
+        )
+        .center(Length::Fill)
+        .into(),
+        Preview::Text { body, truncated, .. } => {
+            let mut col = Column::new().spacing(4).push(
+                // Monospaced, because everything that reaches here - an INI, a
+                // log, a Papyrus source - is written in columns.
+                text(body.clone()).size(11.0).font(iced::Font::MONOSPACE),
+            );
+            if *truncated {
+                col = col.push(
+                    text(format!(
+                        "Showing the first {} KB. The rest is there, just not here.",
+                        PREVIEW_TEXT_CAP / 1024
+                    ))
+                    .size(10.0),
+                );
+            }
+            scrollable(col).height(Length::Fill).into()
+        }
+        Preview::Unsupported { why, .. } => {
+            container(text(why.clone()).size(12.0)).center(Length::Fill).into()
+        }
+    };
+    container(Column::new().spacing(10).push(header).push(body))
+        .width(Length::Fixed(760.0))
+        .height(Length::Fixed(560.0))
+        .padding(18)
+        .style(card_style)
+        .into()
+}
+
 pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)

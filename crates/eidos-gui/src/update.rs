@@ -4811,6 +4811,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             return update(app, Message::ShowModInfo(i));
         }
+        Message::PreviewFile(path) => {
+            app.preview = Some(build_preview(&path));
+        }
+        Message::ClosePreview => app.preview = None,
         Message::ExecAppIdChanged(t) => {
             app.typing = true;
             if let Some(state) = app.executables.as_mut() {

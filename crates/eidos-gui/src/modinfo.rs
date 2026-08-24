@@ -210,6 +210,14 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         } else {
             row = row
                 .push(
+                    button(text("View").size(10.0))
+                        .padding([1, 5])
+                        .style(button::text)
+                        .on_press_maybe(
+                            resolve_in_mod(&m.path, e).map(Message::PreviewFile),
+                        ),
+                )
+                .push(
                     button(text("Open").size(10.0))
                         .padding([1, 5])
                         .style(button::text)
@@ -510,6 +518,14 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .on_press(Message::DataReveal(r.row.real.clone()))
                 .style(button::secondary),
         );
+        if !r.row.is_dir {
+            action = action.push(
+                button(text("View").size(10.0))
+                    .padding([1, 5])
+                    .on_press(Message::PreviewFile(r.row.real.clone()))
+                    .style(button::text),
+            );
+        }
         if let Some(i) = owner {
             action = action.push(
                 button(text("Hide").size(10.0))
@@ -2911,6 +2927,14 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         // No catcher: a hover is not a click, and swallowing presses here would
         // freeze the window for as long as the pointer carried a file.
         layers = layers.push(banner);
+    }
+
+    // The preview pane.
+    if let Some(p) = &app.preview {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ClosePreview);
+        let dialog = container(preview_dialog(p)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
     }
 
     // The collection browser.
