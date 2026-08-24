@@ -46,7 +46,7 @@ pub use profile::{
 pub use settings::{Settings, Theme};
 pub use tools::{
     default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, write_tools,
-    GameExecutables, Tool,
+    tool_search_roots, GameExecutables, Tool,
 };
 
 /// Where an instance is stored.

@@ -84,7 +84,10 @@ purge the ones already installed. An **offline** switch stops all of it.
 inside the game's Proton prefix - they see your mods, their output lands in
 Overwrite, and one click turns it into a real mod. Whatever runtime each one
 needs is fetched on request, so a missing DLL is a button rather than an
-afternoon. Pin the ones you use, hide the ones you do not, give a tool its own
+afternoon. xEdit and its QuickAutoClean twin are found for you - in the game
+folder, inside a mod, or in the tools directory you keep beside your games -
+with the right runtimes already chosen. Pin the ones you use, hide the ones you
+do not, give a tool its own
 Steam AppID when it is its own Steam app, and write a `.desktop` shortcut that
 launches it through the merged view without opening Eidos at all.
 

@@ -218,6 +218,10 @@ enum Message {
     /// which the closure that emits it cannot see - so it carries the row and
     /// `update` reads the live modifier set, the same way a plain click does.
     ModDoubleClick(usize),
+    /// The shared tools folder: typed, browsed, and saved.
+    ToolsDirChanged(String),
+    ToolsDirSave,
+    BrowseToolsDir,
     /// Ctrl+F: put the caret in the filter box.
     FocusFilter,
     /// MO2's "Mark as valid": silence this mod's state flags for good, by
@@ -1681,6 +1685,8 @@ struct App {
     /// What is typed in the preferred-servers field, which is not the saved
     /// value until it is submitted - the same shape as the mod URL field.
     servers_edit: String,
+    /// What is typed in the tools-folder box, saved on submit like the others.
+    tools_dir_edit: String,
     /// Filetree: the entry being renamed and what has been typed, the entry
     /// armed for deletion, and the new-folder box.
     /// The mod NAME and the entry being renamed. By name for the same reason

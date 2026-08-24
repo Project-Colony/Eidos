@@ -118,6 +118,44 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                         .into(),
                 ))
                 .push(settings_section(
+                    "tools",
+                    "Tools",
+                    open("tools"),
+                    Column::new()
+                        .spacing(6)
+                        .push(settings_row(
+                            "Tools folder",
+                            "Where you keep xEdit, DynDOLOD and the like. Eidos already looks in \
+                             the game folder and inside this instance's mods; this is for the \
+                             directory shared between instances. A tool found here is offered \
+                             with the runtimes its name calls for.",
+                            Row::new()
+                                .spacing(6)
+                                .align_y(iced::Alignment::Center)
+                                .push(
+                                    text_input("/mnt/Games/Tools", &app.tools_dir_edit)
+                                        .on_input(Message::ToolsDirChanged)
+                                        .on_submit(Message::ToolsDirSave)
+                                        .padding(5)
+                                        .size(12.0),
+                                )
+                                .push(
+                                    button(text("Browse").size(11.0))
+                                        .padding([4, 10])
+                                        .style(button::secondary)
+                                        .on_press(Message::BrowseToolsDir),
+                                )
+                                .push(
+                                    button(text("Save").size(11.0))
+                                        .padding([4, 10])
+                                        .style(button::secondary)
+                                        .on_press(Message::ToolsDirSave),
+                                )
+                                .into(),
+                        ))
+                        .into(),
+                ))
+                .push(settings_section(
                     "running",
                     "Running a game",
                     open("running"),

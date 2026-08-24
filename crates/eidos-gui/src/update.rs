@@ -5453,6 +5453,34 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Err(e) => app.error = Some(format!("Could not write meta.ini: {e}")),
             }
         }
+        Message::ToolsDirChanged(t) => {
+            app.typing = true;
+            app.tools_dir_edit = t;
+        }
+        Message::ToolsDirSave => {
+            let dir = app.tools_dir_edit.trim().to_string();
+            // An empty box clears the setting rather than storing "": there is
+            // no such directory, and a stored empty string would be a path that
+            // fails a `is_dir` check on every tool list build for ever.
+            app.prefs.tools_dir = Some(dir).filter(|d| !d.is_empty());
+            if let Err(e) = app.prefs.save() {
+                app.error = Some(format!("Could not save settings: {e}"));
+            }
+            app.tools_dir_edit = app.prefs.tools_dir.clone().unwrap_or_default();
+            // The list is built from this, so it has to be rebuilt now rather
+            // than at some later refresh the user has to guess at.
+            load_tools(app);
+        }
+        Message::BrowseToolsDir => {
+            let mut dlg = rfd::AsyncFileDialog::new().set_title("Where your modding tools live");
+            if let Some(cur) = app.prefs.tools_dir.as_deref().filter(|d| !d.is_empty()) {
+                dlg = dlg.set_directory(cur);
+            }
+            return Task::perform(dlg.pick_folder(), |h| match h {
+                Some(h) => Message::ToolsDirChanged(h.path().display().to_string()),
+                None => Message::Noop,
+            });
+        }
         Message::FocusFilter => {
             app.typing = true;
             return operation::focus(filter_input_id());

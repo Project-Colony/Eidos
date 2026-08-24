@@ -5,6 +5,28 @@ prefix. It reads what the game will read - every enabled mod, in priority order 
 and whatever it writes lands in the Overwrite, where one click turns it into a
 real mod.
 
+## The ones Eidos finds by itself
+
+Some tools are named uniquely enough to be found rather than declared, and xEdit
+is the obvious case: `FO4Edit.exe` for Fallout 4, `SSEEdit.exe` for Skyrim SE,
+`TES5Edit.exe` for the original, and so on - along with each one's
+**QuickAutoClean** twin, which is the button for the dirty edits LOOT keeps
+warning about. Eidos looks for them, by file name, in:
+
+- the game's install folder, and the `Root/` trees of enabled mods;
+- **this instance's `mods/`**, which is where MO2 users install tools;
+- the **tools folder** you set in Settings (Tools -> Tools folder), for the
+  directory shared between instances - `/mnt/Games/Tools` and the like.
+
+The list is per game, so a Skyrim instance is never offered Fallout's editor.
+The search stops four levels down, because a mod pool is hundreds of thousands
+of files and this runs every time the tool list is built, and it does not follow
+symlinks. A tool found this way is configured exactly like one you typed in: its
+runtimes come from its name, by the same rule as everything below.
+
+If a tool is somewhere else, or you want different arguments, add it by hand -
+a user entry with the same title overrides anything found automatically.
+
 ## Adding one
 
 In the GUI: **Tools -> Executables**, then Add. From the command line:

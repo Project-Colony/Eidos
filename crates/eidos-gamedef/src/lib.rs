@@ -107,6 +107,34 @@ pub struct GameDef {
     /// loader (SKSE/F4SE/...) to run instead. `None` where the launcher is not
     /// known with confidence (add a row to enable it for a game).
     pub script_extender: Option<ScriptExtender>,
+    /// Third-party tools worth finding for this game, as `(executable, title)`.
+    ///
+    /// The xEdit family above all: it is named per game - `SSEEdit.exe`,
+    /// `FO4Edit.exe`, `TES5Edit.exe` - so a shared list would offer a Skyrim
+    /// user Fallout's editor. Everything here is matched by FILE NAME wherever
+    /// Eidos is told to look (see `eidos_instance::default_tools_in`), because a
+    /// modder keeps these anywhere: in the game folder, inside a mod, or in one
+    /// shared tools directory used by every instance.
+    ///
+    /// The runtime each one needs is NOT here - it is chosen from the title by
+    /// `eidos_instance::default_prereqs`, so a tool the user adds by hand gets
+    /// the same answer as one found here.
+    pub known_tools: &'static [(&'static str, &'static str)],
+}
+
+/// The xEdit variants for one game, and the other tools that ship beside them.
+///
+/// Every xEdit release contains both the editor and its QuickAutoClean twin, and
+/// the second is the one that matters for the "dirty edits" LOOT keeps warning
+/// about - so finding one without the other would leave the user with the
+/// warning and no button.
+macro_rules! xedit {
+    ($name:literal) => {
+        &[
+            (concat!($name, ".exe"), $name),
+            (concat!($name, "QuickAutoClean.exe"), concat!($name, " QuickAutoClean")),
+        ]
+    };
 }
 
 /// Shared across the three Skyrim SE-engine games (SE, VR, Enderal SE).
@@ -134,6 +162,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "SkyrimSELauncher.exe",
             loader: "skse64_loader.exe",
         }),
+        known_tools: xedit!("SSEEdit"),
     },
     GameDef {
         id: "skyrimvr",
@@ -154,6 +183,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "SkyrimVRLauncher.exe",
             loader: "sksevr_loader.exe",
         }),
+        known_tools: xedit!("TES5VREdit"),
     },
     GameDef {
         id: "skyrim",
@@ -176,6 +206,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "SkyrimLauncher.exe",
             loader: "skse_loader.exe",
         }),
+        known_tools: xedit!("TES5Edit"),
     },
     GameDef {
         id: "enderalse",
@@ -197,6 +228,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "Enderal Launcher.exe",
             loader: "skse64_loader.exe",
         }),
+        known_tools: xedit!("SSEEdit"),
     },
     GameDef {
         id: "fallout4",
@@ -217,6 +249,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "Fallout4Launcher.exe",
             loader: "f4se_loader.exe",
         }),
+        known_tools: xedit!("FO4Edit"),
     },
     GameDef {
         id: "fallout4vr",
@@ -237,6 +270,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "Fallout4VRLauncher.exe",
             loader: "f4sevr_loader.exe",
         }),
+        known_tools: xedit!("FO4VREdit"),
     },
     GameDef {
         id: "falloutnv",
@@ -257,6 +291,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "FalloutNVLauncher.exe",
             loader: "nvse_loader.exe",
         }),
+        known_tools: xedit!("FNVEdit"),
     },
     GameDef {
         id: "fallout3",
@@ -277,6 +312,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "FalloutLauncher.exe",
             loader: "fose_loader.exe",
         }),
+        known_tools: xedit!("FO3Edit"),
     },
     GameDef {
         id: "oblivion",
@@ -297,6 +333,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "OblivionLauncher.exe",
             loader: "obse_loader.exe",
         }),
+        known_tools: xedit!("TES4Edit"),
     },
     GameDef {
         id: "morrowind",
@@ -316,6 +353,7 @@ pub static GAMES: &[GameDef] = &[
         game_binary: "Morrowind.exe",
         registry_name: "Morrowind",
         script_extender: None,
+        known_tools: &[],
     },
     GameDef {
         id: "starfield",
@@ -336,6 +374,7 @@ pub static GAMES: &[GameDef] = &[
             launcher: "Starfield.exe",
             loader: "sfse_loader.exe",
         }),
+        known_tools: xedit!("SF1Edit"),
     },
     // The first non-Bethesda game here, and the first to declare its own vocabulary.
     //
@@ -388,6 +427,7 @@ pub static GAMES: &[GameDef] = &[
         game_binary: "SB.exe",
         registry_name: "",
         script_extender: None,
+        known_tools: &[],
     },
 ];
 
@@ -487,6 +527,8 @@ fn default_load_order() -> String {
 
 impl RawGameDef {
     fn into_gamedef(self) -> GameDef {
+        // Resolved before `self.id` is consumed below.
+        let inherited_tools = GameDef::for_id(&self.id).map(|g| g.known_tools).unwrap_or(&[]);
         GameDef {
             id: leak(self.id),
             name: leak(self.name),
@@ -506,6 +548,12 @@ impl RawGameDef {
                 launcher: leak(s.launcher),
                 loader: leak(s.loader),
             }),
+            // A user-defined game inherits the built-in row's tools when it
+            // overrides one, and otherwise declares none. Nothing in the TOML
+            // schema names third-party editors: xEdit is per ENGINE, and a
+            // hand-written game row is for a game Eidos does not know, which by
+            // definition has no xEdit build.
+            known_tools: inherited_tools,
         }
     }
 }

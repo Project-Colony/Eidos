@@ -194,6 +194,98 @@ pub struct GameExecutables<'a> {
     pub binary: Option<&'a str>,
     /// The script-extender loader, e.g. `skse64_loader.exe`.
     pub script_extender: Option<&'a str>,
+    /// Third-party tools worth finding for this game, as `(executable, title)` -
+    /// [`eidos_gamedef::GameDef::known_tools`].
+    pub known_tools: &'a [(&'a str, &'a str)],
+}
+
+/// The extra places a known tool might be, for one instance: its own mods pool,
+/// and the shared tools directory the user configured.
+///
+/// Both are optional and both are common. A tool installed as a mod is MO2's
+/// idiom; a directory beside the games shared by every instance is what somebody
+/// does once they have more than one.
+pub fn tool_search_roots(instance_mods: Option<&Path>, tools_dir: Option<&str>) -> Vec<PathBuf> {
+    let mut v = Vec::new();
+    if let Some(m) = instance_mods.filter(|p| p.is_dir()) {
+        v.push(m.to_path_buf());
+    }
+    if let Some(d) = tools_dir.map(PathBuf::from).filter(|p| p.is_dir()) {
+        v.push(d);
+    }
+    v
+}
+
+/// How deep to look for a known tool under a search root.
+///
+/// Four, because that is where they actually are. `SSEEdit 4.1.5f/SSEEdit.exe`
+/// is two, and BodySlide ships as
+/// `<mod>/CalienteTools/BodySlide/BodySlide x64.exe`, which is four under
+/// `mods/`. Unbounded would mean walking a whole mod pool - hundreds of
+/// thousands of files - every time the tool list is built.
+const TOOL_SEARCH_DEPTH: usize = 4;
+
+/// Find the known tools under `roots`, by file NAME.
+///
+/// Named rather than path-matched because a modder keeps these anywhere: in the
+/// game folder, inside a mod installed for the purpose, or in one shared tools
+/// directory used by every instance. All three are real layouts and none of them
+/// is the "right" one to demand.
+///
+/// The first match for a given executable wins and the walk moves on, so a tool
+/// present in two places is offered once. Unreadable directories are skipped in
+/// silence: a permission error somewhere in a mod pool is not a reason to hand
+/// back no tools at all.
+fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
+    fn walk(dir: &Path, depth: usize, want: &mut Vec<(String, String)>, out: &mut Vec<Tool>) {
+        if depth > TOOL_SEARCH_DEPTH || want.is_empty() {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let mut subdirs = Vec::new();
+        for e in entries.flatten() {
+            let Ok(ft) = e.file_type() else { continue };
+            // Not followed: a link inside a mod pool can point anywhere, and
+            // this walk would follow it out of the tree - or into a cycle.
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
+                subdirs.push(e.path());
+                continue;
+            }
+            let Ok(name) = e.file_name().into_string() else { continue };
+            if let Some(pos) = want.iter().position(|(exe, _)| exe.eq_ignore_ascii_case(&name)) {
+                let (_, title) = want.remove(pos);
+                out.push(Tool {
+                    prereqs: default_prereqs(&title),
+                    title,
+                    exe: e.path(),
+                    ..Default::default()
+                });
+                if want.is_empty() {
+                    return;
+                }
+            }
+        }
+        for d in subdirs {
+            walk(&d, depth + 1, want, out);
+            if want.is_empty() {
+                return;
+            }
+        }
+    }
+
+    let mut want: Vec<(String, String)> =
+        known.iter().map(|(e, t)| ((*e).to_string(), (*t).to_string())).collect();
+    let mut out = Vec::new();
+    for root in roots {
+        if want.is_empty() {
+            break;
+        }
+        walk(root, 0, &mut want, &mut out);
+    }
+    out
 }
 
 /// Add a default tool for `exe` only if its file is present in `install` (detection
@@ -216,7 +308,7 @@ fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, ex
 /// tool installed later (e.g. SKSE after the instance was created) appears on the
 /// next load with no user action, exactly like MO2.
 pub fn default_tools(execs: GameExecutables, install: &Path) -> Vec<Tool> {
-    default_tools_in(execs, install, &[])
+    default_tools_in(execs, install, &[], &[])
 }
 
 /// [`default_tools`], but also looking in `root_layers` - the `Root/` directories
@@ -230,9 +322,16 @@ pub fn default_tools_in(
     execs: GameExecutables,
     install: &Path,
     root_layers: &[PathBuf],
+    extra_roots: &[PathBuf],
 ) -> Vec<Tool> {
-    let search: Vec<PathBuf> =
-        std::iter::once(install.to_path_buf()).chain(root_layers.iter().cloned()).collect();
+    // The game folder, the mods' root trees, the instance's own mods pool, and
+    // the user's shared tools directory - in that order, because the first match
+    // for an executable wins and a tool inside THIS instance should beat a copy
+    // in a directory shared with every other one.
+    let search: Vec<PathBuf> = std::iter::once(install.to_path_buf())
+        .chain(root_layers.iter().cloned())
+        .chain(extra_roots.iter().cloned())
+        .collect();
     let install = &search;
     let mut v = Vec::new();
     if let Some(loader) = execs.script_extender.filter(|s| !s.is_empty()) {
@@ -254,6 +353,11 @@ pub fn default_tools_in(
         };
         push_tool_if_present(&mut v, install, title, binary);
     }
+    // The third-party tools, searched by name rather than at a fixed path. The
+    // three above live in the game folder by construction; xEdit and its kind do
+    // not live anywhere in particular, which is why they were never detected at
+    // all and every user added them by hand.
+    v.extend(find_known_tools(&search, execs.known_tools));
     v
 }
 
@@ -317,6 +421,7 @@ mod tests {
             launcher: Some("SkyrimSELauncher.exe"),
             binary: Some("SkyrimSE.exe"),
             script_extender: Some("skse64_loader.exe"),
+            known_tools: &[],
         };
 
         // Only the launcher + binary exist; SKSE is not installed yet.
@@ -342,6 +447,73 @@ mod tests {
         assert!(default_tools(execs, &empty).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
         let _ = std::fs::remove_dir_all(&empty);
+    }
+
+    #[test]
+    fn a_known_tool_is_found_by_name_wherever_it_lives() {
+        // The defect this closes: Eidos only ever detected three executables -
+        // the launcher, the binary and the script extender - all at a fixed path
+        // inside the game folder. xEdit and its kind live nowhere in
+        // particular, so every user added them by hand or did without.
+        let root = tmp_dir();
+        // The three real layouts, all at once.
+        let in_mod = root.join("mods").join("Some Tool Mod").join("Tools").join("BodySlide");
+        let in_tools = root.join("Tools").join("FO4Edit 4.1.5f");
+        fs::create_dir_all(&in_mod).unwrap();
+        fs::create_dir_all(&in_tools).unwrap();
+        fs::write(in_tools.join("FO4Edit.exe"), b"x").unwrap();
+        fs::write(in_tools.join("FO4EditQuickAutoClean.exe"), b"x").unwrap();
+        fs::write(in_mod.join("BodySlide.exe"), b"x").unwrap();
+
+        let known: &[(&str, &str)] = &[
+            ("FO4Edit.exe", "FO4Edit"),
+            ("FO4EditQuickAutoClean.exe", "FO4Edit QuickAutoClean"),
+            ("BodySlide.exe", "BodySlide"),
+            ("NotInstalled.exe", "Nothing"),
+        ];
+        let found = find_known_tools(&[root.join("mods"), root.join("Tools")], known);
+        let mut titles: Vec<&str> = found.iter().map(|t| t.title.as_str()).collect();
+        titles.sort_unstable();
+        assert_eq!(titles, vec!["BodySlide", "FO4Edit", "FO4Edit QuickAutoClean"]);
+        assert!(!found.iter().any(|t| t.title == "Nothing"), "absent means absent");
+
+        // The QuickAutoClean twin matters on its own: it is the button for the
+        // dirty edits LOOT keeps warning about, and finding the editor without
+        // it would leave the warning with no answer.
+        let qac = found.iter().find(|t| t.title.contains("QuickAutoClean")).unwrap();
+        assert!(qac.exe.ends_with("FO4EditQuickAutoClean.exe"));
+
+        // And the runtime comes from the title, so a found tool is configured
+        // exactly like one the user typed in.
+        let bs = found.iter().find(|t| t.title == "BodySlide").unwrap();
+        assert_eq!(bs.prereqs, vec!["d3dx9_43", "d3dcompiler_47"]);
+        assert!(found.iter().find(|t| t.title == "FO4Edit").unwrap().prereqs.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_tool_search_stops_before_walking_a_whole_mod_pool() {
+        let root = tmp_dir();
+        // One level deeper than the cap. A mod pool is hundreds of thousands of
+        // files, and this walk runs every time the tool list is built.
+        let deep = root.join("a").join("b").join("c").join("d").join("e");
+        fs::create_dir_all(&deep).unwrap();
+        fs::write(deep.join("FO4Edit.exe"), b"x").unwrap();
+        let known: &[(&str, &str)] = &[("FO4Edit.exe", "FO4Edit")];
+        assert!(find_known_tools(&[root.clone()], known).is_empty(), "past the depth cap");
+
+        // And a symlink is not followed - it can point anywhere, including at a
+        // cycle, and a mod pool is full of them.
+        let outside = tmp_dir();
+        fs::write(outside.join("FO4Edit.exe"), b"x").unwrap();
+        let linked = tmp_dir();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, linked.join("away")).unwrap();
+        #[cfg(unix)]
+        assert!(find_known_tools(&[linked.clone()], known).is_empty());
+        for d in [root, outside, linked] {
+            let _ = fs::remove_dir_all(&d);
+        }
     }
 
     #[test]

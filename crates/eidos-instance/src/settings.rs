@@ -304,6 +304,13 @@ pub struct Settings {
     /// network, and the parts of the window that would have asked say why
     /// rather than failing with a connection error.
     pub offline: bool,
+    /// Where the user keeps their modding tools, shared across instances.
+    ///
+    /// xEdit, DynDOLOD and their kind live nowhere in particular: in the game
+    /// folder, inside a mod, or - most often - in one directory beside the
+    /// games. The first two are found without being told; this is how Eidos is
+    /// told about the third.
+    pub tools_dir: Option<String>,
     /// Mod-list columns the user keeps, by key, in display order. `None` means
     /// "never chosen", which is NOT the same as "all off": an empty list is a
     /// deliberate choice and has to survive a restart.
@@ -331,6 +338,7 @@ impl Default for Settings {
             drag_scroll_speed: 1.0,
             remember_window: true,
             offline: false,
+            tools_dir: None,
             mod_columns: None,
             preferred_servers: Vec::new(),
             // Nowhere. A default that could save itself over the real file is
@@ -429,6 +437,11 @@ impl Settings {
                 // this is - a list where position means something.
                 // An EMPTY value is meaningful here - every column off - which is
                 // why the key's presence is what matters rather than its content.
+                "tools_dir" => {
+                    // An empty value clears it, which is how a user removes the
+                    // setting from the GUI without editing the file.
+                    s.tools_dir = Some(v.trim().to_string()).filter(|p| !p.is_empty());
+                }
                 "mod_columns" => {
                     s.mod_columns = Some(
                         v.split(',')
@@ -476,6 +489,9 @@ impl Settings {
         );
         if self.offline {
             out.push_str("offline=true\n");
+        }
+        if let Some(dir) = &self.tools_dir {
+            out.push_str(&format!("tools_dir={dir}\n"));
         }
         if let Some(cols) = &self.mod_columns {
             out.push_str(&format!("mod_columns={}\n", cols.join(",")));
@@ -705,6 +721,7 @@ mod tests {
             offline: false,
             preferred_servers: Vec::new(),
             mod_columns: None,
+            tools_dir: None,
             theme: Theme::Dark,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
@@ -788,6 +805,7 @@ mod tests {
             offline: false,
             preferred_servers: Vec::new(),
             mod_columns: None,
+            tools_dir: None,
             theme: Theme::Dark,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),

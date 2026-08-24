@@ -275,6 +275,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         instances_open: false,
         registry_path: eidos_instance::registry_path(),
         servers_edit: String::new(),
+        tools_dir_edit: String::new(),
         tree_rename: None,
         tree_rename_text: String::new(),
         tree_delete_armed: None,
@@ -457,6 +458,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // The field shows what is stored, so opening Settings does not present an
     // empty box beside a preference that is actually set.
     app.servers_edit = app.prefs.preferred_servers.join(", ");
+    app.tools_dir_edit = app.prefs.tools_dir.clone().unwrap_or_default();
 
     recompute_counts(&mut app);
     // A stored session means the user IS signed in: validate it in the background
@@ -494,6 +496,7 @@ pub(crate) fn game_executables(g: &eidos_games::DetectedGame) -> eidos_instance:
         launcher: g.def.script_extender.as_ref().map(|se| se.launcher),
         binary: Some(g.def.game_binary),
         script_extender: g.def.script_extender.as_ref().map(|se| se.loader),
+        known_tools: g.def.known_tools,
     }
 }
 
@@ -505,6 +508,10 @@ pub(crate) fn load_tools(app: &mut App) {
                 game_executables(g),
                 &g.install_path,
                 &app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default(),
+                &eidos_instance::tool_search_roots(
+                    app.created.as_ref().map(|i| i.mods_dir()).as_deref(),
+                    app.prefs.tools_dir.as_deref(),
+                ),
             ),
         ),
         _ => Vec::new(),
@@ -599,7 +606,12 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
     // mod is detected; the root union puts it on the game root at launch.
     let roots = app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default();
     let defaults =
-        eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots);
+        eidos_instance::default_tools_in(
+            game_executables(game),
+            &game.install_path,
+            &roots,
+            &eidos_instance::tool_search_roots(None, None),
+        );
     let merged = eidos_instance::merge_tools(user, defaults);
     let mut state = ExecutablesDialogState {
         merged,

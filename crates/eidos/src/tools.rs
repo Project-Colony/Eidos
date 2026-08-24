@@ -15,7 +15,12 @@ use crate::*;
 /// on the game root for real.
 pub(crate) fn default_tools_for(game: &DetectedGame, inst: Option<&Instance>) -> Vec<eidos_instance::Tool> {
     let roots = inst.map(|i| i.root_layers()).unwrap_or_default();
-    eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots)
+    let prefs = eidos_instance::settings::Settings::load();
+    let extra = eidos_instance::tool_search_roots(
+        inst.map(|i| i.mods_dir()).as_deref(),
+        prefs.tools_dir.as_deref(),
+    );
+    eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots, &extra)
 }
 
 /// The auto-detectable executables for a game, from its `GameDef`.
@@ -25,6 +30,7 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
         launcher: game.def.script_extender.as_ref().map(|se| se.launcher),
         binary: Some(game.def.game_binary),
         script_extender: game.def.script_extender.as_ref().map(|se| se.loader),
+        known_tools: game.def.known_tools,
     }
 }
 
