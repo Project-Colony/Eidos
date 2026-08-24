@@ -2498,6 +2498,14 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(banner);
     }
 
+    // The Export dialog (MO2's Export to csv).
+    if let Some(state) = &app.export {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseExportDialog);
+        let dialog = container(export_dialog(app, state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     // The File dropdown floats just under the menu bar, at the File item.
     if app.file_menu_open {
         let catcher =

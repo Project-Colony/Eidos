@@ -25,12 +25,14 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 mod categories;
+mod export;
 mod manifest;
 mod meta;
 mod profile;
 mod registry;
 pub mod settings;
 mod tools;
+pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use categories::{
     format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
 };

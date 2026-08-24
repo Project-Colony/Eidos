@@ -234,6 +234,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_set_all: None,
         file_menu_open: false,
         plugin_send_priority: None,
+        export: None,
         pending_note: None,
         categories_dialog: None,
         ini_editor: None,

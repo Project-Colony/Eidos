@@ -471,6 +471,8 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(entry("Game Data", game.map(|g| g.data_path.clone()), false))
         .push(entry("Game INIs (in the Proton prefix)", prefix_inis, false))
         .push(menu_sep())
+        .push(menu_item("Export the mod list...", Message::ShowExportDialog))
+        .push(menu_sep())
         .push(entry("Eidos logs", Some(eidos_log::log_dir()), true))
         .push(entry("Extensions", Some(eidos_addons::user_addons_dir()), true));
     menu_frame(col.into())

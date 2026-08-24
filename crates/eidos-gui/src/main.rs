@@ -22,7 +22,7 @@ use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::settings::{Settings, Theme as PrefTheme};
-use eidos_instance::{Instance, InstanceKind, ModEntry, SaveEntry, Tool};
+use eidos_instance::{ExportScope, Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
@@ -680,6 +680,17 @@ enum Message {
     PluginSendToPriorityStart,
     PluginSendToPriorityChanged(String),
     PluginSendToPriorityCommit,
+    // ---- Export the mod list (MO2's Export to csv) ----
+    ShowExportDialog,
+    CloseExportDialog,
+    /// Pick which rows the export covers.
+    ExportScopeChanged(ExportScope),
+    /// Tick / untick one column.
+    ExportToggleColumn(usize),
+    /// Open the save dialog and write.
+    ExportRun,
+    /// The picked destination (`None` = cancelled).
+    ExportPicked(Option<PathBuf>),
     /// Open / dismiss the File dropdown, which lists every folder that matters.
     OpenFileMenu,
     CloseFileMenu,
@@ -782,6 +793,26 @@ impl ExecutablesDialogState {
         // that silently captures nothing.
         t.output_mod = Some(self.output_mod.trim().to_string())
             .filter(|m| self.mod_names.iter().any(|n| n == m));
+    }
+}
+
+/// The Export dialog (MO2's Export to csv).
+struct ExportDialogState {
+    scope: ExportScope,
+    /// One flag per `Column::ALL`, in that order. A Vec rather than a set so the
+    /// dialog can render in MO2's column order without sorting anything.
+    columns: Vec<bool>,
+}
+
+impl ExportDialogState {
+    /// The columns actually ticked, in MO2's order.
+    fn picked(&self) -> Vec<eidos_instance::Column> {
+        eidos_instance::Column::ALL
+            .iter()
+            .zip(&self.columns)
+            .filter(|(_, on)| **on)
+            .map(|(c, _)| *c)
+            .collect()
     }
 }
 
@@ -1277,6 +1308,8 @@ struct App {
     confirm_set_all: Option<bool>,
     /// Whether the File dropdown (the folder list) is showing.
     file_menu_open: bool,
+    /// The open Export dialog: which rows, and which columns are ticked.
+    export: Option<ExportDialogState>,
     /// The plugin row whose "Send to priority" field is open, and what is typed
     /// in it. Mirrors `send_priority` for mods; kept separate because the two
     /// lists are indexed independently and one menu must not aim the other.

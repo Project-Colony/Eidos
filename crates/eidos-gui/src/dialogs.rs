@@ -1485,3 +1485,100 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
 
     container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
 }
+
+/// The Export dialog (MO2's Export to csv): which rows, which columns.
+pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element<'a, Message> {
+    // Aliased: `Column` is also iced's vertical layout, used three lines down.
+    use eidos_instance::Column as Col;
+
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Export the mod list").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseExportDialog),
+        );
+
+    // How many rows each scope would actually write, said up front - the whole
+    // reason to offer a scope is that the numbers differ.
+    let total = app.mods.iter().filter(|m| !m.is_separator()).count();
+    let active = app.mods.iter().filter(|m| !m.is_separator() && m.enabled).count();
+    let scope = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Rows").size(11.0))
+        .push(
+            button(text(format!("All ({total})")).size(12.0))
+                .padding([3, 10])
+                .style(if state.scope == ExportScope::All { button::primary } else { button::secondary })
+                .on_press(Message::ExportScopeChanged(ExportScope::All)),
+        )
+        .push(
+            button(text(format!("Enabled only ({active})")).size(12.0))
+                .padding([3, 10])
+                .style(if state.scope == ExportScope::Active {
+                    button::primary
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::ExportScopeChanged(ExportScope::Active)),
+        );
+
+    let mut cols = Col::ALL.iter().zip(&state.columns).enumerate().fold(
+        Column::new().spacing(2),
+        |col, (i, (c, on))| {
+            // A column Eidos has no source for is offered but labelled, because
+            // MO2 emits it too - the shape has to match for a parser written
+            // against MO2's output - and an always-blank column with no
+            // explanation reads as a bug.
+            let label = if c.is_untracked() {
+                format!("{}  (not tracked - always empty)", c.label())
+            } else {
+                c.label().to_string()
+            };
+            col.push(
+                button(
+                    Row::new()
+                        .spacing(6)
+                        .push(text(if *on { "[x]" } else { "[ ]" }).size(11.0).font(iced::Font::MONOSPACE))
+                        .push(text(label).size(12.0)),
+                )
+                .width(Length::Fill)
+                .padding([2, 6])
+                .style(button::text)
+                .on_press(Message::ExportToggleColumn(i)),
+            )
+        },
+    );
+    if state.picked().is_empty() {
+        cols = cols.push(text("Tick at least one column.").size(11.0).color(CONFLICT_LOSES_FG));
+    }
+
+    let run = button(text("Export...").size(12.0))
+        .padding([4, 14])
+        .style(button::primary);
+    let footer = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text(
+                "MO2's own CSV format: CRLF line endings, every string quoted, the Nexus id bare - \
+                 so a sheet or a script written for MO2 reads it unchanged.",
+            )
+            .size(10.0)
+            .width(Length::Fill),
+        )
+        .push(if state.picked().is_empty() { run } else { run.on_press(Message::ExportRun) });
+
+    let card = Column::new()
+        .spacing(12)
+        .push(header)
+        .push(scope)
+        .push(scrollable(cols).height(Length::Fixed(300.0)))
+        .push(footer);
+
+    container(card).width(Length::Fixed(560.0)).padding(18).style(card_style).into()
+}

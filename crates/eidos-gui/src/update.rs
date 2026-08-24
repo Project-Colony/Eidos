@@ -3495,6 +3495,72 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.view_menu_open = true;
         }
         Message::CloseViewMenu => app.view_menu_open = false,
+        // ---- Export the mod list (MO2's Export to csv) -----------------------
+        Message::ShowExportDialog => {
+            app.file_menu_open = false;
+            app.view_menu_open = false;
+            if app.created.is_none() {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            }
+            app.export = Some(ExportDialogState {
+                scope: ExportScope::All,
+                // Everything ticked, so the default export is byte-identical to
+                // what the CLI has always produced and to what MO2 writes.
+                columns: vec![true; eidos_instance::Column::ALL.len()],
+            });
+        }
+        Message::CloseExportDialog => app.export = None,
+        Message::ExportScopeChanged(scope) => {
+            if let Some(d) = &mut app.export {
+                d.scope = scope;
+            }
+        }
+        Message::ExportToggleColumn(i) => {
+            if let Some(d) = &mut app.export {
+                if let Some(on) = d.columns.get_mut(i) {
+                    *on = !*on;
+                }
+            }
+        }
+        Message::ExportRun => {
+            let Some(d) = &app.export else { return Task::none() };
+            if d.picked().is_empty() {
+                app.status = Some("Tick at least one column.".to_string());
+                return Task::none();
+            }
+            let name = app
+                .created
+                .as_ref()
+                .and_then(|i| i.root.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "modlist".to_string());
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("CSV", &["csv"])
+                    .set_file_name(format!("{name}.csv"))
+                    .set_title("Export the mod list")
+                    .save_file(),
+                |handle| Message::ExportPicked(handle.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::ExportPicked(picked) => {
+            let Some(path) = picked else { return Task::none() };
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(d) = app.export.take() else { return Task::none() };
+            let domain = selected_game(app).map(|g| g.def.nexus_game).unwrap_or("");
+            // What the WINDOW is showing, not what the file says: the list in
+            // `app.mods` carries unsaved reordering, and exporting a different
+            // order from the one on screen would be its own small betrayal.
+            let (csv, count) =
+                eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), domain);
+            match std::fs::write(&path, csv) {
+                Ok(()) => {
+                    app.status =
+                        Some(format!("Exported {count} mod(s) to {}.", path.display()))
+                }
+                Err(e) => app.status = Some(format!("Could not write {}: {e}", path.display())),
+            }
+        }
         Message::OpenFileMenu => {
             // Only one dropdown at a time, or the two cards overlap and the one
             // underneath eats clicks aimed at the one on top.
