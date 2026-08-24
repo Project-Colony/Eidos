@@ -1089,6 +1089,25 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         });
     }
 
+    // Dropping a file from the file manager is inert on a native Wayland
+    // session, and there is no moment of failure to hang a message on: the event
+    // never fires, so the window cannot know a drop was attempted. It has to be
+    // said somewhere findable instead, and this tab is where "why did that do
+    // nothing" is meant to be answered.
+    if on_wayland() {
+        out.push(Diagnostic {
+            level: DiagLevel::Advice,
+            title: "Dropping files from your file manager will not work here".to_string(),
+            detail: "This is a Wayland session, and winit - the windowing layer Eidos is built on \
+                     - implements file drops for X11 only. Nothing reaches Eidos when you drop an \
+                     archive on it, and it cannot tell that you tried. Two paths do work \
+                     everywhere: Install Mod, and dragging a row from the Downloads tab onto the \
+                     position in the mod list where you want it installed."
+                .to_string(),
+            actions: Vec::new(),
+        });
+    }
+
     // Missing masters: the single most reliable crash predictor.
     //
     // `app.plugins` is a CACHE - dropped on every mod-list change and only
@@ -2457,6 +2476,28 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // A file is hovering over the window: say the drop will be taken. The flag
+    // was already tracked and read by nothing, so on X11 the gesture had no
+    // feedback at all - the user could not tell the window from any other.
+    if app.files_hovering {
+        let banner = container(
+            container(text("Drop to install").size(15.0))
+                .padding([10, 20])
+                .style(|t: &Theme| container::Style {
+                    background: Some(Background::Color(t.extended_palette().primary.base.color)),
+                    text_color: Some(t.extended_palette().primary.base.text),
+                    border: Border { width: 0.0, radius: 4.0.into(), ..Default::default() },
+                    ..Default::default()
+                }),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center(Length::Fill);
+        // No catcher: a hover is not a click, and swallowing presses here would
+        // freeze the window for as long as the pointer carried a file.
+        layers = layers.push(banner);
+    }
+
     // The File dropdown floats just under the menu bar, at the File item.
     if app.file_menu_open {
         let catcher =
@@ -3450,4 +3491,18 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
         );
     }
     container(card).max_width(520.0).padding(16).style(card_style).into()
+}
+
+
+/// Whether this process is talking Wayland rather than X11.
+///
+/// The same test winit itself makes when it picks a backend: it uses Wayland when
+/// `WAYLAND_DISPLAY` names a socket it can reach, and X11 otherwise. There is no
+/// API to ask it afterwards, and the env var is what decided the answer - so
+/// reading it here gives the same verdict rather than a guess about it.
+///
+/// It matters because winit 0.30 has no `wl_data_device` at all: on Wayland, the
+/// file-drop events exist in the type system and never fire.
+pub(crate) fn on_wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
 }

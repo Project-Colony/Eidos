@@ -3845,6 +3845,27 @@ mod tests {
     }
 
     #[test]
+    fn a_wayland_session_is_told_the_desktop_drop_does_nothing() {
+        // There is no moment of failure to hang this on - the event never fires,
+        // so the window cannot know a drop was attempted. It has to be findable
+        // instead, and Health is where "why did that do nothing" is answered.
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Main;
+        let diag = diagnostics(&app);
+        let row = diag.iter().find(|d| d.title.contains("file manager"));
+        if on_wayland() {
+            let row = row.expect("a Wayland session must be told");
+            assert_eq!(row.level, DiagLevel::Advice, "nothing is broken - it is a limitation");
+            // And it must point at the two paths that DO work, or it is a
+            // complaint rather than help.
+            assert!(row.detail.contains("Install Mod"), "{}", row.detail);
+            assert!(row.detail.contains("Downloads"), "{}", row.detail);
+        } else {
+            assert!(row.is_none(), "an X11 session must not be told its drops are broken");
+        }
+    }
+
+    #[test]
     fn the_nexus_budget_shows_only_once_the_server_has_answered() {
         let mut app = nav_app(&[]);
         assert_eq!(nexus_budget_suffix(&app), "", "no invented number before the first call");
