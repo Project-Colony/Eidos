@@ -104,8 +104,11 @@ place instead of five.
 
 **Data** is a real tree of the merged view, expanded one level at a time so
 opening a node costs one directory read per layer that has it rather than a
-recursive walk of every enabled mod. Every node names the layer that actually
-provides it, in the same order the FUSE layer serves. **Plugins** is the
+recursive walk of every enabled mod. It is answered by the SAME layer stack the
+mount serves from, so whiteouts and hidden files are respected and the tab
+cannot disagree with what the game will see. Filter it by name, narrow it to
+contested files only, sort out what is where with the Size and Modified columns,
+and Reveal any row in a file manager. **Plugins** is the
 ESP/ESM/ESL load order (toggle, reorder by hand, or sort with LOOT and read the
 post-sort report, whose advice links open in your browser). **Conflicts**
 explains the per-file winners and losers. **Overwrite** turns what the game wrote
@@ -122,6 +125,23 @@ touching priorities. **INI Tweaks** lists the fragments a mod ships in its
 `INI Tweaks/` folder; the enabled ones are merged into the profile's game INI at
 launch, in priority order, and taken back off when the run's INIs are captured -
 otherwise a tweak silently becomes a setting and disabling it would do nothing.
+
+A download can be **dragged from the Downloads list onto a position in the mod
+list** to install it at that priority, and archives or folders dropped onto the
+window from a file manager install too (that half needs an X11 or XWayland
+session - winit implements file drops for X11 only). Downloads themselves can be
+paused and resumed: pausing stops the transfer and keeps the partial, and Resume
+re-resolves a fresh link and continues from where it stopped.
+
+**Categories** are editable, not just displayed: assign them to one mod or a
+whole selection, edit the catalog itself from the same dialog, and pull the
+game's official category list from Nexus. Both catalog files are MO2's own
+(`categories.dat` and `nexuscatmap.dat`), so a shared instance keeps one catalog.
+
+**View -> INI editor** edits the profile's game INIs - the copy that persists,
+rather than the one buried in the Proton prefix that is overwritten at every
+launch. **View -> Log** reads the session logs. **View -> Extensions** lists
+your own add-ons; see [extensions.md](extensions.md).
 
 Installing accepts everything: the Simple and FOMOD paths, plus Wrye Bash
 **BAIN** packages (tick the sub-packages, which merge in order) and a **manual**

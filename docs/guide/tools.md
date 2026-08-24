@@ -44,6 +44,32 @@ A tool in a **disabled** mod cannot be rewritten, because its files are not in
 the view either. Eidos says so and runs it from its own folder rather than
 pretending.
 
+## Sending a tool's output to its own mod
+
+A generator - FNIS, Nemesis, BodySlide, DynDOLOD, Synthesis - writes hundreds of
+files. By default they land in the Overwrite with everything else. Set **Capture
+output into** in the Executables editor and this run's output goes into that mod
+instead:
+
+```
+Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
+```
+
+The mod is created if it does not exist. Only the files THIS run produced move;
+anything that was already in the Overwrite stays there, so two tools with capture
+targets do not steal each other's output. A run that wrote nothing leaves no
+empty mod behind.
+
+It is done after the run rather than by pointing the write layer at the mod,
+which is how MO2 does it. Pointing the write layer at a mod would promote it to
+top priority for the whole run - flipping every conflict it is in and flipping
+them back afterwards - and would write straight through the mod's own files with
+no copy-up. The capture reaches the same end state without either.
+
+If the target mod is disabled, the output is still written but the game will not
+see it, so the tool would regenerate the same files on the next run. Eidos warns
+when that is the case.
+
 ## The DLLs a tool needs are chosen by its NAME
 
 This is the surprising part, so it is worth stating plainly: **the title you give
