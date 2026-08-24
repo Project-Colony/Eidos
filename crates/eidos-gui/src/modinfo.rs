@@ -2245,6 +2245,21 @@ pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // The filter pane, hanging under its button.
+    if app.filters_open {
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ToggleFilterPane);
+        // Hangs under the Filters button rather than floating at the cursor:
+        // it is a panel belonging to a control, not a context menu.
+        let card = container(filter_pane(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(iced::Padding { top: 84.0, right: 0.0, bottom: 0.0, left: 320.0 })
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
+        layers = layers.push(catcher).push(card);
+    }
+
     // The plugin context menu, floating where it was summoned from.
     // Bounds-checked: a stale row would otherwise render an invisible
     // full-window click catcher over an empty card.

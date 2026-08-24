@@ -628,6 +628,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 .text_size(12.0)
                 .padding(5),
         )
+        .push(filter_button(app))
         .push(tool_btn("+ Separator", Message::AddSeparator(0)))
         .push(tool_btn("+ Empty mod", Message::CreateEmptyMod))
         .push(tool_btn("Install folder", Message::InstallFromFolder));
@@ -922,6 +923,60 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
 
     container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
+}
+
+/// The Filters button, badged with how many criteria are currently narrowing
+/// the list - so a list that looks short always says why.
+pub(crate) fn filter_button<'a>(app: &App) -> Element<'a, Message> {
+    let n = app.filters.active_count();
+    let label = if n > 0 { format!("Filters ({n})") } else { "Filters".to_string() };
+    button(text(label).size(12.0))
+        .padding(5)
+        .on_press(Message::ToggleFilterPane)
+        .style(if n > 0 { button::primary } else { button::text })
+        .into()
+}
+
+/// MO2's filter pane: one row per criterion, each cycling off -> only -> except.
+///
+/// Three settings rather than a checkbox because "only conflicted mods" and
+/// "everything except conflicted mods" are both real questions, and every
+/// criterion here is read from data the list already computes.
+pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
+    let mut col = Column::new().spacing(2).push(
+        Row::new()
+            .align_y(iced::Alignment::Center)
+            .push(text("Show mods that are...").size(11.0).width(Length::Fill))
+            .push(
+                button(text("Clear").size(11.0))
+                    .padding([2, 8])
+                    .style(button::text)
+                    .on_press(Message::ClearFilters),
+            ),
+    );
+    for (label, state, field) in app.filters.rows() {
+        col = col.push(
+            button(
+                Row::new()
+                    .spacing(6)
+                    .push(text(state.mark()).size(11.0).font(iced::Font::MONOSPACE))
+                    .push(text(label).size(12.0).width(Length::Fill))
+                    .push(
+                        text(match state {
+                            Criterion::Off => "",
+                            Criterion::Require => "only",
+                            Criterion::Exclude => "except",
+                        })
+                        .size(10.0),
+                    ),
+            )
+            .width(Length::Fill)
+            .padding([3, 6])
+            .style(button::text)
+            .on_press(Message::CycleFilter(field)),
+        );
+    }
+    container(col).width(Length::Fixed(260.0)).padding(6).style(card_style).into()
 }
 
 /// A small separator line inside the context menu.

@@ -2299,6 +2299,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             ));
             commit_plugin_order(app, &spec);
         }
+        // ---- Mod-list filter pane (MO2's Filters tree) -----------------------
+        Message::CycleFilter(field) => {
+            let next = app.filters.get(field).next();
+            app.filters.set(field, next);
+            // The visible set just changed underneath every row index the
+            // selection and the drag hold.
+            app.selected_mods.clear();
+            app.drag_state = None;
+        }
+        Message::ToggleFilterPane => app.filters_open = !app.filters_open,
+        Message::ClearFilters => {
+            app.filters = ModFilters::default();
+            app.selected_mods.clear();
+            app.drag_state = None;
+        }
         // ---- Backups dialog (MO2's Create Backup / Restore Backup) -----------
         Message::ShowBackupsDialog => {
             app.menu_mod = None;

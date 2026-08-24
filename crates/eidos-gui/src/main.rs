@@ -339,6 +339,10 @@ enum Message {
     IdentifyDownload(String),
     /// The lookup came back: `Ok` carries the name it identified.
     IdentifiedDownload(Result<String, String>),
+    /// Cycle one filter criterion: off -> require -> exclude.
+    CycleFilter(FilterField),
+    ToggleFilterPane,
+    ClearFilters,
     ShowBackupsDialog,
     CloseBackupsDialog,
     CreateBackup(eidos_instance::BackupKind),
@@ -996,6 +1000,10 @@ struct App {
     collapsed: HashSet<String>,
     /// Active category filter (a top-level category id), or `None` for all.
     category_filter: Option<i32>,
+    /// The state criteria the mod list is filtering on (MO2's filter pane).
+    filters: ModFilters,
+    /// Whether that pane is open.
+    filters_open: bool,
     // ---- Settings / Nexus account (the status bar + endorse/update read these) ----
     /// The Preferences modal is open.
     settings_open: bool,
@@ -1194,6 +1202,16 @@ struct App {
     /// portables + detected globals, last-used first. Refreshed on Restart,
     /// so the welcome screen doubles as the instance switcher.
     known: Vec<KnownInstance>,
+}
+
+/// Which criterion a [`Message::CycleFilter`] refers to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilterField {
+    Active,
+    Conflicted,
+    Update,
+    Plugins,
+    Uncategorised,
 }
 
 /// What the Backups dialog shows: the restore points of each list, newest
@@ -3194,6 +3212,81 @@ mod tests {
         assert_eq!(overwrite_tree_rows(&app, &many, 10).len(), 10);
     }
 
+
+    #[test]
+    fn a_criterion_cycles_off_only_except_and_back() {
+        // Three settings, not two: "only conflicted" and "everything except
+        // conflicted" are both questions people ask.
+        let mut app = nav_app(&["a"]);
+        assert_eq!(app.filters.active, Criterion::Off);
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        assert_eq!(app.filters.active, Criterion::Require);
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        assert_eq!(app.filters.active, Criterion::Exclude);
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        assert_eq!(app.filters.active, Criterion::Off, "back to not filtering");
+    }
+
+    #[test]
+    fn the_active_filter_keeps_only_what_it_says() {
+        let mut app = nav_app(&["On", "Off"]);
+        app.mods[1].enabled = false;
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, false], "only the enabled one");
+        app.filters.active = Criterion::Exclude;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![false, true], "and the inverse is the other question");
+    }
+
+    #[test]
+    fn filters_combine_with_each_other_and_with_the_name_box() {
+        // They narrow together (AND), like MO2's - otherwise two criteria would
+        // widen the list, which is the opposite of what a filter is for.
+        let mut app = nav_app(&["Armour Pack", "Armour Patch", "Weather"]);
+        app.mods[1].enabled = false;
+        app.search = "armour".to_string();
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, false, false], "name AND state: {vis:?}");
+    }
+
+    #[test]
+    fn a_separator_survives_only_while_something_under_it_does() {
+        // A group header for an empty group is noise; the existing rule has to
+        // keep holding once state filters can empty a group.
+        let mut app = nav_app(&["Group_separator", "Inside"]);
+        app.mods[1].enabled = false;
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![false, false], "the header goes with its only mod");
+        app.mods[1].enabled = true;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, true], "and comes back with it");
+    }
+
+    #[test]
+    fn changing_a_filter_drops_the_selection_and_any_drag() {
+        // The visible set changes underneath every row index they hold.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mods.extend([0, 2]);
+        app.drag_state = Some(DragState { from: 0, gap: 2, aimed: true });
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Conflicted));
+        assert!(app.selected_mods.is_empty());
+        assert!(app.drag_state.is_none());
+    }
+
+    #[test]
+    fn the_button_says_how_many_criteria_are_narrowing_the_list() {
+        // A list that looks short must always say why.
+        let mut app = nav_app(&["a"]);
+        assert_eq!(app.filters.active_count(), 0);
+        app.filters.active = Criterion::Require;
+        app.filters.update = Criterion::Exclude;
+        assert_eq!(app.filters.active_count(), 2);
+        let _ = update_inner(&mut app, Message::ClearFilters);
+        assert_eq!(app.filters.active_count(), 0, "Clear really clears");
+    }
 
     #[test]
     fn send_to_top_moves_as_far_as_the_engine_allows_not_to_row_zero() {

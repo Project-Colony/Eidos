@@ -210,6 +210,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         notes_edit: String::new(),
         collapsed: HashSet::new(),
         category_filter: None,
+        filters: ModFilters::default(),
+        filters_open: false,
         settings_open: false,
         settings_tab: SettingsTab::General,
         // Open on first sight: a settings page whose sections are all shut asks
@@ -1129,23 +1131,145 @@ pub(crate) fn scroll_focus_into_view(id: widget::Id, pos: usize, total: usize) -
 /// drift, and the drift is invisible until an arrow key walks the focus into a
 /// row that is filtered out or folded away - where the highlight cannot be seen
 /// and Space toggles a mod the user is not looking at.
+/// One criterion of the mod-list filter, and how it is currently set.
+///
+/// MO2's filter pane is what makes a five-hundred-mod list navigable: it slices
+/// by STATE, not just by name. Each row cycles through three settings rather
+/// than two, because "only conflicted mods" and "everything except conflicted
+/// mods" are both questions people ask, and a plain checkbox can only ask one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum Criterion {
+    /// Not filtering on this at all.
+    #[default]
+    Off,
+    /// Keep only the rows that match.
+    Require,
+    /// Keep only the rows that do NOT match.
+    Exclude,
+}
+
+impl Criterion {
+    /// The next setting when the row is clicked: off -> require -> exclude.
+    pub(crate) fn next(self) -> Criterion {
+        match self {
+            Criterion::Off => Criterion::Require,
+            Criterion::Require => Criterion::Exclude,
+            Criterion::Exclude => Criterion::Off,
+        }
+    }
+
+    /// Whether a row whose answer to this criterion is `has` survives it.
+    pub(crate) fn keeps(self, has: bool) -> bool {
+        match self {
+            Criterion::Off => true,
+            Criterion::Require => has,
+            Criterion::Exclude => !has,
+        }
+    }
+
+    pub(crate) fn mark(self) -> &'static str {
+        match self {
+            Criterion::Off => "[ ]",
+            Criterion::Require => "[+]",
+            Criterion::Exclude => "[-]",
+        }
+    }
+}
+
+/// Which state filters the mod list is applying. All of them combine with AND,
+/// and with the name box and the category dropdown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct ModFilters {
+    pub active: Criterion,
+    pub conflicted: Criterion,
+    pub update: Criterion,
+    pub plugins: Criterion,
+    pub uncategorised: Criterion,
+}
+
+impl ModFilters {
+    /// Every criterion, as (label, current setting, the message that cycles it).
+    /// One list so the panel and the count cannot drift apart.
+    pub(crate) fn rows(self) -> [(&'static str, Criterion, FilterField); 5] {
+        [
+            ("Active", self.active, FilterField::Active),
+            ("Conflicted", self.conflicted, FilterField::Conflicted),
+            ("Update available", self.update, FilterField::Update),
+            ("Has plugins", self.plugins, FilterField::Plugins),
+            ("No category", self.uncategorised, FilterField::Uncategorised),
+        ]
+    }
+
+    pub(crate) fn get(self, f: FilterField) -> Criterion {
+        match f {
+            FilterField::Active => self.active,
+            FilterField::Conflicted => self.conflicted,
+            FilterField::Update => self.update,
+            FilterField::Plugins => self.plugins,
+            FilterField::Uncategorised => self.uncategorised,
+        }
+    }
+
+    pub(crate) fn set(&mut self, f: FilterField, c: Criterion) {
+        match f {
+            FilterField::Active => self.active = c,
+            FilterField::Conflicted => self.conflicted = c,
+            FilterField::Update => self.update = c,
+            FilterField::Plugins => self.plugins = c,
+            FilterField::Uncategorised => self.uncategorised = c,
+        }
+    }
+
+    /// How many criteria are actually filtering, for the button's badge.
+    pub(crate) fn active_count(self) -> usize {
+        self.rows().iter().filter(|(_, c, _)| *c != Criterion::Off).count()
+    }
+
+    pub(crate) fn any(self) -> bool {
+        self.active_count() > 0
+    }
+}
+
 pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::CategoryFactory>) -> Vec<bool> {
     let query = app.search.trim().to_lowercase();
-    let filtering = !query.is_empty() || app.category_filter.is_some();
-    visible_rows(&app.mods, &app.collapsed, filtering, |_, m| {
+    let filtering = !query.is_empty() || app.category_filter.is_some() || app.filters.any();
+    visible_rows(&app.mods, &app.collapsed, filtering, |i, m| {
         if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             return false;
         }
-        match app.category_filter {
+        let meta = app.meta_cache.get(&m.name);
+        let by_category = match app.category_filter {
             None => true,
-            Some(fid) => app
-                .meta_cache
-                .get(&m.name)
+            Some(fid) => meta
                 .and_then(|r| r.category_id)
                 .zip(cats)
                 .is_some_and(|(cid, cf)| cf.is_descendant_of(cid, fid)),
+        };
+        if !by_category {
+            return false;
         }
+        let f = app.filters;
+        // Each answer is read from what the list already computes - the whole
+        // point of the pane is that none of this needs new bookkeeping.
+        f.active.keeps(m.enabled)
+            && f.conflicted.keeps(mod_has_conflict(app, i))
+            && f.update.keeps(meta.is_some_and(|r| r.update))
+            && f.plugins.keeps(meta.is_some_and(|r| r.content_tags.contains('P')))
+            && f.uncategorised.keeps(meta.is_none_or(|r| r.category_id.is_none()))
     })
+}
+
+/// Whether this mod contests a file with any other mod.
+///
+/// Not the same question the row TINTS answer: those are relative to the
+/// selected mod ("does it beat the focused one"), while a filter has to hold
+/// with nothing selected at all.
+pub(crate) fn mod_has_conflict(app: &App, row: usize) -> bool {
+    let Some(map) = app.conflicts.as_ref() else { return false };
+    // Origins are `index + 1`; 0 is the game's own data.
+    map.mods
+        .get(&((row + 1) as u32))
+        .is_some_and(|c| c.state != eidos_conflicts::ConflictState::None)
 }
 
 /// Which list the keyboard actually drives right now.
