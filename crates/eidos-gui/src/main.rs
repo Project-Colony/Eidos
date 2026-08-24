@@ -471,6 +471,20 @@ enum Message {
     PauseDownload(String),
     /// Start `eidos nxm --resume` on a paused or stalled partial.
     ResumeDownload(String),
+    // ---- INI editor (MO2's bundled INI Editor tool plugin) ----
+    /// Open the editor on the active profile's INIs.
+    ShowIniEditor,
+    CloseIniEditor,
+    /// Switch to another of the game's INI files.
+    IniEditorPick(String),
+    /// An edit inside the text area.
+    IniEditorAction(iced::widget::text_editor::Action),
+    /// Write the buffer back to the profile's copy.
+    IniEditorSave,
+    /// Throw the buffer away and re-read from disk.
+    IniEditorRevert,
+    /// Hand the file to the desktop's own editor.
+    IniEditorOpenExternal,
     /// Filter the Data tree by name.
     DataQueryChanged(String),
     /// Show only paths more than one mod provides.
@@ -730,6 +744,34 @@ impl ExecutablesDialogState {
         t.output_mod = Some(self.output_mod.trim().to_string())
             .filter(|m| self.mod_names.iter().any(|n| n == m));
     }
+}
+
+/// The INI editor (MO2 ships one as a tool plugin).
+///
+/// It edits the PROFILE's copy, which is the only durable one: the copy in the
+/// Proton prefix is overwritten from the profile at every launch and captured
+/// back after, so editing that one is either pointless or a race. That makes the
+/// editor worth more here than in MO2 - on Linux the prefix copy is buried in
+/// `steamapps/compatdata/<id>/pfx/drive_c/users/steamuser/Documents/My Games/...`,
+/// which is not a path anyone finds by accident.
+struct IniEditorState {
+    /// The INI files this game has, in `GameDef` order.
+    files: Vec<String>,
+    /// Which one is being edited.
+    current: String,
+    /// The editable buffer.
+    content: iced::widget::text_editor::Content,
+    /// Whether the file on disk was Windows-1252, so it is written back the same
+    /// way. Game INIs are as often CP1252 as UTF-8, and re-encoding one silently
+    /// mangles every accented value in it.
+    cp1252: bool,
+    /// Whether the buffer differs from what was read.
+    dirty: bool,
+    /// The text as read, so Revert costs no disk round-trip and works even if
+    /// the file has since been deleted.
+    original: String,
+    /// Absent from disk: a profile that has never had this INI. Saving creates it.
+    missing: bool,
 }
 
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
@@ -1153,6 +1195,8 @@ struct App {
     install_at: Option<usize>,
     /// The Categories dialog: which mods it applies to and the pending choice.
     categories_dialog: Option<CategoriesDialogState>,
+    /// The open INI editor, if any.
+    ini_editor: Option<IniEditorState>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -3721,6 +3765,70 @@ mod tests {
         app.created = Some(inst);
         app.screen = Screen::Main;
         (app, root)
+    }
+
+    #[test]
+    fn the_ini_editor_writes_the_profiles_copy_in_the_encoding_it_found() {
+        let (mut app, root) = data_app(&[], &[]);
+        let inst = app.created.clone().unwrap();
+        let prof = inst.active();
+        // A CP1252 file: Windows-written game INIs are as often this as UTF-8,
+        // and re-encoding one silently mangles every accented value in it.
+        let path = prof.ini_path("Skyrim.ini");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, b"[General]\nsLanguage=Fran\xe7ais").unwrap();
+
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        let ed = app.ini_editor.as_ref().expect("the editor opened");
+        assert_eq!(ed.current, "Skyrim.ini");
+        assert!(ed.cp1252, "the file was not UTF-8 and must be written back as it was read");
+        assert!(ed.original.contains("Français"), "decoded: {}", ed.original);
+        assert!(!ed.dirty, "opening a file is not an edit");
+        assert!(!ed.missing);
+
+        // Saving an untouched buffer must not grow the file. `Content::text()`
+        // always ends with a newline, and this one did not.
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            b"[General]\nsLanguage=Fran\xe7ais",
+            "byte-identical after a no-op save"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_ini_editor_refuses_to_switch_away_from_unsaved_edits() {
+        let (mut app, root) = data_app(&[], &[]);
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        {
+            let ed = app.ini_editor.as_mut().unwrap();
+            ed.dirty = true;
+        }
+        let _ = update_inner(&mut app, Message::IniEditorPick("SkyrimPrefs.ini".to_string()));
+        assert_eq!(
+            app.ini_editor.as_ref().unwrap().current,
+            "Skyrim.ini",
+            "switching would have thrown the edits away without saying so"
+        );
+        assert!(app.status.as_deref().unwrap_or("").contains("unsaved"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_ini_the_profile_does_not_have_yet_opens_empty_and_says_so() {
+        let (mut app, root) = data_app(&[], &[]);
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        let ed = app.ini_editor.as_ref().unwrap();
+        assert!(ed.missing, "a fresh profile owns none of them");
+        assert!(ed.original.is_empty());
+        assert!(!ed.cp1252, "an absent file is not CP1252 - it would be written back wrong");
+
+        // Saving creates it, and the flag clears.
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert!(!app.ini_editor.as_ref().unwrap().missing);
+        assert!(app.created.as_ref().unwrap().active().ini_path("Skyrim.ini").is_file());
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

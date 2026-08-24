@@ -2262,7 +2262,7 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     container(row).width(Length::Fill).padding(4).style(bar_style).into()
 }
 
-pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
+pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // The name is the way into Settings, as Colony's is. It was decoration
     // before, and the only route in was the toolbar button - which is a long way
     // to travel for the thing a window's own title usually opens.
@@ -2402,6 +2402,18 @@ pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
             .on_press(Message::CloseCategoriesDialog);
         let dialog = container(categories_dialog(state)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
+    }
+
+    // The INI editor (MO2's bundled tool plugin).
+    if let Some(state) = &app.ini_editor {
+        // No scrim dismiss: the card holds an editable buffer, and a stray click
+        // outside it must not be how unsaved edits are thrown away. The catcher
+        // is still there to swallow the click.
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::Noop)
+            .on_right_press(Message::Noop);
+        let dialog = container(ini_editor_dialog(app, state)).center(Length::Fill);
+        layers = layers.push(catcher).push(dialog);
     }
 
     // The About box (Help menu).

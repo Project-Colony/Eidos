@@ -1192,3 +1192,88 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
         )
         .into()
 }
+
+/// The INI editor (MO2 ships one as a bundled tool plugin).
+///
+/// Worth more on Linux than it is on Windows: the copy the game reads lives deep
+/// inside the Proton prefix, under a path nobody navigates to by hand. This edits
+/// the PROFILE's copy, which is the durable one - the prefix copy is overwritten
+/// from it at every launch.
+pub(crate) fn ini_editor_dialog<'a>(
+    app: &App,
+    state: &'a IniEditorState,
+) -> Element<'a, Message> {
+    let profile = app
+        .created
+        .as_ref()
+        .map(|i| i.active().name.clone())
+        .unwrap_or_default();
+
+    // One button per INI - two or three files, so tabs beat a dropdown.
+    let mut tabs = Row::new().spacing(4);
+    for f in &state.files {
+        let on = *f == state.current;
+        tabs = tabs.push(
+            button(text(f.clone()).size(12.0))
+                .padding([3, 10])
+                .style(if on { button::primary } else { button::secondary })
+                .on_press(Message::IniEditorPick(f.clone())),
+        );
+    }
+
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text(format!("INI editor - profile '{profile}'")).size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseIniEditor),
+        );
+
+    let editor = iced::widget::text_editor(&state.content)
+        .on_action(Message::IniEditorAction)
+        .height(Length::Fixed(420.0))
+        .font(iced::Font::MONOSPACE)
+        .size(12.0)
+        .padding(8);
+
+    // Say what this file IS before the user changes it: which one, whether it
+    // exists yet, and that the game reads a deployed copy rather than this path.
+    let note = if state.missing {
+        format!(
+            "{} is not in this profile yet. Saving creates it; until then the game uses whatever \
+             is already in the prefix.",
+            state.current
+        )
+    } else {
+        "Edits the profile's copy. It is deployed into the Proton prefix at launch, and what \
+         the game writes back is captured into the profile when it exits."
+            .to_string()
+    };
+
+    let mut actions = Row::new().spacing(8).align_y(iced::Alignment::Center);
+    actions = actions
+        .push(text(if state.dirty { "Unsaved changes" } else { "" }).size(11.0).width(Length::Fill))
+        .push(tool_btn("Open externally", Message::IniEditorOpenExternal));
+    if state.dirty {
+        actions = actions.push(tool_btn("Revert", Message::IniEditorRevert));
+    }
+    actions = actions.push(
+        button(text("Save").size(12.0))
+            .padding([4, 14])
+            .style(if state.dirty { button::primary } else { button::secondary })
+            .on_press(Message::IniEditorSave),
+    );
+
+    let card = Column::new()
+        .spacing(10)
+        .push(header)
+        .push(tabs)
+        .push(editor)
+        .push(text(note).size(10.0))
+        .push(actions);
+
+    container(card).width(Length::Fixed(760.0)).padding(18).style(card_style).into()
+}

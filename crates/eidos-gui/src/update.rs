@@ -1948,6 +1948,97 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.data_expanded.insert(rel);
             }
         }
+        // ---- INI editor -------------------------------------------------------
+        Message::ShowIniEditor => {
+            app.menu_mod = None;
+            let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            let files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
+            let Some(first) = files.first().cloned() else {
+                app.status = Some(format!("{} has no INI files Eidos manages.", game.def.name));
+                return Task::none();
+            };
+            let prof = inst.active();
+            app.ini_editor = Some(load_ini_editor(&prof, files, first));
+        }
+        Message::CloseIniEditor => app.ini_editor = None,
+        Message::IniEditorPick(name) => {
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(ed) = &app.ini_editor else { return Task::none() };
+            if ed.current == name {
+                return Task::none();
+            }
+            // Switching away from unsaved edits would lose them silently, and
+            // this is a file the game reads - say so and stay put.
+            if ed.dirty {
+                app.status = Some(format!(
+                    "Save or revert {} before switching - it has unsaved changes.",
+                    ed.current
+                ));
+                return Task::none();
+            }
+            let files = ed.files.clone();
+            app.ini_editor = Some(load_ini_editor(&inst.active(), files, name));
+        }
+        Message::IniEditorAction(action) => {
+            if let Some(ed) = &mut app.ini_editor {
+                let edits = action.is_edit();
+                ed.content.perform(action);
+                // Only an EDIT dirties it. Clicking, selecting and scrolling are
+                // actions too, and treating those as changes would arm the
+                // "unsaved changes" guard for looking at the file.
+                if edits {
+                    ed.dirty = ed.content.text() != ed.original;
+                }
+            }
+        }
+        Message::IniEditorSave => {
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(ed) = &mut app.ini_editor else { return Task::none() };
+            let path = inst.active().ini_path(&ed.current);
+            // `Content::text()` always ends with a newline; an INI that had none
+            // would otherwise grow one byte on every save.
+            let mut text = ed.content.text();
+            if !ed.original.ends_with('\n') {
+                while text.ends_with('\n') {
+                    text.pop();
+                }
+            }
+            match eidos_instance::write_text(&path, &text, ed.cp1252) {
+                Ok(()) => {
+                    ed.original = ed.content.text();
+                    ed.dirty = false;
+                    ed.missing = false;
+                    app.status = Some(format!(
+                        "Saved {} into profile '{}'. It is deployed at the next launch.",
+                        ed.current,
+                        inst.active().name
+                    ));
+                }
+                Err(e) => app.status = Some(format!("Could not save {}: {e}", ed.current)),
+            }
+        }
+        Message::IniEditorRevert => {
+            if let Some(ed) = &mut app.ini_editor {
+                ed.content = iced::widget::text_editor::Content::with_text(&ed.original);
+                ed.dirty = false;
+                app.status = Some(format!("Reverted {}.", ed.current));
+            }
+        }
+        Message::IniEditorOpenExternal => {
+            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(ed) = &app.ini_editor else { return Task::none() };
+            let path = inst.active().ini_path(&ed.current);
+            if !path.is_file() {
+                app.status =
+                    Some(format!("{} does not exist yet - save once to create it.", ed.current));
+                return Task::none();
+            }
+            let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
+            app.status = Some(format!("Opened {} externally.", path.display()));
+        }
         Message::DataQueryChanged(q) => {
             app.typing = true;
             app.data_query = q;
@@ -4232,4 +4323,24 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     // exist in this game at all.
     app.data_expanded.clear();
     recompute_counts(app);
+}
+
+
+/// Read one of a profile's INIs into a fresh editor state.
+fn load_ini_editor(
+    prof: &eidos_instance::Profile,
+    files: Vec<String>,
+    current: String,
+) -> IniEditorState {
+    let path = prof.ini_path(&current);
+    let (text, cp1252) = eidos_instance::read_text_lossy(&path).unwrap_or_default();
+    IniEditorState {
+        content: iced::widget::text_editor::Content::with_text(&text),
+        original: text,
+        cp1252,
+        dirty: false,
+        missing: !path.is_file(),
+        files,
+        current,
+    }
 }

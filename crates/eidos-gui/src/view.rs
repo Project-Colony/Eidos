@@ -413,6 +413,8 @@ pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(menu_item(toolbar_label, Message::ToggleToolbar))
         .push(menu_item(status_label, Message::ToggleStatusBar))
         .push(menu_sep())
+        .push(menu_item("INI editor...", Message::ShowIniEditor))
+        .push(menu_sep())
         .push(menu_item("Collapse all groups", Message::CollapseAllGroups))
         .push(menu_item("Expand all groups", Message::ExpandAllGroups));
     menu_frame(col.into())
