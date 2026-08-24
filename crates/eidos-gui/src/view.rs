@@ -13,6 +13,11 @@ pub(crate) const C_PRIO: Length = Length::Fixed(26.0);
 /// The flags cell's width. The other columns carry their own (see
 /// [`ModColumn::width`]); this one is built before the loop that lays them out,
 /// so it needs the number here too - and the two must agree.
+/// The ground behind a synthetic group header - a wash rather than the
+/// separator's full-strength bar, because it is a fact about the list rather
+/// than a row in it.
+pub(crate) const GROUP_HEADER_BG: Color = Color::from_rgb(0.86, 0.84, 0.79);
+
 pub(crate) const C_FLAGS: Length = Length::Fixed(46.0);
 
 /// Every file in the Overwrite as `/`-joined paths relative to it (recursive).
@@ -503,12 +508,24 @@ pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
             Message::ToggleModColumn(c),
         ));
     }
-    if app.mod_sort.is_some() {
-        // Say it, and offer the way out. A sorted list refuses drags, and a user
-        // who does not know why cannot fix it.
-        col = col.push(menu_sep()).push(menu_item(
-            "Back to load order (drag needs it)",
-            Message::CycleModSort(SortKey::Name),
+    col = col.push(menu_sep());
+    for g in GroupBy::ALL {
+        let on = app.group_by == Some(g);
+        col = col.push(menu_item_owned(
+            format!("{} {}", if on { "\u{2713}" } else { "\u{2007}" }, g.label()),
+            Message::SetGroupBy((!on).then_some(g)),
+        ));
+    }
+    if app.mod_sort.is_some() || app.group_by.is_some() {
+        // Say it, and offer the way out. A sorted or grouped list refuses drags,
+        // and a user who does not know why cannot fix it.
+        col = col.push(menu_sep()).push(menu_item_owned(
+            "Back to load order (drag needs it)".to_string(),
+            if app.group_by.is_some() {
+                Message::SetGroupBy(None)
+            } else {
+                Message::CycleModSort(SortKey::Name)
+            },
         ));
     }
     let col = col
@@ -803,6 +820,27 @@ pub(crate) fn mod_row<'a>(
         .into()
 }
 
+/// A group header the grouping invented, as opposed to a separator the user
+/// wrote. Deliberately quieter than a separator: it is a fact about the list
+/// rather than something in it, and dressing it up like a separator would
+/// invite the right-click that a separator answers and this cannot.
+fn group_header_row<'a>(label: String, count: usize, folded: bool) -> Element<'a, Message> {
+    let msg = Message::ToggleGroupFold(label.clone());
+    let row = Row::new()
+        .spacing(6)
+        .height(Length::Fixed(MOD_ROW_H))
+        .align_y(iced::Alignment::Center)
+        .push(text(if folded { "[+]" } else { "[-]" }).size(11.0).width(C_CHECK))
+        .push(text(label).size(12.0).width(Length::Fill))
+        .push(text(format!("{count}")).size(11.0).width(C_PRIO));
+    mouse_area(container(row).padding([0, 4]).style(|_: &Theme| container::Style {
+        background: Some(Background::Color(GROUP_HEADER_BG)),
+        ..Default::default()
+    }))
+    .on_press(msg)
+    .into()
+}
+
 /// A date with no time: an install date is read as "which week was this", and a
 /// clock on every row is width spent on a precision nobody wants.
 fn fmt_day(t: std::time::SystemTime) -> String {
@@ -1022,10 +1060,22 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // Load order is `0..len`, so the common path is exactly what it was. Any
     // other order disables the insertion strips: a drop in a sorted list has no
     // meaning to give the row it lands on, which is why MO2 disables it too.
-    let order = display_order(app);
-    let reorderable = app.mod_sort.is_none();
+    let entries = display_entries(app);
+    let reorderable = app.mod_sort.is_none() && app.group_by.is_none();
     let dragging = dragging && reorderable;
-    for &i in &order {
+    for entry in &entries {
+        // A header the grouping invented. It heads rows that are not adjacent in
+        // the real list, so it has none of a separator's actions - there is
+        // nothing in `mods` behind it to rename, colour, move or remove.
+        let i = match entry {
+            ListEntry::Group(label, n) => {
+                let folded = app.groups_collapsed.contains(label);
+                list = list.push(group_header_row(label.clone(), *n, folded));
+                tints.push(None);
+                continue;
+            }
+            ListEntry::Row(i) => *i,
+        };
         let m = &app.mods[i];
         // A row is highlighted when it is the focus row or in the multi-selection.
         let selected = app.selected_mod == Some(i) || app.selected_mods.contains(&i);

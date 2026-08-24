@@ -288,6 +288,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
             Settings::load()
         }),
         mod_sort: None,
+        group_by: None,
+        groups_collapsed: std::collections::HashSet::new(),
         instance_rename: None,
         confirm_forget: None,
         confirm_sync: false,
@@ -1249,6 +1251,42 @@ pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidd
 /// floating to one end. A separator is a HEADING for the rows beneath it; ordered
 /// by author or by date it heads nothing, and leaving one in the middle of a
 /// sorted list is a label attached to whatever happened to land under it.
+pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
+    let Some(_) = app.group_by else {
+        return display_order(app).into_iter().map(ListEntry::Row).collect();
+    };
+    // Grouping and the user's separators cannot both be true at once: a
+    // separator heads the rows that FOLLOW it in load order, and a grouped list
+    // has moved them. Sorted within a group by whatever the sort says, or by
+    // load order when it says nothing - which keeps priority readable inside a
+    // group, the one place it still means something.
+    let order = display_order(app);
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for i in order.into_iter().filter(|&i| !app.mods[i].is_separator()) {
+        let label = group_label(app, i);
+        match groups.iter_mut().find(|(l, _)| *l == label) {
+            Some((_, rows)) => rows.push(i),
+            None => groups.push((label, vec![i])),
+        }
+    }
+    // Headers in name order, always - a grouped list whose groups move around
+    // as mods are installed is not a grouping anybody can navigate. The
+    // catch-all sinks to the bottom whatever it is called.
+    groups.sort_by(|a, b| {
+        let sink = |l: &str| l == "Uncategorised" || l == "Installed by hand";
+        sink(&a.0).cmp(&sink(&b.0)).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+    });
+    let mut out = Vec::new();
+    for (label, rows) in groups {
+        let folded = app.groups_collapsed.contains(&label);
+        out.push(ListEntry::Group(label, rows.len()));
+        if !folded {
+            out.extend(rows.into_iter().map(ListEntry::Row));
+        }
+    }
+    out
+}
+
 pub(crate) fn display_order(app: &App) -> Vec<usize> {
     let Some(sort) = app.mod_sort else { return (0..app.mods.len()).collect() };
     let mut rows: Vec<usize> =
@@ -1284,6 +1322,37 @@ pub(crate) fn display_order(app: &App) -> Vec<usize> {
         rows.reverse();
     }
     rows
+}
+
+/// The label a mod falls under when the list is grouped.
+///
+/// Never empty: a row with no category still has to land somewhere, and
+/// "Uncategorised" is a group people actually want to find - it is the pile
+/// that needs sorting out.
+pub(crate) fn group_label(app: &App, i: usize) -> String {
+    let meta = app.meta_cache.get(&app.mods[i].name);
+    match app.group_by {
+        Some(GroupBy::Category) => meta
+            .and_then(|r| r.category_name.clone())
+            .filter(|c| !c.trim().is_empty())
+            .unwrap_or_else(|| "Uncategorised".to_string()),
+        Some(GroupBy::Source) => match meta.and_then(|r| r.mod_id) {
+            Some(_) => "From Nexus".to_string(),
+            None => "Installed by hand".to_string(),
+        },
+        None => String::new(),
+    }
+}
+
+/// One entry of the drawn list: a real row, or a header the grouping invented.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ListEntry {
+    /// An index into `app.mods`.
+    Row(usize),
+    /// A synthetic group header: its label, and how many rows it heads. It has
+    /// no index because there is nothing in `mods` behind it - which is also
+    /// why it can be neither dragged, renamed, coloured nor removed.
+    Group(String, usize),
 }
 
 /// Which columns to draw, from what the user saved.

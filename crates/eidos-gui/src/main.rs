@@ -234,6 +234,10 @@ enum Message {
     DownloadSortChanged(DownloadSort),
     /// Show or hide one mod-list column. Saved immediately.
     ToggleModColumn(ModColumn),
+    /// Group the list under synthetic headers, or stop.
+    SetGroupBy(Option<GroupBy>),
+    /// Fold or unfold one synthetic group header.
+    ToggleGroupFold(String),
     /// Click a heading: ascending, then descending, then back to load order.
     /// Three states rather than two, because getting BACK to load order has to
     /// be one click away - it is the only order in which dragging works.
@@ -1131,6 +1135,29 @@ impl ModColumn {
     }
 }
 
+/// What the mod list is grouped under, when it is not grouped by separators.
+///
+/// `None` - the default - means the user's own separators, which are the
+/// groups they wrote themselves and the only ones that survive a reorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GroupBy {
+    /// The mod's primary category, resolved to its name.
+    Category,
+    /// Whether it came from Nexus at all - the split that decides which mods
+    /// an update check can even speak about.
+    Source,
+}
+
+impl GroupBy {
+    pub(crate) const ALL: [GroupBy; 2] = [GroupBy::Category, GroupBy::Source];
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            GroupBy::Category => "Group by category",
+            GroupBy::Source => "Group by source",
+        }
+    }
+}
+
 /// What the mod list is ordered by, when it is not in load order.
 ///
 /// `None` - the default - is the real order: priority, which is what the list is
@@ -1580,6 +1607,12 @@ struct App {
     mod_columns: Vec<ModColumn>,
     /// What the list is ordered by. `None` is load order - the real one.
     mod_sort: Option<ModSort>,
+    /// What the list is grouped under. `None` is the user's own separators.
+    group_by: Option<GroupBy>,
+    /// Group headers the user has folded, by their synthetic label. Separate
+    /// from `collapsed`, which keys on separator names: a category called
+    /// "Armour" and a separator called "Armour" are not the same fold.
+    groups_collapsed: std::collections::HashSet<String>,
     /// The instance row being renamed, and the pending name.
     instance_rename: Option<(usize, String)>,
     /// Two-click guard for forgetting an instance.
@@ -4614,6 +4647,129 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn grouping_puts_every_mod_under_exactly_one_header() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        // Two with a category, one without, plus a separator - which grouping
+        // must drop, because it heads rows the grouping has moved.
+        for (name, cat) in [("Helm", "5"), ("Sword", "5"), ("Loose", ""), ("SEP_separator", "")] {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(&dir).unwrap();
+            if !cat.is_empty() {
+                fs::write(dir.join("meta.ini"), format!("[General]\ncategory=\"{cat},\"\n"))
+                    .unwrap();
+            }
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = ["Helm", "Sword", "Loose", "SEP_separator"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Category)));
+        let entries = display_entries(&app);
+        let headers: Vec<String> = entries
+            .iter()
+            .filter_map(|e| match e {
+                ListEntry::Group(l, _) => Some(l.clone()),
+                _ => None,
+            })
+            .collect();
+        // The catch-all sinks to the bottom whatever it is called - it is the
+        // pile that needs sorting out, not the first thing anybody wants.
+        assert_eq!(headers.last().map(String::as_str), Some("Uncategorised"));
+        // Every non-separator mod appears exactly once, and the separator not at
+        // all.
+        let rows: Vec<usize> = entries
+            .iter()
+            .filter_map(|e| match e {
+                ListEntry::Row(i) => Some(*i),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(rows.len(), 3, "the separator is not a row under a grouping");
+        assert!(!rows.contains(&3));
+        // The counts on the headers add up to the rows drawn.
+        let counted: usize = entries
+            .iter()
+            .filter_map(|e| match e {
+                ListEntry::Group(_, n) => Some(*n),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(counted, 3);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn folding_a_group_hides_its_rows_but_keeps_its_count() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["A", "B"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+
+        let label = match display_entries(&app).first() {
+            Some(ListEntry::Group(l, _)) => l.clone(),
+            other => panic!("expected a header, got {other:?}"),
+        };
+        let _ = update_inner(&mut app, Message::ToggleGroupFold(label.clone()));
+        let entries = display_entries(&app);
+        assert_eq!(entries.len(), 1, "only the header is left");
+        // The count still says how many are inside, which is the whole reason to
+        // fold rather than filter.
+        assert_eq!(entries[0], ListEntry::Group(label.clone(), 2));
+
+        // And the same click unfolds it.
+        let _ = update_inner(&mut app, Message::ToggleGroupFold(label));
+        assert_eq!(display_entries(&app).len(), 3);
+    }
+
+    #[test]
+    fn leaving_a_grouping_returns_the_list_to_load_order() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["A", "B"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+        let _ = update_inner(&mut app, Message::ToggleGroupFold("From Nexus".to_string()));
+
+        let _ = update_inner(&mut app, Message::SetGroupBy(None));
+        assert!(app.group_by.is_none());
+        // The folds go with it: they key on labels that no longer exist, and a
+        // stale one would fold a group with the same name next time.
+        assert!(app.groups_collapsed.is_empty());
+        assert_eq!(
+            display_entries(&app),
+            vec![ListEntry::Row(0), ListEntry::Row(1)],
+            "back to the real list"
+        );
     }
 
     #[test]

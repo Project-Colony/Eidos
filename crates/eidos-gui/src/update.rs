@@ -4812,6 +4812,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             return update(app, Message::ShowModInfo(i));
         }
+        Message::SetGroupBy(by) => {
+            app.group_by = by;
+            // A drag armed under the old shape would drop somewhere that no
+            // longer means what the user aimed at - the same reason sorting
+            // drops one.
+            app.drag_state = None;
+            app.drag_hover_group = None;
+            app.groups_collapsed.clear();
+            app.view_menu_open = false;
+        }
+        Message::ToggleGroupFold(label) => {
+            if !app.groups_collapsed.remove(&label) {
+                app.groups_collapsed.insert(label);
+            }
+        }
         Message::ToggleModColumn(col) => {
             if let Some(pos) = app.mod_columns.iter().position(|c| *c == col) {
                 app.mod_columns.remove(pos);
