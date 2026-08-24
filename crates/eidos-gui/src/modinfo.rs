@@ -3632,7 +3632,12 @@ pub(crate) fn load_downloads(app: &mut App) {
     }
     match app.dl_sort {
         DownloadSort::Newest => rows.sort_by_key(|r| std::cmp::Reverse(r.modified)),
-        DownloadSort::Name => rows.sort_by_key(|r| r.name.to_lowercase()),
+        // By what the ROW SHOWS, which is the friendly mod name when there is
+        // one: sorting by the archive file name puts `SkyUI_5_2_SE-12604.7z`
+        // under S while the row reads "SkyUI", and a list ordered by something
+        // invisible reads as unordered.
+        DownloadSort::Name => rows
+            .sort_by_key(|r| r.mod_name.as_deref().unwrap_or(r.name.as_str()).to_lowercase()),
         DownloadSort::Size => rows.sort_by_key(|r| std::cmp::Reverse(r.size)),
         // Within a state, newest first - so the secondary order is the one the
         // list has always had rather than whatever read_dir happened to return.

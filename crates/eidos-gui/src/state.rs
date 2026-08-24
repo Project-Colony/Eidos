@@ -1314,14 +1314,14 @@ pub(crate) fn selection_or(app: &App, row: usize) -> Vec<usize> {
 /// would drift, and the drift is the worst kind here - a button that says it will
 /// touch 12 mods and touches 400.
 pub(crate) fn mods_visible_for_bulk(app: &App) -> Vec<usize> {
-    let vis = mod_row_visibility(app, app.categories.as_ref());
-    app.mods
-        .iter()
-        .enumerate()
-        .filter(|(i, m)| {
-            vis.get(*i).copied().unwrap_or(false) && !m.is_separator() && !m.is_unmanaged()
+    // What is DRAWN, which under a grouping is not the same as what passes the
+    // filter: a mod inside a folded group is on nobody's screen, and a batch
+    // Remove that reached one would delete a mod the user could not see.
+    drawn_mod_rows(app)
+        .into_iter()
+        .filter(|&i| {
+            app.mods.get(i).is_some_and(|m| !m.is_separator() && !m.is_unmanaged())
         })
-        .map(|(i, _)| i)
         .collect()
 }
 
@@ -1408,9 +1408,16 @@ pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
     // has moved them. Sorted within a group by whatever the sort says, or by
     // load order when it says nothing - which keeps priority readable inside a
     // group, the one place it still means something.
+    // From what the list can actually DRAW, not from every mod: a header whose
+    // rows are all filtered out is a header with nothing under it, and a count
+    // that includes them is a count that does not match what is on screen.
+    let vis = mod_row_visibility(app, app.categories.as_ref());
     let order = display_order(app);
     let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
-    for i in order.into_iter().filter(|&i| !app.mods[i].is_separator()) {
+    for i in order
+        .into_iter()
+        .filter(|&i| !app.mods[i].is_separator() && vis.get(i).copied().unwrap_or(false))
+    {
         let label = group_label(app, i);
         match groups.iter_mut().find(|(l, _)| *l == label) {
             Some((_, rows)) => rows.push(i),
@@ -1470,6 +1477,44 @@ pub(crate) fn display_order(app: &App) -> Vec<usize> {
         rows.reverse();
     }
     rows
+}
+
+/// The mod rows the list is actually DRAWING, in draw order.
+///
+/// This function exists because adding sorting and grouping made "the rows on
+/// screen" stop being "0..mods.len() filtered", and everything that acts on a
+/// row (the keyboard, shift-extend, select-all, the bulk actions, type-to-jump)
+/// was still asking the old question. Fourteen defects came out of that one
+/// divergence, so there is one answer now and everything asks it.
+///
+/// Separators are included in load order, because they are drawn there and the
+/// keyboard has always been able to land on one. Under a sort or a grouping they
+/// are not drawn, so they are not here either.
+pub(crate) fn drawn_mod_rows(app: &App) -> Vec<usize> {
+    if app.mod_sort.is_none() && app.group_by.is_none() {
+        // The common path, and deliberately not routed through
+        // `display_entries`: this is what the list did before any of this
+        // existed, and it must stay exactly that.
+        let vis = mod_row_visibility(app, app.categories.as_ref());
+        return (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect();
+    }
+    display_entries(app)
+        .into_iter()
+        .filter_map(|e| match e {
+            ListEntry::Row(i) => Some(i),
+            ListEntry::Group(..) => None,
+        })
+        .collect()
+}
+
+/// Whether dragging can mean anything right now.
+///
+/// Only in load order. Under a sort or a grouping the insertion gaps address the
+/// real list while the rows on screen are somewhere else entirely, so a drop
+/// would move a mod to a position nobody aimed at. The view hides the strips;
+/// this is what stops the drag itself, because a row's own press still arms one.
+pub(crate) fn can_reorder(app: &App) -> bool {
+    app.mod_sort.is_none() && app.group_by.is_none()
 }
 
 /// The label a mod falls under when the list is grouped.
@@ -1671,7 +1716,12 @@ pub(crate) fn is_filtering(app: &App) -> bool {
 
 pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::CategoryFactory>) -> Vec<bool> {
     let query = app.search.trim().to_lowercase();
-    visible_rows(&app.mods, &app.collapsed, is_filtering(app), |i, m| {
+    // Separator folds are suspended under a GROUPING for the same reason they
+    // are under a filter, and more strongly: a grouped list has moved the rows
+    // out from under their separators, and the separator that would unfold them
+    // is not drawn at all - so a fold left standing hides mods with no way back.
+    let suspend_folds = is_filtering(app) || app.group_by.is_some();
+    visible_rows(&app.mods, &app.collapsed, suspend_folds, |i, m| {
         if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             return false;
         }
@@ -1826,10 +1876,7 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
     // or folded into a collapsed group, where the highlight cannot be seen and
     // Space toggles something nobody is looking at.
     let rows: Vec<usize> = match pane {
-        Pane::Mods => {
-            let vis = mod_row_visibility(app, app.categories.as_ref());
-            (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect()
-        }
+        Pane::Mods => drawn_mod_rows(app),
         Pane::Plugins => (0..app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0)).collect(),
     };
     if rows.is_empty() {
@@ -1889,6 +1936,11 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
         Nav::ShiftUp | Nav::ShiftDown => {
             let up = matches!(nav, Nav::ShiftUp);
             let Some(i) = cur else { return Task::none() };
+            // Same rule as the drag: a move only means something in load order.
+            // The Plugins pane is unaffected - its rows are always `0..len`.
+            if pane == Pane::Mods && !can_reorder(app) {
+                return Task::none();
+            }
             // Land beside the neighbour the user can SEE, not one raw index
             // away: under a filter those differ, and a move whose effect is
             // invisible reads as a key that did nothing.

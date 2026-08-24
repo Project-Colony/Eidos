@@ -1247,6 +1247,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             app.rename = None;
             app.confirm_remove = None;
+            // Only in load order: under a sort or a grouping the gaps address
+            // the real list while the rows are somewhere else, so a drop moves
+            // a mod to a position nobody aimed at. The view hides the strips;
+            // this stops the drag a row's own press would otherwise arm.
+            if !can_reorder(app) {
+                return Task::none();
+            }
             app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
         }
         Message::SelectModToggle(i) => {
@@ -1283,11 +1290,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Shift would fall back to the focus this gesture is about to move,
             // and the run would never grow past two rows.
             app.sel_anchor = Some(anchor);
-            let (lo, hi) = (anchor.min(i), anchor.max(i));
+            // The run is over the rows ON SCREEN, not over the raw index range:
+            // once the list can be sorted or grouped the two differ, and a
+            // Shift+click would select mods that are nowhere between the two
+            // rows the user clicked - then a batch action would act on them.
+            let drawn = drawn_mod_rows(app);
             app.selected_mods.clear();
-            for idx in lo..=hi {
-                if idx < app.mods.len() {
-                    app.selected_mods.insert(idx);
+            match (
+                drawn.iter().position(|&r| r == anchor),
+                drawn.iter().position(|&r| r == i),
+            ) {
+                (Some(a), Some(b)) => {
+                    for &idx in &drawn[a.min(b)..=a.max(b)] {
+                        app.selected_mods.insert(idx);
+                    }
+                }
+                // One end is not drawn - the filter moved under it. Selecting a
+                // run between a row on screen and one that is not would be a
+                // selection nobody could see the shape of.
+                _ => {
+                    app.selected_mods.insert(i);
                 }
             }
             app.selected_mod = Some(i);
@@ -2525,6 +2547,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::SettingsTabSelected(t) => app.settings_tab = t,
         Message::NexusSignInStart => {
             if app.nexus_signing_in {
+                return Task::none();
+            }
+            // Signing in opens a BROWSER and talks to Nexus, so offline mode has
+            // to stop it here: `connect` is not on this path at all, and the
+            // guard there does not cover the one action that begins by leaving
+            // the program.
+            if app.prefs.offline {
+                app.nexus_error = Some(eidos_nexus::OFFLINE_MESSAGE.to_string());
                 return Task::none();
             }
             app.nexus_signing_in = true;
@@ -4132,18 +4162,36 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
         }
         Message::CollapseAllGroups => {
-            // Collapse every separator's group (key by display name, like MO2).
-            for m in &app.mods {
-                if m.is_separator() {
-                    app.collapsed.insert(m.display_name().to_string());
+            // Whichever fold set is ON SCREEN. Under a grouping the separators
+            // are not drawn and their folds are suspended, so folding them
+            // would be a menu entry that visibly does nothing.
+            if app.group_by.is_some() {
+                let labels: Vec<String> = display_entries(app)
+                    .into_iter()
+                    .filter_map(|e| match e {
+                        ListEntry::Group(l, _) => Some(l),
+                        ListEntry::Row(_) => None,
+                    })
+                    .collect();
+                app.groups_collapsed.extend(labels);
+            } else {
+                // Key by display name, like MO2.
+                for m in &app.mods {
+                    if m.is_separator() {
+                        app.collapsed.insert(m.display_name().to_string());
+                    }
                 }
+                save_collapsed(app);
             }
-            save_collapsed(app);
             app.view_menu_open = false;
         }
         Message::ExpandAllGroups => {
-            app.collapsed.clear();
-            save_collapsed(app);
+            if app.group_by.is_some() {
+                app.groups_collapsed.clear();
+            } else {
+                app.collapsed.clear();
+                save_collapsed(app);
+            }
             app.view_menu_open = false;
         }
         // ---- Saves tab ----
@@ -5125,11 +5173,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Toggle, so the same button brings it back - a one-way hide with no
             // visible undo is how a library loses things.
             let hiding = !app.downloads.iter().any(|r| r.name == name && r.hidden);
-            match eidos_nexus::set_download_meta_key(
-                &archive,
-                "removed",
-                if hiding { "true" } else { "false" },
-            ) {
+            // Through `ModMeta`, which CREATES the sidecar when there is none.
+            // `set_download_meta_key` edits an existing file, and an archive
+            // copied in by hand has no sidecar at all - which is exactly the
+            // pile somebody wants to hide.
+            let meta_path = eidos_nexus::meta_path_for(&archive);
+            let mut meta = eidos_instance::ModMeta::read(&meta_path);
+            meta.set("removed", if hiding { "true" } else { "false" });
+            match meta.write(&meta_path) {
                 Ok(()) => {
                     load_downloads(app);
                     app.status = Some(if hiding {
@@ -5227,9 +5278,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if effective_focus(app) != Pane::Mods {
                 return Task::none();
             }
-            let vis = mod_row_visibility(app, app.categories.as_ref());
-            let rows: Vec<usize> =
-                (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect();
+            let rows = drawn_mod_rows(app);
             if rows.is_empty() {
                 return Task::none();
             }
@@ -5297,6 +5346,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragDrop => {
             app.drag_hover_group = None;
             let Some(d) = app.drag_state.take() else { return Task::none() };
+            if !can_reorder(app) {
+                return Task::none();
+            }
             if d.from >= app.mods.len() {
                 return Task::none();
             }

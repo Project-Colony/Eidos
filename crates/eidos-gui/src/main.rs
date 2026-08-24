@@ -5039,6 +5039,181 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// Four mods and a separator, with an instance so meta reads work.
+    fn list_app(names: &[&str]) -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in names {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = names
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+        (app, root)
+    }
+
+    #[test]
+    fn nothing_can_act_on_a_row_the_list_is_not_drawing() {
+        // The defect this exists for was systemic: sorting and grouping changed
+        // what is DRAWN, and the keyboard, shift-extend, select-all and the bulk
+        // actions were all still asking "which rows pass the filter" - a
+        // different question once the two orders disagree. One answer now.
+        let (mut app, root) = list_app(&["Zeta", "SEP_separator", "Alpha", "Mid"]);
+
+        // Load order: exactly what it always was, separators included.
+        assert_eq!(drawn_mod_rows(&app), vec![0, 1, 2, 3]);
+
+        // Grouped, with one group folded: the folded rows are drawn by nobody,
+        // so nothing may reach them.
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+        let label = match display_entries(&app).first() {
+            Some(ListEntry::Group(l, _)) => l.clone(),
+            other => panic!("expected a header, got {other:?}"),
+        };
+        let _ = update_inner(&mut app, Message::ToggleGroupFold(label));
+        assert!(drawn_mod_rows(&app).is_empty(), "everything is inside the folded group");
+        // Select-all, which feeds the batch Remove that DELETES FROM DISK.
+        assert!(
+            mods_visible_for_bulk(&app).is_empty(),
+            "a batch action must not reach a mod nobody can see"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_drag_is_refused_outside_load_order_rather_than_moving_the_wrong_row() {
+        // Hiding the insertion strips was not enough: a row's own press still
+        // armed a drag, and the gap it aimed at addressed the REAL list while
+        // the rows on screen were somewhere else.
+        let (mut app, root) = list_app(&["Zeta", "Alpha", "Mid"]);
+        let before: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        assert!(!can_reorder(&app));
+        let _ = update_inner(&mut app, Message::SelectMod(0));
+        assert!(app.drag_state.is_none(), "no drag is armed while sorted");
+        let _ = update_inner(&mut app, Message::DragOverGap(2));
+        let _ = update_inner(&mut app, Message::DragDrop);
+        assert_eq!(
+            app.mods.iter().map(|m| m.name.clone()).collect::<Vec<_>>(),
+            before,
+            "and nothing moved"
+        );
+
+        // Back in load order it works again, which is the point of the escape
+        // hatch in the View menu.
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        assert!(can_reorder(&app));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn shift_click_selects_the_run_that_is_on_screen() {
+        let (mut app, root) = list_app(&["Zeta", "Alpha", "Mid"]);
+        // Sorted by name the drawn order is Alpha(1), Mid(2), Zeta(0).
+        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
+        assert_eq!(drawn_mod_rows(&app), vec![1, 2, 0]);
+
+        let _ = update_inner(&mut app, Message::SelectMod(1));
+        let _ = update_inner(&mut app, Message::SelectModExtend(2));
+        // Alpha to Mid: two rows, adjacent on screen. Over the raw index range
+        // that would have been 1..=2 by luck; the case that broke is below.
+        assert_eq!(app.selected_mods.len(), 2);
+
+        // Alpha to Zeta is the WHOLE drawn list. Over raw indices it would have
+        // been 0..=1 - Zeta and Alpha - silently missing the row between them.
+        let _ = update_inner(&mut app, Message::SelectMod(1));
+        let _ = update_inner(&mut app, Message::SelectModExtend(0));
+        let mut got: Vec<usize> = app.selected_mods.iter().copied().collect();
+        got.sort_unstable();
+        assert_eq!(got, vec![0, 1, 2], "every row between them ON SCREEN");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn collapse_all_acts_on_whichever_folds_are_on_screen() {
+        let (mut app, root) = list_app(&["A", "SEP_separator", "B"]);
+        // Ungrouped: the separators, as it always did.
+        let _ = update_inner(&mut app, Message::CollapseAllGroups);
+        assert!(!app.collapsed.is_empty());
+
+        // Grouped: the separators are not drawn and their folds are suspended,
+        // so folding them would be a menu entry that visibly does nothing.
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+        let _ = update_inner(&mut app, Message::CollapseAllGroups);
+        assert!(!app.groups_collapsed.is_empty(), "the headers that ARE drawn");
+        assert!(drawn_mod_rows(&app).is_empty());
+        let _ = update_inner(&mut app, Message::ExpandAllGroups);
+        assert!(app.groups_collapsed.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_separator_fold_cannot_hide_mods_in_a_grouped_list() {
+        // The separator that would unfold them is not drawn under a grouping, so
+        // a fold left standing hides mods with no way back.
+        let (mut app, root) = list_app(&["SEP_separator", "A", "B"]);
+        let _ = update_inner(&mut app, Message::ToggleCollapse("SEP".to_string()));
+        assert_eq!(drawn_mod_rows(&app).len(), 1, "folded: only the separator");
+
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+        assert_eq!(drawn_mod_rows(&app).len(), 2, "the mods are back");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_group_header_counts_only_the_rows_it_actually_heads() {
+        let (mut app, root) = list_app(&["Alpha", "Beta"]);
+        let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
+        assert!(matches!(display_entries(&app).first(), Some(ListEntry::Group(_, 2))));
+
+        // Filter one out: the count follows, and a header left with nothing does
+        // not draw at all.
+        let _ = update_inner(&mut app, Message::SearchChanged("alpha".to_string()));
+        assert!(matches!(display_entries(&app).first(), Some(ListEntry::Group(_, 1))));
+        let _ = update_inner(&mut app, Message::SearchChanged("nothing".to_string()));
+        assert!(display_entries(&app).is_empty(), "no header with nothing under it");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn offline_mode_stops_the_sign_in_that_never_reaches_connect() {
+        let mut app = app_for_game("skyrimse");
+        app.prefs.offline = true;
+        let _ = update_inner(&mut app, Message::NexusSignInStart);
+        // Signing in opens a BROWSER before any request is made, so the guard in
+        // `Nexus::connect` is not on this path at all.
+        assert!(!app.nexus_signing_in, "it must not start");
+        assert_eq!(app.nexus_error.as_deref(), Some(eidos_nexus::OFFLINE_MESSAGE));
+    }
+
+    #[test]
+    fn an_archive_with_no_sidecar_can_still_be_hidden() {
+        // The pile somebody most wants to hide is the one copied in by hand,
+        // which has no sidecar at all - and the key-editing helper only edits a
+        // file that already exists.
+        let (mut app, root) = downloads_instance(&[("ByHand.7z", "")]);
+        assert_eq!(app.downloads.len(), 1);
+
+        let _ = update_inner(&mut app, Message::HideDownload("ByHand.7z".to_string()));
+        assert!(app.error.is_none(), "{:?}", app.error);
+        assert!(app.downloads.is_empty(), "it is hidden");
+        assert!(root.join("downloads").join("ByHand.7z").is_file(), "and still there");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn grouping_puts_every_mod_under_exactly_one_header() {
         let root = temp_portable("skyrimse");

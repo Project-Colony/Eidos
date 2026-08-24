@@ -44,6 +44,14 @@ use tools::*;
 fn nexus_client() -> eidos_nexus::Nexus {
     match eidos_nexus::Nexus::connect() {
         Ok(nexus) => nexus,
+        // The message matters: `connect` refuses for two quite different
+        // reasons, and offline mode is the user's own setting. Telling somebody
+        // who turned it on that they are "not signed in" sends them to sign in
+        // again, which will also refuse, with the same wrong explanation.
+        Err(e) if e == eidos_nexus::OFFLINE_MESSAGE => {
+            eidos_log::info!("{e}");
+            exit(1);
+        }
         Err(_) => {
             eidos_log::info!(
                 "Not signed in to Nexus. Sign in from the GUI (Settings -> Nexus); \
