@@ -1897,15 +1897,27 @@ pub(crate) fn drop_files_cache(app: &App, layer: Option<&str>) {
 /// Drop the plugin-order cache - and, when the Plugins tab is open, recompute it
 /// immediately so the pane updates in place instead of blanking to the
 /// placeholder until the user leaves and re-enters the tab.
+/// Everything derived from WHICH PLUGINS ARE ACTIVE.
+///
+/// The Archives tab answers "will the engine load this BSA", which is a question
+/// about the active plugin set; so does the orphan-archive health check. Neither
+/// is keyed on the view generation, because toggling a plugin does not move it -
+/// and switching tabs does not either. One function, called from every path that
+/// can change that set, so a new path cannot silently forget one of them.
+pub(crate) fn plugin_state_changed(app: &App) {
+    app.archives_cache.borrow_mut().take();
+    // The orphan-archive check reads the same set; leaving it would have the
+    // Health tab and the Archives tab disagreeing about the same file.
+    app.diag_stale.set(true);
+}
+
 pub(crate) fn invalidate_plugins(app: &mut App) {
     // The menu holds a raw ROW, and the rebuild below renumbers them: acting on
     // a stale index would hit whichever plugin now sits there. The selection
     // survives because it is carried by name; an open menu cannot be, so it
     // closes.
     app.menu_plugin = None;
-    // Same reason as `commit_plugin_order`: the Archives tab's answer depends on
-    // the active plugin set, and this is where that set is thrown away.
-    app.archives_cache.borrow_mut().take();
+    plugin_state_changed(app);
     app.profiles_cache.borrow_mut().take();
     let held = hold_plugin_selection(app);
     app.plugins = None;

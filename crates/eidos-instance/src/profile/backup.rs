@@ -299,6 +299,11 @@ impl Profile {
 /// Write bytes through a temp file and a rename, so an interrupted write can
 /// never leave a torn list where a whole one used to be.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    // The backups directory is made here rather than by the shared writer: a
+    // restore point legitimately lands in a folder that has never existed.
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     crate::write_atomic(path, bytes)
 }
 

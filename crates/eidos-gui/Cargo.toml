@@ -7,6 +7,9 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+# utimensat(2): a transferred save has to keep its own timestamp, and std has
+# no portable setter for one.
+libc = "0.2"
 # `smol` enables iced's timer subscriptions (`iced::time::every`), used to poll a
 # launched game for exit while the GUI is locked.
 iced = { version = "0.14", features = ["image", "smol"] }

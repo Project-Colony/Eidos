@@ -1933,6 +1933,13 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.backups.is_none()
         && app.executables.is_none()
         && !app.addons_open
+        // The three added since. The export dialog and the instance manager own
+        // the screen, and the File dropdown is a menu like the View one - a
+        // Delete reaching the mod list from behind any of them arms a removal on
+        // a row nobody is looking at.
+        && app.export.is_none()
+        && !app.instances_open
+        && !app.file_menu_open
     {
         subs.push(shortcuts);
     }
@@ -4116,6 +4123,90 @@ mod tests {
     }
 
     #[test]
+    fn every_timer_tick_is_ambient() {
+        // A tick that counts as an ACTION cancels every armed two-click
+        // confirmation before the second click can land. The saves watcher fires
+        // every 2.5s and the log tail every 1.5s, so on those screens the
+        // confirmations were a coin flip. Asserted as a set rather than one by
+        // one, so the next tick that gets added is caught here.
+        let app = nav_app(&[]);
+        for m in [
+            Message::DownloadTick,
+            Message::SavesTick,
+            Message::LogRefresh,
+            Message::PointerAt(iced::Point::ORIGIN),
+            Message::ModifiersChanged(iced::keyboard::Modifiers::default()),
+        ] {
+            assert!(is_ambient(&app, &m), "{m:?} must not disarm a confirmation");
+        }
+    }
+
+    #[test]
+    fn a_saves_tick_does_not_cancel_the_delete_it_is_ticking_beside() {
+        let (mut app, root) = saves_app();
+        app.tab = Tab::Saves;
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(0));
+        let _ = update_inner(&mut app, Message::SavesDeleteSelected);
+        assert!(app.confirm_saves_delete);
+        // The watcher runs on its own, between the two clicks.
+        let _ = update(&mut app, Message::SavesTick);
+        assert!(app.confirm_saves_delete, "the tick cancelled the user's arming");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_saves_reload_keeps_the_whole_selection_not_just_the_focus() {
+        let (mut app, root) = saves_app();
+        let a = app.saves.iter().position(|s| s.filename == "Save1.ess").unwrap();
+        let b = app.saves.iter().position(|s| s.filename == "Save2.ess").unwrap();
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(a));
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(b));
+        assert_eq!(app.selected_saves.len(), 2);
+
+        // The game writes an autosave, renumbering everything. The batch bar is
+        // built on this set, so losing it takes the bar off screen mid-gesture.
+        let dir = app.created.as_ref().unwrap().active().saves_dir();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(dir.join("Autosave.ess"), b"z").unwrap();
+        let _ = update_inner(&mut app, Message::SavesTick);
+
+        let names: Vec<String> = app
+            .selected_saves
+            .iter()
+            .filter_map(|&i| app.saves.get(i))
+            .map(|s| s.filename.clone())
+            .collect();
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert!(names.contains(&"Save1.ess".to_string()));
+        assert!(names.contains(&"Save2.ess".to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_transfer_never_lands_a_cosave_beside_another_characters_save() {
+        let (mut app, root) = saves_app();
+        let inst = app.created.clone().unwrap();
+        let dest = inst.profile("Second").saves_dir();
+        let idx = app.saves.iter().position(|s| s.filename == "Save1.ess").unwrap();
+        let stem = app.saves[idx].path.file_stem().unwrap().to_string_lossy().into_owned();
+
+        // The destination already holds a DIFFERENT character's save under that
+        // stem. Guarding per file copied the co-save anyway - a co-save that
+        // silently belongs to the wrong game state.
+        fs::write(dest.join(format!("{stem}.ess")), b"SOMEONE ELSE").unwrap();
+
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(idx));
+        let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
+        assert_eq!(fs::read(dest.join(format!("{stem}.ess"))).unwrap(), b"SOMEONE ELSE");
+        assert!(
+            !dest.join(format!("{stem}.skse")).exists(),
+            "the co-save must not be planted beside a save it does not belong to"
+        );
+        assert!(app.status.as_deref().unwrap_or("").contains("already existed"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn deleting_selected_saves_takes_their_cosaves_and_does_not_shift_underneath_itself() {
         let (mut app, root) = saves_app();
         assert_eq!(app.saves.len(), 2);
@@ -4463,7 +4554,9 @@ mod tests {
         let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
         let _ = update_inner(&mut app, Message::PluginSendToPriorityChanged("  ".into()));
         let _ = update_inner(&mut app, Message::PluginSendToPriorityCommit);
-        assert!(app.status.as_deref().unwrap_or("").contains("load index"));
+        // "Row number", not "load index": the only numeric column the pane
+        // draws is the game's hex load index, which this field does NOT take.
+        assert!(app.status.as_deref().unwrap_or("").contains("row number"));
         let after: Vec<String> =
             app.plugins.as_ref().unwrap().plugins.iter().map(|p| p.name.clone()).collect();
         assert_eq!(before, after);

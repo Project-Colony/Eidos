@@ -31,6 +31,25 @@ pub(crate) fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
     if let Some(c) = old.category() {
         m.set("category", &format!("\"{c}\""));
     }
+    // Everything else the USER typed, which a reinstall rewrites from the
+    // archive and would otherwise destroy. These are not recoverable from
+    // anywhere - a note is a sentence somebody wrote, a colour is a decision
+    // about a list, a page is a link nothing else records - so losing them to
+    // "update this mod" is a silent, permanent cost of keeping a setup current.
+    if let Some(n) = old.notes() {
+        m.set_notes(&n);
+    }
+    if let Some(rgb) = old.color() {
+        m.set_color(Some(rgb));
+    }
+    if let Some(u) = old.url() {
+        m.set_url(&u);
+    }
+    // The local flags too: "ignore updates" survives an update by definition,
+    // and re-arming it every reinstall is exactly the wrong default.
+    if old.ignore_update() {
+        m.set_ignore_update(true);
+    }
     let _ = m.write(meta_path);
 }
 

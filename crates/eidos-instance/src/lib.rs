@@ -506,7 +506,7 @@ impl Instance {
             // the reverse) used to propagate with `?`, splitting the run's output
             // between the Overwrite and the mod at whatever point it hit - which
             // is the worst of both places, because neither is complete.
-            if let Err(e) = move_one_into(&src.join(rel), &to) {
+            if let Err(e) = move_one_into(&self.mods_dir(), &src.join(rel), &to) {
                 failures.push(format!("{}: {e}", rel.display()));
                 continue;
             }
@@ -603,7 +603,7 @@ impl Instance {
                 continue;
             }
             let dest = self.mods_dir().join(owner).join(rel);
-            if let Err(e) = move_one_into(&src.join(rel), &dest) {
+            if let Err(e) = move_one_into(&self.mods_dir(), &src.join(rel), &dest) {
                 failures.push(format!("{}: {e}", rel.display()));
                 continue;
             }
@@ -1059,9 +1059,10 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    // The parent is NOT created here. `meta.write` on a mod with no folder used
+    // to fail with a clean ENOENT that the GUI reported; creating it silently
+    // planted an empty `mods/<name>/` holding only a meta.ini - which the next
+    // reconcile then lists as a real mod. A writer's job is to write.
     fs::write(&tmp, bytes)?;
     match fs::rename(&tmp, path) {
         Ok(()) => Ok(()),
@@ -1189,45 +1190,96 @@ fn prune_empty_dirs(root: &Path, before: &OverwriteSnapshot) {
     walk(root, Path::new(""), keep, 0);
 }
 
-/// Move one captured file into the output mod, resolving a type conflict the
-/// source's way exactly as [`move_tree`] does: what the tool just wrote is the
-/// newer truth.
+/// Move one produced file into a destination inside `base`, resolving a type
+/// conflict the source's way exactly as [`move_tree`] does: what the tool just
+/// wrote is the newer truth.
 ///
-/// Every path component of the destination is created explicitly and checked for
-/// type, rather than leaning on `create_dir_all`. Two reasons, and both bite:
-/// `create_dir_all` fails outright when a component is an existing FILE (a mod
-/// shipping `SKSE` as a file while the run wrote `SKSE/Plugins/x.dll`), and it
-/// follows symlinks - so a mod containing a symlinked subdirectory would let a
-/// capture create, delete and write files anywhere on the filesystem while
-/// reporting success.
-fn move_one_into(from: &Path, to: &Path) -> std::io::Result<()> {
-    if let Some(parent) = to.parent() {
-        create_dirs_no_symlinks(parent)?;
+/// `base` is a directory that ALREADY EXISTS and is never touched - the mods
+/// directory. Only components below it are created. That bound is the whole
+/// safety property: an earlier version walked the destination from `/` and
+/// replaced any symlinked component it met, which on the layout this crate
+/// explicitly supports - a mod pool on another drive reached by a symlinked
+/// `mods/` - deleted the link to the pool and put an empty directory in its
+/// place on the first file synced.
+fn move_one_into(base: &Path, from: &Path, to: &Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    let rel = to
+        .strip_prefix(base)
+        .map_err(|_| Error::new(ErrorKind::InvalidInput, "destination is outside the mods folder"))?;
+    if let Some(parent) = rel.parent() {
+        create_dirs_under(base, parent)?;
     }
-    match fs::symlink_metadata(to).map(|m| m.file_type()) {
-        // A symlink at the destination is REPLACED, never followed: removing it
-        // unlinks the link itself, which is what `remove_file` does.
-        Ok(t) if t.is_dir() => fs::remove_dir_all(to)?,
-        Ok(_) => fs::remove_file(to)?,
-        Err(_) => {}
+
+    // A destination that is in the way is moved ASIDE, not deleted, until the
+    // rename has actually succeeded. Removing it first meant a failed rename -
+    // EXDEV, when mods/ is a mount from another drive - destroyed the mod's own
+    // copy and moved nothing, while reporting only "could not be moved".
+    let existing = fs::symlink_metadata(to).ok();
+    let stash = existing.as_ref().map(|_| {
+        to.with_extension(format!("eidos-replaced.{}", std::process::id()))
+    });
+    if let Some(stash) = &stash {
+        fs::rename(to, stash)?;
     }
-    fs::rename(from, to)
+
+    let outcome = fs::rename(from, to).or_else(|e| {
+        // Different filesystems: rename cannot cross them, so fall back to a
+        // copy and only unlink the source once the copy is safely there.
+        if e.raw_os_error() == Some(libc::EXDEV) {
+            fs::copy(from, to)?;
+            fs::remove_file(from)?;
+            Ok(())
+        } else {
+            Err(e)
+        }
+    });
+
+    match (outcome, stash) {
+        (Ok(()), Some(stash)) => {
+            // The move worked: the displaced original is genuinely superseded.
+            let _ = if stash.is_dir() {
+                fs::remove_dir_all(&stash)
+            } else {
+                fs::remove_file(&stash)
+            };
+            Ok(())
+        }
+        (Ok(()), None) => Ok(()),
+        (Err(e), Some(stash)) => {
+            // Put it back. The caller records a failure and the user's file is
+            // exactly where it was.
+            let _ = fs::rename(&stash, to);
+            Err(e)
+        }
+        (Err(e), None) => Err(e),
+    }
 }
 
-/// `create_dir_all`, refusing to traverse a symlink and replacing a non-directory
-/// component rather than failing on it.
-fn create_dirs_no_symlinks(dir: &Path) -> std::io::Result<()> {
-    let mut cur = PathBuf::new();
-    for comp in dir.components() {
-        cur.push(comp);
+/// Create every component of `rel` under `base`, which must already exist.
+///
+/// Never leaves `base`, and never follows or removes a symlink. A component that
+/// is a symlink is REFUSED rather than replaced: it could point anywhere, the
+/// user put it there deliberately, and writing through it would put files
+/// outside the instance. A component that is a plain FILE is replaced, because
+/// that is the same type conflict `move_tree` resolves the source's way (a mod
+/// shipping `SKSE` as a file while a tool wrote `SKSE/Plugins/x.dll`).
+fn create_dirs_under(base: &Path, rel: &Path) -> std::io::Result<()> {
+    use std::io::{Error, ErrorKind};
+    let mut cur = base.to_path_buf();
+    for comp in rel.components() {
+        // Only plain names. `..` would climb out of `base`, which is the one
+        // thing this function exists to prevent.
+        let std::path::Component::Normal(name) = comp else {
+            return Err(Error::new(ErrorKind::InvalidInput, "path escapes the mods folder"));
+        };
+        cur.push(name);
         match fs::symlink_metadata(&cur) {
             Ok(md) if md.file_type().is_dir() => {}
-            // A symlink, or a file, where a directory has to be. Both are
-            // replaced: following the symlink would write outside the mod, and
-            // failing would abandon the run's output in the Overwrite.
             Ok(md) if md.file_type().is_symlink() => {
-                fs::remove_file(&cur)?;
-                fs::create_dir(&cur)?;
+                return Err(Error::other(format!(
+                    "{} is a symlink; Eidos will not write through it",
+                    cur.display()
+                )));
             }
             Ok(_) => {
                 fs::remove_file(&cur)?;
@@ -1608,13 +1660,58 @@ mod tests {
     }
 
     #[test]
-    fn write_atomic_creates_the_parent_it_is_given() {
+    fn write_atomic_does_not_invent_the_directory_it_is_pointed_at() {
         let dir = std::env::temp_dir().join(format!("eidos-atomic-mk-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
+        // A writer's job is to write. Creating the parent turned "write meta.ini
+        // for a mod that has no folder" from a clean ENOENT the GUI reported
+        // into silently planting an empty `mods/<name>/` that the next reconcile
+        // then lists as a real mod.
         let target = dir.join("deep/inside/file.ini");
+        assert_eq!(write_atomic(&target, b"x").unwrap_err().kind(), std::io::ErrorKind::NotFound);
+        assert!(!dir.exists());
+
+        fs::create_dir_all(dir.join("deep/inside")).unwrap();
         write_atomic(&target, b"x").unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"x");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_move_that_cannot_land_leaves_the_destination_exactly_as_it_was() {
+        // The failure this ordering exists for: removing the destination BEFORE
+        // the rename destroyed the mod's own copy whenever the rename then
+        // failed - EXDEV, when mods/ is a mount from another drive - while
+        // reporting only "could not be moved".
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let dest_mod = inst.mods_dir().join("Target");
+        fs::create_dir_all(dest_mod.join("sub")).unwrap();
+        fs::write(dest_mod.join("sub/x.nif"), b"the mod's own copy").unwrap();
+
+        // A source that does not exist makes the rename fail after the
+        // destination has been stashed aside.
+        let missing = inst.overwrite_dir().join("nope.nif");
+        let err = move_one_into(&inst.mods_dir(), &missing, &dest_mod.join("sub/x.nif"));
+        assert!(err.is_err());
+        assert_eq!(
+            fs::read(dest_mod.join("sub/x.nif")).unwrap(),
+            b"the mod's own copy",
+            "a failed move must not have consumed the original"
+        );
+    }
+
+    #[test]
+    fn a_move_never_climbs_out_of_the_mods_folder() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let src = inst.overwrite_dir().join("x.txt");
+        fs::write(&src, b"x").unwrap();
+        // A destination outside the base is refused outright rather than
+        // resolved - the base is what makes every other guard meaningful.
+        let outside = inst.root.join("elsewhere/x.txt");
+        assert!(move_one_into(&inst.mods_dir(), &src, &outside).is_err());
+        assert!(src.is_file(), "and the source is untouched");
     }
 
     #[test]
@@ -1708,12 +1805,15 @@ mod tests {
         fs::create_dir_all(ow.join("SKSE")).unwrap();
         fs::write(ow.join("SKSE/precious.txt"), b"captured").unwrap();
 
-        assert_eq!(inst.capture_overwrite_into_mod("Out", &before).unwrap(), 1);
-        // The symlink was REPLACED by a real directory; the file it pointed at
-        // is untouched.
+        // REFUSED, not replaced. A symlink could point anywhere and the user put
+        // it there; unlinking it to make room would be Eidos deciding that for
+        // them, and writing THROUGH it would put files outside the instance.
+        let err = inst.capture_overwrite_into_mod("Out", &before).unwrap_err();
+        assert!(err.to_string().contains("symlink"), "{err}");
         assert_eq!(fs::read(outside.join("precious.txt")).unwrap(), b"do not touch");
-        assert!(!fs::symlink_metadata(dest.join("SKSE")).unwrap().file_type().is_symlink());
-        assert_eq!(fs::read(dest.join("SKSE/precious.txt")).unwrap(), b"captured");
+        assert!(fs::symlink_metadata(dest.join("SKSE")).unwrap().file_type().is_symlink());
+        // And the file it could not place is still in the Overwrite, not lost.
+        assert!(inst.overwrite_dir().join("SKSE/precious.txt").is_file());
         let _ = fs::remove_dir_all(&outside);
     }
 

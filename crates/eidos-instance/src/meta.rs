@@ -222,16 +222,20 @@ impl ModMeta {
 
     /// Set (or, with an empty string, clear) that page.
     ///
-    /// Quoted the way `set_notes` quotes, and for the same reason: a URL with a
-    /// comma in it is a QSettings string LIST when written bare, and MO2 would
-    /// read it back as nothing.
+    /// Quoted, because a URL with a comma is a QSettings string LIST when
+    /// written bare and MO2 would read it back as nothing.
+    ///
+    /// NOT escaped. `unquote` strips the surrounding quotes and nothing else, so
+    /// a backslash written as `\\` came back doubled and grew on every save. A
+    /// URL cannot contain a raw quote or backslash anyway - both are
+    /// percent-encoded - so the escaping bought nothing and cost round-tripping.
+    /// Anything that would need it is refused rather than mangled.
     pub fn set_url(&mut self, url: &str) {
         let trimmed = url.trim();
-        if trimmed.is_empty() {
+        if trimmed.is_empty() || trimmed.contains('"') || trimmed.contains('\\') {
             self.set("url", "");
         } else {
-            let escaped = trimmed.replace('\\', "\\\\").replace('"', "\\\"");
-            self.set("url", &format!("\"{escaped}\""));
+            self.set("url", &format!("\"{trimmed}\""));
         }
     }
 
@@ -858,6 +862,22 @@ mod tests {
         let text = fs::read_to_string(&p).unwrap();
         assert!(text.contains("url=\"https://example.com/a,b?x=1\""), "{text}");
         assert_eq!(ModMeta::read(&p).url().as_deref(), Some("https://example.com/a,b?x=1"));
+
+        // It must SURVIVE being saved again. Escaping on write with no
+        // unescaping on read grew the value on every save - a backslash became
+        // two, then four - so the round trip is the property that matters.
+        for _ in 0..3 {
+            let mut m = ModMeta::read(&p);
+            let round = m.url().unwrap();
+            m.set_url(&round);
+            m.write(&p).unwrap();
+            assert_eq!(ModMeta::read(&p).url().as_deref(), Some("https://example.com/a,b?x=1"));
+        }
+        // A value that could not round-trip is refused rather than mangled.
+        let mut m = ModMeta::read(&p);
+        m.set_url("https://example.com/a\\b");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).url(), None);
 
         // Anything that is not a web link is not handed back, whatever is on
         // disk - a hand-edited `file:///` or `javascript:` must never reach a

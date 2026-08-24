@@ -150,9 +150,12 @@ pub fn fmt_mtime(path: &Path) -> String {
 /// (its "visible rows" scope) instead of re-deriving a filter this module would
 /// have to know about.
 ///
-/// The PRIORITY column is the mod's index in `rows`, matching MO2: it numbers
-/// what it exports, so a filtered export reads 0000, 0001, 0002 rather than
-/// carrying holes from the full list.
+/// The PRIORITY column is the mod's POSITION in `rows`, not a count of what was
+/// written. MO2 exports a priority, and a priority that renumbers itself when
+/// the scope changes is not one: the same mod would read 0004 in a full export
+/// and 0002 in an enabled-only export of the same list, and neither would match
+/// the "#" column on screen. Holes are the correct output - they are what says a
+/// row was skipped.
 pub fn mod_list_csv(
     inst: &Instance,
     rows: &[ModEntry],
@@ -166,7 +169,7 @@ pub fn mod_list_csv(
     csv.push_str("\r\n");
 
     let mut count = 0usize;
-    for m in rows.iter() {
+    for (position, m) in rows.iter().enumerate() {
         if scope == ExportScope::Active && !m.enabled {
             continue;
         }
@@ -195,7 +198,7 @@ pub fn mod_list_csv(
             .iter()
             .map(|&c| {
                 let v = match c {
-                    Column::Priority => format!("{count:04}"),
+                    Column::Priority => format!("{position:04}"),
                     Column::Status => (if m.enabled { "+" } else { "-" }).to_string(),
                     Column::Name => m.name.clone(),
                     Column::Note => note.clone(),
@@ -271,15 +274,17 @@ mod tests {
     }
 
     #[test]
-    fn the_priority_column_numbers_what_it_exports() {
+    fn the_priority_column_is_a_position_not_a_running_count() {
         let (inst, root) = fixture();
         let rows = vec![row("Off1", false, &root), row("On1", true, &root), row("On2", true, &root)];
         let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::Active, Column::ALL, "");
         assert_eq!(n, 2);
-        // 0000 and 0001, NOT 0001 and 0002: a filtered export must not carry
-        // holes from the list it was filtered out of. MO2 numbers its output.
+        // 0001 and 0002 - the positions they hold in the list. A priority that
+        // renumbers itself when the scope changes is not a priority: the same
+        // mod would read differently in two exports of one list, and neither
+        // would match the "#" column on screen. The hole IS the information.
         let nums: Vec<&str> = csv.lines().skip(1).map(|l| &l[1..5]).collect();
-        assert_eq!(nums, vec!["0000", "0001"], "{csv}");
+        assert_eq!(nums, vec!["0001", "0002"], "{csv}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

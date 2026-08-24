@@ -472,6 +472,27 @@ fn reapply_user_meta_restores_endorsement_and_category() {
     assert!(s.contains("endorsed=1"));
     assert!(s.contains("tracked=1"));
     assert!(s.contains("category=\"42,\""));
+
+    // Everything else the USER typed. A reinstall rewrites meta.ini from the
+    // archive, and these are not recoverable from anywhere: a note is a sentence
+    // somebody wrote, a colour is a decision about a list, a page is a link
+    // nothing else records. Losing them was a silent, permanent cost of the
+    // ordinary act of keeping a mod up to date.
+    let mut old2 = ModMeta::default();
+    old2.set_notes("needs the AE patch");
+    old2.set_color(Some([0x2e, 0x5e, 0x8b]));
+    old2.set_url("https://github.com/me/mod");
+    old2.set_ignore_update(true);
+    let fresh = dir.path().join("fresh.ini");
+    std::fs::write(&fresh, "[General]\nmodid=7\nversion=2\n").unwrap();
+    reapply_user_meta(&old2, &fresh);
+    let back = ModMeta::read(&fresh);
+    assert_eq!(back.notes().as_deref(), Some("needs the AE patch"));
+    assert_eq!(back.color(), Some([0x2e, 0x5e, 0x8b]));
+    assert_eq!(back.url().as_deref(), Some("https://github.com/me/mod"));
+    assert!(back.ignore_update(), "re-arming it every reinstall is exactly backwards");
+    // And the new archive's own facts are NOT clobbered.
+    assert_eq!(back.version().as_deref(), Some("2"));
 }
 
 #[test]

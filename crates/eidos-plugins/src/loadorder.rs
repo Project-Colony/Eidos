@@ -340,7 +340,16 @@ fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
 /// within one filesystem), so a crash mid-write cannot leave a partial plugins.txt
 /// that the game would load with half the mods off.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension("tmp");
+    // Unique per PROCESS and per call. A fixed name is not atomic against a
+    // second WRITER: two processes share the one temp path, their bytes
+    // interleave in it, and whichever renames last publishes the mixture. The
+    // rename only makes the result all-or-nothing for READERS.
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "eidos-tmp.{}.{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     fs::write(&tmp, bytes)?;
     match fs::rename(&tmp, path) {
         Ok(()) => Ok(()),

@@ -54,6 +54,13 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // this list it would disarm every confirmation before the second
         // click could land - the same defect as the pointer, on a timer.
         | Message::DownloadTick
+        // Same for every other timer: the saves watcher (2.5s while its tab is
+        // open) and the log tail (1.5s while the pane is). Both are the program
+        // looking at a directory, not the user deciding anything - and left out
+        // of this list they cancel every armed confirmation before the second
+        // click can land, which is exactly what the note above describes.
+        | Message::SavesTick
+        | Message::LogRefresh
         // Ctrl is how a multi-selection is built, so pressing or releasing it
         // around a batch action belongs to that gesture. The handler only
         // stores the modifier set - it changes nothing the user can see.
@@ -271,6 +278,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.tab = t;
             if t == Tab::Plugins && app.plugins.is_none() {
                 app.plugins = compute_plugins(app);
+                // Opening this tab FILLS the active plugin set - including
+                // replacing the "we have not looked" the Archives tab memoised
+                // while it was absent. That memo is exactly what this click is
+                // meant to fix, so it must not survive the click.
+                plugin_state_changed(app);
             }
             if t == Tab::Conflicts && app.conflicts.is_none() {
                 app.conflicts = compute_conflicts(app);
@@ -1139,6 +1151,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
         }
         Message::OpenFolder(p) => {
+            // Every other entry in either dropdown dismisses it. Leaving this
+            // one up means coming back from the file manager to a card sitting
+            // over the window with a full-screen click catcher behind it.
+            app.file_menu_open = false;
+            app.view_menu_open = false;
             // Created if absent. Several of these are Eidos's own and are made on
             // first use - downloads before the first download, overwrite before
             // the first run - and "the folder you are looking for is not there
@@ -1615,6 +1632,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         .as_ref()
                         .map(|list| write_plugin_state(app, list, &spec))
                         .transpose();
+                    // A toggled plugin changes which archives the engine loads.
+                    plugin_state_changed(app);
                     app.status = Some(match written {
                         Ok(_) => format!("{} {name}.", if now { "Disabled" } else { "Enabled" }),
                         Err(e) => {
@@ -2008,6 +2027,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.url_edit = s;
         }
         Message::ModUrlSave => {
+            // The game's own content has no folder under mods/, so there is
+            // nowhere to put a meta.ini - and inventing one would plant an empty
+            // directory the next reconcile lists as a real mod.
+            if app.info_mod.and_then(|i| app.mods.get(i)).is_some_and(|m| m.is_unmanaged()) {
+                app.status =
+                    Some("The game's own content has no Eidos metadata to write.".to_string());
+                return Task::none();
+            }
             let typed = app.url_edit.trim().to_string();
             // Refuse anything that is not a web link, HERE rather than at the
             // click that opens it: a value that cannot be opened must not be
@@ -2035,6 +2062,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::NotesSave => {
+            if app.info_mod.and_then(|i| app.mods.get(i)).is_some_and(|m| m.is_unmanaged()) {
+                app.status =
+                    Some("The game's own content has no Eidos metadata to write.".to_string());
+                return Task::none();
+            }
             let result = match (app.info_mod, app.created.as_ref()) {
                 (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
                     let mut meta = inst.mod_meta(&m.name);
@@ -2714,7 +2746,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some((row, typed)) = app.plugin_send_priority.take() else { return Task::none() };
             app.menu_plugin = None;
             let Ok(dest) = typed.trim().parse::<usize>() else {
-                app.status = Some("Enter a load index.".to_string());
+                // "Row number", not "load index": the only numeric column this
+                // pane draws is the game's hex load index (00, FE:003, `--` for
+                // a disabled plugin), and that is NOT what this takes. Asking
+                // for one thing and meaning another is worse than asking plainly.
+                app.status = Some("Enter a row number (1 = the first plugin).".to_string());
                 return Task::none();
             };
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
@@ -2750,8 +2786,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 ));
                 return Task::none();
             }
+            let before = app.status.clone();
             commit_plugin_order(app, &spec);
-            app.status = Some(format!("Moved {} plugin(s) to {dest}.", rows.len()));
+            // Only claim success if the write did not report a problem.
+            // `commit_plugin_order` sets the status when the order is REFUSED -
+            // a running game holds the lock - and overwriting that turned "your
+            // change was not saved" into "moved".
+            if app.status == before {
+                app.status = Some(format!("Moved {} plugin(s) to {dest}.", rows.len()));
+            }
         }
         Message::PluginsSetAll(on) => {
             app.menu_plugin = None;
@@ -3444,6 +3487,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         app.mods.insert(idx, entry);
                         // Every index at or after the insertion point shifted.
                         app.selected_mods.clear();
+                        // If it landed inside a COLLAPSED group the list would
+                        // never draw it - a new mod that exists on disk, holds a
+                        // priority, and cannot be seen or renamed. Unfold the
+                        // group that swallowed it.
+                        if let Some(sep) = app.mods[..idx].iter().rposition(|m| m.is_separator()) {
+                            let name = app.mods[sep].display_name().to_string();
+                            if app.collapsed.remove(&name) {
+                                save_collapsed(app);
+                            }
+                        }
                         mods_changed(app);
                         app.selected_mod = Some(idx);
                         app.selected_mods.clear();
@@ -3702,6 +3755,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 );
                 return Task::none();
             }
+            // And not one ANOTHER process is using. `app.created` only knows
+            // about this window; the flock is what covers a second Eidos window,
+            // a running game, or a CLI session - all of which hold paths into
+            // the folder about to move.
+            if let Err(e) = probe_lock(&k.inst) {
+                app.status = Some(format!("That instance is in use: {e}."));
+                return Task::none();
+            }
             let Some(parent) = k.inst.root.parent() else { return Task::none() };
             let dest = parent.join(&name);
             if dest.exists() {
@@ -3715,9 +3776,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     let mut reg = eidos_instance::Registry::load_from(&app.registry_path);
                     reg.forget_portable(&k.inst.root);
                     reg.remember_portable(&dest);
-                    let _ = reg.save_to(&app.registry_path);
-                    app.known = known_instances(&app.games);
-                    app.status = Some(format!("Renamed to {}.", dest.display()));
+                    // NOT discarded. The folder has already moved; if the
+                    // registry cannot follow, the instance is orphaned - it
+                    // exists at a path nothing lists - and reporting success
+                    // would send the user looking for it in the one place it is
+                    // guaranteed not to be.
+                    match reg.save_to(&app.registry_path) {
+                        Ok(()) => {
+                            app.known = known_instances(&app.games);
+                            app.status = Some(format!("Renamed to {}.", dest.display()));
+                        }
+                        Err(e) => {
+                            app.status = Some(format!(
+                                "Renamed the folder to {}, but the instance list could not be \
+                                 updated: {e}. Open it from that path to re-register it.",
+                                dest.display()
+                            ));
+                        }
+                    }
                 }
                 Err(e) => app.status = Some(format!("Could not rename: {e}")),
             }
@@ -3774,6 +3850,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(path) = picked else { return Task::none() };
             let Some(inst) = app.created.clone() else { return Task::none() };
             let Some(d) = app.export.take() else { return Task::none() };
+            // Re-checked HERE, not only at the click that opened the picker: the
+            // window keeps handling events while the native save dialog is up,
+            // so the ticks can be cleared in between.
+            if d.picked().is_empty() {
+                app.status = Some("Nothing was exported: no columns were ticked.".to_string());
+                return Task::none();
+            }
             let domain = selected_game(app).map(|g| g.def.nexus_game).unwrap_or("");
             // What the WINDOW is showing, not what the file says: the list in
             // `app.mods` carries unsaved reordering, and exporting a different
@@ -3838,12 +3921,27 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // selection and closing the details pane every tick.
             let now = saves_fingerprint(app);
             if now != app.saves_fingerprint {
-                let keep = app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone());
+                // Everything the user has aimed at, by PATH: a new autosave
+                // renumbers every index, so nothing index-shaped survives a
+                // reload. The MULTI-selection matters as much as the focus - it
+                // is what the batch bar is built on, and losing it mid-gesture
+                // takes the bar off screen with the ticks in it.
+                let focus = app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone());
+                let picked: Vec<std::path::PathBuf> = app
+                    .selected_saves
+                    .iter()
+                    .filter_map(|&i| app.saves.get(i))
+                    .map(|s| s.path.clone())
+                    .collect();
                 load_saves(app);
-                // Follow the selected save by PATH: a new autosave changes every
-                // index, and the pane must not silently start describing a
-                // different file.
-                if let Some(p) = keep {
+                app.selected_saves = app
+                    .saves
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| picked.contains(&s.path))
+                    .map(|(i, _)| i)
+                    .collect();
+                if let Some(p) = focus {
                     if let Some(i) = app.saves.iter().position(|s| s.path == p) {
                         app.selected_save = Some(i);
                         load_save_details(app);
@@ -3908,26 +4006,47 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // script extender cannot restore its state for.
                 let mut group = vec![save.path.clone()];
                 group.extend(eidos_instance::cosave_siblings(&save.path));
+                // The guard is on the WHOLE group, checked before anything is
+                // written. Per file it was worse than useless: a save that
+                // already existed at the destination was skipped while its
+                // co-save was still copied - landing beside a DIFFERENT
+                // character's save under the same stem, which is a co-save that
+                // silently belongs to the wrong game state.
+                let clash = group
+                    .iter()
+                    .filter_map(|p| p.file_name())
+                    .any(|n| dest_dir.join(n).exists());
+                if clash {
+                    skipped += 1;
+                    continue;
+                }
+                let mut written: Vec<std::path::PathBuf> = Vec::new();
                 let mut ok = true;
                 for src in &group {
                     let Some(name) = src.file_name() else { continue };
                     let dest = dest_dir.join(name);
-                    // COPY, never move, and never overwrite: this is somebody's
-                    // character, and the other profile may already have a
-                    // different save under the same name.
-                    if dest.exists() {
-                        ok = false;
-                        continue;
-                    }
+                    // COPY, never move: this is somebody's character.
                     if let Err(e) = std::fs::copy(src, &dest) {
                         failed.push(format!("{}: {e}", name.to_string_lossy()));
                         ok = false;
+                        break;
                     }
+                    // The save's own timestamp, so it sorts where it belongs in
+                    // the destination profile instead of jumping to the top as
+                    // the newest thing there.
+                    if let Ok(t) = std::fs::metadata(src).and_then(|m| m.modified()) {
+                        let _ = set_file_mtime(&dest, t);
+                    }
+                    written.push(dest);
                 }
                 if ok {
                     copied += 1;
-                } else if failed.is_empty() {
-                    skipped += 1;
+                } else {
+                    // A half-copied group is a save the extender cannot restore
+                    // state for. Undo it rather than leave one behind.
+                    for p in written {
+                        let _ = std::fs::remove_file(p);
+                    }
                 }
             }
             app.status = Some(match (copied, skipped, failed.len()) {
@@ -4277,10 +4396,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             mods_changed(app);
             app.view_menu_open = false;
+            // A collapsed group hides rows exactly as a filter does, and the
+            // status has to admit either.
+            let total = app.mods.iter().filter(|m| !m.is_separator() && !m.is_unmanaged()).count();
+            let narrowed = targets.len() < total;
             app.status = Some(format!(
                 "{} {changed} mod(s){}.",
                 if enable { "Enabled" } else { "Disabled" },
-                if is_filtering(app) { " (only the ones shown - a filter is running)" } else { "" }
+                if narrowed {
+                    format!(" - only the {} on screen, of {total}", targets.len())
+                } else {
+                    String::new()
+                }
             ));
         }
         Message::BatchToggleMods => {
@@ -5249,4 +5376,35 @@ pub(crate) fn overwrite_owners(app: &App) -> Option<HashMap<String, String>> {
         out.insert(rel.clone(), m.name.clone());
     }
     Some(out)
+}
+
+
+/// Set a file's modification time. `std::fs` has no portable setter, and a
+/// transferred save that carries the COPY date sorts to the top of the
+/// destination profile as if it were the newest thing there - which is exactly
+/// backwards for a save being moved for safekeeping.
+fn set_file_mtime(path: &Path, when: std::time::SystemTime) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let secs = when
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| std::io::Error::other("pre-epoch mtime"))?;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::other("path contains a NUL"))?;
+    let times = [
+        // atime is left to now: nothing reads it and pinning it would be a
+        // second claim this function has no business making.
+        libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT },
+        libc::timespec {
+            tv_sec: secs.as_secs() as libc::time_t,
+            tv_nsec: i64::from(secs.subsec_nanos()),
+        },
+    ];
+    // SAFETY: `c` is a valid NUL-terminated path and `times` is a two-element
+    // array, which is what utimensat's contract asks for.
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
 }

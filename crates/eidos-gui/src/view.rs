@@ -511,7 +511,12 @@ fn set_all_item<'a>(app: &App, enable: bool) -> Element<'a, Message> {
     let n = mods_visible_for_bulk(app).len();
     let armed = app.confirm_set_all == Some(enable);
     let verb = if enable { "Enable" } else { "Disable" };
-    let scope = if is_filtering(app) { " shown" } else { "" };
+    // A FOLD narrows this as much as a filter does - a mod inside a collapsed
+    // group is not drawn, so it is not touched - and saying so only for filters
+    // left the commonest case silent. The count already tells the truth; the
+    // word is what stops it being read as "everything".
+    let narrowed = is_filtering(app) || n < app.mods.iter().filter(|m| !m.is_separator() && !m.is_unmanaged()).count();
+    let scope = if narrowed { " shown" } else { "" };
     let label = if armed {
         format!("Confirm - {} {n}{scope} mod(s)?", verb.to_lowercase())
     } else {
@@ -1225,7 +1230,7 @@ pub(crate) fn nexus_budget_suffix(app: &App) -> String {
 /// already floating where the user is looking.
 fn send_to_plugin_priority<'a>(app: &App, i: usize) -> Element<'a, Message> {
     match app.plugin_send_priority.as_ref().filter(|(row, _)| *row == i) {
-        Some((_, typed)) => text_input("Load index", typed)
+        Some((_, typed)) => text_input("Row number (1 = first)", typed)
             .on_input(Message::PluginSendToPriorityChanged)
             .on_submit(Message::PluginSendToPriorityCommit)
             .padding(5)

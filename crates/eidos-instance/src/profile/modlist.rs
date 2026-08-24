@@ -343,17 +343,11 @@ impl Profile {
         if target.exists() {
             let _ = fs::copy(&target, target.with_extension("txt.bak"));
         }
-        // Write to a temp file in the same directory, then atomically rename it over
-        // the target so a partial write can never clobber the curated order.
-        let tmp = target.with_extension("txt.tmp");
-        fs::write(&tmp, s)?;
-        match fs::rename(&tmp, &target) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                Err(e)
-            }
-        }
+        // Through the shared writer, whose temp name is unique per process: the
+        // window and `eidos install` both write this file and neither serialises
+        // against the other (flock is advisory and the CLI does not take it), so
+        // a fixed temp name let two of them splice the curated order.
+        crate::write_atomic(&target, s.as_bytes())
     }
 
     /// Why writing `modlist.txt` right now would destroy the curated order rather

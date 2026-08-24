@@ -1849,12 +1849,7 @@ pub(crate) fn pinned_by(range: &MovableRange) -> String {
 /// LATER successful write commit this stale list over whatever a running session
 /// wrote meanwhile, so the list is re-read instead: disk is the truth.
 pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
-    // Which archives load is a function of which plugins are ACTIVE, so the
-    // Archives tab's memo has to fall here. Its usual key - the view generation -
-    // does not move for a plugin toggle, and switching tabs does not move it
-    // either, so without this the tab would keep answering from before the
-    // change.
-    app.archives_cache.borrow_mut().take();
+    plugin_state_changed(app);
     let written = app.plugins.as_ref().map(|list| write_plugin_state(app, list, spec)).transpose();
     if let Err(e) = written {
         app.status = Some(format!("Could not write the load order: {e}"));
@@ -3481,6 +3476,11 @@ pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: boo
     drop_files_cache(app, Some(name));
     invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
+    // The reinstalled mod's meta.ini was just rewritten, and
+    // `refresh_meta_cache` only computes rows it does not already hold - so
+    // without dropping this one the list keeps showing the OLD version, colour
+    // and note for a mod that has just changed underneath it.
+    invalidate_meta(app, name);
     refresh_meta_cache(app);
     // Refresh the cached downloads only if they were already loaded, so the
     // status column reflects the new install without a full re-scan otherwise.
