@@ -115,6 +115,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::OverwriteSyncToMods) {
             app.confirm_sync = false;
         }
+        if !matches!(message, Message::SavesDeleteSelected) {
+            app.confirm_saves_delete = false;
+        }
     }
     match message {
         Message::Next => {
@@ -3764,6 +3767,117 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DeleteSave(i) => {
             // First click arms the confirm; clicking a different row re-arms it.
             app.confirm_delete_save = Some(i);
+        }
+        Message::SaveToggleSelect(i) => {
+            if !app.selected_saves.remove(&i) {
+                app.selected_saves.insert(i);
+            }
+        }
+        Message::SavesTick => {
+            // Compare a fingerprint, do NOT reload. Reloading twice a second
+            // would rebuild the list under the user's hands - dropping the
+            // selection and closing the details pane every tick.
+            let now = saves_fingerprint(app);
+            if now != app.saves_fingerprint {
+                let keep = app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone());
+                load_saves(app);
+                // Follow the selected save by PATH: a new autosave changes every
+                // index, and the pane must not silently start describing a
+                // different file.
+                if let Some(p) = keep {
+                    if let Some(i) = app.saves.iter().position(|s| s.path == p) {
+                        app.selected_save = Some(i);
+                        load_save_details(app);
+                    }
+                }
+            }
+        }
+        Message::SavesDeleteSelected => {
+            let targets: Vec<usize> = app.selected_saves.iter().copied().collect();
+            if targets.is_empty() {
+                return Task::none();
+            }
+            if !app.confirm_saves_delete {
+                app.confirm_saves_delete = true;
+                return Task::none();
+            }
+            app.confirm_saves_delete = false;
+            // By PATH, collected before anything is removed: deleting by index
+            // shifts every index after it, so the second removal would take the
+            // wrong file.
+            let paths: Vec<std::path::PathBuf> =
+                targets.iter().filter_map(|&i| app.saves.get(i)).map(|s| s.path.clone()).collect();
+            let mut gone = 0usize;
+            let mut failed = 0usize;
+            for p in &paths {
+                // The co-save travels with its save, and is removed even when the
+                // save itself was already gone - otherwise it orphans invisibly.
+                for co in eidos_instance::cosave_siblings(p) {
+                    let _ = std::fs::remove_file(co);
+                }
+                match std::fs::remove_file(p) {
+                    Ok(()) => gone += 1,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => gone += 1,
+                    Err(_) => failed += 1,
+                }
+            }
+            load_saves(app);
+            app.status = Some(match failed {
+                0 => format!("Deleted {gone} save(s)."),
+                f => format!("Deleted {gone} save(s); {f} could not be removed."),
+            });
+        }
+        Message::SavesCopyToProfile(target) => {
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            let targets: Vec<usize> = app.selected_saves.iter().copied().collect();
+            if targets.is_empty() {
+                app.status = Some("Select the saves to copy first (Ctrl+click).".to_string());
+                return Task::none();
+            }
+            let dest_dir = inst.profile(&target).saves_dir();
+            if let Err(e) = std::fs::create_dir_all(&dest_dir) {
+                app.status = Some(format!("Could not open profile '{target}': {e}"));
+                return Task::none();
+            }
+            let mut copied = 0usize;
+            let mut skipped = 0usize;
+            let mut failed: Vec<String> = Vec::new();
+            for i in targets {
+                let Some(save) = app.saves.get(i) else { continue };
+                // Every file that belongs to this save: the save itself and its
+                // co-saves. Copying one without the others produces a save the
+                // script extender cannot restore its state for.
+                let mut group = vec![save.path.clone()];
+                group.extend(eidos_instance::cosave_siblings(&save.path));
+                let mut ok = true;
+                for src in &group {
+                    let Some(name) = src.file_name() else { continue };
+                    let dest = dest_dir.join(name);
+                    // COPY, never move, and never overwrite: this is somebody's
+                    // character, and the other profile may already have a
+                    // different save under the same name.
+                    if dest.exists() {
+                        ok = false;
+                        continue;
+                    }
+                    if let Err(e) = std::fs::copy(src, &dest) {
+                        failed.push(format!("{}: {e}", name.to_string_lossy()));
+                        ok = false;
+                    }
+                }
+                if ok {
+                    copied += 1;
+                } else if failed.is_empty() {
+                    skipped += 1;
+                }
+            }
+            app.status = Some(match (copied, skipped, failed.len()) {
+                (n, 0, 0) => format!("Copied {n} save(s) to '{target}'."),
+                (n, s, 0) => format!(
+                    "Copied {n} save(s) to '{target}'; {s} already existed there and were left alone."
+                ),
+                (n, _, f) => format!("Copied {n} save(s); {f} file(s) failed, e.g. {}", failed[0]),
+            });
         }
         Message::SelectSave(i) => {
             // Clicking the open row closes the pane, so the list can go full width.

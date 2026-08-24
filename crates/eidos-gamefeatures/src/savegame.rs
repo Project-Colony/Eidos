@@ -166,6 +166,11 @@ pub struct SaveInfo {
     /// Screenshot dimensions. The pixels themselves are skipped on purpose.
     pub screenshot_width: u32,
     pub screenshot_height: u32,
+    /// Byte offset of the first screenshot pixel, and how many bytes each takes
+    /// (3 on the Skyrim LE engine, 4 on SE and Fallout 4). Recorded so
+    /// [`read_screenshot`] can fetch the image on demand without parsing again.
+    pub screenshot_offset: u64,
+    pub screenshot_bytes_per_pixel: u8,
     /// Full-index plugins, in the save's own load order.
     pub plugins: Vec<String>,
     /// Light (ESL) plugins. Present from `formVersion` 78 on for Skyrim, and
@@ -333,6 +338,13 @@ pub fn parse_save(path: &Path) -> Result<SaveInfo, SaveParseError> {
         2 => SaveCompression::Lz4,
         other => return Err(SaveParseError::UnknownCompression(other)),
     };
+
+    // Where the pixels start, kept so `read_screenshot` can come back for them
+    // without re-deriving the header. Parsing NEVER reads them: the whole reason
+    // this is affordable over a saves directory is that it touches three bounded
+    // windows, and a screenshot is a megabyte per save.
+    info.screenshot_offset = cur.pos as u64;
+    info.screenshot_bytes_per_pixel = bytes_per_pixel as u8;
 
     // Skip the screenshot without reading it. u64 throughout with a checked multiply:
     // width and height are attacker-visible u32s straight out of the file.
@@ -819,6 +831,67 @@ fn is_plugin_file(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_screenshot_is_expanded_to_rgba_whatever_the_engine_stored() {
+        // The LE engine writes 3 bytes per pixel and SE/FO4 write 4. Callers get
+        // one shape, so the expansion happens here rather than at every use.
+        let dir = std::env::temp_dir().join(format!("eidos-shot-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+
+        // A hand-built header is not worth it; instead check the arithmetic and
+        // the guards directly through a synthesised SaveInfo over a raw file.
+        let path = dir.join("fake.ess");
+        // 2x1 pixels, 3 bytes each, at offset 4.
+        fs::write(&path, [0u8, 0, 0, 0, 10, 20, 30, 40, 50, 60]).unwrap();
+        let mut info = SaveInfo { engine: SaveEngine::Skyrim, ..Default::default() };
+        info.screenshot_width = 2;
+        info.screenshot_height = 1;
+        info.screenshot_offset = 4;
+        info.screenshot_bytes_per_pixel = 3;
+        let shot = read_screenshot_with(&path, &info).unwrap();
+        assert_eq!(shot.rgba, vec![10, 20, 30, 0xFF, 40, 50, 60, 0xFF]);
+
+        // Four-byte pixels pass straight through.
+        fs::write(&path, [0u8, 0, 0, 0, 1, 2, 3, 4]).unwrap();
+        info.screenshot_width = 1;
+        info.screenshot_bytes_per_pixel = 4;
+        assert_eq!(read_screenshot_with(&path, &info).unwrap().rgba, vec![1, 2, 3, 4]);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_hostile_screenshot_size_is_refused_rather_than_allocated() {
+        let dir = std::env::temp_dir().join(format!("eidos-shot-bad-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("fake.ess");
+        fs::write(&path, [0u8; 16]).unwrap();
+
+        // The dimensions are two u32s straight out of an attacker-visible
+        // header: multiplied out they would ask for an allocation the size of
+        // the product.
+        let mut info = SaveInfo { engine: SaveEngine::Skyrim, ..Default::default() };
+        info.screenshot_offset = 0;
+        info.screenshot_bytes_per_pixel = 4;
+        info.screenshot_width = u32::MAX;
+        info.screenshot_height = u32::MAX;
+        assert!(read_screenshot_with(&path, &info).is_err());
+
+        // Zero is not a screenshot either.
+        info.screenshot_width = 0;
+        info.screenshot_height = 0;
+        assert!(read_screenshot_with(&path, &info).is_err());
+
+        // And a plausible size the file cannot actually satisfy is Truncated,
+        // not a panic or a short buffer.
+        info.screenshot_width = 64;
+        info.screenshot_height = 64;
+        assert!(matches!(
+            read_screenshot_with(&path, &info),
+            Err(SaveParseError::Truncated("screenshot"))
+        ));
+        let _ = fs::remove_dir_all(&dir);
+    }
     use super::*;
     use std::io::Write;
     use std::path::PathBuf;
@@ -1568,4 +1641,77 @@ mod tests {
         assert_eq!(missing[1].providers, ["Big Mod"]);
         let _ = fs::remove_dir_all(&root);
     }
+}
+
+
+/// A save's embedded screenshot, as RGBA8.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Screenshot {
+    pub width: u32,
+    pub height: u32,
+    /// Always four bytes per pixel, whatever the file stored - the LE engine's
+    /// three-byte pixels are expanded here so callers have one shape to handle.
+    pub rgba: Vec<u8>,
+}
+
+/// The largest screenshot this will decode, in pixels.
+///
+/// A save header is attacker-visible: the width and height are two u32s straight
+/// out of the file, and a corrupt or hostile pair would otherwise ask for an
+/// allocation the size of the multiplication. Real ones are around 
+/// 800x450 on SE.
+const MAX_SHOT_PIXELS: u64 = 8 * 1024 * 1024;
+
+/// Read a save's embedded screenshot.
+///
+/// Deliberately separate from [`parse_save`], and never called by it: the list
+/// parses every save in a directory, and reading every screenshot would turn a
+/// cheap three-window read into hundreds of megabytes of I/O for images nobody
+/// has looked at yet. This is for the ONE save that is selected.
+pub fn read_screenshot(path: &Path) -> Result<Screenshot, SaveParseError> {
+    let info = parse_save(path)?;
+    read_screenshot_with(path, &info)
+}
+
+/// [`read_screenshot`] when the header has already been parsed - which it has,
+/// everywhere the GUI needs this.
+pub fn read_screenshot_with(path: &Path, info: &SaveInfo) -> Result<Screenshot, SaveParseError> {
+    let (w, h) = (info.screenshot_width, info.screenshot_height);
+    let bpp = u64::from(info.screenshot_bytes_per_pixel);
+    let pixels = u64::from(w)
+        .checked_mul(u64::from(h))
+        .ok_or(SaveParseError::Corrupt("screenshot dimensions overflow"))?;
+    if pixels == 0 {
+        return Err(SaveParseError::Corrupt("no screenshot"));
+    }
+    if pixels > MAX_SHOT_PIXELS {
+        return Err(SaveParseError::Corrupt("screenshot too large to be real"));
+    }
+    let len = pixels
+        .checked_mul(bpp)
+        .ok_or(SaveParseError::Corrupt("screenshot dimensions overflow"))?;
+
+    let mut file = fs::File::open(path)?;
+    file.seek(SeekFrom::Start(info.screenshot_offset))?;
+    let mut raw = vec![0u8; len as usize];
+    file.read_exact(&mut raw).map_err(|_| SaveParseError::Truncated("screenshot"))?;
+
+    let rgba = match info.screenshot_bytes_per_pixel {
+        4 => raw,
+        // The LE engine stores RGB. Expanded here rather than at the call site
+        // so every consumer sees one format.
+        3 => {
+            let mut out = Vec::with_capacity(pixels as usize * 4);
+            for px in raw.as_chunks::<3>().0 {
+                out.extend_from_slice(px);
+                out.push(0xFF);
+            }
+            out
+        }
+        other => return Err(SaveParseError::Corrupt(match other {
+            0 => "screenshot has no pixel size",
+            _ => "unknown screenshot pixel size",
+        })),
+    };
+    Ok(Screenshot { width: w, height: h, rgba })
 }

@@ -680,6 +680,15 @@ enum Message {
     PluginSendToPriorityStart,
     PluginSendToPriorityChanged(String),
     PluginSendToPriorityCommit,
+    // ---- Saves: multi-select, transfer between profiles ----
+    /// Add / remove a save from the multi-selection (Ctrl+click).
+    SaveToggleSelect(usize),
+    /// Delete every selected save, with their co-saves. Two clicks.
+    SavesDeleteSelected,
+    /// Copy every selected save into another profile (MO2's Transfer Save Games).
+    SavesCopyToProfile(String),
+    /// Re-scan the saves directory (the tick, while the tab is open).
+    SavesTick,
     /// Push every Overwrite file back to the mod that already provides that path
     /// (MO2's "Sync to Mods"). Two clicks: the first arms.
     OverwriteSyncToMods,
@@ -1336,6 +1345,20 @@ struct App {
     confirm_forget: Option<usize>,
     /// Two-click guard for the Overwrite sync.
     confirm_sync: bool,
+    /// Saves picked with Ctrl+click, for the batch actions.
+    selected_saves: std::collections::BTreeSet<usize>,
+    /// Two-click guard for deleting the selection.
+    confirm_saves_delete: bool,
+    /// The saves directory's shape at the last tick: how many entries and the
+    /// newest mtime. Compared rather than re-listed into the model, so a quiet
+    /// directory costs one `read_dir` and changes nothing the view depends on.
+    saves_fingerprint: Option<(usize, std::time::SystemTime)>,
+    /// The selected save's screenshot, decoded once on selection.
+    ///
+    /// Keyed by path so a stale image cannot be shown against another save, and
+    /// held as a ready `image::Handle` rather than raw pixels - `view` runs every
+    /// frame and must not decode anything.
+    save_shot: Option<(PathBuf, Option<iced::widget::image::Handle>)>,
     /// The plugin row whose "Send to priority" field is open, and what is typed
     /// in it. Mirrors `send_priority` for mods; kept separate because the two
     /// lists are indexed independently and one menu must not aim the other.
@@ -1716,6 +1739,11 @@ fn view(app: &App) -> Element<'_, Message> {
 /// few seconds, and calling a live download dead is worse than the reverse.
 const STALLED_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// How often the Saves tab checks whether the directory changed. Slower than the
+/// downloads poll: a save appears when the player makes one, which is not a
+/// progress bar anybody is watching tick.
+const SAVES_TICK: std::time::Duration = std::time::Duration::from_millis(2500);
+
 /// How often the open log pane re-reads its file. Slower than the downloads
 /// tick: a log is read, not watched, and re-parsing half a megabyte twice a
 /// second to catch a line that is not there yet is pure waste.
@@ -1914,6 +1942,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
         let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
+    }
+    // Watch the saves directory while its tab is open. The game writes there
+    // from inside the Proton prefix while Eidos is not looking, so an autosave
+    // made mid-session would otherwise never appear until a manual Refresh.
+    //
+    // The tick compares a FINGERPRINT and only reloads when it moved: rebuilding
+    // the list twice a second would drop the selection and close the details
+    // pane under the user's hands.
+    if app.tab == Tab::Saves {
+        subs.push(iced::time::every(SAVES_TICK).map(|_| Message::SavesTick));
     }
     // Tail the session log while its pane is open. Same reasoning as the
     // downloads tick: the records worth reading are written by a SEPARATE
@@ -3903,6 +3941,103 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    /// An instance with two profiles and a save in the active one.
+    fn saves_app() -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        // A second profile is a directory under profiles/; the copy target only
+        // needs it to exist.
+        fs::create_dir_all(inst.profile("Second").saves_dir()).unwrap();
+        let dir = inst.active().saves_dir();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Save1.ess"), b"x").unwrap();
+        fs::write(dir.join("Save1.skse"), b"co").unwrap();
+        fs::write(dir.join("Save2.ess"), b"y").unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        load_saves(&mut app);
+        (app, root)
+    }
+
+    #[test]
+    fn deleting_selected_saves_takes_their_cosaves_and_does_not_shift_underneath_itself() {
+        let (mut app, root) = saves_app();
+        assert_eq!(app.saves.len(), 2);
+        let dir = app.created.as_ref().unwrap().active().saves_dir();
+
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(0));
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(1));
+        let _ = update_inner(&mut app, Message::SavesDeleteSelected);
+        assert!(app.confirm_saves_delete, "the first click only arms");
+        let _ = update_inner(&mut app, Message::SavesDeleteSelected);
+
+        // Both gone, INCLUDING the co-save - which the game does not know about
+        // and which orphans invisibly if it is left.
+        assert!(!dir.join("Save1.ess").exists());
+        assert!(!dir.join("Save1.skse").exists(), "the co-save travels with its save");
+        assert!(!dir.join("Save2.ess").exists());
+        assert!(app.saves.is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn copying_saves_to_another_profile_copies_the_whole_group_and_never_overwrites() {
+        let (mut app, root) = saves_app();
+        let inst = app.created.clone().unwrap();
+        let dest = inst.profile("Second").saves_dir();
+
+        // The list is newest-first, so pick the one that HAS a co-save by name
+        // rather than assuming an index.
+        let idx = app.saves.iter().position(|s| s.filename == "Save1.ess").expect("Save1");
+        let _ = update_inner(&mut app, Message::SaveToggleSelect(idx));
+        let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
+
+        let moved = app.saves[idx].clone();
+        let stem = moved.path.file_stem().unwrap().to_string_lossy().into_owned();
+        assert!(dest.join(format!("{stem}.ess")).is_file(), "{:?}", app.status);
+        // The co-save comes too: a save without it is one the script extender
+        // cannot restore its state for.
+        assert!(dest.join(format!("{stem}.skse")).is_file());
+        // And the source is untouched - this is a copy, not a move.
+        assert!(moved.path.is_file());
+
+        // A second copy must not clobber somebody's character.
+        fs::write(dest.join(format!("{stem}.ess")), b"DIFFERENT").unwrap();
+        let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
+        assert_eq!(fs::read(dest.join(format!("{stem}.ess"))).unwrap(), b"DIFFERENT");
+        assert!(app.status.as_deref().unwrap_or("").contains("already existed"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_saves_tick_only_reloads_when_the_directory_really_moved() {
+        let (mut app, root) = saves_app();
+        let _ = update_inner(&mut app, Message::SelectSave(0));
+        let picked = app.saves[0].path.clone();
+        assert_eq!(app.selected_save, Some(0));
+
+        // A quiet tick changes nothing - reloading twice a second would close
+        // the details pane under the user's hands.
+        let _ = update_inner(&mut app, Message::SavesTick);
+        assert_eq!(app.selected_save, Some(0));
+
+        // A new save appears. The list reloads AND the selection follows its save
+        // by path, because a new autosave renumbers every index.
+        let dir = app.created.as_ref().unwrap().active().saves_dir();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(dir.join("Save3.ess"), b"z").unwrap();
+        let _ = update_inner(&mut app, Message::SavesTick);
+        assert_eq!(app.saves.len(), 3);
+        assert_eq!(
+            app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone()),
+            Some(picked),
+            "the pane must not silently start describing a different save"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
