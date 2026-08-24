@@ -168,7 +168,21 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             let link = match nexus.download_link(&remote_mod.gate, &nxm) {
                 Ok(l) => l,
                 Err(e) => {
-                    eidos_log::warn!("could not resolve the download: {e}");
+                    // 403 here is the ordinary free-account answer, not a
+                    // fault: minting a link from ids alone is a premium feature,
+                    // and everyone else needs the site's own Mod Manager
+                    // Download button. Saying so beats printing a status code
+                    // into a log the user is being told to read.
+                    if e.contains("403") {
+                        eidos_log::warn!(
+                            "Nexus refused to mint this download link ({e}). Only a premium \
+                             account can do that from the mod and file ids; otherwise use the \
+                             Mod Manager Download button on the file's page, which sends the \
+                             one-use key this needs."
+                        );
+                    } else {
+                        eidos_log::warn!("could not resolve the download: {e}");
+                    }
                     exit(1);
                 }
             };

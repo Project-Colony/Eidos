@@ -220,22 +220,32 @@ fn usage() -> ! {
     exit(2);
 }
 
+/// Which rotation bucket a run's session log belongs to.
+///
+/// The subcommand's own first argument is usually the instance, and it makes a
+/// better bucket than the verb; falling back to the verb keeps every run in a
+/// named file rather than one shared one.
+///
+/// A URL is the exception, and it mattered: `eidos nxm <link>` bucketed by the
+/// LINK, so every mod ever downloaded got a bucket of its own and the
+/// ten-per-bucket retention never pruned anything. One collection's "fetch
+/// missing" alone left a file per member, each named after the ids it fetched.
+fn log_bucket(args: &[String]) -> &str {
+    args.get(1)
+        .filter(|a| !a.starts_with('-') && !a.contains("://"))
+        .or_else(|| args.first())
+        .map(String::as_str)
+        .unwrap_or("eidos")
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     // Open the session log before anything else runs.
     //
     // A launch started from Steam has no terminal at all, so stderr goes
     // nowhere and the file is the ONLY record of what happened - which is also
-    // what the GUI's Log pane reads. The subcommand's own first argument is
-    // usually the instance, and it makes the better rotation bucket than the
-    // verb; falling back to the verb keeps every run in a named file rather than
-    // one shared bucket.
-    let bucket = args
-        .get(1)
-        .filter(|a| !a.starts_with('-'))
-        .or_else(|| args.first())
-        .map(|s| s.as_str())
-        .unwrap_or("eidos");
+    // what the GUI's Log pane reads.
+    let bucket = log_bucket(&args);
     let _ = eidos_log::init_with(
         eidos_log::Config::new(bucket).with_version(env!("CARGO_PKG_VERSION")),
     );
@@ -255,5 +265,36 @@ fn main() {
         Some("nxm") => cmd_nxm(&args[1..]),
         Some("import") => cmd_import(&args[1..]),
         _ => usage(),
+    }
+}
+
+#[cfg(test)]
+mod bucket_tests {
+    use super::log_bucket;
+
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn a_nxm_link_is_never_its_own_rotation_bucket() {
+        // The defect this exists for: bucketing by the link gave every mod its
+        // own bucket, so the ten-per-bucket retention never pruned anything and
+        // one collection fetch left a log file per member - each named after the
+        // mod and file ids it went after.
+        let a = v(&["nxm", "nxm://skyrimspecialedition/mods/36350/files/213426"]);
+        assert_eq!(log_bucket(&a), "nxm");
+        let a = v(&["nxm", "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest"]);
+        assert_eq!(log_bucket(&a), "nxm");
+    }
+
+    #[test]
+    fn an_instance_argument_still_buckets_by_instance() {
+        assert_eq!(log_bucket(&v(&["play", "skyrimse"])), "skyrimse");
+        assert_eq!(log_bucket(&v(&["play", "/mnt/Jeux/Eidos-Skyrim"])), "/mnt/Jeux/Eidos-Skyrim");
+        // A flag is not an instance, and neither is nothing at all.
+        assert_eq!(log_bucket(&v(&["games", "--json"])), "games");
+        assert_eq!(log_bucket(&v(&["games"])), "games");
+        assert_eq!(log_bucket(&[]), "eidos");
     }
 }
