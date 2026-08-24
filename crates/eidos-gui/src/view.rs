@@ -565,6 +565,19 @@ pub(crate) fn mod_row<'a>(
     if let Some(bytes) = hidden_icon {
         flags = flags.push(icon(bytes, 14.0));
     }
+    // A note rides here rather than taking a column of its own. Notes are long
+    // and read on demand; a column would cost width off the NAME on every row to
+    // show the first six characters of something most rows do not have.
+    if let Some(note) = meta.and_then(|r| r.notes.clone()).filter(|n| !n.trim().is_empty()) {
+        flags = flags.push(
+            tooltip(
+                text("\u{270E}").size(12.0),
+                container(text(note).size(11.0)).padding(6).style(card_style),
+                tooltip::Position::Left,
+            )
+            .gap(4),
+        );
+    }
     let flag_cell: Element<'a, Message> = container(flags).width(C_FLAGS).into();
 
     // MO2's Version column; an update marker prefixes it when Nexus has a newer one.
@@ -855,12 +868,17 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // name cell fades into it.
         let conflict = conflict_tint(app, i);
         tints.push(conflict);
-        let bg = row_background(i % 2 == 0, selected, conflict);
+        // The mod's own colour, washed down to a row background. MO2 colours any
+        // mod through the Notes column; Eidos already stored the colour per mod
+        // and only ever offered the picker on separators.
+        let tint = meta.and_then(|r| r.color).map(|rgb| mod_tint(rgb, i % 2 == 0));
+        let bg = row_background(i % 2 == 0, selected, conflict, tint);
         list = list.push(list_row(
             mod_row(i, m, meta, flag_icon, hidden_icon, bg),
             i % 2 == 0,
             selected,
             conflict,
+            tint,
         ));
     }
     // The trailing strip: the only way to aim at the end of the list, since
@@ -1266,6 +1284,7 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     col = col
         .push(menu_item("Categories...", Message::ShowCategoriesDialog(i)))
+        .push(separator_swatches(i, app.meta_cache.get(&m.name).and_then(|r| r.color)))
         .push(menu_sep())
         // The gap is an INSERTION index: `i` is above this row, `i + 1` below.
         .push(menu_item("Install mod above", Message::InstallAt(i)))
@@ -1347,8 +1366,11 @@ pub(crate) fn remove_button<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .into()
 }
 
-/// A small palette of colour swatches for a separator (iced has no native colour
-/// dialog), plus an "x" to clear back to the default.
+/// A small palette of colour swatches for a mod or a separator (iced has no
+/// native colour dialog), plus an "x" to clear back to the default.
+///
+/// On a separator the colour paints the whole header bar; on an ordinary mod it
+/// is washed down into the row background - see `mod_tint`.
 pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Element<'a, Message> {
     const PALETTE: &[[u8; 3]] = &[
         [0x8b, 0x2e, 0x2e],

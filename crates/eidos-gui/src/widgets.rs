@@ -356,12 +356,41 @@ pub(crate) fn drop_gap<'a>(
 ///
 /// Its own function because the NAME CELL needs the same answer - it fades its
 /// overflow into this colour, and a fade into the wrong one is a smear.
-pub(crate) fn row_background(even: bool, selected: bool, conflict: Option<Color>) -> Color {
+pub(crate) fn row_background(
+    even: bool,
+    selected: bool,
+    conflict: Option<Color>,
+    tint: Option<Color>,
+) -> Color {
+    // Precedence, and each step earns its place over the one below it.
+    //
+    // Selection wins outright: it is the answer to "where am I", asked
+    // constantly. The conflict tint comes next because it is TRANSIENT - it only
+    // exists relative to the currently selected mod, so it is a question being
+    // actively asked, and it disappears the moment the answer stops mattering.
+    // The user's own colour is last of the three because it is permanent: it can
+    // afford to be covered for a moment, and it comes back on its own.
     if selected {
         SEL_BG
     } else {
-        conflict.unwrap_or_else(|| row_bg(even))
+        conflict.or(tint).unwrap_or_else(|| row_bg(even))
     }
+}
+
+/// A mod's chosen colour as a row background: a WASH over the stripe, not the
+/// colour itself.
+///
+/// The palette is sized for a separator, which is a full-width bar of solid
+/// colour a few times per list. Painted at that strength behind every row of a
+/// four-hundred-mod list it stops being a marker and becomes the page. Mixed
+/// down, the row still reads as "one of the blue ones" while the name on top of
+/// it stays as legible as on any other row.
+pub(crate) fn mod_tint(rgb: [u8; 3], even: bool) -> Color {
+    const WASH: f32 = 0.22;
+    let base = row_bg(even);
+    let [r, g, b] = rgb;
+    let mix = |a: f32, b8: u8| a + (f32::from(b8) / 255.0 - a) * WASH;
+    Color { r: mix(base.r, r), g: mix(base.g, g), b: mix(base.b, b), a: base.a }
 }
 
 /// Every mod row is exactly this tall, whatever its name.
@@ -379,8 +408,9 @@ pub(crate) fn list_row<'a>(
     even: bool,
     selected: bool,
     conflict: Option<Color>,
+    tint: Option<Color>,
 ) -> Element<'a, Message> {
-    let bg = row_background(even, selected, conflict);
+    let bg = row_background(even, selected, conflict, tint);
     container(content)
         .width(Length::Fill)
         .padding(2)

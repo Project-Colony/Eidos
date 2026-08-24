@@ -611,7 +611,8 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             container(row).padding(3).into(),
             i % 2 == 0,
             app.selected_save == Some(i),
-            // Saves do not fight over files.
+            // Saves do not fight over files, and carry no user colour.
+            None,
             None,
         ));
     }

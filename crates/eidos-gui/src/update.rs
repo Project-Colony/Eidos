@@ -1494,10 +1494,23 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::SetSeparatorColor(i, rgb) => {
             app.menu_mod = None;
             let result = match (app.mods.get(i).cloned(), app.created.as_ref()) {
-                (Some(m), Some(inst)) if m.is_separator() => {
+                // Any mod, not just a separator. The colour was always stored per
+                // mod in meta.ini and cached for every row; only the picker was
+                // withheld. Unmanaged rows stay out: Eidos never writes into the
+                // game's own Data.
+                (Some(m), Some(inst)) if !m.is_unmanaged() => {
                     let mut meta = inst.mod_meta(&m.name);
                     meta.set_color(rgb);
                     Some((m.name.clone(), m.display_name().to_string(), meta.write(&inst.meta_path(&m.name))))
+                }
+                // Refused, and said out loud: a menu entry that does nothing at
+                // all reads as a bug, not as a rule.
+                (Some(m), _) if m.is_unmanaged() => {
+                    app.status = Some(format!(
+                        "'{}' is the game's own content - Eidos never writes into its Data.",
+                        m.display_name()
+                    ));
+                    None
                 }
                 _ => None,
             };
@@ -1968,6 +1981,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 _ => None,
             };
             if let Some((name, r)) = result {
+                // The row caches the note text for its glyph, so the write has to
+                // drop the cached copy or the list keeps showing the old one -
+                // and shows no glyph at all the first time a note is added.
+                invalidate_meta(app, &name);
+                refresh_meta_cache(app);
                 app.status = Some(match r {
                     Ok(()) => format!("Saved notes for '{name}'."),
                     Err(e) => format!("Could not save notes: {e}"),

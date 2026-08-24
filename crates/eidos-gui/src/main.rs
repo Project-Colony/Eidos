@@ -1570,8 +1570,13 @@ struct RowMeta {
     /// ships (P/A/T/M/S/K/I/U/F), empty if none.
     content_tags: String,
     update: bool,
-    /// A separator's display colour (MO2's `color=@Variant(...)`), if set.
+    /// The row's display colour (MO2's `color=@Variant(...)`), if set. Stored per
+    /// mod, not only per separator.
     color: Option<[u8; 3]>,
+    /// The user's note, shown as a glyph with the text on hover. MO2 gives it a
+    /// column; here it rides the Flags cell, because every column costs width off
+    /// the name and a note is read on demand rather than scanned.
+    notes: Option<String>,
 }
 
 /// One entry in the category-filter dropdown (`None` id = "all").
@@ -3814,6 +3819,64 @@ mod tests {
     }
 
     #[test]
+    fn a_colour_can_be_set_on_an_ordinary_mod_but_never_on_the_games_own_content() {
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(root.join("mods/Real")).unwrap();
+        app.created = Some(inst);
+        app.mods = vec![
+            ModEntry { name: "Real".into(), enabled: true, path: root.join("mods/Real"), unmanaged: false },
+            ModEntry {
+                name: "Skyrim.esm".into(),
+                enabled: true,
+                path: PathBuf::from("/game/Data/Skyrim.esm"),
+                unmanaged: true,
+            },
+        ];
+        app.screen = Screen::Main;
+
+        let _ = update_inner(&mut app, Message::SetSeparatorColor(0, Some([0x2e, 0x5e, 0x8b])));
+        let meta = app.created.as_ref().unwrap().mod_meta("Real");
+        assert_eq!(meta.color(), Some([0x2e, 0x5e, 0x8b]), "an ordinary mod takes a colour now");
+
+        // The game's own Data is never written to.
+        let before = app.status.clone();
+        let _ = update_inner(&mut app, Message::SetSeparatorColor(1, Some([0x8b, 0x2e, 0x2e])));
+        assert_ne!(app.status, before, "it says something rather than silently doing it");
+        assert!(!PathBuf::from("/game/Data/Skyrim.esm/meta.ini").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_saved_note_reaches_the_row_immediately() {
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(root.join("mods/Real")).unwrap();
+        app.created = Some(inst);
+        app.mods = vec![ModEntry {
+            name: "Real".into(),
+            enabled: true,
+            path: root.join("mods/Real"),
+            unmanaged: false,
+        }];
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+        assert_eq!(app.meta_cache["Real"].notes, None);
+
+        app.info_mod = Some(0);
+        app.notes_edit = "needs the AE patch".to_string();
+        let _ = update_inner(&mut app, Message::NotesSave);
+        // Without dropping the cached row the glyph would not appear until the
+        // next full refresh - which is exactly the first time anyone adds a note.
+        assert_eq!(app.meta_cache["Real"].notes.as_deref(), Some("needs the AE patch"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn installing_from_a_menu_lands_where_the_menu_was_opened() {
         let mut app = nav_app(&["a", "b", "c"]);
         // "Install below b" = the gap after index 1.
@@ -4929,13 +4992,23 @@ mod tests {
         // the same function - this pins the precedence they both inherit.
         let conflict = Some(CONFLICT_WINS_BG);
         assert_eq!(
-            row_background(true, true, conflict),
+            row_background(true, true, conflict, None),
             SEL_BG,
             "selection outranks the conflict tint"
         );
-        assert_eq!(row_background(true, false, conflict), CONFLICT_WINS_BG);
-        assert_eq!(row_background(true, false, None), row_bg(true));
-        assert_eq!(row_background(false, false, None), row_bg(false));
+        assert_eq!(row_background(true, false, conflict, None), CONFLICT_WINS_BG);
+        assert_eq!(row_background(true, false, None, None), row_bg(true));
+        assert_eq!(row_background(false, false, None, None), row_bg(false));
+        // A user colour paints when nothing more urgent is asking for the row,
+        // and yields to both selection and a live conflict answer.
+        let tint = mod_tint([0x2e, 0x5e, 0x8b], true);
+        assert_eq!(row_background(true, false, None, Some(tint)), tint);
+        assert_eq!(row_background(true, false, conflict, Some(tint)), CONFLICT_WINS_BG);
+        assert_eq!(row_background(true, true, None, Some(tint)), SEL_BG);
+        // And it is a WASH: closer to the stripe than to the raw colour.
+        let raw = Color::from_rgb8(0x2e, 0x5e, 0x8b);
+        let d = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+        assert!(d(tint, row_bg(true)) < d(tint, raw), "the colour must not become the page");
         assert_ne!(
             row_bg(true),
             row_bg(false),

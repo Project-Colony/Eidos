@@ -53,6 +53,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 content_tags: eidos_install::classify_content_dir(&path).tags(),
                 update: meta.update_available(),
                 color: meta.color(),
+                notes: meta.notes(),
             },
         );
     }
