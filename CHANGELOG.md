@@ -1,5 +1,71 @@
 # Changelog
 
+## [1.8.0](https://github.com/Project-Colony/Eidos/compare/v1.7.1...v1.8.0) (2026-08-24)
+
+
+### Features
+
+* **addons:** user extensions, as manifests rather than loaded code ([7eb28c1](https://github.com/Project-Colony/Eidos/commit/7eb28c17b7d3b8867372b473c8011b65e34f5872))
+* **downloads:** pause, resume and cancel a transfer ([890cc8c](https://github.com/Project-Colony/Eidos/commit/890cc8c844118e0cc9514b2dea7be44490fce98a))
+* **gui:** a File menu listing every folder that matters ([b313631](https://github.com/Project-Colony/Eidos/commit/b313631eca9f5918c16155ef3ba00275c6840be8))
+* **gui:** a log pane, reading the files that actually hold the answers ([89c6baa](https://github.com/Project-Colony/Eidos/commit/89c6baa309b49a951aee49ecf7bc5b4814977dd8))
+* **gui:** a page link for mods that are not on Nexus ([09ef093](https://github.com/Project-Colony/Eidos/commit/09ef093b00ea34f08f39b7064962daccb13e4458))
+* **gui:** an Archives tab that says why each BSA/BA2 does or does not load ([d15190b](https://github.com/Project-Colony/Eidos/commit/d15190bb5cf2f9be81934f0b6b6eb9248e8cfd97))
+* **gui:** an INI editor, on the copy that actually persists ([eb43ed2](https://github.com/Project-Colony/Eidos/commit/eb43ed218508f59b35d76168e02c8b7b9ba896d6))
+* **gui:** an instance manager, and a fix for every atomic write in the tree ([788565c](https://github.com/Project-Colony/Eidos/commit/788565cd5801d92c39cd29952159b6d289f8c054))
+* **gui:** back a mod up before touching it, and restore it after ([a3f0361](https://github.com/Project-Colony/Eidos/commit/a3f03619bba81454379ebdc48942776fe9210119))
+* **gui:** backups, a plugin context menu, and MD5 recovery for stray archives ([19e1235](https://github.com/Project-Colony/Eidos/commit/19e12357a77620edbae1229ec32a34b8e44b6264))
+* **gui:** collapse others, hover-to-expand, and the four mouse-keyboard gestures ([71dceb9](https://github.com/Project-Colony/Eidos/commit/71dceb961a8239a88999f477c6a43ed563ba0fdc))
+* **gui:** colour any mod, and surface its note on the row ([7964deb](https://github.com/Project-Colony/Eidos/commit/7964deb882830799c9da89e547317815b8340252))
+* **gui:** editable categories, and six filter fixes ([d4d2650](https://github.com/Project-Colony/Eidos/commit/d4d26504329b4008a896b50896417c1d1af95c8f))
+* **gui:** eight optional columns, and sorting by any of them ([23a9ac2](https://github.com/Project-Colony/Eidos/commit/23a9ac23b138013c619bfb765f9e7679ffe7c36b))
+* **gui:** export the mod list from the window, with scope and columns ([f4afbed](https://github.com/Project-Colony/Eidos/commit/f4afbed46ff1346dc8a38ee8269fab9132721fe6))
+* **gui:** filter the mod list by state, not just by name ([ba6a640](https://github.com/Project-Colony/Eidos/commit/ba6a6408a2ca939fe9a1463dd54b343040b87092))
+* **gui:** group the list by category or by source ([010a344](https://github.com/Project-Colony/Eidos/commit/010a34465e4b1472bea3943a6657a1cec62fe83f))
+* **gui:** highlight the plugins the selected mod ships ([320b7c6](https://github.com/Project-Colony/Eidos/commit/320b7c6607daa3c4f8a97b45c703047c46e79af2))
+* **gui:** install and create at a chosen position, and bulk enable/disable ([7dc1181](https://github.com/Project-Colony/Eidos/commit/7dc11815e84fde06d9c0d1df0c8ef32bb929c65a))
+* **gui:** install by dragging, from the Downloads list and from the desktop ([9d39d01](https://github.com/Project-Colony/Eidos/commit/9d39d0162a9a0662e0ef30084490ed15c9ea6e9f))
+* **gui:** make the Data tab read the real union, and give it depth ([09c4504](https://github.com/Project-Colony/Eidos/commit/09c45046ed97839fe4667758210ef71688a6f02a))
+* **gui:** new folder, rename, delete and open in a mod's file tree ([bfe5538](https://github.com/Project-Colony/Eidos/commit/bfe5538da527f06b276d15015121c64c7688f633))
+* **gui:** preview images and text from the Data tab and a mod's file tree ([ca0d1df](https://github.com/Project-Colony/Eidos/commit/ca0d1df8bf498155898c4924fb75ccce3cf39cb3))
+* **gui:** save screenshots, multi-select, transfer between profiles, and a watcher ([e784081](https://github.com/Project-Colony/Eidos/commit/e78408102c16555ce79e754fa6a5dbac8e3eb326))
+* **gui:** send Overwrite files back to the mods that provide them ([e85633e](https://github.com/Project-Colony/Eidos/commit/e85633ec64e4f0e10757917fc5e227d9e01dfe88))
+* **gui:** send plugins to an exact index, and show what is left of the Nexus budget ([0d7a28d](https://github.com/Project-Colony/Eidos/commit/0d7a28d06115cfe5121633d417311ba946e3e81d))
+* **gui:** show that a drop will be taken, and say when it cannot be ([9282051](https://github.com/Project-Colony/Eidos/commit/928205103c35413b2181dd82a51ddeb2c3cfba93))
+* **gui:** the Downloads tab as an archive library, not a transfer queue ([d842f32](https://github.com/Project-Colony/Eidos/commit/d842f321df99a08fbdb6a861c302a8ec139a26cc))
+* **gui:** the two state flags, and MO2's own key for silencing them ([a1cac39](https://github.com/Project-Colony/Eidos/commit/a1cac3917db468b5d9a85cb6e77099450bc8098b))
+* **nexus:** collections, as a browser rather than an installer ([c9ba2c0](https://github.com/Project-Colony/Eidos/commit/c9ba2c025b74a39a0e517c73c2a15923059ecd4d))
+* **nexus:** flag mods whose Nexus page has been taken down ([f33a6e8](https://github.com/Project-Colony/Eidos/commit/f33a6e80721cc29741cbc1cfed1f1321642542e8))
+* **nexus:** offline mode, and a CDN order that is an order not a filter ([837de00](https://github.com/Project-Colony/Eidos/commit/837de008b62490475557e33144eec69a67a62705))
+* **nexus:** record who made a mod, and link to their profile ([0d775e0](https://github.com/Project-Colony/Eidos/commit/0d775e0e3e06ff4f11207abae867fa1291e95d73))
+* **paths:** the Colony layout, and stop the tests eating your preferences ([eefd0eb](https://github.com/Project-Colony/Eidos/commit/eefd0eb1929a8bcd27417ffd4cb763360ecd4dbc))
+* **tools:** capture a tool's output into a mod instead of the Overwrite ([160a399](https://github.com/Project-Colony/Eidos/commit/160a3993e5cbb4a63be09128cff6d26809fb9f26))
+* **tools:** Steam AppID, hide, pin, and a desktop shortcut ([2852f8b](https://github.com/Project-Colony/Eidos/commit/2852f8b04b067c39b7b10a14b69834a56fa38ca4))
+
+
+### Fixes
+
+* 35 defects found reviewing the eight new features ([e260224](https://github.com/Project-Colony/Eidos/commit/e260224e36079e90f040bb7b5c87d1a771fdc8d2))
+* 41 defects found reviewing the fourteen features ([7468d84](https://github.com/Project-Colony/Eidos/commit/7468d84a7356901a99e094c8d5ab654c49ed9eac))
+* **cli:** a download link is not a log rotation bucket ([888c5d1](https://github.com/Project-Colony/Eidos/commit/888c5d1fa536e246a51cca6fee3ac935ee89acdc))
+* **gui:** a confirmation carries a name, not a position in a list ([40f78f8](https://github.com/Project-Colony/Eidos/commit/40f78f8a6947dd89e920100bce49208a7aa04037))
+* **gui:** one answer to "which rows is the list drawing", and everything asks it ([9048519](https://github.com/Project-Colony/Eidos/commit/9048519dda91cfe7ce7c71ac6a46b71eaf1a72a0))
+* **gui:** the collection pane's fetch button was an unmetered installer ([dfce933](https://github.com/Project-Colony/Eidos/commit/dfce9330d92cd6b0b8db2d09206b02546ec843ef))
+* **log:** bound the log directory, and stop the sweep eating the wrong files ([90d9bd3](https://github.com/Project-Colony/Eidos/commit/90d9bd36d758f809cd428b655fda5446ee42c6d3))
+* **nexus:** a mod knows who made it from the moment it lands ([c01beb5](https://github.com/Project-Colony/Eidos/commit/c01beb54712fdb4cb233e771fb8179b5f70282ff))
+* the second review pass, including two defects in the first pass's fix ([05ac149](https://github.com/Project-Colony/Eidos/commit/05ac14912473302ef97260465f5b05001bc582a0))
+
+
+### Performance
+
+* **gui:** stop reading the filesystem on every frame ([61766f0](https://github.com/Project-Colony/Eidos/commit/61766f09f775805da8978e033476b49847908cdd))
+
+
+### Documentation
+
+* cover output capture, drag-install, download controls, and the new panes ([b2be006](https://github.com/Project-Colony/Eidos/commit/b2be0068c4e28126fb0110fce05c1bada04844ff))
+* **meta:** set_uploader keeps the name when the URL is unusable ([0a683d4](https://github.com/Project-Colony/Eidos/commit/0a683d4a3e9b91471e56fd2ca382f0facd573316))
+
 ## [1.7.1](https://github.com/Project-Colony/Eidos/compare/v1.7.0...v1.7.1) (2026-08-22)
 
 
