@@ -105,6 +105,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::BatchRemoveMods | Message::ConfirmBatchRemove) {
             app.confirm_batch_remove = false;
         }
+        // Same rule for the bulk enable/disable: any other action disarms it.
+        if !matches!(message, Message::SetAllModsEnabled(_)) {
+            app.confirm_set_all = None;
+        }
     }
     match message {
         Message::Next => {
@@ -417,6 +421,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
         }
+        Message::InstallAt(gap) => {
+            app.menu_mod = None;
+            // Under a filter the gap between two VISIBLE rows has an unknown
+            // number of hidden rows behind it, so "here" would be a lie. Same
+            // promise the download drop makes, made the same way.
+            if is_filtering(app) {
+                app.pending_note = Some(
+                    "installed at the end of the list - a filtered list cannot say what a gap means"
+                        .to_string(),
+                );
+                return update(app, Message::InstallMod);
+            }
+            // The gap is remembered as a PLACE, not yet paired with an archive:
+            // `ModPicked` pairs it once the user has chosen one, and only then
+            // can `after_install` honour it.
+            app.install_gap = Some(gap.min(app.mods.len()));
+            return update(app, Message::InstallMod);
+        }
         Message::InstallMod => {
             // Open a native file picker off-thread; the result comes back as ModPicked.
             return Task::perform(
@@ -428,7 +450,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::ModPicked(picked) => {
-            let Some(path) = picked else { return Task::none() };
+            let Some(path) = picked else {
+                // Cancelled at the picker: the position must not outlive it.
+                app.install_gap = None;
+                app.pending_note = None;
+                return Task::none();
+            };
+            // A position chosen from the menu becomes the aim now that there is
+            // an archive to pair it with.
+            if let Some(gap) = app.install_gap.take() {
+                app.install_at = Some((gap, path.clone()));
+            }
             let game_id = selected_game(app).map(|g| g.def.id.to_string());
             let mods_dir = app.created.as_ref().map(|i| i.mods_dir());
             let (Some(gid), Some(mods_dir)) = (game_id, mods_dir) else {
@@ -3247,7 +3279,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         // ---- mod creation (Create empty mod / Install from folder) ----------
-        Message::CreateEmptyMod => {
+        Message::CreateEmptyMod => return update(app, Message::CreateEmptyModAt(app.mods.len())),
+        Message::CreateEmptyModAt(at) => {
             app.menu_mod = None;
             if let Some(inst) = &app.created {
                 // A unique "New Mod N" name, never colliding on disk.
@@ -3259,10 +3292,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
                 match inst.create_empty_mod(&name) {
                     Ok(entry) => {
-                        // New mods land at the TOP of the list (highest priority,
-                        // matching where a fresh install goes) - index = end of vec.
-                        let idx = app.mods.len();
-                        app.mods.push(entry);
+                        // Where the caller asked. The toolbar button still means
+                        // the end of the list - highest priority, where a fresh
+                        // install goes - but the context menu can name a place.
+                        let idx = at.min(app.mods.len());
+                        app.mods.insert(idx, entry);
+                        // Every index at or after the insertion point shifted.
+                        app.selected_mods.clear();
                         mods_changed(app);
                         app.selected_mod = Some(idx);
                         app.selected_mods.clear();
@@ -3701,6 +3737,44 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
                 load_downloads(app);
             }
+        }
+        Message::SetAllModsEnabled(enable) => {
+            // Two clicks, holding the TARGET state: arming "Enable all" and then
+            // clicking "Disable all" must not fire the second one.
+            if app.confirm_set_all != Some(enable) {
+                app.confirm_set_all = Some(enable);
+                return Task::none();
+            }
+            app.confirm_set_all = None;
+            let targets = mods_visible_for_bulk(app);
+            if targets.is_empty() {
+                app.status = Some("Nothing on screen to change.".to_string());
+                return Task::none();
+            }
+            let mut changed = 0usize;
+            for &i in &targets {
+                if let Some(m) = app.mods.get_mut(i) {
+                    if m.enabled != enable {
+                        m.enabled = enable;
+                        changed += 1;
+                    }
+                }
+            }
+            if changed == 0 {
+                app.status = Some(format!(
+                    "Already {}: all {} mod(s) on screen.",
+                    if enable { "enabled" } else { "disabled" },
+                    targets.len()
+                ));
+                return Task::none();
+            }
+            mods_changed(app);
+            app.view_menu_open = false;
+            app.status = Some(format!(
+                "{} {changed} mod(s){}.",
+                if enable { "Enabled" } else { "Disabled" },
+                if is_filtering(app) { " (only the ones shown - a filter is running)" } else { "" }
+            ));
         }
         Message::BatchToggleMods => {
             // MO2-style batch enable/disable: if any selected real mod is enabled,

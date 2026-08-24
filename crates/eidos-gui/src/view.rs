@@ -434,8 +434,35 @@ pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(menu_item("Extensions...", Message::ShowAddons))
         .push(menu_sep())
         .push(menu_item("Collapse all groups", Message::CollapseAllGroups))
-        .push(menu_item("Expand all groups", Message::ExpandAllGroups));
+        .push(menu_item("Expand all groups", Message::ExpandAllGroups))
+        .push(menu_sep())
+        .push(set_all_item(app, true))
+        .push(set_all_item(app, false));
     menu_frame(col.into())
+}
+
+/// "Enable all" / "Disable all", armed on the first click.
+///
+/// The label carries the COUNT and, under a filter, the word "shown" - because
+/// this deliberately touches only the rows on screen, and a user who forgot a
+/// filter was running would otherwise read "Disable all" as meaning everything.
+/// Two clicks rather than a modal, matching the batch remove in the same menus.
+fn set_all_item<'a>(app: &App, enable: bool) -> Element<'a, Message> {
+    let n = mods_visible_for_bulk(app).len();
+    let armed = app.confirm_set_all == Some(enable);
+    let verb = if enable { "Enable" } else { "Disable" };
+    let scope = if is_filtering(app) { " shown" } else { "" };
+    let label = if armed {
+        format!("Confirm - {} {n}{scope} mod(s)?", verb.to_lowercase())
+    } else {
+        format!("{verb} all{scope} ({n})")
+    };
+    button(text(label).size(12.0))
+        .width(Length::Fill)
+        .padding([4, 8])
+        .on_press(Message::SetAllModsEnabled(enable))
+        .style(if armed { button::danger } else { button::text })
+        .into()
 }
 
 pub(crate) fn toolbar<'a>(app: &App) -> Element<'a, Message> {
@@ -1182,7 +1209,14 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
             // no files and so carries no conflict flags - which is MO2's reason
             // too, rather than a test for separator-ness.
             .push(send_to_targets(app, i))
+            .push(menu_sep())
+            // On a separator, "inside" is the only placement that reads
+            // naturally, and it means the END of the group it heads - the same
+            // range the fold machinery uses.
+            .push(menu_item("Install mod inside", Message::InstallAt(group_children(&app.mods, i).end)))
+            .push(menu_item("New empty mod inside", Message::CreateEmptyModAt(group_children(&app.mods, i).end)))
             .push(menu_item("Add separator above", Message::AddSeparator(i)))
+            .push(menu_sep())
             .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)))
             .push(menu_sep())
             .push(remove_button(app, i));
@@ -1232,6 +1266,11 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     col = col
         .push(menu_item("Categories...", Message::ShowCategoriesDialog(i)))
+        .push(menu_sep())
+        // The gap is an INSERTION index: `i` is above this row, `i + 1` below.
+        .push(menu_item("Install mod above", Message::InstallAt(i)))
+        .push(menu_item("Install mod below", Message::InstallAt(i + 1)))
+        .push(menu_item("New empty mod above", Message::CreateEmptyModAt(i)))
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
         .push(menu_item("Rename", Message::RenameStart(i)))

@@ -229,6 +229,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         files_hovering: false,
         download_drag: None,
         install_at: None,
+        install_gap: None,
+        confirm_set_all: None,
         pending_note: None,
         categories_dialog: None,
         ini_editor: None,
@@ -1064,6 +1066,25 @@ pub(crate) fn selection_or(app: &App, row: usize) -> Vec<usize> {
 ///
 /// Adjacency IS the group - the same rule `visible_rows` walks to decide what a
 /// fold hides. There is no parent pointer anywhere, in Eidos or in MO2.
+/// The mods a bulk enable/disable would actually touch: what the list is
+/// DRAWING, minus separators (no toggle) and the game's own content (not ours to
+/// switch off).
+///
+/// Shared by the menu label and the handler on purpose. Computed separately they
+/// would drift, and the drift is the worst kind here - a button that says it will
+/// touch 12 mods and touches 400.
+pub(crate) fn mods_visible_for_bulk(app: &App) -> Vec<usize> {
+    let vis = mod_row_visibility(app, app.categories.as_ref());
+    app.mods
+        .iter()
+        .enumerate()
+        .filter(|(i, m)| {
+            vis.get(*i).copied().unwrap_or(false) && !m.is_separator() && !m.is_unmanaged()
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
 pub(crate) fn group_children(mods: &[ModEntry], sep: usize) -> std::ops::Range<usize> {
     let end = mods
         .iter()

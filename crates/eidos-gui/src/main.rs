@@ -436,7 +436,16 @@ enum Message {
     ModIgnoreUpdate(usize),
     // ---- mod creation (MO2 Create empty mod / Install from folder) ----
     /// Create an empty mod folder and open its rename editor (MO2 createEmptyMod).
+    /// Create an empty mod AT a position (the gap the menu was opened on).
     CreateEmptyMod,
+    CreateEmptyModAt(usize),
+    /// Enable or disable every mod the list is currently DRAWING. An explicit
+    /// target state, never a flip: "Disable all" must mean disable, whatever the
+    /// current mix is.
+    SetAllModsEnabled(bool),
+    /// Open the archive picker with a landing position already chosen. The gap is
+    /// an INSERTION index, so `i` means "above the row at i" and `i + 1` "below".
+    InstallAt(usize),
     /// Open a folder picker to install from an already-unpacked mod directory.
     InstallFromFolder,
     /// The folder picker returned a directory (or `None` if cancelled).
@@ -1252,6 +1261,14 @@ struct App {
     /// leave the aim behind for the NEXT mod installed to silently adopt.
     /// Matching on the archive means a stale aim simply never applies.
     install_at: Option<(usize, PathBuf)>,
+    /// A landing position chosen from a context menu, waiting for the picker to
+    /// name an archive. Separate from `install_at` because that one is PAIRED
+    /// with its archive - the pairing is what stops a cancelled install moving an
+    /// unrelated mod - and there is no archive yet at the moment of the click.
+    install_gap: Option<usize>,
+    /// Two-click guard for the bulk enable/disable, holding the TARGET state so
+    /// arming "Enable all" and then clicking "Disable all" does not fire.
+    confirm_set_all: Option<bool>,
     /// Something the drop wants said once the install finishes. It cannot say it
     /// itself: the installer sets its own status a moment later.
     pending_note: Option<String>,
@@ -3794,6 +3811,107 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    #[test]
+    fn installing_from_a_menu_lands_where_the_menu_was_opened() {
+        let mut app = nav_app(&["a", "b", "c"]);
+        // "Install below b" = the gap after index 1.
+        let _ = update_inner(&mut app, Message::InstallAt(2));
+        assert_eq!(app.install_gap, Some(2), "the place is held until an archive names itself");
+        assert_eq!(app.install_at, None, "and it is NOT an aim yet - there is no archive");
+
+        // The picker returns one: now it becomes a real aim, paired.
+        let _ = update_inner(&mut app, Message::ModPicked(Some(PathBuf::from("/tmp/M.7z"))));
+        assert_eq!(app.install_gap, None, "consumed");
+        assert_eq!(
+            app.install_at,
+            Some((2, PathBuf::from("/tmp/M.7z"))),
+            "paired with the archive, so a later failure cannot move something else"
+        );
+    }
+
+    #[test]
+    fn cancelling_the_picker_forgets_the_position() {
+        let mut app = nav_app(&["a", "b"]);
+        let _ = update_inner(&mut app, Message::InstallAt(1));
+        let _ = update_inner(&mut app, Message::ModPicked(None));
+        assert_eq!(app.install_gap, None, "a cancelled pick must not aim the NEXT install");
+        assert_eq!(app.install_at, None);
+    }
+
+    #[test]
+    fn a_menu_install_under_a_filter_says_it_is_going_to_the_end() {
+        let mut app = nav_app(&["Alpha", "Bravo"]);
+        app.search = "Alpha".to_string();
+        let _ = update_inner(&mut app, Message::InstallAt(1));
+        // The gap between two visible rows means nothing when rows are hidden -
+        // the same promise the drag makes, made the same way.
+        assert_eq!(app.install_gap, None);
+        assert!(app.pending_note.as_deref().unwrap_or("").contains("end of the list"));
+    }
+
+    #[test]
+    fn an_empty_mod_can_be_created_at_a_position() {
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        app.created = Some(inst);
+        app.mods = mods(&["a", "b", "c"]);
+        app.screen = Screen::Main;
+
+        let _ = update_inner(&mut app, Message::CreateEmptyModAt(1));
+        assert_eq!(app.mods.len(), 4);
+        assert_eq!(app.selected_mod, Some(1), "the new row is where it was asked for");
+        assert!(app.mods[1].name.starts_with("New Mod"));
+        assert_eq!(app.mods[2].name, "b", "everything after it shifted, not got overwritten");
+        assert!(app.selected_mods.is_empty(), "stale indices are dropped");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bulk_enable_touches_only_what_is_on_screen_and_needs_two_clicks() {
+        let mut app = nav_app(&["Alpha", "Bravo", "Ivy"]);
+        for m in app.mods.iter_mut() {
+            m.enabled = false;
+        }
+        // A filter that hides Ivy.
+        app.search = "a".to_string(); // Alpha, Bravo
+        assert_eq!(mods_visible_for_bulk(&app), vec![0, 1]);
+
+        // First click only arms.
+        let _ = update_inner(&mut app, Message::SetAllModsEnabled(true));
+        assert_eq!(app.confirm_set_all, Some(true));
+        assert!(!app.mods[0].enabled, "nothing happened yet");
+
+        let _ = update_inner(&mut app, Message::SetAllModsEnabled(true));
+        assert!(app.mods[0].enabled && app.mods[1].enabled);
+        assert!(!app.mods[2].enabled, "the hidden row was NOT touched");
+        assert_eq!(app.confirm_set_all, None, "disarmed after firing");
+    }
+
+    #[test]
+    fn arming_enable_all_and_clicking_disable_all_does_not_fire() {
+        let mut app = nav_app(&["a", "b"]);
+        let _ = update_inner(&mut app, Message::SetAllModsEnabled(true));
+        assert_eq!(app.confirm_set_all, Some(true));
+        // A different TARGET is a different action: it re-arms, it does not fire.
+        let _ = update_inner(&mut app, Message::SetAllModsEnabled(false));
+        assert_eq!(app.confirm_set_all, Some(false));
+        assert!(app.mods.iter().all(|m| m.enabled), "nothing was disabled");
+    }
+
+    #[test]
+    fn bulk_enable_never_touches_a_separator_or_the_games_own_content() {
+        let mut app = nav_app(&["Gear_separator", "real"]);
+        app.mods.push(ModEntry {
+            name: "Skyrim.esm".into(),
+            enabled: true,
+            path: PathBuf::from("/game/Data/Skyrim.esm"),
+            unmanaged: true,
+        });
+        assert_eq!(mods_visible_for_bulk(&app), vec![1], "only the real mod");
     }
 
     #[test]
