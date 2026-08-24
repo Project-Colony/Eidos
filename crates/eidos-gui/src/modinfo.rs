@@ -2248,7 +2248,8 @@ pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
     // The filter pane, hanging under its button.
     if app.filters_open {
         let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(Message::ToggleFilterPane);
+            .on_press(Message::ToggleFilterPane)
+            .on_right_press(Message::ToggleFilterPane);
         // Hangs under the Filters button rather than floating at the cursor:
         // it is a panel belonging to a control, not a context menu.
         let card = container(filter_pane(app))
@@ -2281,6 +2282,14 @@ pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseBackupsDialog);
         let dialog = container(backups_dialog(state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The Categories dialog (MO2's Change Categories).
+    if let Some(state) = &app.categories_dialog {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseCategoriesDialog);
+        let dialog = container(categories_dialog(state)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 

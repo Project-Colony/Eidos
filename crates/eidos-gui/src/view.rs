@@ -658,7 +658,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // Decided up front, because whether a separator draws depends on whether any
     // mod BELOW it survives the filter - which the single downward pass this used
     // to be could not know when it reached the header.
-    let filtering = !query.is_empty() || app.category_filter.is_some();
+    let filtering = is_filtering(app);
     let vis = mod_row_visibility(app, cats);
     // The live drag's insertion point, if any, so exactly one gap draws the line.
     // Drawn iff releasing HERE would move the block - the SAME predicate the
@@ -749,12 +749,19 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // `shown` counts mods only, so this cannot fire on a list that is all folded
     // groups - and it only speaks when something was actually asked.
     if !app.mods.is_empty() && shown == 0 && filtering {
-        let by = match (query.is_empty(), app.category_filter.is_some()) {
-            (false, false) => format!("named \"{}\"", app.search.trim()),
-            (true, _) => "in this category".to_string(),
-            (false, true) => format!("named \"{}\" in this category", app.search.trim()),
-        };
-        list = list.push(text(format!("No mods {by}.")).size(12.0));
+        // Say which of the three narrowings is responsible, or the user is left
+        // staring at an empty list with the guilty control off screen.
+        let mut by: Vec<String> = Vec::new();
+        if !query.is_empty() {
+            by.push(format!("named \"{}\"", app.search.trim()));
+        }
+        if app.category_filter.is_some() {
+            by.push("in this category".to_string());
+        }
+        if app.filters.any() {
+            by.push(format!("matching the {} active filter(s)", app.filters.active_count()));
+        }
+        list = list.push(text(format!("No mods {}.", by.join(", "))).size(12.0));
     }
 
     let overwrite = button(
@@ -976,7 +983,18 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
             .on_press(Message::CycleFilter(field)),
         );
     }
-    container(col).width(Length::Fixed(260.0)).padding(6).style(card_style).into()
+    // Wrapped in a mouse_area that SWALLOWS the press. iced's Stack dispatches
+    // top-down and stops only when a widget captures the event; a bare container
+    // never captures, so every click landing on the card's own padding, on the
+    // header text, or in the gap between two rows fell straight through to the
+    // full-window catcher behind it and closed the pane. `on_right_press` is set
+    // for the same reason: mouse_area captures a right press only when it has a
+    // handler, so without it a right-click reached the mod list THROUGH the open
+    // pane and opened a context menu underneath it.
+    mouse_area(container(col).width(Length::Fixed(260.0)).padding(6).style(card_style))
+        .on_press(Message::Noop)
+        .on_right_press(Message::Noop)
+        .into()
 }
 
 /// A small separator line inside the context menu.
@@ -1114,6 +1132,7 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     }
 
     col = col
+        .push(menu_item("Categories...", Message::ShowCategoriesDialog(i)))
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
         .push(menu_item("Rename", Message::RenameStart(i)))
@@ -1166,6 +1185,14 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(menu_sep())
         .push(menu_item("Send to Top", Message::BatchSendTop))
         .push(menu_item("Send to Bottom", Message::BatchSendBottom))
+        .push(menu_sep())
+        // Anchored on the first REAL target: `real_selection` drops separators
+        // and unmanaged rows, so a selection of nothing but those is empty here
+        // and indexing it would panic.
+        .push(match targets.first() {
+            Some(&first) => menu_item("Categories...", Message::ShowCategoriesDialog(first)),
+            None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
+        })
         .push(menu_sep())
         .push(remove);
     menu_frame(col.into())

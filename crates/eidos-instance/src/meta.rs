@@ -198,6 +198,21 @@ impl ModMeta {
         self.string("category")
     }
 
+    /// Set the mod's categories: `primary` first, then the rest, in MO2's on-disk
+    /// form. `None` writes the uncategorised placeholder.
+    ///
+    /// The value is QUOTED, and that is not cosmetic. MO2 stores this through
+    /// QSettings, where an unquoted value containing a comma is a string LIST:
+    /// written bare, `14,9,` comes back as a QStringList and MO2's
+    /// `value("category").toString()` yields nothing, silently uncategorising the
+    /// mod. Every `category=` MO2 itself writes is quoted (`category="-1,"`), so
+    /// this reproduces it exactly. The trailing comma is MO2's too - its parser
+    /// splits on `,` and drops the empty tail.
+    pub fn set_categories(&mut self, primary: Option<i32>, others: &[i32]) {
+        let raw = crate::categories::format_categories(primary, others);
+        self.set("category", &format!("\"{raw}\""));
+    }
+
     pub fn installation_file(&self) -> Option<String> {
         self.string("installationFile")
     }
@@ -794,6 +809,32 @@ mod tests {
 
         let expected = SAMPLE.replace("newestVersion=0.139.2.0", "newestVersion=d2026.4.3.0");
         assert_eq!(fs::read_to_string(&p).unwrap(), expected);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn set_categories_writes_mo2s_quoted_comma_list() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.category().as_deref(), Some("-1,"));
+
+        m.set_categories(Some(9), &[27, 43]);
+        m.write(&p).unwrap();
+        // Quoted, or QSettings reads it back as a LIST and MO2 shows no category.
+        let on_disk = fs::read_to_string(&p).unwrap();
+        assert!(on_disk.contains("category=\"9,27,43,\"\r\n"), "{on_disk}");
+        assert_eq!(on_disk, SAMPLE.replace("category=\"-1,\"", "category=\"9,27,43,\""));
+
+        // And it round-trips through our own reader.
+        let back = ModMeta::read(&p);
+        assert_eq!(crate::categories::parse_primary(&back.category().unwrap()), Some(9));
+        assert_eq!(crate::categories::parse_all(&back.category().unwrap()), vec![9, 27, 43]);
+
+        // Clearing goes back to exactly what MO2 writes for uncategorised.
+        let mut m = ModMeta::read(&p);
+        m.set_categories(None, &[]);
+        m.write(&p).unwrap();
+        assert_eq!(fs::read_to_string(&p).unwrap(), SAMPLE);
         let _ = fs::remove_file(&p);
     }
 

@@ -225,6 +225,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         prefs: Settings::load(),
         executables: None,
         backups: None,
+        categories_dialog: None,
         endorsing: None,
         endorsed_count: 0,
         updated_count: 0,
@@ -1125,12 +1126,6 @@ pub(crate) fn scroll_focus_into_view(id: widget::Id, pos: usize, total: usize) -
     operation::snap_to(id, operation::RelativeOffset { x: None, y: Some(frac) })
 }
 
-/// Which mod rows the list is currently drawing.
-///
-/// Shared with the keyboard on purpose. Computed separately, the two would
-/// drift, and the drift is invisible until an arrow key walks the focus into a
-/// row that is filtered out or folded away - where the highlight cannot be seen
-/// and Space toggles a mod the user is not looking at.
 /// One criterion of the mod-list filter, and how it is currently set.
 ///
 /// MO2's filter pane is what makes a five-hundred-mod list navigable: it slices
@@ -1230,10 +1225,22 @@ impl ModFilters {
     }
 }
 
+/// Whether ANY narrowing is in force: the name box, the category dropdown, or a
+/// filter criterion.
+///
+/// One definition, because it decides two things that must agree: whether
+/// `visible_rows` suspends folding, and whether the list may say "no mods
+/// match". It was computed twice with two different definitions - the copy in
+/// `modlist_pane` never learned about the criteria - so a state filter left
+/// folding on (hiding rows the filter had chosen to show) and emptied the list
+/// in silence.
+pub(crate) fn is_filtering(app: &App) -> bool {
+    !app.search.trim().is_empty() || app.category_filter.is_some() || app.filters.any()
+}
+
 pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::CategoryFactory>) -> Vec<bool> {
     let query = app.search.trim().to_lowercase();
-    let filtering = !query.is_empty() || app.category_filter.is_some() || app.filters.any();
-    visible_rows(&app.mods, &app.collapsed, filtering, |i, m| {
+    visible_rows(&app.mods, &app.collapsed, is_filtering(app), |i, m| {
         if !query.is_empty() && !m.display_name().to_lowercase().contains(&query) {
             return false;
         }

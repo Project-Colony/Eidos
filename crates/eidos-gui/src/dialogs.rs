@@ -909,3 +909,248 @@ pub(crate) fn loot_severity_label(kind: eidos_loot::MessageType) -> &'static str
         eidos_loot::MessageType::Say => "note",
     }
 }
+
+/// The Categories dialog (MO2's Change Categories, plus its category editor).
+///
+/// Two modes in one card because they are one job: assigning a category the
+/// catalog does not have yet means editing the catalog, and MO2 makes the user
+/// leave the mod, open Settings, find the Categories tab, come back, and find the
+/// mod again to do it.
+pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
+    let title = if state.names.len() == 1 {
+        format!("Categories - {}", state.names[0])
+    } else {
+        format!("Categories - {} mods", state.names.len())
+    };
+
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text(title).size(18.0).width(Length::Fill))
+        .push(button(text(if state.editing { "Done editing" } else { "Edit list..." }).size(12.0))
+            .padding([4, 10])
+            .style(button::secondary)
+            .on_press(Message::ToggleCategoryEditor))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseCategoriesDialog),
+        );
+
+    let body = if state.editing { catalog_editor(state) } else { category_picker(state) };
+
+    let mut foot = Row::new().spacing(8).align_y(iced::Alignment::Center);
+    // What Apply will actually write, spelled out - the pending pick is invisible
+    // otherwise once the tree is scrolled away from the checked rows.
+    let summary = match state.chosen.split_first() {
+        None => "No category (clears it)".to_string(),
+        Some((p, rest)) => {
+            let primary = state.catalog.name_for_id(*p).unwrap_or("?").to_string();
+            if rest.is_empty() {
+                primary
+            } else {
+                format!("{primary} (+{} more)", rest.len())
+            }
+        }
+    };
+    foot = foot
+        .push(text(summary).size(12.0).width(Length::Fill))
+        .push(
+            button(text("Apply").size(12.0))
+                .padding([4, 14])
+                .style(button::primary)
+                .on_press(Message::ApplyCategories),
+        );
+
+    let mut card = Column::new().spacing(12).push(header).push(body).push(foot);
+    if state.names.len() > 1 {
+        card = card.push(
+            text("Applying sets the same categories on every selected mod, replacing what they had.")
+                .size(11.0),
+        );
+    }
+
+    container(card).width(Length::Fixed(620.0)).padding(18).style(card_style).into()
+}
+
+/// The assign side: a filtered tree of checkboxes, with the primary marked.
+fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
+    let q = state.query.trim().to_lowercase();
+    let mut rows = Column::new().spacing(1);
+    let mut shown = 0usize;
+    for (id, name, depth) in state.catalog.tree() {
+        // A filter hides a parent whose name does not match, but never a checked
+        // row: the user must always be able to see - and uncheck - what is set.
+        let checked = state.chosen.contains(&id);
+        if !q.is_empty() && !name.to_lowercase().contains(&q) && !checked {
+            continue;
+        }
+        shown += 1;
+        let is_primary = state.chosen.first() == Some(&id);
+        let mark = if checked { "[x]" } else { "[ ]" };
+        let mut row = Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
+            .push(
+                button(text(format!("{mark} {name}")).size(12.0))
+                    .padding([2, 6])
+                    .width(Length::Fill)
+                    .style(if checked { button::secondary } else { button::text })
+                    .on_press(Message::ToggleCategory(id)),
+            );
+        // Primary is what the mod list column shows, so it needs to be both
+        // visible and settable without unchecking everything else first.
+        if is_primary {
+            row = row.push(text("primary").size(10.0));
+        } else if checked {
+            row = row.push(
+                button(text("make primary").size(10.0))
+                    .padding([2, 6])
+                    .style(button::text)
+                    .on_press(Message::SetPrimaryCategory(id)),
+            );
+        }
+        rows = rows.push(row);
+    }
+    if shown == 0 {
+        rows = rows.push(text("No category matches.").size(12.0));
+    }
+
+    let search = text_input("Filter categories", &state.query)
+        .on_input(Message::CategoryQueryChanged)
+        .padding(5)
+        .size(12.0);
+
+    let nexus = Row::new()
+        .spacing(6)
+        .push(tool_btn("Fetch from Nexus", Message::FetchNexusCategories))
+        .push(tool_btn("Use Nexus category", Message::AssignCategoriesFromNexus));
+
+    Column::new()
+        .spacing(8)
+        .push(search)
+        .push(scrollable(rows).height(Length::Fixed(320.0)))
+        .push(nexus)
+        .push(
+            text(
+                "Fetch pulls this game's official category list; Use Nexus sets the pick from what \
+                 the download recorded.",
+            )
+            .size(10.0),
+        )
+        .into()
+}
+
+/// The catalog side: rename, re-parent, delete, and add.
+fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
+    let mut rows = Column::new().spacing(1);
+    for (id, name, depth) in state.catalog.tree() {
+        // The row turns into an editor while it is the one being renamed.
+        if let Some((rid, pending)) = &state.rename {
+            if *rid == id {
+                rows = rows.push(
+                    Row::new()
+                        .spacing(6)
+                        .align_y(iced::Alignment::Center)
+                        .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
+                        .push(
+                            text_input("Name", pending)
+                                .on_input(Message::RenameCategoryChanged)
+                                .on_submit(Message::RenameCategoryCommit)
+                                .padding(4)
+                                .size(12.0),
+                        )
+                        .push(
+                            button(text("Save").size(11.0))
+                                .padding([2, 8])
+                                .style(button::primary)
+                                .on_press(Message::RenameCategoryCommit),
+                        ),
+                );
+                continue;
+            }
+        }
+        let armed = state.confirm_delete == Some(id);
+        rows = rows.push(
+            Row::new()
+                .spacing(6)
+                .align_y(iced::Alignment::Center)
+                .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
+                .push(text(name).size(12.0).width(Length::Fill))
+                .push(text(format!("#{id}")).size(10.0))
+                .push(
+                    button(text("Rename").size(10.0))
+                        .padding([2, 6])
+                        .style(button::text)
+                        .on_press(Message::RenameCategoryStart(id)),
+                )
+                .push(
+                    button(text(if armed { "Confirm?" } else { "Delete" }).size(10.0))
+                        .padding([2, 6])
+                        .style(if armed { button::danger } else { button::text })
+                        .on_press(Message::DeleteCategory(id)),
+                ),
+        );
+    }
+
+    // Adding: name + a parent picked from the same tree.
+    let parents: Vec<CategoryChoice> = std::iter::once(CategoryChoice { id: 0, label: "(top level)".to_string() })
+        .chain(
+            state
+                .catalog
+                .tree()
+                .into_iter()
+                .map(|(id, name, depth)| CategoryChoice { id, label: format!("{}{name}", "  ".repeat(depth)) }),
+        )
+        .collect();
+    let selected = parents.iter().find(|c| c.id == state.new_parent).cloned();
+    let add = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text_input("New category name", &state.new_name)
+                .on_input(Message::NewCategoryNameChanged)
+                .on_submit(Message::AddCategory)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(
+            pick_list(parents, selected, |c: CategoryChoice| Message::NewCategoryParentChanged(c.id))
+                .text_size(12.0)
+                .padding(4),
+        )
+        .push(
+            button(text("Add").size(12.0))
+                .padding([4, 12])
+                .style(button::primary)
+                .on_press(Message::AddCategory),
+        );
+
+    Column::new()
+        .spacing(8)
+        .push(scrollable(rows).height(Length::Fixed(300.0)))
+        .push(add)
+        .push(
+            text(
+                "Deleting a category lifts its children onto its parent and leaves the mods using \
+                 it alone - they show a bare id until re-categorised. Nothing is written until Apply.",
+            )
+            .size(10.0),
+        )
+        .into()
+}
+
+/// A wrapped category for the parent `pick_list` (so it has a Display label).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CategoryChoice {
+    id: i32,
+    label: String,
+}
+
+impl std::fmt::Display for CategoryChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}

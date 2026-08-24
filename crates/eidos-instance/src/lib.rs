@@ -30,7 +30,9 @@ mod profile;
 mod registry;
 pub mod settings;
 mod tools;
-pub use categories::{parse_primary, CategoryFactory};
+pub use categories::{
+    format_categories, parse_all, parse_primary, Category, CategoryFactory, NexusCategory,
+};
 pub use manifest::Manifest;
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use meta::ModMeta;
@@ -300,7 +302,14 @@ impl Instance {
     /// format), else MO2's built-in defaults. Resolves a mod's `category=` ids to
     /// display names.
     pub fn category_factory(&self) -> CategoryFactory {
-        CategoryFactory::load(&self.root.join("categories.dat"))
+        CategoryFactory::load(&self.root)
+    }
+
+    /// Where the category catalog lives (the instance root, holding MO2's own
+    /// `categories.dat` + `nexuscatmap.dat`, so a shared instance keeps one
+    /// catalog and not two). Pass this to [`CategoryFactory::save`].
+    pub fn categories_root(&self) -> &Path {
+        &self.root
     }
 
     /// The instance manifest path (`<root>/eidos-instance.ini`).

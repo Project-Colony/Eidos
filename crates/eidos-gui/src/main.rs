@@ -347,6 +347,39 @@ enum Message {
     CloseBackupsDialog,
     CreateBackup(eidos_instance::BackupKind),
     RestoreBackup(eidos_instance::BackupKind, u64),
+    // ---- Categories dialog (MO2's Change Categories + the category editor) ----
+    /// Open the dialog on a mod row (or, with a multi-selection, on all of them).
+    ShowCategoriesDialog(usize),
+    CloseCategoriesDialog,
+    /// Check / uncheck a category for the targeted mods.
+    ToggleCategory(i32),
+    /// Promote an already-checked category to primary (the one shown on the row).
+    SetPrimaryCategory(i32),
+    /// Write the pending choice to every target's `meta.ini`, and the catalog if
+    /// it was edited.
+    ApplyCategories,
+    /// Filter the category tree.
+    CategoryQueryChanged(String),
+    /// Flip between the picker and the catalog editor.
+    ToggleCategoryEditor,
+    /// The "new category" name box.
+    NewCategoryNameChanged(String),
+    /// The parent for the category about to be created.
+    NewCategoryParentChanged(i32),
+    /// Create the category currently described by the name + parent boxes.
+    AddCategory,
+    /// Start / edit / commit a catalog rename.
+    RenameCategoryStart(i32),
+    RenameCategoryChanged(String),
+    RenameCategoryCommit,
+    /// Delete a catalog row (two clicks).
+    DeleteCategory(i32),
+    /// Pull the game's official category list from Nexus into the catalog.
+    FetchNexusCategories,
+    /// The category list came back.
+    NexusCategoriesFetched(Result<Vec<(i32, String, Option<i32>)>, String>),
+    /// Set the pending pick from what Nexus recorded for the targeted mods.
+    AssignCategoriesFromNexus,
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,
@@ -1026,6 +1059,8 @@ struct App {
     /// The Backups dialog: the restore points of both lists, read when it opens
     /// so the list cannot go stale behind an open dialog.
     backups: Option<BackupsDialogState>,
+    /// The Categories dialog: which mods it applies to and the pending choice.
+    categories_dialog: Option<CategoriesDialogState>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -1219,6 +1254,37 @@ enum FilterField {
 struct BackupsDialogState {
     mods: Vec<eidos_instance::Backup>,
     order: Vec<eidos_instance::Backup>,
+}
+
+/// The Categories dialog. Two modes in one card: assigning categories to the
+/// selected mods, and editing the catalog those categories come from.
+///
+/// The pending choice lives here rather than being written on every click,
+/// because a `meta.ini` write per checkbox would rewrite the file (and invalidate
+/// the meta cache) a dozen times while the user makes up their mind.
+struct CategoriesDialogState {
+    /// The mods this applies to, BY NAME. More than one = MO2's batch assign.
+    ///
+    /// Names, not row indices: the mod list can be rebuilt behind an open dialog
+    /// (a refresh, a Nexus check, a drag), and indices captured before that would
+    /// then point at different mods than the ones the user opened it on.
+    names: Vec<String>,
+    /// Checked ids, primary FIRST (that is what the on-disk order means).
+    chosen: Vec<i32>,
+    /// The catalog being edited. Loaded once with the dialog; saved on Apply.
+    catalog: eidos_instance::CategoryFactory,
+    /// True while the catalog editor is showing instead of the picker.
+    editing: bool,
+    /// The name box in the catalog editor.
+    new_name: String,
+    /// The parent for a category about to be created (0 = top level).
+    new_parent: i32,
+    /// The catalog row being renamed, and its pending name.
+    rename: Option<(i32, String)>,
+    /// Two-click guard for deleting a catalog row.
+    confirm_delete: Option<i32>,
+    /// Free-text filter over the category tree.
+    query: String,
 }
 
 /// A game/tool launched through Eidos that the GUI is waiting on. A detached
@@ -3272,8 +3338,112 @@ mod tests {
         app.selected_mods.extend([0, 2]);
         app.drag_state = Some(DragState { from: 0, gap: 2, aimed: true });
         let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Conflicted));
-        assert!(app.selected_mods.is_empty());
         assert!(app.drag_state.is_none());
+        // `Conflicted -> only` with no conflict map hides everything, so nothing
+        // in the selection may survive it.
+        assert!(app.selected_mods.is_empty());
+    }
+
+    /// Filtering does not renumber the rows, so an index kept across it still
+    /// RESOLVES - it just resolves to a mod that is no longer on screen. The
+    /// keyboard reads `selected_mod` raw, and `real_selection` falls back to it
+    /// when the multi-selection is empty, so a focus left on a hidden row aimed
+    /// Space, Delete and every batch action at a mod the user could not see.
+    #[test]
+    fn a_filter_never_leaves_the_keyboard_aimed_at_a_row_it_hid() {
+        // Alpha stays visible (disabled); Ivy is enabled, so Active->Exclude hides it.
+        let mut app = nav_app(&["Alpha", "Ivy"]);
+        app.mods[0].enabled = false;
+        app.mods[1].enabled = true;
+
+        // A PLAIN CLICK - the only gesture a mouse user makes. It sets the focus
+        // and the anchor and deliberately leaves `selected_mods` empty, which is
+        // why clearing only that set was never enough.
+        let _ = update_inner(&mut app, Message::SelectMod(1));
+        assert_eq!(app.selected_mod, Some(1));
+        assert!(app.selected_mods.is_empty(), "a plain click never populates the set");
+
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        assert_eq!(app.filters.active, Criterion::Exclude);
+        assert_eq!(mod_row_visibility(&app, None), vec![true, false], "Ivy is off screen");
+
+        assert_eq!(app.selected_mod, None, "the focus went with the row");
+        assert_eq!(app.sel_anchor, None, "and so did the shift-select anchor");
+        // The proof that matters: the keys that ACT are now inert.
+        let _ = update_inner(&mut app, Message::KeyNav(Nav::Toggle));
+        assert!(app.mods[1].enabled, "Space must not toggle a mod that is not drawn");
+        let _ = update_inner(&mut app, Message::KeyNav(Nav::Remove));
+        assert_ne!(app.confirm_remove, Some(1), "Delete must not arm on a hidden row");
+    }
+
+    #[test]
+    fn a_filter_never_redirects_a_batch_action_onto_a_hidden_row() {
+        let mut app = nav_app(&["Alpha", "Bravo", "Ivy"]);
+        app.mods[0].enabled = false;
+        app.mods[1].enabled = false;
+        app.mods[2].enabled = true;
+        // Ctrl+click three rows: the set is full and the focus is on the last.
+        app.modifiers = iced::keyboard::Modifiers::CTRL;
+        for i in 0..3 {
+            let _ = update_inner(&mut app, Message::SelectMod(i));
+        }
+        app.modifiers = iced::keyboard::Modifiers::default();
+        assert_eq!(app.selected_mods.len(), 3);
+
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        // Ivy is hidden. `real_selection` falls back to `selected_mod` when the
+        // set is empty, so a stale focus here would aim the batch Remove at the
+        // one row nobody can see.
+        assert!(!real_selection(&app).contains(&2), "the hidden row is not a batch target");
+    }
+
+    #[test]
+    fn folding_a_group_takes_the_focus_with_it() {
+        // Folding hides rows exactly like a filter does, through the same path.
+        let mut app = nav_app(&["Gear_separator", "under"]);
+        // The fold is keyed by DISPLAY name (the "_separator" suffix stripped),
+        // which is what the header button sends.
+        let key = app.mods[0].display_name().to_string();
+        assert_eq!(key, "Gear");
+        let _ = update_inner(&mut app, Message::SelectMod(1));
+        assert_eq!(app.selected_mod, Some(1));
+        let _ = update_inner(&mut app, Message::ToggleCollapse(key));
+        assert_eq!(mod_row_visibility(&app, None), vec![true, false], "the group folded");
+        assert_eq!(app.selected_mod, None, "the focus did not survive the fold");
+    }
+
+    #[test]
+    fn select_all_only_takes_what_the_list_is_drawing() {
+        let mut app = nav_app(&["Alpha", "Bravo", "Ivy"]);
+        app.mods[0].enabled = false;
+        app.mods[1].enabled = false;
+        app.mods[2].enabled = true;
+        app.focus = Pane::Mods;
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+        let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
+
+        let _ = update_inner(&mut app, Message::SelectAllInFocus);
+        // Not `0..mods.len()`: Ctrl+A used to sweep in every hidden row, and the
+        // batch Remove then aimed remove_dir_all at all of them.
+        assert_eq!(app.selected_mods.len(), 2);
+        assert!(!app.selected_mods.contains(&2), "the hidden row is not selected");
+        assert_eq!(app.selected_mod, Some(0), "the focus lands on a row that is drawn");
+    }
+
+    #[test]
+    fn one_definition_decides_whether_a_filter_is_running() {
+        // Two copies of this predicate drifted: the view's never learned about
+        // the criteria, so a state filter left folding on and emptied the list
+        // in silence.
+        let mut app = nav_app(&["a", "b"]);
+        assert!(!is_filtering(&app));
+        app.filters.update = Criterion::Require;
+        assert!(is_filtering(&app), "a criterion alone counts as filtering");
+        app.filters = ModFilters::default();
+        app.search = "a".to_string();
+        assert!(is_filtering(&app));
     }
 
     #[test]
@@ -4052,80 +4222,4 @@ mod tests {
         let got = reconcile(listed, vec![]);
         assert_eq!(got, ["A", "B", "C"]);
     }
-
-    #[test]
-    fn zz_throwaway_restore_backup_leaves_stale_caches() {
-        // Adversarial check of the RestoreBackup handler in update.rs.
-        let root = temp_portable("skyrimse");
-        fs::create_dir_all(root.join("mods/AAA")).unwrap();
-        fs::create_dir_all(root.join("mods/BBB")).unwrap();
-        let mut app = app_for_game("skyrimse");
-        app.screen = Screen::Welcome;
-        app.known = vec![KnownInstance {
-            label: "p".into(),
-            inst: Instance::portable(root.clone()),
-            game_index: 0,
-        }];
-        let _ = update_inner(&mut app, Message::OpenKnown(0));
-        let inst = app.created.clone().expect("instance opened");
-        inst.save_modlist(&app.mods).expect("modlist written");
-        let b = inst
-            .active()
-            .create_backup(eidos_instance::BackupKind::ModList)
-            .expect("backup made");
-
-        // Stand in for what browsing the Data tab / running LOOT leaves behind.
-        app.data_listing.borrow_mut().insert(
-            String::new(),
-            (app.view_generation.get(), vec![("stale.esp".into(), "[AAA]".into(), false)]),
-        );
-        app.listing_cache.borrow_mut().insert(
-            PathBuf::from("/old"),
-            (app.view_generation.get(), std::rc::Rc::new(vec!["stale".to_string()])),
-        );
-        app.loot_meta = Some(HashMap::new());
-        app.drag_state = Some(DragState { from: 0, gap: 0, aimed: true });
-        app.selected_mods = [0usize].into_iter().collect();
-        app.meta_cache.insert(
-            "GhostMod".to_string(),
-            RowMeta {
-                version: None,
-                mod_id: None,
-                category_id: None,
-                category_name: None,
-                content_tags: String::new(),
-                update: false,
-                color: None,
-            },
-        );
-        let gen_before = app.view_generation.get();
-
-        let _ = update(&mut app, Message::RestoreBackup(eidos_instance::BackupKind::ModList, b.stamp));
-        assert!(
-            app.status.as_deref().unwrap_or("").starts_with("Restored"),
-            "the restore must have succeeded for this test to mean anything: {:?}",
-            app.status
-        );
-
-        println!("view_generation before={} after={}", gen_before, app.view_generation.get());
-        println!("data_listing left = {}", app.data_listing.borrow().len());
-        println!("listing_cache left = {}", app.listing_cache.borrow().len());
-        println!("loot_meta is_some = {}", app.loot_meta.is_some());
-        println!("drag_state is_some = {}", app.drag_state.is_some());
-        println!("selected_mods = {}", app.selected_mods.len());
-        println!("meta_cache has GhostMod = {}", app.meta_cache.contains_key("GhostMod"));
-
-        let _ = fs::remove_dir_all(&root);
-        assert_eq!(app.view_generation.get(), gen_before, "view_generation WAS bumped");
-        assert!(!app.data_listing.borrow().is_empty(), "data_listing WAS cleared");
-        assert!(!app.listing_cache.borrow().is_empty(), "listing_cache WAS cleared");
-        assert!(app.loot_meta.is_some(), "loot_meta WAS dropped");
-        assert!(app.drag_state.is_some(), "drag_state WAS reset");
-        assert!(app.meta_cache.contains_key("GhostMod"), "meta_cache WAS refreshed");
-    }
-
-
-
-
-
 }

@@ -741,6 +741,21 @@ impl ContentFlags {
 /// per mod on a refresh.
 pub fn classify_content_dir(root: &std::path::Path) -> ContentFlags {
     let mut c = ContentFlags::default();
+    // `root` is not always a directory. An unmanaged row - the game's own
+    // Skyrim.esm, a Creation, an AE .esl - is built with its PLUGIN FILE as the
+    // path, so `read_dir` fails and every one of those rows came back with no
+    // content at all: no P in the Content column, and "Has plugins -> only" hid
+    // exactly the rows that are nothing BUT a plugin. Classify the file itself.
+    if root.is_file() {
+        if let Some(ext) = root.extension().and_then(|e| e.to_str()) {
+            match ext.to_ascii_lowercase().as_str() {
+                "esp" | "esm" | "esl" => c.plugins = true,
+                "bsa" | "ba2" => c.bsa = true,
+                _ => {}
+            }
+        }
+        return c;
+    }
     let Ok(rd) = std::fs::read_dir(root) else { return c };
     for e in rd.flatten() {
         let name = e.file_name().to_string_lossy().to_ascii_lowercase();
@@ -1421,6 +1436,18 @@ mod tests {
         let empty = root.join("empty");
         std::fs::create_dir_all(&empty).unwrap();
         assert_eq!(classify_content_dir(&empty).tags(), "");
+
+        // A PLUGIN FILE, not a directory. The game's own Skyrim.esm and every
+        // Creation reach this function as a file path, and `read_dir` on one
+        // fails: those rows used to report no content at all, so the Content
+        // column was blank and "Has plugins -> only" hid exactly the rows that
+        // are nothing but a plugin.
+        let esm = root.join("Skyrim.esm");
+        std::fs::write(&esm, b"").unwrap();
+        assert_eq!(classify_content_dir(&esm).tags(), "P");
+        let ba2 = root.join("Fallout4 - Textures.BA2");
+        std::fs::write(&ba2, b"").unwrap();
+        assert_eq!(classify_content_dir(&ba2).tags(), "A", "and the extension match is case-blind");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

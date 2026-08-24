@@ -810,6 +810,42 @@ impl Nexus {
         Ok(RemoteMod::from_payload(&v, self.adult))
     }
 
+    /// The game's own category list: `games/{game}`, the `categories` array.
+    ///
+    /// This is where a Nexus category id gets a name and a place in a tree. It is
+    /// the only source for it: a download's `.meta` records the id and nothing
+    /// else, so without this table a downloaded mod's category is an integer with
+    /// no meaning. MO2 fetches the same payload (`NexusInterface::requestGameInfo`
+    /// -> `CategoryFactory::refreshNexusCategories`).
+    ///
+    /// Each entry is `(category_id, name, parent_category)`, where the parent is
+    /// `false` in the JSON for a top-level category - hence the `Option`.
+    pub fn game_categories(&self, game: &str) -> Result<Vec<(i32, String, Option<i32>)>, String> {
+        let v = self.get(&format!("games/{game}"))?;
+        let cats = v
+            .get("categories")
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| format!("Nexus returned no category list for '{game}'"))?;
+        let mut out = Vec::new();
+        for c in cats {
+            let Some(id) = c.get("category_id").and_then(serde_json::Value::as_i64) else {
+                continue;
+            };
+            let name = c.get("name").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+            if name.is_empty() {
+                continue;
+            }
+            // `parent_category` is an id for a child and literal `false` for a
+            // top-level one; as_i64 on `false` is None, which is what we want.
+            let parent = c.get("parent_category").and_then(serde_json::Value::as_i64);
+            out.push((id as i32, name.to_string(), parent.map(|p| p as i32)));
+        }
+        if out.is_empty() {
+            return Err(format!("Nexus returned an empty category list for '{game}'"));
+        }
+        Ok(out)
+    }
+
     /// Identify an archive Eidos did not download, by its MD5:
     /// `games/{game}/mods/md5_search/{md5}`.
     ///
