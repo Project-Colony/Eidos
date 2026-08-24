@@ -231,7 +231,14 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         nexus_account: None,
         nexus_signing_in: false,
         nexus_error: None,
-        prefs: Settings::load(),
+        // NOT `Settings::load()` under test, for two reasons that both bit.
+        // Loading binds the real file, so a test dispatching "toggle lock"
+        // wrote the developer's own preferences - the symptom, options
+        // reverting after a build, looked like anything but a test. And
+        // reading it makes every assertion about a default depend on what
+        // happens to be in that person's file. A default has no path, so
+        // saving it is a no-op.
+        prefs: if cfg!(test) { Settings::default() } else { Settings::load() },
         executables: None,
         backups: None,
         dropped: Vec::new(),

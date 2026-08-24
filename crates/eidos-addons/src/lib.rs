@@ -147,13 +147,7 @@ impl Context {
 /// The directory user add-on manifests are read from, mirroring where user game
 /// definitions live so there is one place to look for "things I added".
 pub fn user_addons_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config")
-        });
-    base.join("eidos").join("addons")
+    eidos_paths::config_dir().join("addons")
 }
 
 /// Parse every `*.toml` in `dir`, newest name order, skipping invalid ones.

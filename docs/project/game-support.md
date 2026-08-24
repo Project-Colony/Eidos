@@ -16,7 +16,7 @@ resolves reads; which game those directories belong to never reaches it.
 
 The catalogue is already declarative.
 [`eidos-gamedef`](../../crates/eidos-gamedef/src/lib.rs) mirrors MO2's
-`IPluginGame` schema, and a `<id>.toml` in `~/.config/eidos/games/` joins the
+`IPluginGame` schema, and a `<id>.toml` in `~/.config/Colony/Eidos/games/` joins the
 registry with no recompile, exactly like MO2's `basic_games` plugin.
 [`internals/adding-games.md`](../internals/adding-games.md) documents it.
 

@@ -1,4 +1,4 @@
-//! The instance registry: `$XDG_CONFIG_HOME/eidos/instances.ini`.
+//! The instance registry: `~/.config/Colony/Eidos/instances.ini`.
 //!
 //! A global instance needs no registry - its path is a pure function of the
 //! game id. A portable instance is the opposite: the user chose the folder,
@@ -70,9 +70,9 @@ pub struct Registry {
     pub last: Option<InstanceRef>,
 }
 
-/// `$XDG_CONFIG_HOME/eidos/instances.ini`.
+/// `~/.config/Colony/Eidos/instances.ini`.
 pub fn registry_path() -> PathBuf {
-    config_home().join("eidos").join("instances.ini")
+    config_home().join("instances.ini")
 }
 
 impl Registry {

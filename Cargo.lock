@@ -1026,6 +1026,7 @@ dependencies = [
  "eidos-log",
  "eidos-loot",
  "eidos-nexus",
+ "eidos-paths",
  "eidos-plugins",
 ]
 
@@ -1033,6 +1034,7 @@ dependencies = [
 name = "eidos-addons"
 version = "1.7.1"
 dependencies = [
+ "eidos-paths",
  "serde",
  "toml",
 ]
@@ -1068,6 +1070,7 @@ dependencies = [
 name = "eidos-gamedef"
 version = "1.7.1"
 dependencies = [
+ "eidos-paths",
  "serde",
  "toml",
 ]
@@ -1078,6 +1081,7 @@ version = "1.7.1"
 dependencies = [
  "eidos-gamedef",
  "eidos-ini",
+ "eidos-paths",
  "flate2",
  "object",
  "ureq",
@@ -1106,6 +1110,7 @@ dependencies = [
  "eidos-log",
  "eidos-loot",
  "eidos-nexus",
+ "eidos-paths",
  "eidos-plugins",
  "iced",
  "libc",
@@ -1131,6 +1136,7 @@ version = "1.7.1"
 dependencies = [
  "eidos-core",
  "eidos-ini",
+ "eidos-paths",
  "eidos-plugins",
  "encoding_rs",
  "libc",
@@ -1148,6 +1154,7 @@ dependencies = [
 name = "eidos-log"
 version = "1.7.1"
 dependencies = [
+ "eidos-paths",
  "libc",
 ]
 
@@ -1173,6 +1180,10 @@ dependencies = [
  "sha2",
  "ureq",
 ]
+
+[[package]]
+name = "eidos-paths"
+version = "1.7.1"
 
 [[package]]
 name = "eidos-plugins"

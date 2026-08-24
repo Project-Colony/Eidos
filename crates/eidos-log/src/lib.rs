@@ -13,7 +13,7 @@
 //!
 //! * **A file per run.** Sessions are the unit users talk about ("it broke the
 //!   third time I launched"), so a run gets its own file under
-//!   `$XDG_STATE_HOME/eidos/logs/` (XDG basedir 0.8 puts logs in the *state*
+//!   `~/.local/state/Colony/Eidos/logs/` (XDG basedir 0.8 puts logs in the *state*
 //!   dir, not data or cache: state is "persists between restarts, not portable,
 //!   not precious", which is exactly a log). Appending to one growing file
 //!   would force the reader to guess where the interesting run starts.
@@ -181,12 +181,12 @@ impl Config {
 // XDG paths
 // ---------------------------------------------------------------------------
 
-/// `$XDG_STATE_HOME/eidos`, or `$HOME/.local/state/eidos`.
+/// `~/.local/state/Colony/Eidos`, or `~/.local/state/Colony/Eidos`.
 pub fn state_dir() -> PathBuf {
     state_dir_from(std::env::var_os("XDG_STATE_HOME"), std::env::var_os("HOME"))
 }
 
-/// Where session logs live: `$XDG_STATE_HOME/eidos/logs`.
+/// Where session logs live: `~/.local/state/Colony/Eidos/logs`.
 pub fn log_dir() -> PathBuf {
     state_dir().join("logs")
 }
@@ -199,12 +199,17 @@ pub fn log_dir() -> PathBuf {
 /// cannot write is worse than a log in an odd place, and `HOME` is genuinely
 /// missing in some systemd and Steam-launcher contexts.
 fn state_dir_from(xdg: Option<OsString>, home: Option<OsString>) -> PathBuf {
+    // `Colony/Eidos`, the ecosystem's layout - see `eidos_paths`, which owns the
+    // rule. Spelled out here rather than delegated because this function takes
+    // its environment as arguments precisely so tests need not mutate the
+    // process's, and that shape is worth more than sharing four joins.
+    let tail = Path::new(eidos_paths::VENDOR).join(eidos_paths::PROGRAM);
     if let Some(x) = xdg.filter(|x| !x.is_empty()) {
-        return PathBuf::from(x).join("eidos");
+        return PathBuf::from(x).join(tail);
     }
     match home.filter(|h| !h.is_empty()) {
-        Some(h) => PathBuf::from(h).join(".local/state/eidos"),
-        None => std::env::temp_dir().join("eidos"),
+        Some(h) => PathBuf::from(h).join(".local/state").join(tail),
+        None => std::env::temp_dir().join(tail),
     }
 }
 
@@ -1448,13 +1453,17 @@ mod tests {
 
     #[test]
     fn state_dir_prefers_xdg_then_home_then_temp() {
+        // `Colony/Eidos` - the ecosystem's layout, so a user finds one tree per
+        // program rather than one spelling per crate that needed a directory.
         let xdg = state_dir_from(Some("/x/state".into()), Some("/home/alice".into()));
-        assert_eq!(xdg, PathBuf::from("/x/state/eidos"));
+        assert_eq!(xdg, PathBuf::from("/x/state/Colony/Eidos"));
         // Empty is treated as unset, as the XDG spec requires.
         let home = state_dir_from(Some("".into()), Some("/home/alice".into()));
-        assert_eq!(home, PathBuf::from("/home/alice/.local/state/eidos"));
+        assert_eq!(home, PathBuf::from("/home/alice/.local/state/Colony/Eidos"));
+        // And with no environment at all it still lands somewhere writable,
+        // because a log we cannot write is worse than a log in an odd place.
         let none = state_dir_from(None, None);
-        assert!(none.ends_with("eidos"));
+        assert!(none.ends_with("Colony/Eidos"), "{}", none.display());
     }
 
     #[test]

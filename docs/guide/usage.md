@@ -40,13 +40,28 @@ The folder is self-describing (its `eidos-instance.ini` names the game), so
 nothing else is needed - and `EIDOS_INSTANCE=<folder>` in the environment
 redirects a game id to that folder, which is handy in Steam launch options.
 Portable instances you have created or opened are remembered (most recently
-used first) in `~/.config/eidos/instances.ini`; the GUI's welcome screen lists
+used first) in `~/.config/Colony/Eidos/instances.ini`; the GUI's welcome screen lists
 them to open with one click, the Steam launch lands on the one you last played,
 and the `nxm://` handler downloads into it. Two caveats worth knowing: moving a
 portable folder keeps everything except tool entries you registered with
 absolute paths into the old location (re-add those), and the shared runtime
-cache (`~/.local/share/eidos/runtimes/`) deliberately stays machine-global -
+cache (`~/.local/share/Colony/Eidos/runtimes/`) deliberately stays machine-global -
 a 78 MB .NET host is not per-instance.
+
+Eidos keeps its own files under `Colony/Eidos`, the layout every program in the
+Colony family uses: `~/.config/Colony/Eidos/` for what you chose (preferences,
+your Nexus session, your instance list, the game and add-on definitions you
+wrote), `~/.local/state/Colony/Eidos/logs/` for session logs, and
+`~/.local/share/Colony/Eidos/` for what Eidos downloaded. An older Eidos kept
+these in `~/.config/eidos/` and `~/.local/state/eidos/`; the first launch after
+upgrading **copies** them across and says so in the log. The old directories are
+left exactly as they were - nothing is deleted, so a bad upgrade cannot cost you
+a sign-in - and you can remove them yourself once you are satisfied.
+
+Your mods are not part of that. A global instance still lives at
+`~/.local/share/eidos/<game>/`, and a portable one wherever you put it, because
+those paths are written into your instance list and possibly into a Steam launch
+option: moving them would break a link Eidos does not own both ends of.
 
 One place is refused outright: **inside a game's install folder** (the MO2
 veteran reflex). Steam owns that tree - an update, a "verify integrity" or an
@@ -215,6 +230,6 @@ Building from source and the repository layout are in
 ## Extensions
 
 Eidos can be extended without being rebuilt: a TOML manifest in
-`~/.config/eidos/addons/` adds a tool to the Extensions list or a check to the
+`~/.config/Colony/Eidos/addons/` adds a tool to the Extensions list or a check to the
 Health tab. Nothing is loaded into Eidos - an extension is a program it runs.
 See [extensions.md](extensions.md).

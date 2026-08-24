@@ -15,7 +15,7 @@ worked example of a game declaring its own mod vocabulary.
 Drop a `<id>.toml` file into:
 
 ```
-$XDG_CONFIG_HOME/eidos/games/      # or  ~/.config/eidos/games/
+~/.config/Colony/Eidos/games/
 ```
 
 It joins the registry on the next launch. A file whose `id` matches a built-in
@@ -77,7 +77,7 @@ its file union over `data_dir` - no `plugins.txt`, no BSA invalidation, no INI
 deployment.
 
 ```toml
-# ~/.config/eidos/games/stardew.toml
+# ~/.config/Colony/Eidos/games/stardew.toml
 id = "stardew"
 name = "Stardew Valley"
 short_name = "StardewValley"

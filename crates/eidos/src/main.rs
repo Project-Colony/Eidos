@@ -37,7 +37,7 @@ use resolve::*;
 use sort::*;
 use tools::*;
 
-/// `~/.config/eidos/nexus.ini`, holding the personal Nexus API key. Delegates to
+/// `~/.config/Colony/Eidos/nexus.ini`, holding the personal Nexus API key. Delegates to
 /// the shared `eidos-instance` settings store so the CLI and the GUI can never
 /// disagree on the path or the file format.
 /// A connected Nexus client, or exit with a pointer to signing in.
@@ -249,6 +249,14 @@ fn main() {
     let _ = eidos_log::init_with(
         eidos_log::Config::new(bucket).with_version(env!("CARGO_PKG_VERSION")),
     );
+    // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
+    // reads a setting. Copies rather than moves, runs once, and cannot fail a
+    // launch: see `eidos_paths::migrate_legacy_layout`. Logged rather than
+    // silent, because a user who goes looking for their settings deserves to
+    // find out from the log where they went.
+    for note in eidos_paths::migrate_legacy_layout() {
+        eidos_log::info!("{note}");
+    }
     match args.first().map(String::as_str) {
         Some("games") => cmd_games(),
         Some("init") => match args.get(1) {

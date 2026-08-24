@@ -6,5 +6,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+eidos-paths = { path = "../eidos-paths" }
 serde = { version = "1", features = ["derive"] }
 toml = "1"

@@ -7,5 +7,6 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-paths = { path = "../eidos-paths" }
 serde = { version = "1", features = ["derive"] }
 toml = "1"

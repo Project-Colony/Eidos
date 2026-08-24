@@ -2085,6 +2085,14 @@ fn main() -> iced::Result {
     let _ = eidos_log::init_with(
         eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")),
     );
+    // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
+    // reads a setting. Copies rather than moves, runs once, and cannot fail a
+    // launch: see `eidos_paths::migrate_legacy_layout`. Logged rather than
+    // silent, because a user who goes looking for their settings deserves to
+    // find out from the log where they went.
+    for note in eidos_paths::migrate_legacy_layout() {
+        eidos_log::info!("{note}");
+    }
     eidos_log::info!("eidos-gui {} starting", env!("CARGO_PKG_VERSION"));
     // The title moved out of `application` and onto a builder; the first argument
     // is now the boot function that `run_with` used to take. It must be `Fn`, not
@@ -4372,6 +4380,28 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn no_test_can_write_the_developers_own_preferences() {
+        // The defect this exists for cost real time to find: `Settings::save`
+        // resolved its path globally, and `App::new` loaded from the real one,
+        // so a GUI test dispatching a toggle rewrote ~/.config/.../settings.ini
+        // on the machine running the suite. The symptom - options reverting
+        // after every rebuild - looks like anything but a test.
+        let mut app = app_for_game("skyrimse");
+        assert!(
+            app.prefs.path().is_none(),
+            "a test's Settings must not be bound to a file, let alone the real one"
+        );
+
+        let before = app.prefs.lock_gui;
+        let _ = update_inner(&mut app, Message::ToggleLockGui(!before));
+        assert_eq!(app.prefs.lock_gui, !before, "the toggle still works in memory");
+        // And saving it is a no-op rather than a write, so no arm in update.rs
+        // can reach the real file by accident either.
+        assert!(app.prefs.save().is_ok());
+        assert!(app.prefs.path().is_none());
     }
 
     #[test]

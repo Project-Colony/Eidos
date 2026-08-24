@@ -3,7 +3,7 @@
 An extension adds an entry to Eidos without being part of Eidos. It is a TOML
 manifest naming a program, plus, at most, that program.
 
-Manifests live in `~/.config/eidos/addons/`, one `.toml` per extension. Open the
+Manifests live in `~/.config/Colony/Eidos/addons/`, one `.toml` per extension. Open the
 folder from **View -> Extensions -> Open folder**, then press **Reload** - no
 restart.
 
@@ -89,4 +89,4 @@ It gets values and runs; it cannot call back into Eidos, change the mod list, or
 draw anything in the window. That is deliberate. The things MO2 uses plugins for
 that DO need to reach inside - game support, installers, the conflict engine -
 are built in here rather than bolted on: a game definition is its own TOML in
-`~/.config/eidos/games/`, and FOMOD and BAIN installers are native.
+`~/.config/Colony/Eidos/games/`, and FOMOD and BAIN installers are native.

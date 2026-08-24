@@ -7,6 +7,7 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-paths = { path = "../eidos-paths" }
 # Only for `localtime_r`/`tzset`, to stamp lines in the user's LOCAL time: a mod
 # manager's log is read next to "I clicked Play at 14:32", so UTC would make the
 # reader do arithmetic. libc is already in the workspace (eidos-core, eidos-fuse,

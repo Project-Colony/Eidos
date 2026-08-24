@@ -10,7 +10,7 @@
 //!
 //! Games can also be added WITHOUT recompiling, the way MO2's `basic_games` plugin
 //! lets simple games be declared as data: drop a `<id>.toml` into
-//! `$XDG_CONFIG_HOME/eidos/games/` (or `~/.config/eidos/games/`) and it joins the
+//! `~/.config/Colony/Eidos/games/` (or `~/.config/Colony/Eidos/games/`) and it joins the
 //! registry on next launch (see [`all`]). A definition with `load_order = "None"`
 //! and no `ini_files`/`primary_plugins` is a "generic" game - just the file union
 //! over its data dir, no plugins.txt / BSA / INI machinery - which covers most
@@ -399,7 +399,7 @@ impl GameDef {
 }
 
 /// Every game definition Eidos knows: the built-in [`GAMES`] plus any user TOML
-/// definitions in `$XDG_CONFIG_HOME/eidos/games/`, loaded once. A user definition
+/// definitions in `~/.config/Colony/Eidos/games/`, loaded once. A user definition
 /// whose `id` matches a built-in overrides it; the rest are appended.
 pub fn all() -> &'static [GameDef] {
     static REGISTRY: OnceLock<Vec<GameDef>> = OnceLock::new();
@@ -417,13 +417,7 @@ pub fn all() -> &'static [GameDef] {
 
 /// The directory user TOML game definitions are read from.
 fn user_games_dir() -> PathBuf {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| {
-            std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default().join(".config")
-        });
-    base.join("eidos").join("games")
+    eidos_paths::config_dir().join("games")
 }
 
 /// Parse every `*.toml` game definition in `dir`, ignoring invalid ones with a

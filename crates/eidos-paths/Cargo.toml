@@ -1,0 +1,14 @@
+[package]
+name = "eidos-paths"
+version.workspace = true
+description = "Where Eidos keeps its files: the Colony filesystem layout, and the migration onto it"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+# std only, deliberately. This crate is depended on by every leaf crate in the
+# tree - eidos-log, eidos-gamedef, eidos-addons, eidos-instance - so anything it
+# pulls in is pulled in everywhere. `dirs` would be one line here and one more
+# crate in the graph of a program whose only platform is Linux, where the whole
+# of `dirs` reduces to reading four environment variables.
+[dependencies]

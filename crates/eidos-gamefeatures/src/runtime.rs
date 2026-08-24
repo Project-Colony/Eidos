@@ -67,14 +67,7 @@ pub fn is_runtime_verb(verb: &str) -> bool {
 /// not per-game and not per-profile. Two instances that both use DynDOLOD share
 /// one copy.
 pub fn runtimes_dir() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| {
-            PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".local/share")
-        })
-        .join("eidos")
-        .join("runtimes")
+    eidos_paths::data_dir().join("runtimes")
 }
 
 /// Where one runtime lives, version included so an Eidos that pins a newer one

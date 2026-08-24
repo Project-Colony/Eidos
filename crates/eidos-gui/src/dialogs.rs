@@ -296,7 +296,7 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                         "Nexus",
                         eidos_instance::settings::nexus_key_path().display().to_string(),
                     ))
-                    .push(settings_info("Games", "~/.config/eidos/games/*.toml".to_string()))
+                    .push(settings_info("Games", "~/.config/Colony/Eidos/games/*.toml".to_string()))
                     .into(),
             ))
             .push(settings_section(

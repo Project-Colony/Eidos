@@ -7,6 +7,7 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-paths = { path = "../eidos-paths" }
 # The union filesystem's whiteout/opaque marker names: the overwrite capture has
 # to skip them, and a second copy of the string in this crate would be a silent
 # bug the day either one changed.

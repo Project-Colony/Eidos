@@ -108,7 +108,7 @@ cannot be file-copied. They **download from Microsoft**.
 in their own directory and are found through `DOTNET_ROOT`: never registered,
 never installed into the prefix at all, so neither of the other tiers can carry
 it. Eidos downloads it itself, checks it against a checksum built into the
-binary, and caches it in `~/.local/share/eidos/runtimes/` - **outside any
+binary, and caches it in `~/.local/share/Colony/Eidos/runtimes/` - **outside any
 instance**, because 78 MB is not per-game and not per-profile.
 
 Nothing in tiers 2 or 3 runs silently:

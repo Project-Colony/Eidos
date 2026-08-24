@@ -7,6 +7,7 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-paths = { path = "../eidos-paths" }
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
 # PE import-table parsing, to detect mods that import d3dcompiler_47.dll.

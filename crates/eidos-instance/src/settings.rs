@@ -3,11 +3,11 @@
 //! Two files under the XDG dirs, both our own minimal `key=value` INI dialect
 //! (not MO2's, distinct from the per-mod `meta.ini`):
 //!
-//! - `$XDG_CONFIG_HOME/eidos/nexus.ini` holds only the personal Nexus API key.
+//! - `~/.config/Colony/Eidos/nexus.ini` holds only the personal Nexus API key.
 //!   It is kept separate, and at the path the CLI already uses, so the key the
 //!   user stored with `eidos nexus key` is the same one the GUI sees - the key
 //!   survives across sessions and across tools.
-//! - `$XDG_CONFIG_HOME/eidos/settings.ini` holds the rest of the app-global
+//! - `~/.config/Colony/Eidos/settings.ini` holds the rest of the app-global
 //!   preferences (theme, default game id, last window size), none of which is
 //!   secret.
 //!
@@ -16,23 +16,20 @@
 
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// `$XDG_CONFIG_HOME`, or `$HOME/.config`.
+/// Eidos's config directory: `~/.config/Colony/Eidos`.
+///
+/// One line now, because four crates used to answer this themselves and by
+/// hand - see `eidos_paths`, which is where the answer lives.
 pub fn config_home() -> PathBuf {
-    std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| {
-            let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
-            home.join(".config")
-        })
+    eidos_paths::config_dir()
 }
 
-/// `$XDG_CONFIG_HOME/eidos/nexus.ini`, holding the Nexus OAuth session. Same
+/// `~/.config/Colony/Eidos/nexus.ini`, holding the Nexus OAuth session. Same
 /// path the CLI uses, so a sign-in is shared between the CLI and the GUI.
 pub fn nexus_key_path() -> PathBuf {
-    config_home().join("eidos").join("nexus.ini")
+    config_home().join("nexus.ini")
 }
 
 /// Everything `nexus.ini` can hold: the OAuth session, and nothing else.
@@ -221,10 +218,10 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
     out
 }
 
-/// `$XDG_CONFIG_HOME/eidos/settings.ini`, holding the non-secret app-global
+/// `~/.config/Colony/Eidos/settings.ini`, holding the non-secret app-global
 /// preferences (theme, default game, last window size).
 pub fn settings_path() -> PathBuf {
-    config_home().join("eidos").join("settings.ini")
+    config_home().join("settings.ini")
 }
 
 /// Which color theme the app renders in.
@@ -281,6 +278,12 @@ pub struct Settings {
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
+    /// The file these settings were read from, and the ONLY file `save` will
+    /// write. `None` for a value that was never loaded from disk - a default,
+    /// or a fixture - which therefore cannot save over anybody's real
+    /// preferences. Private so nothing can set it except by going through
+    /// `load_from` or `with_path`.
+    path: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -293,6 +296,9 @@ impl Default for Settings {
             lock_gui: true,
             drag_scroll_speed: 1.0,
             remember_window: true,
+            // Nowhere. A default that could save itself over the real file is
+            // exactly the defect this field exists to remove.
+            path: None,
         }
     }
 }
@@ -301,19 +307,50 @@ impl Settings {
     /// Load the persisted settings, or the defaults if the file is absent or
     /// unreadable (so the app always has something to start from).
     pub fn load() -> Settings {
-        match fs::read_to_string(settings_path()) {
+        Settings::load_from(&settings_path())
+    }
+
+    /// Load from an explicit file, and REMEMBER it, so [`Settings::save`] writes
+    /// back where it read from.
+    ///
+    /// This is what stops a test writing the user's real preferences. It is not
+    /// hypothetical: with the path resolved globally inside `save`, a GUI test
+    /// that dispatched "toggle lock" wrote `~/.config/.../settings.ini` on the
+    /// developer's own machine, and the symptom - options reverting after a
+    /// build - looked like anything but a test.
+    pub fn load_from(path: &Path) -> Settings {
+        let mut s = match fs::read_to_string(path) {
             Ok(text) => Settings::parse(&text),
             Err(_) => Settings::default(),
-        }
+        };
+        s.path = Some(path.to_path_buf());
+        s
     }
 
     /// Persist these settings, creating the parent directory if needed.
+    ///
+    /// Writes to the file these settings were LOADED from. A `Settings` built
+    /// with [`Settings::default`] - which is what a test gets - has no path and
+    /// writing it is a no-op rather than a write to the real one.
     pub fn save(&self) -> io::Result<()> {
-        let path = settings_path();
+        let Some(path) = self.path.as_ref() else {
+            return Ok(());
+        };
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&path, self.to_ini())
+        fs::write(path, self.to_ini())
+    }
+
+    /// Point these settings at a file, for a test that WANTS to exercise saving.
+    pub fn with_path(mut self, path: &Path) -> Settings {
+        self.path = Some(path.to_path_buf());
+        self
+    }
+
+    /// Where these settings would be written, if anywhere.
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
     }
 
     /// Parse a `settings.ini` body. Unknown keys are ignored; missing or invalid
@@ -547,6 +584,7 @@ mod tests {
     #[test]
     fn settings_round_trip_full() {
         let s = Settings {
+            path: None,
             theme: Theme::Dark,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
@@ -626,6 +664,7 @@ mod tests {
             let _ = fs::create_dir_all(parent);
         }
         let s = Settings {
+            path: None,
             theme: Theme::Dark,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
