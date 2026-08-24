@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/Project-Colony/Eidos/compare/v1.8.0...v1.8.1) (2026-08-24)
+
+
+### Documentation
+
+* the eleven parity features, collections, and where files live now ([98988e8](https://github.com/Project-Colony/Eidos/commit/98988e8d95a554e28b5f28b67a974cb34191f75d))
+
 ## [1.8.0](https://github.com/Project-Colony/Eidos/compare/v1.7.1...v1.8.0) (2026-08-24)
 
 
