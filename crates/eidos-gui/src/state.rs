@@ -298,6 +298,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         modifiers: iced::keyboard::Modifiers::default(),
         drag_state: None,
         drag_scroll: None,
+        drag_hover_group: None,
         drag_scroll_depth: 0.5,
         selected_plugin: None,
         selected_plugins: HashSet::new(),
@@ -1203,6 +1204,10 @@ pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidd
 ///
 /// `scrollable::Id` became the shared `widget::Id` in iced 0.14 - the same type
 /// every operation addresses a widget by.
+/// The filter box, so Ctrl+F can put the caret in it.
+pub(crate) fn filter_input_id() -> widget::Id {
+    widget::Id::new("mod-filter")
+}
 pub(crate) fn mod_scroll_id() -> widget::Id {
     widget::Id::new("mod-list")
 }

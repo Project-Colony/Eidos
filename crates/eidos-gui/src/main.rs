@@ -209,6 +209,20 @@ enum Message {
     SetSeparatorColor(usize, Option<[u8; 3]>),
     /// Collapse/expand a separator's group, keyed by its display name.
     ToggleCollapse(String),
+    /// Collapse every OTHER group, leaving this one open - MO2's "Collapse
+    /// others", the fastest way to isolate one part of a long list.
+    CollapseOthers(String),
+    /// A drag has been resting on a collapsed group. Fires only while one is.
+    DragHoverTick,
+    /// Double-click on a mod row. What it does depends on the modifiers held,
+    /// which the closure that emits it cannot see - so it carries the row and
+    /// `update` reads the live modifier set, the same way a plain click does.
+    ModDoubleClick(usize),
+    /// Ctrl+F: put the caret in the filter box.
+    FocusFilter,
+    /// A letter typed with the mod list focused: jump to the next row whose
+    /// name starts with it.
+    JumpToLetter(char),
     /// Enable/disable an ESP/ESM in the Plugins tab, persisting plugins.txt.
     TogglePlugin(usize),
     /// Run LOOT's graph sort over the discovered plugins (MO2's "Sort" button).
@@ -1545,6 +1559,11 @@ struct App {
     /// Which edge of the mod list the pointer rests on mid-drag, if any. Drives
     /// the auto-scroll tick; `None` stops it.
     drag_scroll: Option<ScrollEdge>,
+    /// A collapsed group the drag is resting on, and how many ticks it has
+    /// rested. Dropping INTO a collapsed group is otherwise impossible without
+    /// abandoning the drag to expand it first, which is the whole reason MO2
+    /// expands on hover.
+    drag_hover_group: Option<(String, u8)>,
     /// How deep into that band the pointer is, 0.0..1.0. Speed follows it, so
     /// nudging the edge creeps and pushing right against it flies.
     drag_scroll_depth: f32,
@@ -1950,6 +1969,18 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         Key::Named(Named::Space) => Some(Message::KeyNav(Nav::Toggle)),
         Key::Named(Named::Enter) => Some(Message::KeyNav(Nav::Activate)),
         Key::Named(Named::Delete) => Some(Message::KeyNav(Nav::Remove)),
+        // Ctrl+F puts the caret in the filter box - the one shortcut everybody
+        // tries first in a list this long.
+        Key::Character("f") if mods.control() || mods.command() => Some(Message::FocusFilter),
+        // A bare letter jumps to the next mod starting with it, the way every
+        // desktop list has since before Explorer. Checked LAST so it can never
+        // shadow a modified shortcut, and only for a single character with no
+        // Ctrl/Alt held - the `typing` gate below keeps it out of text fields.
+        Key::Character(c)
+            if !mods.control() && !mods.command() && !mods.alt() && c.chars().count() == 1 =>
+        {
+            c.chars().next().filter(|ch| ch.is_alphanumeric()).map(Message::JumpToLetter)
+        }
         _ => None,
         }
     });
@@ -1961,7 +1992,12 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // keyboard back out of a field.
     let typing = app.typing;
     let shortcuts = shortcuts.with(typing).map(|(typing, m)| match m {
-        Message::KeyNav(_) | Message::CycleFocus if typing => Message::Noop,
+        // JumpToLetter joins them: a bare letter belongs to the list only when
+        // no field has the caret, or typing "f" into the filter box would jump
+        // the list instead of filtering it.
+        Message::KeyNav(_) | Message::CycleFocus | Message::JumpToLetter(_) if typing => {
+            Message::Noop
+        }
         other => other,
     });
 
@@ -2066,6 +2102,15 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     }
     // Auto-scroll while a drag rests on an edge band. Subscribed only then, so an
     // idle drag - or no drag at all - schedules nothing.
+    // Hover-to-expand, subscribed only while a drag actually rests on a
+    // collapsed group - so an idle window, and a drag over ordinary rows,
+    // schedule nothing.
+    if app.drag_state.is_some() && app.drag_hover_group.is_some() {
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(300))
+                .map(|_| Message::DragHoverTick),
+        );
+    }
     if app.drag_scroll.is_some() {
         subs.push(
             // 40ms rather than 60: the step is applied whole, so a slower tick
@@ -4388,6 +4433,146 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_letter_walks_every_match_rather_than_sticking_on_the_first() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["Apachii Hair", "Beyond Skyrim", "Amber Guard", "Cloaks"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+
+        let _ = update_inner(&mut app, Message::JumpToLetter('a'));
+        assert_eq!(app.selected_mod, Some(0), "the first A");
+        let _ = update_inner(&mut app, Message::JumpToLetter('a'));
+        assert_eq!(app.selected_mod, Some(2), "the next one, not the same one again");
+        // And it wraps, so the list has no dead end.
+        let _ = update_inner(&mut app, Message::JumpToLetter('a'));
+        assert_eq!(app.selected_mod, Some(0));
+        // Case does not matter, and a letter nothing starts with moves nothing.
+        let _ = update_inner(&mut app, Message::JumpToLetter('C'));
+        assert_eq!(app.selected_mod, Some(3));
+        let _ = update_inner(&mut app, Message::JumpToLetter('z'));
+        assert_eq!(app.selected_mod, Some(3), "no match leaves the focus alone");
+    }
+
+    #[test]
+    fn a_letter_never_reaches_a_row_the_filter_is_hiding() {
+        // Jumping onto a hidden row moves a highlight nobody can see, and the
+        // next Space would then toggle a mod off screen.
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["Apachii Hair", "Amber Guard"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        app.search = "amber".to_string();
+
+        let _ = update_inner(&mut app, Message::JumpToLetter('a'));
+        assert_eq!(app.selected_mod, Some(1), "only the row the filter still draws");
+    }
+
+    #[test]
+    fn a_double_click_branches_on_the_modifiers_that_are_actually_held() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(root.join("mods").join("Mod")).unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = vec![ModEntry {
+            name: "Mod".to_string(),
+            enabled: true,
+            path: root.join("mods").join("Mod"),
+            unmanaged: false,
+        }];
+        app.screen = Screen::Main;
+
+        // Plain: Information. The closure that emits the double-click cannot see
+        // the modifier set, which is why `update` reads it instead.
+        let _ = update_inner(&mut app, Message::ModDoubleClick(0));
+        assert_eq!(app.info_mod, Some(0));
+
+        app.info_mod = None;
+        app.modifiers = iced::keyboard::Modifiers::SHIFT;
+        let _ = update_inner(&mut app, Message::ModDoubleClick(0));
+        assert!(app.info_mod.is_none(), "Shift is the Nexus page, not Information");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn collapse_others_leaves_exactly_one_group_open() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["A_separator", "one", "B_separator", "two", "C_separator"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        let keep = app.mods[2].display_name().to_string();
+        // Start with the kept one folded, to prove it is opened rather than
+        // merely left alone.
+        app.collapsed.insert(keep.clone());
+
+        let _ = update_inner(&mut app, Message::CollapseOthers(keep.clone()));
+
+        assert!(!app.collapsed.contains(&keep), "the one you asked to keep is open");
+        for m in app.mods.iter().filter(|m| m.is_separator() && m.display_name() != keep) {
+            assert!(app.collapsed.contains(m.display_name()), "{} should be folded", m.name);
+        }
+    }
+
+    #[test]
+    fn a_drag_resting_on_a_folded_group_opens_it_but_brushing_past_does_not() {
+        let mut app = app_for_game("skyrimse");
+        app.mods = ["A_separator", "one", "B_separator", "two"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: PathBuf::from("/tmp").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        let folded = app.mods[2].display_name().to_string();
+        app.collapsed.insert(folded.clone());
+
+        let _ = update_inner(&mut app, Message::DragStart(1));
+        let _ = update_inner(&mut app, Message::DragOverGap(2));
+        assert_eq!(app.drag_hover_group.as_ref().map(|(n, t)| (n.clone(), *t)), Some((folded.clone(), 0)));
+
+        // One tick is not enough - brushing past a group on the way somewhere
+        // else must not open it.
+        let _ = update_inner(&mut app, Message::DragHoverTick);
+        assert!(app.collapsed.contains(&folded), "still folded after one tick");
+
+        // Resting does open it.
+        let _ = update_inner(&mut app, Message::DragHoverTick);
+        assert!(!app.collapsed.contains(&folded), "resting on it opens it");
+
+        // And moving off a group forgets it, so the counter cannot accumulate
+        // across two different groups.
+        app.collapsed.insert(folded.clone());
+        let _ = update_inner(&mut app, Message::DragOverGap(2));
+        let _ = update_inner(&mut app, Message::DragOverGap(1));
+        assert!(app.drag_hover_group.is_none());
     }
 
     #[test]

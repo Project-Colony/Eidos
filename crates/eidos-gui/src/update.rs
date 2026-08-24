@@ -61,6 +61,10 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // click can land, which is exactly what the note above describes.
         | Message::SavesTick
         | Message::LogRefresh
+        // And the hover-to-expand timer, which fires only while a drag rests on
+        // a collapsed group. Same reason: the program watching a pointer sit
+        // still is not the user deciding anything.
+        | Message::DragHoverTick
         // Ctrl is how a multi-selection is built, so pressing or releasing it
         // around a batch action belongs to that gesture. The handler only
         // stores the modifier set - it changes nothing the user can see.
@@ -4111,6 +4115,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.ui_statusbar_visible = !app.ui_statusbar_visible;
             app.view_menu_open = false;
         }
+        Message::CollapseOthers(keep) => {
+            // Every separator but this one. Keyed by display name like the rest
+            // of the fold state, which is also MO2's key - two separators with
+            // the same name fold together there too, and matching that is worth
+            // more than being cleverer about a list somebody wrote themselves.
+            for m in &app.mods {
+                if m.is_separator() && m.display_name() != keep {
+                    app.collapsed.insert(m.display_name().to_string());
+                }
+            }
+            app.collapsed.remove(&keep);
+            save_collapsed(app);
+            app.menu_mod = None;
+        }
         Message::CollapseAllGroups => {
             // Collapse every separator's group (key by display name, like MO2).
             for m in &app.mods {
@@ -4778,7 +4796,87 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.confirm_remove = None;
             app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
         }
+        Message::ModDoubleClick(i) => {
+            // The modifier set is read HERE, not in the closure that emitted
+            // this: `mouse_area` reports the click, and only `update` can see
+            // which keys are down. Same split a plain row click already uses.
+            let m = app.modifiers;
+            if m.control() || m.command() {
+                return update(app, Message::ModOpenFolder(i));
+            }
+            if m.shift() {
+                return update(app, Message::ModVisitNexus(i));
+            }
+            return update(app, Message::ShowModInfo(i));
+        }
+        Message::FocusFilter => {
+            app.typing = true;
+            return operation::focus(filter_input_id());
+        }
+        Message::JumpToLetter(c) => {
+            // Only the mod list, and only the rows it is DRAWING: jumping to a
+            // row hidden by the filter or folded into a collapsed group moves a
+            // highlight nobody can see.
+            if effective_focus(app) != Pane::Mods {
+                return Task::none();
+            }
+            let vis = mod_row_visibility(app, app.categories.as_ref());
+            let rows: Vec<usize> =
+                (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect();
+            if rows.is_empty() {
+                return Task::none();
+            }
+            let want = c.to_ascii_lowercase();
+            // From the row AFTER the current one, wrapping, so pressing the same
+            // letter walks every match instead of sticking on the first.
+            let start = app
+                .selected_mod
+                .and_then(|sel| rows.iter().position(|&r| r == sel))
+                .map(|p| p + 1)
+                .unwrap_or(0);
+            let hit = (0..rows.len()).map(|k| (start + k) % rows.len()).find(|&pos| {
+                app.mods
+                    .get(rows[pos])
+                    .and_then(|m| m.display_name().chars().next())
+                    .is_some_and(|f| f.to_ascii_lowercase() == want)
+            });
+            let Some(pos) = hit else { return Task::none() };
+            app.selected_mod = Some(rows[pos]);
+            app.sel_anchor = Some(rows[pos]);
+            app.selected_mods.clear();
+            app.menu_mod = None;
+            app.confirm_remove = None;
+            return scroll_focus_into_view(mod_scroll_id(), pos, rows.len());
+        }
+        Message::DragHoverTick => {
+            // One tick of rest, not zero: brushing past a collapsed group on the
+            // way somewhere else must not open it. Two ticks would be safer and
+            // slower than the gesture is worth.
+            let Some((name, ticks)) = app.drag_hover_group.take() else { return Task::none() };
+            if ticks == 0 {
+                app.drag_hover_group = Some((name, 1));
+                return Task::none();
+            }
+            // Expanding inserts rows AFTER the separator, so the gap the drag is
+            // aimed at - the separator's own index - still means what it meant.
+            app.collapsed.remove(&name);
+            save_collapsed(app);
+        }
         Message::DragOverGap(gap) => {
+            // Resting on a collapsed group opens it, so a mod can be dropped
+            // inside one without abandoning the drag to expand it first.
+            let hovering = app
+                .mods
+                .get(gap)
+                .filter(|m| m.is_separator() && app.collapsed.contains(m.display_name()))
+                .map(|m| m.display_name().to_string());
+            match (hovering, &app.drag_hover_group) {
+                // Still the same group: leave the counter alone, it is what the
+                // tick is counting.
+                (Some(name), Some((cur, _))) if *cur == name => {}
+                (Some(name), _) => app.drag_hover_group = Some((name, 0)),
+                (None, _) => app.drag_hover_group = None,
+            }
             if let Some(d) = &mut app.drag_state {
                 // Every gap is a target now, the top of the list included. The
                 // clamp here matched the one in `move_mod_rows` and rested on the
@@ -4790,6 +4888,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::DragDrop => {
+            app.drag_hover_group = None;
             let Some(d) = app.drag_state.take() else { return Task::none() };
             if d.from >= app.mods.len() {
                 return Task::none();

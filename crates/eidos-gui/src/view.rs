@@ -704,6 +704,11 @@ pub(crate) fn mod_row<'a>(
         .on_press(Message::DragStart(i))
         .on_enter(Message::DragOverGap(i))
         .on_release(Message::DragDrop)
+        // MO2's three: plain opens Information, Ctrl opens the folder, Shift
+        // opens the Nexus page. A double-click still delivers both presses, so
+        // this arrives AFTER a drag has been armed and dropped on itself - which
+        // is a no-op move, and why it can be layered on without a mode.
+        .on_double_click(Message::ModDoubleClick(i))
         .on_right_press(Message::OpenModMenu(i))
         .into()
 }
@@ -831,6 +836,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .push(
             text_input("Filter mods by name...", &app.search)
+                .id(filter_input_id())
                 .on_input(Message::SearchChanged)
                 .padding(5)
                 .size(12.0),
@@ -1382,6 +1388,10 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         let current = app.meta_cache.get(&m.name).and_then(|r| r.color);
         col = col
             .push(menu_item("Rename", Message::RenameStart(i)))
+            .push(menu_item_owned(
+                "Collapse others".to_string(),
+                Message::CollapseOthers(m.display_name().to_string()),
+            ))
             .push(separator_swatches(i, current))
             .push(menu_sep())
             .push(menu_item("Send to Top", Message::ModSendTop(i)))
