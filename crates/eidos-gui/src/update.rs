@@ -2556,12 +2556,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             app.menu_mod = None;
             app.menu_plugin = Some(i);
+            // A field left open on another row would reopen aimed at that one.
+            app.plugin_send_priority = None;
             // Freeze where it was summoned from. Drawn at the LIVE cursor the
             // card chases the pointer, and its own items can never be reached.
             app.menu_at = Some(app.cursor);
             app.focus = Pane::Plugins;
         }
-        Message::ClosePluginMenu => app.menu_plugin = None,
+        Message::ClosePluginMenu => {
+            app.menu_plugin = None;
+            // The field lives inside the card: closing the card must not leave a
+            // half-typed index armed for the next menu to commit.
+            app.plugin_send_priority = None;
+        }
         Message::OpenPluginOrigin(i) => {
             app.menu_plugin = None;
             match plugin_origin_row(app, i) {
@@ -2631,6 +2638,62 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             commit_plugin_order(app, &spec);
+        }
+        Message::PluginSendToPriorityStart => {
+            // The anchor lives on the menu, and the field replaces a row INSIDE
+            // that menu - so the menu must stay open.
+            let Some(row) = app.menu_plugin.or(app.selected_plugin) else { return Task::none() };
+            app.menu_plugin = Some(row);
+            app.plugin_send_priority = Some((row, String::new()));
+        }
+        Message::PluginSendToPriorityChanged(t) => {
+            app.typing = true;
+            if let Some((_, typed)) = &mut app.plugin_send_priority {
+                *typed = t;
+            }
+        }
+        Message::PluginSendToPriorityCommit => {
+            let Some((row, typed)) = app.plugin_send_priority.take() else { return Task::none() };
+            app.menu_plugin = None;
+            let Ok(dest) = typed.trim().parse::<usize>() else {
+                app.status = Some("Enter a load index.".to_string());
+                return Task::none();
+            };
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            let rows = plugin_selection_or(app, row);
+            if rows.is_empty() {
+                return Task::none();
+            }
+            // The column shows 1-based indices, so '3' means "become the third
+            // row", which is insertion index 2 - the same translation the mod
+            // list makes for the same reason.
+            let gap = dest.saturating_sub(1);
+            let held = hold_plugin_selection(app);
+            let moved = match app.plugins.as_mut() {
+                Some(list) => {
+                    let gap = gap.min(list.plugins.len());
+                    let ok = list.move_plugins_to(&rows, gap, &spec);
+                    if ok {
+                        list.refresh(&spec);
+                    }
+                    ok
+                }
+                None => false,
+            };
+            put_plugin_selection(app, held);
+            if !moved {
+                // `move_plugins_to` refuses a destination the tiers forbid. Say
+                // which rule stopped it rather than "no".
+                app.status = Some(format!(
+                    "Cannot put {} plugin(s) at {dest}: a master tier or a pin is in the way.",
+                    rows.len()
+                ));
+                return Task::none();
+            }
+            commit_plugin_order(app, &spec);
+            app.status = Some(format!("Moved {} plugin(s) to {dest}.", rows.len()));
         }
         Message::PluginsSetAll(on) => {
             app.menu_plugin = None;
@@ -3403,6 +3466,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     app.meta_cache.clear();
                     refresh_meta_cache(app);
                     recompute_counts(app);
+                    // The budget the server reported on the way through. It was
+                    // already in the result and thrown away; the status bar shows
+                    // it now, so an update check stops being the only way to find
+                    // out how much of the hour is left.
+                    app.nexus_hourly_left = r.hourly_remaining;
+                    app.nexus_daily_left = r.daily_remaining;
                     let mut msg = format!(
                         "Update check: {} mods checked, {} update(s) found.",
                         r.checked, r.updates_found

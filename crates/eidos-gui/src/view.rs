@@ -764,8 +764,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(Space::new().width(Length::Fill))
         .push(
             text(format!(
-                "Active: {active}  |  Endorsed: {}  |  Updates: {}",
-                app.endorsed_count, app.updated_count
+                "Active: {active}  |  Endorsed: {}  |  Updates: {}{}",
+                app.endorsed_count,
+                app.updated_count,
+                nexus_budget_suffix(app)
             ))
             .size(12.0),
         );
@@ -1126,11 +1128,54 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
             },
             Message::PluginsSendBottom,
         ))
+        .push(send_to_plugin_priority(app, i))
         .push(menu_sep())
         .push(menu_item("Activate all", Message::PluginsSetAll(true)))
         .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
 
     container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
+}
+
+/// What is left of the Nexus request budget, appended to the counters line.
+///
+/// Empty until something has actually asked Nexus a question: an invented "1000
+/// left" before the first call would be a guess, and the whole value of the
+/// number is that it is the one the server last reported.
+///
+/// The hourly figure is the one shown, because it is the one that runs out - the
+/// daily budget is large enough that it is only interesting once the hourly one
+/// has stopped mattering, so it appears only when it is the smaller of the two.
+pub(crate) fn nexus_budget_suffix(app: &App) -> String {
+    match (app.nexus_hourly_left, app.nexus_daily_left) {
+        (None, None) => String::new(),
+        (h, d) => {
+            let n = match (h, d) {
+                (Some(h), Some(d)) => h.min(d),
+                (Some(h), None) => h,
+                (None, Some(d)) => d,
+                (None, None) => return String::new(),
+            };
+            format!("  |  Nexus: {n} req. left")
+        }
+    }
+}
+
+/// MO2's "Send to priority..." for plugins: an inline field that takes a load
+/// index, opened by the menu row above it.
+///
+/// The field replaces the row rather than opening a dialog, exactly as the mod
+/// list's does - a modal for one number is a lot of ceremony, and the menu is
+/// already floating where the user is looking.
+fn send_to_plugin_priority<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    match app.plugin_send_priority.as_ref().filter(|(row, _)| *row == i) {
+        Some((_, typed)) => text_input("Load index", typed)
+            .on_input(Message::PluginSendToPriorityChanged)
+            .on_submit(Message::PluginSendToPriorityCommit)
+            .padding(5)
+            .size(12.0)
+            .into(),
+        None => menu_item("Send to priority...", Message::PluginSendToPriorityStart),
+    }
 }
 
 /// The Filters button, badged with how many criteria are currently narrowing

@@ -675,6 +675,11 @@ enum Message {
     ImportMo2Pick,
     /// The picked MO2 profile directory (`None` = cancelled).
     ImportMo2Picked(Option<PathBuf>),
+    /// Send the plugin selection to an exact load index, MO2's "Send to
+    /// priority...". Start opens the inline field, Changed types, Commit moves.
+    PluginSendToPriorityStart,
+    PluginSendToPriorityChanged(String),
+    PluginSendToPriorityCommit,
     /// Open / dismiss the File dropdown, which lists every folder that matters.
     OpenFileMenu,
     CloseFileMenu,
@@ -1272,6 +1277,10 @@ struct App {
     confirm_set_all: Option<bool>,
     /// Whether the File dropdown (the folder list) is showing.
     file_menu_open: bool,
+    /// The plugin row whose "Send to priority" field is open, and what is typed
+    /// in it. Mirrors `send_priority` for mods; kept separate because the two
+    /// lists are indexed independently and one menu must not aim the other.
+    plugin_send_priority: Option<(usize, String)>,
     /// Something the drop wants said once the install finishes. It cannot say it
     /// itself: the installer sets its own status a moment later.
     pending_note: Option<String>,
@@ -1301,6 +1310,20 @@ struct App {
     endorsed_count: usize,
     /// Enabled mods with a Nexus update available (recomputed in `mods_changed`).
     updated_count: usize,
+    /// What Nexus last said was left of the request budget.
+    ///
+    /// `None` until something has actually asked: a number invented before the
+    /// first call would be a guess, and the whole point of showing it is that it
+    /// is the server's own answer.
+    ///
+    /// Fed by the update check, which is the operation that can actually empty
+    /// the bucket - it issues one request per mod, and is the only thing here
+    /// that ever hits the hourly ceiling. The one-off calls (endorse, track,
+    /// identify) spend a single request each and would need their result types
+    /// widened to report it, which is a lot of plumbing for a number that moves
+    /// by one.
+    nexus_hourly_left: Option<i64>,
+    nexus_daily_left: Option<i64>,
     /// A Nexus mod-update check is in flight (guards the Update button).
     update_in_progress: bool,
     /// A LOOT sort is in flight. iced runs on smol's single-threaded executor
@@ -3819,6 +3842,94 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    #[test]
+    fn the_nexus_budget_shows_only_once_the_server_has_answered() {
+        let mut app = nav_app(&[]);
+        assert_eq!(nexus_budget_suffix(&app), "", "no invented number before the first call");
+
+        // The smaller of the two buckets is the one that matters: the daily
+        // budget is large enough to be uninteresting until the hourly is spent.
+        app.nexus_hourly_left = Some(1400);
+        app.nexus_daily_left = Some(2200);
+        assert!(nexus_budget_suffix(&app).contains("1400"));
+        app.nexus_hourly_left = Some(2400);
+        app.nexus_daily_left = Some(90);
+        assert!(nexus_budget_suffix(&app).contains("90"));
+        // And one bucket alone is still worth saying.
+        app.nexus_daily_left = None;
+        assert!(nexus_budget_suffix(&app).contains("2400"));
+    }
+
+    #[test]
+    fn an_update_check_records_what_is_left_of_the_budget() {
+        let mut app = nav_app(&[]);
+        let result = eidos_nexus::UpdateCheckResult {
+            checked: 12,
+            queried: 12,
+            updates_found: 1,
+            updates: Vec::new(),
+            rate_limited: false,
+            hourly_remaining: Some(1388),
+            daily_remaining: Some(2100),
+        };
+        let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+        // It arrived in the result and used to be dropped on the floor.
+        assert_eq!(app.nexus_hourly_left, Some(1388));
+        assert_eq!(app.nexus_daily_left, Some(2100));
+        assert!(nexus_budget_suffix(&app).contains("1388"));
+    }
+
+    #[test]
+    fn the_plugin_priority_field_never_outlives_its_menu() {
+        let mut app = nav_app(&[]);
+        let mut list = PluginList::default();
+        for n in ["A.esp", "B.esp", "C.esp"] {
+            list.plugins.push(plugin_row(n, "Some Mod"));
+        }
+        app.plugins = Some(list);
+        app.screen = Screen::Main;
+
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(2));
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
+        assert_eq!(app.plugin_send_priority.as_ref().map(|(r, _)| *r), Some(2));
+        assert_eq!(app.menu_plugin, Some(2), "the field lives INSIDE the card");
+
+        // Dismissing the card drops it - a half-typed index must not be armed
+        // for whatever menu opens next.
+        let _ = update_inner(&mut app, Message::ClosePluginMenu);
+        assert!(app.plugin_send_priority.is_none());
+
+        // And reopening on another row never inherits the old aim.
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(0));
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityChanged("2".into()));
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(1));
+        assert!(app.plugin_send_priority.is_none(), "a new menu starts clean");
+    }
+
+    #[test]
+    fn a_plugin_priority_that_is_not_a_number_says_so_and_moves_nothing() {
+        let mut app = nav_app(&[]);
+        let mut list = PluginList::default();
+        for n in ["A.esp", "B.esp"] {
+            list.plugins.push(plugin_row(n, "Some Mod"));
+        }
+        app.plugins = Some(list);
+        app.screen = Screen::Main;
+        let before: Vec<String> =
+            app.plugins.as_ref().unwrap().plugins.iter().map(|p| p.name.clone()).collect();
+
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(1));
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityChanged("  ".into()));
+        let _ = update_inner(&mut app, Message::PluginSendToPriorityCommit);
+        assert!(app.status.as_deref().unwrap_or("").contains("load index"));
+        let after: Vec<String> =
+            app.plugins.as_ref().unwrap().plugins.iter().map(|p| p.name.clone()).collect();
+        assert_eq!(before, after);
+        assert!(app.plugin_send_priority.is_none(), "the field closes either way");
     }
 
     #[test]
