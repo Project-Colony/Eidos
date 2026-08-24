@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.0](https://github.com/Project-Colony/Eidos/compare/v1.8.2...v1.9.0) (2026-08-24)
+
+
+### Features
+
+* **tools:** find xEdit and its QuickAutoClean twin instead of waiting to be told ([0752772](https://github.com/Project-Colony/Eidos/commit/075277234a467411e3c1c6392c0333377934aa16))
+
 ## [1.8.2](https://github.com/Project-Colony/Eidos/compare/v1.8.1...v1.8.2) (2026-08-24)
 
 
