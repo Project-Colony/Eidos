@@ -279,6 +279,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tree_rename_text: String::new(),
         tree_delete_armed: None,
         tree_new_folder: None,
+        confirm_restore: None,
         dl_filter: String::new(),
         dl_sort: DownloadSort::default(),
         dl_show_hidden: false,

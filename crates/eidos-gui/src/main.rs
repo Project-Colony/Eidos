@@ -238,6 +238,11 @@ enum Message {
     SetGroupBy(Option<GroupBy>),
     /// Fold or unfold one synthetic group header.
     ToggleGroupFold(String),
+    /// Copy a mod's folder aside as `<name>_backup`, before editing it.
+    ModBackup(usize),
+    /// Copy a backup's contents back over the mod it came from. Two clicks.
+    ModRestoreBackup(usize),
+    ConfirmModRestoreBackup(usize),
     /// Filetree: open the entry with the desktop's handler.
     FiletreeOpen(usize, String),
     /// Filetree: start renaming an entry (mod index, relative path).
@@ -1617,6 +1622,8 @@ struct App {
     tree_rename_text: String,
     tree_delete_armed: Option<(usize, String)>,
     tree_new_folder: Option<String>,
+    /// The backup row armed for restoring over its original.
+    confirm_restore: Option<usize>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
     /// shown, and the two-click guard on the bulk purge.
     dl_filter: String,
@@ -4667,6 +4674,66 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_backup_is_inert_and_can_be_restored_over_the_mod_it_came_from() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let modd = root.join("mods").join("Armour");
+        fs::create_dir_all(modd.join("Meshes")).unwrap();
+        fs::write(modd.join("Meshes").join("a.nif"), b"original").unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+
+        let i = app.mods.iter().position(|m| m.name == "Armour").unwrap();
+        let _ = update_inner(&mut app, Message::ModBackup(i));
+        assert!(root.join("mods").join("Armour_backup").join("Meshes").join("a.nif").is_file());
+
+        // Inert: it contributes nothing to the game, whatever modlist.txt says.
+        let backup = app.mods.iter().find(|m| m.name == "Armour_backup").expect("in the list");
+        assert!(backup.is_backup());
+        assert!(!backup.is_active(), "a backup must never reach the game");
+
+        // A second backup does not replace the first - that would lose the very
+        // state somebody took a backup to keep.
+        let i = app.mods.iter().position(|m| m.name == "Armour").unwrap();
+        let _ = update_inner(&mut app, Message::ModBackup(i));
+        assert!(root.join("mods").join("Armour_backup2").is_dir());
+
+        // Now break the mod, and restore.
+        fs::write(modd.join("Meshes").join("a.nif"), b"broken").unwrap();
+        let b = app.mods.iter().position(|m| m.name == "Armour_backup").unwrap();
+        let _ = update_inner(&mut app, Message::ModRestoreBackup(b));
+        assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"broken", "one click arms");
+        let b = app.mods.iter().position(|m| m.name == "Armour_backup").unwrap();
+        let _ = update_inner(&mut app, Message::ConfirmModRestoreBackup(b));
+        assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"original");
+        // And the scratch directory the restore used is gone.
+        assert!(!root.join("mods").join("Armour.eidos-restoring").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_active_is_the_one_predicate_that_decides_what_reaches_the_game() {
+        let mk = |name: &str, enabled: bool| ModEntry {
+            name: name.to_string(),
+            enabled,
+            path: PathBuf::from("/tmp").join(name),
+            unmanaged: false,
+        };
+        assert!(mk("Armour", true).is_active());
+        assert!(!mk("Armour", false).is_active(), "disabled");
+        assert!(!mk("SEP_separator", true).is_active(), "a separator has no files");
+        // The case this predicate was introduced for: a backup is not merely
+        // disabled, because a user who ticked it would deploy two copies of one
+        // mod over each other.
+        assert!(!mk("Armour_backup", true).is_active());
+        assert!(!mk("Armour_backup7", true).is_active());
+        assert!(mk("Armour_backups", true).is_active(), "only the exact suffix");
     }
 
     #[test]

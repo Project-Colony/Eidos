@@ -341,7 +341,7 @@ impl Profile {
             // mounting it again as a layer would stack the game's own Data on
             // top of itself. `modlist()` never yields one, but the filter states
             // the invariant where it matters rather than relying on that.
-            .filter(|m| m.enabled && !m.is_separator() && !m.unmanaged)
+            .filter(|m| m.is_active() && !m.unmanaged)
             .map(|m| m.path)
             .collect();
         v.reverse();

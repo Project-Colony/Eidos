@@ -135,6 +135,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::FiletreeDelete(..) | Message::ConfirmFiletreeDelete(..)) {
             app.tree_delete_armed = None;
         }
+        if !matches!(message, Message::ModRestoreBackup(_) | Message::ConfirmModRestoreBackup(_)) {
+            app.confirm_restore = None;
+        }
         if !matches!(message, Message::CollectionFetchMissing) {
             if let Some(c) = app.collection.as_mut() {
                 c.confirm_fetch = false;
@@ -522,9 +525,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             match eidos_install::open_archive(&path, &mods_dir, &name, &gid) {
                 Ok(eidos_install::Opened::Fomod(session)) => {
                     let enabled_roots: Vec<std::path::PathBuf> =
-                        app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+                        app.mods.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
                     let disabled_roots: Vec<std::path::PathBuf> =
-                        app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+                        app.mods.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
                     let ctx = match selected_game(app) {
                         Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots, &disabled_roots),
                         None => eidos_fomod::Context::default(),
@@ -837,7 +840,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let cs_roots: Vec<std::path::PathBuf> = inst
                     .modlist()
                     .into_iter()
-                    .filter(|m| m.enabled && !m.is_separator())
+                    .filter(|m| m.is_active())
                     .map(|m| m.path)
                     .collect();
                 let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
@@ -4814,6 +4817,97 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return update(app, Message::ModVisitNexus(i));
             }
             return update(app, Message::ShowModInfo(i));
+        }
+        Message::ModBackup(i) => {
+            app.menu_mod = None;
+            let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
+                return Task::none();
+            };
+            if m.is_separator() || m.is_backup() || m.unmanaged {
+                return Task::none();
+            }
+            let mods_dir = inst.mods_dir();
+            // `<name>_backup`, then `_backup2`, `_backup3`... A backup that
+            // silently replaced the previous one would lose the state somebody
+            // took a backup to keep.
+            let mut dest = mods_dir.join(format!("{}_backup", m.name));
+            let mut n = 2;
+            while dest.exists() {
+                dest = mods_dir.join(format!("{}_backup{n}", m.name));
+                n += 1;
+                if n > 99 {
+                    app.error = Some("Too many backups of that mod already.".to_string());
+                    return Task::none();
+                }
+            }
+            let src = m.path.clone();
+            let label = dest.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            match copy_dir_contents(&src, &dest) {
+                Ok(()) => {
+                    // Inserted right after the mod it copies, so it is next to
+                    // what it belongs to rather than at the end of the list.
+                    reload_mods(app);
+                    refresh_meta_cache(app);
+                    bump_views(app);
+                    app.status = Some(format!("Saved a copy as {label}."));
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_dir_all(&dest);
+                    app.error = Some(format!("Could not back up {}: {e}", m.name));
+                }
+            }
+        }
+        Message::ModRestoreBackup(i) => {
+            app.menu_mod = None;
+            app.confirm_restore = Some(i);
+        }
+        Message::ConfirmModRestoreBackup(i) => {
+            app.confirm_restore = None;
+            let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
+                return Task::none();
+            };
+            if !m.is_backup() {
+                return Task::none();
+            }
+            // The name minus the suffix - `X_backup` and `X_backup3` both came
+            // from `X`.
+            let stem = m.name.trim_end_matches(|c: char| c.is_ascii_digit());
+            let Some(orig) = stem.strip_suffix("_backup").filter(|s| !s.is_empty()) else {
+                app.error = Some("That backup's name does not say what it came from.".to_string());
+                return Task::none();
+            };
+            let target = inst.mods_dir().join(orig);
+            if !target.is_dir() {
+                app.error =
+                    Some(format!("{orig} is not in this instance any more - nothing to restore over."));
+                return Task::none();
+            }
+            let src = m.path.clone();
+            let orig = orig.to_string();
+            // The old contents go FIRST, into a sibling that is removed only
+            // once the copy succeeded: restoring over a half-copied folder is
+            // how a restore loses both versions.
+            let stash = inst.mods_dir().join(format!("{orig}.eidos-restoring"));
+            let _ = std::fs::remove_dir_all(&stash);
+            if let Err(e) = std::fs::rename(&target, &stash) {
+                app.error = Some(format!("Could not restore {orig}: {e}"));
+                return Task::none();
+            }
+            match copy_dir_contents(&src, &target) {
+                Ok(()) => {
+                    let _ = std::fs::remove_dir_all(&stash);
+                    reload_mods(app);
+                    refresh_meta_cache(app);
+                    bump_views(app);
+                    app.status = Some(format!("{orig} restored from its backup."));
+                }
+                Err(e) => {
+                    // Put it back exactly as it was.
+                    let _ = std::fs::remove_dir_all(&target);
+                    let _ = std::fs::rename(&stash, &target);
+                    app.error = Some(format!("Could not restore {orig}: {e} - nothing changed."));
+                }
+            }
         }
         Message::FiletreeOpen(i, rel) => {
             let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };

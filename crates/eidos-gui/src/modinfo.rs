@@ -1465,7 +1465,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         let cs_roots: Vec<PathBuf> = inst
             .modlist()
             .into_iter()
-            .filter(|m| m.enabled && !m.is_separator())
+            .filter(|m| m.is_active())
             .map(|m| m.path)
             .collect();
         if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
@@ -1744,7 +1744,7 @@ pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> 
     let mods: Vec<(String, PathBuf)> = app
         .mods
         .iter()
-        .filter(|m| m.enabled && !m.is_separator())
+        .filter(|m| m.is_active())
         .map(|m| (m.name.clone(), m.path.clone()))
         .collect();
     let archives = eidos_gamefeatures::mod_archives(&mods);
@@ -1794,7 +1794,7 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
     let mods: Vec<(String, PathBuf)> = app
         .mods
         .iter()
-        .filter(|m| m.enabled && !m.is_separator())
+        .filter(|m| m.is_active())
         .map(|m| (m.name.clone(), m.path.clone()))
         .collect();
     let archives = eidos_gamefeatures::mod_archives(&mods);
@@ -1930,7 +1930,7 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
     // app.mods is MO2 display order (lowest priority first) = the ascending order
     // plugin discovery wants, so feed it through as-is.
-    let enabled = app.mods.iter().filter(|m| m.enabled && !m.is_separator());
+    let enabled = app.mods.iter().filter(|m| m.is_active());
     sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
     // The Overwrite layer is a plugin source too (a cleaned/generated .esp lands
     // there) - the launch path includes it, so the GUI must agree.
@@ -1995,7 +1995,7 @@ pub(crate) fn loot_data_paths(app: &App) -> Vec<PathBuf> {
         app.mods
             .iter()
             .rev()
-            .filter(|m| m.enabled && !m.is_separator() && !m.is_unmanaged())
+            .filter(|m| m.is_active() && !m.is_unmanaged())
             .map(|m| m.path.clone()),
     );
     dirs.retain(|p| p.is_dir());
@@ -2431,7 +2431,7 @@ pub(crate) fn compute_conflicts(app: &App) -> Option<ConflictMap> {
         .mods
         .iter()
         .enumerate()
-        .filter(|(_, m)| m.enabled && !m.is_separator())
+        .filter(|(_, m)| m.is_active())
         .map(|(i, m)| Layer {
             origin: (i + 1) as u32,
             name: m.name.clone(),
@@ -2488,7 +2488,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let mut counts = (0usize, 0usize, 0usize, 0usize); // overwrites, overwritten, mixed, redundant
     let mut rows = Column::new().spacing(1);
-    for (i, m) in app.mods.iter().enumerate().filter(|(_, m)| m.enabled && !m.is_separator()) {
+    for (i, m) in app.mods.iter().enumerate().filter(|(_, m)| m.is_active()) {
         let origin = (i + 1) as u32;
         let tag = match map.state(origin) {
             ConflictState::Overwrites => {
@@ -3309,9 +3309,9 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
     };
     let mods_dir = inst.mods_dir();
     let enabled_roots: Vec<std::path::PathBuf> =
-        app.mods.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+        app.mods.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
     let disabled_roots: Vec<std::path::PathBuf> =
-        app.mods.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+        app.mods.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     let archive = c.archive.clone();
     // A collision raised by the manual / BAIN picker: replay the SAME picks. The

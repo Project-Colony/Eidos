@@ -222,7 +222,7 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     // the game's own Data directory, and a longest-prefix match against that
     // would attribute every vanilla file to whichever DLC row sorted first - and
     // put a Hide button on the pristine game install.
-    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator() && !m.is_unmanaged()) {
+    for m in app.mods.iter().filter(|m| m.is_active() && !m.is_unmanaged()) {
         sources.push((m.path.clone(), m.name.clone()));
     }
     if let Some(g) = selected_game(app) {
@@ -754,6 +754,11 @@ pub(crate) fn mod_row<'a>(
     // MO2's Content column: a compact letters summary of what the mod ships.
     let content = meta.map(|r| r.content_tags.clone()).unwrap_or_default();
 
+    // A backup contributes nothing to the game, so its checkbox does nothing -
+    // a tick that deployed two copies of one mod over each other would be worse
+    // than no tick at all. Drawn inert, like unmanaged content.
+    let toggle: Element<'a, Message> =
+        if m.is_backup() { checkbox(false).size(16).into() } else { toggle.into() };
     let mut row = Row::new()
         .spacing(6)
         .height(Length::Fixed(MOD_ROW_H))
@@ -912,7 +917,7 @@ pub(crate) fn separator_row<'a>(
 }
 
 pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
-    let active = app.mods.iter().filter(|m| m.enabled && !m.is_separator()).count();
+    let active = app.mods.iter().filter(|m| m.is_active()).count();
     let (names, active_name) = cached_profiles(app);
     let mut profile = Row::new().spacing(6).push(text("Profile:").size(12.0));
     if app.created.is_some() {
@@ -1641,6 +1646,21 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         let tracked = meta.as_ref().is_some_and(|mm| mm.tracked());
         let track_label = if tracked { "Untrack" } else { "Track" };
         col = col.push(menu_item(track_label, Message::ModTrack(i)));
+    }
+    // A backup's menu is short: it is not a mod, so enabling, reinstalling,
+    // endorsing and the rest have nothing to act on. Restoring is what it is for.
+    if m.is_backup() {
+        let armed = app.confirm_restore == Some(i);
+        col = col.push(menu_item_owned(
+            if armed {
+                "Click again: this replaces the mod".to_string()
+            } else {
+                "Restore this backup over the mod".to_string()
+            },
+            if armed { Message::ConfirmModRestoreBackup(i) } else { Message::ModRestoreBackup(i) },
+        ));
+    } else if !m.is_separator() && !m.unmanaged {
+        col = col.push(menu_item("Back up this mod", Message::ModBackup(i)));
     }
     // Offered only when there is actually a warning to silence, so the menu does
     // not carry a line whose effect nobody can see.

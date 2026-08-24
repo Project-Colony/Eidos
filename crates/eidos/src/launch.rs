@@ -252,7 +252,7 @@ pub(crate) fn run_through_view(
     // note it, never block.
     {
         let cs_roots: Vec<PathBuf> =
-            inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
+            inst.modlist().into_iter().filter(|m| m.is_active()).map(|m| m.path).collect();
         if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
             eidos_log::info!(
                 "eidos play: note - ENB (game root) and Community Shaders (a mod) are both active. \
@@ -502,7 +502,7 @@ pub(crate) fn forced_dll_overrides(
         "xinput1_3", "x3daudio1_7", "opengl32", "d3dx9_42",
     ];
     let mut roots: Vec<PathBuf> =
-        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
+        inst.modlist().into_iter().filter(|m| m.is_active()).map(|m| m.path).collect();
     roots.push(inst.overwrite_dir());
 
     // A wrapper DLL sits at the mod's top level when the mod is Data-relative, and

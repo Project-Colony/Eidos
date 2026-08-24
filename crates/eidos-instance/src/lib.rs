@@ -86,11 +86,41 @@ pub fn is_separator_name(name: &str) -> bool {
     name.ends_with("_separator")
 }
 
+/// Whether a mod folder name marks a BACKUP - MO2's `.*_backup` convention, and
+/// derived from the name for the same reason separators are: a stored flag goes
+/// stale on a rename, and this one decides whether files reach the game.
+///
+/// A trailing number counts. The second backup of a mod has to be called
+/// something, and `X_backup2` is what it gets called; a check that only matched
+/// the bare suffix would quietly let every backup after the first deploy itself
+/// over the mod it copies. That is not a hypothetical - it is what the first
+/// version of this function did, and what its test caught.
+pub fn is_backup_name(name: &str) -> bool {
+    name.trim_end_matches(|c: char| c.is_ascii_digit()).ends_with("_backup")
+}
+
 impl ModEntry {
     /// Whether this entry is a separator (derived from its folder name, like MO2 -
     /// never a stored flag, so it can't go stale on rename).
     pub fn is_separator(&self) -> bool {
         is_separator_name(&self.name)
+    }
+
+    /// Whether this entry is a saved copy of another mod rather than a mod.
+    pub fn is_backup(&self) -> bool {
+        is_backup_name(&self.name)
+    }
+
+    /// Whether this entry contributes files to the game.
+    ///
+    /// One predicate rather than the three copies of `enabled && !is_separator`
+    /// this replaced, and the reason is exactly this commit: adding a second
+    /// kind of inert row meant finding every one of them, and a filter that is
+    /// spelled out three times is a filter that will be spelled out twice next
+    /// time. A backup is deliberately NOT merely disabled - a user who ticks it
+    /// would deploy two copies of the same mod over each other.
+    pub fn is_active(&self) -> bool {
+        self.enabled && !self.is_separator() && !self.is_backup()
     }
 
     /// The name shown to the user: the internal folder name with the `_separator`
@@ -213,7 +243,7 @@ impl Instance {
     /// one that a later reinstall dropped, and a launch must not fail over that.
     pub fn enabled_ini_tweaks(&self, mods: &[ModEntry]) -> Vec<PathBuf> {
         let mut out = Vec::new();
-        for m in mods.iter().filter(|m| m.enabled && !m.is_separator()) {
+        for m in mods.iter().filter(|m| m.is_active()) {
             let dir = ini_tweaks_dir(&m.path);
             for name in self.mod_meta(&m.name).ini_tweaks() {
                 let p = dir.join(name);
@@ -265,7 +295,7 @@ impl Instance {
         // A managed mod providing the same plugin owns the row.
         let provided: HashSet<String> = managed
             .iter()
-            .filter(|m| !m.is_separator())
+            .filter(|m| !m.is_separator() && !m.is_backup())
             .flat_map(|m| fs::read_dir(&m.path).into_iter().flatten().flatten())
             .filter_map(|e| e.file_name().into_string().ok())
             .filter(|n| is_plugin_name(n))
@@ -675,7 +705,7 @@ impl Instance {
         self.modlist()
             .into_iter()
             .rev()
-            .filter(|m| m.enabled && !m.is_separator())
+            .filter(|m| m.is_active())
             .filter_map(|m| find_root_dir(&m.path))
             .collect()
     }
@@ -1450,6 +1480,14 @@ mod tests {
         assert!(!modd.is_separator());
         assert_eq!(modd.display_name(), "SkyUI");
 
+        // A backup is inert for the same reason and by the same kind of rule -
+        // including every numbered one, which is where this first went wrong.
+        assert!(is_backup_name("X_backup"));
+        assert!(is_backup_name("X_backup2"));
+        assert!(is_backup_name("X_backup17"));
+        assert!(!is_backup_name("X_backups"));
+        assert!(!is_backup_name("backup_X"));
+        assert!(!is_backup_name("X"));
         assert!(is_separator_name("X_separator"));
         assert!(!is_separator_name("Xseparator"));
         assert!(!is_separator_name("separator_X"));

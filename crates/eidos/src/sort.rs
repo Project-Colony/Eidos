@@ -61,7 +61,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
 
     // Discover exactly what a launch would use, preserving the current order.
     let enabled: Vec<ModEntry> =
-        inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).collect();
+        inst.modlist().into_iter().filter(|m| m.is_active()).collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
     list.apply_prefix_state(&state_dir, &spec);

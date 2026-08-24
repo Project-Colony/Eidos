@@ -86,7 +86,7 @@ pub(crate) fn prepare_plugins(
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
     // into Overwrite are discovered and win same-name shadowing.
-    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).collect();
+    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.is_active()).collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
@@ -258,7 +258,7 @@ pub(crate) fn prepare_inis(
         let mod_bsas: Vec<String> = inst
             .modlist()
             .into_iter()
-            .filter(|m| m.enabled && !m.is_separator())
+            .filter(|m| m.is_active())
             .flat_map(|m| {
                 std::fs::read_dir(&m.path)
                     .into_iter()

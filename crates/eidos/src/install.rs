@@ -39,9 +39,9 @@ pub(crate) fn cmd_install(args: &[String]) {
     // gameDependency options evaluate correctly (MO2 distinguishes the two).
     let ml = inst.modlist();
     let enabled_roots: Vec<std::path::PathBuf> =
-        ml.iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+        ml.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
     let disabled_roots: Vec<std::path::PathBuf> =
-        ml.iter().filter(|m| !m.enabled && !m.is_separator()).map(|m| m.path.clone()).collect();
+        ml.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),
