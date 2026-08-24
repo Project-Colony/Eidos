@@ -232,6 +232,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         install_at: None,
         install_gap: None,
         confirm_set_all: None,
+        file_menu_open: false,
         pending_note: None,
         categories_dialog: None,
         ini_editor: None,

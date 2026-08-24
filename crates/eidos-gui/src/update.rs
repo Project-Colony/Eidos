@@ -1116,6 +1116,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
         }
         Message::OpenFolder(p) => {
+            // Created if absent. Several of these are Eidos's own and are made on
+            // first use - downloads before the first download, overwrite before
+            // the first run - and "the folder you are looking for is not there
+            // yet" is a worse answer than an empty folder.
+            if !p.exists() {
+                let _ = std::fs::create_dir_all(&p);
+            }
+            if !p.is_dir() {
+                app.status = Some(format!("{} does not exist.", p.display()));
+                return Task::none();
+            }
             let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
             app.status = Some(format!("Opened {} in your file manager.", p.display()));
         }
@@ -1922,12 +1933,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
             app.status = Some(format!("Opening {url}"));
         }
-        Message::OpenInstanceFolder => {
-            if let Some(inst) = &app.created {
-                let _ = std::process::Command::new("xdg-open").arg(&inst.root).spawn();
-                app.status = Some(format!("Opened {}", inst.root.display()));
-            }
-        }
         Message::SetupPrereqs => {
             let arg = instance_arg(app);
             let has_prefix = selected_game(app).and_then(|g| g.compatdata.as_ref()).is_some();
@@ -2084,6 +2089,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::ShowLogPane => {
             let files = eidos_log::sessions();
             app.view_menu_open = false;
+            app.file_menu_open = false;
             let Some(newest) = files.first().cloned() else {
                 app.status = Some(format!(
                     "No session logs yet. They appear in {} once Eidos runs a game or a tool.",
@@ -3415,8 +3421,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.about_open = true;
         }
         Message::CloseAbout => app.about_open = false,
-        Message::OpenViewMenu => app.view_menu_open = true,
+        Message::OpenViewMenu => {
+            app.file_menu_open = false;
+            app.view_menu_open = true;
+        }
         Message::CloseViewMenu => app.view_menu_open = false,
+        Message::OpenFileMenu => {
+            // Only one dropdown at a time, or the two cards overlap and the one
+            // underneath eats clicks aimed at the one on top.
+            app.view_menu_open = false;
+            app.file_menu_open = true;
+        }
+        Message::CloseFileMenu => app.file_menu_open = false,
         Message::ToggleToolbar => {
             app.ui_toolbar_visible = !app.ui_toolbar_visible;
             app.view_menu_open = false;

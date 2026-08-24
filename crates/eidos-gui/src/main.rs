@@ -266,8 +266,6 @@ enum Message {
     ChangeGame,
     /// Open the current game's Nexus page in the browser.
     OpenNexusGame,
-    /// Open the instance's root folder in the file manager.
-    OpenInstanceFolder,
     /// Install the modding tools' runtime prerequisites into the prefix
     /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
     SetupPrereqs,
@@ -677,6 +675,9 @@ enum Message {
     ImportMo2Pick,
     /// The picked MO2 profile directory (`None` = cancelled).
     ImportMo2Picked(Option<PathBuf>),
+    /// Open / dismiss the File dropdown, which lists every folder that matters.
+    OpenFileMenu,
+    CloseFileMenu,
     /// Open a URL in the user's browser (LOOT advice links in the report).
     OpenUrl(String),
     // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
@@ -1269,6 +1270,8 @@ struct App {
     /// Two-click guard for the bulk enable/disable, holding the TARGET state so
     /// arming "Enable all" and then clicking "Disable all" does not fire.
     confirm_set_all: Option<bool>,
+    /// Whether the File dropdown (the folder list) is showing.
+    file_menu_open: bool,
     /// Something the drop wants said once the install finishes. It cannot say it
     /// itself: the installer sets its own status a moment later.
     pending_note: Option<String>,
@@ -3816,6 +3819,46 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    #[test]
+    fn only_one_menu_bar_dropdown_is_open_at_a_time() {
+        // Two cards at the same corner would overlap, and the one underneath
+        // would eat clicks aimed at the one on top.
+        let mut app = nav_app(&[]);
+        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        assert!(app.file_menu_open && !app.view_menu_open);
+        let _ = update_inner(&mut app, Message::OpenViewMenu);
+        assert!(app.view_menu_open && !app.file_menu_open);
+        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        assert!(app.file_menu_open && !app.view_menu_open);
+        let _ = update_inner(&mut app, Message::CloseFileMenu);
+        assert!(!app.file_menu_open);
+    }
+
+    #[test]
+    fn the_file_menu_offers_every_folder_that_resolves_and_no_others() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        app.file_menu_open = true;
+
+        // Eidos's own folders stay live even before they exist - several are
+        // created on first use, and "not there yet" is a worse answer than an
+        // empty folder.
+        let i = app.created.as_ref().unwrap();
+        let downloads = i.downloads_dir();
+        assert!(!downloads.exists(), "not created until the first download");
+        let _ = update_inner(&mut app, Message::OpenFolder(downloads.clone()));
+        assert!(downloads.is_dir(), "opening it created it");
+        // The card builds without an open Proton prefix - that entry is simply
+        // the inert one, which is the whole point of drawing rather than hiding.
+        assert!(app.games.first().and_then(|g| g.compatdata.as_ref()).is_none());
+        let _ = file_menu_card(&app);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

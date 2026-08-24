@@ -2457,6 +2457,19 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // The File dropdown floats just under the menu bar, at the File item.
+    if app.file_menu_open {
+        let catcher =
+            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseFileMenu);
+        let card = container(file_menu_card(app))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(iced::Padding { top: 44.0, right: 0.0, bottom: 0.0, left: 4.0 })
+            .align_x(iced::alignment::Horizontal::Left)
+            .align_y(iced::alignment::Vertical::Top);
+        layers = layers.push(catcher).push(card);
+    }
+
     // The View dropdown floats just under the menu bar, near the View item.
     if app.view_menu_open {
         let catcher =

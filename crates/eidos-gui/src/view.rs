@@ -402,14 +402,14 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
     out
 }
 
-/// The menu bar. iced 0.13 has no native dropdown widget, so most top-level items
-/// fire the single most useful action (MO2's most-used per menu): File -> open the
-/// instance folder, Tools -> Executables, Run -> run the current target, Help ->
-/// About. View opens a small floating menu (it has several toggles to host).
+/// The menu bar. iced 0.13 has no native dropdown widget, so the top-level items
+/// that carry ONE useful action fire it directly (Tools -> Executables, Run,
+/// Refresh, Help -> About); File and View open small floating menus, because they
+/// each host several things.
 pub(crate) fn menu_bar<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(0)
-        .push(flat_btn("File", Message::OpenInstanceFolder))
+        .push(flat_btn("File", Message::OpenFileMenu))
         .push(flat_btn("View", Message::OpenViewMenu))
         .push(flat_btn("Tools", Message::ShowExecutablesDialog))
         // Shortcut hints inline, MO2-style (the keys are wired in `subscription`).
@@ -417,6 +417,63 @@ pub(crate) fn menu_bar<'a>() -> Element<'a, Message> {
         .push(flat_btn("Refresh (F5)", Message::Refresh))
         .push(flat_btn("Help", Message::ShowAbout));
     container(row).width(Length::Fill).padding(1).style(bar_style).into()
+}
+
+/// The File dropdown: every folder that matters, in one place.
+///
+/// Worth more on Linux than the same menu is on Windows. The paths a modder
+/// actually needs - the game's INI directory, the prefix's My Games - live at
+/// `steamapps/compatdata/<appid>/pfx/drive_c/users/steamuser/Documents/My Games/…`,
+/// which nobody retypes and no file manager bookmarks by accident. Eidos already
+/// resolves every one of them; they were just never offered.
+///
+/// An entry whose path cannot be resolved right now (no instance open, no Proton
+/// prefix yet) is drawn inert rather than hidden, so the menu does not change
+/// shape underneath the user and the absence is legible.
+pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
+    /// `owned` = a directory Eidos creates on demand (downloads before the first
+    /// download, overwrite before the first run). Those stay live and are created
+    /// when opened; a path outside Eidos - the game, the prefix - is only offered
+    /// when it is really there.
+    fn entry<'a>(label: &'a str, path: Option<PathBuf>, owned: bool) -> Element<'a, Message> {
+        match path.filter(|p| owned || p.exists()) {
+            Some(p) => menu_item_owned(label.to_string(), Message::OpenFolder(p)),
+            None => container(text(label).size(12.0))
+                .width(Length::Fill)
+                .padding([4, 8])
+                .style(|t: &Theme| container::Style {
+                    text_color: Some(t.extended_palette().background.weak.color),
+                    ..Default::default()
+                })
+                .into(),
+        }
+    }
+
+    let inst = app.created.as_ref();
+    let game = selected_game(app);
+    // The profile's INIs are the ones Eidos owns; the prefix copy is what the
+    // game reads. Both are worth reaching, and only one of them is guessable.
+    let prefix_inis = game.and_then(|g| {
+        let spec = GameSpec::for_id(g.def.id)?;
+        let prefix = g.compatdata.as_ref()?.join("pfx");
+        Some(eidos_plugins::documents_my_games_dir(&prefix, &spec))
+    });
+
+    let col = Column::new()
+        .spacing(1)
+        .push(entry("Instance folder", inst.map(|i| i.root.clone()), true))
+        .push(entry("Mods", inst.map(|i| i.mods_dir()), true))
+        .push(entry("Downloads", inst.map(|i| i.downloads_dir()), true))
+        .push(entry("Overwrite", inst.map(|i| i.overwrite_dir()), true))
+        .push(entry("Active profile", inst.map(|i| i.active().dir()), true))
+        .push(menu_sep())
+        .push(entry("Game install", game.map(|g| g.install_path.clone()), false))
+        .push(entry("Game Data", game.map(|g| g.data_path.clone()), false))
+        .push(entry("Game INIs (in the Proton prefix)", prefix_inis, false))
+        .push(menu_sep())
+        .push(entry("Eidos logs", Some(eidos_log::log_dir()), true))
+        .push(entry("Extensions", Some(eidos_addons::user_addons_dir()), true));
+    menu_frame(col.into())
 }
 
 /// The View dropdown's contents (floats over the window via the Stack, dismissed
