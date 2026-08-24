@@ -50,6 +50,16 @@ pub(crate) fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
     if old.ignore_update() {
         m.set_ignore_update(true);
     }
+    // Who made it. Not user-typed, but it comes from a Nexus call the reinstall
+    // does not make, so dropping it here means "Visit X's profile" vanishes off
+    // the menu until the next update check - a menu entry that comes and goes
+    // with no visible cause.
+    if let Some(a) = old.author() {
+        m.set_author(&a);
+    }
+    if let Some(u) = old.uploader() {
+        m.set_uploader(&u, &old.uploader_url().unwrap_or_default());
+    }
     let _ = m.write(meta_path);
 }
 
@@ -88,6 +98,16 @@ pub(crate) fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id:
     meta.set("category", "\"-1,\"");
     // nexusFileStatus mirrors the sidecar's fileCategory (1 = main file by default).
     meta.set("nexusFileStatus", &from.file_category().unwrap_or_else(|| "1".to_string()));
+    // Who made it, carried through from the sidecar the download wrote. Without
+    // this the mod has no author until the user happens to run an update check,
+    // so "Visit X's profile" is missing on exactly the mods just installed -
+    // the ones somebody is most likely to want it on.
+    if let Some(a) = from.author() {
+        meta.set_author(&a);
+    }
+    if let Some(u) = from.uploader() {
+        meta.set_uploader(&u, &from.uploader_url().unwrap_or_default());
+    }
     // Record where the archive came from, absolute (MO2 stores the full path for a
     // file outside the downloads folder).
     let install_file = fs::canonicalize(archive)

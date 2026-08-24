@@ -493,6 +493,48 @@ fn reapply_user_meta_restores_endorsement_and_category() {
     assert!(back.ignore_update(), "re-arming it every reinstall is exactly backwards");
     // And the new archive's own facts are NOT clobbered.
     assert_eq!(back.version().as_deref(), Some("2"));
+
+    // Who made it. Not user-typed, but a reinstall does not make the Nexus call
+    // that learned it, so dropping it here made "Visit X's profile" come and go
+    // off the menu with no visible cause.
+    let mut old3 = ModMeta::default();
+    old3.set_author("Arthmoor");
+    old3.set_uploader("Arthmoor", "https://www.nexusmods.com/users/1234");
+    let again = dir.path().join("again.ini");
+    std::fs::write(&again, "[General]\nmodid=7\nversion=3\n").unwrap();
+    reapply_user_meta(&old3, &again);
+    let back = ModMeta::read(&again);
+    assert_eq!(back.author().as_deref(), Some("Arthmoor"));
+    assert_eq!(back.uploader().as_deref(), Some("Arthmoor"));
+    assert_eq!(
+        back.uploader_url().as_deref(),
+        Some("https://www.nexusmods.com/users/1234"),
+        "the link is what makes the menu entry clickable"
+    );
+}
+
+#[test]
+fn a_freshly_installed_mod_already_knows_who_made_it() {
+    // The hole this closes: author and uploader were only ever learned by an
+    // update check, so a mod just downloaded and installed had no "Visit X's
+    // profile" entry until the user happened to run one - missing on exactly
+    // the mods somebody is most likely to want it on.
+    let dir = TempDir::new("seed");
+    let archive = dir.path().join("Mod-1234-1-0.7z");
+    fs::write(&archive, b"x").unwrap();
+    fs::write(
+        PathBuf::from(format!("{}.meta", archive.display())),
+        "[General]\nmodID=1234\nversion=1.0\nauthor=\"Arthmoor\"\n\
+         uploader=\"Arthmoor\"\nuploaderUrl=\"https://www.nexusmods.com/users/1234\"\n",
+    )
+    .unwrap();
+    let dest = TempDir::new("dest");
+    write_meta(&archive, dest.path(), "skyrimse", None).unwrap();
+
+    let m = ModMeta::read(&dest.path().join("meta.ini"));
+    assert_eq!(m.author().as_deref(), Some("Arthmoor"));
+    assert_eq!(m.uploader().as_deref(), Some("Arthmoor"));
+    assert_eq!(m.uploader_url().as_deref(), Some("https://www.nexusmods.com/users/1234"));
 }
 
 #[test]

@@ -1570,6 +1570,21 @@ pub fn write_download_meta(
     if file.size_in_bytes != 0 {
         out.push_str(&format!("totalSize={}\n", file.size_in_bytes));
     }
+    // Who made it, in MO2's own keys. Written HERE rather than left to the
+    // first update check: the install seeder copies the sidecar into the mod's
+    // meta.ini, so without these lines a mod that was just downloaded and
+    // installed has no "Visit X's profile" entry until the user happens to run
+    // Check for updates. The gate above already refused a hidden mod, so these
+    // cannot leak a withheld name.
+    if !remote_mod.author.is_empty() {
+        out.push_str(&format!("author=\"{}\"\n", remote_mod.author));
+    }
+    if !remote_mod.uploader.is_empty() {
+        out.push_str(&format!("uploader=\"{}\"\n", remote_mod.uploader));
+        if remote_mod.uploader_url.starts_with("http") {
+            out.push_str(&format!("uploaderUrl=\"{}\"\n", remote_mod.uploader_url));
+        }
+    }
     out.push_str("repository=Nexus\n");
     out.push_str("installed=false\nuninstalled=false\npaused=false\nremoved=false\n");
     fs::write(&meta_path, out)?;
@@ -1632,6 +1647,18 @@ pub fn write_recovered_meta(
     }
     if let Ok(md) = fs::metadata(archive) {
         out.push_str(&format!("totalSize={}\n", md.len()));
+    }
+    // Same three keys as the download path: an archive identified by its MD5
+    // knows who made the mod, and dropping that here would leave the recovered
+    // sidecar poorer than a freshly downloaded one for no reason.
+    if !found.remote.author.is_empty() {
+        out.push_str(&format!("author=\"{}\"\n", found.remote.author));
+    }
+    if !found.remote.uploader.is_empty() {
+        out.push_str(&format!("uploader=\"{}\"\n", found.remote.uploader));
+        if found.remote.uploader_url.starts_with("http") {
+            out.push_str(&format!("uploaderUrl=\"{}\"\n", found.remote.uploader_url));
+        }
     }
     out.push_str("repository=Nexus\n");
     out.push_str("installed=false\nuninstalled=false\npaused=false\nremoved=false\n");
@@ -2295,9 +2322,9 @@ mod tests {
             name: "Dynamic String Distributor (DSD)".into(),
             version: "1.3.1".into(),
             summary: "".into(),
-            author: String::new(),
-            uploader: String::new(),
-            uploader_url: String::new(),
+            author: "Sanguinet".into(),
+            uploader: "Sanguinet".into(),
+            uploader_url: "https://www.nexusmods.com/users/1234".into(),
             category_id: Some(42),
             available: true,
             adult: Some(false),
@@ -2319,6 +2346,13 @@ mod tests {
             "category=42",
             "repository=Nexus",
             "installed=false",
+            // Who made it, written HERE rather than left to the first update
+            // check: the install seeder copies this sidecar into the mod's
+            // meta.ini, so without these a mod just downloaded and installed
+            // had no "Visit X's profile" entry until somebody ran one.
+            "author=\"Sanguinet\"",
+            "uploader=\"Sanguinet\"",
+            "uploaderUrl=\"https://www.nexusmods.com/users/1234\"",
         ] {
             assert!(text.contains(needle), "missing {needle} in:\n{text}");
         }
