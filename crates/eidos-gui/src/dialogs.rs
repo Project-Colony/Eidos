@@ -269,7 +269,32 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                             text("The site's Mod Manager Download button lands here once the nxm:// handler is registered (eidos nxm --register).")
                                 .size(10.0),
                         )
+                        .push(settings_row(
+                            "Preferred servers",
+                            "Comma-separated CDN names, best first - a mod downloads from the \
+                             first one Nexus offers today. Only a premium account is given more \
+                             than one to choose between; for everyone else Nexus picks, and this \
+                             changes nothing.",
+                            text_input("Nexus CDN, Paris, Chicago", &app.servers_edit)
+                                .on_input(Message::PreferredServersChanged)
+                                .on_submit(Message::PreferredServersSave)
+                                .padding(5)
+                                .size(12.0)
+                                .into(),
+                        ))
                         .into(),
+                ))
+                .push(settings_section(
+                    "offline",
+                    "Offline",
+                    open("offline"),
+                    settings_toggle(
+                        "Offline mode",
+                        "Stops Eidos contacting Nexus at all. Update checks, sign-in, downloads \
+                         and collections say so instead of failing with a connection error.",
+                        app.prefs.offline,
+                        Message::ToggleOffline(!app.prefs.offline),
+                    ),
                 ))
                 .into()
         }

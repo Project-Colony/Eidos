@@ -253,6 +253,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         collection: None,
         instances_open: false,
         registry_path: eidos_instance::registry_path(),
+        servers_edit: String::new(),
         instance_rename: None,
         confirm_forget: None,
         confirm_sync: false,
@@ -410,6 +411,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     app.conflicts = compute_conflicts(&app);
     refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
+    // The field shows what is stored, so opening Settings does not present an
+    // empty box beside a preference that is actually set.
+    app.servers_edit = app.prefs.preferred_servers.join(", ");
     recompute_counts(&mut app);
     // A stored session means the user IS signed in: validate it in the background
     // so the status bar shows the account instead of "not logged in" every session.

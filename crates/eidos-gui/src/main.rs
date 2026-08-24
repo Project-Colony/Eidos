@@ -324,6 +324,11 @@ enum Message {
     /// Toggle the conflict marks on the mod list's scrollbar.
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
+    /// MO2's offline mode: cut every Nexus request.
+    ToggleOffline(bool),
+    /// Editing the preferred-CDN list. Saved on submit, not per keystroke.
+    PreferredServersChanged(String),
+    PreferredServersSave,
     OpenPluginMenu(usize),
     ClosePluginMenu,
     /// Open the folder of the mod that ships the plugin at this row.
@@ -1396,6 +1401,9 @@ struct App {
     /// window can be tested without writing the real user config - the handlers
     /// that forget and rename instances persist through it.
     registry_path: PathBuf,
+    /// What is typed in the preferred-servers field, which is not the saved
+    /// value until it is submitted - the same shape as the mod URL field.
+    servers_edit: String,
     /// The instance row being renamed, and the pending name.
     instance_rename: Option<(usize, String)>,
     /// Two-click guard for forgetting an instance.
@@ -4380,6 +4388,34 @@ mod tests {
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn offline_mode_is_off_unless_it_was_explicitly_turned_on() {
+        // The opposite default to lock_gui, deliberately: a settings file
+        // written by an older Eidos has no `offline` key, and reading a missing
+        // key as "on" would cut the network for everybody who upgrades.
+        let s = eidos_instance::settings::Settings::parse("[eidos]\ntheme=dark\n");
+        assert!(!s.offline);
+        let s = eidos_instance::settings::Settings::parse("[eidos]\noffline=true\n");
+        assert!(s.offline);
+        // And it round-trips, which is the whole point of a setting.
+        assert!(eidos_instance::settings::Settings::parse(&s.to_ini()).offline);
+    }
+
+    #[test]
+    fn the_server_field_stores_an_order_and_echoes_back_what_it_kept() {
+        let mut app = app_for_game("skyrimse");
+        let _ = update_inner(
+            &mut app,
+            Message::PreferredServersChanged("  Paris , ,Nexus CDN,  ".to_string()),
+        );
+        let _ = update_inner(&mut app, Message::PreferredServersSave);
+
+        assert_eq!(app.prefs.preferred_servers, vec!["Paris", "Nexus CDN"], "trimmed, blanks gone");
+        // Echoed back as stored, so a trailing comma does not sit in the field
+        // looking like it means something.
+        assert_eq!(app.servers_edit, "Paris, Nexus CDN");
     }
 
     #[test]

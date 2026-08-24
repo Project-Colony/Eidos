@@ -278,6 +278,14 @@ pub struct Settings {
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
+    /// Cut every Nexus request. MO2's "offline mode": nothing reaches the
+    /// network, and the parts of the window that would have asked say why
+    /// rather than failing with a connection error.
+    pub offline: bool,
+    /// CDN node names, best first, one per line in the file. Empty means
+    /// "whatever Nexus offers first". Only a premium account is ever given more
+    /// than one mirror to choose between.
+    pub preferred_servers: Vec<String>,
     /// The file these settings were read from, and the ONLY file `save` will
     /// write. `None` for a value that was never loaded from disk - a default,
     /// or a fixture - which therefore cannot save over anybody's real
@@ -296,6 +304,8 @@ impl Default for Settings {
             lock_gui: true,
             drag_scroll_speed: 1.0,
             remember_window: true,
+            offline: false,
+            preferred_servers: Vec::new(),
             // Nowhere. A default that could save itself over the real file is
             // exactly the defect this field exists to remove.
             path: None,
@@ -383,6 +393,21 @@ impl Settings {
                         }
                     }
                 }
+                // Off unless explicitly on - the opposite default to lock_gui,
+                // and deliberately: a key nobody wrote must not cut the network.
+                "offline" => {
+                    s.offline = matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
+                // Comma-separated so one line holds an ordering, which is what
+                // this is - a list where position means something.
+                "preferred_servers" => {
+                    s.preferred_servers = v
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string)
+                        .collect();
+                }
                 "remember_window" => {
                     s.remember_window =
                         !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
@@ -411,6 +436,12 @@ impl Settings {
             self.drag_scroll_speed,
             self.remember_window
         );
+        if self.offline {
+            out.push_str("offline=true\n");
+        }
+        if !self.preferred_servers.is_empty() {
+            out.push_str(&format!("preferred_servers={}\n", self.preferred_servers.join(",")));
+        }
         if let Some(game) = &self.default_game {
             out.push_str("default_game=");
             out.push_str(game);
@@ -585,6 +616,8 @@ mod tests {
     fn settings_round_trip_full() {
         let s = Settings {
             path: None,
+            offline: false,
+            preferred_servers: Vec::new(),
             theme: Theme::Dark,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
@@ -665,6 +698,8 @@ mod tests {
         }
         let s = Settings {
             path: None,
+            offline: false,
+            preferred_servers: Vec::new(),
             theme: Theme::Dark,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),

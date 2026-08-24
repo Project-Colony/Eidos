@@ -508,7 +508,48 @@ pub struct Nexus {
     /// [`AdultPolicy::Unknown`], so a client built without stating a policy
     /// hides adult content rather than leaking it - forgetting is safe.
     adult: AdultPolicy,
+    /// CDN node names the user ranked, best first. Empty means "whatever Nexus
+    /// offers first", which is what every client did before this existed.
+    preferred_servers: Vec<String>,
 }
+
+/// Choose a mirror from what Nexus offered, honouring a ranked preference.
+///
+/// Split out and pure because the interesting cases have nothing to do with
+/// HTTP: a preference naming a node that is not on offer today, a node named
+/// with different capitalisation than last week, and an empty preference, which
+/// must behave exactly as the code did before preferences existed.
+///
+/// Matching is case-insensitive and by substring, because the label Nexus
+/// returns for one node is not stable enough to compare whole: the same CDN has
+/// come back as "Nexus CDN" and "Nexus Global CDN". A preference of "nexus"
+/// should keep matching it.
+pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) -> Option<String> {
+    for want in preferred {
+        let want = want.trim().to_ascii_lowercase();
+        if want.is_empty() {
+            continue;
+        }
+        if let Some((_, uri)) =
+            mirrors.iter().find(|(name, _)| name.to_ascii_lowercase().contains(&want))
+        {
+            return Some(uri.clone());
+        }
+    }
+    // Nothing ranked matched: Nexus's own first choice, never nothing. A
+    // preference is an ordering, not a filter - refusing to download because a
+    // favourite node is busy would be a worse program than one with no
+    // preference at all.
+    mirrors.first().map(|(_, uri)| uri.clone())
+}
+
+/// What every part of Eidos says when offline mode is on.
+///
+/// One sentence, in one place, because it appears wherever a Nexus call would
+/// have been made and the user needs to recognise it as their own setting
+/// rather than a failure.
+pub const OFFLINE_MESSAGE: &str =
+    "Offline mode is on - Eidos is not contacting Nexus. Turn it off in Settings.";
 
 fn s(v: &serde_json::Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string()
@@ -591,7 +632,16 @@ impl Nexus {
             credential,
             limits: std::cell::Cell::new(RateLimits::default()),
             adult: AdultPolicy::Unknown,
+            // Read from the user's settings by `connect`, not here: a client
+            // built by hand for a test has no business reading a config file.
+            preferred_servers: Vec::new(),
         }
+    }
+
+    /// Rank the CDN nodes this client will prefer, best first.
+    pub fn with_preferred_servers(mut self, names: Vec<String>) -> Nexus {
+        self.preferred_servers = names;
+        self
     }
 
     /// Which credential this client carries. Exposed so a caller can report the
@@ -607,6 +657,14 @@ impl Nexus {
     /// Reads a file, so it is safe to call from a UI update handler - unlike
     /// [`Nexus::connect`], which may spend a round trip renewing a token and
     /// belongs in a background task.
+    /// Whether offline mode is on, without building a client.
+    ///
+    /// The window asks this to explain itself before a user presses something
+    /// that would have gone to the network, rather than after.
+    pub fn is_offline() -> bool {
+        eidos_instance::settings::Settings::load().offline
+    }
+
     pub fn have_credentials() -> bool {
         eidos_instance::settings::load_nexus_creds().has_oauth()
     }
@@ -643,12 +701,21 @@ impl Nexus {
     /// renewed is an error saying so, because a distributed client is not allowed
     /// to carry a personal key at all.
     pub fn connect() -> Result<Nexus, String> {
+        // Offline mode, checked HERE rather than at each call site. This is the
+        // one door every Nexus request goes through, so a guard on it is a
+        // guard on all of them - including the ones added later by somebody who
+        // has never heard of the setting.
+        let prefs = eidos_instance::settings::Settings::load();
+        if prefs.offline {
+            return Err(OFFLINE_MESSAGE.to_string());
+        }
         let mut creds = eidos_instance::settings::load_nexus_creds();
         let cfg = oauth::Config::from_env();
         match choose_credential(&creds, oauth::now_unix(), cfg.is_some()) {
             CredentialChoice::Bearer => {
                 let token = creds.access_token.clone().unwrap_or_default();
-                Ok(Nexus::signed_in(&mut creds, &token))
+                Ok(Nexus::signed_in(&mut creds, &token)
+                    .with_preferred_servers(prefs.preferred_servers.clone()))
             }
             CredentialChoice::Refresh => {
                 let cfg = cfg.expect("choose_credential only picks Refresh when a config exists");
@@ -661,7 +728,8 @@ impl Nexus {
                         // A failed write is not fatal: the token in hand still
                         // works, the user just signs in again next session.
                         let _ = eidos_instance::settings::save_nexus_creds(&creds);
-                        Ok(Nexus::signed_in(&mut creds, &t.access_token))
+                        Ok(Nexus::signed_in(&mut creds, &t.access_token)
+                            .with_preferred_servers(prefs.preferred_servers.clone()))
                     }
                     // The refresh token is spent or revoked, and there is
                     // nothing to fall back to: signing in again is the only
@@ -1029,9 +1097,61 @@ impl Nexus {
             .unwrap_or_default())
     }
 
+    /// Every CDN mirror Nexus offers for an `nxm://` link, in the order it
+    /// returned them: `(short_name, uri)`.
+    ///
+    /// A free account is handed exactly one, chosen by Nexus. A premium account
+    /// gets the whole list, which is the only reason ordering them is a feature
+    /// at all - and why nothing here fails when there is only one.
+    pub fn download_mirrors(
+        &self,
+        gate: &ModGate,
+        nxm: &NxmUrl,
+    ) -> Result<Vec<(String, String)>, String> {
+        if let Some(why) = gate.reason() {
+            return Err(why.message().to_string());
+        }
+        let mut path = format!(
+            "games/{}/mods/{}/files/{}/download_link",
+            nxm.game, nxm.mod_id, nxm.file_id
+        );
+        if let (Some(key), Some(expires)) = (&nxm.key, nxm.expires) {
+            path.push_str(&format!("?key={key}&expires={expires}"));
+        }
+        let v = self.get(&path)?;
+        let mirrors: Vec<(String, String)> = v
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|m| {
+                        // `short_name` is the node's own label ("Nexus CDN",
+                        // "Chicago"). Falling back to `name` and then to the
+                        // URI's host keeps a mirror addressable even if Nexus
+                        // renames the field.
+                        let label = [s(m, "short_name"), s(m, "name")]
+                            .into_iter()
+                            .find(|x| !x.is_empty())
+                            .unwrap_or_default();
+                        (label, s(m, "URI"))
+                    })
+                    .filter(|(_, uri)| !uri.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if mirrors.is_empty() {
+            return Err("no download mirror returned (free accounts need a fresh nxm:// link \
+                        from the site's Mod Manager Download button)"
+                .to_string());
+        }
+        Ok(mirrors)
+    }
+
     /// Resolve the CDN download URI for an `nxm://` link: `download_link`
-    /// (+`?key=..&expires=..` for non-premium, exactly like MO2). Returns the
-    /// first mirror's URI.
+    /// (+`?key=..&expires=..` for non-premium, exactly like MO2).
+    ///
+    /// Returns the highest-ranked mirror the user's preference names, else the
+    /// first one Nexus offered - which is what this did unconditionally before
+    /// the preference existed.
     pub fn download_link(&self, gate: &ModGate, nxm: &NxmUrl) -> Result<String, String> {
         // Same token as `file_info`: a mod whose page Eidos may not describe is
         // one whose files Eidos does not fetch either. The link itself carries no
@@ -1048,15 +1168,26 @@ impl Nexus {
             path.push_str(&format!("?key={key}&expires={expires}"));
         }
         let v = self.get(&path)?;
-        v.as_array()
-            .and_then(|a| a.first())
-            .map(|m| s(m, "URI"))
-            .filter(|u| !u.is_empty())
-            .ok_or_else(|| {
-                "no download mirror returned (free accounts need a fresh nxm:// link \
-                 from the site's Mod Manager Download button)"
-                    .to_string()
+        let mirrors: Vec<(String, String)> = v
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .map(|m| {
+                        let label = [s(m, "short_name"), s(m, "name")]
+                            .into_iter()
+                            .find(|x| !x.is_empty())
+                            .unwrap_or_default();
+                        (label, s(m, "URI"))
+                    })
+                    .filter(|(_, uri)| !uri.is_empty())
+                    .collect()
             })
+            .unwrap_or_default();
+        pick_mirror(&mirrors, &self.preferred_servers).ok_or_else(|| {
+            "no download mirror returned (free accounts need a fresh nxm:// link \
+             from the site's Mod Manager Download button)"
+                .to_string()
+        })
     }
 
     /// Read a collection revision and its member list (Nexus GraphQL v2).
@@ -1668,6 +1799,45 @@ pub fn write_recovered_meta(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_mirror_preference_is_an_ordering_not_a_filter() {
+        let mirrors = vec![
+            ("Nexus CDN".to_string(), "https://cdn/a".to_string()),
+            ("Chicago".to_string(), "https://chi/b".to_string()),
+            ("Paris".to_string(), "https://par/c".to_string()),
+        ];
+        // No preference behaves exactly as the code did before preferences
+        // existed: Nexus's own first choice.
+        assert_eq!(pick_mirror(&mirrors, &[]).unwrap(), "https://cdn/a");
+        // A ranked name wins, wherever Nexus put it.
+        assert_eq!(pick_mirror(&mirrors, &["paris".into()]).unwrap(), "https://par/c");
+        // Ranking is in order, and a name that is not on offer today is skipped
+        // rather than fatal.
+        assert_eq!(
+            pick_mirror(&mirrors, &["Tokyo".into(), "Chicago".into()]).unwrap(),
+            "https://chi/b"
+        );
+        // And when NOTHING ranked is on offer, the download still happens.
+        // Refusing because a favourite node is busy would be a worse program
+        // than one with no preference at all.
+        assert_eq!(pick_mirror(&mirrors, &["Tokyo".into()]).unwrap(), "https://cdn/a");
+        // Nothing offered is the only case with no answer.
+        assert_eq!(pick_mirror(&[], &["Paris".into()]), None);
+    }
+
+    #[test]
+    fn a_mirror_matches_by_substring_because_nexus_renames_its_nodes() {
+        // The same CDN has come back as "Nexus CDN" and as "Nexus Global CDN".
+        // A preference that stopped working because a label gained a word would
+        // be a setting the user has to maintain.
+        let a = vec![("Nexus CDN".to_string(), "https://a".to_string())];
+        let b = vec![("Nexus Global CDN".to_string(), "https://b".to_string())];
+        assert_eq!(pick_mirror(&a, &["nexus".into()]).unwrap(), "https://a");
+        assert_eq!(pick_mirror(&b, &["nexus".into()]).unwrap(), "https://b");
+        // Blank entries in the list are skipped, not matched against everything.
+        assert_eq!(pick_mirror(&a, &["".into(), "  ".into()]).unwrap(), "https://a");
+    }
 
     #[test]
     fn the_author_and_uploader_are_read_and_go_behind_the_same_gate() {

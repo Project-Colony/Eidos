@@ -2562,6 +2562,34 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("Could not save preferences: {e}"));
             }
         }
+        Message::ToggleOffline(on) => {
+            app.prefs.offline = on;
+            if let Err(e) = app.prefs.save() {
+                app.error = Some(format!("Could not save settings: {e}"));
+            }
+            // The status bar's account line is now wrong either way: offline
+            // means Eidos will not check, and coming back online means it can.
+            app.nexus_error = on.then(|| eidos_nexus::OFFLINE_MESSAGE.to_string());
+        }
+        Message::PreferredServersChanged(t) => {
+            app.typing = true;
+            app.servers_edit = t;
+        }
+        Message::PreferredServersSave => {
+            app.prefs.preferred_servers = app
+                .servers_edit
+                .split(',')
+                .map(str::trim)
+                .filter(|x| !x.is_empty())
+                .map(str::to_string)
+                .collect();
+            if let Err(e) = app.prefs.save() {
+                app.error = Some(format!("Could not save settings: {e}"));
+            }
+            // Echo back what was actually stored, so a trailing comma or a
+            // double space does not survive in the field looking meaningful.
+            app.servers_edit = app.prefs.preferred_servers.join(", ");
+        }
         Message::ThemeChanged(t) => {
             app.prefs.theme = t;
             if let Err(e) = app.prefs.save() {
