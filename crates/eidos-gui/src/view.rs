@@ -1158,6 +1158,20 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
 }
 
+/// The host of a URL, for a menu label: `https://www.loverslab.com/x` ->
+/// `loverslab.com`. Falls back to the whole string when it does not parse,
+/// which is better than an entry reading "Visit ".
+pub(crate) fn url_host(url: &str) -> String {
+    url.split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(url)
+        .split('/')
+        .next()
+        .unwrap_or(url)
+        .trim_start_matches("www.")
+        .to_string()
+}
+
 /// What is left of the Nexus request budget, appended to the counters line.
 ///
 /// Empty until something has actually asked Nexus a question: an invented "1000
@@ -1380,6 +1394,15 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     // Endorse / Track labels reflect the current state (MO2 toggles them).
     let meta = app.created.as_ref().map(|inst| inst.mod_meta(&m.name));
     let has_nexus = app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some();
+    // Every page this mod has, not just the Nexus one. A mod can have both - a
+    // Nexus listing and a GitHub the author actually updates - and a single
+    // entry could only ever offer one of them.
+    if let Some(url) = meta.as_ref().and_then(|mm| mm.url()) {
+        col = col.push(menu_item_owned(
+            format!("Visit {}", url_host(&url)),
+            Message::OpenUrl(url),
+        ));
+    }
     if has_nexus {
         col = col.push(menu_item("Visit on Nexus", Message::ModVisitNexus(i)));
         let endorsed = meta.as_ref().is_some_and(|mm| mm.endorsed());

@@ -245,6 +245,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         instance_rename: None,
         confirm_forget: None,
         confirm_sync: false,
+        url_edit: String::new(),
         selected_saves: std::collections::BTreeSet::new(),
         confirm_saves_delete: false,
         saves_fingerprint: None,

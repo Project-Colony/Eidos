@@ -1969,12 +1969,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ShowModInfo(i) => {
             app.menu_mod = None;
-            let notes = match (app.created.as_ref(), app.mods.get(i)) {
-                (Some(inst), Some(m)) => Some(inst.mod_meta(&m.name).notes().unwrap_or_default()),
+            let seeded = match (app.created.as_ref(), app.mods.get(i)) {
+                (Some(inst), Some(m)) => {
+                    let meta = inst.mod_meta(&m.name);
+                    Some((meta.notes().unwrap_or_default(), meta.url().unwrap_or_default()))
+                }
                 _ => None,
             };
-            if let Some(notes) = notes {
+            if let Some((notes, url)) = seeded {
                 app.notes_edit = notes;
+                app.url_edit = url;
                 app.info_mod = Some(i);
                 app.info_tab = InfoTab::General;
             }
@@ -1984,6 +1988,37 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::NotesChanged(s) => {
             app.typing = true;
             app.notes_edit = s;
+        }
+        Message::ModUrlChanged(s) => {
+            app.typing = true;
+            app.url_edit = s;
+        }
+        Message::ModUrlSave => {
+            let typed = app.url_edit.trim().to_string();
+            // Refuse anything that is not a web link, HERE rather than at the
+            // click that opens it: a value that cannot be opened must not be
+            // storable in the first place, or the button becomes a dead end that
+            // looks live.
+            if !typed.is_empty() && !(typed.starts_with("http://") || typed.starts_with("https://"))
+            {
+                app.status = Some("A mod page has to be an http:// or https:// address.".to_string());
+                return Task::none();
+            }
+            let result = match (app.info_mod, app.created.as_ref()) {
+                (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
+                    let mut meta = inst.mod_meta(&m.name);
+                    meta.set_url(&typed);
+                    (m.name.clone(), meta.write(&inst.meta_path(&m.name)))
+                }),
+                _ => None,
+            };
+            if let Some((name, r)) = result {
+                app.status = Some(match r {
+                    Ok(()) if typed.is_empty() => format!("Cleared the page link for '{name}'."),
+                    Ok(()) => format!("Saved the page link for '{name}'."),
+                    Err(e) => format!("Could not save the link: {e}"),
+                });
+            }
         }
         Message::NotesSave => {
             let result = match (app.info_mod, app.created.as_ref()) {

@@ -49,9 +49,31 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
             .push(info_kv("Endorsed", if meta.endorsed() { "yes".into() } else { "no".into() }))
             .push(info_kv("Tracked", if meta.tracked() { "yes".into() } else { "no".into() }));
     }
+    // A page for mods that are not on Nexus. Without it every such mod is a dead
+    // end in the interface: "Visit on Nexus" only appears when a Nexus id
+    // exists, so a LoversLab or GitHub mod has nowhere to go from here.
+    let url_row = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Page").size(11.0).width(Length::Fixed(90.0)))
+        .push(
+            text_input("https://...", &app.url_edit)
+                .on_input(Message::ModUrlChanged)
+                .on_submit(Message::ModUrlSave)
+                .padding(4)
+                .size(12.0),
+        )
+        .push(
+            button(text("Save").size(11.0))
+                .padding([3, 8])
+                .style(button::secondary)
+                .on_press(Message::ModUrlSave),
+        );
+
     col.push(info_kv("Enabled", if m.enabled { "yes".into() } else { "no".into() }))
         .push(info_kv("Files", files.to_string()))
         .push(info_kv("Folder", m.path.display().to_string()))
+        .push(url_row)
         .into()
 }
 
@@ -1016,6 +1038,20 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                         .on_press_maybe(
                             (!identifying).then(|| Message::IdentifyDownload(row.name.clone())),
                         ),
+                );
+            }
+            // The mod's page, straight from the row. The sidecar has known the id
+            // since the download started; nothing offered it.
+            if let (Some(id), Some(domain)) =
+                (row.mod_id, selected_game(app).map(|g| g.def.nexus_game).filter(|d| !d.is_empty()))
+            {
+                actions = actions.push(
+                    button(text("Nexus").size(11.0))
+                        .padding(4)
+                        .style(button::text)
+                        .on_press(Message::OpenUrl(format!(
+                            "https://www.nexusmods.com/{domain}/mods/{id}"
+                        ))),
                 );
             }
             actions.push(install).push(del).into()
@@ -3331,6 +3367,7 @@ pub(crate) fn load_downloads(app: &mut App) {
                 size: if partial && total != 0 { total } else { md.len() },
                 version: meta.version().unwrap_or_default(),
                 mod_name: meta.mod_name(),
+                mod_id: meta.mod_id(),
                 state,
                 downloaded: md.len(),
                 total,

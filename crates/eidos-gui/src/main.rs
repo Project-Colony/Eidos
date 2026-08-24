@@ -682,6 +682,9 @@ enum Message {
     PluginSendToPriorityStart,
     PluginSendToPriorityChanged(String),
     PluginSendToPriorityCommit,
+    /// The per-mod custom URL field: type / save.
+    ModUrlChanged(String),
+    ModUrlSave,
     // ---- Saves: multi-select, transfer between profiles ----
     /// Add / remove a save from the multi-selection (Ctrl+click).
     SaveToggleSelect(usize),
@@ -1007,6 +1010,10 @@ struct DownloadRow {
     version: String,
     /// The friendly mod name from the sidecar, if any (Nexus `modName`).
     mod_name: Option<String>,
+    /// The Nexus mod id from the sidecar, so the row can reach the mod's page.
+    /// The sidecar's `url=` is NOT usable for this: it is the CDN link, which
+    /// carries an expiry and a signature and is dead within the hour.
+    mod_id: Option<u64>,
     /// The derived install status.
     state: DownloadState,
     /// Bytes on disk so far. Equals `size` once finished.
@@ -1347,6 +1354,8 @@ struct App {
     confirm_forget: Option<usize>,
     /// Two-click guard for the Overwrite sync.
     confirm_sync: bool,
+    /// The custom-URL editor in the mod info dialog.
+    url_edit: String,
     /// Saves picked with Ctrl+click, for the batch actions.
     selected_saves: std::collections::BTreeSet<usize>,
     /// Two-click guard for deleting the selection.
@@ -3881,6 +3890,7 @@ mod tests {
             size: 1,
             version: String::new(),
             mod_name: None,
+            mod_id: None,
             state: DownloadState::Ready,
             downloaded: 1,
             total: 1,
@@ -3966,6 +3976,50 @@ mod tests {
         app.screen = Screen::Main;
         load_saves(&mut app);
         (app, root)
+    }
+
+    #[test]
+    fn a_menu_label_names_the_host_not_the_whole_url() {
+        assert_eq!(url_host("https://www.loverslab.com/files/file/123-x/"), "loverslab.com");
+        assert_eq!(url_host("https://github.com/a/b"), "github.com");
+        assert_eq!(url_host("http://example.org"), "example.org");
+        // Anything unparseable falls back to the whole string rather than
+        // rendering an entry that reads "Visit ".
+        assert_eq!(url_host("nonsense"), "nonsense");
+    }
+
+    #[test]
+    fn a_mod_page_that_is_not_a_web_link_is_refused_before_it_is_stored() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(root.join("mods/M")).unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = vec![ModEntry {
+            name: "M".into(),
+            enabled: true,
+            path: root.join("mods/M"),
+            unmanaged: false,
+        }];
+        app.screen = Screen::Main;
+        app.info_mod = Some(0);
+
+        // Refused at the SAVE, not at the click that opens it: a value that
+        // cannot be opened must not be storable, or the menu entry becomes a
+        // dead end that looks live.
+        app.url_edit = "file:///etc/passwd".to_string();
+        let _ = update_inner(&mut app, Message::ModUrlSave);
+        assert!(app.status.as_deref().unwrap_or("").contains("http"));
+        assert_eq!(app.created.as_ref().unwrap().mod_meta("M").url(), None);
+
+        app.url_edit = "https://github.com/me/mod".to_string();
+        let _ = update_inner(&mut app, Message::ModUrlSave);
+        assert_eq!(
+            app.created.as_ref().unwrap().mod_meta("M").url().as_deref(),
+            Some("https://github.com/me/mod")
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

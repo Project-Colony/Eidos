@@ -213,6 +213,28 @@ impl ModMeta {
         self.set("category", &format!("\"{raw}\""));
     }
 
+    /// A page for this mod that is not on Nexus: LoversLab, GitHub, a Discord
+    /// message. MO2 lets any mod carry one, which is what stops a non-Nexus mod
+    /// being a dead end in the interface.
+    pub fn url(&self) -> Option<String> {
+        self.string("url").filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+    }
+
+    /// Set (or, with an empty string, clear) that page.
+    ///
+    /// Quoted the way `set_notes` quotes, and for the same reason: a URL with a
+    /// comma in it is a QSettings string LIST when written bare, and MO2 would
+    /// read it back as nothing.
+    pub fn set_url(&mut self, url: &str) {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            self.set("url", "");
+        } else {
+            let escaped = trimmed.replace('\\', "\\\\").replace('"', "\\\"");
+            self.set("url", &format!("\"{escaped}\""));
+        }
+    }
+
     /// Whether Nexus still serves this mod's page, as of the last update check.
     ///
     /// `None` means never checked - which is NOT the same as "available", and the
@@ -820,6 +842,36 @@ mod tests {
 
         let expected = SAMPLE.replace("newestVersion=0.139.2.0", "newestVersion=d2026.4.3.0");
         assert_eq!(fs::read_to_string(&p).unwrap(), expected);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn a_custom_url_round_trips_and_only_a_web_link_is_returned() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.url(), None);
+
+        // A URL with a comma: written bare, QSettings reads it back as a string
+        // LIST and MO2 gets nothing - the same trap the category list has.
+        m.set_url("https://example.com/a,b?x=1");
+        m.write(&p).unwrap();
+        let text = fs::read_to_string(&p).unwrap();
+        assert!(text.contains("url=\"https://example.com/a,b?x=1\""), "{text}");
+        assert_eq!(ModMeta::read(&p).url().as_deref(), Some("https://example.com/a,b?x=1"));
+
+        // Anything that is not a web link is not handed back, whatever is on
+        // disk - a hand-edited `file:///` or `javascript:` must never reach a
+        // browser launch.
+        let mut m = ModMeta::read(&p);
+        m.set("url", "\"file:///etc/passwd\"");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).url(), None);
+
+        // Clearing.
+        let mut m = ModMeta::read(&p);
+        m.set_url("  ");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).url(), None);
         let _ = fs::remove_file(&p);
     }
 
