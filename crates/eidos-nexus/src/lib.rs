@@ -1197,12 +1197,20 @@ pub fn sanitize_file_name(name: &str) -> Option<String> {
 /// the first free `<i>_<name>` (i from 1), else `name` - so re-downloading a file
 /// already on disk never silently clobbers it.
 pub fn unique_download_name(dir: &Path, name: &str) -> String {
-    if !dir.join(name).exists() {
+    // A name is taken by ANY of its three forms: the finished archive, the
+    // `.unfinished` partial of a download still arriving or paused, and the
+    // sidecar that names it. Checking only the archive handed the same name to a
+    // second transfer, which then appended into the first one's partial.
+    let taken = |n: &str| {
+        let p = dir.join(n);
+        p.exists() || unfinished_path(&p).exists() || meta_path_for(&p).exists()
+    };
+    if !taken(name) {
         return name.to_string();
     }
     (1..)
         .map(|i| format!("{i}_{name}"))
-        .find(|c| !dir.join(c).exists())
+        .find(|c| !taken(c))
         .unwrap_or_else(|| name.to_string())
 }
 
@@ -1282,6 +1290,10 @@ pub fn download_meta_key(archive: &Path, key: &str) -> Option<String> {
 /// recorded pid is only believed when `/proc/<pid>/comm` still says `eidos`.
 pub fn live_download_pid(archive: &Path) -> Option<u32> {
     let pid: u32 = download_meta_key(archive, DOWNLOAD_PID_KEY)?.parse().ok()?;
+    // A zombie is not downloading anything.
+    if !process_is_alive(pid) {
+        return None;
+    }
     let comm = fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
     // EXACTLY `eidos`, not a prefix. The downloader is always the CLI, and a
     // prefix test matches anything the user happens to be running whose name
@@ -1314,13 +1326,29 @@ pub fn stop_download(archive: &Path) -> bool {
     // Bounded: normally gone within a millisecond. The cap exists so a wedged
     // process cannot freeze the window, not because waiting long would help.
     for _ in 0..100 {
-        if !Path::new(&format!("/proc/{pid}")).exists() {
+        if !process_is_alive(pid) {
             let _ = set_download_meta_key(archive, DOWNLOAD_PID_KEY, "");
             return true;
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     false
+}
+
+/// Whether `pid` is a process that is still RUNNING, as opposed to one that has
+/// exited and is waiting to be reaped.
+///
+/// `/proc/<pid>` existing is not the test. A resume started by the window is a
+/// direct child of it, and the window never calls `wait` - so once it exits it
+/// lingers as a zombie with its `/proc` entry fully present. Waiting for that
+/// entry to vanish never succeeded: `downloadPid` was never cleared, and the
+/// download could not be resumed again for the life of the session.
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(status) = fs::read_to_string(format!("/proc/{pid}/stat")) else { return false };
+    // `comm` is parenthesised and may itself contain spaces and brackets, so the
+    // state character is read after the LAST ')', not by splitting on spaces.
+    let Some(after) = status.rsplit_once(')') else { return false };
+    !matches!(after.1.split_whitespace().next(), Some("Z") | Some("X"))
 }
 
 /// The sidecar key holding the fetching process's pid. Not an MO2 field - MO2

@@ -229,10 +229,13 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         files_hovering: false,
         download_drag: None,
         install_at: None,
+        pending_note: None,
         categories_dialog: None,
         ini_editor: None,
         log_pane: None,
         addons: eidos_addons::load_addons(),
+        addon_failed: HashMap::new(),
+        addon_rejected: eidos_addons::rejected_manifests(),
         addons_open: false,
         addon_findings: Vec::new(),
         endorsing: None,
@@ -250,6 +253,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         save_info: None,
         save_missing: Vec::new(),
         downloads: Vec::new(),
+        resuming: None,
         confirm_delete_download: None,
         identifying_download: None,
         download_samples: HashMap::new(),
@@ -1687,29 +1691,67 @@ fn run_diagnose_addons(app: &mut App) {
         if a.unavailable().is_some() {
             continue;
         }
+        // A check that already failed is NOT retried. This runs on the
+        // diagnostics refresh, which follows every message that changes
+        // anything, so one bad manifest would otherwise cost three seconds of
+        // frozen window per click - and several would serialise. Reload clears
+        // the memory, which is the button someone reaches for after fixing one.
+        if let Some(why) = app.addon_failed.get(&a.id) {
+            app.addon_findings.push((
+                a.name.clone(),
+                eidos_addons::Finding {
+                    level: eidos_addons::FindingLevel::Problem,
+                    title: format!("The '{}' extension did not run", a.name),
+                    detail: format!("{why} It will not be retried until you press Reload."),
+                },
+            ));
+            continue;
+        }
         match run_addon_capture(&a, &ctx) {
             Ok(stdout) => {
                 for f in eidos_addons::parse_findings(&stdout) {
                     app.addon_findings.push((a.name.clone(), f));
                 }
             }
-            Err(e) => app.addon_findings.push((
-                a.name.clone(),
-                eidos_addons::Finding {
-                    level: eidos_addons::FindingLevel::Problem,
-                    title: format!("The '{}' extension did not run", a.name),
-                    detail: e,
-                },
-            )),
+            Err(e) => {
+                app.addon_failed.insert(a.id.clone(), e.clone());
+                app.addon_findings.push((
+                    a.name.clone(),
+                    eidos_addons::Finding {
+                        level: eidos_addons::FindingLevel::Problem,
+                        title: format!("The '{}' extension did not run", a.name),
+                        detail: e,
+                    },
+                ));
+            }
         }
     }
 }
 
 /// Run an add-on and return its stdout, killing it if it overruns.
-pub(crate) fn run_addon_capture(
+///
+/// Three things this has to get right, and the obvious implementation gets none
+/// of them.
+///
+/// The pipes must be DRAINED while the child runs, not after it exits: a check
+/// that writes more than the 64 KiB pipe buffer blocks in `write` forever, and
+/// polling `try_wait` in a loop would never see it finish. It would be killed at
+/// the timeout and reported as slow, having actually produced its findings.
+///
+/// The wait must be on the CHILD, not on the pipes: `wait_with_output` reads to
+/// EOF, and a child that spawns its own children hands them the same pipe, so EOF
+/// only arrives when the last grandchild exits. A three-second timeout would
+/// become unbounded for a shell script that backgrounds anything.
+///
+/// And the reading must happen off this thread, because this runs on the
+/// diagnostics refresh that follows every message.
+fn run_addon_capture_inner(
     a: &eidos_addons::Addon,
     ctx: &eidos_addons::Context,
+    timeout: std::time::Duration,
 ) -> Result<String, String> {
+    use std::io::Read;
+
     let mut cmd = std::process::Command::new(&a.exec);
     for arg in &a.args {
         cmd.arg(ctx.expand(arg));
@@ -1721,30 +1763,74 @@ pub(crate) fn run_addon_capture(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-    // Bounded wait. A `diagnose` add-on runs on the diagnostics refresh, which
-    // fires after every message that changes anything - one that blocks would
-    // freeze the window on every click, and the user would have no way to tell
-    // which add-on did it.
-    let deadline = std::time::Instant::now() + ADDON_DIAGNOSE_TIMEOUT;
-    loop {
+
+    // One reader thread per pipe, so neither can wedge the other and neither can
+    // wedge us. They end when their pipe closes, which happens when the last
+    // holder of the write end exits - possibly after we have already returned,
+    // which is why the handles are detached rather than joined on the slow path.
+    let mut out_pipe = child.stdout.take();
+    let mut err_pipe = child.stderr.take();
+    let stdout_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let drain = |pipe: Option<std::process::ChildStdout>, into: std::sync::Arc<std::sync::Mutex<Vec<u8>>>| {
+        std::thread::spawn(move || {
+            if let Some(mut p) = pipe {
+                let mut buf = Vec::new();
+                let _ = p.read_to_end(&mut buf);
+                if let Ok(mut slot) = into.lock() {
+                    *slot = buf;
+                }
+            }
+        })
+    };
+    let out_thread = drain(out_pipe.take(), stdout_buf.clone());
+    // Same shape for stderr; the types differ, so it cannot share the closure.
+    let err_slot = stderr_buf.clone();
+    let err_thread = std::thread::spawn(move || {
+        if let Some(mut p) = err_pipe.take() {
+            let mut buf = Vec::new();
+            let _ = p.read_to_end(&mut buf);
+            if let Ok(mut slot) = err_slot.lock() {
+                *slot = buf;
+            }
+        }
+    });
+
+    // Wait on the CHILD only.
+    let deadline = std::time::Instant::now() + timeout;
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
+            Ok(Some(st)) => break st,
             Ok(None) if std::time::Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(format!("it took longer than {ADDON_DIAGNOSE_TIMEOUT:?} and was stopped"));
+                return Err(format!("it took longer than {timeout:?} and was stopped"));
             }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
             Err(e) => return Err(e.to_string()),
         }
+    };
+    // The child is gone; its own pipe ends are closed, so the readers finish -
+    // unless a grandchild still holds them, which is exactly the case the wait
+    // above refuses to block on. Bounded join, then take what arrived.
+    let joined = out_thread.join().is_ok() && err_thread.join().is_ok();
+    let stdout = stdout_buf.lock().map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+    let stderr = stderr_buf.lock().map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+    let _ = joined;
+
+    if !status.success() && stdout.is_empty() {
+        let why = stderr.lines().next().unwrap_or("no output").trim();
+        return Err(format!("it exited with {status} ({why})"));
     }
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    if !out.status.success() && out.stdout.is_empty() {
-        let why = String::from_utf8_lossy(&out.stderr);
-        let why = why.lines().next().unwrap_or("no output").trim();
-        return Err(format!("it exited with {} ({why})", out.status));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(stdout)
+}
+
+/// [`run_addon_capture_inner`] with the standard timeout.
+pub(crate) fn run_addon_capture(
+    a: &eidos_addons::Addon,
+    ctx: &eidos_addons::Context,
+) -> Result<String, String> {
+    run_addon_capture_inner(a, ctx, ADDON_DIAGNOSE_TIMEOUT)
 }
 
 /// Drop cached per-layer file walks: one layer by name (a mod whose contents
@@ -1910,6 +1996,10 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
     app.drag_state = None;
     app.download_drag = None;
     app.menu_mod = None;
+    // The new profile has a different mod list, so a different merged view: the
+    // Data tab's layer stack and its per-directory memos both belong to the
+    // profile that was just left.
+    bump_views(app);
     // Saves are per-profile; drop the cache so the Saves tab reloads.
     app.saves = Vec::new();
     app.confirm_delete_save = None;

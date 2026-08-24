@@ -1951,17 +1951,29 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // ---- User extensions --------------------------------------------------
         Message::ShowAddons => {
             app.menu_mod = None;
+            // These are all opened FROM the View dropdown, which otherwise stays
+            // up over the dialog and swallows the first click aimed at it.
+            app.view_menu_open = false;
             // Re-read on open, so a manifest just written or just fixed appears
             // without a restart. Discovery is a directory of small TOML files.
-            app.addons = eidos_addons::load_addons();
+            let (ok, bad) = eidos_addons::scan_addons_from(&eidos_addons::user_addons_dir());
+            app.addons = ok;
+            app.addon_rejected = bad;
             app.addons_open = true;
         }
         Message::CloseAddons => app.addons_open = false,
         Message::ReloadAddons => {
-            app.addons = eidos_addons::load_addons();
-            // The diagnose add-ons have to run again: the set may have changed.
+            let (ok, bad) = eidos_addons::scan_addons_from(&eidos_addons::user_addons_dir());
+            app.addons = ok;
+            app.addon_rejected = bad;
+            // Reload is the button someone presses after fixing a check that
+            // failed, so it is what clears the "do not retry" memory.
+            app.addon_failed.clear();
             app.diag_dirty = true;
-            app.status = Some(format!("Loaded {} extension(s).", app.addons.len()));
+            app.status = Some(match app.addon_rejected.len() {
+                0 => format!("Loaded {} extension(s).", app.addons.len()),
+                n => format!("Loaded {} extension(s); {n} manifest(s) refused.", app.addons.len()),
+            });
         }
         Message::RunAddon(id) => {
             let Some(a) = app.addons.iter().find(|a| a.id == id).cloned() else {
@@ -2021,6 +2033,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // ---- Log pane ---------------------------------------------------------
         Message::ShowLogPane => {
             let files = eidos_log::sessions();
+            app.view_menu_open = false;
             let Some(newest) = files.first().cloned() else {
                 app.status = Some(format!(
                     "No session logs yet. They appear in {} once Eidos runs a game or a tool.",
@@ -2030,6 +2043,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             app.log_pane = Some(load_log_pane(files, newest, eidos_log::Level::Info));
             app.menu_mod = None;
+            // Opened from the View dropdown, which otherwise stays up over the
+            // pane and swallows the first click aimed at it.
+            app.view_menu_open = false;
         }
         Message::CloseLogPane => app.log_pane = None,
         Message::LogPick(path) => {
@@ -2082,6 +2098,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // ---- INI editor -------------------------------------------------------
         Message::ShowIniEditor => {
             app.menu_mod = None;
+            // These are all opened FROM the View dropdown, which otherwise stays
+            // up over the dialog and swallows the first click aimed at it.
+            app.view_menu_open = false;
             let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
                 app.status = Some("Open a game instance first.".to_string());
                 return Task::none();
@@ -2129,14 +2148,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(inst) = app.created.clone() else { return Task::none() };
             let Some(ed) = &mut app.ini_editor else { return Task::none() };
             let path = inst.active().ini_path(&ed.current);
-            // `Content::text()` always ends with a newline; an INI that had none
-            // would otherwise grow one byte on every save.
-            let mut text = ed.content.text();
-            if !ed.original.ends_with('\n') {
-                while text.ends_with('\n') {
-                    text.pop();
-                }
+            if ed.unreadable {
+                app.status = Some(format!(
+                    "{} could not be read, so saving would replace it with an empty file. \
+                     Fix its permissions first.",
+                    ed.current
+                ));
+                return Task::none();
             }
+            // No trailing-newline surgery. iced 0.14's `Content::text()`
+            // round-trips exactly, so the guard that used to sit here did not
+            // prevent growth - it DELETED newlines the user had typed at the end
+            // of a file that happened to start without one.
+            let text = ed.content.text();
             match eidos_instance::write_text(&path, &text, ed.cp1252) {
                 Ok(()) => {
                     ed.original = ed.content.text();
@@ -2782,6 +2806,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Two passes so a child's parent exists before it is placed, whatever
             // order Nexus returned them in.
             let mut local_of: HashMap<i32, i32> = HashMap::new();
+            let mut created_ids: std::collections::HashSet<i32> = std::collections::HashSet::new();
             for (nexus_id, name, _) in &remote {
                 let existing = d
                     .catalog
@@ -2793,7 +2818,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     Some(id) => id,
                     None => {
                         created += 1;
-                        d.catalog.add(name, 0)
+                        let id = d.catalog.add(name, 0);
+                        created_ids.insert(id);
+                        id
                     }
                 };
                 local_of.insert(*nexus_id, local);
@@ -2802,15 +2829,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             for (nexus_id, _, parent) in &remote {
-                // Only place categories this fetch created: re-parenting one the
-                // user already arranged would undo their own tree on every fetch.
+                // ONLY the categories this fetch created. The previous rule was
+                // "currently top-level", which is not the same thing at all: it
+                // swept in every pre-existing top-level category - MO2's own
+                // defaults included - and re-parented the user's shared tree on
+                // every fetch.
                 let (Some(&local), Some(parent)) = (local_of.get(nexus_id), *parent) else {
                     continue;
                 };
+                if !created_ids.contains(&local) {
+                    continue;
+                }
                 if let Some(&local_parent) = local_of.get(&parent) {
-                    if d.catalog.parent_id(local) == Some(0) {
-                        d.catalog.set_parent(local, local_parent);
-                    }
+                    d.catalog.set_parent(local, local_parent);
                 }
             }
             app.status = Some(format!(
@@ -2864,14 +2895,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ApplyCategories => {
             let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(d) = app.categories_dialog.take() else { return Task::none() };
+            let Some(d) = app.categories_dialog.as_ref() else { return Task::none() };
             // The catalog first: if it fails, nothing has been written yet, and a
             // mod pointing at an id the catalog does not carry would show a bare
             // number with no way to name it.
+            //
+            // The dialog is NOT taken until that save succeeds. Taking it first
+            // meant a failed write - a read-only instance, a full disk - threw
+            // away every pending edit with nothing to retry from.
             if let Err(e) = d.catalog.save(inst.categories_root()) {
                 app.status = Some(format!("Could not save the category list: {e}"));
                 return Task::none();
             }
+            let Some(d) = app.categories_dialog.take() else { return Task::none() };
             let (primary, others) = match d.chosen.split_first() {
                 Some((p, rest)) => (Some(*p), rest),
                 None => (None, &[][..]),
@@ -2891,6 +2927,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             refresh_meta_cache(app);
             app.categories = Some(inst.category_factory());
             recompute_counts(app);
+            // Recategorising changes what a category filter shows, so the same
+            // rule applies as to the filter pane itself: nothing may stay aimed
+            // at a row that just left the screen.
+            forget_hidden_rows(app);
             app.status = Some(if failed.is_empty() {
                 match (primary, written) {
                     (None, n) => format!("Cleared the category on {n} mod(s)."),
@@ -3535,6 +3575,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // files. It is NOT called from view() - that lesson is already paid
             // for - so it costs twice a second, not once per frame.
             load_downloads(app);
+            // A resume that FAILED has to say so. The child is also reaped here:
+            // left unwaited it becomes a zombie, and a zombie's /proc entry is
+            // what made `stop_download` wait out its whole timeout and refuse to
+            // clear the recorded pid.
+            if let Some((name, child, log)) = &mut app.resuming {
+                if let Ok(Some(status)) = child.try_wait() {
+                    let (name, log) = (name.clone(), log.clone());
+                    app.resuming = None;
+                    if !status.success() {
+                        let why = std::fs::read_to_string(&log)
+                            .unwrap_or_default()
+                            .lines()
+                            .rev()
+                            .find(|l| !l.trim().is_empty())
+                            .unwrap_or("no reason given")
+                            .to_string();
+                        app.status = Some(format!("Could not resume '{name}': {why}"));
+                    }
+                }
+            }
         }
         Message::DeleteDownload(name) => {
             app.confirm_delete_download = Some(name);
@@ -3571,16 +3631,33 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // A separate process, exactly like a browser-initiated download: the
             // window must not be blocked for the length of a transfer, and the
             // downloads tick already reports progress from the partial's size.
-            match std::process::Command::new(find_eidos_binary())
-                .arg("nxm")
-                .arg("--resume")
-                .arg(&path)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                Ok(_) => app.status = Some(format!("Resuming '{name}'...")),
+            // The child's stderr is CAPTURED, not discarded. The one failure
+            // this path exists to surface - a non-premium account cannot mint a
+            // fresh link, so an unattended resume is impossible - is printed
+            // there, and sending it to /dev/null left the window saying
+            // "Resuming..." while the row quietly went back to Stalled.
+            let log = eidos_log::log_dir().join("resume.log");
+            let _ = std::fs::create_dir_all(eidos_log::log_dir());
+            let sink = std::fs::File::create(&log).ok();
+            let mut cmd = std::process::Command::new(find_eidos_binary());
+            cmd.arg("nxm").arg("--resume").arg(&path).stdin(std::process::Stdio::null());
+            match sink {
+                Some(f) => {
+                    let dup = f.try_clone().ok();
+                    cmd.stdout(std::process::Stdio::from(f));
+                    if let Some(d) = dup {
+                        cmd.stderr(std::process::Stdio::from(d));
+                    }
+                }
+                None => {
+                    cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+                }
+            }
+            match cmd.spawn() {
+                Ok(child) => {
+                    app.resuming = Some((name.clone(), child, log));
+                    app.status = Some(format!("Resuming '{name}'..."));
+                }
                 Err(e) => app.status = Some(format!("Could not resume '{name}': {e}")),
             }
             load_downloads(app);
@@ -3826,7 +3903,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DragScrollEdge(edge) => {
             // Only meaningful mid-drag: the bands are not rendered otherwise, but
             // a stale message must not start a scroll on its own.
-            app.drag_scroll = edge.filter(|_| app.drag_state.is_some());
+            app.drag_scroll =
+                edge.filter(|_| app.drag_state.is_some() || app.download_drag.is_some());
             // Entering starts mid-range: `on_move` has not fired yet, and a band
             // that began at full speed would lurch before the user had aimed.
             if app.drag_scroll.is_some() {
@@ -3886,15 +3964,25 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // mods/ would copy it onto itself, and from the overwrite would move
             // live output out from under a running game.
             if let Some(inst) = &app.created {
-                let inside = |dir: std::path::PathBuf| {
-                    std::fs::canonicalize(&path)
+                let real = std::fs::canonicalize(&path).ok();
+                // BOTH directions. Refusing only "inside the instance" left the
+                // opposite case wide open: dropping a directory that CONTAINS
+                // mods/ starts a recursive copy of that directory into a
+                // subdirectory of itself, which never ends and fills the disk.
+                let entangled = |dir: std::path::PathBuf| {
+                    std::fs::canonicalize(&dir)
                         .ok()
-                        .zip(std::fs::canonicalize(&dir).ok())
-                        .is_some_and(|(p, d)| p.starts_with(&d))
+                        .zip(real.clone())
+                        .is_some_and(|(d, p)| p.starts_with(&d) || d.starts_with(&p))
                 };
-                if inside(inst.mods_dir()) || inside(inst.overwrite_dir()) {
+                if entangled(inst.mods_dir())
+                    || entangled(inst.overwrite_dir())
+                    || entangled(inst.root.clone())
+                {
                     app.status = Some(
-                        "That is already inside this instance - nothing to install.".to_string(),
+                        "That folder is part of this instance (or contains it) - it cannot be \
+                         installed into itself."
+                            .to_string(),
                     );
                     return Task::done(Message::DrainDrops);
                 }
@@ -3954,12 +4042,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // promise kept honestly rather than a silent wrong answer.
             if is_filtering(app) {
                 app.install_at = None;
-                app.status = Some(
-                    "Installing at the end of the list: a filtered list cannot say what a gap means."
+                // Said through the installer, not before it: `ModPicked` sets its
+                // own status a moment later and would overwrite this one before
+                // it could ever be read.
+                app.pending_note = Some(
+                    "installed at the end of the list - a filtered list cannot say what a gap means"
                         .to_string(),
                 );
             } else {
-                app.install_at = Some(d.gap);
+                app.install_at = Some((d.gap, d.path.clone()));
             }
             // Straight into the ordinary installer, so the FOMOD wizard, the
             // BAIN picker, the manual picker and the collision dialog all work
@@ -4464,13 +4555,21 @@ fn load_ini_editor(
     current: String,
 ) -> IniEditorState {
     let path = prof.ini_path(&current);
-    let (text, cp1252) = eidos_instance::read_text_lossy(&path).unwrap_or_default();
+    // `read_text_lossy` returns None on ANY read failure, and a file that exists
+    // but could not be read is not an empty one. Collapsing the two meant an
+    // EACCES or an I/O error opened a blank editor whose always-enabled Save
+    // then truncated the real file to nothing.
+    let read = eidos_instance::read_text_lossy(&path);
+    let exists = path.is_file();
+    let unreadable = exists && read.is_none();
+    let (text, cp1252) = read.unwrap_or_default();
     IniEditorState {
         content: iced::widget::text_editor::Content::with_text(&text),
         original: text,
         cp1252,
         dirty: false,
-        missing: !path.is_file(),
+        missing: !exists,
+        unreadable,
         files,
         current,
     }
@@ -4507,22 +4606,31 @@ pub(crate) fn load_log_pane(
 
     let mut lines: Vec<(eidos_log::Level, String)> = Vec::new();
     let mut total = 0usize;
+    // Whether the record a continuation belongs to was KEPT. Without this, the
+    // continuation lines of a filtered-out Debug record were appended to the last
+    // record that survived - attaching a stack trace from a debug message to an
+    // unrelated error, at a severity it never had.
+    let mut attaching = false;
     for line in text.lines() {
         match eidos_log::parse_line(line) {
             Some((lvl, msg)) => {
                 total += 1;
-                if lvl >= level {
+                attaching = lvl >= level;
+                if attaching {
                     lines.push((lvl, msg.to_string()));
                 }
             }
             // A continuation of a multi-line message belongs to the record above
             // it - shown when that one is, dropped when it is filtered out. A
             // seek into the middle of the file can also land mid-line, which is
-            // why a leading orphan is simply skipped rather than guessed at.
+            // why a leading orphan (nothing to attach to) is skipped rather than
+            // guessed at.
             None => {
-                if let Some(last) = lines.last_mut() {
-                    last.1.push('\n');
-                    last.1.push_str(line);
+                if attaching {
+                    if let Some(last) = lines.last_mut() {
+                        last.1.push('\n');
+                        last.1.push_str(line);
+                    }
                 }
             }
         }

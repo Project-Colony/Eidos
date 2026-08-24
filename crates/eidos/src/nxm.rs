@@ -46,7 +46,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("--resume") => {
             let Some(archive) = args.get(1).map(std::path::PathBuf::from) else {
-                eprintln!("usage: eidos nxm --resume <downloads/archive.7z>");
+                eidos_log::info!("usage: eidos nxm --resume <downloads/archive.7z>");
                 exit(2);
             };
             resume(&archive);
@@ -62,7 +62,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 exe.display()
             );
             if let Err(e) = std::fs::write(&desktop, body) {
-                eprintln!("could not write {}: {e}", desktop.display());
+                eidos_log::warn!("could not write {}: {e}", desktop.display());
                 exit(1);
             }
             let _ = std::process::Command::new("xdg-mime")
@@ -77,7 +77,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             let nxm = match eidos_nexus::NxmUrl::parse(url) {
                 Ok(n) => n,
                 Err(e) => {
-                    eprintln!("bad nxm link: {e}");
+                    eidos_log::info!("bad nxm link: {e}");
                     exit(1);
                 }
             };
@@ -89,7 +89,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 .filter(|g| g.def.nexus_game.eq_ignore_ascii_case(&nxm.game))
                 .collect();
             if candidates.is_empty() {
-                eprintln!("No detected game matches the Nexus domain '{}'.", nxm.game);
+                eidos_log::info!("No detected game matches the Nexus domain '{}'.", nxm.game);
                 exit(1);
             }
             let (game, inst) = pick_instance(&candidates);
@@ -110,25 +110,25 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             let remote_mod = match nexus.mod_info(&nxm.game, nxm.mod_id) {
                 Ok(m) => m,
                 Err(e) => {
-                    eprintln!("mod lookup failed: {e}");
+                    eidos_log::warn!("mod lookup failed: {e}");
                     exit(1);
                 }
             };
             if let Some(why) = remote_mod.hidden() {
-                eprintln!("{}", why.message());
+                eidos_log::info!("{}", why.message());
                 exit(1);
             }
             let file = match nexus.file_info(&remote_mod.gate, &nxm.game, nxm.mod_id, nxm.file_id) {
                 Ok(f) => f,
                 Err(e) => {
-                    eprintln!("file lookup failed: {e}");
+                    eidos_log::warn!("file lookup failed: {e}");
                     exit(1);
                 }
             };
             let link = match nexus.download_link(&remote_mod.gate, &nxm) {
                 Ok(l) => l,
                 Err(e) => {
-                    eprintln!("could not resolve the download: {e}");
+                    eidos_log::warn!("could not resolve the download: {e}");
                     exit(1);
                 }
             };
@@ -147,6 +147,15 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 })
                 .unwrap_or_else(|| format!("{}-{}.archive", nxm.mod_id, nxm.file_id));
             let downloads = inst.downloads_dir();
+            // An IN-FLIGHT download of the same name is not a free name either.
+            // The guard below only ever looked at the finished archive, so a
+            // second `eidos nxm` for a file already arriving opened the same
+            // partial and the same sidecar: two byte streams appended into one
+            // file, and the first process's pid erased from under it.
+            if eidos_nexus::live_download_pid(&downloads.join(&name)).is_some() {
+                println!("Already downloading: {}", downloads.join(&name).display());
+                return;
+            }
             // Don't silently clobber an existing download. If the very same file is
             // already here (its .meta carries this fileID), stop; otherwise give the
             // new download a unique `<i>_<name>` (MO2's getDownloadFileName).
@@ -187,7 +196,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             run_transfer(&nexus, &link, &dest, &inst_arg);
         }
         None => {
-            eprintln!(
+            eidos_log::info!(
                 "usage:\n\
                  \x20 eidos nxm <nxm://...>   download a Mod Manager Download link\n\
                  \x20 eidos nxm --resume <f>  continue a paused or interrupted download\n\
@@ -221,7 +230,7 @@ fn run_transfer(nexus: &eidos_nexus::Nexus, link: &str, dest: &std::path::Path, 
             println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", dest.display());
         }
         Err(e) => {
-            eprintln!("download failed: {e}");
+            eidos_log::warn!("download failed: {e}");
             exit(1);
         }
     }
@@ -240,21 +249,21 @@ fn run_transfer(nexus: &eidos_nexus::Nexus, link: &str, dest: &std::path::Path, 
 fn resume(archive: &std::path::Path) {
     let meta = eidos_nexus::meta_path_for(archive);
     if !meta.is_file() {
-        eprintln!("no .meta beside {} - nothing to resume from", archive.display());
+        eidos_log::info!("no .meta beside {} - nothing to resume from", archive.display());
         exit(1);
     }
     if let Some(pid) = eidos_nexus::live_download_pid(archive) {
-        eprintln!("already downloading (pid {pid})");
+        eidos_log::info!("already downloading (pid {pid})");
         exit(1);
     }
     let key = |k: &str| eidos_nexus::download_meta_key(archive, k);
     let (Some(game), Some(mod_id), Some(file_id)) = (key("gameName"), key("modID"), key("fileID"))
     else {
-        eprintln!("that .meta does not record which Nexus file it came from");
+        eidos_log::info!("that .meta does not record which Nexus file it came from");
         exit(1);
     };
     let (Ok(mod_id), Ok(file_id)) = (mod_id.parse::<u64>(), file_id.parse::<u64>()) else {
-        eprintln!("that .meta has an unreadable modID/fileID");
+        eidos_log::warn!("that .meta has an unreadable modID/fileID");
         exit(1);
     };
     // The sidecar stores the game by SHORT name; the API wants the domain.
@@ -266,14 +275,14 @@ fn resume(archive: &std::path::Path) {
     let nexus = match eidos_nexus::Nexus::connect() {
         Ok(n) => n,
         Err(e) => {
-            eprintln!("{e}");
+            eidos_log::info!("{e}");
             exit(1);
         }
     };
     let remote_mod = match nexus.mod_info(&domain, mod_id) {
         Ok(m) => m,
         Err(e) => {
-            eprintln!("could not look the mod up: {e}");
+            eidos_log::warn!("could not look the mod up: {e}");
             exit(1);
         }
     };
@@ -290,7 +299,7 @@ fn resume(archive: &std::path::Path) {
     let link = match nexus.download_link(&remote_mod.gate, &nxm) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("could not resolve a fresh download link: {e}");
+            eidos_log::warn!("could not resolve a fresh download link: {e}");
             exit(1);
         }
     };

@@ -1241,7 +1241,13 @@ pub(crate) fn ini_editor_dialog<'a>(
 
     // Say what this file IS before the user changes it: which one, whether it
     // exists yet, and that the game reads a deployed copy rather than this path.
-    let note = if state.missing {
+    let note = if state.unreadable {
+        format!(
+            "{} exists but could not be read. Saving is refused - it would replace the file with \
+             an empty one. Check its permissions.",
+            state.current
+        )
+    } else if state.missing {
         format!(
             "{} is not in this profile yet. Saving creates it; until then the game uses whatever \
              is already in the prefix.",
@@ -1260,12 +1266,13 @@ pub(crate) fn ini_editor_dialog<'a>(
     if state.dirty {
         actions = actions.push(tool_btn("Revert", Message::IniEditorRevert));
     }
-    actions = actions.push(
-        button(text("Save").size(12.0))
-            .padding([4, 14])
-            .style(if state.dirty { button::primary } else { button::secondary })
-            .on_press(Message::IniEditorSave),
-    );
+    let save = button(text("Save").size(12.0))
+        .padding([4, 14])
+        .style(if state.dirty { button::primary } else { button::secondary });
+    // Greyed rather than merely refused when the file could not be read: the
+    // handler stops it too, but a button that looks live and does nothing is its
+    // own bug report.
+    actions = actions.push(if state.unreadable { save } else { save.on_press(Message::IniEditorSave) });
 
     let card = Column::new()
         .spacing(10)
@@ -1388,7 +1395,22 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         );
 
     let mut rows = Column::new().spacing(6);
-    if app.addons.is_empty() {
+    // The refusals FIRST. A manifest that failed to parse simply does not
+    // appear, and "no extensions yet" then tells the user their file is not
+    // there when it is - one typo away from working.
+    for (path, why) in &app.addon_rejected {
+        rows = rows.push(
+            Column::new()
+                .spacing(2)
+                .push(
+                    text(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
+                        .size(13.0)
+                        .color(CONFLICT_LOSES_FG),
+                )
+                .push(text(format!("refused: {why}")).size(11.0)),
+        );
+    }
+    if app.addons.is_empty() && app.addon_rejected.is_empty() {
         rows = rows.push(
             text(
                 "No extensions yet. Drop a .toml manifest into the folder above; the format is in \

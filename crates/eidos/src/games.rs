@@ -26,7 +26,7 @@ pub(crate) fn cmd_games() {
 
 pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
     let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games` to see what's available.");
+        eidos_log::info!("Game '{id}' is not detected. Run `eidos games` to see what's available.");
         exit(1);
     };
     // With a folder the instance is PORTABLE: self-contained there, movable,
@@ -41,7 +41,7 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
             if let Some(g) =
                 detect(&home()).into_iter().find(|g| Instance::root_inside_game(&root, &g.install_path))
             {
-                eprintln!(
+                eidos_log::warn!(
                     "'{}' is inside {}'s own folder - an instance cannot live there.\n\
                      Steam owns that tree (an update or uninstall can wipe it), and Eidos\n\
                      mounts over the game root, so the instance would live inside its own\n\
@@ -53,7 +53,7 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
             }
             if let Some(m) = Instance::portable(root.clone()).read_manifest() {
                 if m.game_id != id {
-                    eprintln!(
+                    eidos_log::info!(
                         "'{}' already holds a '{}' instance - not stamping it as '{id}'.",
                         root.display(),
                         m.game_id

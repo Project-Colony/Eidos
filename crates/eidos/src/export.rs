@@ -43,14 +43,14 @@ pub(crate) fn fmt_mtime(path: &std::path::Path) -> String {
 /// uploader) are emitted empty for column/parser parity.
 pub(crate) fn cmd_export(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!("usage: eidos export <game-id> [-o <file>] [--active]");
+        eidos_log::info!("usage: eidos export <game-id> [-o <file>] [--active]");
         exit(2);
     };
     let active_only = args.iter().any(|a| a == "--active");
     let out_path = args.iter().position(|a| a == "-o").and_then(|i| args.get(i + 1)).cloned();
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
     let inst = target.inst;
@@ -110,7 +110,7 @@ pub(crate) fn cmd_export(args: &[String]) {
         Some(p) => match std::fs::write(&p, &csv) {
             Ok(()) => println!("Exported {count} rows to {p}"),
             Err(e) => {
-                eprintln!("write failed: {e}");
+                eidos_log::warn!("write failed: {e}");
                 exit(1);
             }
         },

@@ -45,7 +45,7 @@ fn nexus_client() -> eidos_nexus::Nexus {
     match eidos_nexus::Nexus::connect() {
         Ok(nexus) => nexus,
         Err(_) => {
-            eprintln!(
+            eidos_log::info!(
                 "Not signed in to Nexus. Sign in from the GUI (Settings -> Nexus); \
                  personal API keys are not supported."
             );
@@ -81,19 +81,19 @@ fn cmd_nexus(args: &[String]) {
                     );
                 }
                 Err(e) => {
-                    eprintln!("not connected: {e}");
+                    eidos_log::info!("not connected: {e}");
                     exit(1);
                 }
             }
         }
         Some("update") => {
             let Some(id) = args.get(1) else {
-                eprintln!("usage: eidos nexus update <game-id-or-instance-path>");
+                eidos_log::info!("usage: eidos nexus update <game-id-or-instance-path>");
                 exit(2);
             };
             let target = resolve(id);
             let Some(game) = find_game(&target.game_id) else {
-                eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+                eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
                 exit(1);
             };
             let inst = target.inst;
@@ -104,7 +104,7 @@ fn cmd_nexus(args: &[String]) {
             let updated = match nexus.updated_mod_ids(game.def.nexus_game, "1m") {
                 Ok(v) => v,
                 Err(e) => {
-                    eprintln!("update query failed: {e}");
+                    eidos_log::warn!("update query failed: {e}");
                     exit(1);
                 }
             };
@@ -140,7 +140,7 @@ fn cmd_nexus(args: &[String]) {
                 // Stop before the request is built, not after Nexus refuses it.
                 if nexus.would_block() {
                     rate_limited = true;
-                    eprintln!("  Nexus request budget spent - stopping; remaining mods unchecked.");
+                    eidos_log::info!("  Nexus request budget spent - stopping; remaining mods unchecked.");
                     break;
                 }
                 match nexus.mod_info(game.def.nexus_game, mod_id) {
@@ -165,10 +165,10 @@ fn cmd_nexus(args: &[String]) {
                         // status code - stopped one and left this one hammering.
                         if eidos_nexus::is_rate_limited(&e) {
                             rate_limited = true;
-                            eprintln!("  {e} - stopping; remaining mods unchecked.");
+                            eidos_log::info!("  {e} - stopping; remaining mods unchecked.");
                             break;
                         }
-                        eprintln!("  {}: {e}", m.name);
+                        eidos_log::info!("  {}: {e}", m.name);
                     }
                 }
             }
@@ -183,11 +183,11 @@ fn cmd_nexus(args: &[String]) {
                 println!("Nexus budget: {h} request(s) left this hour{daily}.");
             }
             if rate_limited {
-                eprintln!("Some mods were not checked (request budget spent). Re-run once it refills.");
+                eidos_log::info!("Some mods were not checked (request budget spent). Re-run once it refills.");
             }
         }
         _ => {
-            eprintln!(
+            eidos_log::info!(
                 "usage:\n\
                  \x20 eidos nexus status          check the stored sign-in\n\
                  \x20 eidos nexus update <game>   check installed mods for updates"
@@ -198,7 +198,7 @@ fn cmd_nexus(args: &[String]) {
 }
 
 fn usage() -> ! {
-    eprintln!(
+    eidos_log::info!(
         "eidos - a native Linux mod manager\n\
          \n\
          usage:\n\
@@ -222,6 +222,23 @@ fn usage() -> ! {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Open the session log before anything else runs.
+    //
+    // A launch started from Steam has no terminal at all, so stderr goes
+    // nowhere and the file is the ONLY record of what happened - which is also
+    // what the GUI's Log pane reads. The subcommand's own first argument is
+    // usually the instance, and it makes the better rotation bucket than the
+    // verb; falling back to the verb keeps every run in a named file rather than
+    // one shared bucket.
+    let bucket = args
+        .get(1)
+        .filter(|a| !a.starts_with('-'))
+        .or_else(|| args.first())
+        .map(|s| s.as_str())
+        .unwrap_or("eidos");
+    let _ = eidos_log::init_with(
+        eidos_log::Config::new(bucket).with_version(env!("CARGO_PKG_VERSION")),
+    );
     match args.first().map(String::as_str) {
         Some("games") => cmd_games(),
         Some("init") => match args.get(1) {

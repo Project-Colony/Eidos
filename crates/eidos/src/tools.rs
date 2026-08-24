@@ -33,7 +33,7 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
 /// BodySlide) through the merged view, inside the game's Proton prefix.
 pub(crate) fn cmd_tool(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!(
+        eidos_log::info!(
             "usage:\n\
              \x20 eidos tool <game-id>                       list tools\n\
              \x20 eidos tool <game-id> add <title> <exe> [args...]\n\
@@ -44,7 +44,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
     };
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
     let inst = target.inst;
@@ -67,7 +67,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
         }
         Some("add") => {
             let (Some(title), Some(exe)) = (args.get(2), args.get(3)) else {
-                eprintln!("usage: eidos tool {id} add <title> <exe> [args...]");
+                eidos_log::info!("usage: eidos tool {id} add <title> <exe> [args...]");
                 exit(2);
             };
             // The title becomes a `[Tool/<title>]` section header, so reject what
@@ -75,7 +75,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // the header and corrupt neighbouring tools on the next read).
             let title = title.trim();
             if title.is_empty() || title.chars().any(char::is_control) {
-                eprintln!("Invalid tool title: must be non-empty and free of control characters.");
+                eidos_log::warn!("Invalid tool title: must be non-empty and free of control characters.");
                 exit(2);
             }
             let mut user = inst.tools();
@@ -94,21 +94,21 @@ pub(crate) fn cmd_tool(args: &[String]) {
             match inst.save_tools(&user) {
                 Ok(()) => println!("Added '{title}'. Run it: eidos tool {id} run {title}"),
                 Err(e) => {
-                    eprintln!("could not save tools.ini: {e}");
+                    eidos_log::warn!("could not save tools.ini: {e}");
                     exit(1);
                 }
             }
         }
         Some("rm") => {
             let Some(title) = args.get(2) else {
-                eprintln!("usage: eidos tool {id} rm <title>");
+                eidos_log::info!("usage: eidos tool {id} rm <title>");
                 exit(2);
             };
             let mut user = inst.tools();
             let before = user.len();
             user.retain(|t| !t.title.eq_ignore_ascii_case(title));
             if user.len() == before {
-                eprintln!("No user tool named '{title}' (defaults cannot be removed).");
+                eidos_log::warn!("No user tool named '{title}' (defaults cannot be removed).");
                 exit(1);
             }
             let _ = inst.save_tools(&user);
@@ -116,7 +116,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
         }
         Some("run") => {
             let Some(title) = args.get(2) else {
-                eprintln!("usage: eidos tool {id} run <title> [--print] [-- <extra args>...]");
+                eidos_log::info!("usage: eidos tool {id} run <title> [--print] [-- <extra args>...]");
                 exit(2);
             };
             // Everything after `--` is opaque tool args, so scan for --print only
@@ -130,7 +130,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
 
             let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
             let Some(tool) = tools.iter().find(|t| t.title.eq_ignore_ascii_case(title)) else {
-                eprintln!("No tool named '{title}'. List them: eidos tool {id}");
+                eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
             };
             let exe = if tool.exe.is_absolute() {
@@ -142,7 +142,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // virtual path deliberately does not exist yet, it only appears once
             // the union is mounted.
             if !exe.is_file() {
-                eprintln!("Tool executable not found: {}", exe.display());
+                eidos_log::warn!("Tool executable not found: {}", exe.display());
                 exit(1);
             }
             // `load_order`, NOT `root_layers`: the latter is the Root Builder list
@@ -155,7 +155,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // the user has disabled, in which case its own files are not in the
                 // view either and running it from its folder is the only option.
                 if exe.starts_with(inst.mods_dir()) {
-                    eprintln!(
+                    eidos_log::info!(
                         "eidos tool: '{title}' lives in a mod that is not enabled - it will run \
                          from its own folder and will not see other mods' files."
                     );
@@ -163,7 +163,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 exe.clone()
             });
             let Some(compat) = game.compatdata.as_ref() else {
-                eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
+                eidos_log::info!("No Proton prefix for {id} - launch the game once through Steam first.");
                 exit(1);
             };
             let Some(run) = eidos_games::proton_command(
@@ -173,7 +173,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 &game.install_path,
             )
             else {
-                eprintln!(
+                eidos_log::warn!(
                     "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
                      compatibilitytools.d). Is the game set up to run under Proton?"
                 );
@@ -206,9 +206,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     },
                     &env,
                 ) {
-                    Ok(true) => eprintln!("eidos: registered the game path in the Wine prefix"),
+                    Ok(true) => eidos_log::info!("eidos: registered the game path in the Wine prefix"),
                     Ok(false) => {}
-                    Err(e) => eprintln!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
+                    Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
                 }
             }
             let mut command = run.command(&exe, &tool.args);
@@ -235,7 +235,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 .collect();
             if !missing2.is_empty() {
                 let names = missing2.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
-                eprintln!(
+                eidos_log::info!(
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
             }
@@ -254,7 +254,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 .collect();
             if !missing3.is_empty() {
                 let names = missing3.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
-                eprintln!(
+                eidos_log::info!(
                     "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
                      run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
                      leaving a log with nothing in it but a version banner."
@@ -282,7 +282,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             if let Some(m) = &output_mod {
                 let listed = inst.modlist();
                 match listed.iter().find(|e| e.name.eq_ignore_ascii_case(m)) {
-                    Some(e) if !e.enabled => eprintln!(
+                    Some(e) if !e.enabled => eidos_log::info!(
                         "eidos tool: '{title}' captures into mods/{m}, which is DISABLED - \
                          the output will be written but the game will not see it."
                     ),
@@ -300,7 +300,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             );
         }
         Some(other) => {
-            eprintln!("unknown tool subcommand '{other}' (list | add | rm | run)");
+            eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
             exit(2);
         }
     }

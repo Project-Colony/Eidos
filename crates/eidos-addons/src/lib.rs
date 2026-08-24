@@ -163,7 +163,18 @@ pub fn user_addons_dir() -> PathBuf {
 /// under it, while an add-on is something the user is actively writing, and
 /// making them restart to see a typo fixed is the wrong trade.
 pub fn load_addons_from(dir: &Path) -> Vec<Addon> {
-    let Ok(rd) = fs::read_dir(dir) else { return Vec::new() };
+    scan_addons_from(dir).0
+}
+
+/// [`load_addons_from`] plus the manifests it REFUSED, each with the reason.
+///
+/// The refusals matter as much as the acceptances: an add-on that fails to parse
+/// simply does not appear, and a list that then says "no extensions yet" is
+/// telling the user their file is not there when it is - sitting one typo away
+/// from working. A message on stderr does not reach a window started from a
+/// desktop launcher.
+pub fn scan_addons_from(dir: &Path) -> (Vec<Addon>, Vec<(PathBuf, String)>) {
+    let Ok(rd) = fs::read_dir(dir) else { return (Vec::new(), Vec::new()) };
     let mut paths: Vec<PathBuf> = rd
         .flatten()
         .map(|e| e.path())
@@ -171,24 +182,55 @@ pub fn load_addons_from(dir: &Path) -> Vec<Addon> {
         .collect();
     paths.sort();
     let mut out: Vec<Addon> = Vec::new();
+    let mut bad: Vec<(PathBuf, String)> = Vec::new();
     for p in paths {
-        match fs::read_to_string(&p).ok().and_then(|t| parse_addon(&t, &p)) {
+        let text = match fs::read_to_string(&p) {
+            Ok(t) => t,
+            Err(e) => {
+                bad.push((p, format!("could not be read: {e}")));
+                continue;
+            }
+        };
+        match parse_addon(&text, &p) {
             // Later files do not silently shadow earlier ones: two manifests
             // claiming one id is a mistake worth seeing, and the alternative is
             // an add-on that vanishes for no visible reason.
             Some(a) if out.iter().any(|b| b.id.eq_ignore_ascii_case(&a.id)) => {
-                eprintln!("eidos: ignoring {} - add-on id '{}' is already taken", p.display(), a.id);
+                bad.push((p, format!("the id '{}' is already taken by another manifest", a.id)));
             }
             Some(a) => out.push(a),
-            None => eprintln!("eidos: ignoring invalid add-on {}", p.display()),
+            None => bad.push((p, why_rejected(&text))),
         }
     }
-    out
+    (out, bad)
+}
+
+/// A specific reason a manifest was refused, for the Extensions list.
+fn why_rejected(text: &str) -> String {
+    let Ok(raw) = toml::from_str::<RawAddon>(text) else {
+        return "not valid TOML, or a required field is missing (id, kind, exec)".to_string();
+    };
+    let id = raw.id.trim();
+    if id.is_empty() {
+        return "`id` is empty".to_string();
+    }
+    if id.contains(char::is_whitespace) {
+        return "`id` contains a space - it is used as a key, so it cannot".to_string();
+    }
+    if raw.exec.trim().is_empty() {
+        return "`exec` is empty - there is no program to run".to_string();
+    }
+    format!("`kind` is '{}'; it must be 'tool' or 'diagnose'", raw.kind.trim())
 }
 
 /// Every user add-on.
 pub fn load_addons() -> Vec<Addon> {
     load_addons_from(&user_addons_dir())
+}
+
+/// The manifests in the user's add-on directory that were refused, and why.
+pub fn rejected_manifests() -> Vec<(PathBuf, String)> {
+    scan_addons_from(&user_addons_dir()).1
 }
 
 /// Parse one manifest.
@@ -433,6 +475,31 @@ games = ["skyrimse"]
         assert_eq!(addons[0].name, "First", "the first file wins, deterministically");
         assert!(addons.iter().any(|a| a.id == "ok"));
         assert!(!addons.iter().any(|a| a.id == "ignored"), "only .toml is read");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_refused_manifest_says_why_instead_of_vanishing() {
+        let dir = std::env::temp_dir().join(format!("eidos-addons-bad-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        fs::write(dir.join("a.toml"), "id='a b'\nkind='tool'\nexec='sh'\n").unwrap();
+        fs::write(dir.join("b.toml"), "id='b'\nkind='wat'\nexec='sh'\n").unwrap();
+        fs::write(dir.join("c.toml"), "id='c'\nkind='tool'\nexec=''\n").unwrap();
+        fs::write(dir.join("d.toml"), "not toml at all [[[").unwrap();
+        fs::write(dir.join("e.toml"), "id='e'\nkind='tool'\nexec='sh'\n").unwrap();
+
+        let (ok, bad) = scan_addons_from(&dir);
+        assert_eq!(ok.len(), 1);
+        assert_eq!(bad.len(), 4, "{bad:?}");
+        // Each reason names the actual problem: a list that only said "invalid"
+        // would leave the user comparing their file to the docs line by line.
+        let why = |n: &str| {
+            bad.iter().find(|(p, _)| p.ends_with(n)).map(|(_, w)| w.clone()).unwrap_or_default()
+        };
+        assert!(why("a.toml").contains("space"), "{}", why("a.toml"));
+        assert!(why("b.toml").contains("'wat'"), "{}", why("b.toml"));
+        assert!(why("c.toml").contains("exec"), "{}", why("c.toml"));
+        assert!(why("d.toml").contains("TOML"), "{}", why("d.toml"));
         let _ = fs::remove_dir_all(&dir);
     }
 

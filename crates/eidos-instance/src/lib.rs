@@ -436,11 +436,12 @@ impl Instance {
     /// A metadata-only picture of the Overwrite, taken BEFORE a tool runs, so
     /// what the tool produced can be told apart from what was already there.
     ///
-    /// Metadata only, and no hashing: the Overwrite is normally small, this runs
-    /// on the launch path, and (len, mtime) is what every incremental build tool
-    /// uses to answer the same question.
-    pub fn overwrite_snapshot(&self) -> HashMap<PathBuf, (u64, SystemTime)> {
-        let mut out = HashMap::new();
+    /// Metadata only, no hashing: the Overwrite is normally small and this runs on
+    /// the launch path. But not just (len, mtime), which is what an incremental
+    /// build tool would use - a build tool is allowed to be wrong occasionally and
+    /// this is not. See [`FileStamp`].
+    pub fn overwrite_snapshot(&self) -> OverwriteSnapshot {
+        let mut out = OverwriteSnapshot::default();
         snapshot_into(&self.overwrite_dir(), Path::new(""), &mut out);
         out
     }
@@ -470,7 +471,7 @@ impl Instance {
     pub fn capture_overwrite_into_mod(
         &self,
         name: &str,
-        before: &HashMap<PathBuf, (u64, SystemTime)>,
+        before: &OverwriteSnapshot,
     ) -> std::io::Result<usize> {
         use std::io::{Error, ErrorKind};
         let name = name.trim();
@@ -480,26 +481,33 @@ impl Instance {
         let src = self.overwrite_dir();
         let dest = self.mods_dir().join(name);
         let fresh = !dest.exists();
-        let mut after = HashMap::new();
+        let mut after = OverwriteSnapshot::default();
         snapshot_into(&src, Path::new(""), &mut after);
 
+        // Sorted, so a failure part-way through is reproducible rather than
+        // dependent on hash order - and so the caller's error names a
+        // deterministic point.
+        let mut produced: Vec<&PathBuf> = after
+            .files
+            .iter()
+            .filter(|(rel, stamp)| before.files.get(*rel) != Some(*stamp))
+            .map(|(rel, _)| rel)
+            .collect();
+        produced.sort();
+
         let mut moved = 0usize;
-        for (rel, stamp) in &after {
-            if before.get(rel) == Some(stamp) {
-                continue; // untouched by this run
-            }
+        let mut failures: Vec<String> = Vec::new();
+        for rel in produced {
             let to = dest.join(rel);
-            if let Some(parent) = to.parent() {
-                fs::create_dir_all(parent)?;
+            // Every step is fallible and NONE of them aborts the loop. A type
+            // conflict on one path (a file where this run wants a directory, or
+            // the reverse) used to propagate with `?`, splitting the run's output
+            // between the Overwrite and the mod at whatever point it hit - which
+            // is the worst of both places, because neither is complete.
+            if let Err(e) = move_one_into(&src.join(rel), &to) {
+                failures.push(format!("{}: {e}", rel.display()));
+                continue;
             }
-            // Type conflicts resolve the source's way, exactly as `move_tree`
-            // does: what the tool just wrote is the newer truth.
-            match fs::symlink_metadata(&to).map(|m| m.file_type()) {
-                Ok(t) if t.is_dir() => fs::remove_dir_all(&to)?,
-                Ok(_) => fs::remove_file(&to)?,
-                Err(_) => {}
-            }
-            fs::rename(src.join(rel), &to)?;
             moved += 1;
         }
         if moved == 0 {
@@ -507,13 +515,51 @@ impl Instance {
             if fresh {
                 let _ = fs::remove_dir_all(&dest);
             }
-            return Ok(0);
+            return match failures.first() {
+                Some(first) => Err(std::io::Error::other(format!(
+                    "{} file(s) could not be captured, e.g. {first}",
+                    failures.len()
+                ))),
+                None => Ok(0),
+            };
         }
         if fresh {
             let _ =
                 fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n");
         }
-        prune_empty_dirs(&src);
+        // A capture that creates the mod has to REGISTER it, or the output is in
+        // the instance and invisible: reconciliation lists an unknown folder as
+        // disabled, `load_order` drops disabled mods, and the tool would
+        // regenerate the same files on the next run having achieved nothing.
+        // Enabled and at the end of the display order, which is highest priority
+        // - generated output is meant to win, and that is where the GUI's own
+        // "create mod from Overwrite" puts it too.
+        if fresh {
+            let mut ml = self.modlist();
+            // The folder is already on disk by now, so reconciliation has
+            // ALREADY put it in this list - appended DISABLED, which is what it
+            // does with any folder it has not seen before. So the job is to
+            // enable it, not to add it. Only when the capture created the mod:
+            // a mod the user disabled on purpose must not be switched back on
+            // behind them.
+            match ml.iter_mut().find(|m| m.name.eq_ignore_ascii_case(name)) {
+                Some(entry) => entry.enabled = true,
+                None => ml.push(ModEntry {
+                    name: name.to_string(),
+                    enabled: true,
+                    path: dest.clone(),
+                    unmanaged: false,
+                }),
+            }
+            let _ = self.save_modlist(&ml);
+        }
+        prune_empty_dirs(&src, before);
+        if let Some(first) = failures.first() {
+            return Err(std::io::Error::other(format!(
+                "captured {moved} file(s); {} could not be moved, e.g. {first}",
+                failures.len()
+            )));
+        }
         Ok(moved)
     }
 
@@ -948,7 +994,36 @@ fn find_root_dir(mod_dir: &Path) -> Option<PathBuf> {
 /// (`.eidoswh.<name>`) and an opaque marker are how the OVERWRITE layer records a
 /// deletion, and they mean nothing in a mod - moved there they would be junk
 /// files with no effect, while the deletion they encoded would be silently lost.
-fn snapshot_into(dir: &Path, prefix: &Path, out: &mut HashMap<PathBuf, (u64, SystemTime)>) {
+/// What identifies a file as "the same one, unchanged" for the output capture.
+///
+/// (len, mtime) alone is not enough, and the failure is silent: a tool that
+/// rewrites a file to the same length inside one filesystem timestamp tick - or
+/// one that restores the original mtime after writing, which xEdit and several
+/// packers do - would be judged untouched and its output abandoned in the
+/// Overwrite while the run reported having written nothing.
+///
+/// So the inode and the ctime come too. A write through a temp file and a rename
+/// changes the inode; an in-place write changes the ctime, and unlike mtime the
+/// ctime cannot be set back by `utimes` - setting it is itself a ctime change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FileStamp {
+    len: u64,
+    mtime: SystemTime,
+    ino: u64,
+    ctime: i64,
+    ctime_ns: i64,
+}
+
+/// A picture of the Overwrite before a run: every file's identity, plus the
+/// directories that were ALREADY empty (which the post-run sweep must not remove
+/// - see [`prune_empty_dirs`]).
+#[derive(Debug, Clone, Default)]
+pub struct OverwriteSnapshot {
+    files: HashMap<PathBuf, FileStamp>,
+    empty_dirs: std::collections::HashSet<PathBuf>,
+}
+
+fn snapshot_into(dir: &Path, prefix: &Path, out: &mut OverwriteSnapshot) {
     let Ok(rd) = fs::read_dir(dir) else { return };
     for e in rd.flatten() {
         let name = e.file_name();
@@ -962,24 +1037,58 @@ fn snapshot_into(dir: &Path, prefix: &Path, out: &mut HashMap<PathBuf, (u64, Sys
         // whatever it points at (which may be outside the instance entirely).
         let Ok(md) = fs::symlink_metadata(e.path()) else { continue };
         if md.is_dir() {
+            let before = out.files.len();
             snapshot_into(&e.path(), &rel, out);
+            // Nothing under it, at any depth: record it so the sweep leaves it.
+            if out.files.len() == before && fs::read_dir(e.path()).into_iter().flatten().next().is_none()
+            {
+                out.empty_dirs.insert(rel);
+            }
         } else {
-            let mtime = md.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-            out.insert(rel, (md.len(), mtime));
+            use std::os::unix::fs::MetadataExt;
+            out.files.insert(
+                rel,
+                FileStamp {
+                    len: md.len(),
+                    mtime: md.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+                    ino: md.ino(),
+                    ctime: md.ctime(),
+                    ctime_ns: md.ctime_nsec(),
+                },
+            );
         }
     }
 }
 
 /// Remove directories left empty by a capture, deepest first. The Overwrite's own
 /// root is never removed - the mount expects it to exist.
-fn prune_empty_dirs(root: &Path) {
-    fn walk(dir: &Path) -> bool {
+fn prune_empty_dirs(root: &Path, before: &OverwriteSnapshot) {
+    // Everything now empty is swept up EXCEPT a directory that was already empty
+    // before the run. That one is not debris this capture left: a tool that
+    // creates its output folder once and expects to find it next time would be
+    // told it is missing, and the whole promise of the feature is that what the
+    // run did not touch stays put.
+    let keep = &before.empty_dirs;
+
+    fn walk(
+        dir: &Path,
+        rel: &Path,
+        keep: &std::collections::HashSet<PathBuf>,
+        depth: usize,
+    ) -> bool {
+        // A symlink loop inside the Overwrite would otherwise recurse forever.
+        if depth > 64 {
+            return false;
+        }
         let mut empty = true;
         let Ok(rd) = fs::read_dir(dir) else { return false };
         for e in rd.flatten() {
             let p = e.path();
-            if fs::symlink_metadata(&p).map(|m| m.is_dir()).unwrap_or(false) {
-                if walk(&p) {
+            let child_rel = rel.join(e.file_name());
+            // `symlink_metadata`, so a symlink TO a directory is an entry, not a
+            // directory to descend into and possibly unlink through.
+            if fs::symlink_metadata(&p).map(|m| m.file_type().is_dir()).unwrap_or(false) {
+                if walk(&p, &child_rel, keep, depth + 1) && !keep.contains(&child_rel) {
                     let _ = fs::remove_dir(&p);
                 } else {
                     empty = false;
@@ -990,7 +1099,58 @@ fn prune_empty_dirs(root: &Path) {
         }
         empty
     }
-    walk(root);
+    // The Overwrite root itself is never removed - the mount expects it.
+    walk(root, Path::new(""), keep, 0);
+}
+
+/// Move one captured file into the output mod, resolving a type conflict the
+/// source's way exactly as [`move_tree`] does: what the tool just wrote is the
+/// newer truth.
+///
+/// Every path component of the destination is created explicitly and checked for
+/// type, rather than leaning on `create_dir_all`. Two reasons, and both bite:
+/// `create_dir_all` fails outright when a component is an existing FILE (a mod
+/// shipping `SKSE` as a file while the run wrote `SKSE/Plugins/x.dll`), and it
+/// follows symlinks - so a mod containing a symlinked subdirectory would let a
+/// capture create, delete and write files anywhere on the filesystem while
+/// reporting success.
+fn move_one_into(from: &Path, to: &Path) -> std::io::Result<()> {
+    if let Some(parent) = to.parent() {
+        create_dirs_no_symlinks(parent)?;
+    }
+    match fs::symlink_metadata(to).map(|m| m.file_type()) {
+        // A symlink at the destination is REPLACED, never followed: removing it
+        // unlinks the link itself, which is what `remove_file` does.
+        Ok(t) if t.is_dir() => fs::remove_dir_all(to)?,
+        Ok(_) => fs::remove_file(to)?,
+        Err(_) => {}
+    }
+    fs::rename(from, to)
+}
+
+/// `create_dir_all`, refusing to traverse a symlink and replacing a non-directory
+/// component rather than failing on it.
+fn create_dirs_no_symlinks(dir: &Path) -> std::io::Result<()> {
+    let mut cur = PathBuf::new();
+    for comp in dir.components() {
+        cur.push(comp);
+        match fs::symlink_metadata(&cur) {
+            Ok(md) if md.file_type().is_dir() => {}
+            // A symlink, or a file, where a directory has to be. Both are
+            // replaced: following the symlink would write outside the mod, and
+            // failing would abandon the run's output in the Overwrite.
+            Ok(md) if md.file_type().is_symlink() => {
+                fs::remove_file(&cur)?;
+                fs::create_dir(&cur)?;
+            }
+            Ok(_) => {
+                fs::remove_file(&cur)?;
+                fs::create_dir(&cur)?;
+            }
+            Err(_) => fs::create_dir(&cur)?,
+        }
+    }
+    Ok(())
 }
 
 fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -1264,7 +1424,7 @@ mod tests {
         fs::create_dir_all(ow.join("SKSE/Plugins")).unwrap();
         fs::write(ow.join("SKSE/Plugins/old.json"), b"pre-existing").unwrap();
         let before = inst.overwrite_snapshot();
-        assert_eq!(before.len(), 1);
+        assert_eq!(before.files.len(), 1);
 
         // What the run writes.
         fs::create_dir_all(ow.join("meshes/actors")).unwrap();
@@ -1282,6 +1442,96 @@ mod tests {
         // survives because it still holds it.
         assert_eq!(fs::read(ow.join("SKSE/Plugins/old.json")).unwrap(), b"pre-existing");
         assert!(!ow.join("meshes").exists(), "emptied directories are swept up");
+    }
+
+    #[test]
+    fn capture_leaves_a_directory_that_was_already_empty_and_sweeps_the_ones_it_emptied() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        // A tool that creates its output folder once and expects to find it on
+        // the next run. Removing it would tell that tool its setup is gone.
+        fs::create_dir_all(ow.join("Nemesis_Engine/temp")).unwrap();
+        let before = inst.overwrite_snapshot();
+
+        fs::create_dir_all(ow.join("meshes/actors")).unwrap();
+        fs::write(ow.join("meshes/actors/gen.hkx"), b"x").unwrap();
+
+        assert_eq!(inst.capture_overwrite_into_mod("Out", &before).unwrap(), 1);
+        assert!(ow.join("Nemesis_Engine/temp").is_dir(), "it was empty BEFORE the run");
+        assert!(!ow.join("meshes").exists(), "this one the run created and emptied");
+    }
+
+    #[test]
+    fn capture_survives_a_type_conflict_instead_of_abandoning_half_its_output() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        let before = inst.overwrite_snapshot();
+        // Three files; the middle one's parent is occupied by a FILE in the
+        // target mod, which `create_dir_all` refuses outright.
+        for rel in ["a.txt", "SKSE/Plugins/gen.json", "z.txt"] {
+            let p = ow.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, b"x").unwrap();
+        }
+        let dest = inst.mods_dir().join("Out");
+        fs::create_dir_all(&dest).unwrap();
+        fs::write(dest.join("SKSE"), b"a file where a directory has to go").unwrap();
+
+        // It does not abort: aborting mid-loop would split the run's output
+        // between the Overwrite and the mod, which is worse than either.
+        let n = inst.capture_overwrite_into_mod("Out", &before).unwrap();
+        assert_eq!(n, 3, "the occupying file is replaced, source wins the name");
+        assert!(dest.join("SKSE/Plugins/gen.json").is_file());
+        assert!(dest.join("a.txt").is_file() && dest.join("z.txt").is_file());
+    }
+
+    #[test]
+    fn capture_never_writes_through_a_symlink_out_of_the_instance() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        // Somewhere the capture must never reach.
+        let outside = inst.root.join("..").join(format!("eidos-outside-{}", std::process::id()));
+        let _ = fs::create_dir_all(&outside);
+        fs::write(outside.join("precious.txt"), b"do not touch").unwrap();
+
+        let dest = inst.mods_dir().join("Out");
+        fs::create_dir_all(&dest).unwrap();
+        std::os::unix::fs::symlink(&outside, dest.join("SKSE")).unwrap();
+
+        let before = inst.overwrite_snapshot();
+        let ow = inst.overwrite_dir();
+        fs::create_dir_all(ow.join("SKSE")).unwrap();
+        fs::write(ow.join("SKSE/precious.txt"), b"captured").unwrap();
+
+        assert_eq!(inst.capture_overwrite_into_mod("Out", &before).unwrap(), 1);
+        // The symlink was REPLACED by a real directory; the file it pointed at
+        // is untouched.
+        assert_eq!(fs::read(outside.join("precious.txt")).unwrap(), b"do not touch");
+        assert!(!fs::symlink_metadata(dest.join("SKSE")).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(dest.join("SKSE/precious.txt")).unwrap(), b"captured");
+        let _ = fs::remove_dir_all(&outside);
+    }
+
+    #[test]
+    fn a_created_output_mod_is_registered_and_enabled() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let before = inst.overwrite_snapshot();
+        fs::write(inst.overwrite_dir().join("gen.esp"), b"x").unwrap();
+
+        assert_eq!(inst.capture_overwrite_into_mod("FNIS Output", &before).unwrap(), 1);
+        // Otherwise the output is in the instance and invisible: an unregistered
+        // folder reconciles as DISABLED, `load_order` drops it, and the tool
+        // regenerates the same files every run having achieved nothing.
+        let entry = inst
+            .modlist()
+            .into_iter()
+            .find(|m| m.name == "FNIS Output")
+            .expect("registered in modlist.txt");
+        assert!(entry.enabled);
+        assert!(inst.load_order().iter().any(|p| p.ends_with("FNIS Output")));
     }
 
     #[test]

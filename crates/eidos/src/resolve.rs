@@ -67,7 +67,7 @@ pub(crate) fn resolve(arg: &str) -> Target {
     match try_resolve(arg) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("eidos: {e}");
+            eidos_log::info!("eidos: {e}");
             exit(1);
         }
     }

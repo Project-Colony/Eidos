@@ -36,13 +36,13 @@ pub(crate) fn satisfied_prereqs_in(
 /// so run only on the explicit `--install`.
 pub(crate) fn cmd_prereqs(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!("usage: eidos prereqs <game-id> [--install]");
+        eidos_log::info!("usage: eidos prereqs <game-id> [--install]");
         exit(2);
     };
     let install = args.iter().any(|a| a == "--install");
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
     let inst = target.inst;
@@ -127,12 +127,12 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     }
 
     if !unknown.is_empty() {
-        eprintln!("eidos prereqs: ignoring unknown verb(s): {}", unknown.join(", "));
+        eidos_log::warn!("eidos prereqs: ignoring unknown verb(s): {}", unknown.join(", "));
     }
 
     // --install: Tier 1 (copy bundled DLLs) then the consented Tier 2 (winetricks).
     let Some(compat) = game.compatdata.as_ref() else {
-        eprintln!("No Proton prefix for {id} - launch the game once through Steam first.");
+        eidos_log::info!("No Proton prefix for {id} - launch the game once through Steam first.");
         exit(1);
     };
     let win = compat.join("pfx").join("drive_c").join("windows");
@@ -140,7 +140,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         match eidos_gamefeatures::ensure_native_dll(&win, v) {
             Ok(true) => println!("provisioned {v} (bundled)"),
             Ok(false) => {}
-            Err(e) => eprintln!("could not provision {v}: {e}"),
+            Err(e) => eidos_log::warn!("could not provision {v}: {e}"),
         }
     }
     // Tier 3 first: it needs no prefix and no Proton, so a machine that cannot
@@ -149,7 +149,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         match eidos_gamefeatures::install_runtime(v, |step| println!("  {v}: {step}")) {
             Ok(true) => println!("installed {v}"),
             Ok(false) => {}
-            Err(e) => eprintln!("could not install {v}: {e}"),
+            Err(e) => eidos_log::warn!("could not install {v}: {e}"),
         }
     }
     if pending2.is_empty() {
@@ -161,12 +161,12 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     let Some(run) =
         eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
     else {
-        eprintln!("Could not resolve Proton for {id}.");
+        eidos_log::warn!("Could not resolve Proton for {id}.");
         exit(1);
     };
     warn_if_flatpak_proton(&run);
     if !eidos_gamefeatures::cabextract_available() {
-        eprintln!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
+        eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
     let prefix = compat.join("pfx");
     // Refuse rather than corrupt. A game, Steam or a stale wineserver still
@@ -176,11 +176,11 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     // is the right move. We do not kill anything on the user's behalf.
     let busy = eidos_gamefeatures::prefix_busy(&prefix, compat);
     if !busy.is_empty() {
-        eprintln!("This prefix is still in use by {} process(es):", busy.len());
+        eidos_log::info!("This prefix is still in use by {} process(es):", busy.len());
         for (pid, cmd) in busy.iter().take(10) {
-            eprintln!("  pid {pid}: {}", cmd.chars().take(100).collect::<String>());
+            eidos_log::info!("  pid {pid}: {}", cmd.chars().take(100).collect::<String>());
         }
-        eprintln!("Close the game, its tools and Steam, then run this again.");
+        eidos_log::info!("Close the game, its tools and Steam, then run this again.");
         exit(1);
     }
     println!(
@@ -208,8 +208,8 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     match failed {
         None => println!("Done."),
         Some((v, e)) => {
-            eprintln!("winetricks failed on '{v}': {e}");
-            eprintln!("(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)");
+            eidos_log::warn!("winetricks failed on '{v}': {e}");
+            eidos_log::info!("(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)");
             exit(1);
         }
     }

@@ -8,12 +8,12 @@ use crate::*;
 
 pub(crate) fn cmd_install(args: &[String]) {
     let (Some(id), Some(archive)) = (args.first(), args.get(1)) else {
-        eprintln!("usage: eidos install <game-id-or-instance-path> <archive> [name]");
+        eidos_log::info!("usage: eidos install <game-id-or-instance-path> <archive> [name]");
         exit(2);
     };
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
     let inst = target.inst;
@@ -72,17 +72,17 @@ pub(crate) fn cmd_install(args: &[String]) {
             println!();
             println!("  -> {}", r.dest.display());
             if !r.missing.is_empty() {
-                eprintln!("  note: {} file(s) the installer expected were not in the archive:", r.missing.len());
+                eidos_log::warn!("  note: {} file(s) the installer expected were not in the archive:", r.missing.len());
                 for m in &r.missing {
-                    eprintln!("    - {m}");
+                    eidos_log::info!("    - {m}");
                 }
             }
             println!("  enabled at the top of the load order. `eidos play {id}` to use it.");
         }
         Err(e) => {
-            eprintln!("install failed: {e}");
+            eidos_log::warn!("install failed: {e}");
             if matches!(e, eidos_install::InstallError::Exists(_)) {
-                eprintln!("  (re-run with --replace to reinstall it, or --merge to install over it)");
+                eidos_log::info!("  (re-run with --replace to reinstall it, or --merge to install over it)");
             }
             exit(1);
         }
@@ -96,7 +96,7 @@ pub(crate) fn cmd_import(args: &[String]) -> ! {
     let target = resolve(id);
     let inst = target.inst;
     if !inst.exists() {
-        eprintln!("eidos import: no instance for '{id}' - run `eidos init {id}` first.");
+        eidos_log::info!("eidos import: no instance for '{id}' - run `eidos init {id}` first.");
         exit(1);
     }
     match inst.import_mo2_profile(std::path::Path::new(dir)) {
@@ -125,7 +125,7 @@ pub(crate) fn cmd_import(args: &[String]) -> ! {
             exit(0)
         }
         Err(e) => {
-            eprintln!("eidos import: {e}");
+            eidos_log::info!("eidos import: {e}");
             exit(1)
         }
     }

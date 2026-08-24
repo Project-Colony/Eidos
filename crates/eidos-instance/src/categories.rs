@@ -358,10 +358,22 @@ impl CategoryFactory {
         true
     }
 
-    /// The lowest id not already taken, for a newly created category. Starts at 1
-    /// because `0` is the "no parent" sentinel and `-1` the uncategorised one.
+    /// The next id for a new category: one past the highest in the catalog.
+    ///
+    /// MONOTONIC, never the lowest free one. Mods reference categories by NUMBER
+    /// in `meta.ini`, and `remove` deliberately leaves those references alone -
+    /// so handing a freed id back would make the next category the user creates
+    /// silently adopt every mod that pointed at the deleted one. On the MO2
+    /// defaults, ids 1..55 are all taken, so "lowest free" meant that deleting
+    /// ANY built-in category made its id the very next one handed out. MO2 avoids
+    /// this the same way, with an `m_NextID` seeded from the maximum at load.
+    ///
+    /// Derived from the persisted rows rather than stored, so an instance shared
+    /// with MO2 cannot drift.
     pub fn free_id(&self) -> i32 {
-        (1..).find(|id| !self.by_id.contains_key(id)).unwrap_or(1)
+        let max = self.rows.iter().map(|c| c.id).max().unwrap_or(0).max(0);
+        // Only if a hand-edited file has already reached i32::MAX.
+        max.checked_add(1).unwrap_or_else(|| (1..).find(|id| !self.by_id.contains_key(id)).unwrap_or(1))
     }
 
     /// Add a category, returning its id. Reuses a free id; the name is trimmed and
@@ -369,6 +381,14 @@ impl CategoryFactory {
     /// inside a name would split the row on the next load.
     pub fn add(&mut self, name: &str, parent: i32) -> i32 {
         let id = self.free_id();
+        // A row that is its own parent is neither a root (its parent is known)
+        // nor a child of anything (`walk` excludes a row from its own children),
+        // so `tree()` never emits it: it cannot be seen, assigned, renamed or
+        // deleted, and it survives a save/load round trip invisible.
+        // `set_parent` already refuses this; `add` has to as well, and it is
+        // reachable whenever the parent dropdown still names a category that was
+        // deleted in the same dialog session.
+        let parent = if parent == id { 0 } else { parent };
         self.put(Category { id, name: clean_name(name), parent, nexus: Vec::new() });
         id
     }
@@ -669,6 +689,36 @@ mod tests {
         let b = f.add("D", 0);
         assert_ne!(a, b);
         assert!(a > 0 && b > 0);
+    }
+
+    #[test]
+    fn a_deleted_id_is_never_handed_out_again() {
+        // The mods still on disk reference the deleted category by NUMBER, and
+        // `remove` deliberately leaves them alone - so reusing the id would make
+        // the next category the user creates adopt all of them.
+        let mut f = CategoryFactory::defaults();
+        assert!(f.remove(47), "Miscellaneous");
+        let fresh = f.add("Mounts", 0);
+        assert_ne!(fresh, 47, "a new category must not inherit the deleted one's mods");
+        assert_eq!(f.name_for_id(47), None, "and 47 stays unresolvable, as documented");
+
+        // Holds after a round trip too: the high-water mark is derived from the
+        // rows, so it cannot go backwards when the file is re-read.
+        let back = CategoryFactory::parse_dat(&f.to_dat());
+        assert!(back.free_id() > fresh);
+    }
+
+    #[test]
+    fn a_category_cannot_be_created_as_its_own_parent() {
+        // Reachable from the editor: the parent dropdown still names a category
+        // deleted earlier in the same session, and the id allocator could hand
+        // that same number back. Such a row is emitted by neither branch of
+        // `tree()` and would be invisible forever.
+        let mut f = CategoryFactory::parse_dat("1|A|0\n");
+        let id = f.add("Self", 2); // 2 is what free_id will return
+        assert_eq!(id, 2);
+        assert_eq!(f.parent_id(id), Some(0), "silently re-rooted rather than orphaned");
+        assert!(f.tree().iter().any(|&(i, _, _)| i == id), "and it is visible");
     }
 
     #[test]

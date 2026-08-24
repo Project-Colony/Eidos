@@ -821,6 +821,10 @@ struct IniEditorState {
     original: String,
     /// Absent from disk: a profile that has never had this INI. Saving creates it.
     missing: bool,
+    /// Present but unreadable. Distinct from `missing`, because saving an empty
+    /// buffer over a file that exists destroys it - and a permission error is
+    /// exactly when that would happen.
+    unreadable: bool,
 }
 
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
@@ -1238,10 +1242,19 @@ struct App {
     files_hovering: bool,
     /// A download being dragged onto the mod list (MO2's drop-to-priority).
     download_drag: Option<DownloadDrag>,
-    /// Where the install now in flight should land, if it was aimed at a gap.
-    /// Survives the FOMOD wizard and the manual picker, which is why it is not
-    /// carried on the drag itself.
-    install_at: Option<usize>,
+    /// Where the install now in flight should land, if it was aimed at a gap,
+    /// paired with the ARCHIVE it was aimed at.
+    ///
+    /// The archive is what makes it safe. This has to survive the FOMOD wizard,
+    /// the BAIN picker and the collision prompt, so it cannot live on the drag -
+    /// and an install that ends without reaching `after_install` (an extraction
+    /// failure, an unrecognised layout, a dismissed dialog) would otherwise
+    /// leave the aim behind for the NEXT mod installed to silently adopt.
+    /// Matching on the archive means a stale aim simply never applies.
+    install_at: Option<(usize, PathBuf)>,
+    /// Something the drop wants said once the install finishes. It cannot say it
+    /// itself: the installer sets its own status a moment later.
+    pending_note: Option<String>,
     /// The Categories dialog: which mods it applies to and the pending choice.
     categories_dialog: Option<CategoriesDialogState>,
     /// The open INI editor, if any.
@@ -1254,6 +1267,13 @@ struct App {
     addons_open: bool,
     /// What the `diagnose` add-ons reported on the last refresh, by add-on name.
     addon_findings: Vec<(String, eidos_addons::Finding)>,
+    /// Checks that failed, and why. Not retried until Reload: this runs on every
+    /// diagnostics refresh, so retrying a hanging one would cost its timeout per
+    /// click.
+    addon_failed: HashMap<String, String>,
+    /// Manifests that could not be parsed, and why - so a typo is visible in the
+    /// Extensions list instead of only on a stderr the window never shows.
+    addon_rejected: Vec<(PathBuf, String)>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -1295,6 +1315,12 @@ struct App {
     // ---- Downloads manager ----
     /// The completed downloads (cached so the panel does not re-scan on redraw).
     downloads: Vec<DownloadRow>,
+    /// A resume in flight: which download, the child, and the file its output
+    /// went to. Held so the child can be REAPED (an unwaited one becomes a
+    /// zombie, whose /proc entry makes it look alive to `stop_download`) and so
+    /// a failure can be reported instead of the row silently going back to
+    /// Stalled.
+    resuming: Option<(String, std::process::Child, PathBuf)>,
     /// Two-click guard for a download deletion (the row's index in `downloads`).
     confirm_delete_download: Option<String>,
     /// The download whose MD5 lookup is in flight, so the row can say so and a
@@ -1733,6 +1759,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.overwrite_to_mod.is_none()
         && app.menu_mod.is_none()
         && app.menu_plugin.is_none()
+        // The panes added since. The INI editor above all: it owns the keyboard
+        // outright, and an arrow key reaching the mod list behind it moves a
+        // selection nobody can see while Space toggles a mod they are not
+        // looking at.
+        && app.ini_editor.is_none()
+        && app.log_pane.is_none()
+        && app.categories_dialog.is_none()
+        && app.backups.is_none()
+        && app.executables.is_none()
+        && !app.addons_open
     {
         subs.push(shortcuts);
     }
@@ -1802,6 +1838,13 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 fn main() -> iced::Result {
     // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
     let launch_command: Vec<String> = std::env::args().skip(1).collect();
+    // Its own rotation bucket, distinct from the CLI's: the window and an
+    // `eidos` child are separate processes writing the same directory, and
+    // sharing a bucket would let one rotate the other's session away.
+    let _ = eidos_log::init_with(
+        eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")),
+    );
+    eidos_log::info!("eidos-gui {} starting", env!("CARGO_PKG_VERSION"));
     // The title moved out of `application` and onto a builder; the first argument
     // is now the boot function that `run_with` used to take. It must be `Fn`, not
     // `FnOnce` - which is why the `.clone()` stays: without it the closure would
@@ -3715,7 +3758,11 @@ mod tests {
         let _ = update_inner(&mut app, Message::DownloadDragOverGap(1));
         assert!(app.download_drag.as_ref().unwrap().aimed);
         let _ = update_inner(&mut app, Message::DownloadDragDrop);
-        assert_eq!(app.install_at, Some(1), "the drop remembers where it was aimed");
+        assert_eq!(
+            app.install_at.as_ref().map(|(gap, _)| *gap),
+            Some(1),
+            "the drop remembers where it was aimed"
+        );
         assert!(app.download_drag.is_none(), "and the drag is over");
     }
 
@@ -3738,13 +3785,45 @@ mod tests {
         let _ = update_inner(&mut app, Message::DownloadDragOverGap(1));
         let _ = update_inner(&mut app, Message::DownloadDragDrop);
         // The strip between two VISIBLE rows can have any number of hidden rows
-        // behind it, so "here" would be a lie. It installs at the end and says so.
+        // behind it, so "here" would be a lie. It installs at the end and says
+        // so - through the installer, because `ModPicked` sets its own status a
+        // moment later and would overwrite anything said here.
         assert_eq!(app.install_at, None);
         assert!(
-            app.status.as_deref().unwrap_or("").contains("end of the list"),
+            app.pending_note.as_deref().unwrap_or("").contains("end of the list"),
             "{:?}",
-            app.status
+            app.pending_note
         );
+    }
+
+    #[test]
+    fn an_aim_left_by_a_failed_install_never_moves_the_next_mod() {
+        // An install can end without ever reaching `after_install`: an extraction
+        // failure, an unrecognised layout, a dialog dismissed. The aim it left
+        // behind must not be adopted by whatever is installed next.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.install_at = Some((0, PathBuf::from("/tmp/Aimed.7z")));
+        let before: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+
+        // A DIFFERENT archive finishes installing.
+        after_install(&mut app, "c", PathBuf::from("/tmp/x"), false, Some(Path::new("/tmp/Other.7z")));
+        let after: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
+        assert_eq!(before, after, "the unrelated mod was moved by a stale aim");
+        assert!(app.install_at.is_some(), "and the aim is still waiting for ITS archive");
+    }
+
+    #[test]
+    fn a_download_can_be_dropped_into_an_empty_mod_list() {
+        // A fresh instance has no rows, so there is nothing to aim at except the
+        // trailing strip. Without it the drag can never become aimed and the
+        // release installs nothing, silently.
+        let mut app = nav_app(&[]);
+        app.downloads = vec![dl_row("First.7z")];
+        let _ = update_inner(&mut app, Message::DownloadDragStart(0));
+        let _ = update_inner(&mut app, Message::DownloadDragOverGap(0));
+        assert!(app.download_drag.as_ref().is_some_and(|d| d.aimed));
+        let _ = update_inner(&mut app, Message::DownloadDragDrop);
+        assert_eq!(app.install_at.as_ref().map(|(g, _)| *g), Some(0));
     }
 
     #[test]
@@ -3752,7 +3831,7 @@ mod tests {
         // The mod already has a place in the load order; honouring a drop's
         // target priority would yank it out and flip every conflict it is in.
         let mut app = nav_app(&["a", "b"]);
-        app.install_at = Some(0);
+        app.install_at = Some((0, PathBuf::from("/tmp/Mod.7z")));
         let _ = update_inner(&mut app, Message::CollisionMerge);
         assert_eq!(app.install_at, None, "the aim is discarded, not applied");
     }
@@ -3761,7 +3840,7 @@ mod tests {
     fn a_cancelled_install_does_not_leave_its_target_for_the_next_one() {
         let mut app = nav_app(&["a"]);
         for cancel in [Message::FomodCancel, Message::PickerCancel, Message::CollisionCancel] {
-            app.install_at = Some(0);
+            app.install_at = Some((0, PathBuf::from("/tmp/Mod.7z")));
             let _ = update_inner(&mut app, cancel);
             assert_eq!(app.install_at, None);
         }
@@ -3991,6 +4070,25 @@ mod tests {
         // And filtering it out takes its continuations with it.
         let quiet = load_log_pane(pane.files.clone(), pane.current.clone(), eidos_log::Level::Debug);
         assert_eq!(quiet.lines.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_filtered_out_records_continuations_do_not_land_on_the_record_before_it() {
+        // `concat!` rather than a `\`-continued literal: the continuation eats
+        // the following source indentation INTO the next line, which pushes the
+        // timestamp off the offset `parse_line` reads.
+        let (pane, dir) = log_fixture(concat!(
+            "2026-08-24 17:04:11.238 ERROR mount failed\n",
+            "2026-08-24 17:04:11.239 DEBUG probing layers\n",
+            "    layer 3: /mods/AAA\n",
+            "    layer 4: /mods/BBB\n",
+        ));
+        // The Debug record is below the floor; its two continuation lines belong
+        // to IT, not to the error above. Attaching them there would put a debug
+        // trace under an error's severity and call it evidence.
+        assert_eq!(pane.lines.len(), 1);
+        assert_eq!(pane.lines[0].1, "mount failed", "{:?}", pane.lines[0].1);
         let _ = fs::remove_dir_all(&dir);
     }
 

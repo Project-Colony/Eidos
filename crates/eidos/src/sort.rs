@@ -13,7 +13,7 @@ use crate::*;
 /// discovery so the sorted set matches exactly what a launch would deploy.
 pub(crate) fn cmd_sort(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!("usage: eidos sort <game-id> [--dry-run] [--update-masterlist]");
+        eidos_log::info!("usage: eidos sort <game-id> [--dry-run] [--update-masterlist]");
         exit(2);
     };
     let dry_run = args.iter().any(|a| a == "--dry-run");
@@ -22,19 +22,19 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let target = resolve(id);
     let id = &target.game_id;
     if !eidos_loot::is_supported(id) {
-        eprintln!("LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game).");
+        eidos_log::info!("LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game).");
         exit(1);
     }
     let Some(game) = find_game(id) else {
-        eprintln!("Game '{id}' is not detected. Run `eidos games`.");
+        eidos_log::info!("Game '{id}' is not detected. Run `eidos games`.");
         exit(1);
     };
     let Some(spec) = eidos_plugins::GameSpec::for_id(id) else {
-        eprintln!("No plugin support for '{id}'.");
+        eidos_log::info!("No plugin support for '{id}'.");
         exit(1);
     };
     let Some(compatdata) = game.compatdata.as_ref() else {
-        eprintln!("No Proton prefix found for '{id}'. Launch it once through Steam first.");
+        eidos_log::info!("No Proton prefix found for '{id}'. Launch it once through Steam first.");
         exit(1);
     };
     let prefix = compatdata.join("pfx");
@@ -49,12 +49,12 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let _lock = match inst.try_lock("eidos sort") {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Cannot sort now: {e}.");
+            eidos_log::warn!("Cannot sort now: {e}.");
             exit(1);
         }
     };
     if let Err(e) = prof.seed_plugin_state(&local_dir, &spec) {
-        eprintln!("Cannot sort: adopting the plugin state into the profile failed ({e}).");
+        eidos_log::warn!("Cannot sort: adopting the plugin state into the profile failed ({e}).");
         exit(1);
     }
     let state_dir = prof.plugins_state_dir();
@@ -71,7 +71,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
     list.refresh(&spec);
 
     if list.plugins.is_empty() {
-        eprintln!("No plugins discovered for '{id}'; nothing to sort.");
+        eidos_log::info!("No plugins discovered for '{id}'; nothing to sort.");
         exit(1);
     }
 
@@ -81,7 +81,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let (masterlist, prelude) = match eidos_loot::ensure_masterlist(repo, &cache, update) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Could not obtain masterlist: {e}");
+            eidos_log::warn!("Could not obtain masterlist: {e}");
             exit(1);
         }
     };
@@ -116,7 +116,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let sorted = match eidos_loot::sort(&view) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("LOOT sort failed: {e}");
+            eidos_log::warn!("LOOT sort failed: {e}");
             exit(1);
         }
     };
@@ -140,7 +140,7 @@ pub(crate) fn cmd_sort(args: &[String]) {
             println!("Sorted {} plugins ({active} active) and wrote the load order.", sorted.len())
         }
         Err(e) => {
-            eprintln!("Could not write load order: {e}");
+            eidos_log::warn!("Could not write load order: {e}");
             exit(1);
         }
     }

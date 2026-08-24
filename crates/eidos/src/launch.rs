@@ -13,7 +13,7 @@ use crate::*;
 
 pub(crate) fn cmd_play(args: &[String]) {
     let Some(id) = args.first() else {
-        eprintln!("usage: eidos play <game-id-or-instance-path> [-- <command>...]");
+        eidos_log::info!("usage: eidos play <game-id-or-instance-path> [-- <command>...]");
         exit(2);
     };
     let command: Vec<String> = match args.iter().position(|a| a == "--") {
@@ -23,14 +23,14 @@ pub(crate) fn cmd_play(args: &[String]) {
 
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eprintln!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
         exit(1);
     };
     // The wizard and `eidos init` refuse to CREATE an instance inside the
     // game's install; this is the same guard at the moment that actually
     // hurts - mounting. A hand-made folder in there must not reach the union.
     if Instance::root_inside_game(&target.inst.root, &game.install_path) {
-        eprintln!(
+        eidos_log::warn!(
             "eidos: this instance lives inside the game's own folder ({}).\n\
              eidos: Eidos mounts over the game root, so the instance would sit inside\n\
              eidos: its own mount target - refusing to mount. Move the folder out\n\
@@ -69,7 +69,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     // and the game would start inside the sandbox, blind to our mount.
     if let Some(cd) = game.compatdata.as_ref() {
         if eidos_games::is_flatpak_steam(cd) {
-            eprintln!(
+            eidos_log::warn!(
                 "eidos: WARNING - this game's prefix belongs to the Flatpak Steam install.\n\
                  eidos: the `eidos play` launch option cannot work from inside the Steam sandbox:\n\
                  eidos: the game would run there and never see the mods mounted in our namespace.\n\
@@ -95,7 +95,7 @@ pub(crate) fn cmd_play(args: &[String]) {
 /// actually wants is a native Proton (or native Steam).
 pub(crate) fn warn_if_flatpak_proton(run: &eidos_games::ProtonRun) {
     if run.flatpak {
-        eprintln!(
+        eidos_log::warn!(
             "eidos: WARNING - this Proton belongs to the Flatpak Steam install ({}).\n\
              eidos: it ships its runtime and steamclient libraries inside the sandbox, so running\n\
              eidos: it from the host may fail to resolve them. Eidos will NOT relaunch through\n\
@@ -124,10 +124,10 @@ pub(crate) fn swap_script_extender(id: &str, command: &mut [String]) {
         if a.contains(se.launcher) {
             let candidate = a.replace(se.launcher, se.loader);
             if std::path::Path::new(&candidate).is_file() {
-                eprintln!("eidos play: running {} (script extender) instead of {}", se.loader, se.launcher);
+                eidos_log::info!("eidos play: running {} (script extender) instead of {}", se.loader, se.launcher);
                 *a = candidate;
             } else {
-                eprintln!(
+                eidos_log::info!(
                     "eidos play: {} is not installed - launching the vanilla {} \
                      (script-extender mods will not load)",
                     se.loader, se.launcher
@@ -203,7 +203,7 @@ pub(crate) fn run_through_view(
                     std::thread::sleep(std::time::Duration::from_millis(100));
                 }
                 Err(e) => {
-                    eprintln!("eidos: refusing to launch: {e}");
+                    eidos_log::warn!("eidos: refusing to launch: {e}");
                     exit(1);
                 }
             }
@@ -234,7 +234,7 @@ pub(crate) fn run_through_view(
     // this cannot fire on a deliberate mass-disable.
     let (_, trust) = prof.modlist_checked();
     if let Some(why) = trust.reason() {
-        eprintln!(
+        eidos_log::warn!(
             "eidos play: refusing to start - the mod list cannot be trusted: {why}\n\
              \x20 Nothing has been written. Fix the mods folder (permissions, a mount that is \
              not mounted) and try again; the profile's load order is untouched."
@@ -254,7 +254,7 @@ pub(crate) fn run_through_view(
         let cs_roots: Vec<PathBuf> =
             inst.modlist().into_iter().filter(|m| m.enabled && !m.is_separator()).map(|m| m.path).collect();
         if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
-            eprintln!(
+            eidos_log::info!(
                 "eidos play: note - ENB (game root) and Community Shaders (a mod) are both active. \
                  Both can run together; if visuals look wrong, disable one in its INI."
             );
@@ -287,7 +287,7 @@ pub(crate) fn run_through_view(
 
     let root_layers = inst.root_layers();
     if !root_layers.is_empty() {
-        eprintln!("eidos: {} mod(s) provide root-level files", root_layers.len());
+        eidos_log::info!("eidos: {} mod(s) provide root-level files", root_layers.len());
     }
 
     // The mount point has to exist before anything can be mounted over it, and for
@@ -303,13 +303,13 @@ pub(crate) fn run_through_view(
     // it is what the user would have had to make by hand anyway.
     if !game.data_path.is_dir() {
         if let Err(e) = std::fs::create_dir_all(&game.data_path) {
-            eprintln!(
+            eidos_log::warn!(
                 "eidos: cannot create the mod directory {}: {e}",
                 game.data_path.display()
             );
             exit(1);
         }
-        eprintln!("eidos: created {} (the game does not ship it)", game.data_path.display());
+        eidos_log::info!("eidos: created {} (the game does not ship it)", game.data_path.display());
     }
 
     let spec = LaunchSpec {
@@ -347,9 +347,9 @@ pub(crate) fn run_through_view(
     // worse answer than putting them where they were asked to go.
     if let (Some(name), Some(before)) = (opts.output_mod, &ow_before) {
         match inst.capture_overwrite_into_mod(name, before) {
-            Ok(0) => eprintln!("eidos: '{name}' asked for the output but the run wrote nothing"),
-            Ok(n) => eprintln!("eidos: captured {n} file(s) into mods/{name}"),
-            Err(e) => eprintln!("eidos: could not capture the output into mods/{name}: {e}"),
+            Ok(0) => eidos_log::info!("eidos: '{name}' asked for the output but the run wrote nothing"),
+            Ok(n) => eidos_log::info!("eidos: captured {n} file(s) into mods/{name}"),
+            Err(e) => eidos_log::warn!("eidos: could not capture the output into mods/{name}: {e}"),
         }
     }
 
@@ -359,7 +359,7 @@ pub(crate) fn run_through_view(
     if let Some(prepared) = inis {
         if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
-                eprintln!("eidos: captured {n} INI(s) back into profile '{}'", prof.name);
+                eidos_log::info!("eidos: captured {n} INI(s) back into profile '{}'", prof.name);
             }
         }
         // Undo the INI tweaks in the CAPTURED copy, so the profile keeps the values
@@ -383,7 +383,7 @@ pub(crate) fn run_through_view(
                 let restored = eidos_instance::untweak_ini(&text, record);
                 if restored != text {
                     if let Err(e) = eidos_instance::write_text(&path, &restored, cp1252) {
-                        eprintln!(
+                        eidos_log::warn!(
                             "eidos: WARNING - could not un-apply INI tweaks in {}: {e}",
                             path.display()
                         );
@@ -401,7 +401,7 @@ pub(crate) fn run_through_view(
         let post_loss = eidos_plugins::GameSpec::for_id(id)
             .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
         if let Some(reason) = post_loss {
-            eprintln!(
+            eidos_log::info!(
                 "eidos: WARNING - plugins.txt now {reason} relative to the pre-session snapshot \
                  kept at {snap}. Restore it from the GUI Diagnostics tab if this was a crash, or \
                  accept the current set there - without the GUI, restore by copying that file \
@@ -417,10 +417,10 @@ pub(crate) fn run_through_view(
     if let Some((prof_saves, prefix_saves)) = &save_bind {
         match sync_saves_for_cloud(prof_saves, prefix_saves) {
             Ok(n) if n > 0 => {
-                eprintln!("eidos: synced {n} save file(s) into the prefix for Steam Cloud")
+                eidos_log::info!("eidos: synced {n} save file(s) into the prefix for Steam Cloud")
             }
             Ok(_) => {}
-            Err(e) => eprintln!("eidos: WARNING - could not sync saves for Steam Cloud: {e}"),
+            Err(e) => eidos_log::warn!("eidos: WARNING - could not sync saves for Steam Cloud: {e}"),
         }
     }
 
@@ -435,10 +435,10 @@ pub(crate) fn run_through_view(
             // on its own gives the user nothing to act on, and it is the message
             // they get for the most likely failure here - a mount point or a game
             // directory that is not where the descriptor says.
-            eprintln!("eidos: launch failed: {e}");
+            eidos_log::warn!("eidos: launch failed: {e}");
             if e.kind() == std::io::ErrorKind::NotFound {
-                eprintln!("eidos:   mod directory: {}", game.data_path.display());
-                eprintln!("eidos:   game install:  {}", game.install_path.display());
+                eidos_log::info!("eidos:   mod directory: {}", game.data_path.display());
+                eidos_log::info!("eidos:   game install:  {}", game.install_path.display());
             }
             exit(1)
         }
@@ -524,9 +524,9 @@ pub(crate) fn forced_dll_overrides(
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
         if let Some(win) = &win {
             match eidos_gamefeatures::ensure_d3dcompiler_47(win) {
-                Ok(true) => eprintln!("eidos play: provisioned native d3dcompiler_47 into the prefix"),
+                Ok(true) => eidos_log::info!("eidos play: provisioned native d3dcompiler_47 into the prefix"),
                 Ok(false) => {}
-                Err(e) => eprintln!("eidos play: could not provision d3dcompiler_47: {e}"),
+                Err(e) => eidos_log::warn!("eidos play: could not provision d3dcompiler_47: {e}"),
             }
         }
         stems.insert("d3dcompiler_47".to_string());
@@ -539,9 +539,9 @@ pub(crate) fn forced_dll_overrides(
         if eidos_gamefeatures::is_tier1_dll(verb) {
             if let Some(win) = &win {
                 match eidos_gamefeatures::ensure_native_dll(win, verb) {
-                    Ok(true) => eprintln!("eidos tool: provisioned native {verb} into the prefix"),
+                    Ok(true) => eidos_log::info!("eidos tool: provisioned native {verb} into the prefix"),
                     Ok(false) => {}
-                    Err(e) => eprintln!("eidos tool: could not provision {verb}: {e}"),
+                    Err(e) => eidos_log::warn!("eidos tool: could not provision {verb}: {e}"),
                 }
             }
             stems.insert(verb.clone());

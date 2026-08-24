@@ -3153,7 +3153,17 @@ pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: boo
     // A drop aimed at a gap says WHERE, not just whether. Consumed here, after
     // `reload_mods`, because that is when the new row exists to be moved - and
     // this is MO2's own ordering too (install first, reposition after).
-    if let Some(dest) = app.install_at.take() {
+    // Only when this install is the one that was aimed. An aim left behind by an
+    // install that failed or was cancelled must never move an unrelated mod.
+    let aimed = app
+        .install_at
+        .as_ref()
+        .filter(|(_, want)| archive.is_some_and(|a| a == want.as_path()))
+        .map(|(gap, _)| *gap);
+    if aimed.is_some() {
+        app.install_at = None;
+    }
+    if let Some(dest) = aimed {
         if let Some(at) = app.mods.iter().position(|m| m.name == name) {
             let dest = dest.min(app.mods.len());
             let hidden = hidden_by_folds(app);
@@ -3164,10 +3174,13 @@ pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: boo
             where_to = format!(" at priority {landed}");
         }
     }
+    // A note the drop left for the installer to deliver - it could not say it
+    // itself, because this line would have overwritten it.
+    let note = app.pending_note.take().map(|n| format!(" ({n})")).unwrap_or_default();
     app.status = Some(if fomod {
-        format!("Installed '{name}' via FOMOD{where_to}.")
+        format!("Installed '{name}' via FOMOD{where_to}{note}.")
     } else {
-        format!("Installed '{name}'{where_to}.")
+        format!("Installed '{name}'{where_to}{note}.")
     });
 }
 

@@ -213,7 +213,11 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     if let Some(inst) = app.created.as_ref() {
         sources.push((inst.overwrite_dir(), "[Overwrite]".to_string()));
     }
-    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator()) {
+    // Unmanaged rows are EXCLUDED. Their `path` is a single plugin file inside
+    // the game's own Data directory, and a longest-prefix match against that
+    // would attribute every vanilla file to whichever DLC row sorted first - and
+    // put a Hide button on the pristine game install.
+    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator() && !m.is_unmanaged()) {
         sources.push((m.path.clone(), m.name.clone()));
     }
     if let Some(g) = selected_game(app) {
@@ -237,10 +241,14 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
             let is_dir = ftype.map(|t| t.is_dir()).unwrap_or_else(|| real.is_dir());
             // The conflict map is keyed by lowercased relative path and is
             // already computed for the mod list, so this is a lookup, not a walk.
+            // ASCII-only case folding, because that is how `eidos-conflicts`
+            // keys the map. Unicode `to_lowercase` disagrees with it for any
+            // path containing a non-ASCII capital, and the lookup would then
+            // silently never match - a contested file quietly unflagged.
             let rel = if dir.is_empty() {
-                name.to_lowercase()
+                name.to_ascii_lowercase()
             } else {
-                format!("{}/{}", dir.to_lowercase(), name.to_lowercase())
+                format!("{}/{}", dir.to_ascii_lowercase(), name.to_ascii_lowercase())
             };
             let conflicted = !is_dir
                 && conflicts.is_some_and(|c| {
@@ -352,13 +360,17 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
         if out.len() >= limit || depth > 32 {
             return;
         }
-        // A filter reaches INTO folders: a name typed in the box is somewhere
-        // in the tree, not necessarily in the level currently expanded, so a
-        // directory that would be empty after filtering is walked anyway and
-        // then dropped if nothing under it survived.
+        // A filter reaches INTO folders: a name typed in the box is somewhere in
+        // the tree, not necessarily on the level currently expanded, so a
+        // directory is walked even when its own name does not match, and then
+        // dropped if nothing under it survived.
         let query = app.data_query.trim().to_lowercase();
         let filtering = !query.is_empty() || app.data_conflicts_only;
         for row in cached_merged_listing(app, dir) {
+            // Checked against the KEPT count, and re-checked after each subtree.
+            // Filtering removes rows again, so `out.len()` alone stopped being a
+            // bound the moment a filter was typed: the walk then stat'd the
+            // entire merged tree on every redraw, inside `view()`.
             if out.len() >= limit {
                 return;
             }
@@ -374,9 +386,13 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
             if expanded {
                 walk(app, &rel, depth + 1, limit, out);
             }
-            // A folder earns its row by what is under it. Dropped last, so the
-            // recursion above has already had its say.
-            if filtering && !keeps && (!is_dir || out.len() == at + 1) {
+            // A folder earns its row by what is under it - unless the budget ran
+            // out inside it, in which case it is KEPT: it may well contain a
+            // match nobody got to look for, and dropping it would both hide that
+            // and shorten the list below the budget, suppressing the "showing
+            // the first N" notice that explains why.
+            let budget_spent = out.len() >= limit;
+            if filtering && !keeps && !budget_spent && (!is_dir || out.len() == at + 1) {
                 out.remove(at);
             }
         }
@@ -821,11 +837,12 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         ));
     }
     // The trailing strip: the only way to aim at the end of the list, since
-    // hovering a row always means "above it".
-    if !app.mods.is_empty() {
-        let end = app.mods.len();
-        list = list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
-    }
+    // hovering a row always means "above it". Drawn even for an EMPTY list, or a
+    // download dragged into a fresh instance could never become aimed and the
+    // release would install nothing, silently - the one case where there is
+    // nothing else on screen to aim at.
+    let end = app.mods.len();
+    list = list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
     // `shown` counts mods only, so this cannot fire on a list that is all folded
     // groups - and it only speaks when something was actually asked.
     if !app.mods.is_empty() && shown == 0 && filtering {

@@ -11,6 +11,9 @@ name = "eidos"
 path = "src/main.rs"
 
 [dependencies]
+# Session logs: a launch started from Steam has no terminal, so the file is the
+# only record of what happened - and the GUI's Log pane reads exactly these.
+eidos-log = { path = "../eidos-log" }
 eidos-games = { path = "../eidos-games" }
 eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }

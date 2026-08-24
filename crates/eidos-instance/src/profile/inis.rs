@@ -41,7 +41,21 @@ pub fn read_text_lossy(path: &Path) -> Option<(String, bool)> {
 /// took pains to capture safely.
 pub fn write_text(path: &Path, text: &str, cp1252: bool) -> io::Result<()> {
     if cp1252 {
-        let (bytes, _, _) = encoding_rs::WINDOWS_1252.encode(text);
+        let (bytes, _, had_errors) = encoding_rs::WINDOWS_1252.encode(text);
+        // `encode` does not fail on an unrepresentable character - it substitutes
+        // an HTML numeric reference (`&#26085;`) and sets this flag. For the
+        // untweak pass that could never happen, since it only ever writes back
+        // what it read. The INI editor can: someone pastes a Japanese mod name
+        // into a CP1252 file, and the value on disk silently becomes seven ASCII
+        // characters of markup that the game reads literally.
+        //
+        // So it falls back to UTF-8 rather than mangling. A game INI is read as
+        // ANSI on Windows and this is not that, but a value the user can see is
+        // a better failure than one that was quietly rewritten - and the file
+        // was going to hold a character CP1252 cannot express either way.
+        if had_errors {
+            return copy_atomic_bytes(path, text.as_bytes());
+        }
         copy_atomic_bytes(path, &bytes)
     } else {
         copy_atomic_bytes(path, text.as_bytes())

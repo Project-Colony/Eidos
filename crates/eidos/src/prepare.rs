@@ -45,7 +45,7 @@ pub(crate) fn prepare_plugins(
 ) -> Option<(PathBuf, PathBuf)> {
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let Some(compatdata) = game.compatdata.as_ref() else {
-        eprintln!("eidos play: no Proton prefix found, skipping plugins.txt");
+        eidos_log::info!("eidos play: no Proton prefix found, skipping plugins.txt");
         return None;
     };
     let prefix = compatdata.join("pfx");
@@ -56,7 +56,7 @@ pub(crate) fn prepare_plugins(
     // bound dir never shows the game less than the dir it wrote.
     match prof.seed_plugin_state(&prefix_dir, &spec) {
         Ok(n) if n > 0 => {
-            eprintln!("eidos play: adopted {n} plugin-state file(s) into profile '{}'", prof.name)
+            eidos_log::info!("eidos play: adopted {n} plugin-state file(s) into profile '{}'", prof.name)
         }
         Ok(_) => {}
         Err(e) => {
@@ -66,7 +66,7 @@ pub(crate) fn prepare_plugins(
             // good copies with an alphabetical everything-enabled list - the exact
             // files the seed just failed to adopt. Plugin management sits out this
             // run; the game reads its own prefix files, untouched.
-            eprintln!(
+            eidos_log::warn!(
                 "eidos play: WARNING - could not adopt the plugin state into profile '{}' ({e}); \
                  plugin management is OFF for this run, the prefix files are left alone, and \
                  plugin changes made in-game this session will NOT persist to the profile",
@@ -104,7 +104,7 @@ pub(crate) fn prepare_plugins(
     list.refresh(&spec);
 
     for (p, m) in list.missing_masters() {
-        eprintln!("eidos play: WARNING - {p} is missing master {m} (likely a crash)");
+        eidos_log::warn!("eidos play: WARNING - {p} is missing master {m} (likely a crash)");
     }
     let active = list.plugins.iter().filter(|p| p.enabled).count();
     match list.write_load_order(&state_dir, &spec) {
@@ -113,7 +113,7 @@ pub(crate) fn prepare_plugins(
             // primaries and Creations the engine loads by itself, which are
             // deliberately NOT in the file. Reporting `active` as "written" once
             // pointed a whole investigation at a file that was never wrong.
-            eprintln!(
+            eidos_log::info!(
                 "eidos play: wrote plugins.txt ({listed} listed, {active} active incl. implicit)"
             );
         }
@@ -121,7 +121,7 @@ pub(crate) fn prepare_plugins(
             // Same fail-closed rule as the seed: if the PROFILE copy could not be
             // written, the shadow below must not run - it would push a state that
             // exists nowhere else onto the prefix, destroying the real files.
-            eprintln!(
+            eidos_log::warn!(
                 "eidos play: WARNING - could not write the profile plugins.txt ({e}); plugin \
                  management is OFF for this run and the prefix files are left alone"
             );
@@ -144,13 +144,13 @@ pub(crate) fn prepare_plugins(
     // copy), while our own legitimate prune after a Mods-tab disable was judged
     // as damage and flamed a false alarm on every launch.
     if session_damage.is_some() {
-        eprintln!(
+        eidos_log::info!(
             "eidos play: keeping the previous pre-session plugins.txt snapshot - the last \
              session's damage is unresolved (the GUI Diagnostics tab offers the restore, or \
              accept the current set there)"
         );
     } else if let Err(e) = prof.snapshot_plugin_state() {
-        eprintln!("eidos play: WARNING - could not snapshot plugins.txt: {e}");
+        eidos_log::warn!("eidos play: WARNING - could not snapshot plugins.txt: {e}");
     }
     Some((state_dir, prefix_dir))
 }
@@ -182,10 +182,10 @@ pub(crate) fn prepare_inis(
 
     match prof.seed_inis(&docs, ini_files) {
         Ok(n) if n > 0 => {
-            eprintln!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name)
+            eidos_log::info!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name)
         }
         Ok(_) => {}
-        Err(e) => eprintln!("eidos play: WARNING - could not seed profile INIs: {e}"),
+        Err(e) => eidos_log::warn!("eidos play: WARNING - could not seed profile INIs: {e}"),
     }
     // If the deploy fails, the prefix keeps its OLD INIs; capturing those back
     // after the run would clobber the profile's copies with stale content. So a
@@ -193,12 +193,12 @@ pub(crate) fn prepare_inis(
     let deploy_ok = match prof.deploy_inis(&docs, ini_files) {
         Ok(n) => {
             if n > 0 {
-                eprintln!("eidos play: deployed {n} profile INI(s) into the prefix");
+                eidos_log::info!("eidos play: deployed {n} profile INI(s) into the prefix");
             }
             true
         }
         Err(e) => {
-            eprintln!(
+            eidos_log::warn!(
                 "eidos play: WARNING - could not deploy profile INIs into the prefix ({e}); \
                  the game runs with the prefix's own INIs and they will NOT be captured back"
             );
@@ -220,7 +220,7 @@ pub(crate) fn prepare_inis(
             // game writes its INIs, the capture adopts them) - but silently
             // skipping the user's own initweaks.ini deserves a line of honesty.
             if !ini_files.iter().any(|f| prof.ini_path(f).is_file()) {
-                eprintln!(
+                eidos_log::info!(
                     "eidos play: INI tweaks skipped this run - profile '{}' owns no INIs yet \
                      (they are adopted after the first session)",
                     prof.name
@@ -236,11 +236,11 @@ pub(crate) fn prepare_inis(
                 }
                 match prof.apply_ini_tweaks(&docs.join(f), &fragments) {
                     Ok(rec) if !rec.is_empty() => {
-                        eprintln!("eidos play: applied {} INI tweak(s) to {f}", rec.len());
+                        eidos_log::info!("eidos play: applied {} INI tweak(s) to {f}", rec.len());
                         tweaked.push((f.to_string(), rec));
                     }
                     Ok(_) => {}
-                    Err(e) => eprintln!("eidos play: WARNING - could not apply INI tweaks to {f}: {e}"),
+                    Err(e) => eidos_log::warn!("eidos play: WARNING - could not apply INI tweaks to {f}: {e}"),
                 }
             }
         }
@@ -249,8 +249,8 @@ pub(crate) fn prepare_inis(
     // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
     // reset the plugin selection (both written into the deployed profile INIs).
     match eidos_gamefeatures::enable_bsa_invalidation(&docs, &inst.overwrite_dir(), id) {
-        Ok(()) => eprintln!("eidos play: BSA invalidation on"),
-        Err(e) => eprintln!("eidos play: could not enable BSA invalidation: {e}"),
+        Ok(()) => eidos_log::warn!("eidos play: BSA invalidation on"),
+        Err(e) => eidos_log::warn!("eidos play: could not enable BSA invalidation: {e}"),
     }
     if id == "morrowind" {
         // Morrowind only loads a BSA listed in its numbered [Archives] section;
@@ -274,7 +274,7 @@ pub(crate) fn prepare_inis(
         let _ = eidos_gamefeatures::register_morrowind_archives(&docs.join("Morrowind.ini"), &mod_bsas);
     } else if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
         if let Err(e) = eidos_gamefeatures::enable_file_selection(&docs, ini) {
-            eprintln!("eidos play: could not enable launcher file selection: {e}");
+            eidos_log::warn!("eidos play: could not enable launcher file selection: {e}");
         }
     }
     // No capture cycle when the deploy failed: the prefix INIs are not this
@@ -427,7 +427,7 @@ pub(crate) fn preserve_diverged_save(
         .unwrap_or(0);
     let orphan = prof_saves.join(format!("orphan-{secs}-{}", name.to_string_lossy()));
     if !orphan.exists() && std::fs::copy(dst, &orphan).is_ok() {
-        eprintln!(
+        eidos_log::info!(
             "eidos: rescued a save the profile had never seen into {}",
             orphan.display()
         );
@@ -459,7 +459,7 @@ pub(crate) fn prepare_saves(
     let prefix_saves = docs.join("Saves");
     if let Ok(n) = prof.seed_saves(&prefix_saves) {
         if n > 0 {
-            eprintln!("eidos play: adopted {n} existing save(s) into profile '{}'", prof.name);
+            eidos_log::info!("eidos play: adopted {n} existing save(s) into profile '{}'", prof.name);
         }
     }
     Some((prof.saves_dir(), prefix_saves))
