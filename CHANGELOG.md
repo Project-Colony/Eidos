@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.2](https://github.com/Project-Colony/Eidos/compare/v1.8.1...v1.8.2) (2026-08-24)
+
+
+### Fixes
+
+* **gui:** renaming a mod sent it to the top of the list, disabled ([0368347](https://github.com/Project-Colony/Eidos/commit/03683478f1e0c9bb1e4c3d82353ff41c76613551))
+* **loot:** the sort never used record overlap, so a dragged plugin stayed put ([c5fb1fe](https://github.com/Project-Colony/Eidos/commit/c5fb1fe9e256f492bb0676dcfaa3ca6aaaf80035))
+* **nexus:** a stored sign-in was rejected on every launch, by an endpoint that cannot accept it ([1a6012d](https://github.com/Project-Colony/Eidos/commit/1a6012d98a8bb36ce17ce4651d028500e784b66e))
+
 ## [1.8.1](https://github.com/Project-Colony/Eidos/compare/v1.8.0...v1.8.1) (2026-08-24)
 
 
