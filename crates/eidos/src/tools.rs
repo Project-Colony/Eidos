@@ -89,7 +89,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // dotnet...); the user can edit tools.ini to override.
                 prereqs: eidos_instance::default_prereqs(title),
                 // Set through the GUI's Executables editor, or by hand.
-                output_mod: None,
+                ..Default::default()
             });
             match inst.save_tools(&user) {
                 Ok(()) => println!("Added '{title}'. Run it: eidos tool {id} run {title}"),
@@ -225,6 +225,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 .or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
             let output_mod = tool.output_mod.clone();
+            let app_id = tool.app_id;
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
             // warn with the fix - without blocking (the user may have it via Steam).
@@ -261,6 +262,17 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 );
             }
 
+            // A tool that IS its own Steam app - the Creation Kit is the usual
+            // one - wants that app's id, not the game's. Both variables, because
+            // Proton reads one and Steam's own libraries read the other, and a
+            // tool that sees them disagree is a tool that fails oddly rather
+            // than clearly. Set here, on the env that is about to be handed
+            // over, so `--print` shows exactly what the real run would get.
+            if let Some(id) = app_id {
+                run.env.retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
+                run.env.push(("SteamAppId".to_string(), id.to_string()));
+                run.env.push(("SteamGameId".to_string(), id.to_string()));
+            }
             if print_only {
                 println!("would run (through the merged view at {}):", game.data_path.display());
                 println!("  argv : {command:?}");

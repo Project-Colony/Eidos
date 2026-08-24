@@ -3277,14 +3277,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::AddExecutableTool => {
             if let Some(state) = &mut app.executables {
                 state.commit_buffers();
-                let tool = Tool {
-                    title: "New Tool".to_string(),
-                    exe: PathBuf::new(),
-                    args: Vec::new(),
-                    workdir: None,
-                    prereqs: Vec::new(),
-                    output_mod: None,
-                };
+                let tool = Tool { title: "New Tool".to_string(), ..Default::default() };
                 // User tools sit at the front, ahead of the read-only defaults.
                 state.merged.insert(state.user_len, tool);
                 state.selected = Some(state.user_len);
@@ -4817,6 +4810,43 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return update(app, Message::ModVisitNexus(i));
             }
             return update(app, Message::ShowModInfo(i));
+        }
+        Message::ExecAppIdChanged(t) => {
+            app.typing = true;
+            if let Some(state) = app.executables.as_mut() {
+                state.app_id = t;
+                state.commit_buffers();
+            }
+        }
+        Message::ExecToggleHidden => {
+            if let Some(state) = app.executables.as_mut() {
+                if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
+                    t.hidden = !t.hidden;
+                }
+            }
+        }
+        Message::ExecTogglePinned => {
+            if let Some(state) = app.executables.as_mut() {
+                if let Some(t) = state.selected.and_then(|i| state.merged.get_mut(i)) {
+                    t.pinned = !t.pinned;
+                }
+            }
+        }
+        Message::ExecMakeShortcut => {
+            let (Some(state), Some(inst), Some(game)) =
+                (app.executables.as_ref(), app.created.as_ref(), selected_game(app))
+            else {
+                return Task::none();
+            };
+            let Some(tool) = state.selected.and_then(|i| state.merged.get(i)) else {
+                return Task::none();
+            };
+            match write_desktop_entry(inst, game.def.id, tool) {
+                Ok(path) => {
+                    app.status = Some(format!("Shortcut written to {}", path.display()));
+                }
+                Err(e) => app.error = Some(format!("Could not write the shortcut: {e}")),
+            }
         }
         Message::ModBackup(i) => {
             app.menu_mod = None;

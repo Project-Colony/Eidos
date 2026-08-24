@@ -13,7 +13,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// One tool the user can run through the merged view.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Tool {
     /// Display name and lookup key (case-insensitive), e.g. `SSEEdit`.
     pub title: String,
@@ -34,6 +34,20 @@ pub struct Tool {
     /// A folder name under `mods/`, never a path: it is validated on read so a
     /// hand-edited `tools.ini` cannot aim the capture outside the instance.
     pub output_mod: Option<String>,
+    /// A Steam AppID to launch this tool under, instead of the game's.
+    ///
+    /// The Creation Kit is its own Steam app and wants its own id; so do a few
+    /// modding tools shipped as separate Steam entries. On Linux this is one
+    /// environment variable at launch rather than a different launcher, which
+    /// makes it cheaper here than it is on Windows.
+    pub app_id: Option<u32>,
+    /// Keep this entry out of the tool picker without deleting it.
+    ///
+    /// A game's defaults include tools somebody may never use, and a picker
+    /// listing eight entries to reach the second is a picker nobody reads.
+    pub hidden: bool,
+    /// Sort this entry to the top of the picker.
+    pub pinned: bool,
 }
 
 /// Whether a string names a mod FOLDER and nothing else: no separators, no
@@ -62,14 +76,7 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
         let line = line.trim();
         if let Some(section) = eidos_ini::section_header(line) {
             if let Some(title) = section.strip_prefix("Tool/") {
-                out.push(Tool {
-                    title: title.to_string(),
-                    exe: PathBuf::new(),
-                    args: Vec::new(),
-                    workdir: None,
-                    prereqs: Vec::new(),
-                    output_mod: None,
-                });
+                out.push(Tool { title: title.to_string(), ..Default::default() });
             }
             continue;
         }
@@ -98,6 +105,13 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             // a hand-edited or migrated file cannot point the move at `..`, at
             // an absolute path, or at the mods directory itself.
             "output_mod" if is_mod_folder_name(v) => tool.output_mod = Some(v.to_string()),
+            // A Steam AppID is a positive integer and nothing else. A bad value
+            // is dropped rather than passed through: `SteamAppId=nonsense` in a
+            // launch environment is a confusing failure inside Proton, a long
+            // way from the file that caused it.
+            "app_id" => tool.app_id = v.trim().parse::<u32>().ok().filter(|&n| n != 0),
+            "hidden" => tool.hidden = matches!(v.trim(), "true" | "1" | "yes" | "on"),
+            "pinned" => tool.pinned = matches!(v.trim(), "true" | "1" | "yes" | "on"),
             _ => {}
         }
     }
@@ -134,6 +148,17 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if let Some(m) = t.output_mod.as_deref().filter(|m| is_mod_folder_name(m)) {
             s.push_str(&format!("output_mod={m}\n"));
+        }
+        if let Some(id) = t.app_id {
+            s.push_str(&format!("app_id={id}\n"));
+        }
+        // Written only when true, so a file nobody has touched stays as short as
+        // it was - these are defaults, not state.
+        if t.hidden {
+            s.push_str("hidden=true\n");
+        }
+        if t.pinned {
+            s.push_str("pinned=true\n");
         }
         s.push('\n');
     }
@@ -179,9 +204,7 @@ fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, ex
             prereqs: default_prereqs(&title),
             title,
             exe: PathBuf::from(exe),
-            args: Vec::new(),
-            workdir: None,
-            output_mod: None,
+            ..Default::default()
         });
     }
 }
@@ -334,6 +357,11 @@ mod tests {
                 workdir: None,
                 prereqs: Vec::new(),
                 output_mod: None,
+                // The three that decide how a tool is REACHED rather than what
+                // it runs, and they have to survive a save like everything else.
+                app_id: Some(1946160),
+                hidden: false,
+                pinned: true,
             },
             Tool {
                 title: "BodySlide".into(),
@@ -342,6 +370,9 @@ mod tests {
                 workdir: Some(PathBuf::from("/mnt/Tools")),
                 prereqs: vec!["d3dx9_43".into(), "d3dcompiler_47".into()],
                 output_mod: Some("BodySlide Output".into()),
+                app_id: None,
+                hidden: true,
+                pinned: false,
             },
         ];
         write_tools(&p, &tools).unwrap();
@@ -371,8 +402,8 @@ mod tests {
         // file; write_tools must drop such an entry, not emit it.
         let p = tmp();
         let tools = vec![
-            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None },
-            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None },
+            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None, ..Default::default() },
+            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None, ..Default::default() },
         ];
         write_tools(&p, &tools).unwrap();
         let back = read_tools(&p);
@@ -399,6 +430,7 @@ mod tests {
             workdir: None,
             prereqs: vec![],
             output_mod: Some("../escape".into()),
+                    ..Default::default()
         };
         write_tools(&p, &[t]).unwrap();
         assert!(!fs::read_to_string(&p).unwrap().contains("output_mod"), "not written");
@@ -417,6 +449,7 @@ mod tests {
             workdir: None,
             prereqs: Vec::new(),
             output_mod: None,
+                ..Default::default()
         }];
         let defaults = vec![
             Tool {
@@ -426,6 +459,7 @@ mod tests {
                 workdir: None,
                 prereqs: Vec::new(),
                 output_mod: None,
+                ..Default::default()
             },
             Tool {
                 title: "Launcher".into(),
@@ -434,6 +468,7 @@ mod tests {
                 workdir: None,
                 prereqs: Vec::new(),
                 output_mod: None,
+                ..Default::default()
             },
         ];
         let merged = merge_tools(user, defaults);

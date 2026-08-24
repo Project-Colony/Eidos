@@ -2608,8 +2608,14 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     // Run-target picker (MO2's executables combo): the game, or any tool run
     // through the same merged view. The game's launcher/binary + script extender are
     // auto-detected as tools, so they show up here alongside the user's tools.
+    // Pinned first, hidden not at all. A game's defaults include tools somebody
+    // may never use, and a picker listing eight entries to reach the second is a
+    // picker nobody reads. The order within each half is left alone - that is
+    // the order tools.ini has, which the user controls.
+    let mut listed: Vec<&Tool> = app.tools.iter().filter(|t| !t.hidden).collect();
+    listed.sort_by_key(|t| !t.pinned);
     let run_options: Vec<String> = std::iter::once(RUN_GAME.to_string())
-        .chain(app.tools.iter().map(|t| t.title.clone()))
+        .chain(listed.iter().map(|t| t.title.clone()))
         .collect();
     let run_choice = app.tool_choice.clone().unwrap_or_else(|| RUN_GAME.to_string());
 

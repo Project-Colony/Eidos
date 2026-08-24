@@ -610,6 +610,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         args: String::new(),
         prereqs: String::new(),
         output_mod: String::new(),
+        app_id: String::new(),
         // Separators head groups and unmanaged rows are the game's own content -
         // neither is a folder output can be written into. MO2 filters the same
         // set out of this combo.
@@ -755,6 +756,70 @@ pub(crate) fn reload_mods(app: &mut App) {
 /// multi-threaded, so it cannot enter a user namespace itself; the single-process
 /// `eidos` binary can. Prefer a sibling of this binary, then `~/.cargo/bin`, then
 /// `PATH`.
+/// Write a `.desktop` launcher for one tool, and return where it went.
+///
+/// The Linux translation of MO2's "create shortcut", and more useful than the
+/// Windows one: the entry runs `eidos tool <instance> run <title>` directly, so
+/// the tool comes up through the merged view with the instance's profile,
+/// without the window being open at all.
+///
+/// `~/.local/share/applications`, not the desktop: that is where a launcher
+/// belongs on a freedesktop system, and it is what makes the entry appear in the
+/// application menu and in a search.
+pub(crate) fn write_desktop_entry(
+    inst: &Instance,
+    game_id: &str,
+    tool: &eidos_instance::Tool,
+) -> std::io::Result<PathBuf> {
+    let dir = xdg_data_home().join("applications");
+    std::fs::create_dir_all(&dir)?;
+    // The instance by PATH when it is portable, by id when it is the global one
+    // - the same two spellings `eidos tool` itself accepts.
+    let target = if inst.root == Instance::global(game_id).root {
+        game_id.to_string()
+    } else {
+        inst.root.display().to_string()
+    };
+    // A name that cannot break the file: `.desktop` is INI-shaped, so a newline
+    // in a title would end the key and start a bogus one.
+    let clean = |s: &str| s.replace(['\n', '\r'], " ");
+    let title = clean(tool.title.trim());
+    let slug: String = title
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .collect();
+    let path = dir.join(format!("eidos-{}-{}.desktop", clean(game_id), slug.trim_matches('-')));
+    // Exec arguments are quoted per the Desktop Entry spec, where a literal
+    // quote and a backslash both need escaping - an instance path with a space
+    // in it is ordinary (`/mnt/Jeux/Eidos Skyrim`) and would otherwise arrive
+    // as two arguments.
+    let q = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let body = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name={title}\n\
+         Comment=Run {title} through Eidos, in the {game_id} instance\n\
+         Exec={} tool {} run {}\n\
+         Terminal=false\n\
+         Categories=Game;Utility;\n\
+         StartupNotify=false\n",
+        q(&find_eidos_binary().display().to_string()),
+        q(&target),
+        q(&title),
+    );
+    std::fs::write(&path, body)?;
+    Ok(path)
+}
+
+/// `$XDG_DATA_HOME`, or `~/.local/share`. NOT the Colony tree: a `.desktop` file
+/// belongs where the desktop looks for one, which is not ours to choose.
+fn xdg_data_home() -> PathBuf {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| home().join(".local/share"))
+}
+
 pub(crate) fn find_eidos_binary() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         let sib = exe.with_file_name("eidos");

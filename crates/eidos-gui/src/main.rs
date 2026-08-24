@@ -238,6 +238,11 @@ enum Message {
     SetGroupBy(Option<GroupBy>),
     /// Fold or unfold one synthetic group header.
     ToggleGroupFold(String),
+    /// Executables editor: the AppID field, the two flags, and the shortcut.
+    ExecAppIdChanged(String),
+    ExecToggleHidden,
+    ExecTogglePinned,
+    ExecMakeShortcut,
     /// Copy a mod's folder aside as `<name>_backup`, before editing it.
     ModBackup(usize),
     /// Copy a backup's contents back over the mod it came from. Two clicks.
@@ -844,6 +849,8 @@ struct ExecutablesDialogState {
     output_mod: String,
     /// The mods that can be picked as a target, read when the dialog opens.
     mod_names: Vec<String>,
+    /// A Steam AppID to launch this tool under, as typed (empty = the game's).
+    app_id: String,
 }
 
 impl ExecutablesDialogState {
@@ -857,6 +864,7 @@ impl ExecutablesDialogState {
                 self.args = t.args.join("\n");
                 self.prereqs = t.prereqs.join(", ");
                 self.output_mod = t.output_mod.clone().unwrap_or_default();
+                self.app_id = t.app_id.map(|n| n.to_string()).unwrap_or_default();
             }
             None => {
                 self.title.clear();
@@ -865,6 +873,7 @@ impl ExecutablesDialogState {
                 self.args.clear();
                 self.prereqs.clear();
                 self.output_mod.clear();
+                self.app_id.clear();
             }
         }
     }
@@ -895,6 +904,10 @@ impl ExecutablesDialogState {
         // that silently captures nothing.
         t.output_mod = Some(self.output_mod.trim().to_string())
             .filter(|m| self.mod_names.iter().any(|n| n == m));
+        // A blank field means "the game's id", which is what a missing key
+        // means too - so an unparseable one clears it rather than being kept as
+        // something the launch would have to guess about.
+        t.app_id = self.app_id.trim().parse::<u32>().ok().filter(|&n| n != 0);
     }
 }
 
@@ -4673,6 +4686,68 @@ mod tests {
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_hidden_tool_leaves_the_picker_and_a_pinned_one_goes_to_the_top() {
+        use eidos_instance::Tool;
+        let mk = |title: &str, hidden: bool, pinned: bool| Tool {
+            title: title.to_string(),
+            exe: PathBuf::from("/x/t.exe"),
+            hidden,
+            pinned,
+            ..Default::default()
+        };
+        let tools = vec![
+            mk("Launcher", false, false),
+            mk("Never used", true, false),
+            mk("SSEEdit", false, true),
+        ];
+        let mut listed: Vec<&Tool> = tools.iter().filter(|t| !t.hidden).collect();
+        listed.sort_by_key(|t| !t.pinned);
+        let titles: Vec<&str> = listed.iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles, vec!["SSEEdit", "Launcher"], "pinned first, hidden gone");
+    }
+
+    #[test]
+    fn a_desktop_shortcut_quotes_a_path_with_a_space_in_it() {
+        use eidos_instance::Tool;
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.join("Eidos Skyrim"));
+        inst.create().unwrap();
+        let home = root.join("fakehome");
+        fs::create_dir_all(&home).unwrap();
+        // The entry must land where the DESKTOP looks, not in the Colony tree.
+        let prev = std::env::var_os("XDG_DATA_HOME");
+        // SAFETY: single-threaded here, and restored below.
+        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+
+        let tool = Tool {
+            title: "SSEEdit".to_string(),
+            exe: PathBuf::from("/x/SSEEdit.exe"),
+            ..Default::default()
+        };
+        let path = write_desktop_entry(&inst, "skyrimse", &tool).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+
+        assert!(path.starts_with(home.join("applications")));
+        assert!(body.starts_with("[Desktop Entry]"));
+        // A portable instance with a space in its path is ordinary, and unquoted
+        // it would reach `eidos tool` as two arguments.
+        assert!(
+            body.contains(&format!("\"{}\"", inst.root.display())),
+            "the whole path is one quoted argument:\n{body}"
+        );
+        assert!(inst.root.display().to_string().contains(' '), "the fixture has a space in it");
+        assert!(body.contains("tool "), "{body}");
+        assert!(body.contains("run \"SSEEdit\""), "{body}");
+
+        match prev {
+            // SAFETY: as above.
+            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
+            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

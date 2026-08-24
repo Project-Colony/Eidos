@@ -532,12 +532,22 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) 
             .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
             .push(prereq_status_rows(app, &state.prereqs))
             .push(output_mod_field(state))
+            .push(exe_field(
+                "Steam AppID (blank = the game's)",
+                &state.app_id,
+                Message::ExecAppIdChanged,
+            ))
+            .push(tool_flags_row(state))
             .into()
     } else if state.selected.is_some() {
+        // A default cannot be edited, but hiding and pinning are about the
+        // PICKER rather than the tool, so they apply to a default too - and the
+        // list of eight defaults is exactly what somebody wants to prune.
         Column::new()
             .spacing(8)
             .push(text("This is a per-game default and cannot be edited.").size(12.0))
             .push(text("Add a user tool with the same title to override it.").size(10.0))
+            .push(tool_flags_row(state))
             .into()
     } else {
         Column::new()
@@ -1188,6 +1198,36 @@ impl std::fmt::Display for CategoryChoice {
 /// A picker, not a text field, because MO2's whole "output mod not found" error
 /// class exists only because its combo is editable: a typo there produces a tool
 /// that appears configured and captures into nothing.
+/// Hide, pin, and the desktop shortcut - three things about how a tool is
+/// REACHED rather than what it runs, which is why they sit together and apply to
+/// per-game defaults as well as to the user's own entries.
+fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+    let sel = state.selected.and_then(|i| state.merged.get(i));
+    let (hidden, pinned) = sel.map(|t| (t.hidden, t.pinned)).unwrap_or((false, false));
+    Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(
+            button(text(if pinned { "Unpin" } else { "Pin to top" }).size(11.0))
+                .padding([4, 10])
+                .style(if pinned { button::primary } else { button::secondary })
+                .on_press(Message::ExecTogglePinned),
+        )
+        .push(
+            button(text(if hidden { "Show in picker" } else { "Hide from picker" }).size(11.0))
+                .padding([4, 10])
+                .style(if hidden { button::primary } else { button::secondary })
+                .on_press(Message::ExecToggleHidden),
+        )
+        .push(
+            button(text("Desktop shortcut").size(11.0))
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::ExecMakeShortcut),
+        )
+        .into()
+}
+
 fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
     const NONE: &str = "(none - leave it in the Overwrite)";
     let mut choices: Vec<String> = vec![NONE.to_string()];
