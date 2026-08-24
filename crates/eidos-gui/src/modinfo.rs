@@ -180,7 +180,8 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         let label = if is_hidden { "Unhide" } else { "Hide" };
         // Renaming replaces the last component only, so the box holds the NAME.
         let renaming = app.tree_rename.as_ref().is_some_and(|(mi, r)| *mi == i && r == e);
-        let armed = app.tree_delete_armed.as_ref().is_some_and(|(mi, r)| *mi == i && r == e);
+        let armed =
+            app.tree_delete_armed.as_ref().is_some_and(|(mn, r)| *mn == m.name && r == e);
         let name_cell: Element<'a, Message> = if renaming {
             text_input("new name", &app.tree_rename_text)
                 .on_input(Message::FiletreeRenameChanged)
@@ -243,7 +244,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                         .padding([1, 5])
                         .style(if armed { button::danger } else { button::secondary })
                         .on_press(if armed {
-                            Message::ConfirmFiletreeDelete(i, e.clone())
+                            Message::ConfirmFiletreeDelete(m.name.clone(), e.clone())
                         } else {
                             Message::FiletreeDelete(i, e.clone())
                         }),

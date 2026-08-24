@@ -4941,11 +4941,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ModRestoreBackup(i) => {
             app.menu_mod = None;
-            app.confirm_restore = Some(i);
+            app.confirm_restore = app.mods.get(i).map(|m| m.name.clone());
         }
-        Message::ConfirmModRestoreBackup(i) => {
+        Message::ConfirmModRestoreBackup(name) => {
             app.confirm_restore = None;
-            let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
+            // Resolved by NAME at commit time, so a reload between the two
+            // clicks cannot aim this at a different backup.
+            let (Some(inst), Some(m)) =
+                (app.created.as_ref(), app.mods.iter().find(|m| m.name == name))
+            else {
                 return Task::none();
             };
             if !m.is_backup() {
@@ -5052,12 +5056,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::FiletreeDelete(i, rel) => {
-            app.tree_delete_armed = Some((i, rel));
+            app.tree_delete_armed = app.mods.get(i).map(|m| (m.name.clone(), rel));
             app.tree_rename = None;
         }
-        Message::ConfirmFiletreeDelete(i, rel) => {
+        Message::ConfirmFiletreeDelete(name, rel) => {
             app.tree_delete_armed = None;
-            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            // By name, so a reload between the clicks cannot point this at
+            // another mod's folder - where the same relative path may well
+            // exist, and would be deleted without a word.
+            let Some(base) = app.mods.iter().find(|m| m.name == name).map(|m| m.path.clone())
+            else {
+                return Task::none();
+            };
             let Some(path) = resolve_in_mod(&base, &rel) else {
                 app.error = Some(format!("Refused to delete {rel}: not a path inside this mod."));
                 return Task::none();

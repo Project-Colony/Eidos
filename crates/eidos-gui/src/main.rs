@@ -250,7 +250,8 @@ enum Message {
     ModBackup(usize),
     /// Copy a backup's contents back over the mod it came from. Two clicks.
     ModRestoreBackup(usize),
-    ConfirmModRestoreBackup(usize),
+    /// The backup's NAME, not its index: see `confirm_restore`.
+    ConfirmModRestoreBackup(String),
     /// Filetree: open the entry with the desktop's handler.
     FiletreeOpen(usize, String),
     /// Filetree: start renaming an entry (mod index, relative path).
@@ -260,7 +261,8 @@ enum Message {
     FiletreeRenameCancel,
     /// Filetree: delete an entry. Two clicks, like everything else that removes.
     FiletreeDelete(usize, String),
-    ConfirmFiletreeDelete(usize, String),
+    /// The mod's NAME, not its index: see `tree_delete_armed`.
+    ConfirmFiletreeDelete(String, String),
     /// Filetree: make a directory beside the entries shown.
     FiletreeNewFolderStart,
     FiletreeNewFolderChanged(String),
@@ -1670,10 +1672,18 @@ struct App {
     /// armed for deletion, and the new-folder box.
     tree_rename: Option<(usize, String)>,
     tree_rename_text: String,
-    tree_delete_armed: Option<(usize, String)>,
+    /// The filetree entry armed for deletion: the MOD'S NAME and the relative
+    /// path. By name for the same reason as `confirm_restore` - a reload
+    /// between the clicks would otherwise aim the delete into another mod's
+    /// folder, where the same relative path may well exist.
+    tree_delete_armed: Option<(String, String)>,
     tree_new_folder: Option<String>,
-    /// The backup row armed for restoring over its original.
-    confirm_restore: Option<usize>,
+    /// The backup armed for restoring over its original, BY NAME.
+    ///
+    /// Not by index: an index is a position in a list that anything can reload
+    /// between the two clicks, and the second click would then restore a
+    /// different backup - one that is still a backup, so no guard catches it.
+    confirm_restore: Option<String>,
     /// The file being previewed, and what could be made of it.
     preview: Option<Preview>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
@@ -4884,8 +4894,8 @@ mod tests {
         let b = app.mods.iter().position(|m| m.name == "Armour_backup").unwrap();
         let _ = update_inner(&mut app, Message::ModRestoreBackup(b));
         assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"broken", "one click arms");
-        let b = app.mods.iter().position(|m| m.name == "Armour_backup").unwrap();
-        let _ = update_inner(&mut app, Message::ConfirmModRestoreBackup(b));
+        let _ =
+            update_inner(&mut app, Message::ConfirmModRestoreBackup("Armour_backup".to_string()));
         assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"original");
         // And the scratch directory the restore used is gone.
         assert!(!root.join("mods").join("Armour.eidos-restoring").exists());
@@ -5033,8 +5043,10 @@ mod tests {
         assert!(modd.join("Meshes").join("a.nif").is_file());
 
         let _ = update_inner(&mut app, Message::FiletreeDelete(0, "Meshes/a.nif".to_string()));
-        let _ =
-            update_inner(&mut app, Message::ConfirmFiletreeDelete(0, "Meshes/a.nif".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
+        );
         assert!(!modd.join("Meshes").join("a.nif").exists());
         let _ = fs::remove_dir_all(&root);
     }
@@ -5061,6 +5073,53 @@ mod tests {
         app.screen = Screen::Main;
         refresh_meta_cache(&mut app);
         (app, root)
+    }
+
+    #[test]
+    fn a_confirmation_survives_the_list_moving_under_it() {
+        // Two-click confirmations that store an INDEX are a known trap here: a
+        // reload between the clicks and the second one acts on a different row.
+        // A restore would then overwrite a different mod - and the `is_backup`
+        // guard would not catch it, because the other row is a backup too.
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for (name, body) in [("A", "a"), ("B", "b")] {
+            let d = root.join("mods").join(name);
+            fs::create_dir_all(&d).unwrap();
+            fs::write(d.join("f.txt"), body).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+
+        // Back both up, so there are two backups to confuse.
+        for name in ["A", "B"] {
+            let i = app.mods.iter().position(|m| m.name == name).unwrap();
+            let _ = update_inner(&mut app, Message::ModBackup(i));
+        }
+        // Break A, then arm ITS restore.
+        fs::write(root.join("mods").join("A").join("f.txt"), b"broken").unwrap();
+        let i = app.mods.iter().position(|m| m.name == "A_backup").unwrap();
+        let _ = update_inner(&mut app, Message::ModRestoreBackup(i));
+        assert_eq!(app.confirm_restore.as_deref(), Some("A_backup"), "armed by name");
+
+        // Now the list moves under it - a refresh, an install, anything.
+        app.mods.reverse();
+
+        let _ = update_inner(&mut app, Message::ConfirmModRestoreBackup("A_backup".to_string()));
+        assert_eq!(
+            fs::read(root.join("mods").join("A").join("f.txt")).unwrap(),
+            b"a",
+            "A was restored"
+        );
+        assert_eq!(
+            fs::read(root.join("mods").join("B").join("f.txt")).unwrap(),
+            b"b",
+            "and B was not touched"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

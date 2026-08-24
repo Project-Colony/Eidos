@@ -1650,14 +1650,18 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     // A backup's menu is short: it is not a mod, so enabling, reinstalling,
     // endorsing and the rest have nothing to act on. Restoring is what it is for.
     if m.is_backup() {
-        let armed = app.confirm_restore == Some(i);
+        let armed = app.confirm_restore.as_deref() == Some(m.name.as_str());
         col = col.push(menu_item_owned(
             if armed {
                 "Click again: this replaces the mod".to_string()
             } else {
                 "Restore this backup over the mod".to_string()
             },
-            if armed { Message::ConfirmModRestoreBackup(i) } else { Message::ModRestoreBackup(i) },
+            if armed {
+                Message::ConfirmModRestoreBackup(m.name.clone())
+            } else {
+                Message::ModRestoreBackup(i)
+            },
         ));
     } else if !m.is_separator() && !m.unmanaged {
         col = col.push(menu_item("Back up this mod", Message::ModBackup(i)));
