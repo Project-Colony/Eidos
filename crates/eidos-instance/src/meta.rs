@@ -213,6 +213,58 @@ impl ModMeta {
         self.set("category", &format!("\"{raw}\""));
     }
 
+    /// Who is credited for the mod (MO2's `author=`). Free text: often a team
+    /// name, and not necessarily a Nexus account - which is why nothing links to
+    /// it. See [`ModMeta::uploader`] for the account that actually published it.
+    pub fn author(&self) -> Option<String> {
+        self.string("author")
+    }
+
+    pub fn set_author(&mut self, author: &str) {
+        self.set_quoted("author", author);
+    }
+
+    /// The Nexus account that uploaded it (MO2's `uploader=`), and the profile
+    /// page Nexus returned for it (`uploaderUrl=`).
+    pub fn uploader(&self) -> Option<String> {
+        self.string("uploader")
+    }
+
+    /// The uploader's profile page, if it is a web link. Same refusal as
+    /// [`ModMeta::url`]: whatever is on disk, only an http(s) address is handed
+    /// back, because the only thing a caller does with this is open it.
+    pub fn uploader_url(&self) -> Option<String> {
+        self.string("uploaderUrl")
+            .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+    }
+
+    /// Set both halves together: a profile URL with no name to attach it to is
+    /// a link with nothing to label it, and a name with no URL is not clickable
+    /// - neither is useful alone, so neither is settable alone.
+    pub fn set_uploader(&mut self, name: &str, profile_url: &str) {
+        self.set_quoted("uploader", name);
+        let url = profile_url.trim();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            self.set_quoted("uploaderUrl", url);
+        }
+    }
+
+    /// Write a value MO2's QSettings dialect can read back whole.
+    ///
+    /// Quoted, because an unquoted value containing a comma is a string LIST
+    /// there and comes back as nothing - the trap the category list and the mod
+    /// page link both have. Not escaped: `unquote` strips the surrounding quotes
+    /// and nothing else, so anything needing an escape would grow on every save;
+    /// such a value is dropped rather than mangled.
+    fn set_quoted(&mut self, key: &str, value: &str) {
+        let v = value.trim();
+        if v.is_empty() || v.contains('"') || v.contains('\\') {
+            self.set(key, "");
+        } else {
+            self.set(key, &format!("\"{v}\""));
+        }
+    }
+
     /// A page for this mod that is not on Nexus: LoversLab, GitHub, a Discord
     /// message. MO2 lets any mod carry one, which is what stops a non-Nexus mod
     /// being a dead end in the interface.
@@ -231,12 +283,7 @@ impl ModMeta {
     /// percent-encoded - so the escaping bought nothing and cost round-tripping.
     /// Anything that would need it is refused rather than mangled.
     pub fn set_url(&mut self, url: &str) {
-        let trimmed = url.trim();
-        if trimmed.is_empty() || trimmed.contains('"') || trimmed.contains('\\') {
-            self.set("url", "");
-        } else {
-            self.set("url", &format!("\"{trimmed}\""));
-        }
+        self.set_quoted("url", url);
     }
 
     /// Whether Nexus still serves this mod's page, as of the last update check.
@@ -846,6 +893,60 @@ mod tests {
 
         let expected = SAMPLE.replace("newestVersion=0.139.2.0", "newestVersion=d2026.4.3.0");
         assert_eq!(fs::read_to_string(&p).unwrap(), expected);
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn the_author_and_uploader_use_mo2s_own_keys_and_round_trip() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        assert_eq!(m.author(), None);
+
+        // A name with a comma in it - "Arthmoor, Kesta" is an ordinary credit -
+        // is a QSettings string LIST when written bare, and MO2 reads it as
+        // nothing.
+        m.set_author("Arthmoor, Kesta");
+        m.set_uploader("Arthmoor", "https://www.nexusmods.com/users/1234");
+        m.write(&p).unwrap();
+        let text = fs::read_to_string(&p).unwrap();
+        assert!(text.contains("author=\"Arthmoor, Kesta\""), "{text}");
+        assert!(text.contains("uploader=\"Arthmoor\""), "{text}");
+        assert!(text.contains("uploaderUrl=\"https://www.nexusmods.com/users/1234\""), "{text}");
+
+        let back = ModMeta::read(&p);
+        assert_eq!(back.author().as_deref(), Some("Arthmoor, Kesta"));
+        assert_eq!(back.uploader().as_deref(), Some("Arthmoor"));
+        assert_eq!(back.uploader_url().as_deref(), Some("https://www.nexusmods.com/users/1234"));
+
+        // Saved again and again without growing: the quoting is not escaped, so
+        // it has to survive its own round trip.
+        for _ in 0..3 {
+            let mut m = ModMeta::read(&p);
+            let (a, u) = (m.author().unwrap(), m.uploader().unwrap());
+            m.set_author(&a);
+            m.set_uploader(&u, &m.uploader_url().unwrap());
+            m.write(&p).unwrap();
+        }
+        assert_eq!(ModMeta::read(&p).author().as_deref(), Some("Arthmoor, Kesta"));
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn an_uploader_url_that_is_not_a_web_link_is_never_handed_back() {
+        let p = tmp_ini(SAMPLE);
+        let mut m = ModMeta::read(&p);
+        // Refused on the way IN...
+        m.set_uploader("Someone", "javascript:alert(1)");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).uploader_url(), None);
+        assert_eq!(ModMeta::read(&p).uploader().as_deref(), Some("Someone"));
+
+        // ...and on the way OUT, whatever a hand-edited file says. The only
+        // thing a caller does with this is hand it to a browser.
+        let mut m = ModMeta::read(&p);
+        m.set("uploaderUrl", "\"file:///etc/passwd\"");
+        m.write(&p).unwrap();
+        assert_eq!(ModMeta::read(&p).uploader_url(), None);
         let _ = fs::remove_file(&p);
     }
 

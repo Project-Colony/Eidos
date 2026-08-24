@@ -101,11 +101,13 @@ impl Column {
         self != Column::NexusId
     }
 
-    /// Whether Eidos has no source for this column at all. MO2 emits them empty
-    /// too, so the shape still matches - but a picker should say so rather than
-    /// offering a column that is always blank without explanation.
+    /// Whether Eidos has no source for this column at all.
+    ///
+    /// Empty now that the author and uploader are read from the mod payload the
+    /// update check already fetches - but a mod that has never been checked
+    /// still exports blank, which is a different thing and not worth a label.
     pub fn is_untracked(self) -> bool {
-        matches!(self, Column::Author | Column::Uploader | Column::UploaderUrl)
+        false
     }
 }
 
@@ -203,9 +205,12 @@ pub fn mod_list_csv(
                     Column::Name => m.name.clone(),
                     Column::Note => note.clone(),
                     Column::PrimaryCategory => category.clone(),
-                    // Not tracked; emitted empty for column parity, as MO2 does
-                    // for fields its own game plugin did not fill.
-                    Column::Author | Column::Uploader | Column::UploaderUrl => String::new(),
+                    // MO2's own three, filled from the same meta.ini keys it
+                    // uses. Blank for a mod no update check has reached yet -
+                    // which is the honest answer, not a missing feature.
+                    Column::Author => meta.author().unwrap_or_default(),
+                    Column::Uploader => meta.uploader().unwrap_or_default(),
+                    Column::UploaderUrl => meta.uploader_url().unwrap_or_default(),
                     Column::NexusId => nexus_id.to_string(),
                     Column::NexusUrl => nexus_url.clone(),
                     Column::Version => meta.version().unwrap_or_default(),

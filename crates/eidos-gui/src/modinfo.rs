@@ -42,6 +42,15 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
         if let Some(id) = meta.mod_id() {
             col = col.push(info_kv("Nexus id", id.to_string()));
         }
+        if let Some(a) = meta.author() {
+            col = col.push(info_kv("Author", a));
+        }
+        // The uploader is shown only when it says something the Author line does
+        // not: on most mods they are the same person, and a second identical row
+        // is noise pretending to be information.
+        if let Some(u) = meta.uploader().filter(|u| Some(u) != meta.author().as_ref()) {
+            col = col.push(info_kv("Uploaded by", u));
+        }
         if let Some(src) = meta.installation_file() {
             col = col.push(info_kv("Installed from", src));
         }

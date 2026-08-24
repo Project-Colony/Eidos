@@ -222,6 +222,14 @@ pub struct RemoteMod {
     pub name: String,
     pub version: String,
     pub summary: String,
+    /// Who is CREDITED for the mod - free text the author wrote, often a team
+    /// name, and not necessarily a Nexus account.
+    pub author: String,
+    /// The Nexus account that uploaded it, and the profile page Nexus gives for
+    /// it. Unlike `author` this really is an account, which is why the link
+    /// hangs off it.
+    pub uploader: String,
+    pub uploader_url: String,
     pub category_id: Option<u64>,
     pub available: bool,
     /// Nexus's own rating: `Some(true)` adult, `Some(false)` not, `None` when the
@@ -267,6 +275,12 @@ impl RemoteMod {
             // break update detection for a mod the user already has installed.
             version: s(v, "version"),
             summary: if redact { String::new() } else { s(v, "summary") },
+            // Descriptive metadata from the mod page, so it goes behind the same
+            // gate as the name and the summary. A withheld mod must not leak who
+            // made it any more than what it is called.
+            author: if redact { String::new() } else { s(v, "author") },
+            uploader: if redact { String::new() } else { s(v, "uploaded_by") },
+            uploader_url: if redact { String::new() } else { s(v, "uploaded_users_profile_url") },
             category_id: if redact { None } else { v.get("category_id").and_then(|x| x.as_u64()) },
             available,
             adult,
@@ -1115,6 +1129,16 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
                 // status that matters most and the only one obtainable without a
                 // second request per mod.
                 meta.set_nexus_available(remote.available);
+                // Free, from the payload this request already returned. MO2's
+                // own keys, so a shared instance shows the same three columns.
+                // Only written when Nexus actually said something: a blank
+                // answer must not erase what an earlier check learned.
+                if !remote.author.is_empty() {
+                    meta.set_author(&remote.author);
+                }
+                if !remote.uploader.is_empty() {
+                    meta.set_uploader(&remote.uploader, &remote.uploader_url);
+                }
                 if !remote.available {
                     result.unavailable.push(m.name.clone());
                 }
@@ -1511,6 +1535,55 @@ pub fn write_recovered_meta(
 #[cfg(test)]
 mod tests {
 
+    #[test]
+    fn the_author_and_uploader_are_read_and_go_behind_the_same_gate() {
+        let payload = serde_json::json!({
+            "name": "Unofficial Patch",
+            "version": "4.3.1",
+            "summary": "fixes",
+            "available": true,
+            "contains_adult_content": false,
+            "author": "Arthmoor, Kesta",
+            "uploaded_by": "Arthmoor",
+            "uploaded_users_profile_url": "https://www.nexusmods.com/users/1234",
+        });
+        let m = RemoteMod::from_payload(&payload, AdultPolicy::Allowed);
+        assert_eq!(m.author, "Arthmoor, Kesta");
+        assert_eq!(m.uploader, "Arthmoor");
+        assert_eq!(m.uploader_url, "https://www.nexusmods.com/users/1234");
+
+        // Withheld metadata means withheld: who made a mod is as descriptive as
+        // what it is called, and the gate exists for the descriptive fields.
+        let adult = serde_json::json!({
+            "name": "Something",
+            "version": "1.0",
+            "summary": "x",
+            "available": true,
+            "contains_adult_content": true,
+            "author": "Someone",
+            "uploaded_by": "Someone",
+            "uploaded_users_profile_url": "https://www.nexusmods.com/users/9",
+        });
+        let g = RemoteMod::from_payload(&adult, AdultPolicy::Denied);
+        assert!(!g.gate.visible());
+        assert_eq!(g.author, "");
+        assert_eq!(g.uploader, "");
+        assert_eq!(g.uploader_url, "", "a withheld mod must not leak its uploader's profile");
+        // The version still comes through - the update check depends on it.
+        assert_eq!(g.version, "1.0");
+    }
+
+    #[test]
+    fn a_payload_with_no_author_yields_empty_rather_than_a_placeholder() {
+        let payload = serde_json::json!({
+            "name": "x", "version": "1", "summary": "", "available": true,
+            "contains_adult_content": false,
+        });
+        let m = RemoteMod::from_payload(&payload, AdultPolicy::Allowed);
+        assert_eq!(m.author, "");
+        assert_eq!(m.uploader_url, "");
+    }
+
     /// A throwaway downloads dir holding one archive + its sidecar.
     fn dl_fixture(body: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir()
@@ -1653,6 +1726,9 @@ mod tests {
                 name: "Cool Mod".into(),
                 version: "1.1".into(),
                 summary: String::new(),
+                author: String::new(),
+                uploader: String::new(),
+                uploader_url: String::new(),
                 category_id: Some(7),
                 available: true,
                 adult: Some(false),
@@ -2041,6 +2117,9 @@ mod tests {
             name: "Dynamic String Distributor (DSD)".into(),
             version: "1.3.1".into(),
             summary: "".into(),
+            author: String::new(),
+            uploader: String::new(),
+            uploader_url: String::new(),
             category_id: Some(42),
             available: true,
             adult: Some(false),
@@ -2190,6 +2269,9 @@ mod tests {
             name: "Thing".into(),
             version: "1.0".into(),
             summary: String::new(),
+            author: String::new(),
+            uploader: String::new(),
+            uploader_url: String::new(),
             category_id: None,
             available: true,
             adult: Some(false),

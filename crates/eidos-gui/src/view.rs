@@ -1429,6 +1429,15 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
             Message::OpenUrl(url),
         ));
     }
+    // The person who published it, not just the page. Offered only when Nexus
+    // actually gave a profile URL - it is a real account there, unlike the
+    // free-text Author field, which is why nothing links to that one.
+    if let Some((who, url)) = meta
+        .as_ref()
+        .and_then(|mm| mm.uploader().zip(mm.uploader_url()))
+    {
+        col = col.push(menu_item_owned(format!("Visit {who}'s profile"), Message::OpenUrl(url)));
+    }
     if has_nexus {
         col = col.push(menu_item("Visit on Nexus", Message::ModVisitNexus(i)));
         let endorsed = meta.as_ref().is_some_and(|mm| mm.endorsed());

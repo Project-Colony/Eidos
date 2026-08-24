@@ -1534,11 +1534,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
             // MO2 emits it too - the shape has to match for a parser written
             // against MO2's output - and an always-blank column with no
             // explanation reads as a bug.
-            let label = if c.is_untracked() {
-                format!("{}  (not tracked - always empty)", c.label())
-            } else {
-                c.label().to_string()
-            };
+            let label = c.label().to_string();
             col.push(
                 button(
                     Row::new()
