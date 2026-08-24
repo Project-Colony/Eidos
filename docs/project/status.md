@@ -192,6 +192,31 @@ README carries only the short version; this is the receipts.
       plugin side: a capture that clears the active set entirely is refused at any
       size, because the names are still listed so nothing was uninstalled, and no
       edit produces that
+- [x] MO2 parity, the last thirty-eight: filter criteria, editable categories,
+      backups, MD5 recovery, output capture per tool, pause/resume/cancel, a real
+      Data tree, an INI editor, a log pane, user extensions, an instance manager,
+      Overwrite send-to-mods, an Archives tab that says WHY each BSA does or does
+      not load, save screenshots and cross-profile transfer, unavailable-mod
+      flags, CSV export, a File menu, plugin send-to-priority, colours and notes
+      on the row, install-at-position, bulk enable/disable, and drag-to-install.
+      Then the last eleven in one pass: offline mode, preferred CDN servers,
+      collapse-others with hover-to-expand, the four mouse and keyboard gestures,
+      the two state flags (silenced through MO2's own `validated=`), the
+      Downloads tab as an archive library, eight optional columns with a sort on
+      any of them, grouping by category or source, file operations in a mod's
+      tree, per-mod backup and restore, executable extras (Steam AppID, hide,
+      pin, `.desktop` shortcut), and image/text previews. Thirty-seven of the
+      thirty-eight are closed; the last is Nexus **collection installation**,
+      which is a decision rather than a remainder - Eidos reads a collection and
+      says on screen why it does not install one
+- [x] The Colony filesystem layout (`eidos-paths`) - `~/.config/Colony/Eidos`,
+      with logs under `~/.local/state/Colony/Eidos`, migrated by COPY so a wrong
+      migration cannot cost anybody a Nexus session. Four crates had each been
+      answering "where do my files go" by hand; there is one answer now. The
+      reason to look was worse than the layout: `Settings::save` resolved its
+      path globally, so a GUI test rewrote the developer's own preferences on
+      every run of the suite - which presented as "options revert after every
+      rebuild"
 - [ ] Casing normalization at mod-import time
 - [ ] Packaging and distribution. Now unconstrained, since the launch capability
       became optional: Eidos runs rootless and only the opt-in passthrough path
@@ -240,3 +265,28 @@ Since then, and all measured on a real 50-layer instance rather than a benchmark
 Next up: casing normalization at import, more game families proven in-game, and
 packaging - plus the open `plugins.txt` question in troubleshooting.md, which is
 the one thing standing between a working mount and a working playthrough.
+
+## On reviewing this work
+
+The MO2-parity batches were each relidden adversarially: independent readers hunt
+for defects, other readers try to refute them, and only what survives is fixed.
+Across the batches that is 154 confirmed findings, every one reproduced before
+being touched.
+
+Two results are worth keeping, because they are the argument for the method
+rather than for the count.
+
+**A systemic defect hides behind a feature that works.** Adding sorting and
+grouping to the mod list changed which rows the list DRAWS. Nothing else was
+told: selection, keyboard navigation, shift-extend, select-all and the bulk
+actions all went on asking which rows pass the *filter*, a different question the
+moment the two orders disagree. Ten findings, one mistake - and its worst case
+was Ctrl+A selecting mods inside a folded group, one click away from a batch
+Remove that deletes from disk. The fix is one function, `drawn_mod_rows`, that
+everything asks.
+
+**A fix can look right and be unreachable.** The review of *that* fix found the
+drag guard sitting in a branch no user gesture reaches - a mod row's press emits
+`DragStart`, never `SelectMod` - and its test passed only because it sent a
+message no user can produce. A second pass is not caution; it is what catches the
+first pass being confidently wrong.

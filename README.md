@@ -50,6 +50,13 @@ ENB, Engine Fixes), with no Root Builder plugin and nothing copied into your
 install. Hide single files, group with separators, targeted moves, per-mod notes
 and categories, and an MO2 profile importer.
 
+The list is MO2's, with its habits: eight optional columns and a sort on any of
+them, grouping by category or by source, double-click gestures, type-to-jump,
+per-mod backups that are inert until you restore them, and advisory flags for a
+mod whose layout this game will not load or that was downloaded for another one.
+Its file tree does the ordinary operations - new folder, rename, delete, open -
+and previews images and text without launching anything.
+
 **Plugins.** The load order with LOOT sorting built in, mod indexes like the game
 computes them, missing-master warnings, and your DLC and Creation Club content
 shown as the unmanaged rows they are.
@@ -66,17 +73,31 @@ parsed, diffed against your current plugins - with a button that enables what a
 save needs - and synced back for Steam Cloud after every session.
 
 **Nexus.** Connect an account and the site's "Mod Manager Download" button lands
-straight in your instance, with update checks against what you have installed.
+straight in your instance, with update checks against what you have installed,
+who made each mod and a link to their profile. A **collection** link lists its
+members joined against your instance - installed, downloaded, missing - which is
+reading a collection rather than installing one, and the pane says why. The
+Downloads tab is an archive library: filter, sort, hide without deleting, and
+purge the ones already installed. An **offline** switch stops all of it.
 
 **Tools.** xEdit, BodySlide, DynDOLOD and friends run *through the merged view*
 inside the game's Proton prefix - they see your mods, their output lands in
 Overwrite, and one click turns it into a real mod. Whatever runtime each one
 needs is fetched on request, so a missing DLL is a button rather than an
-afternoon.
+afternoon. Pin the ones you use, hide the ones you do not, give a tool its own
+Steam AppID when it is its own Steam app, and write a `.desktop` shortcut that
+launches it through the merged view without opening Eidos at all.
 
 **Diagnostics.** Missing masters, orphaned archives, mod-list drift, damaged
 plugin sets - and, after a run, what the script extender's own log says actually
 loaded.
+
+**Where it keeps its own files.** `~/.config/Colony/Eidos/` for what you chose -
+preferences, your Nexus session, your instance list, the game and add-on
+definitions you wrote - with logs under `~/.local/state/Colony/Eidos/`. The
+layout every program in the Colony family uses. An older Eidos kept these in
+`~/.config/eidos/`; the first launch after upgrading copies them across, says so
+in the log, and leaves the old directory exactly as it was.
 
 ## How it compares
 
@@ -131,7 +152,7 @@ combine freely:
 | DLSS with Community Shaders | `PROTON_ENABLE_NVAPI=1` - without it DLSS silently never initialises; the full checklist is [guide/graphics.md](docs/guide/graphics.md) |
 | an FPS counter on screen | `DXVK_HUD=fps` |
 | driver-level frame interpolation, zero mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - never together with Community Shaders' own frame generation |
-| verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/state/eidos/logs/`) |
+| verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/state/Colony/Eidos/logs/`) |
 | a per-session I/O report from the mount | `EIDOS_FUSE_STATS=1` |
 | a different FUSE worker count | `EIDOS_FUSE_THREADS=8` (default 4; `1` is the first thing to try when chasing a concurrency bug) |
 | this launch pinned to one portable instance | `EIDOS_INSTANCE=/path/to/folder` - without it Eidos opens the instance you last used, which is usually what you want |

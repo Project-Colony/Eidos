@@ -39,8 +39,14 @@ crates/eidos-fomod      FOMOD scripted-installer parser + condition/flag engine
 crates/eidos-gamefeatures  BSA/archive invalidation + per-profile INIs/saves at launch
 crates/eidos-gamedef    declarative per-game descriptor (one row per game; MO2 schema)
 crates/eidos-ini        shared low-level INI primitives (newline / section / key / edit)
-crates/eidos-nexus      Nexus Mods: v1 API client, nxm:// downloads, update checks
-docs/architecture.md    the design and the tradeoffs behind it
+crates/eidos-nexus      Nexus Mods: v1 API client, nxm:// downloads, update checks,
+                        v2 GraphQL for collections
+crates/eidos-log        session logs: levels, rotation, home-path redaction
+crates/eidos-addons     user extensions, read as out-of-process TOML manifests
+crates/eidos-paths      where Eidos keeps its files: the Colony layout, and the
+                        migration onto it. Depended on by every leaf crate, so
+                        std-only on purpose
+docs/internals/architecture.md  the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required
 ```

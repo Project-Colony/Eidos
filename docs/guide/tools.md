@@ -154,6 +154,35 @@ installer writes - and which Steam under Proton never runs. Without it xEdit,
 Wrye Bash and DynDOLOD open on an empty path. Eidos writes it before running a
 tool: idempotent, additive, and skipped if the prefix is uninitialised or in use.
 
+## Reaching a tool: hide, pin, and a desktop shortcut
+
+A game's defaults include tools you may never use, and a picker listing eight
+entries to reach the second is a picker nobody reads. In the Executables dialog:
+
+- **Pin to top** puts an entry at the head of the Run list.
+- **Hide from picker** takes one out without deleting it.
+- **Desktop shortcut** writes a `.desktop` into
+  `~/.local/share/applications` - where a launcher belongs on a freedesktop
+  system, so it turns up in your application menu and in a search rather than
+  on the desktop. It runs `eidos tool <instance> run <title>` directly, which
+  means the tool comes up **through the merged view with this instance's
+  profile** without the Eidos window being open at all.
+
+Hiding and pinning are about how a tool is *reached* rather than what it runs,
+so they apply to the per-game defaults as well as to your own entries.
+
+## A tool that is its own Steam app
+
+The Creation Kit is a separate Steam application and wants its own AppID; a few
+other modding tools shipped through Steam are the same. Set **Steam AppID** on
+the entry and Eidos launches it under that id instead of the game's.
+
+On Windows this means a different launcher. Here it is two environment variables
+on the run that was already being built - `SteamAppId` and `SteamGameId`, both,
+because Proton reads one and Steam's own libraries read the other, and a tool
+that sees them disagree fails oddly rather than clearly. `eidos tool ... --print`
+shows exactly what the real run would get.
+
 ## A tool's own settings are still its own
 
 Eidos puts a tool in the right place with the right DLLs. What the tool then
