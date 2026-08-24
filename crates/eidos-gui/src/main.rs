@@ -5123,6 +5123,55 @@ mod tests {
     }
 
     #[test]
+    fn renaming_a_mod_leaves_it_where_it_was_and_still_enabled() {
+        // The defect, exactly as it was reported: rename a mod and it is
+        // "teleported all the way to the top, unticked". The rename itself was
+        // fine - what failed was `save_mods` immediately after it, refused by
+        // the instance lock the rename handler was still holding. modlist.txt
+        // then still named the OLD folder, the reload treated the renamed one as
+        // a mod nobody had seen, and a new mod goes to the top disabled.
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "Middle", "Zzz"] {
+            fs::create_dir_all(root.join("mods").join(n).join("Meshes")).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        // Everything on, and remember where the middle one sits.
+        for m in app.mods.iter_mut() {
+            m.enabled = true;
+        }
+        mods_changed(&mut app);
+        let before = app.mods.iter().position(|m| m.name == "Middle").unwrap();
+        let total = app.mods.len();
+
+        let _ = update_inner(&mut app, Message::RenameStart(before));
+        let _ = update_inner(&mut app, Message::RenameChanged("Renamed".to_string()));
+        let _ = update_inner(&mut app, Message::RenameCommit);
+
+        assert!(
+            root.join("mods").join("Renamed").is_dir(),
+            "the folder moved: status={:?}",
+            app.status
+        );
+        assert_eq!(app.mods.len(), total, "no row appeared or vanished");
+        let after = app.mods.iter().position(|m| m.name == "Renamed").expect("still listed");
+        assert_eq!(after, before, "same position - status={:?}", app.status);
+        assert!(app.mods[after].enabled, "still enabled - status={:?}", app.status);
+
+        // And it survives a reload, which is what proves modlist.txt was written
+        // rather than merely the in-memory list being right.
+        reload_mods(&mut app);
+        let reloaded = app.mods.iter().position(|m| m.name == "Renamed").expect("in modlist.txt");
+        assert_eq!(reloaded, before);
+        assert!(app.mods[reloaded].enabled);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn a_confirmation_survives_the_list_moving_under_it() {
         // Two-click confirmations that store an INDEX are a known trap here: a
         // reload between the clicks and the second one acts on a different row.

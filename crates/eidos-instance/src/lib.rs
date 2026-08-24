@@ -167,7 +167,45 @@ pub struct Instance {
 /// the process dying, however abruptly - releases it; there is no stale-lock
 /// cleanup because `flock` leaves nothing to clean.
 pub struct InstanceLock {
-    _file: std::fs::File,
+    /// `None` for a RE-ENTRANT hold: this thread already owns the lock, so
+    /// there is no second `flock` to release, only a depth to decrement.
+    _file: Option<std::fs::File>,
+    root: PathBuf,
+}
+
+/// Which instance roots this process currently holds, and how deep.
+///
+/// `flock` exists to keep OTHER processes out, and it is per-open-file-
+/// description: a second descriptor is refused *even to the process that
+/// already holds the first*. Every handler in the window takes the lock around
+/// its write and then calls something that saves - and saving takes the lock.
+/// The result was a handler deadlocking against itself, reported to the user as
+/// "this instance is in use by the Eidos window", which is true and useless.
+///
+/// Worse than useless, in one case: renaming a mod took the lock, renamed the
+/// folder, and then failed to write `modlist.txt` - so the list was reloaded
+/// from a file still naming the old folder, the renamed one looked like a mod
+/// nobody had seen before, and it landed at the top of the list, disabled.
+///
+/// So the lock is re-entrant WITHIN A THREAD. Keyed by thread, not by process:
+/// two threads racing the same instance is a real conflict and still refused,
+/// which is what the background tasks need.
+static HELD: std::sync::Mutex<Vec<(PathBuf, std::thread::ThreadId, usize)>> =
+    std::sync::Mutex::new(Vec::new());
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        let me = std::thread::current().id();
+        let Ok(mut held) = HELD.lock() else { return };
+        if let Some(pos) = held.iter().position(|(r, t, _)| r == &self.root && *t == me) {
+            held[pos].2 -= 1;
+            if held[pos].2 == 0 {
+                held.swap_remove(pos);
+            }
+        }
+        // `_file` drops after this, releasing the flock - but only for the
+        // outermost hold, since a re-entrant one carries no file.
+    }
 }
 
 impl Instance {
@@ -195,6 +233,18 @@ impl Instance {
     /// mutations. `WouldBlock` means someone else has it - report WHO from the
     /// lockfile contents rather than a bare errno.
     pub fn try_lock(&self, holder: &str) -> std::io::Result<InstanceLock> {
+        // Already ours, on this thread: hand back a depth rather than asking the
+        // kernel for a second descriptor it would refuse. See [`HELD`].
+        let me = std::thread::current().id();
+        {
+            let mut held = HELD.lock().map_err(|_| {
+                std::io::Error::other("the instance lock table is poisoned")
+            })?;
+            if let Some(e) = held.iter_mut().find(|(r, t, _)| r == &self.root && *t == me) {
+                e.2 += 1;
+                return Ok(InstanceLock { _file: None, root: self.root.clone() });
+            }
+        }
         fs::create_dir_all(&self.root)?;
         let path = self.root.join(".eidos.lock");
         let file = fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path)?;
@@ -219,7 +269,10 @@ impl Instance {
         use std::io::Write;
         let mut f = &file;
         let _ = write!(f, "{holder} (pid {})", std::process::id());
-        Ok(InstanceLock { _file: file })
+        if let Ok(mut held) = HELD.lock() {
+            held.push((self.root.clone(), me, 1));
+        }
+        Ok(InstanceLock { _file: Some(file), root: self.root.clone() })
     }
 
     pub fn mods_dir(&self) -> PathBuf {
@@ -2072,6 +2125,46 @@ mod tests {
         fs::write(legacy.join("stray.nif"), b"x").unwrap();
         inst.create().unwrap();
         assert!(inst.root_overwrite_dir().join("stray.nif").is_file());
+    }
+
+    #[test]
+    fn the_instance_lock_is_re_entrant_on_one_thread_and_not_across_two() {
+        let root = std::env::temp_dir().join(format!(
+            "eidos-lock-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.clone());
+
+        // The defect this exists for: every handler takes the lock around its
+        // write and then calls something that saves - and saving takes the lock.
+        // `flock` refuses a second descriptor even to the holder, so the handler
+        // deadlocked against itself. Renaming a mod then failed to write
+        // modlist.txt, the list was reloaded from a file naming the old folder,
+        // and the renamed mod arrived at the top of the list, disabled.
+        let outer = inst.try_lock("the Eidos window").expect("first hold");
+        let inner = inst.try_lock("the Eidos window").expect("nested hold on the same thread");
+        drop(inner);
+        // Still held after the inner one goes: a depth, not a second lock.
+        assert!(inst.try_lock("again").is_ok());
+
+        // Another THREAD is a real conflict and stays refused - which is what
+        // the background tasks need.
+        let r2 = root.clone();
+        let across = std::thread::spawn(move || Instance::portable(r2).try_lock("other").is_err())
+            .join()
+            .unwrap();
+        assert!(across, "a second thread must still be refused");
+
+        drop(outer);
+        // And once every hold is gone, another thread can take it.
+        let r3 = root.clone();
+        let after = std::thread::spawn(move || Instance::portable(r3).try_lock("other").is_ok())
+            .join()
+            .unwrap();
+        assert!(after, "released for good once the last hold drops");
+        let _ = fs::remove_dir_all(&root);
     }
 
 }
