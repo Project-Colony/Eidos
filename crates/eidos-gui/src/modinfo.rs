@@ -2404,6 +2404,14 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // The log pane (MO2's dockable log view).
+    if let Some(state) = &app.log_pane {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseLogPane);
+        let dialog = container(log_pane_dialog(state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     // The INI editor (MO2's bundled tool plugin).
     if let Some(state) = &app.ini_editor {
         // No scrim dismiss: the card holds an editable buffer, and a stray click

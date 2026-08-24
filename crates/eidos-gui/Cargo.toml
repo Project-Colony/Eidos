@@ -14,6 +14,9 @@ iced = { version = "0.14", features = ["image", "smol"] }
 # eidos-core decides what the mount shows, and both must agree on the suffix.
 eidos-core = { path = "../eidos-core" }
 eidos-games = { path = "../eidos-games" }
+# The Log pane reads the session logs the CLI writes, and shares its line format
+# rather than re-deriving where the level sits in a line.
+eidos-log = { path = "../eidos-log" }
 eidos-launch = { path = "../eidos-launch" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-nexus = { path = "../eidos-nexus" }

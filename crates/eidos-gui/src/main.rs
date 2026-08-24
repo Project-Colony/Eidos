@@ -471,6 +471,20 @@ enum Message {
     PauseDownload(String),
     /// Start `eidos nxm --resume` on a paused or stalled partial.
     ResumeDownload(String),
+    // ---- Log pane (MO2's dockable log view) ----
+    /// Open the log pane, reading the newest session file.
+    ShowLogPane,
+    CloseLogPane,
+    /// Show a different session file.
+    LogPick(PathBuf),
+    /// Only show records at this level or above.
+    LogLevel(eidos_log::Level),
+    /// Re-read the current file (also fired by the tick while the pane is open).
+    LogRefresh,
+    /// Put the shown records on the clipboard.
+    LogCopy,
+    /// Open the logs folder in a file manager.
+    LogOpenFolder,
     // ---- INI editor (MO2's bundled INI Editor tool plugin) ----
     /// Open the editor on the active profile's INIs.
     ShowIniEditor,
@@ -744,6 +758,31 @@ impl ExecutablesDialogState {
         t.output_mod = Some(self.output_mod.trim().to_string())
             .filter(|m| self.mod_names.iter().any(|n| n == m));
     }
+}
+
+/// The log pane (MO2's dockable log view).
+///
+/// It reads the session FILES rather than an in-process buffer, which is the
+/// opposite of MO2 and is forced by the architecture: MO2 is one process and can
+/// install a sink into its own logger, while the work worth reading here - the
+/// mount, the deploy, the launch - happens in a separate `eidos` process whose
+/// records only ever reach its own file. A buffer inside the window would be
+/// empty of exactly what a user opens this to find.
+struct LogPaneState {
+    /// Every session file, newest first.
+    files: Vec<PathBuf>,
+    /// The one being read.
+    current: PathBuf,
+    /// Records at or above `level`, oldest first.
+    lines: Vec<(eidos_log::Level, String)>,
+    /// The floor for what is shown.
+    level: eidos_log::Level,
+    /// How many records the file held before filtering, so the pane can say what
+    /// a level switch is hiding.
+    total: usize,
+    /// True when the file was longer than the read budget and only its tail is
+    /// shown - a launch log runs to megabytes.
+    truncated: bool,
 }
 
 /// The INI editor (MO2 ships one as a tool plugin).
@@ -1197,6 +1236,8 @@ struct App {
     categories_dialog: Option<CategoriesDialogState>,
     /// The open INI editor, if any.
     ini_editor: Option<IniEditorState>,
+    /// The open log pane, if any.
+    log_pane: Option<LogPaneState>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -1526,6 +1567,11 @@ fn view(app: &App) -> Element<'_, Message> {
 /// few seconds, and calling a live download dead is worse than the reverse.
 const STALLED_AFTER: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// How often the open log pane re-reads its file. Slower than the downloads
+/// tick: a log is read, not watched, and re-parsing half a megabyte twice a
+/// second to catch a line that is not there yet is pure waste.
+const LOG_TAIL_TICK: std::time::Duration = std::time::Duration::from_millis(1500);
+
 /// How often the downloads directory is re-scanned while something is arriving.
 /// Fast enough that a progress bar moves rather than jumps, slow enough that it
 /// is a rounding error next to the transfer itself.
@@ -1709,6 +1755,13 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
         let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
+    }
+    // Tail the session log while its pane is open. Same reasoning as the
+    // downloads tick: the records worth reading are written by a SEPARATE
+    // `eidos` process, so there is nothing to await - the file is the interface.
+    // Subscribed only while the pane is up, so a closed pane costs nothing.
+    if app.log_pane.is_some() {
+        subs.push(iced::time::every(LOG_TAIL_TICK).map(|_| Message::LogRefresh));
     }
     // Auto-scroll while a drag rests on an edge band. Subscribed only then, so an
     // idle drag - or no drag at all - schedules nothing.
@@ -3765,6 +3818,86 @@ mod tests {
         app.created = Some(inst);
         app.screen = Screen::Main;
         (app, root)
+    }
+
+    /// A throwaway logs dir with one session file, and the pane loaded from it.
+    fn log_fixture(body: &str) -> (LogPaneState, PathBuf) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "eidos-logs-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        let _ = fs::create_dir_all(&dir);
+        let f = dir.join("gui.20260824-170411.1234.log");
+        fs::write(&f, body).unwrap();
+        (load_log_pane(vec![f.clone()], f, eidos_log::Level::Info), dir)
+    }
+
+    #[test]
+    fn the_log_pane_filters_by_level_and_says_what_it_is_hiding() {
+        let (pane, dir) = log_fixture(
+            "2026-08-24 17:04:11.238 DEBUG resolving layers\n\
+             2026-08-24 17:04:11.239 INFO  mounted 412 layers\n\
+             2026-08-24 17:04:11.240 ERROR could not open the prefix\n",
+        );
+        assert_eq!(pane.total, 3, "every record is counted, filtered or not");
+        assert_eq!(pane.lines.len(), 2, "Debug is below the floor");
+        assert_eq!(pane.lines[0], (eidos_log::Level::Info, "mounted 412 layers".to_string()));
+        assert_eq!(pane.lines[1].0, eidos_log::Level::Error);
+        assert!(!pane.truncated);
+
+        // Lowering the floor shows everything.
+        let all = load_log_pane(pane.files.clone(), pane.current.clone(), eidos_log::Level::Debug);
+        assert_eq!(all.lines.len(), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_multi_line_message_stays_attached_to_its_record() {
+        let (pane, dir) = log_fixture(
+            "2026-08-24 17:04:11.240 ERROR mount failed:\n    \
+             fuse: device not found\n    try: modprobe fuse\n",
+        );
+        // Three lines on disk, ONE record: the continuation lines carry no
+        // level, and inventing one for them would put text at a severity
+        // nothing claimed.
+        assert_eq!(pane.total, 1);
+        assert_eq!(pane.lines.len(), 1);
+        assert!(pane.lines[0].1.contains("device not found"), "{:?}", pane.lines[0].1);
+        assert!(pane.lines[0].1.contains("modprobe fuse"));
+
+        // And filtering it out takes its continuations with it.
+        let quiet = load_log_pane(pane.files.clone(), pane.current.clone(), eidos_log::Level::Debug);
+        assert_eq!(quiet.lines.len(), 1);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_line_orphaned_by_the_tail_seek_is_dropped_rather_than_guessed_at() {
+        // Reading only the END of a big file lands mid-line. That fragment
+        // belongs to a record that is not in the buffer, so there is nothing to
+        // attach it to and nothing honest to say about its level.
+        let (pane, dir) = log_fixture(
+            "ount 412 layers\n2026-08-24 17:04:11.239 INFO  mounted\n",
+        );
+        assert_eq!(pane.lines.len(), 1);
+        assert_eq!(pane.lines[0].1, "mounted");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_empty_or_unreadable_session_is_not_a_panic() {
+        let (pane, dir) = log_fixture("");
+        assert_eq!(pane.total, 0);
+        assert!(pane.lines.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+
+        // A file that is not there at all.
+        let gone = std::env::temp_dir().join("eidos-no-such.log");
+        let pane = load_log_pane(vec![gone.clone()], gone, eidos_log::Level::Info);
+        assert!(pane.lines.is_empty());
     }
 
     #[test]

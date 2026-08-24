@@ -1277,3 +1277,90 @@ pub(crate) fn ini_editor_dialog<'a>(
 
     container(card).width(Length::Fixed(760.0)).padding(18).style(card_style).into()
 }
+
+/// The log pane (MO2's dockable log view).
+pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> {
+    use eidos_log::Level;
+
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Log").size(18.0).width(Length::Fill))
+        .push(tool_btn("Open folder", Message::LogOpenFolder))
+        .push(tool_btn("Copy", Message::LogCopy))
+        .push(tool_btn("Refresh", Message::LogRefresh))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseLogPane),
+        );
+
+    // The level floor. Four buttons rather than a dropdown: the whole point is
+    // to flip between them while reading, which a dropdown costs two clicks.
+    let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center);
+    levels = levels.push(text("Show").size(11.0));
+    for lvl in [Level::Debug, Level::Info, Level::Warn, Level::Error] {
+        levels = levels.push(
+            button(text(lvl.as_str()).size(11.0))
+                .padding([2, 8])
+                .style(if state.level == lvl { button::primary } else { button::secondary })
+                .on_press(Message::LogLevel(lvl)),
+        );
+    }
+    levels = levels.push(
+        text(format!("{} of {} record(s)", state.lines.len(), state.total))
+            .size(10.0)
+            .width(Length::Fill),
+    );
+
+    // Which session. Newest first, and only a handful are kept, so they all fit.
+    let mut sessions = Row::new().spacing(4).align_y(iced::Alignment::Center);
+    for f in state.files.iter().take(8) {
+        let label = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        // The instance and the time; the pid is noise on a button.
+        let short: String = label.split('.').take(2).collect::<Vec<_>>().join(" ");
+        sessions = sessions.push(
+            button(text(short).size(10.0))
+                .padding([2, 6])
+                .style(if *f == state.current { button::primary } else { button::text })
+                .on_press(Message::LogPick(f.clone())),
+        );
+    }
+
+    let mut body = Column::new().spacing(1);
+    if state.truncated {
+        body = body.push(text("(showing the end of the file)").size(10.0));
+    }
+    if state.lines.is_empty() {
+        body = body.push(
+            text(if state.total == 0 {
+                "This session logged nothing."
+            } else {
+                "Nothing at this level. Lower it to see more."
+            })
+            .size(12.0),
+        );
+    }
+    for (lvl, msg) in &state.lines {
+        let colour = match lvl {
+            Level::Error => Some(CONFLICT_LOSES_FG),
+            Level::Warn => Some(Color::from_rgb8(0x8A, 0x5A, 0x00)),
+            _ => None,
+        };
+        let mut line = text(format!("{:<5} {msg}", lvl.as_str())).size(11.0).font(iced::Font::MONOSPACE);
+        if let Some(c) = colour {
+            line = line.color(c);
+        }
+        body = body.push(line);
+    }
+
+    let card = Column::new()
+        .spacing(8)
+        .push(header)
+        .push(sessions)
+        .push(levels)
+        .push(scrollable(body).height(Length::Fixed(420.0)).width(Length::Fill));
+
+    container(card).width(Length::Fixed(820.0)).padding(18).style(card_style).into()
+}

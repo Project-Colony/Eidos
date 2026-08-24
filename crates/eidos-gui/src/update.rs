@@ -1948,6 +1948,67 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.data_expanded.insert(rel);
             }
         }
+        // ---- Log pane ---------------------------------------------------------
+        Message::ShowLogPane => {
+            let files = eidos_log::sessions();
+            let Some(newest) = files.first().cloned() else {
+                app.status = Some(format!(
+                    "No session logs yet. They appear in {} once Eidos runs a game or a tool.",
+                    eidos_log::log_dir().display()
+                ));
+                return Task::none();
+            };
+            app.log_pane = Some(load_log_pane(files, newest, eidos_log::Level::Info));
+            app.menu_mod = None;
+        }
+        Message::CloseLogPane => app.log_pane = None,
+        Message::LogPick(path) => {
+            if let Some(pane) = &app.log_pane {
+                let (files, level) = (pane.files.clone(), pane.level);
+                app.log_pane = Some(load_log_pane(files, path, level));
+            }
+        }
+        Message::LogLevel(level) => {
+            if let Some(pane) = &app.log_pane {
+                let (files, current) = (pane.files.clone(), pane.current.clone());
+                app.log_pane = Some(load_log_pane(files, current, level));
+            }
+        }
+        Message::LogRefresh => {
+            if let Some(pane) = &app.log_pane {
+                // The file LIST is re-read too: a launch started while the pane
+                // is open creates a new session, and it is the one worth seeing.
+                let files = eidos_log::sessions();
+                let current =
+                    if files.contains(&pane.current) { pane.current.clone() } else {
+                        match files.first() {
+                            Some(f) => f.clone(),
+                            None => return Task::none(),
+                        }
+                    };
+                let level = pane.level;
+                app.log_pane = Some(load_log_pane(files, current, level));
+            }
+        }
+        Message::LogCopy => {
+            let Some(pane) = &app.log_pane else { return Task::none() };
+            let text: String = pane
+                .lines
+                .iter()
+                .map(|(lvl, msg)| format!("{:<5} {msg}", lvl.as_str()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            app.status = Some(format!("Copied {} log line(s).", pane.lines.len()));
+            // The level is kept in the copied text: a pasted log with the
+            // severities stripped is the half that stops being diagnosable.
+            return iced::clipboard::write(text);
+        }
+        Message::LogOpenFolder => {
+            let dir = eidos_log::log_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
+            app.status = Some(format!("Opened {}", dir.display()));
+        }
         // ---- INI editor -------------------------------------------------------
         Message::ShowIniEditor => {
             app.menu_mod = None;
@@ -4343,4 +4404,58 @@ fn load_ini_editor(
         files,
         current,
     }
+}
+
+
+/// How much of a session log the pane reads. A launch log runs to megabytes and
+/// the interesting part is always the end, so only the tail is taken.
+const LOG_TAIL_BYTES: u64 = 512 * 1024;
+
+/// Read one session log into the pane, keeping records at or above `level`.
+pub(crate) fn load_log_pane(
+    files: Vec<PathBuf>,
+    current: PathBuf,
+    level: eidos_log::Level,
+) -> LogPaneState {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut text = String::new();
+    let mut truncated = false;
+    if let Ok(mut f) = std::fs::File::open(&current) {
+        let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+        if len > LOG_TAIL_BYTES {
+            truncated = true;
+            let _ = f.seek(SeekFrom::Start(len - LOG_TAIL_BYTES));
+        }
+        let mut buf = Vec::new();
+        let _ = f.read_to_end(&mut buf);
+        // Lossy: a log can carry a game's own output, which is not always UTF-8,
+        // and refusing to show the file because one byte is odd is the wrong
+        // trade for a diagnostic view.
+        text = String::from_utf8_lossy(&buf).into_owned();
+    }
+
+    let mut lines: Vec<(eidos_log::Level, String)> = Vec::new();
+    let mut total = 0usize;
+    for line in text.lines() {
+        match eidos_log::parse_line(line) {
+            Some((lvl, msg)) => {
+                total += 1;
+                if lvl >= level {
+                    lines.push((lvl, msg.to_string()));
+                }
+            }
+            // A continuation of a multi-line message belongs to the record above
+            // it - shown when that one is, dropped when it is filtered out. A
+            // seek into the middle of the file can also land mid-line, which is
+            // why a leading orphan is simply skipped rather than guessed at.
+            None => {
+                if let Some(last) = lines.last_mut() {
+                    last.1.push('\n');
+                    last.1.push_str(line);
+                }
+            }
+        }
+    }
+    LogPaneState { files, current, lines, level, total, truncated }
 }

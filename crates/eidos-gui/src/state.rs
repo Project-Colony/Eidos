@@ -231,6 +231,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         install_at: None,
         categories_dialog: None,
         ini_editor: None,
+        log_pane: None,
         endorsing: None,
         endorsed_count: 0,
         updated_count: 0,

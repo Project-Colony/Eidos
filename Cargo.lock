@@ -1093,6 +1093,7 @@ dependencies = [
  "eidos-install",
  "eidos-instance",
  "eidos-launch",
+ "eidos-log",
  "eidos-loot",
  "eidos-nexus",
  "eidos-plugins",

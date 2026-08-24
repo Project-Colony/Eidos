@@ -214,6 +214,48 @@ pub fn path() -> Option<PathBuf> {
     LOGGER.get().and_then(|l| l.path.clone())
 }
 
+/// Every session log on disk, newest first.
+///
+/// The file name is `<instance>.<timestamp>.<pid>.log`, so a lexicographic sort
+/// within one instance is chronological; across instances the timestamp field is
+/// still fixed-width, so sorting the whole name by its timestamp is enough
+/// without stat()ing anything.
+pub fn sessions() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(log_dir()) else { return Vec::new() };
+    let mut out: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "log"))
+        .collect();
+    // Sort on the TIMESTAMP field, not the whole name: sorting the whole name
+    // would group by instance first and interleave the times, so the newest file
+    // overall would not be first.
+    out.sort_by_key(|p| {
+        let stamp = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.split('.').nth(1))
+            .unwrap_or("")
+            .to_string();
+        std::cmp::Reverse(stamp)
+    });
+    out
+}
+
+/// Split one log line into its level and its message, or `None` for a line that
+/// is not a record (a continuation of a multi-line message, or a file written by
+/// something else).
+///
+/// The format is fixed by `emit`: `YYYY-MM-DD HH:MM:SS.mmm LEVEL message`, which
+/// puts the level at a known offset. Parsing it here rather than in the reader
+/// keeps the two halves of the format in one file.
+pub fn parse_line(line: &str) -> Option<(Level, &str)> {
+    // 23 characters of timestamp, a space, then the level.
+    let rest = line.get(24..)?;
+    let (level, msg) = rest.split_once(' ')?;
+    Some((Level::parse(level.trim())?, msg.trim_start()))
+}
+
 /// Emit one record. The macros call this; call it directly only when the level
 /// is a runtime value.
 pub fn log(level: Level, args: fmt::Arguments<'_>) {
@@ -721,6 +763,28 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_log_line_splits_into_its_level_and_message() {
+        // The exact shape `emit` writes.
+        assert_eq!(
+            parse_line("2026-08-24 17:04:11.238 INFO  mounted 412 layers"),
+            Some((Level::Info, "mounted 412 layers"))
+        );
+        assert_eq!(
+            parse_line("2026-08-24 17:04:11.238 ERROR could not open the prefix"),
+            Some((Level::Error, "could not open the prefix"))
+        );
+        // A continuation line of a multi-line message is NOT a record: reading
+        // it as one would invent a level for text that has none.
+        assert_eq!(parse_line("    at some/path.rs:12"), None);
+        assert_eq!(parse_line(""), None);
+        // And a line from some other program in the same folder.
+        assert_eq!(parse_line("this is not an eidos log line at all"), None);
+        // Multi-byte characters before the offset must not panic (`get` is a
+        // char-boundary-checked slice, which is why it is used here).
+        assert_eq!(parse_line("héllo"), None);
+    }
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
