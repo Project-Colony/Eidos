@@ -232,6 +232,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         categories_dialog: None,
         ini_editor: None,
         log_pane: None,
+        addons: eidos_addons::load_addons(),
+        addons_open: false,
+        addon_findings: Vec::new(),
         endorsing: None,
         endorsed_count: 0,
         updated_count: 0,
@@ -1633,7 +1636,115 @@ pub(crate) fn refresh_diagnostics(app: &mut App) {
     }
     app.diag_stale.set(false);
     app.diag_dirty = false;
+    run_diagnose_addons(app);
     app.diag = diagnostics(app);
+}
+
+/// The values an add-on's `{placeholders}` are filled from.
+///
+/// A snapshot, deliberately: an add-on gets values and cannot call back into the
+/// window, so it cannot leave the application in a state the application did not
+/// choose. Every key is absolute, because an add-on's working directory is its
+/// own business.
+pub(crate) fn addon_context(app: &App) -> eidos_addons::Context {
+    let mut values = std::collections::BTreeMap::new();
+    if let Some(inst) = &app.created {
+        values.insert("instance".to_string(), inst.root.display().to_string());
+        values.insert("mods".to_string(), inst.mods_dir().display().to_string());
+        values.insert("downloads".to_string(), inst.downloads_dir().display().to_string());
+        values.insert("overwrite".to_string(), inst.overwrite_dir().display().to_string());
+        let prof = inst.active();
+        values.insert("profile".to_string(), prof.name.clone());
+        values.insert("profile_dir".to_string(), prof.dir().display().to_string());
+    }
+    if let Some(g) = selected_game(app) {
+        values.insert("game".to_string(), g.def.id.to_string());
+        values.insert("game_name".to_string(), g.def.name.to_string());
+        values.insert("install".to_string(), g.install_path.display().to_string());
+        values.insert("data".to_string(), g.data_path.display().to_string());
+    }
+    eidos_addons::Context { values }
+}
+
+/// How long a `diagnose` add-on is given before it is killed.
+///
+/// It runs on the diagnostics refresh, which happens after every message that
+/// changes anything, so one that blocks would freeze the window on every click.
+const ADDON_DIAGNOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Run every applicable `diagnose` add-on and collect what they reported.
+fn run_diagnose_addons(app: &mut App) {
+    app.addon_findings.clear();
+    let Some(game_id) = selected_game(app).map(|g| g.def.id.to_string()) else { return };
+    let ctx = addon_context(app);
+    let addons: Vec<eidos_addons::Addon> = app
+        .addons
+        .iter()
+        .filter(|a| a.kind == eidos_addons::AddonKind::Diagnose && a.applies_to(&game_id))
+        .cloned()
+        .collect();
+    for a in addons {
+        if a.unavailable().is_some() {
+            continue;
+        }
+        match run_addon_capture(&a, &ctx) {
+            Ok(stdout) => {
+                for f in eidos_addons::parse_findings(&stdout) {
+                    app.addon_findings.push((a.name.clone(), f));
+                }
+            }
+            Err(e) => app.addon_findings.push((
+                a.name.clone(),
+                eidos_addons::Finding {
+                    level: eidos_addons::FindingLevel::Problem,
+                    title: format!("The '{}' extension did not run", a.name),
+                    detail: e,
+                },
+            )),
+        }
+    }
+}
+
+/// Run an add-on and return its stdout, killing it if it overruns.
+pub(crate) fn run_addon_capture(
+    a: &eidos_addons::Addon,
+    ctx: &eidos_addons::Context,
+) -> Result<String, String> {
+    let mut cmd = std::process::Command::new(&a.exec);
+    for arg in &a.args {
+        cmd.arg(ctx.expand(arg));
+    }
+    if !a.workdir.is_empty() {
+        cmd.current_dir(ctx.expand(&a.workdir));
+    }
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    // Bounded wait. A `diagnose` add-on runs on the diagnostics refresh, which
+    // fires after every message that changes anything - one that blocks would
+    // freeze the window on every click, and the user would have no way to tell
+    // which add-on did it.
+    let deadline = std::time::Instant::now() + ADDON_DIAGNOSE_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("it took longer than {ADDON_DIAGNOSE_TIMEOUT:?} and was stopped"));
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !out.status.success() && out.stdout.is_empty() {
+        let why = String::from_utf8_lossy(&out.stderr);
+        let why = why.lines().next().unwrap_or("no output").trim();
+        return Err(format!("it exited with {} ({why})", out.status));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// Drop cached per-layer file walks: one layer by name (a mod whose contents

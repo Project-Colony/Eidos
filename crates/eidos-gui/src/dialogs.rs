@@ -1364,3 +1364,102 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
 
     container(card).width(Length::Fixed(820.0)).padding(18).style(card_style).into()
 }
+
+/// The Extensions list: what is installed, whether it can run, and how to add one.
+///
+/// Called "extensions", never "plugins": in this window a plugin is an `.esp`,
+/// and the Plugins tab three inches away shows exactly those.
+pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
+    use eidos_addons::AddonKind;
+
+    let game_id = app.games.get(app.selected.unwrap_or(0)).map(|g| g.def.id.to_string());
+
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Extensions").size(18.0).width(Length::Fill))
+        .push(tool_btn("Open folder", Message::OpenAddonsFolder))
+        .push(tool_btn("Reload", Message::ReloadAddons))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseAddons),
+        );
+
+    let mut rows = Column::new().spacing(6);
+    if app.addons.is_empty() {
+        rows = rows.push(
+            text(
+                "No extensions yet. Drop a .toml manifest into the folder above; the format is in \
+                 docs/guide/extensions.md.",
+            )
+            .size(12.0),
+        );
+    }
+    for a in &app.addons {
+        let kind = match a.kind {
+            AddonKind::Tool => "tool",
+            AddonKind::Diagnose => "check",
+        };
+        let mut title = Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(text(a.name.clone()).size(13.0))
+            .push(text(format!("({kind})")).size(10.0));
+        if !a.version.is_empty() {
+            title = title.push(text(format!("v{}", a.version)).size(10.0));
+        }
+        title = title.push(Space::new().width(Length::Fill));
+
+        // Why it cannot be used, if it cannot - the missing program, or a game
+        // it does not apply to. Said on the row rather than only on failure.
+        let blocked = a.unavailable().or_else(|| {
+            game_id
+                .as_deref()
+                .filter(|g| !a.applies_to(g))
+                .map(|_| "not for this game".to_string())
+        });
+        match (&blocked, a.kind) {
+            (Some(why), _) => title = title.push(text(why.clone()).size(10.0)),
+            (None, AddonKind::Tool) => {
+                title = title.push(
+                    button(text("Run").size(11.0))
+                        .padding([3, 10])
+                        .style(button::primary)
+                        .on_press(Message::RunAddon(a.id.clone())),
+                );
+            }
+            (None, AddonKind::Diagnose) => {
+                title = title.push(text("runs on refresh").size(10.0));
+            }
+        }
+
+        let mut col = Column::new().spacing(2).push(title);
+        if !a.description.is_empty() {
+            col = col.push(text(a.description.clone()).size(11.0));
+        }
+        let by = if a.author.is_empty() {
+            a.source.display().to_string()
+        } else {
+            format!("{} - {}", a.author, a.source.display())
+        };
+        col = col.push(text(by).size(9.5));
+        rows = rows.push(col);
+    }
+
+    let card = Column::new()
+        .spacing(10)
+        .push(header)
+        .push(scrollable(rows).height(Length::Fixed(360.0)).width(Length::Fill))
+        .push(
+            text(
+                "An extension is a manifest and a program Eidos runs - nothing is loaded into \
+                 Eidos itself. A 'tool' gets a Run button; a 'check' runs on every refresh and \
+                 its output appears in Health, under its own name.",
+            )
+            .size(10.0),
+        );
+
+    container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
+}

@@ -13,6 +13,8 @@ iced = { version = "0.14", features = ["image", "smol"] }
 # For the hidden-file convention only: the GUI performs the hide/unhide rename,
 # eidos-core decides what the mount shows, and both must agree on the suffix.
 eidos-core = { path = "../eidos-core" }
+# User extensions: declarative TOML add-ons run out of process.
+eidos-addons = { path = "../eidos-addons" }
 eidos-games = { path = "../eidos-games" }
 # The Log pane reads the session logs the CLI writes, and shares its line format
 # rather than re-deriving where the level sits in a line.

@@ -1948,6 +1948,76 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.data_expanded.insert(rel);
             }
         }
+        // ---- User extensions --------------------------------------------------
+        Message::ShowAddons => {
+            app.menu_mod = None;
+            // Re-read on open, so a manifest just written or just fixed appears
+            // without a restart. Discovery is a directory of small TOML files.
+            app.addons = eidos_addons::load_addons();
+            app.addons_open = true;
+        }
+        Message::CloseAddons => app.addons_open = false,
+        Message::ReloadAddons => {
+            app.addons = eidos_addons::load_addons();
+            // The diagnose add-ons have to run again: the set may have changed.
+            app.diag_dirty = true;
+            app.status = Some(format!("Loaded {} extension(s).", app.addons.len()));
+        }
+        Message::RunAddon(id) => {
+            let Some(a) = app.addons.iter().find(|a| a.id == id).cloned() else {
+                return Task::none();
+            };
+            if let Some(why) = a.unavailable() {
+                app.status = Some(format!("Cannot run '{}': {why}.", a.name));
+                return Task::none();
+            }
+            let ctx = addon_context(app);
+            // Every placeholder must resolve BEFORE anything is spawned. An
+            // unresolved one is left literal on purpose, so the program would
+            // otherwise be handed `{data}` as a path and fail somewhere far from
+            // the cause - or worse, treat it as a relative one.
+            let missing: Vec<String> = a
+                .args
+                .iter()
+                .chain(std::iter::once(&a.workdir))
+                .flat_map(|s| ctx.missing(s))
+                .collect();
+            if !missing.is_empty() {
+                app.status = Some(format!(
+                    "'{}' needs {} - open a game instance first.",
+                    a.name,
+                    missing.join(", ")
+                ));
+                return Task::none();
+            }
+            let mut cmd = std::process::Command::new(&a.exec);
+            for arg in &a.args {
+                cmd.arg(ctx.expand(arg));
+            }
+            if !a.workdir.is_empty() {
+                cmd.current_dir(ctx.expand(&a.workdir));
+            }
+            // Detached, unlike a `diagnose` add-on: a tool is something the user
+            // watches, may take minutes, and has no output Eidos parses. Waiting
+            // on it would lock the window with no lock overlay to explain why.
+            match cmd
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    app.status = Some(format!("Started '{}' (pid {}).", a.name, child.id()))
+                }
+                Err(e) => app.status = Some(format!("Could not start '{}': {e}", a.name)),
+            }
+        }
+        Message::OpenAddonsFolder => {
+            let dir = eidos_addons::user_addons_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
+            app.status = Some(format!("Opened {}", dir.display()));
+        }
         // ---- Log pane ---------------------------------------------------------
         Message::ShowLogPane => {
             let files = eidos_log::sessions();

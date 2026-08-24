@@ -1029,6 +1029,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "eidos-addons"
+version = "1.7.1"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "eidos-conflicts"
 version = "1.7.1"
 
@@ -1085,6 +1093,7 @@ dependencies = [
 name = "eidos-gui"
 version = "1.7.1"
 dependencies = [
+ "eidos-addons",
  "eidos-conflicts",
  "eidos-core",
  "eidos-fomod",

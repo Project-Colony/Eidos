@@ -471,6 +471,16 @@ enum Message {
     PauseDownload(String),
     /// Start `eidos nxm --resume` on a paused or stalled partial.
     ResumeDownload(String),
+    // ---- User extensions (add-ons) ----
+    /// Open the Extensions list.
+    ShowAddons,
+    CloseAddons,
+    /// Re-read the add-on manifests from disk.
+    ReloadAddons,
+    /// Run a `tool` add-on by id.
+    RunAddon(String),
+    /// Open the add-ons folder in a file manager.
+    OpenAddonsFolder,
     // ---- Log pane (MO2's dockable log view) ----
     /// Open the log pane, reading the newest session file.
     ShowLogPane,
@@ -1238,6 +1248,12 @@ struct App {
     ini_editor: Option<IniEditorState>,
     /// The open log pane, if any.
     log_pane: Option<LogPaneState>,
+    /// User add-ons, read at startup and on demand.
+    addons: Vec<eidos_addons::Addon>,
+    /// Whether the Extensions list is showing.
+    addons_open: bool,
+    /// What the `diagnose` add-ons reported on the last refresh, by add-on name.
+    addon_findings: Vec<(String, eidos_addons::Finding)>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -3833,6 +3849,110 @@ mod tests {
         let f = dir.join("gui.20260824-170411.1234.log");
         fs::write(&f, body).unwrap();
         (load_log_pane(vec![f.clone()], f, eidos_log::Level::Info), dir)
+    }
+
+    #[test]
+    fn an_extension_gets_every_instance_path_it_is_promised() {
+        let (app, root) = data_app(&[], &[]);
+        let ctx = addon_context(&app);
+        // Every placeholder documented in docs/guide/extensions.md must
+        // actually resolve, or the doc is a promise the code does not keep.
+        for key in [
+            "instance",
+            "mods",
+            "downloads",
+            "overwrite",
+            "profile",
+            "profile_dir",
+            "game",
+            "game_name",
+            "install",
+            "data",
+        ] {
+            assert!(ctx.values.contains_key(key), "{key} is documented but not provided");
+            assert!(!ctx.values[key].is_empty(), "{key} resolved to nothing");
+        }
+        assert_eq!(ctx.values["game"], "skyrimse");
+        assert!(ctx.expand("--root {instance}").contains(&root.display().to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_tool_extension_with_an_unresolvable_placeholder_is_refused_not_run() {
+        let mut app = nav_app(&[]);
+        assert!(app.created.is_none(), "no instance, so the instance placeholder cannot resolve");
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='x'\nname='X'\nkind='tool'\nexec='sh'\nargs=['-c','ls {instance}']\n",
+            std::path::Path::new("/x.toml"),
+        )
+        .unwrap()];
+        let _ = update_inner(&mut app, Message::RunAddon("x".to_string()));
+        let msg = app.status.clone().unwrap_or_default();
+        assert!(msg.contains("instance"), "it names what is missing: {msg}");
+        assert!(msg.contains("needs"), "{msg}");
+    }
+
+    #[test]
+    fn a_check_extension_reports_under_its_own_name_and_never_as_eidoss_own() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='c'\nname='My check'\nkind='diagnose'\nexec='sh'\n\
+             args=['-c','printf \"advice\\\\tLook here\\\\tand the detail\\\\n\"']\n",
+            std::path::Path::new("/c.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        refresh_diagnostics(&mut app);
+
+        let found = app
+            .diag
+            .iter()
+            .find(|d| d.title.contains("Look here"))
+            .expect("the finding reached the Health tab");
+        assert_eq!(found.level, DiagLevel::Advice);
+        assert_eq!(found.detail, "and the detail");
+        // Attributed. A row that read like one of Eidos's own checks would put
+        // Eidos's authority behind something it did not check.
+        assert!(found.title.starts_with("My check - "), "{}", found.title);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_check_that_hangs_is_stopped_and_blamed_by_name() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='slow'\nname='Slow one'\nkind='diagnose'\nexec='sh'\nargs=['-c','sleep 30']\n",
+            std::path::Path::new("/s.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        let started = std::time::Instant::now();
+        refresh_diagnostics(&mut app);
+        // It runs on the refresh that follows every click, so a hanging one
+        // would freeze the window with nothing on screen to blame.
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "it was not stopped");
+        let row = app
+            .diag
+            .iter()
+            .find(|d| d.title.contains("Slow one"))
+            .expect("the failure is reported, not swallowed");
+        assert_eq!(row.level, DiagLevel::Problem);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_extension_for_another_game_does_not_run_here() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='f4'\nname='FO4 only'\nkind='diagnose'\nexec='sh'\n\
+             args=['-c','printf \"problem\\\\tShould not appear\\\\n\"']\ngames=['fallout4']\n",
+            std::path::Path::new("/f.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        refresh_diagnostics(&mut app);
+        assert!(!app.diag.iter().any(|d| d.title.contains("Should not appear")));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

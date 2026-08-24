@@ -191,3 +191,10 @@ merged path rather than its own folder are in [tools.md](tools.md).
 
 Building from source and the repository layout are in
 [../internals/contributing.md](../internals/contributing.md).
+
+## Extensions
+
+Eidos can be extended without being rebuilt: a TOML manifest in
+`~/.config/eidos/addons/` adds a tool to the Extensions list or a check to the
+Health tab. Nothing is loaded into Eidos - an extension is a program it runs.
+See [extensions.md](extensions.md).

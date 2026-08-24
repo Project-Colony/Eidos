@@ -1023,6 +1023,23 @@ pub(crate) struct Diagnostic {
 pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     let mut out: Vec<Diagnostic> = Vec::new();
 
+    // What the user's own `diagnose` extensions reported, FIRST and attributed by
+    // name. First because someone who wrote a check wants to see it; attributed
+    // because a row that reads like one of Eidos's own would put its own
+    // authority behind something Eidos did not check.
+    for (who, f) in &app.addon_findings {
+        out.push(Diagnostic {
+            level: match f.level {
+                eidos_addons::FindingLevel::Problem => DiagLevel::Problem,
+                eidos_addons::FindingLevel::Advice => DiagLevel::Advice,
+                eidos_addons::FindingLevel::Ok => DiagLevel::Ok,
+            },
+            title: format!("{} - {}", who, f.title),
+            detail: f.detail.clone(),
+            actions: Vec::new(),
+        });
+    }
+
     // First, because while it is showing nothing else in this tab is trustworthy:
     // the mod list Eidos is working from does not match what is on disk, so the
     // conflict map, the load order and the layer stack are all built from a
@@ -2401,6 +2418,14 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseCategoriesDialog);
         let dialog = container(categories_dialog(state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The Extensions list.
+    if app.addons_open {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseAddons);
+        let dialog = container(addons_dialog(app)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
