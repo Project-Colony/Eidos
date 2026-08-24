@@ -471,6 +471,15 @@ enum Message {
     PauseDownload(String),
     /// Start `eidos nxm --resume` on a paused or stalled partial.
     ResumeDownload(String),
+    /// Filter the Data tree by name.
+    DataQueryChanged(String),
+    /// Show only paths more than one mod provides.
+    DataToggleConflictsOnly,
+    /// Expand / collapse every folder in the Data tree.
+    DataExpandAll,
+    DataCollapseAll,
+    /// Open a file manager on the real file behind a Data row.
+    DataReveal(PathBuf),
     /// Re-scan the downloads directory + reload each archive's `.meta` status.
     RefreshDownloads,
     /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).
@@ -1000,7 +1009,23 @@ struct PluginDrag {
 
 /// One Data-tab row: entry name, the layer providing it, and whether it is a
 /// folder (the merged view as the FUSE union would serve it).
-type DataRow = (String, String, bool);
+/// One row of the merged Data tree.
+#[derive(Debug, Clone)]
+pub(crate) struct DataRow {
+    /// The file or folder name as the merged view serves it.
+    pub(crate) name: String,
+    /// What provides it: a mod name, `[Overwrite]`, or the game.
+    pub(crate) source: String,
+    pub(crate) is_dir: bool,
+    /// The real path on disk behind the name - what Reveal and Open act on.
+    pub(crate) real: PathBuf,
+    /// Size and mtime of the winner. `None` for anything that cannot be stat'd.
+    pub(crate) size: Option<u64>,
+    pub(crate) mtime: Option<std::time::SystemTime>,
+    /// Whether more than one mod provides this path (so a row can be filtered
+    /// down to just the contested ones, which is what the tab is FOR).
+    pub(crate) conflicted: bool,
+}
 
 /// One memoised recursive listing: the view generation it was built at, and the
 /// entries behind an `Rc` so a cache HIT hands out a pointer bump instead of
@@ -1281,6 +1306,17 @@ struct App {
     /// built at. The tree merges a level at a time, so only the directories the
     /// user actually opened are ever read.
     data_listing: std::cell::RefCell<HashMap<String, (u64, Vec<DataRow>)>>,
+    /// The union the Data tab reads, built once per view generation.
+    ///
+    /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled
+    /// merge beside it: whiteouts, opaque directories, hidden names, case-folded
+    /// dedup and NTFS collation all live in one place, and the tab can no longer
+    /// disagree with the filesystem the game sees.
+    data_stack: std::cell::RefCell<Option<(u64, std::rc::Rc<eidos_core::LayerStack>)>>,
+    /// Free-text filter over the Data tree.
+    data_query: String,
+    /// Show only paths more than one mod provides.
+    data_conflicts_only: bool,
     /// Directories the user expanded in the Data tree, same keys as above. The
     /// root is implicitly expanded and never in here.
     data_expanded: HashSet<String>,
@@ -2275,7 +2311,21 @@ mod tests {
         // Stand in for what browsing the previous instance's Data tab leaves behind.
         app.data_listing
             .borrow_mut()
-            .insert(String::new(), (app.view_generation.get(), vec![("SKSE".into(), "[skyrimse]".into(), true)]));
+            .insert(
+                String::new(),
+                (
+                    app.view_generation.get(),
+                    vec![DataRow {
+                        name: "SKSE".into(),
+                        source: "[skyrimse]".into(),
+                        is_dir: true,
+                        real: PathBuf::from("/old/SKSE"),
+                        size: None,
+                        mtime: None,
+                        conflicted: false,
+                    }],
+                ),
+            );
         app.listing_cache
             .borrow_mut()
             .insert(PathBuf::from("/old"), (app.view_generation.get(), std::rc::Rc::new(vec!["stale".to_string()])));
@@ -3631,6 +3681,121 @@ mod tests {
         let msg = app.status.clone().unwrap_or_default();
         assert!(msg.contains("notes.txt"), "{msg}");
         assert!(msg.contains(".7z"), "and it says what IS accepted: {msg}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// An App with a real portable instance, one mod, and a game Data dir - the
+    /// minimum the Data tab needs to build a real `LayerStack`.
+    fn data_app(mod_files: &[(&str, &str)], overwrite: &[(&str, &str)]) -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let game = root.join("game/Data");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("Skyrim.esm"), b"vanilla").unwrap();
+        let modroot = root.join("mods/AAA");
+        for (rel, body) in mod_files {
+            let p = modroot.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, body.as_bytes()).unwrap();
+        }
+        let ow = root.join("overwrite");
+        for (rel, body) in overwrite {
+            let p = ow.join(rel);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, body.as_bytes()).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        if let Some(g) = app.games.first_mut() {
+            g.data_path = game;
+        }
+        app.mods = vec![ModEntry {
+            name: "AAA".into(),
+            enabled: true,
+            path: modroot,
+            unmanaged: false,
+        }];
+        // Written to disk, because the tab now reads the SAME layer stack the
+        // mount is handed - `load_order()`, not the window's in-memory list.
+        inst.save_modlist(&app.mods).unwrap();
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        (app, root)
+    }
+
+    #[test]
+    fn the_data_tree_hides_what_the_mount_hides() {
+        // The tab used to re-implement the union merge beside the real one, and
+        // had drifted: it showed `.eidoswh.<name>` markers as ordinary rows, and
+        // showed the lower-layer files those markers DELETE as winners - so it
+        // claimed the game would see files the mount hides.
+        let (app, root) = data_app(
+            &[("mod.esp", "from the mod")],
+            &[(&format!("{}Skyrim.esm", eidos_core::WHITEOUT_PREFIX), "")],
+        );
+        let names: Vec<String> =
+            merged_listing(&app, "").into_iter().map(|r| r.name).collect();
+        assert!(names.contains(&"mod.esp".to_string()), "{names:?}");
+        assert!(
+            !names.iter().any(|n| n.starts_with(eidos_core::WHITEOUT_PREFIX)),
+            "the marker is bookkeeping, not a file: {names:?}"
+        );
+        assert!(
+            !names.contains(&"Skyrim.esm".to_string()),
+            "a whited-out file is NOT in the merged view: {names:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_data_row_names_the_layer_that_actually_provides_it() {
+        let (app, root) = data_app(&[("mod.esp", "x")], &[("gen.json", "y")]);
+        let rows = merged_listing(&app, "");
+        let by = |n: &str| {
+            rows.iter().find(|r| r.name == n).map(|r| r.source.clone()).unwrap_or_default()
+        };
+        assert_eq!(by("gen.json"), "[Overwrite]");
+        assert_eq!(by("mod.esp"), "AAA");
+        assert_eq!(by("Skyrim.esm"), "[skyrimse]");
+        // And the size column reads the WINNER's file, not some other layer's.
+        let m = rows.iter().find(|r| r.name == "mod.esp").unwrap();
+        assert_eq!(m.size, Some(1));
+        assert!(m.real.ends_with("mods/AAA/mod.esp"), "{:?}", m.real);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_data_filter_reaches_into_folders_and_drops_empty_ones() {
+        let (mut app, root) = data_app(
+            &[("meshes/actors/thing.nif", "x"), ("scripts/other.pex", "y")],
+            &[],
+        );
+        // Unfiltered and unexpanded: only the top level draws.
+        let top: Vec<String> = data_tree_rows(&app, 500).into_iter().map(|r| r.rel).collect();
+        assert!(top.contains(&"meshes".to_string()));
+        assert!(!top.iter().any(|r| r.contains('/')), "nothing is expanded: {top:?}");
+
+        // A filter looks THROUGH folders - the match is somewhere in the tree,
+        // not necessarily on the level the user happens to have open.
+        app.data_query = "thing".to_string();
+        let hits: Vec<String> = data_tree_rows(&app, 500).into_iter().map(|r| r.rel).collect();
+        assert!(hits.contains(&"meshes/actors/thing.nif".to_string()), "{hits:?}");
+        assert!(hits.contains(&"meshes".to_string()), "its parents stay, to reach it: {hits:?}");
+        assert!(
+            !hits.iter().any(|r| r.starts_with("scripts")),
+            "a branch with no match is dropped whole: {hits:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn conflicts_only_needs_a_conflict_map_and_says_nothing_without_one() {
+        let (mut app, root) = data_app(&[("mod.esp", "x")], &[]);
+        app.data_conflicts_only = true;
+        assert!(app.conflicts.is_none());
+        // No map means nothing is KNOWN to conflict. Reporting rows as
+        // contested on no evidence would be worse than an empty list.
+        assert!(data_tree_rows(&app, 500).is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 

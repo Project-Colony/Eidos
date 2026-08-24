@@ -1948,6 +1948,45 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.data_expanded.insert(rel);
             }
         }
+        Message::DataQueryChanged(q) => {
+            app.typing = true;
+            app.data_query = q;
+        }
+        Message::DataToggleConflictsOnly => {
+            app.data_conflicts_only = !app.data_conflicts_only;
+        }
+        Message::DataExpandAll => {
+            // Walk the tree to the row budget, expanding as it goes, so this
+            // costs exactly what DRAWING the expanded tree costs and no more. A
+            // fully-expanded Skyrim Data is six figures of files; expanding the
+            // whole thing eagerly would read every enabled mod to the leaves.
+            for _ in 0..32 {
+                let rows = data_tree_rows(app, DATA_TREE_ROWS);
+                let mut added = false;
+                for r in rows {
+                    if r.row.is_dir && app.data_expanded.insert(r.rel) {
+                        added = true;
+                    }
+                }
+                if !added {
+                    break;
+                }
+            }
+            app.status = Some(format!(
+                "Expanded to the first {DATA_TREE_ROWS} entries. Filter to narrow it down."
+            ));
+        }
+        Message::DataCollapseAll => app.data_expanded.clear(),
+        Message::DataReveal(path) => {
+            // The DIRECTORY, not the file: xdg-open on a .esp hands it to
+            // whatever claims that type, which on a modding machine is usually
+            // nothing, and on an unlucky one is an editor that rewrites it.
+            let target = if path.is_dir() { path.clone() } else {
+                path.parent().map(std::path::Path::to_path_buf).unwrap_or(path.clone())
+            };
+            let _ = std::process::Command::new("xdg-open").arg(&target).spawn();
+            app.status = Some(format!("Opened {}", target.display()));
+        }
         Message::OverwriteToggleDir(rel) => {
             if !app.overwrite_expanded.remove(&rel) {
                 app.overwrite_expanded.insert(rel);

@@ -272,24 +272,57 @@ pub(crate) const DATA_TREE_ROWS: usize = 3000;
 /// so a hidden file is absent here by construction - unhiding is done from the
 /// owning mod's Filetree tab, which shows the mod's real contents.
 pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
+    // Column widths declared once so the header and the rows cannot drift apart.
+    const C_SIZE: f32 = 72.0;
+    const C_DATE: f32 = 96.0;
+    const C_ACTION: f32 = 116.0;
+
+    let controls = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text_input("Filter files", &app.data_query)
+                .on_input(Message::DataQueryChanged)
+                .padding(5)
+                .size(12.0)
+                .width(Length::Fill),
+        )
+        .push(
+            button(text("Conflicts only").size(11.0))
+                .padding([3, 8])
+                .style(if app.data_conflicts_only { button::primary } else { button::secondary })
+                .on_press(Message::DataToggleConflictsOnly),
+        )
+        .push(tool_btn("Expand all", Message::DataExpandAll))
+        .push(tool_btn("Collapse all", Message::DataCollapseAll));
+
     let header = Row::new()
         .spacing(6)
         .push(text("Name").size(11.0).width(Length::FillPortion(3)))
         .push(text("Provided by").size(11.0).width(Length::FillPortion(2)))
-        .push(text("").size(11.0).width(Length::Fixed(56.0)));
+        .push(text("Size").size(11.0).width(Length::Fixed(C_SIZE)))
+        .push(text("Modified").size(11.0).width(Length::Fixed(C_DATE)))
+        .push(text("").size(11.0).width(Length::Fixed(C_ACTION)));
 
     // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
     let mut list = Column::new();
     let rows = data_tree_rows(app, DATA_TREE_ROWS);
     if rows.is_empty() {
-        list = list.push(text("(empty)").size(12.0));
+        list = list.push(
+            text(if app.data_query.trim().is_empty() && !app.data_conflicts_only {
+                "(empty)"
+            } else {
+                "Nothing in the merged view matches."
+            })
+            .size(12.0),
+        );
     }
     let truncated = rows.len() >= DATA_TREE_ROWS;
     for (idx, r) in rows.into_iter().enumerate() {
         // A folder gets a clickable disclosure triangle; a file gets a spacer of
         // the same width so names stay in one column.
-        let lead: Element<'a, Message> = if r.is_dir {
+        let lead: Element<'a, Message> = if r.row.is_dir {
             let glyph = if app.data_expanded.contains(&r.rel) { "\u{25BE}" } else { "\u{25B8}" };
             button(text(glyph).size(11.0))
                 .padding([0, 4])
@@ -299,32 +332,62 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             Space::new().width(Length::Fixed(18.0)).into()
         };
+        // A contested file is marked on the NAME, where the eye already is,
+        // rather than in a column of its own that would cost width on every row.
+        // The colour is the one the mod list already uses for "this wins the
+        // file", because that is exactly what the row is saying.
+        let label: Element<'a, Message> = if r.row.conflicted {
+            text(format!("{} *", r.row.name)).size(12.0).color(CONFLICT_WINS_FG).into()
+        } else {
+            text(r.row.name.clone()).size(12.0).into()
+        };
         let name = Row::new()
             .spacing(2)
             .align_y(iced::Alignment::Center)
             .push(Space::new().width(Length::Fixed(r.depth as f32 * 14.0)))
             .push(lead)
-            .push(text(r.name).size(12.0));
+            .push(label);
 
         // Hiding is only offered on rows a mod owns: the Overwrite is regenerated
         // by the game (it would just come back) and the game layer is the pristine
         // install, which Eidos never writes to.
-        let owner = app.mods.iter().position(|m| !m.is_separator() && m.name == r.source);
-        let action: Element<'a, Message> = match owner {
-            Some(i) => button(text("Hide").size(10.0))
+        let owner = app.mods.iter().position(|m| !m.is_separator() && m.name == r.row.source);
+        let mut action = Row::new().spacing(3).align_y(iced::Alignment::Center);
+        // Reveal works on every row: the whole reason to look at this tree is to
+        // find out WHICH copy of a file the game gets, and the next question is
+        // always "where is it".
+        action = action.push(
+            button(text("Reveal").size(10.0))
                 .padding([1, 5])
-                .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
-                .style(button::secondary)
-                .into(),
-            None => Space::new().width(Length::Fixed(56.0)).into(),
-        };
+                .on_press(Message::DataReveal(r.row.real.clone()))
+                .style(button::secondary),
+        );
+        if let Some(i) = owner {
+            action = action.push(
+                button(text("Hide").size(10.0))
+                    .padding([1, 5])
+                    .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
+                    .style(button::secondary),
+            );
+        }
 
         let row = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
             .push(container(name).width(Length::FillPortion(3)))
-            .push(text(r.source).size(12.0).width(Length::FillPortion(2)))
-            .push(container(action).width(Length::Fixed(56.0)));
+            .push(text(r.row.source.clone()).size(12.0).width(Length::FillPortion(2)))
+            .push(
+                text(r.row.size.map(format_size).unwrap_or_default())
+                    .size(11.0)
+                    .width(Length::Fixed(C_SIZE))
+                    .align_x(iced::alignment::Horizontal::Right),
+            )
+            .push(
+                text(r.row.mtime.map(format_when).unwrap_or_default())
+                    .size(11.0)
+                    .width(Length::Fixed(C_DATE)),
+            )
+            .push(container(action).width(Length::Fixed(C_ACTION)));
         list = list.push(striped(row.into(), idx % 2 == 0));
     }
     if truncated {
@@ -333,7 +396,23 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                 .size(11.0),
         );
     }
-    Column::new().spacing(4).push(header).push(scrollable(list).height(Length::Fill)).into()
+    Column::new()
+        .spacing(4)
+        .push(controls)
+        .push(header)
+        .push(scrollable(list).height(Length::Fill))
+        .into()
+}
+
+/// A file timestamp as `YYYY-MM-DD`, which is what a Data tree is read for -
+/// "did this mod's copy land after that one's" - and short enough to sit in a
+/// column beside a name.
+pub(crate) fn format_when(t: std::time::SystemTime) -> String {
+    let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    // The backups list already owns this arithmetic (Howard Hinnant's
+    // civil_from_days); it renders `YYYY-MM-DD HH:MM` and the date is the half
+    // a file column has room for.
+    eidos_instance::format_stamp(secs).split(' ').next().unwrap_or_default().to_string()
 }
 
 pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {

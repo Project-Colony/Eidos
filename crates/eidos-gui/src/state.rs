@@ -277,6 +277,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         diag_dirty: true,
         diag_stale: std::cell::Cell::new(true),
         data_listing: std::cell::RefCell::new(HashMap::new()),
+        data_stack: std::cell::RefCell::new(None),
+        data_query: String::new(),
+        data_conflicts_only: false,
         data_expanded: HashSet::new(),
         overwrite_expanded: HashSet::new(),
         listing_cache: std::cell::RefCell::new(HashMap::new()),
@@ -1614,6 +1617,7 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
 pub(crate) fn bump_views(app: &App) {
     app.view_generation.set(app.view_generation.get().wrapping_add(1));
     app.data_listing.borrow_mut().clear();
+    app.data_stack.borrow_mut().take();
     app.listing_cache.borrow_mut().clear();
     app.diag_stale.set(true);
 }

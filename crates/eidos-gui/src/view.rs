@@ -170,48 +170,98 @@ pub(crate) fn cached_merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     entries
 }
 
+/// The union the Data tab reads, built once per view generation.
+///
+/// The same `LayerStack` `eidos-launch` mounts: same layers, same order, same
+/// overwrite. Building it walks every enabled mod once, which is why it is
+/// cached against the view generation rather than rebuilt per directory.
+pub(crate) fn data_stack(app: &App) -> Option<std::rc::Rc<eidos_core::LayerStack>> {
+    let gen = app.view_generation.get();
+    if let Some((at, stack)) = app.data_stack.borrow().as_ref() {
+        if *at == gen {
+            return Some(stack.clone());
+        }
+    }
+    let inst = app.created.as_ref()?;
+    let game = selected_game(app)?;
+    // `load_order` is already highest-priority-first and already drops disabled
+    // mods, separators and unmanaged rows - exactly what the mount is handed.
+    let mut layers = inst.load_order();
+    layers.push(game.data_path.clone());
+    let stack = std::rc::Rc::new(eidos_core::LayerStack::new(layers, inst.overwrite_dir()));
+    *app.data_stack.borrow_mut() = Some((gen, stack.clone()));
+    Some(stack)
+}
+
 /// The entries of ONE directory of the merged view (`dir` relative to `Data`,
-/// `""` for the root): each name, the source providing it (highest-priority
-/// enabled mod, or the game data), and whether it's a folder. Winner attribution
-/// matches what the FUSE layer actually serves: Overwrite first, then mods from
-/// HIGHEST display priority down, then the game data.
+/// `""` for the root): each name, the source providing it, whether it is a
+/// folder, and the real path behind it.
+///
+/// Answered by the SAME `LayerStack` the mount serves from. It used to be a
+/// third, independent reimplementation of the merge, and it had drifted: it
+/// showed `.eidoswh.<name>` whiteout markers as ordinary rows, and showed the
+/// lower-layer files those markers DELETE as winners - so the tab claimed the
+/// game would see files the mount hides.
 ///
 /// One level at a time, so expanding a node costs one directory read per layer
 /// that has it rather than a full recursive walk of every enabled mod.
 pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
-    let mut seen = HashSet::new();
-    let mut out: Vec<DataRow> = Vec::new();
-    let take = |root: &Path, source: &str, seen: &mut HashSet<String>, out: &mut Vec<DataRow>| {
-        let base = if dir.is_empty() { root.to_path_buf() } else { root.join(dir) };
-        let Ok(rd) = fs::read_dir(base) else { return };
-        for e in rd.flatten() {
-            let Ok(name) = e.file_name().into_string() else { continue };
-            // Hidden entries are out of the virtual view (eidos-core drops them
-            // from the mount too), so the Data tree must not show them as winners
-            // - the point of hiding is that the layer below wins instead.
-            if eidos_core::is_hidden_name(&name) {
-                continue;
-            }
-            if seen.insert(name.to_lowercase()) {
-                out.push((name, source.to_string(), e.path().is_dir()));
-            }
-        }
-    };
+    let Some(stack) = data_stack(app) else { return Vec::new() };
+    // Where each real path came from, so a winner can be named. Built once per
+    // call rather than per row: a deep tree asks this thousands of times.
+    let mut sources: Vec<(PathBuf, String)> = Vec::new();
     if let Some(inst) = app.created.as_ref() {
-        take(&inst.overwrite_dir(), "[Overwrite]", &mut seen, &mut out);
+        sources.push((inst.overwrite_dir(), "[Overwrite]".to_string()));
     }
-    // `app.mods` is display order = lowest priority first; the merged view's
-    // winner is the highest, so walk it in reverse.
-    for m in app.mods.iter().rev().filter(|m| m.enabled && !m.is_separator()) {
-        take(&m.path, &m.name, &mut seen, &mut out);
+    for m in app.mods.iter().filter(|m| m.enabled && !m.is_separator()) {
+        sources.push((m.path.clone(), m.name.clone()));
     }
     if let Some(g) = selected_game(app) {
-        let label = format!("[{}]", g.def.id);
-        take(&g.data_path, &label, &mut seen, &mut out);
+        sources.push((g.data_path.clone(), format!("[{}]", g.def.id)));
     }
+    let conflicts = app.conflicts.as_ref();
+
+    let mut out: Vec<DataRow> = stack
+        .list_dir_typed(dir)
+        .into_iter()
+        .map(|(name, real, ftype)| {
+            // Longest match wins: a mod nested under another root would
+            // otherwise be attributed to whichever prefix came first.
+            let source = sources
+                .iter()
+                .filter(|(root, _)| real.starts_with(root))
+                .max_by_key(|(root, _)| root.as_os_str().len())
+                .map(|(_, label)| label.clone())
+                .unwrap_or_default();
+            let md = fs::symlink_metadata(&real).ok();
+            let is_dir = ftype.map(|t| t.is_dir()).unwrap_or_else(|| real.is_dir());
+            // The conflict map is keyed by lowercased relative path and is
+            // already computed for the mod list, so this is a lookup, not a walk.
+            let rel = if dir.is_empty() {
+                name.to_lowercase()
+            } else {
+                format!("{}/{}", dir.to_lowercase(), name.to_lowercase())
+            };
+            let conflicted = !is_dir
+                && conflicts.is_some_and(|c| {
+                    c.files.get(&rel).is_some_and(eidos_conflicts::FileNode::is_conflicted)
+                });
+            DataRow {
+                name,
+                source,
+                is_dir,
+                real,
+                size: md.as_ref().filter(|m| m.is_file()).map(|m| m.len()),
+                mtime: md.as_ref().and_then(|m| m.modified().ok()),
+                conflicted,
+            }
+        })
+        .collect();
     // Folders first, then files, each alphabetically - the ordering every file
     // browser uses, and the one that makes a deep tree navigable.
-    out.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase())));
+    out.sort_by(|a, b| {
+        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     out
 }
 
@@ -289,9 +339,7 @@ pub(crate) fn restore_hidden_files(root: &Path) -> std::io::Result<usize> {
 pub(crate) struct TreeRow {
     pub(crate) depth: usize,
     pub(crate) rel: String,
-    pub(crate) name: String,
-    pub(crate) source: String,
-    pub(crate) is_dir: bool,
+    pub(crate) row: DataRow,
 }
 
 /// Flatten the expanded parts of the merged tree into the rows to draw, depth
@@ -304,15 +352,32 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
         if out.len() >= limit || depth > 32 {
             return;
         }
-        for (name, source, is_dir) in cached_merged_listing(app, dir) {
+        // A filter reaches INTO folders: a name typed in the box is somewhere
+        // in the tree, not necessarily in the level currently expanded, so a
+        // directory that would be empty after filtering is walked anyway and
+        // then dropped if nothing under it survived.
+        let query = app.data_query.trim().to_lowercase();
+        let filtering = !query.is_empty() || app.data_conflicts_only;
+        for row in cached_merged_listing(app, dir) {
             if out.len() >= limit {
                 return;
             }
-            let rel = if dir.is_empty() { name.clone() } else { format!("{dir}/{name}") };
-            let expanded = is_dir && app.data_expanded.contains(&rel);
-            out.push(TreeRow { depth, rel: rel.clone(), name, source, is_dir });
+            let rel =
+                if dir.is_empty() { row.name.clone() } else { format!("{dir}/{}", row.name) };
+            let expanded = row.is_dir && (app.data_expanded.contains(&rel) || filtering);
+            let keeps = !filtering
+                || (row.name.to_lowercase().contains(&query)
+                    && (!app.data_conflicts_only || row.conflicted));
+            let at = out.len();
+            let is_dir = row.is_dir;
+            out.push(TreeRow { depth, rel: rel.clone(), row });
             if expanded {
                 walk(app, &rel, depth + 1, limit, out);
+            }
+            // A folder earns its row by what is under it. Dropped last, so the
+            // recursion above has already had its say.
+            if filtering && !keeps && (!is_dir || out.len() == at + 1) {
+                out.remove(at);
             }
         }
     }
