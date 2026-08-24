@@ -11,10 +11,10 @@ use crate::model::*;
 /// UTF-16BE byte-order mark (FOMODs are commonly UTF-16).
 pub fn decode_xml(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let u: Vec<u16> = rest.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+        let u: Vec<u16> = rest.as_chunks::<2>().0.iter().copied().map(u16::from_le_bytes).collect();
         String::from_utf16_lossy(&u)
     } else if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        let u: Vec<u16> = rest.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+        let u: Vec<u16> = rest.as_chunks::<2>().0.iter().copied().map(u16::from_be_bytes).collect();
         String::from_utf16_lossy(&u)
     } else if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         String::from_utf8_lossy(rest).into_owned()

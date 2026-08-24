@@ -266,8 +266,6 @@ pub struct Settings {
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
     pub drag_scroll_speed: f32,
-    /// Draw the conflict marks on the mod list's scrollbar (on by default).
-    pub conflict_marks: bool,
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
@@ -282,7 +280,6 @@ impl Default for Settings {
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
             drag_scroll_speed: 1.0,
-            conflict_marks: true,
             remember_window: true,
         }
     }
@@ -337,10 +334,6 @@ impl Settings {
                         }
                     }
                 }
-                "conflict_marks" => {
-                    s.conflict_marks =
-                        !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
-                }
                 "remember_window" => {
                     s.remember_window =
                         !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
@@ -363,11 +356,10 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nconflict_marks={}\nremember_window={}\n",
+            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nremember_window={}\n",
             self.theme.as_str(),
             self.lock_gui,
             self.drag_scroll_speed,
-            self.conflict_marks,
             self.remember_window
         );
         if let Some(game) = &self.default_game {
@@ -392,6 +384,22 @@ mod tests {
     fn tmp(label: &str) -> PathBuf {
         let n = N.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("eidos-settings-{}-{}-{}.ini", label, std::process::id(), n))
+    }
+
+    #[test]
+    fn a_settings_file_from_before_the_marks_switch_still_loads() {
+        // `conflict_marks` was a real key until the scrollbar marks became
+        // unconditional. Files in the wild still carry it, and an unknown key
+        // must be ignored rather than throw the whole file away - the settings
+        // beside it are the user's and have to survive the upgrade.
+        let s = Settings::parse(
+            "[eidos]\ntheme=dark\nlock_gui=false\nconflict_marks=false\nremember_window=false\n",
+        );
+        assert_eq!(s.theme, Theme::Dark);
+        assert!(!s.lock_gui);
+        assert!(!s.remember_window);
+        // And the key is not written back: nothing reads it any more.
+        assert!(!s.to_ini().contains("conflict_marks"));
     }
 
     #[test]
@@ -532,7 +540,6 @@ mod tests {
             window_size: Some((1280, 720)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
-            conflict_marks: false,
             remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
@@ -612,7 +619,6 @@ mod tests {
             window_size: Some((1600, 900)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
-            conflict_marks: false,
             remember_window: false,
         };
         fs::write(&path, s.to_ini()).unwrap();

@@ -2057,12 +2057,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.settings_expanded.insert(key);
             }
         }
-        Message::ToggleConflictMarks(on) => {
-            app.prefs.conflict_marks = on;
-            if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
-            }
-        }
         Message::ToggleRememberWindow(on) => {
             app.prefs.remember_window = on;
             if let Err(e) = app.prefs.save() {

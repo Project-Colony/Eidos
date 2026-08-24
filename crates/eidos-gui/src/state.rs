@@ -836,6 +836,38 @@ pub(crate) fn selected_game(app: &App) -> Option<&DetectedGame> {
     app.selected.and_then(|i| app.games.get(i))
 }
 
+/// The mod folder names currently selected in the mod list, lowercased for
+/// comparison against a plugin's `origin_mod`.
+///
+/// MO2 highlights, in the plugin list, the plugins that come from the mod you
+/// just clicked - the answer to "which of these 215 rows did THIS mod bring?",
+/// which is otherwise a tooltip-by-tooltip hunt. Multi-selection is included
+/// because the mod list supports it and a highlight that covered only the
+/// anchor row would contradict what the user sees selected.
+///
+/// Separators contribute nothing: they are dividers, never the origin of a
+/// plugin, so a selected separator highlights nothing rather than matching
+/// every plugin whose origin happens to be empty.
+pub(crate) fn selected_mod_origins(app: &App) -> HashSet<String> {
+    app.selected_mods
+        .iter()
+        .copied()
+        .chain(app.selected_mod)
+        .filter_map(|i| app.mods.get(i))
+        .filter(|m| !m.is_separator())
+        .map(|m| m.name.to_ascii_lowercase())
+        .collect()
+}
+
+/// Whether a plugin was shipped by one of the mods selected in the mod list.
+///
+/// Case-insensitive because the origin is a folder name and the comparison must
+/// not depend on how the archive happened to be cased. An empty origin means
+/// the game's own Data, which belongs to no mod and so never highlights.
+pub(crate) fn plugin_from_selected_mod(origins: &HashSet<String>, origin_mod: &str) -> bool {
+    !origin_mod.is_empty() && origins.contains(&origin_mod.to_ascii_lowercase())
+}
+
 pub(crate) fn planned_instance(app: &App) -> Option<Instance> {
     let game = selected_game(app)?;
     Some(match app.kind {

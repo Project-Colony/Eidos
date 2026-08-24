@@ -1591,9 +1591,16 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
+    // Computed once for the whole list, not per row: the mod selection does not
+    // change while the panel is being drawn, and lowercasing 215 folder names
+    // per plugin would be work proportional to mods x plugins.
+    let selected_origins = selected_mod_origins(app);
     // No spacing: the insertion strips are the spacing, exactly as in the mod
     // list, so the layout does not shift the instant a drag begins.
     let mut rows = Column::new();
+    // One entry per drawn row, feeding the strip over the scrollbar: a highlight
+    // is useless if the plugin it marks is forty rows out of sight.
+    let mut marks: Vec<Option<Color>> = Vec::new();
     let total = list.plugins.len();
     let drag = app.plugin_drag.as_ref();
     // The line draws iff releasing here would move the block - the exact
@@ -1778,14 +1785,21 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // both exactly as in the mod list; hovering it during a drag means
         // "insert above me".
         let selected = app.selected_plugin == Some(i) || app.selected_plugins.contains(&i);
+        // Highlight the plugins the SELECTED MOD ships, as MO2 does: with two
+        // hundred rows, "which of these came from the mod I just clicked" is
+        // otherwise a tooltip-by-tooltip hunt. The plugin's own selection still
+        // outranks it - that row is where the user's focus is, and losing its
+        // marker to a colour describing a relationship would be a step back.
+        let from_selected_mod = plugin_from_selected_mod(&selected_origins, &p.origin_mod);
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
-        let painted: Element<'a, Message> = if selected {
+        let painted: Element<'a, Message> = if selected || from_selected_mod {
+            let bg = if selected { SEL_BG } else { ORIGIN_BG };
             container(row)
                 .width(Length::Fill)
                 .padding(2)
-                .style(|_t: &Theme| container::Style {
-                    background: Some(Background::Color(SEL_BG)),
+                .style(move |_t: &Theme| container::Style {
+                    background: Some(Background::Color(bg)),
                     ..Default::default()
                 })
                 .into()
@@ -1804,6 +1818,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             Message::PluginDragDrop,
         ));
         rows = rows.push(grab);
+        marks.push(from_selected_mod.then_some(ORIGIN_BG));
     }
     // The trailing strip: hovering a row always means "above it", so this is the
     // only way to aim at the end of the load order.
@@ -1822,6 +1837,14 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // bounds - the gesture that reaches an earlier row - and `on_release` raced
     // the listener to cancel what it was about to drop.
     let list_area = mouse_area(scrollable(rows).id(plugin_scroll_id()).height(Length::Fill));
+    // Stacked over the scrollbar rather than beside it: in the flow, a strip
+    // shifts the whole list sideways for what is meant to be a hint. Nothing in
+    // it handles events, so the scrollbar keeps the pointer. Always drawn, like
+    // the mod list's: the strip takes no width when there is nothing to mark, so
+    // there was never anything for a switch to save.
+    let list_area = Stack::new().push(list_area).push(
+        Row::new().push(Space::new().width(Length::Fill)).push(scroll_marks(&marks)),
+    );
 
     Column::new().spacing(6).push(head).push(header).push(list_area).into()
 }
@@ -2806,7 +2829,7 @@ pub(crate) fn load_downloads(app: &mut App) {
             Some((row, modified))
         })
         .collect();
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.1));
     let mut rows: Vec<DownloadRow> =
         entries.into_iter().map(|(r, _)| r).take(SAVES_LIST_CAP).collect();
 

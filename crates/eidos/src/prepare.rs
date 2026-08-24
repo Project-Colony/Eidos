@@ -324,7 +324,7 @@ pub(crate) fn sync_saves_for_cloud(
             Some((path, mtime))
         })
         .collect();
-    files.sort_by(|a, b| b.1.cmp(&a.1));
+    files.sort_by_key(|f| std::cmp::Reverse(f.1));
     files.truncate(MAX_FILES);
 
     // What THIS sync has written to the prefix over its lifetime, so a later run

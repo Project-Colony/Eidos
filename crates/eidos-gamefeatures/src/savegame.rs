@@ -587,8 +587,8 @@ fn lz4_block_decompress(src: &[u8], limit: usize, out: &mut Vec<u8>) -> bool {
 
         // Byte at a time on purpose: an LZ4 match is allowed to overlap the bytes it
         // is producing (offset < match_len), so a bulk copy would be wrong.
-        let mut from = out.len() - offset;
-        for _ in 0..match_len {
+        let start = out.len() - offset;
+        for from in start..start + match_len {
             if out.len() >= limit {
                 return true;
             }
@@ -597,7 +597,6 @@ fn lz4_block_decompress(src: &[u8], limit: usize, out: &mut Vec<u8>) -> bool {
                 None => return false,
             };
             out.push(b);
-            from += 1;
         }
     }
     true

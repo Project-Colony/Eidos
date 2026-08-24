@@ -140,8 +140,9 @@ pub(crate) fn settings_info<'a>(label: &'a str, value: String) -> Element<'a, Me
         .into()
 }
 
-/// A thin strip beside the scrollbar marking WHERE the conflicting mods are, in
-/// the same green/red as the row tints.
+/// A thin strip beside the scrollbar marking WHERE the tinted rows are, in the
+/// same colours the rows themselves use - the conflict green/red in the mod
+/// list, the origin blue in the plugin list.
 ///
 /// MO2 draws these marks on the scrollbar itself. The point is the same: with a
 /// few hundred mods, "this one is overwritten" is useless if finding the culprit
@@ -154,12 +155,12 @@ pub(crate) fn settings_info<'a>(label: &'a str, value: String) -> Element<'a, Me
 ///
 /// Meant to be stacked over the scrollbar, not placed next to it. Nothing here
 /// handles events, so the scrollbar underneath still takes the pointer.
-pub(crate) fn conflict_map<'a>(tints: &[Option<Color>]) -> Element<'a, Message> {
+pub(crate) fn scroll_marks<'a>(tints: &[Option<Color>]) -> Element<'a, Message> {
     // Nothing to point at: take no width at all rather than leave a dead gutter.
     if tints.is_empty() || tints.iter().all(Option::is_none) {
         return Space::new().width(Length::Fixed(0.0)).into();
     }
-    let mut col = Column::new().width(Length::Fixed(CONFLICT_MAP_W)).height(Length::Fill);
+    let mut col = Column::new().width(Length::Fixed(SCROLL_MARKS_W)).height(Length::Fill);
     let mut i = 0;
     while i < tints.len() {
         let tint = tints[i];
@@ -180,11 +181,11 @@ pub(crate) fn conflict_map<'a>(tints: &[Option<Color>]) -> Element<'a, Message> 
     col.into()
 }
 
-/// Width of the conflict strip: iced's default scrollbar width, because the
+/// Width of the marks strip: iced's default scrollbar width, because the
 /// strip is laid OVER the scrollbar rather than beside it. Beside it, the marks
 /// pushed the whole list sideways to make room - visible, and ugly, for
 /// something that is meant to be a hint.
-pub(crate) const CONFLICT_MAP_W: f32 = 10.0;
+pub(crate) const SCROLL_MARKS_W: f32 = 10.0;
 
 /// Place a floating card with one corner at `at`, growing away from the nearest
 /// window edge.

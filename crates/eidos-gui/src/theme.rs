@@ -74,6 +74,12 @@ pub(crate) fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<
 /// The highlight behind the selected mod row.
 pub(crate) const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct from the stripes
 
+/// A plugin that comes FROM the mod selected in the mod list (MO2 highlights
+/// the same relationship). Blue on purpose: it must not be mistaken for the
+/// selection tan, nor for the green/red of the conflict tints, because it
+/// answers a different question - not "who wins", but "who ships this".
+pub(crate) const ORIGIN_BG: Color = Color::from_rgb(0.796, 0.851, 0.898);
+
 /// A mod the focused one OVERWRITES: it sits lower in the list and wins the
 /// files they share. Green - the focused mod is on top of these.
 pub(crate) const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);

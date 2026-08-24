@@ -322,7 +322,6 @@ enum Message {
     /// Open or close one collapsible section of the Settings screen.
     SettingsToggleSection(&'static str),
     /// Toggle the conflict marks on the mod list's scrollbar.
-    ToggleConflictMarks(bool),
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
     // ---- Executables dialog (MO2's Modify Executables) ----
@@ -1634,6 +1633,63 @@ mod tests {
             .map(|n| ModEntry { name: n.to_string(), enabled: true, path: PathBuf::new(), unmanaged: false })
             .collect()
     }
+    #[test]
+    fn selecting_a_mod_marks_the_plugins_it_ships() {
+        // MO2's behaviour, and the reason the feature exists: with hundreds of
+        // rows, the only other way to learn which plugins a mod brought is to
+        // hover them one by one.
+        let mut app = nav_app(&["Armour Pack", "Weather_separator", "Quest Mod"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "Armour Pack"));
+        assert!(!plugin_from_selected_mod(&origins, "Quest Mod"), "another mod's plugin");
+        // The game's own Data has no origin mod, so it can never light up.
+        assert!(!plugin_from_selected_mod(&origins, ""), "vanilla content belongs to no mod");
+    }
+
+    #[test]
+    fn the_origin_match_ignores_case_like_the_filesystem_does() {
+        // `origin_mod` is a folder name: an archive that installed as
+        // "armour pack" must still match the row shown as "Armour Pack".
+        let mut app = nav_app(&["Armour Pack"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "ARMOUR PACK"));
+        assert!(plugin_from_selected_mod(&origins, "armour pack"));
+    }
+
+    #[test]
+    fn a_multi_selection_marks_every_selected_mods_plugins() {
+        // The mod list supports multi-select, so a highlight covering only the
+        // anchor row would contradict what the user sees selected.
+        let mut app = nav_app(&["A", "B", "C"]);
+        app.selected_mod = Some(0);
+        app.selected_mods.extend([0, 2]);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "A"));
+        assert!(plugin_from_selected_mod(&origins, "C"));
+        assert!(!plugin_from_selected_mod(&origins, "B"), "B was never selected");
+    }
+
+    #[test]
+    fn a_selected_separator_marks_nothing() {
+        // A separator is a divider, never the origin of a plugin. Matching on it
+        // would light up every plugin whose origin happens to be empty - i.e.
+        // the whole of the game's own Data.
+        let mut app = nav_app(&["Group_separator"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(origins.is_empty(), "{origins:?}");
+        assert!(!plugin_from_selected_mod(&origins, ""));
+        assert!(!plugin_from_selected_mod(&origins, "Group_separator"));
+    }
+
+    #[test]
+    fn no_mod_selected_marks_nothing() {
+        let app = nav_app(&["A", "B"]);
+        assert!(selected_mod_origins(&app).is_empty(), "nothing selected, nothing lit");
+    }
+
     fn names(v: &[ModEntry]) -> Vec<&str> {
         v.iter().map(|m| m.name.as_str()).collect()
     }
@@ -2109,13 +2165,11 @@ mod tests {
         // Each of these writes settings.ini, so a flip that only changed the
         // in-memory copy would look right and be gone next launch.
         let mut app = nav_app(&[]);
-        let before = (app.prefs.conflict_marks, app.prefs.remember_window, app.prefs.lock_gui);
-        let _ = update(&mut app, Message::ToggleConflictMarks(!before.0));
-        let _ = update(&mut app, Message::ToggleRememberWindow(!before.1));
-        let _ = update(&mut app, Message::ToggleLockGui(!before.2));
-        assert_eq!(app.prefs.conflict_marks, !before.0);
-        assert_eq!(app.prefs.remember_window, !before.1);
-        assert_eq!(app.prefs.lock_gui, !before.2);
+        let before = (app.prefs.remember_window, app.prefs.lock_gui);
+        let _ = update(&mut app, Message::ToggleRememberWindow(!before.0));
+        let _ = update(&mut app, Message::ToggleLockGui(!before.1));
+        assert_eq!(app.prefs.remember_window, !before.0);
+        assert_eq!(app.prefs.lock_gui, !before.1);
     }
 
     #[test]

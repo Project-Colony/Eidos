@@ -230,7 +230,7 @@ impl Profile {
                 })
             })
             .collect();
-        out.sort_by(|a, b| b.mtime.cmp(&a.mtime));
+        out.sort_by_key(|s| std::cmp::Reverse(s.mtime));
         out
     }
 }

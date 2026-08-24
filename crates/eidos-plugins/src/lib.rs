@@ -278,7 +278,7 @@ impl PluginList {
                     is_plugin(&name).then(|| (name, e.path()))
                 })
                 .collect();
-            found.sort_by(|a, b| a.0.to_ascii_lowercase().cmp(&b.0.to_ascii_lowercase()));
+            found.sort_by_key(|(name, _)| name.to_ascii_lowercase());
 
             for (name, path) in found {
                 let key = name.to_ascii_lowercase();

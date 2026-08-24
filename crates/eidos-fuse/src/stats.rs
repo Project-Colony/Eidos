@@ -428,7 +428,7 @@ impl Stats {
         let over = |n: u32| s.slots.iter().filter(|x| x.reads >= n).count();
 
         let mut tids: Vec<(u32, u64)> = s.per_tid.iter().map(|(&t, &c)| (t, c)).collect();
-        tids.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        tids.sort_unstable_by_key(|&(_, count)| std::cmp::Reverse(count));
         let top_tid = tids.first().map(|(_, c)| pct(*c)).unwrap_or(0.0);
 
         let mut files: Vec<(u64, u64, u64)> =

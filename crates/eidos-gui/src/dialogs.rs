@@ -162,7 +162,7 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .align_y(iced::Alignment::Center)
                 .push(
                     slider(0.25..=4.0, speed, Message::DragScrollSpeedChanged)
-                        .step(0.25)
+                        .step(0.25_f32)
                         .width(Length::Fixed(160.0)),
                 )
                 .push(text(format!("{speed:.2}x")).size(12.0).width(Length::Fixed(42.0)));
@@ -176,17 +176,6 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                         "Auto-scroll speed",
                         "How fast the list moves when a dragged mod rests on its top or bottom edge. Speed already rises the closer to the edge; this scales the whole range.",
                         slider_row.into(),
-                    ),
-                ))
-                .push(settings_section(
-                    "conflicts",
-                    "Conflicts",
-                    open("conflicts"),
-                    settings_toggle(
-                        "Mark conflicts on the scrollbar",
-                        "Green where the selected mod wins, red where it loses, at the same place in the list.",
-                        app.prefs.conflict_marks,
-                        Message::ToggleConflictMarks(!app.prefs.conflict_marks),
                     ),
                 ))
                 .into()
