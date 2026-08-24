@@ -22,13 +22,13 @@ use std::path::{Path, PathBuf};
 /// `<dir>/.eidoswh.<name>` means `<name>` is deleted and any lower-layer copy
 /// must stay hidden. This is how a union filesystem records deletions without
 /// touching the read-only mod and game layers.
-const WHITEOUT_PREFIX: &str = ".eidoswh.";
+pub const WHITEOUT_PREFIX: &str = ".eidoswh.";
 
 /// Marker file dropped INSIDE an overwrite directory that was deleted and then
 /// re-created: it makes the directory opaque (its lower-layer contents stay
 /// hidden), matching NTFS where a recreated directory is empty. Distinct from the
 /// per-file `.eidoswh.<name>` whiteout so it is never mistaken for one.
-const OPAQUE_MARKER: &str = ".eidoswh_opaque";
+pub const OPAQUE_MARKER: &str = ".eidoswh_opaque";
 
 /// Suffix marking a file or directory the user hid from the virtual view, MO2's
 /// convention (`filetree.cpp` renames through a `FileRenamer` with HIDE/UNHIDE).

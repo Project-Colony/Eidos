@@ -941,6 +941,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.overwrite_to_mod = Some(suggestion);
             }
         }
+        Message::ToolOutputModChanged(name) => {
+            if let Some(state) = &mut app.executables {
+                state.output_mod = name;
+            }
+        }
         Message::OverwriteToModName(s) => {
             app.typing = true;
             if app.overwrite_to_mod.is_some() {
@@ -2711,6 +2716,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     args: Vec::new(),
                     workdir: None,
                     prereqs: Vec::new(),
+                    output_mod: None,
                 };
                 // User tools sit at the front, ahead of the read-only defaults.
                 state.merged.insert(state.user_len, tool);

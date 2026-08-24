@@ -28,6 +28,28 @@ pub struct Tool {
     /// `["d3dx9_43", "d3dcompiler_47"]` for BodySlide's 3D preview). Empty for the
     /// Delphi tools (xEdit/SSEEdit) that need nothing extra.
     pub prereqs: Vec<String>,
+    /// A mod to capture this tool's output into, instead of leaving it in the
+    /// Overwrite (MO2's "Create files in mod instead of overwrite").
+    ///
+    /// A folder name under `mods/`, never a path: it is validated on read so a
+    /// hand-edited `tools.ini` cannot aim the capture outside the instance.
+    pub output_mod: Option<String>,
+}
+
+/// Whether a string names a mod FOLDER and nothing else: no separators, no
+/// traversal, not empty, no control characters.
+///
+/// The same guard `overwrite_into_mod` applies, hoisted so `tools.ini` cannot
+/// carry a value the capture would later have to refuse - a tool configured with
+/// a bad target would otherwise appear to work until the first run.
+pub fn is_mod_folder_name(name: &str) -> bool {
+    let n = name.trim();
+    !n.is_empty()
+        && n != "."
+        && n != ".."
+        && !n.contains('/')
+        && !n.contains('\\')
+        && !n.chars().any(char::is_control)
 }
 
 /// Read `tools.ini`. A missing file is an empty list.
@@ -46,6 +68,7 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                     args: Vec::new(),
                     workdir: None,
                     prereqs: Vec::new(),
+                    output_mod: None,
                 });
             }
             continue;
@@ -71,6 +94,10 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
                 tool.prereqs =
                     v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
             }
+            // A mods/ folder NAME. Rejected here rather than at the capture, so
+            // a hand-edited or migrated file cannot point the move at `..`, at
+            // an absolute path, or at the mods directory itself.
+            "output_mod" if is_mod_folder_name(v) => tool.output_mod = Some(v.to_string()),
             _ => {}
         }
     }
@@ -104,6 +131,9 @@ pub fn write_tools(path: &Path, tools: &[Tool]) -> io::Result<()> {
         }
         if !t.prereqs.is_empty() {
             s.push_str(&format!("prereqs={}\n", t.prereqs.join(",")));
+        }
+        if let Some(m) = t.output_mod.as_deref().filter(|m| is_mod_folder_name(m)) {
+            s.push_str(&format!("output_mod={m}\n"));
         }
         s.push('\n');
     }
@@ -162,6 +192,7 @@ fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, ex
             exe: PathBuf::from(exe),
             args: Vec::new(),
             workdir: None,
+            output_mod: None,
         });
     }
 }
@@ -313,6 +344,7 @@ mod tests {
                 args: vec!["-D:D:\\My Mods\\Data".into(), "-IKnowWhatImDoing".into()],
                 workdir: None,
                 prereqs: Vec::new(),
+                output_mod: None,
             },
             Tool {
                 title: "BodySlide".into(),
@@ -320,6 +352,7 @@ mod tests {
                 args: Vec::new(),
                 workdir: Some(PathBuf::from("/mnt/Tools")),
                 prereqs: vec!["d3dx9_43".into(), "d3dcompiler_47".into()],
+                output_mod: Some("BodySlide Output".into()),
             },
         ];
         write_tools(&p, &tools).unwrap();
@@ -349,13 +382,40 @@ mod tests {
         // file; write_tools must drop such an entry, not emit it.
         let p = tmp();
         let tools = vec![
-            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![] },
-            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![] },
+            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None },
+            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None },
         ];
         write_tools(&p, &tools).unwrap();
         let back = read_tools(&p);
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].title, "Good");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn an_output_mod_that_is_not_a_folder_name_never_reaches_disk() {
+        // tools.ini is hand-editable and survives a migration, so a value that
+        // could aim the capture at `..` or an absolute path must be refused on
+        // BOTH sides - written and read - not just once.
+        for bad in ["", " ", ".", "..", "a/b", "a\\b", "x\ny"] {
+            assert!(!is_mod_folder_name(bad), "{bad:?} must not pass");
+        }
+        assert!(is_mod_folder_name("FNIS Output"));
+
+        let p = tmp();
+        let t = Tool {
+            title: "T".into(),
+            exe: PathBuf::from("/x/t.exe"),
+            args: vec![],
+            workdir: None,
+            prereqs: vec![],
+            output_mod: Some("../escape".into()),
+        };
+        write_tools(&p, &[t]).unwrap();
+        assert!(!fs::read_to_string(&p).unwrap().contains("output_mod"), "not written");
+        // And a file that already carries one is not trusted on read either.
+        fs::write(&p, "[Tool/T]\nexe=/x/t.exe\noutput_mod=../escape\n").unwrap();
+        assert_eq!(read_tools(&p)[0].output_mod, None);
         let _ = fs::remove_file(&p);
     }
 
@@ -367,6 +427,7 @@ mod tests {
             args: vec!["-forcesteamloader".into()],
             workdir: None,
             prereqs: Vec::new(),
+            output_mod: None,
         }];
         let defaults = vec![
             Tool {
@@ -375,6 +436,7 @@ mod tests {
                 args: Vec::new(),
                 workdir: None,
                 prereqs: Vec::new(),
+                output_mod: None,
             },
             Tool {
                 title: "Launcher".into(),
@@ -382,6 +444,7 @@ mod tests {
                 args: Vec::new(),
                 workdir: None,
                 prereqs: Vec::new(),
+                output_mod: None,
             },
         ];
         let merged = merge_tools(user, defaults);

@@ -88,6 +88,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 // Seed known tools' runtime prereqs (BodySlide -> d3dx, Synthesis ->
                 // dotnet...); the user can edit tools.ini to override.
                 prereqs: eidos_instance::default_prereqs(title),
+                // Set through the GUI's Executables editor, or by hand.
+                output_mod: None,
             });
             match inst.save_tools(&user) {
                 Ok(()) => println!("Added '{title}'. Run it: eidos tool {id} run {title}"),
@@ -222,6 +224,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 })
                 .or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
+            let output_mod = tool.output_mod.clone();
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
             // warn with the fix - without blocking (the user may have it via Steam).
@@ -267,9 +270,34 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 if let Some(c) = &cwd {
                     println!("  cwd  : {}", c.display());
                 }
+                if let Some(m) = &output_mod {
+                    println!("  out  : mods/{m} (the run's Overwrite output is captured there)");
+                }
                 return;
             }
-            run_through_view(id, &game, &inst, command, run.env, cwd, &prereqs);
+            // A capture target the user cannot SEE is a target that quietly does
+            // nothing on the next launch: the mod exists and holds the output,
+            // but a disabled mod contributes nothing to the merged view, so the
+            // tool would regenerate the same files every run.
+            if let Some(m) = &output_mod {
+                let listed = inst.modlist();
+                match listed.iter().find(|e| e.name.eq_ignore_ascii_case(m)) {
+                    Some(e) if !e.enabled => eprintln!(
+                        "eidos tool: '{title}' captures into mods/{m}, which is DISABLED - \
+                         the output will be written but the game will not see it."
+                    ),
+                    _ => {}
+                }
+            }
+            run_through_view(
+                id,
+                &game,
+                &inst,
+                command,
+                run.env,
+                cwd,
+                crate::launch::ToolOpts { prereqs: &prereqs, output_mod: output_mod.as_deref() },
+            );
         }
         Some(other) => {
             eprintln!("unknown tool subcommand '{other}' (list | add | rm | run)");

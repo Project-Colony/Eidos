@@ -606,6 +606,8 @@ enum Message {
     OverwriteToModStart,
     /// The typed target mod name (an existing mod merges, a new one is created).
     OverwriteToModName(String),
+    /// Pick the mod a tool's output is captured into (empty = the Overwrite).
+    ToolOutputModChanged(String),
     /// Move the Overwrite's contents into that mod.
     OverwriteToModCommit,
     /// Dismiss the prompt.
@@ -659,6 +661,10 @@ struct ExecutablesDialogState {
     args: String,
     /// Prerequisite verbs, comma-separated in the editor.
     prereqs: String,
+    /// The mod this tool's output is captured into (empty = the Overwrite).
+    output_mod: String,
+    /// The mods that can be picked as a target, read when the dialog opens.
+    mod_names: Vec<String>,
 }
 
 impl ExecutablesDialogState {
@@ -671,6 +677,7 @@ impl ExecutablesDialogState {
                 self.workdir = t.workdir.as_ref().map(|w| w.display().to_string()).unwrap_or_default();
                 self.args = t.args.join("\n");
                 self.prereqs = t.prereqs.join(", ");
+                self.output_mod = t.output_mod.clone().unwrap_or_default();
             }
             None => {
                 self.title.clear();
@@ -678,6 +685,7 @@ impl ExecutablesDialogState {
                 self.workdir.clear();
                 self.args.clear();
                 self.prereqs.clear();
+                self.output_mod.clear();
             }
         }
     }
@@ -703,6 +711,11 @@ impl ExecutablesDialogState {
         t.args = self.args.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect();
         t.prereqs =
             self.prereqs.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        // Only a name that still names a mod. The list is read when the dialog
+        // opens, so a mod deleted behind it would otherwise be saved as a target
+        // that silently captures nothing.
+        t.output_mod = Some(self.output_mod.trim().to_string())
+            .filter(|m| self.mod_names.iter().any(|n| n == m));
     }
 }
 

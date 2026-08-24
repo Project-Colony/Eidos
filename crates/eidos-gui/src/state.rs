@@ -502,6 +502,16 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         workdir: String::new(),
         args: String::new(),
         prereqs: String::new(),
+        output_mod: String::new(),
+        // Separators head groups and unmanaged rows are the game's own content -
+        // neither is a folder output can be written into. MO2 filters the same
+        // set out of this combo.
+        mod_names: inst
+            .modlist()
+            .into_iter()
+            .filter(|m| !m.is_separator() && !m.unmanaged)
+            .map(|m| m.name)
+            .collect(),
     };
     // Select the first user tool, if any, so the editor opens with something.
     if user_len > 0 {

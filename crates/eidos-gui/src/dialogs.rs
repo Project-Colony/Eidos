@@ -506,6 +506,7 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) 
             )
             .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
             .push(prereq_status_rows(app, &state.prereqs))
+            .push(output_mod_field(state))
             .into()
     } else if state.selected.is_some() {
         Column::new()
@@ -1153,4 +1154,41 @@ impl std::fmt::Display for CategoryChoice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.label)
     }
+}
+
+
+/// MO2's "Create files in mod instead of overwrite", as a picker over the
+/// instance's own mods rather than MO2's editable combo box.
+///
+/// A picker, not a text field, because MO2's whole "output mod not found" error
+/// class exists only because its combo is editable: a typo there produces a tool
+/// that appears configured and captures into nothing.
+fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
+    const NONE: &str = "(none - leave it in the Overwrite)";
+    let mut choices: Vec<String> = vec![NONE.to_string()];
+    choices.extend(state.mod_names.iter().cloned());
+    let selected = if state.output_mod.trim().is_empty() {
+        Some(NONE.to_string())
+    } else {
+        Some(state.output_mod.clone())
+    };
+    Column::new()
+        .spacing(4)
+        .push(text("Capture output into").size(11.0))
+        .push(
+            pick_list(choices, selected, |c: String| {
+                Message::ToolOutputModChanged(if c == NONE { String::new() } else { c })
+            })
+            .text_size(12.0)
+            .padding(5)
+            .width(Length::Fill),
+        )
+        .push(
+            text(
+                "What this run writes goes into that mod instead of the Overwrite. Only the files \
+                 THIS run produced move - anything already in the Overwrite stays put.",
+            )
+            .size(10.0),
+        )
+        .into()
 }

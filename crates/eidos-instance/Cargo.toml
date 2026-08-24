@@ -7,6 +7,10 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+# The union filesystem's whiteout/opaque marker names: the overwrite capture has
+# to skip them, and a second copy of the string in this crate would be a silent
+# bug the day either one changed.
+eidos-core = { path = "../eidos-core" }
 eidos-ini = { path = "../eidos-ini" }
 # For case-variant resolution of the prefix control files (plugins.txt etc.):
 # the prefix is case-sensitive while the game came from a case-insensitive

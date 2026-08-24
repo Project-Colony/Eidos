@@ -83,7 +83,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     remember_use(&inst, &game_id);
     let mut command = command;
     swap_script_extender(&game_id, &mut command);
-    run_through_view(&game_id, &game, &inst, command, Vec::new(), None, &[]);
+    run_through_view(&game_id, &game, &inst, command, Vec::new(), None, ToolOpts::default());
 }
 
 /// Warn when the resolved Proton belongs to the Flatpak Steam install.
@@ -165,6 +165,18 @@ pub(crate) fn virtualize_under_data(path: &Path, layers: &[PathBuf], data: &Path
     (!tail.as_os_str().is_empty()).then(|| data.join(tail))
 }
 
+/// The tool-specific half of a run: everything that comes from the `tools.ini`
+/// entry rather than from the instance. Grouped so the game's own launch can pass
+/// `ToolOpts::default()` and mean it.
+#[derive(Default, Clone, Copy)]
+pub(crate) struct ToolOpts<'a> {
+    /// Runtime prerequisites to ensure in the prefix before the tool runs.
+    pub prereqs: &'a [String],
+    /// A `mods/` folder to capture this run's Overwrite output into (MO2's
+    /// "Create files in mod instead of overwrite").
+    pub output_mod: Option<&'a str>,
+}
+
 pub(crate) fn run_through_view(
     id: &str,
     game: &DetectedGame,
@@ -172,7 +184,7 @@ pub(crate) fn run_through_view(
     command: Vec<String>,
     env: Vec<(String, String)>,
     cwd: Option<std::path::PathBuf>,
-    prereqs: &[String],
+    opts: ToolOpts<'_>,
 ) -> ! {
     // The instance lock, held for the WHOLE run: the GUI and a second `eidos`
     // are separate processes, and without this two concurrent runs interleaved
@@ -253,7 +265,7 @@ pub(crate) fn run_through_view(
     // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
     // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).
     let mut env = env;
-    if let Some(kv) = forced_dll_overrides(game, inst, prereqs) {
+    if let Some(kv) = forced_dll_overrides(game, inst, opts.prereqs) {
         env.push(kv);
     }
     // Wine derives its Unix codepage from the locale; a C/POSIX one collapses to
@@ -321,7 +333,25 @@ pub(crate) fn run_through_view(
         // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
         root_overwrite: Some(inst.root_overwrite_dir()),
     };
+    // Taken immediately before the run so the capture below can tell what THIS
+    // run produced from what was already in the Overwrite.
+    let ow_before = opts.output_mod.map(|_| inst.overwrite_snapshot());
     let result = launch(spec);
+
+    // The tool asked for its output in a mod. Done here, before anything else
+    // touches the Overwrite, and while the instance lock is still held so the
+    // GUI cannot race the move.
+    //
+    // Run regardless of the exit code: a generator can write its output and then
+    // fail on the way out, and abandoning the files in the Overwrite would be a
+    // worse answer than putting them where they were asked to go.
+    if let (Some(name), Some(before)) = (opts.output_mod, &ow_before) {
+        match inst.capture_overwrite_into_mod(name, before) {
+            Ok(0) => eprintln!("eidos: '{name}' asked for the output but the run wrote nothing"),
+            Ok(n) => eprintln!("eidos: captured {n} file(s) into mods/{name}"),
+            Err(e) => eprintln!("eidos: could not capture the output into mods/{name}: {e}"),
+        }
+    }
 
     // The command has exited: capture any INI changes back into the profile.
     // (`prof`, not a fresh `inst.active()`: the captures belong to the profile

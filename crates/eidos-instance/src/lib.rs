@@ -22,6 +22,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 mod categories;
 mod manifest;
@@ -430,6 +431,90 @@ impl Instance {
                 fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n");
         }
         Ok(dest)
+    }
+
+    /// A metadata-only picture of the Overwrite, taken BEFORE a tool runs, so
+    /// what the tool produced can be told apart from what was already there.
+    ///
+    /// Metadata only, and no hashing: the Overwrite is normally small, this runs
+    /// on the launch path, and (len, mtime) is what every incremental build tool
+    /// uses to answer the same question.
+    pub fn overwrite_snapshot(&self) -> HashMap<PathBuf, (u64, SystemTime)> {
+        let mut out = HashMap::new();
+        snapshot_into(&self.overwrite_dir(), Path::new(""), &mut out);
+        out
+    }
+
+    /// Move everything the run WROTE - and only that - out of the Overwrite and
+    /// into `mods/<name>/`. Returns how many files moved.
+    ///
+    /// This is Eidos's answer to MO2's "Create files in mod instead of
+    /// overwrite", and it is deliberately not the obvious port. MO2 flips a
+    /// usvfs create-target flag; the equivalent here would be handing the mod's
+    /// directory to the FUSE union as its write layer, which breaks three things
+    /// at once:
+    ///
+    /// * the overwrite is consulted BEFORE the layers on every read, so the mod
+    ///   would be silently promoted to top priority for the whole run and every
+    ///   conflict it is in would flip - and flip back on the next run;
+    /// * a directory that is both a layer and the write target needs no copy-up,
+    ///   so writes would go straight THROUGH the mod's own files, destroying the
+    ///   "mod sources stay pristine" invariant with no undo;
+    /// * and the real Overwrite would leave the union entirely, so the tool
+    ///   would stop seeing its own previously-generated output.
+    ///
+    /// Capturing afterwards reaches the same end state - the output is in the
+    /// mod, the Overwrite is clean - with none of that. `Root/` output needs no
+    /// special case: it lands at `mods/<name>/Root/`, which is already the
+    /// convention a mod uses for game-root files.
+    pub fn capture_overwrite_into_mod(
+        &self,
+        name: &str,
+        before: &HashMap<PathBuf, (u64, SystemTime)>,
+    ) -> std::io::Result<usize> {
+        use std::io::{Error, ErrorKind};
+        let name = name.trim();
+        if !crate::tools::is_mod_folder_name(name) {
+            return Err(Error::new(ErrorKind::InvalidInput, "invalid mod name"));
+        }
+        let src = self.overwrite_dir();
+        let dest = self.mods_dir().join(name);
+        let fresh = !dest.exists();
+        let mut after = HashMap::new();
+        snapshot_into(&src, Path::new(""), &mut after);
+
+        let mut moved = 0usize;
+        for (rel, stamp) in &after {
+            if before.get(rel) == Some(stamp) {
+                continue; // untouched by this run
+            }
+            let to = dest.join(rel);
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            // Type conflicts resolve the source's way, exactly as `move_tree`
+            // does: what the tool just wrote is the newer truth.
+            match fs::symlink_metadata(&to).map(|m| m.file_type()) {
+                Ok(t) if t.is_dir() => fs::remove_dir_all(&to)?,
+                Ok(_) => fs::remove_file(&to)?,
+                Err(_) => {}
+            }
+            fs::rename(src.join(rel), &to)?;
+            moved += 1;
+        }
+        if moved == 0 {
+            // Nothing was produced. Do not leave an empty mod behind.
+            if fresh {
+                let _ = fs::remove_dir_all(&dest);
+            }
+            return Ok(0);
+        }
+        if fresh {
+            let _ =
+                fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\nendorsed=0\ntracked=0\n");
+        }
+        prune_empty_dirs(&src);
+        Ok(moved)
     }
 
     /// Bind-stash mountpoint for the pristine game files (used at launch).
@@ -857,6 +942,57 @@ fn find_root_dir(mod_dir: &Path) -> Option<PathBuf> {
 /// leaving `from` empty. Both sides live under the instance root (one
 /// filesystem), so entries move by rename; a rename that fails because the
 /// destination directory already exists recurses into it.
+/// Record every FILE under `dir` as `relpath -> (len, mtime)`.
+///
+/// The union filesystem's own bookkeeping is skipped: a whiteout
+/// (`.eidoswh.<name>`) and an opaque marker are how the OVERWRITE layer records a
+/// deletion, and they mean nothing in a mod - moved there they would be junk
+/// files with no effect, while the deletion they encoded would be silently lost.
+fn snapshot_into(dir: &Path, prefix: &Path, out: &mut HashMap<PathBuf, (u64, SystemTime)>) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let name = e.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with(eidos_core::WHITEOUT_PREFIX) || name_str == eidos_core::OPAQUE_MARKER
+        {
+            continue;
+        }
+        let rel = prefix.join(&name);
+        // `symlink_metadata`, so a symlink is recorded as itself rather than as
+        // whatever it points at (which may be outside the instance entirely).
+        let Ok(md) = fs::symlink_metadata(e.path()) else { continue };
+        if md.is_dir() {
+            snapshot_into(&e.path(), &rel, out);
+        } else {
+            let mtime = md.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            out.insert(rel, (md.len(), mtime));
+        }
+    }
+}
+
+/// Remove directories left empty by a capture, deepest first. The Overwrite's own
+/// root is never removed - the mount expects it to exist.
+fn prune_empty_dirs(root: &Path) {
+    fn walk(dir: &Path) -> bool {
+        let mut empty = true;
+        let Ok(rd) = fs::read_dir(dir) else { return false };
+        for e in rd.flatten() {
+            let p = e.path();
+            if fs::symlink_metadata(&p).map(|m| m.is_dir()).unwrap_or(false) {
+                if walk(&p) {
+                    let _ = fs::remove_dir(&p);
+                } else {
+                    empty = false;
+                }
+            } else {
+                empty = false;
+            }
+        }
+        empty
+    }
+    walk(root);
+}
+
 fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     for e in fs::read_dir(from)?.flatten() {
         let src = e.path();
@@ -1116,6 +1252,120 @@ mod tests {
         assert_eq!(fs::read(dest.join("loose.txt")).unwrap(), b"x");
         assert!(dest.join("meta.ini").is_file(), "a fresh mod gets a meta.ini");
         assert!(inst.overwrite_is_empty(), "the Overwrite must be left empty");
+    }
+
+    #[test]
+    fn capture_takes_only_what_the_run_produced() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        // Already in the Overwrite before the tool ran: someone else's output,
+        // and it must stay exactly where it is.
+        fs::create_dir_all(ow.join("SKSE/Plugins")).unwrap();
+        fs::write(ow.join("SKSE/Plugins/old.json"), b"pre-existing").unwrap();
+        let before = inst.overwrite_snapshot();
+        assert_eq!(before.len(), 1);
+
+        // What the run writes.
+        fs::create_dir_all(ow.join("meshes/actors")).unwrap();
+        fs::write(ow.join("meshes/actors/fnis.hkx"), b"generated").unwrap();
+        fs::write(ow.join("SKSE/Plugins/new.json"), b"also generated").unwrap();
+
+        let moved = inst.capture_overwrite_into_mod("FNIS Output", &before).unwrap();
+        assert_eq!(moved, 2);
+        let dest = inst.mods_dir().join("FNIS Output");
+        assert_eq!(fs::read(dest.join("meshes/actors/fnis.hkx")).unwrap(), b"generated");
+        assert_eq!(fs::read(dest.join("SKSE/Plugins/new.json")).unwrap(), b"also generated");
+        assert!(dest.join("meta.ini").is_file(), "a fresh output mod gets a meta.ini");
+
+        // The pre-existing file is untouched, and its now-childless parent
+        // survives because it still holds it.
+        assert_eq!(fs::read(ow.join("SKSE/Plugins/old.json")).unwrap(), b"pre-existing");
+        assert!(!ow.join("meshes").exists(), "emptied directories are swept up");
+    }
+
+    #[test]
+    fn capture_notices_a_file_that_was_rewritten_in_place() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        fs::write(ow.join("out.txt"), b"first").unwrap();
+        let before = inst.overwrite_snapshot();
+        // A rewrite that keeps the same LENGTH: only the mtime moves, which is
+        // why the snapshot records both.
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        fs::write(ow.join("out.txt"), b"AGAIN").unwrap();
+
+        let moved = inst.capture_overwrite_into_mod("Out", &before).unwrap();
+        assert_eq!(moved, 1, "a same-size rewrite is still output");
+        assert_eq!(fs::read(inst.mods_dir().join("Out/out.txt")).unwrap(), b"AGAIN");
+    }
+
+    #[test]
+    fn a_run_that_produced_nothing_leaves_no_empty_mod_behind() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        fs::write(inst.overwrite_dir().join("old.txt"), b"x").unwrap();
+        let before = inst.overwrite_snapshot();
+
+        assert_eq!(inst.capture_overwrite_into_mod("Nothing", &before).unwrap(), 0);
+        assert!(
+            !inst.mods_dir().join("Nothing").exists(),
+            "an empty mod in the list would be noise the user has to clean up"
+        );
+        assert!(inst.overwrite_dir().join("old.txt").is_file(), "and nothing moved");
+    }
+
+    #[test]
+    fn capture_merges_into_an_existing_output_mod_without_wiping_it() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let target = inst.mods_dir().join("Output");
+        fs::create_dir_all(target.join("meshes")).unwrap();
+        fs::write(target.join("meshes/keep.nif"), b"keep").unwrap();
+        fs::write(target.join("meta.ini"), b"[General]\nendorsed=1\n").unwrap();
+
+        let before = inst.overwrite_snapshot();
+        fs::create_dir_all(inst.overwrite_dir().join("meshes")).unwrap();
+        fs::write(inst.overwrite_dir().join("meshes/new.nif"), b"new").unwrap();
+
+        assert_eq!(inst.capture_overwrite_into_mod("Output", &before).unwrap(), 1);
+        assert_eq!(fs::read(target.join("meshes/keep.nif")).unwrap(), b"keep");
+        assert_eq!(fs::read(target.join("meshes/new.nif")).unwrap(), b"new");
+        // The existing meta.ini is NOT overwritten - the endorsement survives.
+        assert!(fs::read_to_string(target.join("meta.ini")).unwrap().contains("endorsed=1"));
+    }
+
+    #[test]
+    fn capture_leaves_the_union_filesystems_own_bookkeeping_alone() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let ow = inst.overwrite_dir();
+        let before = inst.overwrite_snapshot();
+        // A whiteout records "this lower-layer file is deleted". It only means
+        // anything in the OVERWRITE; moved into a mod it would be a junk file,
+        // and the deletion it encoded would be silently lost.
+        fs::write(ow.join(format!("{}dead.esp", eidos_core::WHITEOUT_PREFIX)), b"").unwrap();
+        fs::write(ow.join(eidos_core::OPAQUE_MARKER), b"").unwrap();
+        fs::write(ow.join("real.txt"), b"x").unwrap();
+
+        assert_eq!(inst.capture_overwrite_into_mod("Out", &before).unwrap(), 1);
+        assert!(ow.join(format!("{}dead.esp", eidos_core::WHITEOUT_PREFIX)).is_file());
+        assert!(ow.join(eidos_core::OPAQUE_MARKER).is_file());
+        assert!(!inst.mods_dir().join("Out").join(eidos_core::OPAQUE_MARKER).exists());
+    }
+
+    #[test]
+    fn capture_refuses_a_target_that_is_not_a_mod_folder_name() {
+        let inst = tmp_instance();
+        inst.create().unwrap();
+        let before = inst.overwrite_snapshot();
+        for bad in ["", "  ", "..", ".", "a/b", "a\\b", "x\ny"] {
+            assert!(
+                inst.capture_overwrite_into_mod(bad, &before).is_err(),
+                "must refuse {bad:?} - a tools.ini is hand-editable"
+            );
+        }
     }
 
     #[test]
