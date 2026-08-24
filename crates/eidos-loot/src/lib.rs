@@ -197,7 +197,21 @@ pub fn sort(view: &GameView<'_>) -> Result<Vec<String>, LootError> {
     }
 
     let paths: Vec<&Path> = plugins.iter().map(|(_, p)| p.as_path()).collect();
-    game.load_plugin_headers(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
+    // WHOLE plugins, not headers. LOOT's sort has five stages, and the fourth -
+    // overlap - is the one that reorders plugins nobody wrote a masterlist rule
+    // for: two plugins touching a common record get an edge from the one
+    // overriding more to the one overriding fewer. It needs the records.
+    //
+    // With headers only, esplugin stores no record ids, so
+    // `override_record_count` is 0, and libloot skips archive scanning, so
+    // `asset_count` is 0 - and `add_overlap_edges` opens by skipping every
+    // plugin where both are zero. The entire stage was dead, silently: no
+    // error, no warning, and a status line still reading "LOOT checked 211
+    // plugins". What survived was masters, groups and the tie-break, and the
+    // tie-break is the user's current order - so a dragged plugin stayed where
+    // it was dropped, which is precisely what MO2 does not do. MO2's lootcli
+    // passes `loadHeadersOnly = false`; this is the same call.
+    game.load_plugins(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
     game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
 
     let names: Vec<&str> = plugins.iter().map(|(n, _)| n.as_str()).collect();
@@ -512,7 +526,10 @@ pub fn report(
     }
 
     let paths: Vec<&Path> = plugins.iter().map(|(_, p)| p.as_path()).collect();
-    game.load_plugin_headers(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
+    // Whole plugins here too, for the same reason plus one of its own: the
+    // report's CRC column comes from `plugin.crc()`, which libloot only computes
+    // for a whole-plugin load - so with headers it was permanently blank.
+    game.load_plugins(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
     game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
 
     // A master is "present" only if it is enabled; a disabled master won't load and
