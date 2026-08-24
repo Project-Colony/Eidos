@@ -119,6 +119,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.confirm_saves_delete = false;
         }
     }
+    // Anything that can create, rename, delete or switch a profile drops the
+    // chip row's memo. Done centrally rather than in each handler: those have
+    // many branches, only some of them bump the view generation, and a stale
+    // chip row would keep offering a profile that no longer exists.
+    if matches!(
+        message,
+        Message::NewProfile
+            | Message::SwitchProfile(_)
+            | Message::ProfileRenameCommit
+            | Message::ProfileCopyCommit
+            | Message::ProfileDeleteCommit(_)
+    ) {
+        app.profiles_cache.borrow_mut().take();
+    }
     match message {
         Message::Next => {
             app.screen = match app.screen {

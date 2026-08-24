@@ -309,6 +309,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         diag_dirty: true,
         diag_stale: std::cell::Cell::new(true),
         data_listing: std::cell::RefCell::new(HashMap::new()),
+        profiles_cache: std::cell::RefCell::new(None),
+        archives_cache: std::cell::RefCell::new(None),
         data_stack: std::cell::RefCell::new(None),
         data_query: String::new(),
         data_conflicts_only: false,
@@ -1669,6 +1671,8 @@ pub(crate) fn bump_views(app: &App) {
     app.view_generation.set(app.view_generation.get().wrapping_add(1));
     app.data_listing.borrow_mut().clear();
     app.data_stack.borrow_mut().take();
+    app.archives_cache.borrow_mut().take();
+    app.profiles_cache.borrow_mut().take();
     app.listing_cache.borrow_mut().clear();
     app.diag_stale.set(true);
 }
@@ -1899,6 +1903,10 @@ pub(crate) fn invalidate_plugins(app: &mut App) {
     // survives because it is carried by name; an open menu cannot be, so it
     // closes.
     app.menu_plugin = None;
+    // Same reason as `commit_plugin_order`: the Archives tab's answer depends on
+    // the active plugin set, and this is where that set is thrown away.
+    app.archives_cache.borrow_mut().take();
+    app.profiles_cache.borrow_mut().take();
     let held = hold_plugin_selection(app);
     app.plugins = None;
     if app.tab == Tab::Plugins && app.created.is_some() {

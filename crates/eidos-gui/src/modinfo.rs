@@ -669,9 +669,11 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(text(format!("{n} selected")).size(11.0));
         // Copy to another profile - MO2's Transfer Save Games. Only profiles
         // that are not this one: copying a save onto itself is not a thing.
-        if let Some(inst) = &app.created {
-            let here = inst.active().name.clone();
-            for name in inst.profiles().into_iter().filter(|p| *p != here) {
+        if app.created.is_some() {
+            // The memoised list, not a fresh read_dir: this bar is drawn on
+            // every frame while anything is selected.
+            let (names, here) = cached_profiles(app);
+            for name in names.into_iter().filter(|p| *p != here) {
                 bar = bar.push(
                     button(text(format!("Copy to {name}")).size(11.0))
                         .padding([3, 8])
@@ -1521,6 +1523,7 @@ pub(crate) fn active_plugin_names(app: &App, game_id: &str) -> Option<Vec<String
 
 /// One row of the Archives tab: an archive a mod ships, and why it will or will
 /// not be loaded.
+#[derive(Clone)]
 pub(crate) struct ArchiveRow {
     pub(crate) mod_name: String,
     pub(crate) archive: String,
@@ -1542,6 +1545,18 @@ impl ArchiveRow {
 /// `None` when the active plugin set is unknown - the same distinction the
 /// diagnostic makes, for the same reason: without it, "we have not looked" would
 /// render as a tab full of red.
+pub(crate) fn cached_archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> {
+    let gen = app.view_generation.get();
+    if let Some((at, rows)) = app.archives_cache.borrow().as_ref() {
+        if *at == gen {
+            return rows.clone();
+        }
+    }
+    let rows = archive_rows(app, game_id);
+    *app.archives_cache.borrow_mut() = Some((gen, rows.clone()));
+    rows
+}
+
 pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> {
     let inst = app.created.as_ref()?;
     let mods: Vec<(String, PathBuf)> = app
@@ -1834,6 +1849,12 @@ pub(crate) fn pinned_by(range: &MovableRange) -> String {
 /// LATER successful write commit this stale list over whatever a running session
 /// wrote meanwhile, so the list is re-read instead: disk is the truth.
 pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
+    // Which archives load is a function of which plugins are ACTIVE, so the
+    // Archives tab's memo has to fall here. Its usual key - the view generation -
+    // does not move for a plugin toggle, and switching tabs does not move it
+    // either, so without this the tab would keep answering from before the
+    // change.
+    app.archives_cache.borrow_mut().take();
     let written = app.plugins.as_ref().map(|list| write_plugin_state(app, list, spec)).transpose();
     if let Err(e) = written {
         app.status = Some(format!("Could not write the load order: {e}"));
@@ -3781,7 +3802,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(game) = selected_game(app) else {
         return text("Open a game instance to see its archives.").into();
     };
-    let Some(rows) = archive_rows(app, game.def.id) else {
+    let Some(rows) = cached_archive_rows(app, game.def.id) else {
         return Column::new()
             .spacing(6)
             .push(text("Archives").size(13.0))

@@ -766,10 +766,10 @@ pub(crate) fn separator_row<'a>(
 
 pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let active = app.mods.iter().filter(|m| m.enabled && !m.is_separator()).count();
-    let active_name = app.created.as_ref().map(|i| i.active_profile()).unwrap_or_default();
+    let (names, active_name) = cached_profiles(app);
     let mut profile = Row::new().spacing(6).push(text("Profile:").size(12.0));
-    if let Some(inst) = &app.created {
-        for name in inst.profiles() {
+    if app.created.is_some() {
+        for name in names {
             let selected = name == active_name;
             // Left-click switches (MO2's profile selector); right-click opens the
             // rename / copy / delete menu (MO2's Profiles dialog actions).
@@ -1156,6 +1156,27 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
 
     container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
+}
+
+/// The profile names and the active one, memoised against the view generation.
+///
+/// Read straight from disk this cost a `read_dir` plus a stat per profile and a
+/// file read for the active name, on every frame the main screen was drawn -
+/// which is every pointer move. Every path that creates, renames, deletes or
+/// switches a profile bumps the view generation, so the memo cannot go stale.
+pub(crate) fn cached_profiles(app: &App) -> (Vec<String>, String) {
+    let gen = app.view_generation.get();
+    if let Some((at, names, active)) = app.profiles_cache.borrow().as_ref() {
+        if *at == gen {
+            return (names.clone(), active.clone());
+        }
+    }
+    let (names, active) = match app.created.as_ref() {
+        Some(inst) => (inst.profiles(), inst.active_profile()),
+        None => (Vec::new(), String::new()),
+    };
+    *app.profiles_cache.borrow_mut() = Some((gen, names.clone(), active.clone()));
+    (names, active)
 }
 
 /// The host of a URL, for a menu label: `https://www.loverslab.com/x` ->

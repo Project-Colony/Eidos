@@ -1569,6 +1569,21 @@ struct App {
     /// built at. The tree merges a level at a time, so only the directories the
     /// user actually opened are ever read.
     data_listing: std::cell::RefCell<HashMap<String, (u64, Vec<DataRow>)>>,
+    /// The profile chip row's data: every profile name and which one is active.
+    ///
+    /// Both were read from disk on EVERY frame of the main screen - a `read_dir`
+    /// plus an `is_dir` per entry, and a file read for the active name. The
+    /// chips are always drawn, so that was a few filesystem calls per frame for
+    /// something that changes when the user creates or switches a profile.
+    profiles_cache: std::cell::RefCell<Option<(u64, Vec<String>, String)>>,
+    /// The Archives tab's rows, built once per view generation.
+    ///
+    /// `archive_rows` walks every enabled mod's folder and reads an INI. It is
+    /// called from `view()`, which runs on every frame - every pointer move,
+    /// every keystroke - so without this a four-hundred-mod list did four
+    /// hundred `read_dir` calls per frame while the tab was open. The same memo
+    /// the merged listing uses, keyed the same way.
+    archives_cache: std::cell::RefCell<Option<(u64, Option<Vec<ArchiveRow>>)>>,
     /// The union the Data tab reads, built once per view generation.
     ///
     /// The SAME `LayerStack` the mount serves from, rather than a hand-rolled
@@ -3976,6 +3991,32 @@ mod tests {
         app.screen = Screen::Main;
         load_saves(&mut app);
         (app, root)
+    }
+
+    #[test]
+    fn the_profile_chips_are_read_once_and_follow_every_change() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.profile("Second").dir()).unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+
+        let (names, active) = cached_profiles(&app);
+        assert!(names.contains(&"Default".to_string()) && names.contains(&"Second".to_string()));
+        assert_eq!(active, "Default");
+        // Cached: a change on disk alone must NOT be picked up, or the memo is
+        // not doing anything.
+        fs::create_dir_all(app.created.as_ref().unwrap().profile("Third").dir()).unwrap();
+        assert_eq!(cached_profiles(&app).0.len(), 2, "still memoised");
+
+        // But a profile message drops it, whichever branch the handler takes -
+        // delete and rename do not bump the view generation.
+        let _ = update_inner(&mut app, Message::ProfileDeleteCommit("Second".into()));
+        let (names, _) = cached_profiles(&app);
+        assert!(names.contains(&"Third".to_string()), "the memo fell: {names:?}");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
