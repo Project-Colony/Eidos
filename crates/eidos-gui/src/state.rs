@@ -201,6 +201,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         search: String::new(),
         selected_mod: None,
         menu_mod: None,
+        menu_plugin: None,
         rename: None,
         meta_cache: HashMap::new(),
         confirm_remove: None,
@@ -221,6 +222,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         nexus_error: None,
         prefs: Settings::load(),
         executables: None,
+        backups: None,
         endorsing: None,
         endorsed_count: 0,
         updated_count: 0,
@@ -237,6 +239,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         save_missing: Vec::new(),
         downloads: Vec::new(),
         confirm_delete_download: None,
+        identifying_download: None,
         download_samples: HashMap::new(),
         selected_mods: HashSet::new(),
         sel_anchor: None,
@@ -449,6 +452,30 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
 /// entries (editable) followed by the per-game defaults (read-only). Recomputed
 /// every open so a game switch picks up the right script-extender defaults; `None`
 /// when no instance is open.
+/// The mod-list row of the mod that ships the plugin at `row`, if any.
+///
+/// The plugin already carries its origin as a NAME, and the mod list is what
+/// every mod action is indexed by, so this is the translation between the two.
+/// `None` means the game's own Data - which is a real answer, not a failure:
+/// vanilla content belongs to no mod and has no folder to open.
+pub(crate) fn plugin_origin_row(app: &App, row: usize) -> Option<usize> {
+    let list = app.plugins.as_ref()?;
+    let origin = list.plugins.get(row).map(|p| p.origin_mod.as_str())?;
+    if origin.is_empty() {
+        return None;
+    }
+    app.mods.iter().position(|m| m.name.eq_ignore_ascii_case(origin))
+}
+
+/// Read both lists' restore points for the Backups dialog, newest first.
+pub(crate) fn load_backups(app: &App) -> Option<BackupsDialogState> {
+    let prof = app.created.as_ref()?.active();
+    Some(BackupsDialogState {
+        mods: prof.backups(eidos_instance::BackupKind::ModList),
+        order: prof.backups(eidos_instance::BackupKind::LoadOrder),
+    })
+}
+
 pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogState> {
     let (game, inst) = (selected_game(app)?, app.created.as_ref()?);
     let user = inst.tools();
@@ -1476,6 +1503,11 @@ pub(crate) fn drop_files_cache(app: &App, layer: Option<&str>) {
 /// immediately so the pane updates in place instead of blanking to the
 /// placeholder until the user leaves and re-enters the tab.
 pub(crate) fn invalidate_plugins(app: &mut App) {
+    // The menu holds a raw ROW, and the rebuild below renumbers them: acting on
+    // a stale index would hit whichever plugin now sits there. The selection
+    // survives because it is carried by name; an open menu cannot be, so it
+    // closes.
+    app.menu_plugin = None;
     let held = hold_plugin_selection(app);
     app.plugins = None;
     if app.tab == Tab::Plugins && app.created.is_some() {

@@ -807,6 +807,64 @@ impl PluginList {
     /// whether anything moved; `refresh` afterwards re-applies the engine
     /// ordering, which may pull the block back if the drop would load a plugin
     /// before one of its masters.
+    /// Send `rows` as far up (or down) the load order as the engine allows.
+    ///
+    /// [`move_plugins_to`] REFUSES a destination outside the movable range
+    /// rather than clamping - correct for a drag, where the gap is where the
+    /// user actually let go, but useless for "send to top": every plugin has
+    /// the game's own masters above it, so gap 0 is refused for all of them and
+    /// the action would silently never work.
+    ///
+    /// So the edge is computed here instead: the tightest range that satisfies
+    /// EVERY moved row, then the outermost insertion point inside it that no
+    /// pin has claimed. `None` when the selection is already there, or when the
+    /// rows have no destination in common.
+    pub fn edge_gap(&self, rows: &[usize], to_top: bool, spec: &GameSpec) -> Option<usize> {
+        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        idx.sort_unstable();
+        idx.dedup();
+        if idx.is_empty() {
+            return None;
+        }
+        // The intersection of the rows' ranges: a block moves as one, so a gap
+        // any single row forbids is forbidden for the block.
+        let mut lo = 0usize;
+        let mut hi = self.plugins.len();
+        let mut blocked: Vec<usize> = Vec::new();
+        for &i in &idx {
+            let r = self.range_excluding(i, spec, &idx)?;
+            lo = lo.max(r.lo);
+            hi = hi.min(r.hi);
+            blocked.extend(r.blocked.iter().copied());
+        }
+        if lo > hi {
+            return None;
+        }
+        // Walk inward past the pinned slots: a pin is a hole in the range, not
+        // a bound, so the next gap along may well be free.
+        let mut gap = if to_top { lo } else { hi };
+        while blocked.contains(&gap) {
+            if to_top {
+                gap += 1;
+                if gap > hi {
+                    return None;
+                }
+            } else {
+                if gap == lo {
+                    return None;
+                }
+                gap -= 1;
+            }
+        }
+        // Already there: the block starts at the gap (top) or ends at it
+        // (bottom). Reporting None lets the caller say so instead of writing
+        // the same order back to disk.
+        let first = *idx.first()?;
+        let last = *idx.last()?;
+        let unchanged = if to_top { first == gap } else { last + 1 == gap };
+        (!unchanged).then_some(gap)
+    }
+
     pub fn move_plugins_to(&mut self, rows: &[usize], gap: usize, spec: &GameSpec) -> bool {
         let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
         idx.sort_unstable();

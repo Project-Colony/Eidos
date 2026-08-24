@@ -196,6 +196,20 @@ impl ModGate {
     }
 }
 
+/// What an MD5 lookup recovered about an archive with no sidecar.
+#[derive(Debug, Clone)]
+pub struct Md5Match {
+    pub mod_id: u64,
+    pub file_id: u64,
+    /// The file's display name on Nexus ("Main file"), which is what the
+    /// sidecar's `name=` key holds.
+    pub file_name: String,
+    /// The archive's own name as Nexus knows it, for the `fileName=` key.
+    pub archive_name: String,
+    pub file_version: String,
+    pub remote: RemoteMod,
+}
+
 /// Remote mod metadata (subset of `games/{game}/mods/{id}`).
 ///
 /// When [`Self::hidden`] is set, the descriptive fields have already been blanked
@@ -796,6 +810,57 @@ impl Nexus {
         Ok(RemoteMod::from_payload(&v, self.adult))
     }
 
+    /// Identify an archive Eidos did not download, by its MD5:
+    /// `games/{game}/mods/md5_search/{md5}`.
+    ///
+    /// Every archive dropped into `downloads/` by hand - moved from another
+    /// machine, fetched in a browser, recovered from a backup - arrives with no
+    /// `.meta` beside it, and stays "Untracked" forever: no mod id, so no
+    /// version, no update check, no Nexus page. This is the recovery path, and
+    /// it is the same one MO2 offers as Query Metadata.
+    ///
+    /// The reply is an ARRAY: one MD5 can match several files (a mod republished
+    /// under a new file id keeps the bytes). The first match is taken, as MO2
+    /// does - they describe the same file, and the alternative is asking the user
+    /// a question they have no way to answer.
+    pub fn md5_search(&self, game: &str, md5: &str) -> Result<Md5Match, String> {
+        let v = self.get(&format!("games/{game}/mods/md5_search/{md5}"))?;
+        let first = v
+            .as_array()
+            .and_then(|a| a.first())
+            .ok_or("Nexus knows no file with that checksum")?;
+        let m = first.get("mod").ok_or("the reply carried no mod")?;
+        let f = first.get("file_details").ok_or("the reply carried no file")?;
+        let remote = RemoteMod::from_payload(m, self.adult);
+        // A withheld mod is withheld here too: the gate exists so metadata for a
+        // hidden or adult-gated mod cannot arrive through a side door.
+        if let Some(why) = remote.gate.reason() {
+            return Err(why.message().to_string());
+        }
+        // `mod_id` / `file_id` are what make the row tracked at all: without
+        // them there is no update check and no Nexus page, and the sidecar this
+        // writes would REMOVE the Identify button that is the only way to try
+        // again. A reply missing either is a failed identification, not a
+        // partial one.
+        let (Some(mod_id), Some(file_id)) = (
+            m.get("mod_id").and_then(|x| x.as_u64()),
+            f.get("file_id").and_then(|x| x.as_u64()),
+        ) else {
+            return Err("Nexus answered without a mod or file id".to_string());
+        };
+        Ok(Md5Match {
+            mod_id,
+            file_id,
+            // `name` is the file's DISPLAY name ("Main file"); `file_name` is
+            // the archive on disk. The sidecar's `name=` key is the former -
+            // MO2 shows it as the download's title.
+            file_name: s(f, "name"),
+            archive_name: s(f, "file_name"),
+            file_version: s(f, "version"),
+            remote,
+        })
+    }
+
     /// File metadata: `games/{game}/mods/{id}/files/{file_id}`.
     ///
     /// Takes the [`ModGate`] minted by [`Nexus::mod_info`], so a file's name and
@@ -1203,9 +1268,153 @@ pub fn write_download_meta(
     Ok(meta_path)
 }
 
+/// The MD5 of a file, lowercase hex - the fingerprint Nexus indexes archives by.
+///
+/// Streamed in chunks rather than read whole: a mod archive is routinely
+/// hundreds of megabytes and this runs on the GUI's behalf.
+pub fn md5_file(path: &Path) -> io::Result<String> {
+    use md5::{Digest, Md5};
+    use std::io::Read;
+
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Md5::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Write a `.meta` for an archive identified by [`Nexus::md5_search`].
+///
+/// The same MO2 key set [`write_download_meta`] writes, minus what only a live
+/// download knows (the CDN url): what matters is that the row stops being
+/// "Untracked" and gains its mod id, name and version, so update checks and the
+/// Nexus page work from here on.
+pub fn write_recovered_meta(
+    archive: &Path,
+    game_short: &str,
+    found: &Md5Match,
+) -> io::Result<PathBuf> {
+    // Same defence as the download path: a withheld mod must not have its
+    // metadata land on disk through this door either.
+    if let Some(why) = found.remote.hidden() {
+        return Err(io::Error::other(why.message()));
+    }
+    let meta_path = PathBuf::from(format!("{}.meta", archive.display()));
+    let name = archive.file_name().unwrap_or_default().to_string_lossy();
+    let mut out = String::from("[General]\n");
+    out.push_str(&format!("gameName={game_short}\n"));
+    out.push_str(&format!("modID={}\n", found.mod_id));
+    out.push_str(&format!("fileID={}\n", found.file_id));
+    out.push_str(&format!("name={}\n", found.file_name));
+    out.push_str(&format!("modName={}\n", found.remote.name));
+    out.push_str(&format!(
+        "version={}\n",
+        if found.file_version.is_empty() { &found.remote.version } else { &found.file_version }
+    ));
+    out.push_str(&format!("newestVersion={}\n", found.remote.version));
+    out.push_str(&format!("fileName={name}\n"));
+    if let Some(c) = found.remote.category_id {
+        out.push_str(&format!("category={c}\n"));
+    }
+    if let Ok(md) = fs::metadata(archive) {
+        out.push_str(&format!("totalSize={}\n", md.len()));
+    }
+    out.push_str("repository=Nexus\n");
+    out.push_str("installed=false\nuninstalled=false\npaused=false\nremoved=false\n");
+    fs::write(&meta_path, out)?;
+    Ok(meta_path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_md5_matches_the_rfc_1321_vectors() {
+        // Published known answers. If this ever fails, every lookup returns "no
+        // file with that checksum" and the reason will not point here.
+        let dir = std::env::temp_dir().join(format!("eidos-md5-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        for (input, want) in [
+            ("", "d41d8cd98f00b204e9800998ecf8427e"),
+            ("abc", "900150983cd24fb0d6963f7d28e17f72"),
+            (
+                "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+                "57edf4a22be3c955ac49da2e2107b67a",
+            ),
+        ] {
+            let f = dir.join("probe.bin");
+            fs::write(&f, input).unwrap();
+            assert_eq!(md5_file(&f).unwrap(), want, "MD5 of {input:?}");
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_withheld_mod_cannot_land_on_disk_through_the_md5_path_either() {
+        // The gate exists so metadata for a hidden or adult-gated mod cannot
+        // arrive through a side door. The download path asserts this; the
+        // recovery path is the same door.
+        let dir = std::env::temp_dir().join(format!("eidos-gate-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let archive = dir.join("x.zip");
+        fs::write(&archive, b"x").unwrap();
+        let hidden = gated(&mod_payload(Some(true)), AdultPolicy::Denied);
+        assert!(hidden.hidden().is_some(), "the fixture really is withheld");
+        let found = Md5Match {
+            mod_id: 1,
+            file_id: 2,
+            file_name: "Main file".into(),
+            archive_name: "x.zip".into(),
+            file_version: "1.0".into(),
+            remote: hidden,
+        };
+        assert!(write_recovered_meta(&archive, "SkyrimSE", &found).is_err());
+        assert!(!dir.join("x.zip.meta").exists(), "nothing was written");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_recovered_meta_carries_what_makes_a_download_tracked() {
+        // The point of the recovery: a row that was "Untracked" gains the mod
+        // id and version that update checks and the Nexus page need.
+        let dir = std::env::temp_dir().join(format!("eidos-recov-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let archive = dir.join("Cool Mod-123-1-0.zip");
+        fs::write(&archive, b"payload").unwrap();
+        let found = Md5Match {
+            mod_id: 123,
+            file_id: 456,
+            file_name: "Main file".into(),
+            archive_name: "Cool Mod-123-1-0.zip".into(),
+            file_version: "1.0".into(),
+            remote: RemoteMod {
+                name: "Cool Mod".into(),
+                version: "1.1".into(),
+                summary: String::new(),
+                category_id: Some(7),
+                available: true,
+                adult: Some(false),
+                gate: shown_gate(),
+            },
+        };
+        let meta = write_recovered_meta(&archive, "SkyrimSE", &found).unwrap();
+        let body = fs::read_to_string(&meta).unwrap();
+        assert!(body.contains("modID=123"), "{body}");
+        assert!(body.contains("fileID=456"), "{body}");
+        assert!(body.contains("version=1.0"), "the FILE version, not the mod's: {body}");
+        assert!(body.contains("newestVersion=1.1"), "so the update check has a target: {body}");
+        assert!(body.contains("name=Main file"), "the display name, not the archive: {body}");
+        assert!(body.contains("fileName=Cool Mod-123-1-0.zip"), "{body}");
+        assert!(body.contains("totalSize=7"), "{body}");
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     /// A gate for a mod that may be shown, for fixtures whose subject is not the
     /// gate itself.

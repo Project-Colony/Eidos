@@ -449,6 +449,13 @@ pub(crate) fn icon_text_btn<'a>(bytes: &'static [u8], label: &'a str, msg: Messa
     button(content).padding(5).on_press(msg).style(button::text).into()
 }
 
+/// A flat text-only toolbar button, for an action with no icon in the MO2 set
+/// Eidos borrows. Same padding and style as [`icon_text_btn`] so the row does
+/// not visibly change height where one appears.
+pub(crate) fn text_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
+    button(text(label).size(12.0)).padding(5).on_press(msg).style(button::text).into()
+}
+
 /// A flat icon-only button (toolbar right group, row arrows).
 pub(crate) fn icon_btn<'a>(bytes: &'static [u8], size: f32, msg: Option<Message>) -> Element<'a, Message> {
     let mut b = button(icon(bytes, size)).padding(3).style(button::text);

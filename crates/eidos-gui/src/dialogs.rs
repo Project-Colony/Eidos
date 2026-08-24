@@ -339,6 +339,96 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
 
 // ---- Executables editor (MO2's Modify Executables) --------------------------
 
+/// The Backups dialog: one column per list, each with a Back up now button and
+/// its restore points newest first.
+///
+/// Both lists in one dialog on purpose - they are the two halves of "what my
+/// setup looked like", and a bad LOOT sort touches the load order while a bad
+/// drag touches the mod list. Splitting them across two menus would make the
+/// user learn which button to look for while already in trouble.
+pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Message> {
+    use eidos_instance::BackupKind;
+
+    fn column<'a>(
+        title: &'a str,
+        what: &'a str,
+        kind: BackupKind,
+        list: &[eidos_instance::Backup],
+    ) -> Element<'a, Message> {
+        let mut col = Column::new()
+            .spacing(6)
+            .push(text(title).size(13.0))
+            .push(text(what).size(11.0))
+            .push(
+                button(text("Back up now").size(12.0))
+                    .padding([4, 10])
+                    .style(button::primary)
+                    .on_press(Message::CreateBackup(kind)),
+            );
+        if list.is_empty() {
+            col = col.push(text("No restore points yet.").size(11.0));
+        } else {
+            let mut rows = Column::new().spacing(3);
+            for b in list {
+                rows = rows.push(
+                    Row::new()
+                        .spacing(8)
+                        .align_y(iced::Alignment::Center)
+                        .push(text(b.when()).size(12.0).width(Length::Fill))
+                        .push(
+                            button(text("Restore").size(11.0))
+                                .padding([3, 8])
+                                .style(button::secondary)
+                                .on_press(Message::RestoreBackup(kind, b.stamp)),
+                        ),
+                );
+            }
+            col = col.push(scrollable(rows).height(Length::Fixed(180.0)));
+        }
+        col.width(Length::Fill).into()
+    }
+
+    let body = Row::new()
+        .spacing(24)
+        .push(column(
+            "Mod list",
+            "Order and enabled state of every mod.",
+            BackupKind::ModList,
+            &state.mods,
+        ))
+        .push(column(
+            "Load order",
+            "plugins.txt and loadorder.txt together.",
+            BackupKind::LoadOrder,
+            &state.order,
+        ));
+
+    let card = Column::new()
+        .spacing(12)
+        .push(
+            Row::new()
+                .align_y(iced::Alignment::Center)
+                .push(text("Backups").size(18.0).width(Length::Fill))
+                .push(
+                    button(text("Close").size(12.0))
+                        .padding([4, 12])
+                        .style(button::secondary)
+                        .on_press(Message::CloseBackupsDialog),
+                ),
+        )
+        .push(body)
+        .push(
+            text("Restoring backs up the current state first, so a wrong pick can be undone.")
+                .size(11.0),
+        );
+
+    container(card)
+        .width(Length::Fixed(620.0))
+        .padding(18)
+        .style(card_style)
+        .into()
+}
+
 pub(crate) fn executables_dialog<'a>(app: &App, state: &ExecutablesDialogState) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)

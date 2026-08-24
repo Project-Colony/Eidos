@@ -14,6 +14,12 @@ serde_json = "1"
 # default-features off: 0.11 defaults to `oid`, which drags const-oid into the
 # OAuth path for a crate whose only use is one Sha256::digest (PKCE S256).
 sha2 = { version = "0.11", default-features = false }
+# Nexus identifies an archive that arrived with no sidecar by its MD5. Same
+# RustCrypto family and digest version as sha2 above, for the same reason: this
+# is a published algorithm with published vectors, not ours to reimplement.
+# MD5 is used here as a file fingerprint the API asks for, never as a security
+# primitive - which is why `ring`, already in the tree, refuses to provide it.
+md-5 = { version = "0.11", default-features = false }
 base64 = "0.23"
 # JWT signature verification for the OAuth access token. Already in the tree via
 # ureq -> rustls, so this costs a line here and nothing at build time. Nexus

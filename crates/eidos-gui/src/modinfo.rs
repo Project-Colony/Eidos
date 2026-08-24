@@ -725,6 +725,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     for (i, row) in app.downloads.iter().enumerate() {
         let armed = app.confirm_delete_download.as_deref() == Some(row.name.as_str());
+        let identifying = app.identifying_download.as_deref() == Some(row.name.as_str());
         // Two action buttons: Install (re-run the installer) and Delete.
         // MO2 keeps Install available on an already-installed archive
         // (downloadlistview.cpp:230, `state >= STATE_READY`) because re-running a
@@ -826,14 +827,26 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                     Message::DeleteDownload(row.name.clone())
                 })
                 .style(if armed { button::danger } else { button::secondary });
-            Row::new()
+            let mut actions = Row::new()
                 .spacing(4)
                 .align_y(iced::Alignment::Center)
                 .width(Length::Fixed(DL_C_ACTIONS))
-                .height(Length::Fixed(DL_ACTION_H))
-                .push(install)
-                .push(del)
-                .into()
+                .height(Length::Fixed(DL_ACTION_H));
+            // An archive with no sidecar has no mod id, so no version, no update
+            // check and no Nexus page - and every archive copied in by hand
+            // arrives that way. Nexus can identify it from its MD5, which is the
+            // only route back (MO2 calls this Query Metadata).
+            if row.state == DownloadState::Untracked {
+                actions = actions.push(
+                    button(text(if identifying { "..." } else { "Identify" }).size(11.0))
+                        .padding(4)
+                        .style(button::secondary)
+                        .on_press_maybe(
+                            (!identifying).then(|| Message::IdentifyDownload(row.name.clone())),
+                        ),
+                );
+            }
+            actions.push(install).push(del).into()
         };
         // Prefer the friendly Nexus mod name when present, else the file name.
         let display = row.mod_name.clone().unwrap_or_else(|| row.name.clone());
@@ -1807,6 +1820,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             striped(row.into(), i % 2 == 0)
         };
         let grab = mouse_area(painted)
+            .on_right_press(Message::OpenPluginMenu(i))
             .on_press(Message::SelectPlugin(i))
             .on_enter(Message::PluginDragOverGap(i))
             .on_release(Message::PluginDragDrop);
@@ -2228,6 +2242,30 @@ pub(crate) fn main_screen<'a>(app: &App) -> Element<'a, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseExecutablesDialog);
         let dialog = container(executables_dialog(app, state)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // The plugin context menu, floating where it was summoned from.
+    // Bounds-checked: a stale row would otherwise render an invisible
+    // full-window click catcher over an empty card.
+    let plugin_menu_row = app
+        .menu_plugin
+        .filter(|&i| app.plugins.as_ref().is_some_and(|l| i < l.plugins.len()));
+    if let Some(i) = plugin_menu_row {
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ClosePluginMenu)
+            .on_right_press(Message::ClosePluginMenu);
+        // From the frozen anchor, not the live cursor.
+        let at = app.menu_at.unwrap_or(app.cursor);
+        let card = floating_at(plugin_menu_card(app, i), at, app.window);
+        layers = layers.push(catcher).push(card);
+    }
+
+    // The Backups dialog (MO2's Create Backup / Restore Backup).
+    if let Some(state) = &app.backups {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseBackupsDialog);
+        let dialog = container(backups_dialog(state)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
@@ -2739,6 +2777,7 @@ pub(crate) fn load_downloads(app: &mut App) {
     let Some(inst) = &app.created else {
         app.downloads = Vec::new();
         app.confirm_delete_download = None;
+        app.identifying_download = None;
         return;
     };
     let dir = inst.downloads_dir();

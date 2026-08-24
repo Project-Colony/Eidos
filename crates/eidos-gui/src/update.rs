@@ -28,25 +28,47 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
 /// pointer tracking publishes a message per `CursorMoved` and every disarm rule
 /// read that as an action. The confirmation was unreachable in practice: the
 /// pointer has to travel to the button, and travelling is a mouse move.
-pub(crate) fn is_ambient(m: &Message) -> bool {
-    matches!(
-        m,
+pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
+    match m {
         Message::PointerAt(_)
-            | Message::WindowResized(_)
-            | Message::FomodHover(_)
-            | Message::FomodUnhover(..)
-            // The downloads tick fires twice a second on its own. Left out of
-            // this list it would disarm every confirmation before the second
-            // click could land - the same defect as the pointer, on a timer.
-            | Message::DownloadTick
-    )
+        | Message::WindowResized(_)
+        | Message::FomodHover(_)
+        | Message::FomodUnhover(..)
+        // The downloads tick fires twice a second on its own. Left out of
+        // this list it would disarm every confirmation before the second
+        // click could land - the same defect as the pointer, on a timer.
+        | Message::DownloadTick
+        // Ctrl is how a multi-selection is built, so pressing or releasing it
+        // around a batch action belongs to that gesture. The handler only
+        // stores the modifier set - it changes nothing the user can see.
+        | Message::ModifiersChanged(_)
+        // Cancelling a drag is the absence of an action: nothing moved, nothing
+        // was written. These arrive from the release path above, so exempting
+        // PointerReleased alone fixed nothing - it simply handed the job to the
+        // two messages it emits.
+        | Message::DragCancel
+        | Message::PluginDragCancel => true,
+        // Letting go of the very click that armed a confirmation is the END of
+        // that click, not a new decision - and EVERY left release publishes
+        // this, so treating it as an action made the confirmation live exactly
+        // as long as the button was held down. The pointer fix covered moving
+        // and missed this, which is why the bug came back wearing a hat.
+        //
+        // Not blanket, though: a release that commits an aimed drag really is
+        // an action, and must cancel like any other.
+        Message::PointerReleased => {
+            !(app.drag_state.is_some_and(|d| d.aimed)
+                || app.plugin_drag.as_ref().is_some_and(|d| d.aimed))
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
     // A confirmation is armed by the first click and cancelled by any other
     // ACTION - including arming a different row. Ambient messages are not
     // actions and must leave it standing.
-    if !is_ambient(&message) {
+    if !is_ambient(app, &message) {
         // Any action other than a second Clear click cancels the clear confirmation.
         if !matches!(message, Message::ClearOverwrite) {
             app.confirm_clear = false;
@@ -1164,6 +1186,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.plugin_drag = None;
             app.drag_scroll = None;
             app.menu_mod = None;
+            app.menu_plugin = None;
         }
         Message::OpenModMenu(i) => {
             // Right-clicking a row already in the multi-selection keeps the whole
@@ -2079,6 +2102,251 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.prefs.lock_gui = v;
             if let Err(e) = app.prefs.save() {
                 app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        // ---- Identify an archive by its MD5 (MO2's Query Metadata) -----------
+        Message::IdentifyDownload(name) => {
+            // One at a time. The row greys itself, but a keyboard repeat or a
+            // second row's button would otherwise start another whole-file hash
+            // on the same executor - and the two would race to write one
+            // sidecar.
+            if app.identifying_download.is_some() {
+                return Task::none();
+            }
+            let Some(row) = app.downloads.iter().find(|d| d.name == name) else {
+                return Task::none();
+            };
+            let Some(game) = selected_game(app) else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            let (path, domain, short) =
+                (row.path.clone(), game.def.nexus_game, game.def.short_name);
+            app.identifying_download = Some(name.clone());
+            app.status = Some(format!("Identifying {name} by checksum..."));
+            // Hashing hundreds of megabytes and a round trip to Nexus: off the
+            // draw thread, or the window freezes for the duration.
+            // Hashing hundreds of megabytes and a blocking HTTP round trip do
+            // not belong on the async executor iced drives the window with:
+            // held there they freeze every other task, including the one that
+            // would repaint this row. A thread does the work and the channel
+            // carries the answer back.
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let outcome = (|| {
+                    let md5 = eidos_nexus::md5_file(&path)
+                        .map_err(|e| format!("could not read the archive: {e}"))?;
+                    let nexus = eidos_nexus::Nexus::connect()?;
+                    let found = nexus.md5_search(domain, &md5)?;
+                    let label = found.remote.name.clone();
+                    eidos_nexus::write_recovered_meta(&path, short, &found).map_err(|e| {
+                        format!("identified it, but could not write the sidecar: {e}")
+                    })?;
+                    Ok(label)
+                })();
+                let _ = tx.send(outcome);
+            });
+            return Task::perform(
+                async move {
+                    rx.recv().unwrap_or_else(|_| Err("the lookup stopped unexpectedly".into()))
+                },
+                Message::IdentifiedDownload,
+            );
+        }
+        Message::IdentifiedDownload(result) => {
+            app.identifying_download = None;
+            match result {
+                Ok(name) => {
+                    app.status = Some(format!("Identified as '{name}'."));
+                    // The row reads its state from the sidecar that now exists.
+                    load_downloads(app);
+                }
+                Err(e) => app.status = Some(format!("Could not identify it: {e}")),
+            }
+        }
+        // ---- Plugin context menu (MO2's plugin right-click) ------------------
+        Message::OpenPluginMenu(i) => {
+            // Right-clicking a row outside the selection selects just it first,
+            // exactly like the mod list - otherwise a batch action would run on
+            // rows the user cannot see any more.
+            if !app.selected_plugins.contains(&i) {
+                app.selected_plugins.clear();
+                app.selected_plugin = Some(i);
+            }
+            app.menu_mod = None;
+            app.menu_plugin = Some(i);
+            // Freeze where it was summoned from. Drawn at the LIVE cursor the
+            // card chases the pointer, and its own items can never be reached.
+            app.menu_at = Some(app.cursor);
+            app.focus = Pane::Plugins;
+        }
+        Message::ClosePluginMenu => app.menu_plugin = None,
+        Message::OpenPluginOrigin(i) => {
+            app.menu_plugin = None;
+            match plugin_origin_row(app, i) {
+                Some(row) => {
+                    if let Some(m) = app.mods.get(row) {
+                        let _ = std::process::Command::new("xdg-open").arg(&m.path).spawn();
+                    }
+                }
+                None => {
+                    app.status =
+                        Some("That plugin comes from the game's own Data, not from a mod.".into())
+                }
+            }
+        }
+        Message::ShowPluginOriginInfo(i) => {
+            app.menu_plugin = None;
+            match plugin_origin_row(app, i) {
+                Some(row) => return update(app, Message::ShowModInfo(row)),
+                None => {
+                    app.status =
+                        Some("That plugin comes from the game's own Data, not from a mod.".into())
+                }
+            }
+        }
+        Message::PluginsSendTop | Message::PluginsSendBottom => {
+            // Read the anchor BEFORE closing the menu - it is stored there.
+            let anchor = app.menu_plugin.or(app.selected_plugin);
+            app.menu_plugin = None;
+            let to_top = matches!(message, Message::PluginsSendTop);
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            // Right-clicking inside a multi-selection acts on the whole set,
+            // outside it on that row alone - the same rule the mod list uses,
+            // applied by OpenPluginMenu above.
+            let Some(anchor) = anchor else { return Task::none() };
+            let rows = plugin_selection_or(app, anchor);
+            if rows.is_empty() {
+                return Task::none();
+            }
+            let held = hold_plugin_selection(app);
+            let mut moved = false;
+            let mut already = false;
+            if let Some(list) = app.plugins.as_mut() {
+                // The engine's own masters sit above every mod plugin, so gap 0
+                // is refused for all of them: the destination has to be the
+                // outermost slot the load order actually allows, which is what
+                // edge_gap works out.
+                match list.edge_gap(&rows, to_top, &spec) {
+                    Some(gap) => {
+                        moved = list.move_plugins_to(&rows, gap, &spec);
+                        if moved {
+                            list.refresh(&spec);
+                        }
+                    }
+                    None => already = true,
+                }
+            }
+            put_plugin_selection(app, held);
+            if !moved {
+                app.status = Some(if already {
+                    "Those plugins are already as far as the load order allows.".to_string()
+                } else {
+                    "The load order will not take that move: a master or a pin is in the way."
+                        .to_string()
+                });
+                return Task::none();
+            }
+            commit_plugin_order(app, &spec);
+        }
+        Message::PluginsSetAll(on) => {
+            app.menu_plugin = None;
+            let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
+                return Task::none();
+            };
+            // By NAME, like the batch toggle: enabling changes the tier a plugin
+            // sorts into, so the rows move under any index collected first.
+            let names: Vec<String> = {
+                let Some(list) = app.plugins.as_ref() else { return Task::none() };
+                list.plugins
+                    .iter()
+                    .filter(|p| {
+                        // The game's own masters and an .esl on a no-light
+                        // engine cannot be toggled at all; writing them would be
+                        // a lie the next refresh silently corrects.
+                        let engine_owned = spec
+                            .primary_plugins
+                            .iter()
+                            .any(|pp| pp.eq_ignore_ascii_case(&p.name))
+                            || list.implicit.contains(&p.name.to_ascii_lowercase());
+                        !engine_owned && !p.force_disabled && p.enabled != on
+                    })
+                    .map(|p| p.name.clone())
+                    .collect()
+            };
+            if names.is_empty() {
+                app.status = Some(if on {
+                    "Every plugin that can be active already is.".to_string()
+                } else {
+                    "Nothing left to deactivate: the rest are loaded by the game itself.".to_string()
+                });
+                return Task::none();
+            }
+            let held = hold_plugin_selection(app);
+            if let Some(list) = app.plugins.as_mut() {
+                for n in &names {
+                    list.set_enabled(n, on);
+                }
+                list.refresh(&spec);
+            }
+            put_plugin_selection(app, held);
+            app.status = Some(format!(
+                "{} {} plugin(s).",
+                if on { "Activated" } else { "Deactivated" },
+                names.len()
+            ));
+            commit_plugin_order(app, &spec);
+        }
+        // ---- Backups dialog (MO2's Create Backup / Restore Backup) -----------
+        Message::ShowBackupsDialog => {
+            app.menu_mod = None;
+            match load_backups(app) {
+                Some(state) => app.backups = Some(state),
+                None => app.status = Some("Open a game instance first.".to_string()),
+            }
+        }
+        Message::CloseBackupsDialog => app.backups = None,
+        Message::CreateBackup(kind) => {
+            let Some(prof) = app.created.as_ref().map(|i| i.active()) else { return Task::none() };
+            match prof.create_backup(kind) {
+                Ok(b) => {
+                    app.status =
+                        Some(format!("Backed up the {} ({}).", kind.label(), b.when()));
+                    app.backups = load_backups(app);
+                }
+                Err(e) => app.status = Some(format!("Could not back up the {}: {e}", kind.label())),
+            }
+        }
+        Message::RestoreBackup(kind, stamp) => {
+            let Some(inst) = app.created.clone() else { return Task::none() };
+            // Restoring rewrites the same files a running game is deploying
+            // from, so it takes the instance lock like every other mutation.
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot restore now: {e}."));
+                    return Task::none();
+                }
+            };
+            match inst.active().restore_backup(kind, stamp) {
+                Ok(()) => {
+                    let when = eidos_instance::format_stamp(stamp);
+                    app.status = Some(format!(
+                        "Restored the {} from {when}. The state it replaced was backed up first.",
+                        kind.label()
+                    ));
+                    app.backups = None;
+                    drop(_lock);
+                    // Both lists are read from disk again: the restore changed
+                    // them underneath every cache the window holds.
+                    reload_mods(app);
+                    app.plugins = None;
+                    app.conflicts = compute_conflicts(app);
+                    recompute_counts(app);
+                }
+                Err(e) => app.status = Some(format!("Could not restore the {}: {e}", kind.label())),
             }
         }
         // ---- Executables dialog ----------------------------------------------

@@ -35,7 +35,7 @@ pub use manifest::Manifest;
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use meta::ModMeta;
 pub use profile::{
-    cosave_siblings, is_save_data, is_save_listing, read_text_lossy, untweak_ini, write_text,
+    cosave_siblings, format_stamp, Backup, BackupKind, is_save_data, is_save_listing, read_text_lossy, untweak_ini, write_text,
     ListTrust, Profile, SaveEntry, TweakedKey,
 };
 pub use settings::{Settings, Theme};

@@ -372,6 +372,7 @@ pub(crate) fn toolbar<'a>(app: &App) -> Element<'a, Message> {
         .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::ChangeGame))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
         .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::ShowExecutablesDialog))
+        .push(text_btn("Backups", Message::ShowBackupsDialog))
         .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
         .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenSettings))
         .push(Space::new().width(Length::Fill))
@@ -867,6 +868,60 @@ pub(crate) fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message
         .on_press(msg)
         .style(button::text)
         .into()
+}
+
+/// MO2's right-click plugin menu: jump to the mod that ships this plugin, send
+/// the selection to either end of the load order, or set every plugin at once.
+///
+/// "Which mod does this ESP come from" is asked dozens of times while debugging
+/// a load order, and until now the only answer was the row's hover tooltip.
+pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
+    let Some(list) = app.plugins.as_ref() else {
+        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+    };
+    let Some(p) = list.plugins.get(i) else {
+        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+    };
+    let picked = app.selected_plugins.len().max(1);
+    let mut col = Column::new()
+        .spacing(1)
+        .push(text(p.name.clone()).size(13.0))
+        .push(menu_sep());
+
+    // The origin actions are only offered when there IS an origin: vanilla
+    // content belongs to no mod, and a greyed row that never explains itself is
+    // worse than no row.
+    match plugin_origin_row(app, i) {
+        Some(row) => {
+            let name = app.mods.get(row).map(|m| m.display_name().to_string()).unwrap_or_default();
+            col = col
+                .push(menu_item_owned(format!("Open mod folder  ({name})"), Message::OpenPluginOrigin(i)))
+                .push(menu_item("Mod info", Message::ShowPluginOriginInfo(i)));
+        }
+        None => {
+            col = col.push(container(text("From the game's own Data").size(11.0)).padding([4, 8]));
+        }
+    }
+
+    col = col
+        .push(menu_sep())
+        .push(menu_item_owned(
+            if picked > 1 { format!("Send {picked} to top") } else { "Send to top".to_string() },
+            Message::PluginsSendTop,
+        ))
+        .push(menu_item_owned(
+            if picked > 1 {
+                format!("Send {picked} to bottom")
+            } else {
+                "Send to bottom".to_string()
+            },
+            Message::PluginsSendBottom,
+        ))
+        .push(menu_sep())
+        .push(menu_item("Activate all", Message::PluginsSetAll(true)))
+        .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
+
+    container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
 }
 
 /// A small separator line inside the context menu.

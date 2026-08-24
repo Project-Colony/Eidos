@@ -324,6 +324,25 @@ enum Message {
     /// Toggle the conflict marks on the mod list's scrollbar.
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
+    OpenPluginMenu(usize),
+    ClosePluginMenu,
+    /// Open the folder of the mod that ships the plugin at this row.
+    OpenPluginOrigin(usize),
+    /// Open the mod-info dialog for that same mod.
+    ShowPluginOriginInfo(usize),
+    /// Send the selected plugins to the very top / bottom of the load order.
+    PluginsSendTop,
+    PluginsSendBottom,
+    /// Activate or deactivate every plugin the engine does not own.
+    PluginsSetAll(bool),
+    /// Ask Nexus what this archive is, by its MD5 (MO2's Query Metadata).
+    IdentifyDownload(String),
+    /// The lookup came back: `Ok` carries the name it identified.
+    IdentifiedDownload(Result<String, String>),
+    ShowBackupsDialog,
+    CloseBackupsDialog,
+    CreateBackup(eidos_instance::BackupKind),
+    RestoreBackup(eidos_instance::BackupKind, u64),
     // ---- Executables dialog (MO2's Modify Executables) ----
     /// Open the Executables editor (toolbar Executables button + Tools menu).
     ShowExecutablesDialog,
@@ -957,6 +976,10 @@ struct App {
     selected_mod: Option<usize>,
     /// The mod whose right-click action menu is open (None = closed).
     menu_mod: Option<usize>,
+    /// The plugin row whose right-click menu is open (MO2's plugin context
+    /// menu). Separate from `menu_mod`: the two lists are shown at once, and a
+    /// shared field would make right-clicking one dismiss nothing in the other.
+    menu_plugin: Option<usize>,
     /// In-progress rename: `(mod index, edited name)`.
     rename: Option<(usize, String)>,
     /// Per-mod metadata for the extra columns + context menu, keyed by folder name.
@@ -992,6 +1015,9 @@ struct App {
     // ---- Executables dialog ----
     /// The open Executables editor, if any (None = closed).
     executables: Option<ExecutablesDialogState>,
+    /// The Backups dialog: the restore points of both lists, read when it opens
+    /// so the list cannot go stale behind an open dialog.
+    backups: Option<BackupsDialogState>,
     // ---- Endorse / update in-flight + counts ----
     /// The mod index whose Nexus endorse is in flight (greys the toolbar button).
     endorsing: Option<usize>,
@@ -1035,6 +1061,9 @@ struct App {
     downloads: Vec<DownloadRow>,
     /// Two-click guard for a download deletion (the row's index in `downloads`).
     confirm_delete_download: Option<String>,
+    /// The download whose MD5 lookup is in flight, so the row can say so and a
+    /// second click cannot start the same hash twice.
+    identifying_download: Option<String>,
     /// Last (instant, bytes) seen for each in-flight download, keyed by file
     /// name. Speed is a derivative, so it needs the previous sample; keeping it
     /// out of `DownloadRow` means a rebuilt row list does not lose the history.
@@ -1165,6 +1194,13 @@ struct App {
     /// portables + detected globals, last-used first. Refreshed on Restart,
     /// so the welcome screen doubles as the instance switcher.
     known: Vec<KnownInstance>,
+}
+
+/// What the Backups dialog shows: the restore points of each list, newest
+/// first, as they were when the dialog opened.
+struct BackupsDialogState {
+    mods: Vec<eidos_instance::Backup>,
+    order: Vec<eidos_instance::Backup>,
 }
 
 /// A game/tool launched through Eidos that the GUI is waiting on. A detached
@@ -1387,6 +1423,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         && app.send_priority.is_none()
         && app.overwrite_to_mod.is_none()
         && app.menu_mod.is_none()
+        && app.menu_plugin.is_none()
     {
         subs.push(shortcuts);
     }
@@ -1688,6 +1725,23 @@ mod tests {
     fn no_mod_selected_marks_nothing() {
         let app = nav_app(&["A", "B"]);
         assert!(selected_mod_origins(&app).is_empty(), "nothing selected, nothing lit");
+    }
+
+    /// A plugin row for the menu tests: name plus the mod that ships it.
+    fn plugin_row(name: &str, origin: &str) -> eidos_plugins::Plugin {
+        eidos_plugins::Plugin {
+            name: name.to_string(),
+            origin_mod: origin.to_string(),
+            path: PathBuf::new(),
+            enabled: true,
+            force_disabled: false,
+            is_master: false,
+            is_light: false,
+            is_medium: false,
+            masters: Vec::new(),
+            priority: 0,
+            index: None,
+        }
     }
 
     fn names(v: &[ModEntry]) -> Vec<&str> {
@@ -3142,6 +3196,220 @@ mod tests {
 
 
     #[test]
+    fn send_to_top_moves_as_far_as_the_engine_allows_not_to_row_zero() {
+        // The defect this shipped with: gap 0 is refused for every plugin,
+        // because the game's own masters sit above them - so the action did
+        // nothing at all, silently.
+        let spec = GameSpec::for_id("skyrimse").unwrap();
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Skyrim.esm", ""));
+        for n in ["A.esp", "B.esp", "C.esp"] {
+            list.plugins.push(plugin_row(n, "Some Mod"));
+        }
+        list.plugins[0].is_master = true;
+        // C is last; sending it to the top must land it above A, not above the
+        // master.
+        let gap = list.edge_gap(&[3], true, &spec).expect("a reachable destination");
+        assert!(gap >= 1, "never above the game's own master, got {gap}");
+        assert!(list.move_plugins_to(&[3], gap, &spec), "and the move is accepted");
+        list.refresh(&spec);
+        let names: Vec<&str> = list.plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names[0], "Skyrim.esm", "the master did not move");
+        assert_eq!(names[1], "C.esp", "C went as high as it may: {names:?}");
+
+        // Already there: reported as such rather than rewritten.
+        assert_eq!(list.edge_gap(&[1], true, &spec), None);
+    }
+
+    #[test]
+    fn send_to_bottom_lands_the_selection_last() {
+        let spec = GameSpec::for_id("skyrimse").unwrap();
+        let mut list = PluginList::default();
+        for n in ["A.esp", "B.esp", "C.esp"] {
+            list.plugins.push(plugin_row(n, "Some Mod"));
+        }
+        let gap = list.edge_gap(&[0], false, &spec).expect("a destination");
+        assert!(list.move_plugins_to(&[0], gap, &spec));
+        list.refresh(&spec);
+        let names: Vec<&str> = list.plugins.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names.last(), Some(&"A.esp"), "{names:?}");
+        assert_eq!(list.edge_gap(&[2], false, &spec), None, "already last");
+    }
+
+    #[test]
+    fn activate_all_leaves_the_engines_own_plugins_alone() {
+        // Writing them would be a lie the next refresh silently corrects.
+        let mut app = app_for_game("skyrimse");
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Skyrim.esm", ""));
+        list.plugins.push(plugin_row("Mine.esp", "Some Mod"));
+        list.plugins[0].enabled = true;
+        list.plugins[1].enabled = false;
+        app.plugins = Some(list);
+        let _ = update_inner(&mut app, Message::PluginsSetAll(true));
+        let list = app.plugins.as_ref().unwrap();
+        assert!(list.plugins.iter().find(|p| p.name == "Mine.esp").unwrap().enabled);
+        // And saying nothing changed is itself an outcome worth stating.
+        let _ = update_inner(&mut app, Message::PluginsSetAll(true));
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("already"),
+            "{:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn rebuilding_the_plugin_list_closes_a_menu_that_points_at_a_row() {
+        // menu_plugin is a raw index and the rebuild renumbers the rows: acting
+        // on a stale one would hit whichever plugin now sits there.
+        let mut app = app_for_game("skyrimse");
+        app.menu_plugin = Some(3);
+        invalidate_plugins(&mut app);
+        assert_eq!(app.menu_plugin, None);
+    }
+
+    #[test]
+    fn a_second_identify_cannot_start_while_one_is_running() {
+        // Two whole-file hashes racing to write one sidecar.
+        let mut app = nav_app(&[]);
+        app.identifying_download = Some("a.zip".into());
+        let _ = update_inner(&mut app, Message::IdentifyDownload("b.zip".into()));
+        assert_eq!(app.identifying_download.as_deref(), Some("a.zip"), "the first one still owns it");
+    }
+
+    #[test]
+    fn the_plugin_menu_finds_the_mod_that_ships_the_plugin() {
+        // The question the menu exists to answer, and the one the tooltip could
+        // only answer one row at a time.
+        let mut app = app_for_game("skyrimse");
+        app.mods = mods(&["Other Mod", "Armour Pack"]);
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Armour.esp", "Armour Pack"));
+        list.plugins.push(plugin_row("Skyrim.esm", ""));
+        app.plugins = Some(list);
+        assert_eq!(plugin_origin_row(&app, 0), Some(1), "matched to the mod row");
+        // Vanilla content belongs to no mod: a real answer, not a failure.
+        assert_eq!(plugin_origin_row(&app, 1), None);
+    }
+
+    #[test]
+    fn right_clicking_a_plugin_outside_the_selection_takes_that_row_alone() {
+        // Same rule as the mod list: otherwise a batch action would run on rows
+        // the user can no longer see.
+        let mut app = app_for_game("skyrimse");
+        let mut list = PluginList::default();
+        for n in ["A.esp", "B.esp", "C.esp"] {
+            list.plugins.push(plugin_row(n, "Some Mod"));
+        }
+        app.plugins = Some(list);
+        app.selected_plugins.extend([0, 1]);
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(2));
+        assert_eq!(app.menu_plugin, Some(2), "the menu opens on the row");
+        assert!(app.selected_plugins.is_empty(), "the old set is dropped");
+        assert_eq!(app.selected_plugin, Some(2));
+
+        // Right-clicking INSIDE the selection keeps it whole.
+        app.selected_plugins.extend([0, 1]);
+        let _ = update_inner(&mut app, Message::OpenPluginMenu(1));
+        assert_eq!(app.selected_plugins.len(), 2, "the set survives");
+    }
+
+
+    #[test]
+    fn opening_the_origin_of_a_vanilla_plugin_says_so_instead_of_doing_nothing() {
+        // A menu action that silently no-ops reads as a broken button.
+        let mut app = app_for_game("skyrimse");
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Skyrim.esm", ""));
+        app.plugins = Some(list);
+        let _ = update_inner(&mut app, Message::OpenPluginOrigin(0));
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("game's own Data"),
+            "{:?}",
+            app.status
+        );
+    }
+
+    #[test]
+    fn the_backups_dialog_reads_both_lists_and_restores_through_the_instance() {
+        use eidos_instance::BackupKind;
+        let root = std::env::temp_dir().join(format!("eidos-gui-bk-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        let prof = inst.active();
+        fs::write(prof.dir().join("modlist.txt"), "+Kept\n").unwrap();
+
+        let mut app = nav_app(&[]);
+        app.created = Some(inst);
+        let _ = update_inner(&mut app, Message::CreateBackup(BackupKind::ModList));
+        let _ = update_inner(&mut app, Message::ShowBackupsDialog);
+        let state = app.backups.as_ref().expect("the dialog opened");
+        assert_eq!(state.mods.len(), 1, "the mod-list restore point is listed");
+        let stamp = state.mods[0].stamp;
+
+        // Destroy the list, restore it through the message the button sends.
+        fs::write(prof.dir().join("modlist.txt"), "+Ruined\n").unwrap();
+        let _ = update_inner(&mut app, Message::RestoreBackup(BackupKind::ModList, stamp));
+        assert_eq!(fs::read_to_string(prof.dir().join("modlist.txt")).unwrap(), "+Kept\n");
+        assert!(app.backups.is_none(), "the dialog closes on a restore");
+        assert!(
+            app.status.as_deref().unwrap_or("").contains("Restored"),
+            "the outcome is said out loud: {:?}",
+            app.status
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn releasing_the_button_that_armed_a_confirmation_does_not_cancel_it() {
+        // The reported bug, and the half the previous fix missed: the pointer
+        // fix covered MOVING, but every left-button release publishes
+        // PointerReleased, so letting go of the very click that armed Delete
+        // disarmed it again. The confirmation flashed for as long as the button
+        // was held down - about a tenth of a second - and could never be
+        // completed.
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        update_inner(&mut app, Message::PointerReleased);
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "letting go is the end of that same click, not a new action"
+        );
+        // The same release must not cancel the other confirmations either.
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteSave(0));
+        update_inner(&mut app, Message::PointerReleased);
+        assert!(app.confirm_delete_save.is_some(), "saves too");
+    }
+
+    #[test]
+    fn a_release_that_commits_a_drag_still_counts_as_an_action() {
+        // The exemption is not blanket: a release that DROPS a dragged mod is a
+        // real action, and it must cancel an armed confirmation like any other.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.drag_state = Some(DragState { from: 0, gap: 2, aimed: true });
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        update_inner(&mut app, Message::PointerReleased);
+        assert_eq!(app.confirm_delete_download, None, "a committed drop is an action");
+    }
+
+    #[test]
+    fn holding_a_modifier_does_not_cancel_an_armed_confirmation() {
+        // Ctrl is how a multi-selection is made, so pressing or releasing it
+        // around a batch action is part of that gesture, not a decision to do
+        // something else. The handler only stores the modifier set.
+        let mut app = nav_app(&["a", "b"]);
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        update_inner(
+            &mut app,
+            Message::ModifiersChanged(iced::keyboard::Modifiers::CTRL),
+        );
+        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
+    }
+
+    #[test]
     fn moving_the_mouse_does_not_cancel_an_armed_confirmation() {
         // The reported bug: arm Delete on a download, twitch the mouse, and the
         // confirmation is gone. The pointer HAS to move to reach the button, so
@@ -3691,4 +3959,80 @@ mod tests {
         let got = reconcile(listed, vec![]);
         assert_eq!(got, ["A", "B", "C"]);
     }
+
+    #[test]
+    fn zz_throwaway_restore_backup_leaves_stale_caches() {
+        // Adversarial check of the RestoreBackup handler in update.rs.
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(root.join("mods/AAA")).unwrap();
+        fs::create_dir_all(root.join("mods/BBB")).unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.screen = Screen::Welcome;
+        app.known = vec![KnownInstance {
+            label: "p".into(),
+            inst: Instance::portable(root.clone()),
+            game_index: 0,
+        }];
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        let inst = app.created.clone().expect("instance opened");
+        inst.save_modlist(&app.mods).expect("modlist written");
+        let b = inst
+            .active()
+            .create_backup(eidos_instance::BackupKind::ModList)
+            .expect("backup made");
+
+        // Stand in for what browsing the Data tab / running LOOT leaves behind.
+        app.data_listing.borrow_mut().insert(
+            String::new(),
+            (app.view_generation.get(), vec![("stale.esp".into(), "[AAA]".into(), false)]),
+        );
+        app.listing_cache.borrow_mut().insert(
+            PathBuf::from("/old"),
+            (app.view_generation.get(), std::rc::Rc::new(vec!["stale".to_string()])),
+        );
+        app.loot_meta = Some(HashMap::new());
+        app.drag_state = Some(DragState { from: 0, gap: 0, aimed: true });
+        app.selected_mods = [0usize].into_iter().collect();
+        app.meta_cache.insert(
+            "GhostMod".to_string(),
+            RowMeta {
+                version: None,
+                mod_id: None,
+                category_id: None,
+                category_name: None,
+                content_tags: String::new(),
+                update: false,
+                color: None,
+            },
+        );
+        let gen_before = app.view_generation.get();
+
+        let _ = update(&mut app, Message::RestoreBackup(eidos_instance::BackupKind::ModList, b.stamp));
+        assert!(
+            app.status.as_deref().unwrap_or("").starts_with("Restored"),
+            "the restore must have succeeded for this test to mean anything: {:?}",
+            app.status
+        );
+
+        println!("view_generation before={} after={}", gen_before, app.view_generation.get());
+        println!("data_listing left = {}", app.data_listing.borrow().len());
+        println!("listing_cache left = {}", app.listing_cache.borrow().len());
+        println!("loot_meta is_some = {}", app.loot_meta.is_some());
+        println!("drag_state is_some = {}", app.drag_state.is_some());
+        println!("selected_mods = {}", app.selected_mods.len());
+        println!("meta_cache has GhostMod = {}", app.meta_cache.contains_key("GhostMod"));
+
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(app.view_generation.get(), gen_before, "view_generation WAS bumped");
+        assert!(!app.data_listing.borrow().is_empty(), "data_listing WAS cleared");
+        assert!(!app.listing_cache.borrow().is_empty(), "listing_cache WAS cleared");
+        assert!(app.loot_meta.is_some(), "loot_meta WAS dropped");
+        assert!(app.drag_state.is_some(), "drag_state WAS reset");
+        assert!(app.meta_cache.contains_key("GhostMod"), "meta_cache WAS refreshed");
+    }
+
+
+
+
+
 }

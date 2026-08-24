@@ -11,6 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 
+mod backup;
 mod inis;
 mod modlist;
 mod plugins;
@@ -18,6 +19,7 @@ mod saves;
 #[cfg(test)]
 mod tests;
 
+pub use backup::*;
 pub use inis::*;
 pub use modlist::*;
 use plugins::*;
