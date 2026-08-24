@@ -547,6 +547,48 @@ pub use install::{
     FomodSession, InstallError, InstallReport, Opened, OverwritePolicy,
 };
 
+/// The same check as [`ArchiveTree::data_looks_valid`], against a directory that
+/// is already INSTALLED rather than an archive about to be.
+///
+/// Eidos validated a mod's layout once, in the install picker, and never again -
+/// so a mod extracted by hand into `mods/`, or one whose archive was laid out
+/// for a different manager, sat in the list looking exactly like a working one.
+/// This is what lets the list say otherwise.
+///
+/// Only the top level is read, which is all the rule looks at, and it is
+/// deliberately generous about what counts as valid:
+///
+/// * `Root/` counts. That is Eidos's own convention for files belonging to the
+///   game's install directory rather than its data folder, and a mod that ships
+///   only a `Root/` tree is correct.
+/// * An unreadable directory counts. A permission error is not evidence that a
+///   mod is malformed, and a warning nobody can act on is worse than none.
+/// * An EMPTY directory counts. An empty mod is what "New empty mod" makes, and
+///   flagging one the user just created reads as the feature being broken.
+///
+/// Every way this can be wrong therefore ends with no warning rather than a
+/// wrong one, which is the only safe direction for a flag that appears on every
+/// row of a five-hundred-mod list.
+pub fn folder_looks_valid(dir: &std::path::Path, rules: LayoutRules) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return true };
+    let mut saw_anything = false;
+    for e in entries.flatten() {
+        saw_anything = true;
+        let Ok(name) = e.file_name().into_string() else { continue };
+        let is_dir = e.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        if is_dir {
+            if rules.folder_matches(&name) || name.eq_ignore_ascii_case("Root") {
+                return true;
+            }
+        } else if let Some((_, ext)) = name.rsplit_once('.') {
+            if rules.suffix_matches(ext) {
+                return true;
+            }
+        }
+    }
+    !saw_anything
+}
+
 /// What makes a directory level a valid mod root, for one game.
 ///
 /// This is MO2's per-game `ModDataChecker` reduced to the two lists it actually

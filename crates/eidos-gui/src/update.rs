@@ -4809,6 +4809,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             return update(app, Message::ShowModInfo(i));
         }
+        Message::ModMarkValid(i) => {
+            app.menu_mod = None;
+            let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
+                return Task::none();
+            };
+            let mut meta = inst.mod_meta(&m.name);
+            meta.set_validated(true);
+            let name = m.name.clone();
+            match meta.write(&inst.meta_path(&name)) {
+                // MO2's own key, so this silences the mod over there too.
+                Ok(()) => {
+                    invalidate_meta(app, &name);
+                    refresh_meta_cache(app);
+                    app.status = Some(format!("{name}: warnings marked as checked."));
+                }
+                Err(e) => app.error = Some(format!("Could not write meta.ini: {e}")),
+            }
+        }
         Message::FocusFilter => {
             app.typing = true;
             return operation::focus(filter_input_id());

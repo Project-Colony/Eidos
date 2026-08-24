@@ -39,6 +39,13 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
         return;
     }
     let cats = inst.category_factory();
+    // The two state flags need the game's layout rules and its short name.
+    // Resolved once for the whole refresh rather than per mod: both are constant
+    // for the instance, and this loop already reads every mod's directory.
+    let game = selected_game(app).map(|g| g.def);
+    let rules =
+        game.map(|g| eidos_install::LayoutRules::for_game(g.id)).unwrap_or_default();
+    let short = game.map(|g| g.short_name).unwrap_or_default();
     for (name, path) in missing {
         let meta = inst.mod_meta(&name);
         let category_id = meta.category().as_deref().and_then(eidos_instance::parse_primary);
@@ -55,6 +62,16 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 color: meta.color(),
                 notes: meta.notes(),
                 nexus_gone: meta.nexus_available() == Some(false),
+                // A mod the user vouched for is silent under both rules. That
+                // is what MO2's `validated=` is for, and honouring it means a
+                // mod already vouched for in MO2 arrives here quiet.
+                invalid_data: !meta.validated()
+                    && !eidos_install::folder_looks_valid(&path, rules),
+                other_game: meta
+                    .game_name()
+                    .filter(|_| !meta.validated())
+                    .filter(|g| !g.is_empty() && !short.is_empty())
+                    .filter(|g| !g.eq_ignore_ascii_case(short)),
             },
         );
     }

@@ -653,6 +653,47 @@ pub(crate) fn mod_row<'a>(
             .gap(4),
         );
     }
+    // MO2's two state flags. Both are advisory - the mod still loads, and Eidos
+    // still deploys it - so they are a glyph with an explanation on hover rather
+    // than anything that blocks. "Mark as valid" on the row menu silences either.
+    if meta.is_some_and(|r| r.invalid_data) {
+        flags = flags.push(
+            tooltip(
+                text("\u{26A0}").size(12.0).color(CONFLICT_LOSES_FG),
+                container(
+                    text(
+                        "Nothing at the top of this mod looks like data this game loads. It \
+                         may need its folders moved up a level, or it may simply not be a mod \
+                         for this game. Right-click and Mark as valid to stop asking.",
+                    )
+                    .size(11.0),
+                )
+                .padding(6)
+                .style(card_style),
+                tooltip::Position::Left,
+            )
+            .gap(4),
+        );
+    }
+    if let Some(other) = meta.and_then(|r| r.other_game.clone()) {
+        flags = flags.push(
+            tooltip(
+                text("\u{25C6}").size(12.0).color(CONFLICT_LOSES_FG),
+                container(
+                    text(format!(
+                        "Downloaded for {other}, not for this game. It may still work - many \
+                         mods do - but nothing here checked. Right-click and Mark as valid to \
+                         stop asking."
+                    ))
+                    .size(11.0),
+                )
+                .padding(6)
+                .style(card_style),
+                tooltip::Position::Left,
+            )
+            .gap(4),
+        );
+    }
     if let Some(note) = meta.and_then(|r| r.notes.clone()).filter(|n| !n.trim().is_empty()) {
         flags = flags.push(
             tooltip(
@@ -1457,6 +1498,15 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         let tracked = meta.as_ref().is_some_and(|mm| mm.tracked());
         let track_label = if tracked { "Untrack" } else { "Track" };
         col = col.push(menu_item(track_label, Message::ModTrack(i)));
+    }
+    // Offered only when there is actually a warning to silence, so the menu does
+    // not carry a line whose effect nobody can see.
+    let flagged = app
+        .meta_cache
+        .get(&m.name)
+        .is_some_and(|r| r.invalid_data || r.other_game.is_some());
+    if flagged {
+        col = col.push(menu_item("Mark as valid", Message::ModMarkValid(i)));
     }
     // Ignore update is a local flag (MO2 shows it for any mod, Nexus id or not).
     let ignored = meta.as_ref().is_some_and(|mm| mm.ignore_update());

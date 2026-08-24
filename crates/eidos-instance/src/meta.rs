@@ -180,6 +180,21 @@ impl ModMeta {
         self.string("gameName")
     }
 
+    /// MO2's `validated=`: the user has looked at this mod's warnings and said
+    /// they are fine.
+    ///
+    /// A real MO2 key, not one of ours - it is written into every meta.ini MO2
+    /// touches - so marking a mod valid here silences it in MO2 too, and a mod
+    /// somebody already vouched for over there arrives here already quiet.
+    pub fn validated(&self) -> bool {
+        self.raw("validated").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
+    }
+
+    /// Set MO2's `validated=`.
+    pub fn set_validated(&mut self, ok: bool) {
+        self.set("validated", if ok { "true" } else { "false" });
+    }
+
     /// The Nexus mod id (`0`/absent -> `None`).
     pub fn mod_id(&self) -> Option<u64> {
         self.raw("modid").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)

@@ -220,6 +220,9 @@ enum Message {
     ModDoubleClick(usize),
     /// Ctrl+F: put the caret in the filter box.
     FocusFilter,
+    /// MO2's "Mark as valid": silence this mod's state flags for good, by
+    /// writing MO2's own `validated=true` into its meta.ini.
+    ModMarkValid(usize),
     /// A letter typed with the mod list focused: jump to the next row whose
     /// name starts with it.
     JumpToLetter(char),
@@ -1789,6 +1792,14 @@ struct RowMeta {
     /// column; here it rides the Flags cell, because every column costs width off
     /// the name and a note is read on demand rather than scanned.
     notes: Option<String>,
+    /// The mod's top level looks like nothing this game loads - MO2's "no valid
+    /// game data". Never set for a mod the user has marked valid.
+    invalid_data: bool,
+    /// The game this mod's `meta.ini` says it was downloaded for, when that is
+    /// NOT the instance's game. `None` covers both "same game" and "does not
+    /// say", which have to look identical: a mod installed from a folder never
+    /// had a game recorded, and warning about that would flag half a list.
+    other_game: Option<String>,
 }
 
 /// One entry in the category-filter dropdown (`None` id = "all").
@@ -4432,6 +4443,80 @@ mod tests {
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_that_looks_like_nothing_this_game_loads_is_flagged_and_can_be_silenced() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        // One real mod, one that is just a readme, and one that ships only a
+        // Root/ tree - Eidos's own convention, which must NOT be flagged.
+        for (name, inner) in [("Good", "Meshes"), ("Junk", "docs"), ("RootOnly", "Root")] {
+            fs::create_dir_all(root.join("mods").join(name).join(inner)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = ["Good", "Junk", "RootOnly"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        assert!(!app.meta_cache["Good"].invalid_data, "Meshes/ is data this game loads");
+        assert!(app.meta_cache["Junk"].invalid_data, "docs/ alone is not");
+        assert!(
+            !app.meta_cache["RootOnly"].invalid_data,
+            "a Root/ mod is correct - flagging it would flag every Root Builder mod"
+        );
+
+        // And "Mark as valid" silences it for good, through MO2's own key.
+        let _ = update_inner(&mut app, Message::ModMarkValid(1));
+        assert!(!app.meta_cache["Junk"].invalid_data);
+        let text = fs::read_to_string(root.join("mods").join("Junk").join("meta.ini")).unwrap();
+        assert!(text.contains("validated=true"), "MO2 reads this key too: {text}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_mod_downloaded_for_another_game_says_which_one() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for (name, game) in [("Ours", "SkyrimSE"), ("Theirs", "Fallout4"), ("Silent", "")] {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(dir.join("Meshes")).unwrap();
+            if !game.is_empty() {
+                fs::write(dir.join("meta.ini"), format!("[General]\ngameName={game}\n")).unwrap();
+            }
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = ["Ours", "Theirs", "Silent"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        assert_eq!(app.meta_cache["Ours"].other_game, None);
+        assert_eq!(app.meta_cache["Theirs"].other_game.as_deref(), Some("Fallout4"));
+        // "Does not say" must look identical to "same game". A mod installed
+        // from a folder never had a game recorded, and warning about that would
+        // flag half a list.
+        assert_eq!(app.meta_cache["Silent"].other_game, None);
         let _ = fs::remove_dir_all(&root);
     }
 
