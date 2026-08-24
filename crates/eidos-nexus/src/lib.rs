@@ -1229,6 +1229,106 @@ pub fn mark_installed(archive: &Path) -> io::Result<()> {
     fs::write(&meta_path, out)
 }
 
+/// The `.meta` sidecar beside a download.
+pub fn meta_path_for(archive: &Path) -> PathBuf {
+    PathBuf::from(format!("{}.meta", archive.display()))
+}
+
+/// Set (or add) one key in a download's `.meta`, leaving every other line as it
+/// was. A missing sidecar is a no-op, not an error: a manually dropped archive
+/// legitimately has none.
+pub fn set_download_meta_key(archive: &Path, key: &str, value: &str) -> io::Result<()> {
+    let meta_path = meta_path_for(archive);
+    let Ok(text) = fs::read_to_string(&meta_path) else {
+        return Ok(());
+    };
+    let mut out = String::with_capacity(text.len() + key.len() + value.len() + 2);
+    let mut written = false;
+    for line in text.lines() {
+        if line.trim_start().starts_with(&format!("{key}=")) {
+            if !written {
+                out.push_str(&format!("{key}={value}\n"));
+                written = true;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    if !written {
+        out.push_str(&format!("{key}={value}\n"));
+    }
+    fs::write(&meta_path, out)
+}
+
+/// Read one key from a download's `.meta`.
+pub fn download_meta_key(archive: &Path, key: &str) -> Option<String> {
+    let text = fs::read_to_string(meta_path_for(archive)).ok()?;
+    for line in text.lines() {
+        if let Some(v) = line.trim_start().strip_prefix(&format!("{key}=")) {
+            let v = v.trim().trim_matches('"');
+            return (!v.is_empty()).then(|| v.to_string());
+        }
+    }
+    None
+}
+
+/// The pid of the `eidos nxm` process currently fetching this archive, if one is
+/// recorded AND still alive AND still an `eidos` process.
+///
+/// The liveness check is what makes the pid usable at all. A transfer that died
+/// with the machine leaves its pid behind in the sidecar, and pids are reused:
+/// signalling a stale one would kill whatever inherited the number. So the
+/// recorded pid is only believed when `/proc/<pid>/comm` still says `eidos`.
+pub fn live_download_pid(archive: &Path) -> Option<u32> {
+    let pid: u32 = download_meta_key(archive, DOWNLOAD_PID_KEY)?.parse().ok()?;
+    let comm = fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+    // EXACTLY `eidos`, not a prefix. The downloader is always the CLI, and a
+    // prefix test matches anything the user happens to be running whose name
+    // starts the same way - including this crate's own test binary, which is how
+    // the looseness was caught. `comm` is truncated to 15 bytes by the kernel,
+    // which "eidos" is comfortably inside.
+    (comm.trim() == "eidos").then_some(pid)
+}
+
+/// Stop the `eidos nxm` process fetching this archive, and wait for it to go.
+///
+/// Returns `true` if one was running and has now exited. The partial and the
+/// sidecar are left exactly as they are: that pair IS a paused download, and the
+/// next attempt resumes it with a Range request from the length on disk.
+///
+/// The wait is what makes this safe to build a delete on. The transfer writes
+/// straight to `<archive>.unfinished` and finishes with a rename onto the real
+/// name, so unlinking those files while the process still holds the descriptor
+/// would let it keep writing to the orphaned inode and then RECREATE the archive
+/// - a download the user deleted, back on disk seconds later.
+///
+/// SIGTERM, not SIGKILL: the writes are unbuffered `write_all` calls straight to
+/// the file, so the length on disk is already a truthful resume point, and the
+/// default action ends a process blocked in `read()` immediately.
+pub fn stop_download(archive: &Path) -> bool {
+    let Some(pid) = live_download_pid(archive) else { return false };
+    // SAFETY: `pid` came from /proc a moment ago and was confirmed to be an
+    // `eidos` process, which is the check that makes pid reuse survivable.
+    unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
+    // Bounded: normally gone within a millisecond. The cap exists so a wedged
+    // process cannot freeze the window, not because waiting long would help.
+    for _ in 0..100 {
+        if !Path::new(&format!("/proc/{pid}")).exists() {
+            let _ = set_download_meta_key(archive, DOWNLOAD_PID_KEY, "");
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    false
+}
+
+/// The sidecar key holding the fetching process's pid. Not an MO2 field - MO2
+/// owns its transfers in-process and has a QNetworkReply to abort. Eidos
+/// downloads in a separate `eidos nxm` process launched by the browser, so the
+/// window has nothing to abort unless the process says who it is.
+pub const DOWNLOAD_PID_KEY: &str = "downloadPid";
+
 fn percent_decode(sname: &str) -> String {
     // Pure byte-level decoding: slicing the &str (`&sname[i+1..i+3]`) would panic
     // when a multi-byte UTF-8 character follows a stray '%' in a CDN URI.
@@ -1369,6 +1469,84 @@ pub fn write_recovered_meta(
 
 #[cfg(test)]
 mod tests {
+
+    /// A throwaway downloads dir holding one archive + its sidecar.
+    fn dl_fixture(body: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir()
+            .join(format!("eidos-dl-{}-{}", std::process::id(), body.len()));
+        let _ = fs::create_dir_all(&dir);
+        let archive = dir.join("Mod-1-0.7z");
+        fs::write(&archive, b"partial").unwrap();
+        fs::write(meta_path_for(&archive), body).unwrap();
+        archive
+    }
+
+    #[test]
+    fn a_sidecar_key_is_set_in_place_without_disturbing_the_rest() {
+        let a = dl_fixture("[General]\ngameName=SkyrimSE\npaused=false\nmodID=7\n");
+        set_download_meta_key(&a, "paused", "true").unwrap();
+        let text = fs::read_to_string(meta_path_for(&a)).unwrap();
+        assert!(text.contains("paused=true"));
+        assert!(text.contains("gameName=SkyrimSE"), "the other keys survive: {text}");
+        assert!(text.contains("modID=7"));
+        assert_eq!(text.matches("paused=").count(), 1, "set, not appended a second time");
+        assert_eq!(download_meta_key(&a, "paused").as_deref(), Some("true"));
+
+        // A key that was not there is added rather than dropped on the floor.
+        set_download_meta_key(&a, DOWNLOAD_PID_KEY, "4242").unwrap();
+        assert_eq!(download_meta_key(&a, DOWNLOAD_PID_KEY).as_deref(), Some("4242"));
+        // And a quoted value reads back unquoted, as the url line is written.
+        set_download_meta_key(&a, "url", "\"https://x/y?expires=1\"").unwrap();
+        assert_eq!(download_meta_key(&a, "url").as_deref(), Some("https://x/y?expires=1"));
+        let _ = fs::remove_dir_all(a.parent().unwrap());
+    }
+
+    #[test]
+    fn a_recorded_pid_is_only_believed_while_it_is_still_an_eidos_process() {
+        let a = dl_fixture("[General]\nmodID=1\n");
+        assert_eq!(live_download_pid(&a), None, "no pid recorded");
+
+        // OUR pid: alive, but this test binary is not called `eidos`, so the
+        // comm check refuses it. That check is the whole point - pids are
+        // reused, and signalling a stale one kills whatever inherited it.
+        set_download_meta_key(&a, DOWNLOAD_PID_KEY, &std::process::id().to_string()).unwrap();
+        assert_eq!(live_download_pid(&a), None, "a live NON-eidos pid is refused");
+
+        // A pid that cannot exist.
+        set_download_meta_key(&a, DOWNLOAD_PID_KEY, "4294967294").unwrap();
+        assert_eq!(live_download_pid(&a), None);
+        // Junk in a hand-edited sidecar is not a panic.
+        set_download_meta_key(&a, DOWNLOAD_PID_KEY, "not-a-number").unwrap();
+        assert_eq!(live_download_pid(&a), None);
+        let _ = fs::remove_dir_all(a.parent().unwrap());
+    }
+
+    #[test]
+    fn stopping_a_download_that_is_not_running_changes_nothing() {
+        let a = dl_fixture("[General]\nmodID=1\ndownloadPid=4294967294\n");
+        assert!(!stop_download(&a), "nothing to stop");
+        // The partial and the sidecar are untouched: that pair IS the paused
+        // download, and destroying either would lose the transfer.
+        assert!(a.is_file());
+        assert!(meta_path_for(&a).is_file());
+        let _ = fs::remove_dir_all(a.parent().unwrap());
+    }
+
+    #[test]
+    fn a_missing_sidecar_is_not_an_error() {
+        let dir = std::env::temp_dir().join(format!("eidos-dl-none-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let a = dir.join("Manual.7z");
+        fs::write(&a, b"x").unwrap();
+        // A manually dropped archive has none, and every control path has to
+        // survive that rather than creating one out of nowhere.
+        assert!(set_download_meta_key(&a, "paused", "true").is_ok());
+        assert!(!meta_path_for(&a).exists());
+        assert_eq!(download_meta_key(&a, "paused"), None);
+        assert_eq!(live_download_pid(&a), None);
+        assert!(!stop_download(&a));
+        let _ = fs::remove_dir_all(&dir);
+    }
     use super::*;
 
     #[test]

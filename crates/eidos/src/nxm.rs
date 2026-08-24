@@ -44,6 +44,13 @@ fn pick_instance<'a>(candidates: &[&'a DetectedGame]) -> (&'a DetectedGame, Inst
 /// x-scheme-handler so the site's button opens Eidos.
 pub(crate) fn cmd_nxm(args: &[String]) {
     match args.first().map(String::as_str) {
+        Some("--resume") => {
+            let Some(archive) = args.get(1).map(std::path::PathBuf::from) else {
+                eprintln!("usage: eidos nxm --resume <downloads/archive.7z>");
+                exit(2);
+            };
+            resume(&archive);
+        }
         Some("--register") => {
             let exe = std::env::current_exe().unwrap_or_else(|_| "eidos".into());
             let apps = home().join(".local/share/applications");
@@ -177,24 +184,117 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                 &remote_mod,
             );
             println!("Downloading {} ({}) ...", file.name, name);
-            match nexus.download(&link, &dest) {
-                Ok(bytes) => {
-                    println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
-                    println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", dest.display());
-                }
-                Err(e) => {
-                    eprintln!("download failed: {e}");
-                    exit(1);
-                }
-            }
+            run_transfer(&nexus, &link, &dest, &inst_arg);
         }
         None => {
             eprintln!(
                 "usage:\n\
                  \x20 eidos nxm <nxm://...>   download a Mod Manager Download link\n\
+                 \x20 eidos nxm --resume <f>  continue a paused or interrupted download\n\
                  \x20 eidos nxm --register    make the browser send nxm:// links to Eidos"
             );
             exit(2);
         }
     }
+}
+
+
+/// Run the transfer, announcing this process in the sidecar for the lifetime of
+/// the download so the window can pause or cancel it.
+///
+/// The pid is cleared on every exit path, successful or not - a stale one would
+/// make a finished download look like it still had a process behind it. It is
+/// also only ever BELIEVED after a liveness check (`live_download_pid`), because
+/// a machine that lost power leaves one behind that no cleanup can reach.
+fn run_transfer(nexus: &eidos_nexus::Nexus, link: &str, dest: &std::path::Path, inst_arg: &str) {
+    let _ = eidos_nexus::set_download_meta_key(
+        dest,
+        eidos_nexus::DOWNLOAD_PID_KEY,
+        &std::process::id().to_string(),
+    );
+    let outcome = nexus.download(link, dest);
+    let _ = eidos_nexus::set_download_meta_key(dest, eidos_nexus::DOWNLOAD_PID_KEY, "");
+    match outcome {
+        Ok(bytes) => {
+            let _ = eidos_nexus::set_download_meta_key(dest, "paused", "false");
+            println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
+            println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", dest.display());
+        }
+        Err(e) => {
+            eprintln!("download failed: {e}");
+            exit(1);
+        }
+    }
+}
+
+/// `eidos nxm --resume <archive>` - continue a paused or interrupted download.
+///
+/// The stored CDN link cannot simply be reused: it carries an `expires=`
+/// timestamp and a signature, so a download paused for an hour has a dead URL. A
+/// fresh one is resolved from the mod and file ids the sidecar recorded, and the
+/// partial then resumes with a Range request from exactly where it stopped.
+///
+/// A free account has no way through this: its download links are minted
+/// per-click by the site, so resuming needs a new "Mod Manager Download" press.
+/// `download_link` already says so, and that message is what surfaces here.
+fn resume(archive: &std::path::Path) {
+    let meta = eidos_nexus::meta_path_for(archive);
+    if !meta.is_file() {
+        eprintln!("no .meta beside {} - nothing to resume from", archive.display());
+        exit(1);
+    }
+    if let Some(pid) = eidos_nexus::live_download_pid(archive) {
+        eprintln!("already downloading (pid {pid})");
+        exit(1);
+    }
+    let key = |k: &str| eidos_nexus::download_meta_key(archive, k);
+    let (Some(game), Some(mod_id), Some(file_id)) = (key("gameName"), key("modID"), key("fileID"))
+    else {
+        eprintln!("that .meta does not record which Nexus file it came from");
+        exit(1);
+    };
+    let (Ok(mod_id), Ok(file_id)) = (mod_id.parse::<u64>(), file_id.parse::<u64>()) else {
+        eprintln!("that .meta has an unreadable modID/fileID");
+        exit(1);
+    };
+    // The sidecar stores the game by SHORT name; the API wants the domain.
+    let domain = eidos_games::catalog()
+        .iter()
+        .find(|d| d.short_name.eq_ignore_ascii_case(&game))
+        .map(|d| d.nexus_game.to_string())
+        .unwrap_or(game);
+    let nexus = match eidos_nexus::Nexus::connect() {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("{e}");
+            exit(1);
+        }
+    };
+    let remote_mod = match nexus.mod_info(&domain, mod_id) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("could not look the mod up: {e}");
+            exit(1);
+        }
+    };
+    // No key and no expiry: a premium account resolves a mirror from the ids
+    // alone, which is exactly the case that can be resumed unattended.
+    let nxm = eidos_nexus::NxmUrl {
+        game: domain,
+        mod_id,
+        file_id,
+        key: None,
+        expires: None,
+        user_id: None,
+    };
+    let link = match nexus.download_link(&remote_mod.gate, &nxm) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("could not resolve a fresh download link: {e}");
+            exit(1);
+        }
+    };
+    let _ = eidos_nexus::set_download_meta_key(archive, "paused", "false");
+    println!("Resuming {} ...", archive.display());
+    run_transfer(&nexus, &link, archive, "<instance>");
 }

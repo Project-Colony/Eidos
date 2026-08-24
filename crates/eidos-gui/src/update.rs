@@ -3278,6 +3278,52 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DeleteDownload(name) => {
             app.confirm_delete_download = Some(name);
         }
+        Message::PauseDownload(name) => {
+            let Some(row) = app.downloads.iter().find(|r| r.name == name) else {
+                return Task::none();
+            };
+            let path = row.path.clone();
+            // The flag goes down FIRST. If the process dies between the two
+            // writes, the row still reads as paused rather than reverting to
+            // "stalled" - which is the same state on disk but a different thing
+            // to tell the user, and the one that says something went wrong.
+            let _ = eidos_nexus::set_download_meta_key(&path, "paused", "true");
+            if eidos_nexus::stop_download(&path) {
+                app.status = Some(format!("Paused '{name}'. Resume picks up where it stopped."));
+            } else {
+                // No live process: it had already stopped. The flag still tells
+                // the truth about what the user wants.
+                app.status = Some(format!("'{name}' was not running; marked paused."));
+            }
+            load_downloads(app);
+        }
+        Message::ResumeDownload(name) => {
+            let Some(row) = app.downloads.iter().find(|r| r.name == name) else {
+                return Task::none();
+            };
+            let path = row.path.clone();
+            if eidos_nexus::live_download_pid(&path).is_some() {
+                app.status = Some(format!("'{name}' is already downloading."));
+                return Task::none();
+            }
+            let _ = eidos_nexus::set_download_meta_key(&path, "paused", "false");
+            // A separate process, exactly like a browser-initiated download: the
+            // window must not be blocked for the length of a transfer, and the
+            // downloads tick already reports progress from the partial's size.
+            match std::process::Command::new(find_eidos_binary())
+                .arg("nxm")
+                .arg("--resume")
+                .arg(&path)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(_) => app.status = Some(format!("Resuming '{name}'...")),
+                Err(e) => app.status = Some(format!("Could not resume '{name}': {e}")),
+            }
+            load_downloads(app);
+        }
         Message::ConfirmDeleteDownload(name) => {
             // Armed and confirmed on the SAME file. The list re-sorts under a
             // background tick, so an index would have been a way to delete the
@@ -3285,6 +3331,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.confirm_delete_download.as_deref() == Some(name.as_str()) {
                 if let Some(row) = app.downloads.iter().find(|r| r.name == name) {
                     let name = row.name.clone();
+                    // Stop the transfer BEFORE unlinking anything. It writes to
+                    // `<archive>.unfinished` and finishes with a rename onto the
+                    // real name: delete those out from under a live process and
+                    // it keeps filling the orphaned inode, then puts the archive
+                    // back on disk seconds after the user removed it.
+                    eidos_nexus::stop_download(&row.path);
                     // Remove the archive and its `.meta` sidecar together (MO2 keeps
                     // them paired). A missing sidecar is fine.
                     let meta = PathBuf::from(format!("{}.meta", row.path.display()));

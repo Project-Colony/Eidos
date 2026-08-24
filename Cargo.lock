@@ -1154,6 +1154,7 @@ version = "1.7.1"
 dependencies = [
  "base64",
  "eidos-instance",
+ "libc",
  "md-5",
  "ring",
  "serde_json",

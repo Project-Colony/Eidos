@@ -7,6 +7,9 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+# kill(2), to stop a download running in another `eidos nxm` process: the window
+# owns none of its transfers, so pausing one means signalling it.
+libc = "0.2"
 ureq = { version = "3", features = ["json"] }
 serde_json = "1"
 # PKCE S256: a published transform with a published test vector. Hand-rolling a

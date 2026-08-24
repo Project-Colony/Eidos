@@ -646,6 +646,7 @@ pub(crate) fn download_state_label(state: DownloadState) -> &'static str {
         DownloadState::Untracked => "-",
         DownloadState::Downloading => "Downloading",
         DownloadState::Stalled => "Stalled",
+        DownloadState::Paused => "Paused",
         DownloadState::Ready => "Ready",
         DownloadState::Installed => "Installed",
         DownloadState::Uninstalled => "Uninstalled",
@@ -664,6 +665,8 @@ pub(crate) fn download_state_color(state: DownloadState, theme: &Theme) -> Optio
         // stopped and is waiting to be resumed.
         DownloadState::Downloading => Some(theme.palette().primary),
         DownloadState::Stalled => Some(theme.palette().warning),
+        // Paused is not a warning: nothing went wrong, the user asked for it.
+        DownloadState::Paused => None,
         DownloadState::Installed | DownloadState::Untracked => None,
     }
 }
@@ -736,15 +739,19 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         // So keep the action, drop the shouting. Burgundy means "this is what to
         // do here"; on a row that is already installed, that was a lie, and the
         // label said "Install" for something that would install it a second time.
-        let arriving =
-            matches!(row.state, DownloadState::Downloading | DownloadState::Stalled);
+        let arriving = matches!(
+            row.state,
+            DownloadState::Downloading | DownloadState::Stalled | DownloadState::Paused
+        );
         let installed = row.state == DownloadState::Installed;
         // Nothing can be installed out of a partial file, so while one is
         // arriving the action column carries the progress instead of two buttons
         // that would either lie or refuse. It is also the widest column, which is
         // what a bar wants.
         let actions: Element<'a, Message> = if arriving {
-            let stalled = row.state == DownloadState::Stalled;
+            // Stopped either way - the difference is only WHY, which the status
+            // column already says. Both offer the same two things to do.
+            let stalled = matches!(row.state, DownloadState::Stalled | DownloadState::Paused);
             let frac = if row.total > 0 {
                 (row.downloaded as f32 / row.total as f32).clamp(0.0, 1.0)
             } else {
@@ -793,6 +800,12 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             if stalled {
                 cell.push(readout)
                     .push(
+                        button(text("Resume").size(10.0))
+                            .padding(3)
+                            .on_press(Message::ResumeDownload(row.name.clone()))
+                            .style(button::primary),
+                    )
+                    .push(
                         button(text(if armed { "Confirm?" } else { "Delete" }).size(10.0))
                             .padding(3)
                             .on_press(if armed {
@@ -812,6 +825,15 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                         .girth(Length::Fixed(7.0)),
                 )
                 .push(readout)
+                // A live transfer gets exactly one control: stop it. Delete is
+                // deliberately absent - a partial cannot be installed, and the
+                // safe order is always pause first, then decide.
+                .push(
+                    button(text("Pause").size(10.0))
+                        .padding(3)
+                        .on_press(Message::PauseDownload(row.name.clone()))
+                        .style(button::secondary),
+                )
                 .into()
             }
         } else {
@@ -2875,7 +2897,18 @@ pub(crate) fn load_downloads(app: &mut App) {
                     .and_then(|m| m.modified())
                     .map_or(modified, |t| t.max(modified));
                 let quiet = touched.elapsed().map(|d| d > STALLED_AFTER).unwrap_or(false);
-                if quiet { DownloadState::Stalled } else { DownloadState::Downloading }
+                // Paused BEATS the mtime heuristic, in both directions. A user
+                // who paused a second ago has a fresh mtime and would otherwise
+                // still read as "Downloading" for the whole quiet window; and
+                // one paused an hour ago would read as "Stalled", which says
+                // something went wrong when nothing did.
+                if eidos_nexus::download_meta_key(&dest, "paused").as_deref() == Some("true") {
+                    DownloadState::Paused
+                } else if quiet {
+                    DownloadState::Stalled
+                } else {
+                    DownloadState::Downloading
+                }
             } else if !has_meta {
                 DownloadState::Untracked
             } else if meta.uninstalled() {

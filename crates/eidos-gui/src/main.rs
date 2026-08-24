@@ -467,6 +467,10 @@ enum Message {
     /// Second click: actually delete the armed save.
     ConfirmDeleteSave(usize),
     // ---- Downloads manager (MO2's downloads list) ----
+    /// Stop the transfer behind this row, leaving the partial to resume from.
+    PauseDownload(String),
+    /// Start `eidos nxm --resume` on a paused or stalled partial.
+    ResumeDownload(String),
     /// Re-scan the downloads directory + reload each archive's `.meta` status.
     RefreshDownloads,
     /// Delete a downloaded archive and its `.meta` sidecar (two-click confirm).
@@ -801,6 +805,11 @@ enum DownloadState {
     /// died, the network went, or the user closed the terminal. Not lost: the
     /// partial resumes with a Range request on the next attempt.
     Stalled,
+    /// Stopped ON PURPOSE (the Pause button), which is why it is not Stalled: the
+    /// two look identical on disk - a partial with no live process - and only the
+    /// sidecar's `paused` flag tells them apart. Saying "stalled" for a download
+    /// the user paused a second ago reads as a failure.
+    Paused,
     /// Downloaded but not yet installed into a mod.
     Ready,
     /// Already installed into a mod.
