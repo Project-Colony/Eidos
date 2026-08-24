@@ -1582,3 +1582,110 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
 
     container(card).width(Length::Fixed(560.0)).padding(18).style(card_style).into()
 }
+
+/// The instance manager (MO2's Manage Instances).
+///
+/// It offers Open, Rename and Forget - and deliberately NOT Delete. An instance
+/// holds a mod pool that routinely runs to hundreds of gigabytes, and no button
+/// behind one confirmation is going to remove that. Forget stops listing it and
+/// says so; the folder button is there for anyone who really does want it gone.
+pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Instances").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseInstanceManager),
+        );
+
+    let mut rows = Column::new().spacing(6);
+    if app.known.is_empty() {
+        rows = rows.push(text("No instances found yet.").size(12.0));
+    }
+    for (i, k) in app.known.iter().enumerate() {
+        // Rename takes over the row while it is armed, exactly as the profile
+        // menu's does - there is nowhere better to put a one-field editor.
+        if let Some((ri, typed)) = &app.instance_rename {
+            if *ri == i {
+                rows = rows.push(
+                    Row::new()
+                        .spacing(6)
+                        .align_y(iced::Alignment::Center)
+                        .push(
+                            text_input("Folder name", typed)
+                                .on_input(Message::InstanceRenameChanged)
+                                .on_submit(Message::InstanceRenameCommit)
+                                .padding(5)
+                                .size(12.0),
+                        )
+                        .push(
+                            button(text("Save").size(11.0))
+                                .padding([3, 10])
+                                .style(button::primary)
+                                .on_press(Message::InstanceRenameCommit),
+                        ),
+                );
+                continue;
+            }
+        }
+
+        let open_now = app.created.as_ref().is_some_and(|c| c.root == k.inst.root);
+        let mut title = Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(text(k.label.clone()).size(12.0).width(Length::Fill));
+        if open_now {
+            title = title.push(text("open").size(10.0));
+        } else {
+            title = title.push(
+                button(text("Open").size(11.0))
+                    .padding([3, 10])
+                    .style(button::primary)
+                    .on_press(Message::InstanceOpen(i)),
+            );
+        }
+        // Rename and Forget are portable-only: a global instance lives at a path
+        // derived from the game id, so it has no folder to rename and nothing in
+        // the registry to drop.
+        if k.portable && !open_now {
+            title = title.push(
+                button(text("Rename").size(11.0))
+                    .padding([3, 8])
+                    .style(button::secondary)
+                    .on_press(Message::InstanceRenameStart(i)),
+            );
+            let armed = app.confirm_forget == Some(i);
+            title = title.push(
+                button(text(if armed { "Confirm?" } else { "Forget" }).size(11.0))
+                    .padding([3, 8])
+                    .style(if armed { button::danger } else { button::secondary })
+                    .on_press(Message::InstanceForget(i)),
+            );
+        }
+        title = title.push(
+            button(text("Folder").size(11.0))
+                .padding([3, 8])
+                .style(button::text)
+                .on_press(Message::OpenFolder(k.inst.root.clone())),
+        );
+        rows = rows.push(title);
+    }
+
+    let card = Column::new()
+        .spacing(12)
+        .push(header)
+        .push(scrollable(rows).height(Length::Fixed(300.0)))
+        .push(
+            text(
+                "Forget removes an instance from this list and touches nothing on disk. There is \
+                 no Delete: an instance holds your whole mod pool, and that is not something to \
+                 lose to one confirmation - use Folder and delete it yourself if you mean it.",
+            )
+            .size(10.0),
+        );
+
+    container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
+}

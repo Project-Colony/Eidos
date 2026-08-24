@@ -449,9 +449,7 @@ pub const CATEGORIES_DAT: &str = "categories.dat";
 pub const NEXUS_MAP_DAT: &str = "nexuscatmap.dat";
 
 fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
-    let tmp = path.with_extension("dat.tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path)
+    crate::write_atomic(path, text.as_bytes())
 }
 
 /// Strip the field separator and surrounding space from a category name. A `|` in

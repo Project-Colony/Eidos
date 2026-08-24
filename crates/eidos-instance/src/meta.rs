@@ -411,15 +411,7 @@ impl ModMeta {
         // Atomic (tmp + rename): a meta.ini carries user labour - notes,
         // endorsements, tweak selections - and a crash mid-write would replace
         // the mod's only copy of it with a torn file.
-        let tmp = std::path::PathBuf::from(format!("{}.tmp", path.display()));
-        fs::write(&tmp, out)?;
-        match fs::rename(&tmp, path) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                Err(e)
-            }
-        }
+        crate::write_atomic(path, out.as_bytes())
     }
 }
 

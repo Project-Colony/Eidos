@@ -145,7 +145,15 @@ fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
     }
     // Atomic replace so a failed/interrupted download never truncates a good
     // cached copy - the cached masterlist keeps working offline.
-    let tmp = dest.with_extension("yaml.tmp");
+    // Unique per process and per call: a fixed temp name is not atomic against
+    // a second WRITER, and the GUI's sort and a `eidos sort` both refresh this
+    // cache. Two of them sharing one temp interleave their bytes, and the last
+    // rename publishes the mixture as a masterlist.
+    let tmp = dest.with_extension(format!(
+        "yaml.eidos-tmp.{}.{}",
+        std::process::id(),
+        SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     fs::write(&tmp, body)?;
     match fs::rename(&tmp, dest) {
         Ok(()) => Ok(()),
@@ -155,6 +163,9 @@ fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
         }
     }
 }
+
+/// Distinguishes concurrent writes from the same process.
+static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Run LOOT's sort and return the optimised order of `plugins` (by name).
 ///

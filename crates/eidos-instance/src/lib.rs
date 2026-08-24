@@ -990,6 +990,40 @@ fn find_root_dir(mod_dir: &Path) -> Option<PathBuf> {
 /// leaving `from` empty. Both sides live under the instance root (one
 /// filesystem), so entries move by rename; a rename that fails because the
 /// destination directory already exists recurses into it.
+/// Write `bytes` to `path` through a temp file and a rename.
+///
+/// The temp name is UNIQUE per process and per call, and that is the whole point
+/// of this function existing. Every writer here used a fixed `<name>.tmp`, which
+/// is not atomic against a second WRITER: two Eidos processes - the window and an
+/// `eidos` child, or two threads - both write the same temp path, their bytes
+/// interleave, and whichever renames last publishes the mixture. It was
+/// reproduced on the instance registry, which came out with a half-line in it.
+///
+/// The rename itself is what makes the result all-or-nothing for READERS; the
+/// unique name is what makes it all-or-nothing between writers. Both are needed.
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let tmp = path.with_extension(format!(
+        "eidos-tmp.{}.{}",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(&tmp, bytes)?;
+    match fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // A failed rename leaves the temp behind; it has a unique name, so
+            // nothing else is going to trip over it, but it is still litter.
+            let _ = fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 /// Record every FILE under `dir` as `relpath -> (len, mtime)`.
 ///
 /// The union filesystem's own bookkeeping is skipped: a whiteout
@@ -1414,6 +1448,61 @@ mod tests {
         assert_eq!(fs::read(dest.join("loose.txt")).unwrap(), b"x");
         assert!(dest.join("meta.ini").is_file(), "a fresh mod gets a meta.ini");
         assert!(inst.overwrite_is_empty(), "the Overwrite must be left empty");
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_never_publish_a_mixture() {
+        // The failure this exists for, reproduced: every writer used a fixed
+        // `<name>.tmp`, so two writers of the same file wrote the SAME temp,
+        // their bytes interleaved, and whichever renamed last published the
+        // mixture. It was found on the instance registry, which came out with a
+        // half-written `able=` line in it.
+        let dir = std::env::temp_dir().join(format!("eidos-atomic-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let target = dir.join("contended.ini");
+
+        // Two distinct bodies, different lengths, no common prefix - so any
+        // interleaving is unmistakable in the result.
+        let a = "a".repeat(64 * 1024);
+        let b = "b".repeat(48 * 1024 + 7);
+        let (ta, tb) = (target.clone(), target.clone());
+        let (ba, bb) = (a.clone(), b.clone());
+        let h1 = std::thread::spawn(move || {
+            for _ in 0..40 {
+                write_atomic(&ta, ba.as_bytes()).unwrap();
+            }
+        });
+        let h2 = std::thread::spawn(move || {
+            for _ in 0..40 {
+                write_atomic(&tb, bb.as_bytes()).unwrap();
+            }
+        });
+        h1.join().unwrap();
+        h2.join().unwrap();
+
+        // Whoever won, the file is one of the two whole bodies - never a splice.
+        let got = fs::read_to_string(&target).unwrap();
+        assert!(got == a || got == b, "torn: {} bytes, starts {:?}", got.len(), &got[..8.min(got.len())]);
+
+        // And no litter: a unique temp is still cleaned up on the way through.
+        let leftovers: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("eidos-tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_atomic_creates_the_parent_it_is_given() {
+        let dir = std::env::temp_dir().join(format!("eidos-atomic-mk-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let target = dir.join("deep/inside/file.ini");
+        write_atomic(&target, b"x").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"x");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

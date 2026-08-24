@@ -299,15 +299,7 @@ impl Profile {
 /// Write bytes through a temp file and a rename, so an interrupted write can
 /// never leave a torn list where a whole one used to be.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let tmp = path.with_extension("eidos-tmp");
-    fs::write(&tmp, bytes)?;
-    match fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = fs::remove_file(&tmp);
-            Err(e)
-        }
-    }
+    crate::write_atomic(path, bytes)
 }
 
 /// `modlist.txt` + 1787580000 -> `modlist.txt.1787580000`.

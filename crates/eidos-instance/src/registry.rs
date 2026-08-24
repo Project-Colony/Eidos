@@ -80,7 +80,14 @@ impl Registry {
     /// unreadable - an unreadable registry must degrade to "no portables
     /// known", never to a startup failure.
     pub fn load() -> Registry {
-        match fs::read_to_string(registry_path()) {
+        Registry::load_from(&registry_path())
+    }
+
+    /// [`Registry::load`] from an explicit file. The path is a parameter so a
+    /// caller can be tested without writing the real user config - and so a
+    /// sandbox or a second profile can point somewhere else deliberately.
+    pub fn load_from(path: &Path) -> Registry {
+        match fs::read_to_string(path) {
             Ok(text) => Registry::parse(&text),
             Err(_) => Registry::default(),
         }
@@ -124,19 +131,16 @@ impl Registry {
     /// Persist the registry. Atomic (tmp + rename) like the manifest: a torn
     /// registry would orphan every portable instance at once.
     pub fn save(&self) -> io::Result<()> {
-        let path = registry_path();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let tmp = path.with_extension("ini.tmp");
-        fs::write(&tmp, self.to_ini())?;
-        match fs::rename(&tmp, &path) {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                let _ = fs::remove_file(&tmp);
-                Err(e)
-            }
-        }
+        self.save_to(&registry_path())
+    }
+
+    /// [`Registry::save`] to an explicit file.
+    ///
+    /// Through the shared atomic writer: the window and any `eidos` process both
+    /// save this file, and a FIXED temp name let two of them interleave into one
+    /// - which is how a half-written `able=` line got into a real registry.
+    pub fn save_to(&self, path: &Path) -> io::Result<()> {
+        crate::write_atomic(path, self.to_ini().as_bytes())
     }
 
     /// Record a portable root, moving it to the front (most recently used).

@@ -109,6 +109,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::SetAllModsEnabled(_)) {
             app.confirm_set_all = None;
         }
+        if !matches!(message, Message::InstanceForget(_)) {
+            app.confirm_forget = None;
+        }
     }
     match message {
         Message::Next => {
@@ -3495,6 +3498,114 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.view_menu_open = true;
         }
         Message::CloseViewMenu => app.view_menu_open = false,
+        // ---- Instance manager (MO2's Manage Instances) -----------------------
+        Message::ShowInstanceManager => {
+            app.file_menu_open = false;
+            // Read fresh: an instance created or moved since startup should be
+            // here, and the welcome-screen list is only built once.
+            app.known = known_instances(&app.games);
+            app.instances_open = true;
+            app.instance_rename = None;
+            app.confirm_forget = None;
+        }
+        Message::CloseInstanceManager => {
+            app.instances_open = false;
+            app.instance_rename = None;
+            app.confirm_forget = None;
+        }
+        Message::InstanceOpen(i) => {
+            app.instances_open = false;
+            return update(app, Message::OpenKnown(i));
+        }
+        Message::InstanceForget(i) => {
+            // Two clicks, like every other action that removes something.
+            if app.confirm_forget != Some(i) {
+                app.confirm_forget = Some(i);
+                return Task::none();
+            }
+            app.confirm_forget = None;
+            let Some(k) = app.known.get(i).cloned() else { return Task::none() };
+            if !k.portable {
+                app.status =
+                    Some("A global instance is derived from the game id - there is nothing to forget."
+                        .to_string());
+                return Task::none();
+            }
+            let mut reg = eidos_instance::Registry::load_from(&app.registry_path);
+            reg.forget_portable(&k.inst.root);
+            match reg.save_to(&app.registry_path) {
+                Ok(()) => {
+                    app.known = known_instances(&app.games);
+                    // FORGOTTEN, not deleted, and the difference is the whole
+                    // point: an instance holds a mod pool that can run to
+                    // hundreds of gigabytes, and no button here is going to
+                    // remove that on one confirmation.
+                    app.status = Some(format!(
+                        "No longer listing {}. Nothing on disk was touched.",
+                        k.inst.root.display()
+                    ));
+                }
+                Err(e) => app.status = Some(format!("Could not update the instance list: {e}")),
+            }
+        }
+        Message::InstanceRenameStart(i) => {
+            app.confirm_forget = None;
+            let Some(k) = app.known.get(i) else { return Task::none() };
+            let current =
+                k.inst.root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            app.instance_rename = Some((i, current));
+        }
+        Message::InstanceRenameChanged(t) => {
+            app.typing = true;
+            if let Some((_, name)) = &mut app.instance_rename {
+                *name = t;
+            }
+        }
+        Message::InstanceRenameCommit => {
+            let Some((i, typed)) = app.instance_rename.take() else { return Task::none() };
+            let Some(k) = app.known.get(i).cloned() else { return Task::none() };
+            let name = typed.trim().to_string();
+            if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+                app.status = Some("That is not a folder name.".to_string());
+                return Task::none();
+            }
+            if !k.portable {
+                app.status = Some(
+                    "A global instance lives at a path derived from the game id; it has no folder \
+                     to rename."
+                        .to_string(),
+                );
+                return Task::none();
+            }
+            // Renaming the folder out from under the OPEN instance would leave
+            // every cached path in the window pointing at somewhere that no
+            // longer exists - including the lock it is holding.
+            if app.created.as_ref().is_some_and(|c| c.root == k.inst.root) {
+                app.status = Some(
+                    "That is the instance you have open. Switch to another one first.".to_string(),
+                );
+                return Task::none();
+            }
+            let Some(parent) = k.inst.root.parent() else { return Task::none() };
+            let dest = parent.join(&name);
+            if dest.exists() {
+                app.status = Some(format!("{} already exists.", dest.display()));
+                return Task::none();
+            }
+            match std::fs::rename(&k.inst.root, &dest) {
+                Ok(()) => {
+                    // The registry points at the OLD path; it has to follow, or
+                    // the instance vanishes from every list including this one.
+                    let mut reg = eidos_instance::Registry::load_from(&app.registry_path);
+                    reg.forget_portable(&k.inst.root);
+                    reg.remember_portable(&dest);
+                    let _ = reg.save_to(&app.registry_path);
+                    app.known = known_instances(&app.games);
+                    app.status = Some(format!("Renamed to {}.", dest.display()));
+                }
+                Err(e) => app.status = Some(format!("Could not rename: {e}")),
+            }
+        }
         // ---- Export the mod list (MO2's Export to csv) -----------------------
         Message::ShowExportDialog => {
             app.file_menu_open = false;

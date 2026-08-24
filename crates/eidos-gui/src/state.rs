@@ -79,6 +79,10 @@ pub(crate) struct KnownInstance {
     pub inst: Instance,
     /// Index into `app.games`.
     pub game_index: usize,
+    /// Portable instances live at a path the user chose and are listed from the
+    /// registry; a global one is derived from the game id and cannot be renamed
+    /// or forgotten.
+    pub portable: bool,
 }
 
 /// Every existing instance worth offering on the welcome screen, most recently
@@ -112,7 +116,7 @@ pub(crate) fn known_instances_from(
         } else {
             format!("{name}  -  global")
         };
-        out.push(KnownInstance { label, inst, game_index });
+        out.push(KnownInstance { label, inst, game_index, portable });
     };
     // The last-used instance first: it is what the user means by "my setup".
     if let Some(last) = reg.last.clone() {
@@ -235,6 +239,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         file_menu_open: false,
         plugin_send_priority: None,
         export: None,
+        instances_open: false,
+        registry_path: eidos_instance::registry_path(),
+        instance_rename: None,
+        confirm_forget: None,
         pending_note: None,
         categories_dialog: None,
         ini_editor: None,

@@ -101,7 +101,19 @@ pub fn save_nexus_creds(creds: &NexusCreds) -> io::Result<()> {
     // with the tokens inside. Written to a sibling temp born 0600 and renamed
     // over, which also tightens a pre-existing looser file (the rename replaces
     // its inode, permissions and all) and makes the write atomic.
-    let tmp = path.with_extension("ini.tmp");
+    // Unique per process AND per call. A fixed name is not atomic against a
+    // second WRITER - two processes interleave into one temp and the last rename
+    // publishes the mixture - and here it is worse than elsewhere: the comment
+    // below about a leftover keeping its old permission bits describes exactly
+    // that collision, and with a unique name it cannot happen at all.
+    let tmp = path.with_extension(format!(
+        "ini.eidos-tmp.{}.{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    ));
     {
         use std::io::Write;
         let mut opts = fs::OpenOptions::new();

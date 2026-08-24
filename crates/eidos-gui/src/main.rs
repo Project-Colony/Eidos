@@ -680,6 +680,17 @@ enum Message {
     PluginSendToPriorityStart,
     PluginSendToPriorityChanged(String),
     PluginSendToPriorityCommit,
+    // ---- Instance manager (MO2's Manage Instances) ----
+    ShowInstanceManager,
+    CloseInstanceManager,
+    /// Open the instance at this index of the manager's list.
+    InstanceOpen(usize),
+    /// Stop offering a portable instance. The folder is left alone.
+    InstanceForget(usize),
+    /// Rename the FOLDER of a portable instance: start / type / commit.
+    InstanceRenameStart(usize),
+    InstanceRenameChanged(String),
+    InstanceRenameCommit,
     // ---- Export the mod list (MO2's Export to csv) ----
     ShowExportDialog,
     CloseExportDialog,
@@ -1310,6 +1321,16 @@ struct App {
     file_menu_open: bool,
     /// The open Export dialog: which rows, and which columns are ticked.
     export: Option<ExportDialogState>,
+    /// Whether the instance manager is showing.
+    instances_open: bool,
+    /// Where the instance registry lives. A field rather than a global so the
+    /// window can be tested without writing the real user config - the handlers
+    /// that forget and rename instances persist through it.
+    registry_path: PathBuf,
+    /// The instance row being renamed, and the pending name.
+    instance_rename: Option<(usize, String)>,
+    /// Two-click guard for forgetting an instance.
+    confirm_forget: Option<usize>,
     /// The plugin row whose "Send to priority" field is open, and what is typed
     /// in it. Mirrors `send_priority` for mods; kept separate because the two
     /// lists are indexed independently and one menu must not aim the other.
@@ -2417,6 +2438,7 @@ mod tests {
             label: "Skyrim SE - portable".into(),
             inst: Instance::portable(root.clone()),
             game_index: 0,
+        portable: true,
         }];
         let _ = update_inner(&mut app, Message::OpenKnown(0));
         assert_eq!(app.created.as_ref().map(|i| i.root.clone()), Some(root.clone()));
@@ -2433,6 +2455,7 @@ mod tests {
             label: "gone".into(),
             inst: Instance::portable(PathBuf::from("/nonexistent/eidos-test-root")),
             game_index: 0,
+        portable: true,
         }];
         let _ = update_inner(&mut app, Message::OpenKnown(0));
         assert!(app.created.is_none(), "a dead root must not fake an open");
@@ -3875,6 +3898,114 @@ mod tests {
             "{:?}",
             app.pending_note
         );
+    }
+
+    #[test]
+    fn renaming_a_portable_instance_moves_the_folder_and_the_registry_with_it() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        // NEVER the real user registry: these handlers persist.
+        app.registry_path = root.parent().unwrap().join(format!("reg-{}.ini", std::process::id()));
+        app.known = vec![KnownInstance {
+            label: "Skyrim - portable".into(),
+            inst: inst.clone(),
+            game_index: 0,
+            portable: true,
+        }];
+        app.instances_open = true;
+
+        let dest = root.parent().unwrap().join(format!("renamed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dest);
+        let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
+        let _ = update_inner(
+            &mut app,
+            Message::InstanceRenameChanged(dest.file_name().unwrap().to_string_lossy().into_owned()),
+        );
+        let _ = update_inner(&mut app, Message::InstanceRenameCommit);
+
+        assert!(dest.is_dir(), "the folder moved: {:?}", app.status);
+        assert!(!root.exists());
+        let _ = fs::remove_dir_all(&dest);
+    }
+
+    #[test]
+    fn the_open_instance_cannot_be_renamed_out_from_under_the_window() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.registry_path = root.parent().unwrap().join(format!("reg2-{}.ini", std::process::id()));
+        app.created = Some(inst.clone());
+        app.known = vec![KnownInstance {
+            label: "Skyrim - portable".into(),
+            inst,
+            game_index: 0,
+            portable: true,
+        }];
+
+        let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
+        let _ = update_inner(&mut app, Message::InstanceRenameChanged("something-else".into()));
+        let _ = update_inner(&mut app, Message::InstanceRenameCommit);
+        // Every cached path in the window - and the lock it holds - points at
+        // the old root.
+        assert!(root.is_dir(), "it was renamed anyway");
+        assert!(app.status.as_deref().unwrap_or("").contains("Switch to another"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_rename_that_is_not_a_folder_name_is_refused() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.registry_path = root.parent().unwrap().join(format!("reg3-{}.ini", std::process::id()));
+        app.known =
+            vec![KnownInstance { label: "x".into(), inst, game_index: 0, portable: true }];
+        for bad in ["", "  ", "..", ".", "a/b", "a\\b"] {
+            let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
+            let _ = update_inner(&mut app, Message::InstanceRenameChanged(bad.into()));
+            let _ = update_inner(&mut app, Message::InstanceRenameCommit);
+            assert!(root.is_dir(), "{bad:?} moved something");
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn forgetting_an_instance_needs_two_clicks_and_never_touches_the_disk() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let mut app = app_for_game("skyrimse");
+        app.registry_path = root.parent().unwrap().join(format!("reg4-{}.ini", std::process::id()));
+        app.known =
+            vec![KnownInstance { label: "x".into(), inst, game_index: 0, portable: true }];
+
+        let _ = update_inner(&mut app, Message::InstanceForget(0));
+        assert_eq!(app.confirm_forget, Some(0), "the first click only arms");
+        let _ = update_inner(&mut app, Message::InstanceForget(0));
+        // Forgotten is not deleted, and that distinction is the whole design: an
+        // instance is a mod pool, not a preference.
+        assert!(root.is_dir(), "the folder must survive");
+        assert!(app.status.as_deref().unwrap_or("").contains("Nothing on disk"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_global_instance_offers_neither_rename_nor_forget() {
+        let mut app = app_for_game("skyrimse");
+        app.registry_path = std::env::temp_dir().join(format!("reg5-{}.ini", std::process::id()));
+        app.known = vec![KnownInstance {
+            label: "Skyrim - global".into(),
+            inst: Instance::global("skyrimse"),
+            game_index: 0,
+            portable: false,
+        }];
+        let _ = update_inner(&mut app, Message::InstanceForget(0));
+        let _ = update_inner(&mut app, Message::InstanceForget(0));
+        assert!(app.status.as_deref().unwrap_or("").contains("derived from the game id"));
     }
 
     #[test]
