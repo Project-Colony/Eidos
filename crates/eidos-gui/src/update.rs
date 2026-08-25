@@ -2089,8 +2089,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // click that opens it: a value that cannot be opened must not be
             // storable in the first place, or the button becomes a dead end that
             // looks live.
-            if !typed.is_empty() && !(typed.starts_with("http://") || typed.starts_with("https://"))
-            {
+            let is_web_link = typed.starts_with("http://") || typed.starts_with("https://");
+            if !typed.is_empty() && !is_web_link {
                 app.status = Some("A mod page has to be an http:// or https:// address.".to_string());
                 return Task::none();
             }
