@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0](https://github.com/Project-Colony/Eidos/compare/v1.10.0...v1.11.0) (2026-08-25)
+
+
+### Features
+
+* **docs:** translate the player-facing pages, and make a stale one impossible to ignore ([#34](https://github.com/Project-Colony/Eidos/issues/34)) ([1fa2a06](https://github.com/Project-Colony/Eidos/commit/1fa2a0640a09ae8c3b77108a9e31c6cad7329a45))
+
+
+### Fixes
+
+* **gamedef:** let a user game declare its own tools, and correct two stale accounts ([#33](https://github.com/Project-Colony/Eidos/issues/33)) ([65ab4bd](https://github.com/Project-Colony/Eidos/commit/65ab4bdb223ed9aa84a69049cc7455dff3595f42))
+
 ## [1.10.0](https://github.com/Project-Colony/Eidos/compare/v1.9.1...v1.10.0) (2026-08-25)
 
 
