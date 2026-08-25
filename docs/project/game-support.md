@@ -7,6 +7,28 @@ can stay declarative.
 Short answer: one function, five call sites, three new fields. The engine is not
 involved at any point.
 
+## Status (2026-08-25)
+
+**Two of the four proposed fields shipped in [#5](https://github.com/Project-Colony/Eidos/pull/5)
+on 2026-08-03.** The section below called "The actual blocker" describes a state
+that no longer exists; it is kept because the reasoning still explains the design,
+but read it as history.
+
+| | State |
+|---|---|
+| `valid_folders` | **shipped** - on `GameDef` and in the TOML schema |
+| `valid_suffixes` | **shipped** - on `GameDef` and in the TOML schema |
+| `valid_files` | not implemented |
+| `mod_unit` | not implemented |
+| `known_tools` | **shipped** in the TOML schema (2026-08-25), not part of the original proposal |
+
+So a game whose mod root is marked by a FOLDER or an EXTENSION is declarable
+today, with no recompile: Gamebryo/Creation, BepInEx/Unity, Cyberpunk, Unreal
+`~mods`. What is still not declarable is a game whose marker is a FILE
+(`manifest.json`, `ModInfo.xml`, `info.json`) or whose unit of install is a named
+FOLDER rather than loose files - which is what SMAPI/Stardew and 7 Days to Die
+need, and why the worked example below still does not work.
+
 ## The state of play
 
 The VFS engine has no game knowledge at all. Searching `eidos-core` and
@@ -24,10 +46,12 @@ So detection works for any Steam game, and the file union mounts over any
 `data_dir`. What does not work is the step between downloading a mod and having
 it on disk.
 
-## The actual blocker
+## The blocker, as it stood before #5
 
 [`ArchiveTree::data_looks_valid`](../../crates/eidos-install/src/lib.rs) is MO2's
-`ModDataChecker`, and it is hardcoded to the Gamebryo family:
+`ModDataChecker`. It **was** hardcoded to the Gamebryo family; it now takes a
+`LayoutRules` built from the game's descriptor, and the constants below survive
+only as the default for a game that declares nothing:
 
 ```rust
 const GAMEBRYO_FOLDERS: &[&str] = &["fonts", "interface", "meshes", "textures", ...];
@@ -50,8 +74,10 @@ When `data_looks_valid` says Invalid at every level, `simple_archive_base` retur
 `None`, `open_archive` returns `NotSimple`, and the user gets the manual picker
 with the tree and no guidance. For every non-Bethesda mod, every time.
 
-That is the whole gap. The game is declarable, the mount is correct, and the
-installer refuses the archive.
+That was the whole gap, and it is closed for folder- and extension-marked games.
+It remains exactly true for the two families below whose marker is a file or whose
+unit is a folder: the game is declarable, the mount is correct, and the installer
+still refuses the archive.
 
 ### Worked example: Stardew Valley
 

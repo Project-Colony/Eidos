@@ -10,8 +10,10 @@
 //!
 //!   - the prefix registry was never written, so xEdit opened on a path that
 //!     did not exist and said "There are no modules in the data folder";
-//!   - the prefix's `S:` drive was pointed one directory above where Steam puts
-//!     it, silently invalidating every `S:`-relative path already stored there;
+//!   - the prefix's `S:` drive was pointed one directory BELOW where Steam puts
+//!     it, so `S:\steamapps\common\<game>` - the way a Windows program looks for
+//!     a Steam game - stopped existing, and BodySlide created it and wrote 267 MB
+//!     of meshes outside the union mount where nothing ever captured them;
 //!   - a Skyrim instance had no Proton prefix at all, and nothing said so.
 //!
 //! Each check here answers its question by calling the SAME function as the
@@ -42,7 +44,9 @@ pub(crate) struct PrefixFacts {
     pub(crate) registry: RegistryStatus,
     /// Where `dosdevices/s:` points, if it exists.
     pub(crate) gamedrive_found: Option<PathBuf>,
-    /// Where Steam points it: the library's `steamapps`.
+    /// Where Steam points it: the library ROOT, the directory that HOLDS
+    /// `steamapps`. Taken from `library_path`, the same function whose value is
+    /// handed to Proton, so this can never disagree with what Eidos passes.
     pub(crate) gamedrive_want: Option<PathBuf>,
 }
 
@@ -106,10 +110,13 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
         }),
     }
 
-    // The game drive. Steam points `S:` at the library's `steamapps`, and Proton
-    // recreates the symlink from what it is handed on EVERY run - so a wrong
-    // value here is not cosmetic, it silently breaks paths that other programs
-    // stored in the prefix while Steam's own value was in place.
+    // The game drive. Steam points `S:` at the library ROOT - the directory that
+    // holds `steamapps` - because Windows programs find a Steam game by trying
+    // `<drive>\steamapps\common\<game>`, and the root is what makes that
+    // heuristic land. Proton recreates the symlink from whatever it is handed on
+    // EVERY run, so a wrong value here is not cosmetic: the path a tool looks for
+    // simply stops existing, and a tool that WRITES there creates it somewhere
+    // outside the mount instead of failing.
     if let (Some(found), Some(want)) = (&f.gamedrive_found, &f.gamedrive_want) {
         if found != want {
             out.push(Diagnostic {
