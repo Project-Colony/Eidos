@@ -116,7 +116,7 @@ Resolver brał dokładne dopasowanie wielkości liter dla każdego składnika ś
 trzymał się go: wchodził do `meshes/`, nie znajdował tam reszty ścieżki i porzucał
 CAŁĄ WARSTWĘ. Każdy plik pod drugą pisownią był dla gry niewidzialny - bez błędu, bez
 dziennika, bez niczego w jakiejkolwiek diagnostyce. Na prawdziwej instancji z 50
-warstwami było to 79... a dokładnie 74 pliki.
+warstwami było to 74 pliki.
 
 Pasujący składnik jest teraz kandydatem, a nie decyzją; dokładna wielkość liter wciąż
 próbowana jest najpierw, a dopiero gdy reszta pod nią zawiedzie, skan szuka
