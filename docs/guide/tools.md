@@ -153,9 +153,9 @@ not implement. It dies before its first line of work, leaving a log holding a
 version banner and nothing else, and a DynDOLOD dialog that says only "failed for
 one or more worlds".
 
-Installing the real .NET Framework does not fix it: Proton replaces `mscoree.dll`
-- the loader that would find it - with a symlink into its own tree, and re-does
-that on every prefix update.
+Installing the real .NET Framework does not fix it: Proton replaces
+`mscoree.dll` - the loader that would find it - with a symlink into its own
+tree, and re-does that on every prefix update.
 
 The build that works is `LODGenx64Win10.exe`, which targets modern .NET and never
 touches `mscoree`. Point `DOTNET_ROOT` at a .NET 10 runtime and it runs. That is

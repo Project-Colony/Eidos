@@ -136,6 +136,9 @@ jobs:
       - name: Check every translation against its English source
         run: ./scripts/i18n-check.sh
 
+      - name: Check every link and anchor resolves
+        run: ./scripts/i18n-links.py
+
   fmt:
     name: rustfmt (advisory)
     runs-on: ubuntu-24.04

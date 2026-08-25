@@ -87,6 +87,33 @@ while IFS= read -r t; do
     fi
 done < <(find . -name '*.[a-z][a-z].md' -o -name '*.[a-z][a-z]-[A-Za-z]*.md' | grep -v './target/' | sort)
 
+# Structure. Nobody here reads fifteen languages, so the honest check on a
+# translation's BODY is not its prose but its shape: a page with the source's
+# headings, code blocks and table rows is a page somebody actually translated,
+# and one with half of them is a page that was summarised, truncated, or had its
+# examples "helpfully" merged. This catches the failure a reviewer cannot.
+shape() {
+    # headings | fenced code blocks | table rows, for one file
+    printf '%s %s %s' \
+        "$(grep -c '^#\{1,6\} ' "$1")" \
+        "$(grep -c '^```' "$1")" \
+        "$(grep -c '^|' "$1")"
+}
+
+for t in $(find . -name '*.[a-z][a-z].md' -o -name '*.[a-z][a-z]-[A-Za-z]*.md' | grep -v './target/' | sort); do
+    t="${t#./}"
+    src="$(printf '%s' "$t" | sed -E 's/\.[a-z]{2}(-[A-Za-z]+)?\.md$/.md/')"
+    [ -f "$src" ] || continue
+    # The stamp line is one extra line in the translation and nothing else.
+    a="$(shape "$src")"
+    b="$(shape "$t")"
+    if [ "$a" != "$b" ]; then
+        printf 'SHAPE   %s\n        headings/code-fences/table-rows: source %s, translation %s\n' \
+            "$t" "$a" "$b"
+        stale=$((stale + 1))
+    fi
+done
+
 printf '\n%s translation(s) checked' "$checked"
 [ "$stale" -gt 0 ] && printf ', %s STALE' "$stale"
 [ "$missing" -gt 0 ] && printf ', %s unusable' "$missing"

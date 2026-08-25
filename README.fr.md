@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=6d693599c6ceb4b2af2e9a86c3994d86d7057dc5 -->
+<!-- eidos-i18n: source=README.md sha=1d6c3a7886c5271693cbd986804bc5608d27cf3b -->
 
 <div align="center">
 
@@ -196,17 +196,53 @@ désactivé par défaut) vivent dans
 | Si vous voulez... | |
 |---|---|
 | l'installer | [guide/install.fr.md](docs/guide/install.fr.md) |
-| apprendre la ligne de commande et la GUI | [guide/usage.md](docs/guide/usage.md) 🇬🇧 |
+| apprendre la ligne de commande et la GUI | [guide/usage.fr.md](docs/guide/usage.fr.md) |
+| configurer xEdit, BodySlide ou DynDOLOD | [guide/tools.fr.md](docs/guide/tools.fr.md) |
+| jouer à Fallout 4 (F4SE, versions, le plantage des débris NVIDIA) | [guide/fallout4.fr.md](docs/guide/fallout4.fr.md) |
+| faire marcher DLSS et la génération d'images (Community Shaders) | [guide/graphics.fr.md](docs/guide/graphics.fr.md) |
 | réparer quelque chose qui semble anormal | [guide/troubleshooting.fr.md](docs/guide/troubleshooting.fr.md) |
-| configurer xEdit, BodySlide ou DynDOLOD | [guide/tools.md](docs/guide/tools.md) 🇬🇧 |
-| jouer à Fallout 4 | [guide/fallout4.md](docs/guide/fallout4.md) 🇬🇧 |
-| faire marcher DLSS et la génération d'images | [guide/graphics.md](docs/guide/graphics.md) 🇬🇧 |
-| comprendre son fonctionnement interne | [internals/architecture.md](docs/internals/architecture.md) 🇬🇧 |
-| le compiler, le tester, y contribuer | [internals/contributing.md](docs/internals/contributing.md) 🇬🇧 |
+| savoir pourquoi c'est rapide, et le vérifier vous-même | [internals/performance.md](docs/internals/performance.md) |
+| comprendre son fonctionnement interne | [internals/architecture.md](docs/internals/architecture.md) |
+| le compiler, le tester, y contribuer | [internals/contributing.md](docs/internals/contributing.md) |
+| savoir pourquoi il existe | [project/landscape.md](docs/project/landscape.md) |
 
-Les pages marquées 🇬🇧 ne sont pas traduites, volontairement : elles s'adressent à
-des gens qui lisent aussi le Rust. L'index complet est dans
-[docs/README.md](docs/README.md).
+L'index complet est dans [docs/README.fr.md](docs/README.fr.md) ; la politique de
+sécurité et comment signaler une vulnérabilité dans [SECURITY.md](SECURITY.md).
+
+## Langue
+
+Les pages dont un joueur a besoin sont traduites. **L'anglais fait foi** : quand une
+traduction le contredit, c'est le fichier anglais qui a raison.
+
+- **Français** - [README](README.fr.md) · [index](docs/README.fr.md) · [install](docs/guide/install.fr.md) · [usage](docs/guide/usage.fr.md) · [tools](docs/guide/tools.fr.md) · [fallout4](docs/guide/fallout4.fr.md) · [graphics](docs/guide/graphics.fr.md) · [troubleshooting](docs/guide/troubleshooting.fr.md) · [extensions](docs/guide/extensions.fr.md)
+- **Русский** - [README](README.ru.md) · [index](docs/README.ru.md) · [install](docs/guide/install.ru.md) · [usage](docs/guide/usage.ru.md) · [tools](docs/guide/tools.ru.md) · [fallout4](docs/guide/fallout4.ru.md) · [graphics](docs/guide/graphics.ru.md) · [troubleshooting](docs/guide/troubleshooting.ru.md) · [extensions](docs/guide/extensions.ru.md)
+- **Deutsch** - [README](README.de.md) · [index](docs/README.de.md) · [install](docs/guide/install.de.md) · [usage](docs/guide/usage.de.md) · [tools](docs/guide/tools.de.md) · [fallout4](docs/guide/fallout4.de.md) · [graphics](docs/guide/graphics.de.md) · [troubleshooting](docs/guide/troubleshooting.de.md) · [extensions](docs/guide/extensions.de.md)
+- **Español** - [README](README.es.md) · [index](docs/README.es.md) · [install](docs/guide/install.es.md) · [usage](docs/guide/usage.es.md) · [tools](docs/guide/tools.es.md) · [fallout4](docs/guide/fallout4.es.md) · [graphics](docs/guide/graphics.es.md) · [troubleshooting](docs/guide/troubleshooting.es.md) · [extensions](docs/guide/extensions.es.md)
+- **Português (BR)** - [README](README.pt-BR.md) · [index](docs/README.pt-BR.md) · [install](docs/guide/install.pt-BR.md) · [usage](docs/guide/usage.pt-BR.md) · [tools](docs/guide/tools.pt-BR.md) · [fallout4](docs/guide/fallout4.pt-BR.md) · [graphics](docs/guide/graphics.pt-BR.md) · [troubleshooting](docs/guide/troubleshooting.pt-BR.md) · [extensions](docs/guide/extensions.pt-BR.md)
+- **简体中文** - [README](README.zh-CN.md) · [index](docs/README.zh-CN.md) · [install](docs/guide/install.zh-CN.md) · [usage](docs/guide/usage.zh-CN.md) · [tools](docs/guide/tools.zh-CN.md) · [fallout4](docs/guide/fallout4.zh-CN.md) · [graphics](docs/guide/graphics.zh-CN.md) · [troubleshooting](docs/guide/troubleshooting.zh-CN.md) · [extensions](docs/guide/extensions.zh-CN.md)
+- **Polski** - [README](README.pl.md) · [index](docs/README.pl.md) · [install](docs/guide/install.pl.md) · [usage](docs/guide/usage.pl.md) · [tools](docs/guide/tools.pl.md) · [fallout4](docs/guide/fallout4.pl.md) · [graphics](docs/guide/graphics.pl.md) · [troubleshooting](docs/guide/troubleshooting.pl.md) · [extensions](docs/guide/extensions.pl.md)
+- **Italiano** - [README](README.it.md) · [index](docs/README.it.md) · [install](docs/guide/install.it.md) · [usage](docs/guide/usage.it.md) · [tools](docs/guide/tools.it.md) · [fallout4](docs/guide/fallout4.it.md) · [graphics](docs/guide/graphics.it.md) · [troubleshooting](docs/guide/troubleshooting.it.md) · [extensions](docs/guide/extensions.it.md)
+- **Українська** - [README](README.uk.md) · [index](docs/README.uk.md) · [install](docs/guide/install.uk.md) · [usage](docs/guide/usage.uk.md) · [tools](docs/guide/tools.uk.md) · [fallout4](docs/guide/fallout4.uk.md) · [graphics](docs/guide/graphics.uk.md) · [troubleshooting](docs/guide/troubleshooting.uk.md) · [extensions](docs/guide/extensions.uk.md)
+- **日本語** - [README](README.ja.md) · [index](docs/README.ja.md) · [install](docs/guide/install.ja.md) · [usage](docs/guide/usage.ja.md) · [tools](docs/guide/tools.ja.md) · [fallout4](docs/guide/fallout4.ja.md) · [graphics](docs/guide/graphics.ja.md) · [troubleshooting](docs/guide/troubleshooting.ja.md) · [extensions](docs/guide/extensions.ja.md)
+- **繁體中文** - [README](README.zh-TW.md) · [index](docs/README.zh-TW.md) · [install](docs/guide/install.zh-TW.md) · [usage](docs/guide/usage.zh-TW.md) · [tools](docs/guide/tools.zh-TW.md) · [fallout4](docs/guide/fallout4.zh-TW.md) · [graphics](docs/guide/graphics.zh-TW.md) · [troubleshooting](docs/guide/troubleshooting.zh-TW.md) · [extensions](docs/guide/extensions.zh-TW.md)
+- **Čeština** - [README](README.cs.md) · [index](docs/README.cs.md) · [install](docs/guide/install.cs.md) · [usage](docs/guide/usage.cs.md) · [tools](docs/guide/tools.cs.md) · [fallout4](docs/guide/fallout4.cs.md) · [graphics](docs/guide/graphics.cs.md) · [troubleshooting](docs/guide/troubleshooting.cs.md) · [extensions](docs/guide/extensions.cs.md)
+- **한국어** - [README](README.ko.md) · [index](docs/README.ko.md) · [install](docs/guide/install.ko.md) · [usage](docs/guide/usage.ko.md) · [tools](docs/guide/tools.ko.md) · [fallout4](docs/guide/fallout4.ko.md) · [graphics](docs/guide/graphics.ko.md) · [troubleshooting](docs/guide/troubleshooting.ko.md) · [extensions](docs/guide/extensions.ko.md)
+- **Türkçe** - [README](README.tr.md) · [index](docs/README.tr.md) · [install](docs/guide/install.tr.md) · [usage](docs/guide/usage.tr.md) · [tools](docs/guide/tools.tr.md) · [fallout4](docs/guide/fallout4.tr.md) · [graphics](docs/guide/graphics.tr.md) · [troubleshooting](docs/guide/troubleshooting.tr.md) · [extensions](docs/guide/extensions.tr.md)
+- **Nederlands** - [README](README.nl.md) · [index](docs/README.nl.md) · [install](docs/guide/install.nl.md) · [usage](docs/guide/usage.nl.md) · [tools](docs/guide/tools.nl.md) · [fallout4](docs/guide/fallout4.nl.md) · [graphics](docs/guide/graphics.nl.md) · [troubleshooting](docs/guide/troubleshooting.nl.md) · [extensions](docs/guide/extensions.nl.md)
+
+**Tout le reste est en anglais volontairement, pas par omission.** `docs/internals/`
+et `docs/project/` sont lus par des gens qui lisent aussi le Rust, et `CHANGELOG.md`
+est généré. Les traduire ferait 17 678 mots de plus à tenir honnêtes pour un public
+qui n'en a pas besoin.
+
+Chaque traduction porte l'empreinte du fichier anglais dont elle est issue, et la CI
+échoue quand l'anglais avance - voir [`scripts/i18n-check.sh`](scripts/i18n-check.sh).
+Une traduction qu'on ne peut pas remettre à jour est **supprimée**, pas laissée en
+place : une page périmée garde l'air officiel et distribue les commandes du mois
+dernier, ce qui est pire pour le lecteur que d'être renvoyé vers l'anglais.
+
+Ajouter une langue, c'est neuf fichiers et une ligne dans cette liste ;
+[`docs/internals/contributing.md`](docs/internals/contributing.md) donne les étapes.
 
 ## Jeux pris en charge
 
