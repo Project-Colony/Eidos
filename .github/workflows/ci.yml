@@ -119,7 +119,18 @@ jobs:
       # "N passed, M failed, K skipped" summary line - read K when a FUSE
       # regression suspiciously fails to show up.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --exclude eidos-gui
+
+      # The GUI suite runs SERIALLY, and this is a workaround, not a fix. Two of
+      # its tests fail about one run in twenty under the parallel runner with
+      # "this instance is in use by the Eidos window (pid <ourselves>)": the
+      # instance flock is refused to our own process while the in-process table
+      # says nobody holds it. Single-threaded it has never failed - 0 in 30 runs
+      # - so the race is between tests sharing one process, not in the product's
+      # own path. It blocked the 1.11.0 release, which is why this line exists;
+      # remove it the day the race is understood rather than merely avoided.
+      - name: Test the GUI (serially - see above)
+        run: cargo test -p eidos-gui --locked -- --test-threads=1
 
   i18n:
     name: translations up to date
