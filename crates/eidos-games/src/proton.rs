@@ -178,7 +178,7 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
 ///
 /// So: match Steam exactly. Eidos must not show the prefix a different world
 /// than the one Steam shows it.
-pub pub fn library_path(inside: &Path) -> Option<PathBuf> {
+pub fn library_path(inside: &Path) -> Option<PathBuf> {
     inside
         .ancestors()
         .find(|a| a.file_name().map(|n| n == "steamapps").unwrap_or(false))
