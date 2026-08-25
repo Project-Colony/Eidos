@@ -276,8 +276,8 @@ heuristic recognises the layout. No archive is refused.
 
 **Diagnostics** runs live health checks: the launch capability above all, missing
 masters (the single most reliable crash predictor), archives no active plugin
-will load, whether the mod list still matches the mods folder, and - after a run
-- what the script extender's own log says about each of its plugin DLLs, which
+will load, whether the mod list still matches the mods folder, and - after a
+run - what the script extender's own log says about each of its plugin DLLs, which
 turns "did my SKSE plugins load?" from an inference into evidence.
 
 To launch the game through the GUI, set the game's Steam launch option to the
