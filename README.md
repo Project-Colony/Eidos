@@ -192,6 +192,33 @@ bisection toggles, why `EIDOS_FUSE_PASSTHROUGH` is off by default) live in
 The whole index is at [docs/README.md](docs/README.md); security policy and how
 to report a vulnerability at [SECURITY.md](SECURITY.md).
 
+## Language
+
+The pages a player needs are translated. **English is canonical**: when a
+translation disagrees with it, the English file is right.
+
+| | README | Installer | Dépanner | Utiliser |
+|---|---|---|---|---|
+| Français | [lisez-moi](README.fr.md) | [installer](docs/guide/install.fr.md) | [dépanner](docs/guide/troubleshooting.fr.md) | *(en cours)* |
+
+Only what is listed exists. A language is added a file at a time and appears here
+only once the file is written and stamped - a row promising a page that is not
+there is the same broken contract as a page that is out of date.
+
+**Everything else is English on purpose, not by omission.** `docs/internals/` and
+`docs/project/` are read by people who are also reading the Rust, and `CHANGELOG.md`
+is generated. Translating them would be 17,678 more words to keep honest for an
+audience that does not need them.
+
+Each translation carries the hash of the English file it was made from, and CI
+fails when the English moves ahead - see [`scripts/i18n-check.sh`](scripts/i18n-check.sh).
+A translation that cannot be brought back up to date is **deleted**, not left in
+place: a stale page still looks authoritative and hands out last month's
+commands, which is worse for the reader than being sent to English.
+
+Adding a language is four files and a row in this table;
+[`docs/internals/contributing.md`](docs/internals/contributing.md) has the steps.
+
 ## Supported games
 
 **Skyrim SE/AE** - proven in real play. **Fallout 4** is wired end to end too

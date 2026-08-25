@@ -121,6 +121,21 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+  i18n:
+    name: translations up to date
+    runs-on: ubuntu-24.04
+    steps:
+      # No `fetch-depth` needed, and that is the point: the check compares the
+      # BLOB HASH of each English source against the stamp its translations
+      # carry, which is computable from the working tree alone. The obvious
+      # alternative - `git log` on the source - reports a single commit on the
+      # depth-1 clone Actions makes by default, so every comparison would come
+      # out equal and this job would pass green forever while translations rot.
+      - uses: actions/checkout@v4
+
+      - name: Check every translation against its English source
+        run: ./scripts/i18n-check.sh
+
   fmt:
     name: rustfmt (advisory)
     runs-on: ubuntu-24.04
