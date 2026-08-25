@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.10.0](https://github.com/Project-Colony/Eidos/compare/v1.9.1...v1.10.0) (2026-08-25)
+
+
+### Features
+
+* **gui:** watch Eidos's own machinery, not only the user's mods ([#29](https://github.com/Project-Colony/Eidos/issues/29)) ([3a5a0bf](https://github.com/Project-Colony/Eidos/commit/3a5a0bf4c69c29adab7547fc9eaa456d76b38868))
+
+
+### Fixes
+
+* **gui:** main was red on the pinned toolchain, on a lint the newer one drops ([#32](https://github.com/Project-Colony/Eidos/issues/32)) ([55bd10a](https://github.com/Project-Colony/Eidos/commit/55bd10a99a84ebaf624c9fba80822348fe11f824))
+* **install:** an archive that used Windows path separators installed as a flat pile ([#28](https://github.com/Project-Colony/Eidos/issues/28)) ([a34f4c9](https://github.com/Project-Colony/Eidos/commit/a34f4c9d7da9c1b4183597f4821088c146d76217))
+* **proton:** the prefix's S: drive belongs on the library root, not on steamapps ([#30](https://github.com/Project-Colony/Eidos/issues/30)) ([bd9f897](https://github.com/Project-Colony/Eidos/commit/bd9f8975f732c9fc4af963a6b5d05341030ea20f))
+
 ## [1.9.1](https://github.com/Project-Colony/Eidos/compare/v1.9.0...v1.9.1) (2026-08-25)
 
 
