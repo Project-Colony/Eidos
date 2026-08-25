@@ -1346,6 +1346,18 @@ pub(crate) struct Diagnostic {
 pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     let mut out: Vec<Diagnostic> = Vec::new();
 
+    // Eidos's own machinery first, before anything about the user's mods. When
+    // the prefix is unusable nothing below is actionable: a tool that cannot
+    // find the game will not be fixed by tidying an archive, and a user reading
+    // top to bottom should meet the cause before the symptoms.
+    if let Some(f) = crate::state::selected_game(app).and_then(crate::health::prefix_facts) {
+        out.extend(crate::health::prefix_checks(&f));
+    }
+    out.extend(crate::health::nexus_checks(&crate::health::NexusFacts {
+        signed_in: app.nexus_account.is_some(),
+        last_error: app.nexus_error.clone(),
+    }));
+
     // What the user's own `diagnose` extensions reported, FIRST and attributed by
     // name. First because someone who wrote a check wants to see it; attributed
     // because a row that reads like one of Eidos's own would put its own

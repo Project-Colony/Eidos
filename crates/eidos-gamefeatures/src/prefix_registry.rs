@@ -124,27 +124,85 @@ fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
 /// So the question has to be "is the key right NOW", which is what this asks.
 /// Anything unparsed reads as "does not match", because re-importing is cheap
 /// and idempotent while a wrong path costs the user a support thread.
+/// The `installed path` currently recorded in one view of the game's key, if any.
+///
+/// Split out so that "is the key right?" and "what does the key actually say?"
+/// are answered by the SAME reader. A health check that parsed `system.reg` its
+/// own way would be a second source of truth, and the two would drift until one
+/// of them reported a prefix healthy that the other was busy repairing.
+fn installed_path_in(system_reg: &str, registry_name: &str, view: &str) -> Option<String> {
+    if registry_name.is_empty() {
+        return None;
+    }
+    let header = format!("[{}]", escape_reg(&format!("{view}\\Bethesda Softworks\\{registry_name}")));
+    let section = system_reg.split(&header).nth(1)?;
+    // Stop at the next section so a later key's value cannot be mistaken for
+    // this one's.
+    section
+        .split("\n[")
+        .next()
+        .unwrap_or("")
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("\"installed path\"="))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .next()
+}
+
+/// The two views Wine does not mirror. A 32-bit tool reads the second, a 64-bit
+/// tool the first, and the xEdit family ships in both flavours.
+const VIEWS: [&str; 2] = ["Software", "Software\\Wow6432Node"];
+
 fn registry_matches(system_reg: &str, registry_name: &str, want: &str) -> bool {
     if registry_name.is_empty() {
         // xEdit-only mode registers no game path, so there is nothing to check.
         return true;
     }
     let want_escaped = escape_reg(want);
-    ["Software", "Software\\Wow6432Node"].iter().all(|view| {
-        let header = format!("[{}]", escape_reg(&format!("{view}\\Bethesda Softworks\\{registry_name}")));
-        let Some(section) = system_reg.split(&header).nth(1) else {
-            return false;
-        };
-        // Stop at the next section so a later key's value cannot be mistaken
-        // for this one's.
-        section
-            .split("\n[")
-            .next()
-            .unwrap_or("")
-            .lines()
-            .filter_map(|l| l.trim().strip_prefix("\"installed path\"="))
-            .any(|v| v.trim().trim_matches('"') == want_escaped)
-    })
+    VIEWS
+        .iter()
+        .all(|view| installed_path_in(system_reg, registry_name, view).as_deref() == Some(want_escaped.as_str()))
+}
+
+/// What the prefix's game path looks like RIGHT NOW, without changing anything.
+///
+/// Deliberately built on `registry_matches`, the same predicate `ensure_registry`
+/// decides with: the health check must never be able to disagree with the code
+/// it is watching.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RegistryStatus {
+    /// This game registers no path (Enderal, Stellar Blade). Nothing to report.
+    NotApplicable,
+    /// Proton has not created the prefix yet - the game has never been launched.
+    PrefixUninitialised,
+    /// Both views hold the current install path.
+    Correct,
+    /// The key is missing, or holds something else. `found` is what a tool would
+    /// read today, which is the single most useful thing to show a user: it is
+    /// the path their tool is about to complain about.
+    Stale { found: Option<String>, want: String },
+}
+
+/// Read-only counterpart to [`ensure_registry`]: answers "would a Windows tool
+/// find this game?" without touching the prefix or starting a wineserver.
+pub fn registry_status(compatdata: &Path, install_path: &Path, registry_name: &str) -> RegistryStatus {
+    if registry_name.is_empty() {
+        return RegistryStatus::NotApplicable;
+    }
+    let prefix = compatdata.join("pfx");
+    if !prefix.join("user.reg").is_file() {
+        return RegistryStatus::PrefixUninitialised;
+    }
+    let want = to_windows_path(install_path);
+    let Ok(reg) = fs::read_to_string(prefix.join("system.reg")) else {
+        return RegistryStatus::Stale { found: None, want };
+    };
+    if registry_matches(&reg, registry_name, &want) {
+        return RegistryStatus::Correct;
+    }
+    // Report the 32-bit view: that is the one xEdit opens first, so it is the
+    // value the user is actually about to be bitten by.
+    let found = installed_path_in(&reg, registry_name, VIEWS[1]).map(|v| v.replace("\\\\", "\\"));
+    RegistryStatus::Stale { found, want }
 }
 
 /// What `ensure_registry` did, and when it did nothing, why.

@@ -1925,6 +1925,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let written =
                 app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
             let landed = written.is_ok();
+            // The same numbers, into the log. The status bar carries them already,
+            // but it is gone the moment anything else sets a status - and these
+            // two numbers are the ones that expose a broken sort. LOOT deciding
+            // nothing on a large list is legitimate ONCE, on an order that really
+            // is optimal; run after run on hundreds of plugins it means the sort
+            // is not running, which is precisely how the overlap stage managed to
+            // be dead for 69 days while the status said "checked 211 plugins".
+            // A user cannot see "every time" in a status bar. They can in a log.
+            eidos_log::info!(
+                "eidos loot: sorted {} plugins, {changed} moved{}",
+                sorted.len(),
+                if pinned > 0 { format!(", {pinned} pinned position(s) kept") } else { String::new() }
+            );
             app.status = Some(match written {
                 Ok(_) => {
                     if changed == 0 {
