@@ -60,6 +60,15 @@ pub(crate) const DIVIDER: Color = Color::from_rgb8(0xC9, 0xB8, 0x90);
 /// edge of something".
 pub(crate) const DIVIDER_HELD: Color = Color::from_rgb8(0x7A, 0x1F, 0x2B);
 
+/// Secondary text: a description under a title, a caption, a hint.
+///
+/// The convention asks for descriptions in `text_muted` rather than in the body
+/// colour, so that a page of settings reads as titles with explanations under
+/// them instead of as two columns of equally loud text. This is the parchment
+/// palette's version of it - the same brown as the body ink, lightened until it
+/// recedes without becoming hard to read.
+pub(crate) const TEXT_MUTED: Color = Color::from_rgb8(0x6A, 0x5A, 0x40);
+
 pub(crate) fn row_bg(even: bool) -> Color {
     if even {
         Color::from_rgb8(0xF3, 0xEA, 0xD3)

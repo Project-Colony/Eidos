@@ -118,33 +118,59 @@ enum InfoTab {
 enum SettingsTab {
     General,
     Appearance,
+    Accessibility,
     ModList,
     Nexus,
     About,
 }
 
 impl SettingsTab {
-    /// Every section, in the order the sidebar lists them.
-    pub(crate) const ALL: [SettingsTab; 5] = [
+    /// Every category, in the order the rail lists them.
+    ///
+    /// The first three are imposed by the Colony convention and must stay in
+    /// this order: they are what somebody hunting for a setting scans first, and
+    /// they hold the same things in every program in the ecosystem. After them
+    /// come Eidos's own, and About last. `the_first_three_categories_are_the_imposed_ones`
+    /// fails if that is disturbed.
+    pub(crate) const ALL: [SettingsTab; 6] = [
         SettingsTab::General,
         SettingsTab::Appearance,
+        SettingsTab::Accessibility,
         SettingsTab::ModList,
         SettingsTab::Nexus,
         SettingsTab::About,
     ];
 
-    /// The sections open the first time Settings is shown - one per category, so
-    /// every page says something without a click.
-    pub(crate) const DEFAULT_OPEN: [&'static str; 5] =
-        ["startup", "theme", "dragging", "account", "paths"];
+    /// The sections open the first time Preferences is shown - one per category,
+    /// so every page says something without a click.
+    pub(crate) const DEFAULT_OPEN: [&'static str; 6] =
+        ["startup", "theme", "motion", "dragging", "account", "paths"];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             SettingsTab::General => "General",
             SettingsTab::Appearance => "Appearance",
+            SettingsTab::Accessibility => "Accessibility",
             SettingsTab::ModList => "Mod list",
             SettingsTab::Nexus => "Nexus",
             SettingsTab::About => "About",
+        }
+    }
+
+    /// The line under the category's own heading: what it changes, not its name
+    /// said again.
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            // This sentence is imposed by the convention, near enough word for
+            // word, because it carries the contract that matters most on this
+            // page: there is no Save button, and its absence has to be explained
+            // somewhere rather than left to be discovered.
+            SettingsTab::General => "Preferences are saved automatically.",
+            SettingsTab::Appearance => "Applies immediately - nothing here needs a restart.",
+            SettingsTab::Accessibility => "Changes how the window behaves, on any theme.",
+            SettingsTab::ModList => "How the list of mods behaves under the pointer.",
+            SettingsTab::Nexus => "The account downloads are fetched with, and what is cached.",
+            SettingsTab::About => "Version, licence and where this instance lives.",
         }
     }
 }
@@ -3273,6 +3299,81 @@ mod tests {
         // Ending the drag stops it, so no timer outlives the gesture.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_scroll.is_none());
+    }
+
+    /// The rank each category is required to hold, written out separately from
+    /// `ALL`. The match is exhaustive, so adding a category without giving it a
+    /// rank does not compile - which is the point, because `ALL` is a
+    /// hand-written array and nothing else would force the question.
+    fn expected_rank(tab: SettingsTab) -> usize {
+        match tab {
+            SettingsTab::General => 0,
+            SettingsTab::Appearance => 1,
+            SettingsTab::Accessibility => 2,
+            SettingsTab::ModList => 3,
+            SettingsTab::Nexus => 4,
+            SettingsTab::About => 5,
+        }
+    }
+
+    /// "Do not reorder the first three. They are what a user hunting for a
+    /// setting scans first" - the ecosystem convention is explicit, and this is
+    /// exactly the kind of constraint a reshuffle breaks without noticing.
+    #[test]
+    fn the_first_three_categories_are_the_imposed_ones_in_order() {
+        assert_eq!(
+            &SettingsTab::ALL[..3],
+            &[SettingsTab::General, SettingsTab::Appearance, SettingsTab::Accessibility],
+        );
+    }
+
+    /// "About last where it exists."
+    #[test]
+    fn about_comes_last() {
+        assert_eq!(SettingsTab::ALL.last(), Some(&SettingsTab::About));
+        for (rank, tab) in SettingsTab::ALL.into_iter().enumerate() {
+            assert_eq!(rank, expected_rank(tab), "{tab:?} is in the wrong place");
+        }
+    }
+
+    /// The contract the page lives by: no Save button, so the sentence that
+    /// explains its absence has to be somewhere the user will read.
+    #[test]
+    fn general_carries_the_no_save_button_contract() {
+        assert!(
+            SettingsTab::General.description().contains("saved automatically"),
+            "General must say preferences save themselves; it says {:?}",
+            SettingsTab::General.description(),
+        );
+    }
+
+    /// A description that repeats the title teaches nothing. The convention asks
+    /// it to say the CONSEQUENCE of the category, so no two may be the same and
+    /// none may echo its own label.
+    #[test]
+    fn each_category_explains_itself_and_says_something_different() {
+        let mut seen: Vec<&str> = SettingsTab::ALL.into_iter().map(|t| t.description()).collect();
+        seen.sort_unstable();
+        let before = seen.len();
+        seen.dedup();
+        assert_eq!(before, seen.len(), "two categories share a description");
+
+        for tab in SettingsTab::ALL {
+            assert_ne!(tab.label(), tab.description(), "{tab:?} repeats its own name");
+            assert!(!tab.description().is_empty());
+        }
+    }
+
+    /// Reduced motion belongs to Accessibility, not to Appearance. Appearance is
+    /// what the window looks like; Accessibility is what it does to somebody who
+    /// needs it to do less.
+    #[test]
+    fn motion_is_filed_under_accessibility() {
+        let rank = expected_rank(SettingsTab::Accessibility);
+        assert_eq!(
+            SettingsTab::DEFAULT_OPEN[rank], "motion",
+            "Accessibility must open on its motion section",
+        );
     }
 
     #[test]

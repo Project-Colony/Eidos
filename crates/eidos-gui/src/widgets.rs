@@ -29,7 +29,13 @@ pub(crate) fn settings_section<'a>(
         Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(title).size(13.0).width(Length::Fill))
+            // The convention says 15 for a section title. That number assumes
+            // Colony's type scale, whose body text is 13; Eidos's is 12, and 15
+            // here would leave a section title as loud as the category heading
+            // above it. What the convention is actually specifying is the
+            // HIERARCHY - page, category, section, body - and that is what this
+            // keeps: 22 / 16 / 14 / 12.
+            .push(text(title).size(14.0).width(Length::Fill))
             .push(text(chevron).size(10.0)),
     )
     .padding([7, 4])

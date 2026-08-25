@@ -52,26 +52,44 @@ fn adult_content_state() -> Option<bool> {
     eidos_instance::settings::load_nexus_creds().adult_pref(now)
 }
 
-pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
+/// The Preferences page.
+///
+/// It **replaces the content area**: not a modal, not a separate window, not a
+/// popover, which the Colony convention names as the three counter-examples -
+/// and this was the first of them. The name is `preferences_page` rather than
+/// `settings_dialog` because it is no longer a dialog, and a function whose name
+/// disagrees with what it returns is how the next reader is misled.
+pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
+    // "Preferences", not "Settings". The convention settles the user-facing word
+    // and Colony, Grape and Xion all say Preferences; only the code here is still
+    // named `settings_*`, which costs the user nothing and is not worth a rename
+    // on its own. Size and padding are the convention's too.
     let header = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Settings").size(18.0).width(Length::Fill))
+        .push(text("Preferences").size(22.0).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
-                .padding([5, 12])
+            // The same message the title button sends to OPEN the page: two ways
+            // out, one message, so they cannot drift apart.
+            button(text("Close").size(13.0))
+                .padding([6, 14])
                 .on_press(Message::CloseSettings)
                 .style(button::secondary),
         );
 
     // A vertical rail, as in Colony: five sections do not fit across a dialog,
     // and a rail takes a sixth without re-laying anything out.
-    let mut rail = Column::new().spacing(2).width(Length::Fixed(132.0));
+    // Wide enough for "Accessibility", the longest of the six, so the rail does
+    // not resize when the category changes.
+    let mut rail = Column::new().spacing(2).width(Length::Fixed(148.0));
     for tab in SettingsTab::ALL {
         let active = app.settings_tab == tab;
         rail = rail.push(
             button(text(tab.label()).size(12.0).width(Length::Fill))
-                .padding([6, 10])
+                // The convention's own numbers, and the same selection rules as
+                // the main list: selected is a filled background, hover is the
+                // card hover, and the two must not look alike.
+                .padding([8, 14])
                 .width(Length::Fill)
                 .on_press(Message::SettingsTabSelected(tab))
                 .style(if active { button::primary } else { button::text }),
@@ -191,22 +209,43 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                         picker.into(),
                     ),
                 ))
-                .push(settings_section(
-                    "motion",
-                    "Motion",
-                    open("motion"),
-                    settings_toggle(
-                        "Animate the window",
-                        "The tab strips cross-fade and a new status message fades in. \
-                         Off means they change instantly - nothing is animated more \
-                         quickly, and no frame timer runs at all. Nothing here moves \
-                         the layout either way, so turning it off changes no spacing.",
-                        app.prefs.motion,
-                        Message::ToggleMotion(!app.prefs.motion),
-                    ),
-                ))
                 .into()
         }
+        // The convention puts motion under Accessibility, not Appearance, and
+        // the distinction is not filing: Appearance is what the window looks
+        // like, Accessibility is what it does to somebody who needs it to do
+        // less. Reduced motion is the second.
+        SettingsTab::Accessibility => Column::new()
+            .spacing(2)
+            .push(settings_section(
+                "motion",
+                "Motion",
+                open("motion"),
+                settings_toggle(
+                    "Animate the window",
+                    "The tab strips cross-fade and a new status message fades in. Off means \
+                     they change instantly - nothing is animated more quickly, none of it \
+                     runs, and no frame timer is started. No animation moves the layout \
+                     either way, so turning this off changes no spacing.",
+                    app.prefs.motion,
+                    Message::ToggleMotion(!app.prefs.motion),
+                ),
+            ))
+            .push(settings_section(
+                "a11y_todo",
+                "Vision and reading",
+                open("a11y_todo"),
+                settings_row(
+                    "Not implemented yet",
+                    "The convention also asks for a high-contrast palette, a dyslexia-friendly \
+                     font and a text scale here. Eidos has none of the three: every size in \
+                     this window is a literal, so a scale is a change to the whole GUI rather \
+                     than a setting. Said out loud rather than shown as switches that do \
+                     nothing.",
+                    Space::new().into(),
+                ),
+            ))
+            .into(),
         SettingsTab::ModList => {
             let speed = app.prefs.drag_scroll_speed;
             let slider_row = Row::new()
@@ -421,12 +460,42 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
             .into(),
     };
 
+    // Each category opens with its own heading and one line saying what it
+    // changes. General's line carries the contract: there is no Save button.
+    let titled = Column::new()
+        .spacing(2)
+        .push(text(app.settings_tab.label()).size(16.0))
+        .push(text(app.settings_tab.description()).size(11.0).color(TEXT_MUTED))
+        .push(Space::new().height(Length::Fixed(8.0)))
+        .push(body);
+
     let panes = Row::new()
         .spacing(14)
+        .height(Length::Fill)
         .push(rail)
-        .push(container(scrollable(body)).width(Length::Fill).height(Length::Fixed(240.0)));
-    let card = Column::new().spacing(12).push(header).push(panes);
-    container(card).max_width(620.0).padding(16).style(card_style).into()
+        .push(
+            container(scrollable(titled))
+                .width(Length::Fill)
+                .height(Length::Fill),
+        );
+
+    // A PAGE, not a card floating on a scrim. The convention names a modal, a
+    // separate window and a popover as the three things this must not be, and
+    // this was the first of them: it replaces the content area between the
+    // toolbar and the status bar, and the program's own chrome stays put.
+    //
+    // What that buys is not tidiness. A modal capped at 620x240 could not grow,
+    // so every category was read through a 240-pixel slot however big the window
+    // was - and the page that most needs room to be scanned was the one with the
+    // least.
+    Column::new()
+        .spacing(12)
+        .padding(4)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .push(header)
+        .push(panes)
+        .into()
 }
 
 // ---- Executables editor (MO2's Modify Executables) --------------------------

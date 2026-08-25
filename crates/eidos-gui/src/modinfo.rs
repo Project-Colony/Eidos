@@ -2850,12 +2850,22 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     )
     .on_press(Message::SplitGrab);
 
-    let body = Row::new()
-        .spacing(4)
-        .height(Length::Fill)
-        .push(modlist_pane(app))
-        .push(divider)
-        .push(right_pane(app));
+    // Preferences REPLACE the content area - they are not a modal, a separate
+    // window or a popover, which the Colony convention names as the three things
+    // this must not be. The header, the menu bar, the toolbar and the status bar
+    // all stay exactly where they are: the program's chrome does not move
+    // because the user went to configure it.
+    let body: Element<'_, Message> = if app.settings_open {
+        preferences_page(app)
+    } else {
+        Row::new()
+            .spacing(4)
+            .height(Length::Fill)
+            .push(modlist_pane(app))
+            .push(divider)
+            .push(right_pane(app))
+            .into()
+    };
 
     let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());
     if app.ui_toolbar_visible {
@@ -2911,14 +2921,6 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim =
             mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
         let dialog = container(collision_dialog(c)).center(Length::Fill);
-        layers = layers.push(scrim).push(dialog);
-    }
-
-    // The Preferences modal (MO2's Settings dialog).
-    if app.settings_open {
-        let scrim =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseSettings);
-        let dialog = container(settings_dialog(app)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
