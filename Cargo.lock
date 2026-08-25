@@ -1128,6 +1128,7 @@ dependencies = [
  "eidos-fomod",
  "eidos-gamedef",
  "eidos-instance",
+ "eidos-log",
 ]
 
 [[package]]
