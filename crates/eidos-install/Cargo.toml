@@ -10,3 +10,4 @@ edition.workspace = true
 eidos-instance = { path = "../eidos-instance" }
 eidos-fomod = { path = "../eidos-fomod" }
 eidos-gamedef = { path = "../eidos-gamedef" }
+eidos-log = { path = "../eidos-log" }
