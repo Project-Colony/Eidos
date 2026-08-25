@@ -36,6 +36,7 @@ use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 // the measure of the split: nothing at the root draws anything any more.
 mod dialogs;
 mod fomod;
+mod health;
 mod modinfo;
 mod state;
 mod theme;

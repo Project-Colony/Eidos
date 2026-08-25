@@ -176,13 +176,9 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
 /// outside the union mount, invisible to Eidos, and never captured into
 /// Overwrite. The doubled `steamapps` in that path is the whole story.
 ///
-/// The reasoning that produced the wrong value is worth recording, because it
-/// looked sound: a stale `installed path = S:\common\Fallout 4\` in a real
-/// prefix was read as evidence that `S:` had once been `<lib>/steamapps`. It was
-/// not - that key was simply written wrong, and the fix for it is the absolute
-/// `Z:` path `ensure_registry` writes, which needs no drive letter at all. A
-/// registry timestamp is not a measurement.
-fn library_path(inside: &Path) -> Option<PathBuf> {
+/// So: match Steam exactly. Eidos must not show the prefix a different world
+/// than the one Steam shows it.
+pub fn library_path(inside: &Path) -> Option<PathBuf> {
     inside
         .ancestors()
         .find(|a| a.file_name().map(|n| n == "steamapps").unwrap_or(false))

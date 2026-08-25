@@ -18,7 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod proton;
-pub use proton::{is_flatpak_steam, proton_command, steam_root, ProtonRun};
+pub use proton::{is_flatpak_steam, library_path, proton_command, steam_root, ProtonRun};
 
 /// A supported game. The catalog now lives in the shared `eidos-gamedef`
 /// descriptor; re-exported so detection callers keep using `eidos_games::GameDef`.
