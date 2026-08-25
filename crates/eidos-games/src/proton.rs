@@ -159,29 +159,34 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
     None
 }
 
-/// The value Steam puts in `STEAM_COMPAT_LIBRARY_PATHS` for a path inside a
-/// library: the `steamapps` directory itself, e.g.
-/// `<lib>/steamapps/common/<game>` -> `<lib>/steamapps`.
+/// The value for `STEAM_COMPAT_LIBRARY_PATHS`: the library ROOT, the directory
+/// that HOLDS `steamapps`, e.g. `<lib>/steamapps/common/<game>` -> `<lib>`.
 ///
-/// This used to return the library ROOT - `<lib>`, one level up - and that is
-/// not a cosmetic difference. Proton hands the value straight to
+/// This is not a free choice. Proton hands the value straight to
 /// `setup_dir_drive("gamedrive", "s:", ...)`, so the prefix's `S:` drive is
-/// recreated to point at whatever we pass, on every single run. Steam points it
-/// at `steamapps`; Eidos pointed it one directory higher, and every `S:`-
-/// relative path already stored in the prefix silently became wrong.
+/// recreated to point at whatever we pass, on every single run - and Windows
+/// programs find a Steam game by trying `<drive>\steamapps\common\<game>`,
+/// which is the shape Steam's own libraries have. The root is what makes that
+/// heuristic land on the game.
 ///
-/// Proved on a real prefix (2026-08-25, appid 377160): Fallout 4's own launcher
-/// had written `installed path = S:\common\Fallout 4\` under Steam - correct
-/// only if `S:` is `<lib>/steamapps`. After an Eidos run repointed `S:` to
-/// `<lib>`, that key resolved to a directory that does not exist, and
-/// FO4Edit opened on it and reported "There are no modules in the data folder".
+/// It returned `<lib>/steamapps` for one release and that was WRONG, proven by
+/// behaviour rather than by inference: with `S:` one directory too low,
+/// `S:\steamapps\common\Fallout 4` no longer existed, so BodySlide CREATED it
+/// and wrote 267 MB of meshes into `<lib>/steamapps/steamapps/common/...` -
+/// outside the union mount, invisible to Eidos, and never captured into
+/// Overwrite. The doubled `steamapps` in that path is the whole story.
 ///
-/// So: match Steam exactly. Eidos must not show the prefix a different world
-/// than the one Steam shows it.
+/// The reasoning that produced the wrong value is worth recording, because it
+/// looked sound: a stale `installed path = S:\common\Fallout 4\` in a real
+/// prefix was read as evidence that `S:` had once been `<lib>/steamapps`. It was
+/// not - that key was simply written wrong, and the fix for it is the absolute
+/// `Z:` path `ensure_registry` writes, which needs no drive letter at all. A
+/// registry timestamp is not a measurement.
 fn library_path(inside: &Path) -> Option<PathBuf> {
     inside
         .ancestors()
         .find(|a| a.file_name().map(|n| n == "steamapps").unwrap_or(false))
+        .and_then(Path::parent)
         .map(Path::to_path_buf)
 }
 
@@ -284,21 +289,29 @@ pub fn is_flatpak_steam(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn the_library_path_is_the_steamapps_dir_because_that_is_what_steam_passes() {
+    fn the_library_path_is_the_root_that_holds_steamapps() {
         use super::library_path;
         use std::path::{Path, PathBuf};
-        // Proton turns this into the prefix's `S:` drive. One directory too high
-        // and every S:-relative path a game or Steam already wrote is broken -
-        // which is exactly how FO4Edit came to open on a folder that does not
-        // exist. Both spellings Eidos has to hand must agree.
-        let want = PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps");
+        // Proton turns this into the prefix's `S:` drive, and Windows programs
+        // find a Steam game by trying `S:\steamapps\common\<game>`. Return the
+        // `steamapps` dir itself and that lands one level too deep: BodySlide
+        // then CREATES `<lib>/steamapps/steamapps/common/<game>/Data` and writes
+        // its output outside the mount, where Eidos never sees it.
+        let want = PathBuf::from("/mnt/Jeux/SteamLibrary");
         assert_eq!(
             library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4")),
             Some(want.clone())
         );
         assert_eq!(
             library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/compatdata/377160")),
-            Some(want)
+            Some(want.clone())
+        );
+        // The property that actually matters, stated as the heuristic itself.
+        assert_eq!(
+            library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4"))
+                .map(|l| l.join("steamapps/common/Fallout 4")),
+            Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4")),
+            "S:\\steamapps\\common\\<game> must resolve to the real install"
         );
         // Nothing to say about a path that is not inside a library at all.
         assert_eq!(library_path(Path::new("/mnt/Jeux/Eidos-Fallout4/mods")), None);
@@ -418,14 +431,9 @@ mod tests {
         assert_eq!(env.get("SteamAppId").map(String::as_str), Some("489830"));
         // The install dir lets Proton's drive setup repair s: instead of deleting it.
         assert_eq!(env.get("STEAM_COMPAT_INSTALL_PATH").map(String::as_str), Some(install.to_str().unwrap()));
-        // The `steamapps` dir, NOT the library root above it. This assertion used
-        // to demand the root, and that is what put the prefix's `S:` drive one
-        // directory higher than Steam puts it - see `library_path`. Changed
-        // deliberately, against a real prefix that proved what Steam passes.
-        assert_eq!(
-            env.get("STEAM_COMPAT_LIBRARY_PATHS").map(String::as_str),
-            Some(steam.join("steamapps").to_str().unwrap())
-        );
+        // The library ROOT, so that `S:\steamapps\common\<game>` - the way a
+        // Windows program looks for a Steam game - resolves to the real install.
+        assert_eq!(env.get("STEAM_COMPAT_LIBRARY_PATHS").map(String::as_str), Some(steam.to_str().unwrap()));
 
         let argv = run.command(Path::new("C:/Tools/xEdit/SSEEdit.exe"), &["-quickautoclean".to_string()]);
         // Steam's main-app verb, not the bare `run` (which deletes the s: drive).
