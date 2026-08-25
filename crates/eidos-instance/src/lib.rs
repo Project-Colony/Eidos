@@ -254,12 +254,17 @@ impl Instance {
             let err = std::io::Error::last_os_error();
             let who = fs::read_to_string(&path).unwrap_or_default();
             let who = who.trim();
+            // Name the instance. "this instance is in use" is unfalsifiable from
+            // the outside: with several instances open, or a background task on
+            // another, the reader cannot tell WHICH one refused or whether the
+            // refusal is even about the thing they just clicked.
+            let root = self.root.display();
             return Err(std::io::Error::new(
                 err.kind(),
                 if who.is_empty() {
-                    "another Eidos process is using this instance".to_string()
+                    format!("another Eidos process is using {root}")
                 } else {
-                    format!("this instance is in use by {who}")
+                    format!("{root} is in use by {who}")
                 },
             ));
         }
