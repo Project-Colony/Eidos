@@ -88,7 +88,13 @@ jobs:
       # instead of building the whole tree a second time in dev. A tag that fails
       # its own test suite must not become a download.
       - name: Test the release build
-        run: cargo test --workspace --release --locked
+        run: |
+          # The GUI suite runs serially: two of its tests race each other under
+          # the parallel runner and refuse the instance lock to our own process.
+          # It failed the 1.11.0 release build, with the tarball never attached.
+          # A workaround, not a fix - see the note in ci.yml.
+          cargo test --workspace --release --locked --exclude eidos-gui
+          cargo test -p eidos-gui --release --locked -- --test-threads=1
 
       - name: Stage the package
         run: |

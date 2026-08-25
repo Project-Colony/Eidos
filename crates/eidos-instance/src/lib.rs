@@ -167,9 +167,8 @@ pub struct Instance {
 /// the process dying, however abruptly - releases it; there is no stale-lock
 /// cleanup because `flock` leaves nothing to clean.
 pub struct InstanceLock {
-    /// `None` for a RE-ENTRANT hold: this thread already owns the lock, so
-    /// there is no second `flock` to release, only a depth to decrement.
-    _file: Option<std::fs::File>,
+    /// Nothing but the instance it belongs to: the descriptor is owned by the
+    /// [`HELD`] table, so releasing it and forgetting it are one step.
     root: PathBuf,
 }
 
@@ -190,21 +189,35 @@ pub struct InstanceLock {
 /// So the lock is re-entrant WITHIN A THREAD. Keyed by thread, not by process:
 /// two threads racing the same instance is a real conflict and still refused,
 /// which is what the background tasks need.
-static HELD: std::sync::Mutex<Vec<(PathBuf, std::thread::ThreadId, usize)>> =
-    std::sync::Mutex::new(Vec::new());
+/// One in-process holder: who has it, how deep, and THE OPEN DESCRIPTOR.
+///
+/// The file lives in the table rather than in the guard because that is what
+/// ties the kernel's opinion to ours. Held separately, the two drift: a guard
+/// whose `drop` body runs before its fields are dropped removes the entry while
+/// the flock is still held, and a caller in that window is told the instance is
+/// free, asks the kernel, and is refused by its own process.
+struct Held {
+    root: PathBuf,
+    owner: std::thread::ThreadId,
+    depth: usize,
+    _file: std::fs::File,
+}
+
+static HELD: std::sync::Mutex<Vec<Held>> = std::sync::Mutex::new(Vec::new());
 
 impl Drop for InstanceLock {
     fn drop(&mut self) {
         let me = std::thread::current().id();
         let Ok(mut held) = HELD.lock() else { return };
-        if let Some(pos) = held.iter().position(|(r, t, _)| r == &self.root && *t == me) {
-            held[pos].2 -= 1;
-            if held[pos].2 == 0 {
+        if let Some(pos) = held.iter().position(|e| e.root == self.root && e.owner == me) {
+            held[pos].depth -= 1;
+            if held[pos].depth == 0 {
+                // Removing the entry closes the descriptor, releasing the flock -
+                // both under the mutex, so no one can observe one without the
+                // other.
                 held.swap_remove(pos);
             }
         }
-        // `_file` drops after this, releasing the flock - but only for the
-        // outermost hold, since a re-entrant one carries no file.
     }
 }
 
@@ -233,30 +246,50 @@ impl Instance {
     /// mutations. `WouldBlock` means someone else has it - report WHO from the
     /// lockfile contents rather than a bare errno.
     pub fn try_lock(&self, holder: &str) -> std::io::Result<InstanceLock> {
-        // Already ours, on this thread: hand back a depth rather than asking the
-        // kernel for a second descriptor it would refuse. See [`HELD`].
         let me = std::thread::current().id();
-        {
-            let mut held = HELD.lock().map_err(|_| {
-                std::io::Error::other("the instance lock table is poisoned")
-            })?;
-            if let Some(e) = held.iter_mut().find(|(r, t, _)| r == &self.root && *t == me) {
-                e.2 += 1;
-                return Ok(InstanceLock { _file: None, root: self.root.clone() });
-            }
-        }
         fs::create_dir_all(&self.root)?;
-        let path = self.root.join(".eidos.lock");
+        let key = self.root.clone();
+        // The table is held for the WHOLE acquisition, kernel call included.
+        // Releasing it before calling `flock` leaves a gap in which two callers
+        // both see "free", both open the file, and one is refused by the other -
+        // inside the same process, where the answer should have been decided by
+        // the table and never have reached the kernel at all.
+        let mut held = HELD
+            .lock()
+            .map_err(|_| std::io::Error::other("the instance lock table is poisoned"))?;
+
+        if let Some(e) = held.iter_mut().find(|e| e.root == key) {
+            if e.owner == me {
+                // Already ours on this thread: hand back a depth rather than
+                // asking the kernel for a second descriptor it would refuse.
+                e.depth += 1;
+                return Ok(InstanceLock { root: key });
+            }
+            // Another thread of OUR process. A real conflict, answered here
+            // rather than by an errno, because "in use by the Eidos window" is
+            // useless when the Eidos window IS the caller.
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                format!(
+                    "{} is already held by this process on another thread ({:?})",
+                    self.root.display(),
+                    e.owner
+                ),
+            ));
+        }
+
+        let path = key.join(".eidos.lock");
         let file = fs::OpenOptions::new().create(true).truncate(false).write(true).open(&path)?;
         // SAFETY: flock on an owned, open fd; no memory preconditions.
-        let rc = unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&file), libc::LOCK_EX | libc::LOCK_NB) };
+        let rc =
+            unsafe { libc::flock(std::os::fd::AsRawFd::as_raw_fd(&file), libc::LOCK_EX | libc::LOCK_NB) };
         if rc != 0 {
             let err = std::io::Error::last_os_error();
             let who = fs::read_to_string(&path).unwrap_or_default();
             let who = who.trim();
             // Name the instance. "this instance is in use" is unfalsifiable from
             // the outside: with several instances open, or a background task on
-            // another, the reader cannot tell WHICH one refused or whether the
+            // another, the reader cannot tell WHICH one refused, or whether the
             // refusal is even about the thing they just clicked.
             let root = self.root.display();
             return Err(std::io::Error::new(
@@ -274,10 +307,8 @@ impl Instance {
         use std::io::Write;
         let mut f = &file;
         let _ = write!(f, "{holder} (pid {})", std::process::id());
-        if let Ok(mut held) = HELD.lock() {
-            held.push((self.root.clone(), me, 1));
-        }
-        Ok(InstanceLock { _file: Some(file), root: self.root.clone() })
+        held.push(Held { root: key.clone(), owner: me, depth: 1, _file: file });
+        Ok(InstanceLock { root: key })
     }
 
     pub fn mods_dir(&self) -> PathBuf {
