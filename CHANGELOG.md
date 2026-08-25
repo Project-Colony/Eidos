@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/Project-Colony/Eidos/compare/v1.9.0...v1.9.1) (2026-08-25)
+
+
+### Fixes
+
+* **tools:** a tool started from the GUI got neither its profile nor a usable game path ([#26](https://github.com/Project-Colony/Eidos/issues/26)) ([115f065](https://github.com/Project-Colony/Eidos/commit/115f0657e19c717f5d19a5a687795f7697c92b61))
+
 ## [1.9.0](https://github.com/Project-Colony/Eidos/compare/v1.8.2...v1.9.0) (2026-08-24)
 
 
