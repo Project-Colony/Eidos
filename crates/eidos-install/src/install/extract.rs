@@ -71,22 +71,39 @@ impl Drop for ExtractedTree {
 /// FOMOD is invisible, and the install fails in a way that looks like the mod is
 /// broken. Observed on OpenCBP for Fallout 4, 15 entries out of 15.
 ///
-/// Only fires when at least half the top-level entries carry a backslash. One
+/// Only fires when backslash-bearing names strictly OUTNUMBER the rest, so one
 /// oddly-named file in an otherwise normal archive is left exactly as it is: a
 /// backslash is legal here, and silently restructuring somebody's mod because of
 /// one filename would be worse than the problem.
+///
+/// A name that is not valid UTF-8 never counts and is never touched, which is
+/// not a detail. In every legacy CJK encoding the TRAIL byte of a two-byte
+/// character can be 0x5C: CP932 `ソ` is 83 5C, `表` is 95 5C, and Big5 and GBK
+/// have the same hazard - the dame-moji problem that has been biting Japanese
+/// software since the 1980s. `to_string_lossy` turns the undecodable lead byte
+/// into U+FFFD and leaves that 0x5C standing as a literal backslash, so a
+/// perfectly ordinary Japanese mod looks like a flattened archive, and rebuilding
+/// a destination from that same lossy string RENAMES the file, replacing its
+/// bytes with EF BF BD. A `ソード.esp` sitting correctly at a mod's root ends up
+/// buried in a garbage directory, and the install still reports success.
+///
+/// `to_str` is therefore the right tool and `OsStrExt` is the wrong one: the
+/// bytes really do contain 0x5C, so splitting on them would stop the mangling
+/// and still relocate the plugin into a phantom folder. An undecodable name is
+/// simply an ordinary name in an encoding we do not know, and the crate already
+/// treats it that way in `resolve_dir_collisions`.
 ///
 /// Returns how many entries were rebuilt.
 fn unflatten_backslash_paths(root: &Path) -> io::Result<usize> {
     let entries: Vec<_> = fs::read_dir(root)?.filter_map(Result::ok).collect();
     let (mut flat, mut plain) = (Vec::new(), 0usize);
     for e in entries {
-        match e.file_name().to_string_lossy().contains('\\') {
+        match e.file_name().to_str().is_some_and(|n| n.contains('\\')) {
             true => flat.push(e),
             false => plain += 1,
         }
     }
-    if flat.is_empty() || flat.len() < plain {
+    if flat.len() <= plain {
         return Ok(0);
     }
 
@@ -98,7 +115,9 @@ fn unflatten_backslash_paths(root: &Path) -> io::Result<usize> {
 
     let mut moved = 0;
     for e in flat {
-        let raw = e.file_name().to_string_lossy().into_owned();
+        // `to_str` again, for the same reason as the guard: a destination built
+        // from a lossy string would rename the file it is meant to move.
+        let Some(raw) = e.file_name().to_str().map(str::to_owned) else { continue };
         let Some(rel) = safe_relative(&raw) else {
             // Refused rather than repaired. Splitting on backslashes is exactly
             // what turns `..\..\etc\passwd` from one harmlessly-named file
@@ -110,11 +129,17 @@ fn unflatten_backslash_paths(root: &Path) -> io::Result<usize> {
         let dest = root.join(&rel);
         let src = e.path();
         if src.is_dir() {
-            // A placeholder. Make sure the directory exists under its real name
-            // and drop the placeholder; `remove_dir` refuses a non-empty one, so
-            // an unexpected tree is left alone rather than lost.
+            // Remove FIRST, then mirror. A flattened extraction only ever leaves
+            // EMPTY placeholders (`Mod\Data\`), so `remove_dir` succeeding is the
+            // proof that this is one. Creating the destination first and then
+            // swallowing a failed removal is what turns an archive that mixes
+            // `\` and `/` into an empty mirror beside stranded real content -
+            // and the install reports success, because `ArchiveTree::from_dir`
+            // already normalises separators and so believes the files arrived.
+            if fs::remove_dir(&src).is_err() {
+                continue;
+            }
             fs::create_dir_all(&dest)?;
-            let _ = fs::remove_dir(&src);
             moved += 1;
             continue;
         }
@@ -218,6 +243,64 @@ mod backslash_tests {
             !fs::read_dir(&d).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().contains('\\')),
             "a flattened name was left behind"
         );
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_legacy_cjk_name_is_never_mistaken_for_a_separator() {
+        use std::os::unix::ffi::OsStrExt;
+        // The dame-moji problem. CP932 `ソ` is 83 5C and `表` is 95 5C; Big5 and
+        // GBK have the same hazard. `to_string_lossy` turns the undecodable lead
+        // byte into U+FFFD and leaves the 5C standing as a backslash, so a
+        // perfectly ordinary Japanese mod looks flattened - and rebuilding a
+        // destination from that lossy string RENAMES the file, replacing its
+        // bytes with EF BF BD. A plugin sitting correctly at the mod root ends up
+        // buried in a garbage directory, and the install still reports success.
+        let d = tmp("cjk");
+        let esp = std::ffi::OsStr::from_bytes(b"\x83\x5c\x81\x5b\x83\x68.esp"); // ソード.esp
+        let txt = std::ffi::OsStr::from_bytes(b"\x95\x5c.txt"); // 表.txt
+        fs::write(d.join(esp), b"plugin").unwrap();
+        fs::write(d.join(txt), b"readme").unwrap();
+        fs::create_dir(d.join("meshes")).unwrap();
+
+        // Two undecodable names against one ordinary directory: under a lossy
+        // reading this is 2 "flat" vs 1 plain and the pass would fire.
+        assert_eq!(unflatten_backslash_paths(&d).unwrap(), 0, "an unreadable name is not a path");
+        assert!(d.join(esp).is_file(), "the plugin must still be at the mod root, byte for byte");
+        assert_eq!(fs::read(d.join(esp)).unwrap(), b"plugin");
+        assert!(d.join(txt).is_file());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_backslash_named_directory_that_is_not_empty_is_left_alone() {
+        // Only an EMPTY placeholder may be consumed. Creating the destination
+        // first and then swallowing a failed removal is what strands real
+        // content beside an empty mirror - and the install reports success,
+        // because the classifier normalises separators and believes the files
+        // arrived.
+        let d = tmp("nonempty");
+        fs::create_dir(d.join(r"Mod\Data")).unwrap();
+        fs::write(d.join(r"Mod\Data").join("real.esp"), b"x").unwrap();
+        fs::write(d.join(r"Mod\readme.txt"), b"x").unwrap();
+
+        let n = unflatten_backslash_paths(&d).unwrap();
+        assert!(d.join(r"Mod\Data").join("real.esp").is_file(), "real content must not be stranded");
+        assert!(!d.join("Mod/Data").is_dir(), "no empty mirror may be created beside it");
+        assert_eq!(n, 1, "only the plain file is rebuilt");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_tie_does_not_fire() {
+        // One odd name against one ordinary entry is not evidence of a
+        // flattened archive, and the promise made to users is that a single
+        // strange filename is left alone.
+        let d = tmp("tie");
+        fs::create_dir(d.join("Data")).unwrap();
+        fs::write(d.join(r"weird\name.txt"), b"x").unwrap();
+        assert_eq!(unflatten_backslash_paths(&d).unwrap(), 0);
+        assert!(d.join(r"weird\name.txt").is_file());
         let _ = fs::remove_dir_all(&d);
     }
 
