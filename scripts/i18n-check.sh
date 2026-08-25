@@ -5,6 +5,11 @@
 #
 #     <!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b -->
 #
+# Translations live at docs/i18n/<lang>/<the source path>, so a translation is
+# a mirror of the repo root: docs/i18n/fr/docs/guide/install.md translates
+# docs/guide/install.md. That shape is what makes a link between two translated
+# pages the SAME string as the link between their English originals.
+#
 # The hash is `git hash-object <source>`, computable from the working tree with
 # no history at all. That is deliberate. The obvious design - record the last
 # commit that touched the source and compare with `git log` - needs history this
@@ -33,18 +38,14 @@ stale=0
 missing=0
 checked=0
 
-# Translations are `<name>.<lang>.md` beside their English source, so the source
-# is the same path with the language segment removed. Sibling suffix rather than
-# a mirrored tree because 16 links in docs/ climb out of their own directory -
-# 8 of them into crates/ - and a mirror would need every one of those rewritten
-# per language, silently breaking at the next restructure.
+# A translation's source is its path with the docs/i18n/<lang>/ prefix removed.
 while IFS= read -r t; do
     checked=$((checked + 1))
     # Strip `find`'s leading `./`: the stamp inside a file names its source the
     # way a human would write it, repo-relative, and a path that does not match
     # the stamp byte for byte makes --fix silently substitute nothing.
     t="${t#./}"
-    src="$(printf '%s' "$t" | sed -E 's/\.[a-z]{2}(-[A-Za-z]+)?\.md$/.md/')"
+    src="$(printf '%s' "$t" | sed -E 's|^docs/i18n/[^/]+/||')"
     if [ ! -f "$src" ]; then
         printf 'ORPHAN  %s\n        its English source %s does not exist\n' "$t" "$src"
         missing=$((missing + 1))
@@ -85,7 +86,7 @@ while IFS= read -r t; do
             stale=$((stale + 1))
         fi
     fi
-done < <(find . -name '*.[a-z][a-z].md' -o -name '*.[a-z][a-z]-[A-Za-z]*.md' | grep -v './target/' | sort)
+done < <(find docs/i18n -name '*.md' 2>/dev/null | sort)
 
 # Structure. Nobody here reads fifteen languages, so the honest check on a
 # translation's BODY is not its prose but its shape: a page with the source's
@@ -100,9 +101,9 @@ shape() {
         "$(grep -c '^|' "$1")"
 }
 
-for t in $(find . -name '*.[a-z][a-z].md' -o -name '*.[a-z][a-z]-[A-Za-z]*.md' | grep -v './target/' | sort); do
+for t in $(find docs/i18n -name '*.md' 2>/dev/null | sort); do
     t="${t#./}"
-    src="$(printf '%s' "$t" | sed -E 's/\.[a-z]{2}(-[A-Za-z]+)?\.md$/.md/')"
+    src="$(printf '%s' "$t" | sed -E 's|^docs/i18n/[^/]+/||')"
     [ -f "$src" ] || continue
     # The stamp line is one extra line in the translation and nothing else.
     a="$(shape "$src")"
