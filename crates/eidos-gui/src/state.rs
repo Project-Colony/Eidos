@@ -204,6 +204,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // If Steam launched us with the game's command (`eidos-gui %command%`),
     // identify the game and open straight to its instance, like MO2 does.
     let auto = identify_game(&games, &launch_command);
+    // Read once: the struct needs it twice, and reading the file twice could give
+    // two different answers.
+    let prefs = if cfg!(test) { Settings::default() } else { Settings::load() };
     let mut app = App {
         screen: Screen::Welcome,
         games,
@@ -259,7 +262,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         // reading it makes every assertion about a default depend on what
         // happens to be in that person's file. A default has no path, so
         // saving it is a no-op.
-        prefs: if cfg!(test) { Settings::default() } else { Settings::load() },
+        prefs: prefs.clone(),
         executables: None,
         backups: None,
         dropped: Vec::new(),
@@ -322,6 +325,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         update_in_progress: false,
         sorting: false,
         ui_toolbar_visible: true,
+        split: prefs.split,
+        split_drag: false,
         ui_statusbar_visible: true,
         view_menu_open: false,
         about_open: false,

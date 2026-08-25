@@ -297,6 +297,11 @@ pub struct Settings {
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
     pub drag_scroll_speed: f32,
+    /// How much of the main window's width the mod list gets, 0.0 to 1.0. The
+    /// two panes were a fixed 3:2, which is a guess about somebody else's screen:
+    /// the right pane's tab strip runs out of room and "Diagnostics (2)" gets
+    /// clipped on a narrow window, with no way to give it more.
+    pub split: f32,
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
@@ -336,6 +341,7 @@ impl Default for Settings {
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
             drag_scroll_speed: 1.0,
+            split: 0.6,
             remember_window: true,
             offline: false,
             tools_dir: None,
@@ -418,6 +424,17 @@ impl Settings {
                 "window_width" => width = v.parse().ok(),
                 "window_height" => height = v.parse().ok(),
                 // Any value other than an explicit off keeps locking on (default).
+                "split" => {
+                    // Same policy as the scroll speed: out of range or
+                    // unparseable reads as the default, because a bad number
+                    // here is a window with one pane collapsed and no obvious
+                    // way back.
+                    if let Ok(n) = v.parse::<f32>() {
+                        if (0.15..=0.85).contains(&n) {
+                            s.split = n;
+                        }
+                    }
+                }
                 "drag_scroll_speed" => {
                     // Out-of-range or unparseable reads as the default rather
                     // than as a value: a bad number here is a list that either
@@ -481,10 +498,11 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nremember_window={}\n",
+            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nremember_window={}\n",
             self.theme.as_str(),
             self.lock_gui,
             self.drag_scroll_speed,
+            self.split,
             self.remember_window
         );
         if self.offline {
@@ -727,6 +745,7 @@ mod tests {
             window_size: Some((1280, 720)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
+            split: 0.6,
             remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
@@ -738,6 +757,23 @@ mod tests {
         let s = Settings { theme: Theme::Light, ..Settings::default() };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
+    }
+
+    #[test]
+    fn the_split_round_trips_and_refuses_a_collapsed_pane() {
+        assert_eq!(Settings::default().split, 0.6);
+        assert_eq!(Settings::parse("split=0.35\n").split, 0.35);
+        // A pane pushed off the edge is not a preference anyone chose; it is a
+        // window with no way back, so it reads as the default.
+        for bad in ["0", "1", "0.05", "0.99", "-1", "abc", ""] {
+            assert_eq!(
+                Settings::parse(&format!("split={bad}\n")).split,
+                0.6,
+                "split={bad} should have been refused"
+            );
+        }
+        let s = Settings { split: 0.42, ..Settings::default() };
+        assert_eq!(Settings::parse(&s.to_ini()).split, 0.42);
     }
 
     #[test]
@@ -811,6 +847,7 @@ mod tests {
             window_size: Some((1600, 900)),
             lock_gui: false,
             drag_scroll_speed: 1.0,
+            split: 0.6,
             remember_window: false,
         };
         fs::write(&path, s.to_ini()).unwrap();

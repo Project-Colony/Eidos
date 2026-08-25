@@ -51,6 +51,15 @@ pub(crate) fn bar_style(_theme: &Theme) -> container::Style {
     }
 }
 
+/// The bar between the two panes at rest: the same muted line the toolbars use,
+/// so it reads as furniture rather than as content.
+pub(crate) const DIVIDER: Color = Color::from_rgb8(0xC9, 0xB8, 0x90);
+
+/// The same bar while it is being dragged - the panel border's burgundy, which is
+/// the strongest colour in this palette and the one already used for "this is the
+/// edge of something".
+pub(crate) const DIVIDER_HELD: Color = Color::from_rgb8(0x7A, 0x1F, 0x2B);
+
 pub(crate) fn row_bg(even: bool) -> Color {
     if even {
         Color::from_rgb8(0xF3, 0xEA, 0xD3)
