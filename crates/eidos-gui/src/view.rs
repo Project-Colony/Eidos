@@ -16,7 +16,11 @@ pub(crate) const C_PRIO: Length = Length::Fixed(26.0);
 /// The ground behind a synthetic group header - a wash rather than the
 /// separator's full-strength bar, because it is a fact about the list rather
 /// than a row in it.
-pub(crate) const GROUP_HEADER_BG: Color = Color::from_rgb(0.86, 0.84, 0.79);
+/// The band behind a collapsed group header. The sidebar tone, so a header
+/// reads as furniture between rows rather than as a row of its own.
+pub(crate) fn group_header_bg() -> Color {
+    pal().bg_sidebar
+}
 
 pub(crate) const C_FLAGS: Length = Length::Fixed(46.0);
 
@@ -678,7 +682,7 @@ pub(crate) fn mod_row<'a>(
     if meta.is_some_and(|r| r.nexus_gone) {
         flags = flags.push(
             tooltip(
-                text("\u{2298}").size(12.0).color(CONFLICT_LOSES_FG),
+                text("\u{2298}").size(12.0).color(conflict_loses_fg()),
                 container(
                     text("Nexus no longer serves this mod's page. Keep your archive: you will not be able to download it again.")
                         .size(11.0),
@@ -696,7 +700,7 @@ pub(crate) fn mod_row<'a>(
     if meta.is_some_and(|r| r.invalid_data) {
         flags = flags.push(
             tooltip(
-                text("\u{26A0}").size(12.0).color(CONFLICT_LOSES_FG),
+                text("\u{26A0}").size(12.0).color(conflict_loses_fg()),
                 container(
                     text(
                         "Nothing at the top of this mod looks like data this game loads. It \
@@ -715,7 +719,7 @@ pub(crate) fn mod_row<'a>(
     if let Some(other) = meta.and_then(|r| r.other_game.clone()) {
         flags = flags.push(
             tooltip(
-                text("\u{25C6}").size(12.0).color(CONFLICT_LOSES_FG),
+                text("\u{25C6}").size(12.0).color(conflict_loses_fg()),
                 container(
                     text(format!(
                         "Downloaded for {other}, not for this game. It may still work - many \
@@ -839,7 +843,7 @@ fn group_header_row<'a>(label: String, count: usize, folded: bool) -> Element<'a
         .push(text(label).size(12.0).width(Length::Fill))
         .push(text(format!("{count}")).size(11.0).width(C_PRIO));
     mouse_area(container(row).padding([0, 4]).style(|_: &Theme| container::Style {
-        background: Some(Background::Color(GROUP_HEADER_BG)),
+        background: Some(Background::Color(group_header_bg())),
         ..Default::default()
     }))
     .on_press(msg)
@@ -856,7 +860,10 @@ fn fmt_day(t: std::time::SystemTime) -> String {
 
 /// Default separator bar colour when its `meta.ini` carries none (a parchment tan,
 /// #C8B895).
-pub(crate) const SEPARATOR_ACCENT: Color = Color::from_rgb(0.784, 0.722, 0.584);
+/// A separator the user has given no colour of their own.
+pub(crate) fn separator_accent() -> Color {
+    pal().border_subtle
+}
 
 /// A separator (group divider) row, MO2-style: a full-width coloured bar with the
 /// display name centred, no checkbox / version / conflict flags, but still movable.
@@ -867,7 +874,7 @@ pub(crate) fn separator_row<'a>(
     collapsed: bool,
     selected: bool,
 ) -> Element<'a, Message> {
-    let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(SEPARATOR_ACCENT);
+    let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(separator_accent());
 
     // The collapse/expand toggle sits in the checkbox column (a separator has no
     // checkbox); it hides/shows the mods grouped beneath this separator.
@@ -907,7 +914,7 @@ pub(crate) fn separator_row<'a>(
     .style(move |_t: &Theme| container::Style {
         background: Some(Background::Color(bg)),
         border: Border {
-            color: if selected { Color::from_rgb8(0x6E, 0x24, 0x2E) } else { bg },
+            color: if selected { accent() } else { bg },
             width: if selected { 2.0 } else { 0.0 },
             radius: 0.0.into(),
         },
@@ -1509,7 +1516,7 @@ pub(crate) fn menu_sep<'a>() -> Element<'a, Message> {
     container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
         .padding([2, 6])
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xC8, 0xB8, 0x95))),
+            background: Some(Background::Color(pal().border_subtle)),
             ..Default::default()
         })
         .into()
@@ -1804,7 +1811,7 @@ pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Elem
             .style(move |_t: &Theme, _s: button::Status| button::Style {
                 background: Some(Background::Color(Color::from_rgb8(r, g, b))),
                 border: Border {
-                    color: Color::from_rgb8(0x3a, 0x2a, 0x1a),
+                    color: pal().text_primary,
                     width: if sel { 2.0 } else { 0.5 },
                     radius: 2.0.into(),
                 },
@@ -1827,9 +1834,9 @@ pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Messa
         .width(Length::Fixed(210.0))
         .padding(6)
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+            background: Some(Background::Color(pal().bg_card)),
             border: Border {
-                color: Color::from_rgb8(0x6E, 0x24, 0x2E),
+                color: accent(),
                 width: 1.0,
                 radius: 3.0.into(),
             },

@@ -207,6 +207,15 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // Read once: the struct needs it twice, and reading the file twice could give
     // two different answers.
     let prefs = if cfg!(test) { Settings::default() } else { Settings::load() };
+    // Before anything is drawn. The palette is a global that every style closure
+    // reads, so a window built before this call would paint its first frame in
+    // the previous theme and only correct itself on the next redraw.
+    crate::theme::apply(
+        &prefs.theme_family,
+        &prefs.theme_variant,
+        prefs.accent.as_deref(),
+        prefs.high_contrast,
+    );
     let mut app = App {
         screen: Screen::Welcome,
         games,

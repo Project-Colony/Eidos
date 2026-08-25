@@ -14,6 +14,24 @@ use crate::*;
 /// function has 68 early returns and a refresh reachable from only some of them
 /// is worse than none - the tab count would be right or wrong depending on which
 /// branch ran.
+/// Put a theme choice into force and write it down.
+///
+/// The palette lives in a global - a style closure inside `iced` cannot reach
+/// `App` - so changing the preference is not enough on its own: it has to be
+/// pushed into `theme::apply` or the window keeps drawing the old one until the
+/// next launch. One function, so the three pickers cannot each get it half right.
+fn repaint(app: &mut App) {
+    crate::theme::apply(
+        &app.prefs.theme_family,
+        &app.prefs.theme_variant,
+        app.prefs.accent.as_deref(),
+        app.prefs.high_contrast,
+    );
+    if let Err(e) = app.prefs.save() {
+        app.status = Some(format!("Could not save preferences: {e}"));
+    }
+}
+
 pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
     // popped the last item must not re-arm itself off its own empty queue.
@@ -2693,11 +2711,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // double space does not survive in the field looking meaningful.
             app.servers_edit = app.prefs.preferred_servers.join(", ");
         }
-        Message::ThemeChanged(t) => {
-            app.prefs.theme = t;
-            if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
-            }
+        Message::ThemeChanged(family, variant) => {
+            app.prefs.theme_family = family;
+            app.prefs.theme_variant = variant;
+            repaint(app);
+        }
+        Message::AccentChanged(key) => {
+            app.prefs.accent = key;
+            repaint(app);
+        }
+        Message::ToggleHighContrast(on) => {
+            app.prefs.high_contrast = on;
+            repaint(app);
         }
         Message::DefaultGameChanged(g) => {
             app.prefs.default_game = g;

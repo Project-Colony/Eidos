@@ -1,25 +1,160 @@
-//! The Colony parchment palette and the container styles built on it.
+//! The palette, and the container styles built on it.
 //!
-//! Split out of `main.rs` unchanged. These are leaves: called from everywhere,
-//! calling nothing back, which is what made them the first thing worth moving
-//! out of a 13k-line file.
+//! Every colour in this window comes from one [`ThemePalette`] - the Colony
+//! ecosystem's 38-field palette shape, from `colony-ui`. Two things can fill it:
+//!
+//! * [`PARCHMENT`], the look Eidos has always worn, written out here as those
+//!   same 38 fields rather than as scattered literals; and
+//! * any of the **57 palettes** in the shared catalogue, 25 families generated
+//!   from the design tokens in Project-Colony-Resources.
+//!
+//! Before this, the parchment was hard-coded in about seventy places across the
+//! GUI and the theme setting did nothing at all: `theme(_app)` ignored its
+//! argument, so the Light / Dark / System picker had never changed a pixel.
+//!
+//! **A literal hex outside this file is a bug.** It will be right on one palette
+//! and wrong on the other fifty-seven.
 
+use std::sync::RwLock;
+
+use colony_ui::{hex, ThemePalette};
 use iced::widget::container;
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::{App, Message};
 
+/// The key that means "Eidos's own", as stored in `settings.ini`.
+///
+/// Not a family in the shared catalogue: the catalogue is the ecosystem's, and
+/// this parchment is this program's. Kept as the default so an upgrade changes
+/// nobody's window - what a user sees today is what they keep.
+pub(crate) const OWN_FAMILY: &str = "eidos";
+pub(crate) const OWN_VARIANT: &str = "parchment";
+pub(crate) const OWN_LABEL: &str = "Eidos";
+pub(crate) const OWN_VARIANT_LABEL: &str = "Parchment";
+
+/// Eidos's parchment, as the 38 fields every other palette also fills.
+///
+/// The values are the ones this window already used - the background, the card,
+/// the burgundy, the muted brown, the two conflict tints - with the fields that
+/// had no literal filled in from the same family so nothing reads as borrowed
+/// from another theme.
+pub(crate) const PARCHMENT: ThemePalette = ThemePalette {
+    bg_primary: hex(0xECDFC2),
+    bg_sidebar: hex(0xE3D6B6),
+    bg_card: hex(0xF3EAD3),
+    bg_card_hover: hex(0xEADDBF),
+    bg_card_pressed: hex(0xE0D2B2),
+    bg_selected: hex(0xCFB886),
+    bg_input: hex(0xF7F0DE),
+    bg_progress: hex(0xD8C9A6),
+
+    text_primary: hex(0x2B2018),
+    text_secondary: hex(0x4A3B2C),
+    text_muted: hex(0x6A5A40),
+    text_dim: hex(0x7C6C52),
+    text_dimmer: hex(0x8E7E64),
+    text_dimmest: hex(0xA09076),
+    text_placeholder: hex(0xA89A80),
+
+    accent_blue: hex(0x7A1F2B),
+    accent_icon: hex(0x7A1F2B),
+    accent_progress: hex(0x7A1F2B),
+
+    btn_default: hex(0xE3D6B6),
+    btn_hover: hex(0xEADDBF),
+    btn_pressed: hex(0xD8C9A6),
+
+    success: hex(0x216B29),
+    success_bg: hex(0xC8DAB4),
+    btn_success: hex(0x4A6B3A),
+    btn_success_hover: hex(0x577E45),
+    btn_success_pressed: hex(0x3D5930),
+
+    warning: hex(0xB06A1E),
+    warning_bg: hex(0xEDD9B4),
+
+    error: hex(0x8A2A2A),
+    error_light: hex(0x992929),
+    error_bg: hex(0xEBC4BD),
+    btn_danger_bg: hex(0x8A2A2A),
+    btn_danger_hover: hex(0x9C3232),
+    btn_trash_hover: hex(0x9C3232),
+    btn_trash_pressed: hex(0x742222),
+
+    bg_modal_section: hex(0xEFE5CC),
+    border_subtle: hex(0xC9B890),
+    divider: hex(0xC9B890),
+};
+
+/// The palette in force, before high contrast. Written at boot and whenever the
+/// user picks, read on every style call.
+///
+/// A global for the same reason `colony-ui` uses one: a style closure inside
+/// `iced` cannot reach `App`, and threading a palette through some seventy of
+/// them is how one of the seventy ends up different.
+static ACTIVE: RwLock<ThemePalette> = RwLock::new(PARCHMENT);
+/// The user's accent override, or `None` for the palette's own.
+static ACCENT: RwLock<Option<Color>> = RwLock::new(None);
+static CONTRAST: RwLock<bool> = RwLock::new(false);
+
+/// Point the window at a theme.
+///
+/// An unknown family or variant resolves to the parchment rather than failing,
+/// so a `settings.ini` written by a later version - or naming a family that has
+/// since been removed upstream - degrades instead of stopping the program.
+pub(crate) fn apply(family: &str, variant: &str, accent: Option<&str>, high_contrast: bool) {
+    let resolved = if family == OWN_FAMILY {
+        PARCHMENT
+    } else {
+        // `resolve` never fails: an unknown pair gives the catalogue's own
+        // fallback. Checking membership first is what keeps an unknown family on
+        // EIDOS's default rather than on somebody else's.
+        if colony_ui::THEME_FAMILIES.iter().any(|f| {
+            f.key == family && f.variants.iter().any(|v| v.key == variant)
+        }) {
+            colony_ui::resolve(family, variant)
+        } else {
+            PARCHMENT
+        }
+    };
+    *ACTIVE.write().unwrap() = resolved;
+    *ACCENT.write().unwrap() = accent.and_then(colony_ui::accent_key_to_color);
+    *CONTRAST.write().unwrap() = high_contrast;
+
+    // The shared catalogue's own globals, kept in step so anything drawn from
+    // `colony_ui` agrees with what this file draws.
+    *ACTIVE.write().unwrap() = resolved;
+    colony_ui::set_high_contrast(high_contrast);
+}
+
+/// The palette to draw with, high contrast already applied.
+pub(crate) fn pal() -> ThemePalette {
+    let base = *ACTIVE.read().unwrap();
+    if *CONTRAST.read().unwrap() {
+        // Derived rather than shipped: no theme carries a high-contrast twin, so
+        // the boost works on the parchment and on all 57 alike.
+        base.with_high_contrast()
+    } else {
+        base
+    }
+}
+
+/// The accent: the user's override if they picked one, else the palette's own.
+pub(crate) fn accent() -> Color {
+    ACCENT.read().unwrap().unwrap_or_else(|| pal().accent_blue)
+}
+
 pub(crate) fn palette() -> iced::theme::Palette {
+    let p = pal();
     iced::theme::Palette {
-        background: Color::from_rgb8(0xEC, 0xDF, 0xC2),
-        text: Color::from_rgb8(0x2B, 0x20, 0x18),
-        primary: Color::from_rgb8(0x7A, 0x1F, 0x2B),
-        success: Color::from_rgb8(0x4A, 0x6B, 0x3A),
-        // New in iced 0.14, and it has to sit between the green of success and
-        // the deep red of danger without reading as either: a burnt amber that
-        // belongs to the same parchment family.
-        warning: Color::from_rgb8(0xB0, 0x6A, 0x1E),
-        danger: Color::from_rgb8(0x8A, 0x2A, 0x2A),
+        background: p.bg_primary,
+        text: p.text_primary,
+        primary: accent(),
+        success: p.success,
+        // Sits between success and danger without reading as either.
+        warning: p.warning,
+        danger: p.error,
     }
 }
 
@@ -28,52 +163,55 @@ pub(crate) fn theme(_app: &App) -> Theme {
 }
 
 pub(crate) fn card_style(_theme: &Theme) -> container::Style {
+    let p = pal();
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
-        border: Border { color: Color::from_rgb8(0x7A, 0x1F, 0x2B), width: 1.5, radius: 8.0.into() },
+        background: Some(Background::Color(p.bg_card)),
+        border: Border { color: accent(), width: 1.5, radius: 8.0.into() },
         ..Default::default()
     }
 }
 
 pub(crate) fn panel_style(_theme: &Theme) -> container::Style {
+    let p = pal();
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
-        border: Border { color: Color::from_rgb8(0x7A, 0x1F, 0x2B), width: 1.0, radius: 3.0.into() },
+        background: Some(Background::Color(p.bg_card)),
+        border: Border { color: accent(), width: 1.0, radius: 3.0.into() },
         ..Default::default()
     }
 }
 
 pub(crate) fn bar_style(_theme: &Theme) -> container::Style {
+    let p = pal();
     container::Style {
-        background: Some(Background::Color(Color::from_rgb8(0xE3, 0xD6, 0xB6))),
-        border: Border { color: Color::from_rgb8(0xC9, 0xB8, 0x90), width: 1.0, radius: 0.0.into() },
+        background: Some(Background::Color(p.bg_sidebar)),
+        border: Border { color: p.border_subtle, width: 1.0, radius: 0.0.into() },
         ..Default::default()
     }
 }
 
 /// The bar between the two panes at rest: the same muted line the toolbars use,
 /// so it reads as furniture rather than as content.
-pub(crate) const DIVIDER: Color = Color::from_rgb8(0xC9, 0xB8, 0x90);
+pub(crate) fn divider() -> Color {
+    pal().divider
+}
 
-/// The same bar while it is being dragged - the panel border's burgundy, which is
-/// the strongest colour in this palette and the one already used for "this is the
-/// edge of something".
-pub(crate) const DIVIDER_HELD: Color = Color::from_rgb8(0x7A, 0x1F, 0x2B);
+/// The same bar while it is being dragged - the accent, which is the strongest
+/// colour in any palette and already means "this is the edge of something".
+pub(crate) fn divider_held() -> Color {
+    accent()
+}
 
 /// Secondary text: a description under a title, a caption, a hint.
-///
-/// The convention asks for descriptions in `text_muted` rather than in the body
-/// colour, so that a page of settings reads as titles with explanations under
-/// them instead of as two columns of equally loud text. This is the parchment
-/// palette's version of it - the same brown as the body ink, lightened until it
-/// recedes without becoming hard to read.
-pub(crate) const TEXT_MUTED: Color = Color::from_rgb8(0x6A, 0x5A, 0x40);
+pub(crate) fn text_muted() -> Color {
+    pal().text_muted
+}
 
 pub(crate) fn row_bg(even: bool) -> Color {
+    let p = pal();
     if even {
-        Color::from_rgb8(0xF3, 0xEA, 0xD3)
+        p.bg_card
     } else {
-        Color::from_rgb8(0xEA, 0xDD, 0xBF)
+        p.bg_card_hover
     }
 }
 
@@ -90,20 +228,199 @@ pub(crate) fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<
 }
 
 /// The highlight behind the selected mod row.
-pub(crate) const SEL_BG: Color = Color::from_rgb(0.812, 0.722, 0.525); // tan, distinct from the stripes
+pub(crate) fn sel_bg() -> Color {
+    pal().bg_selected
+}
 
-/// A plugin that comes FROM the mod selected in the mod list (MO2 highlights
-/// the same relationship). Blue on purpose: it must not be mistaken for the
-/// selection tan, nor for the green/red of the conflict tints, because it
-/// answers a different question - not "who wins", but "who ships this".
-pub(crate) const ORIGIN_BG: Color = Color::from_rgb(0.796, 0.851, 0.898);
+/// A plugin that comes FROM the mod selected in the mod list (MO2 highlights the
+/// same relationship). It answers a different question from the conflict tints -
+/// not "who wins", but "who ships this" - so it must not be mistaken for either
+/// of them, nor for the selection.
+///
+/// It used to be a fixed pale blue, which cannot survive 57 palettes. It is now
+/// the card tinted towards the accent - so it belongs to the theme rather than
+/// sitting on top of it.
+///
+/// The strength of the tint is CHOSEN, not fixed. On several palettes the
+/// selection is itself an accent-tinted card, and a fixed ratio landed on top of
+/// it - on `catppuccin/frappe` the two were 0.02 apart, which is to say
+/// identical. So five strengths are measured against the three tints this must
+/// never be confused with, and the one that stays furthest from all of them
+/// wins. Fifteen subtractions per call, and it makes the guarantee hold on every
+/// palette instead of on most of them.
+pub(crate) fn origin_bg() -> Color {
+    let p = pal();
+    let rivals = [p.bg_selected, p.success_bg, p.error_bg];
+    let gap = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+
+    let mut best = mix(p.bg_card, p.accent_icon, 0.28);
+    let mut best_gap = -1.0;
+    for r in [0.28, 0.42, 0.56, 0.70, 0.84] {
+        let c = mix(p.bg_card, p.accent_icon, r);
+        let worst = rivals.iter().fold(f32::MAX, |m, v| m.min(gap(c, *v)));
+        if worst > best_gap {
+            best_gap = worst;
+            best = c;
+        }
+    }
+    best
+}
 
 /// A mod the focused one OVERWRITES: it sits lower in the list and wins the
-/// files they share. Green - the focused mod is on top of these.
-pub(crate) const CONFLICT_WINS_BG: Color = Color::from_rgb(0.784, 0.855, 0.706);
-/// A mod that overwrites the focused one: it sits lower and takes those files
-/// away. Red - the focused mod is losing to these.
-pub(crate) const CONFLICT_LOSES_BG: Color = Color::from_rgb(0.921, 0.769, 0.741);
-/// The same two meanings as text, dark enough to read on parchment.
-pub(crate) const CONFLICT_WINS_FG: Color = Color::from_rgb(0.13, 0.42, 0.16);
-pub(crate) const CONFLICT_LOSES_FG: Color = Color::from_rgb(0.60, 0.16, 0.16);
+/// files they share. The palette's success tint - the focused mod is on top.
+pub(crate) fn conflict_wins_bg() -> Color {
+    pal().success_bg
+}
+/// A mod that overwrites the focused one: it takes those files away.
+pub(crate) fn conflict_loses_bg() -> Color {
+    pal().error_bg
+}
+/// The same two meanings as text.
+pub(crate) fn conflict_wins_fg() -> Color {
+    pal().success
+}
+pub(crate) fn conflict_loses_fg() -> Color {
+    pal().error
+}
+
+/// Blend two colours. Shared with `anim`, which needs the same operation for a
+/// different reason.
+fn mix(from: Color, to: Color, t: f32) -> Color {
+    crate::anim::mix(from, to, t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The parchment must fill every field. A hole would read as transparent
+    /// black on whatever it was used for, and only on the default theme.
+    #[test]
+    fn the_parchment_names_a_colour_for_every_field() {
+        let p = PARCHMENT;
+        for (name, c) in [
+            ("bg_primary", p.bg_primary),
+            ("bg_card", p.bg_card),
+            ("bg_selected", p.bg_selected),
+            ("text_primary", p.text_primary),
+            ("text_muted", p.text_muted),
+            ("accent_blue", p.accent_blue),
+            ("success", p.success),
+            ("success_bg", p.success_bg),
+            ("error", p.error),
+            ("error_bg", p.error_bg),
+            ("warning", p.warning),
+            ("divider", p.divider),
+            ("border_subtle", p.border_subtle),
+        ] {
+            assert_eq!(c.a, 1.0, "{name} is not opaque");
+        }
+    }
+
+    /// An upgrade must not repaint anybody's window: with nothing chosen, the
+    /// parchment is what is drawn.
+    #[test]
+    fn the_default_is_the_parchment_this_program_has_always_worn() {
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        assert_eq!(pal().bg_primary, hex(0xECDFC2));
+        assert_eq!(pal().bg_card, hex(0xF3EAD3));
+        assert_eq!(accent(), hex(0x7A1F2B));
+    }
+
+    #[test]
+    fn a_catalogue_theme_really_replaces_the_palette() {
+        apply("gruvbox", "dark", None, false);
+        assert_eq!(pal().bg_primary, hex(0x282828), "gruvbox dark did not take");
+        assert_ne!(pal().bg_primary, PARCHMENT.bg_primary);
+
+        // And back.
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        assert_eq!(pal().bg_primary, PARCHMENT.bg_primary);
+    }
+
+    /// A family this build has never heard of - a config from a later version,
+    /// or one removed upstream - must land on EIDOS's default, not on the
+    /// catalogue's, which would repaint the window for a typo.
+    #[test]
+    fn an_unknown_theme_degrades_to_the_parchment() {
+        for (family, variant) in [
+            ("no-such-family", "dark"),
+            ("gruvbox", "no-such-variant"),
+            ("", ""),
+        ] {
+            apply(family, variant, None, false);
+            assert_eq!(
+                pal().bg_primary,
+                PARCHMENT.bg_primary,
+                "{family}/{variant} did not degrade to the parchment"
+            );
+        }
+    }
+
+    #[test]
+    fn an_accent_override_wins_over_the_palettes_own() {
+        apply(OWN_FAMILY, OWN_VARIANT, Some("green"), false);
+        assert_ne!(accent(), PARCHMENT.accent_blue, "the override was ignored");
+        // An unknown accent key is not an accent: fall back to the theme's.
+        apply(OWN_FAMILY, OWN_VARIANT, Some("chartreuse"), false);
+        assert_eq!(accent(), PARCHMENT.accent_blue);
+        // And none means the theme's own.
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        assert_eq!(accent(), PARCHMENT.accent_blue);
+    }
+
+    /// Derived from the active palette, not shipped as a twin - so it works on
+    /// the parchment and on all 57 alike.
+    #[test]
+    fn high_contrast_moves_the_palette_and_is_reversible() {
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        let plain = pal();
+        apply(OWN_FAMILY, OWN_VARIANT, None, true);
+        let boosted = pal();
+
+        // It moves the INK and the lines, not the grounds: a high-contrast mode
+        // that repainted the backgrounds would be a different theme rather than
+        // the same one read more easily.
+        assert_ne!(plain.text_primary, boosted.text_primary, "the ink did not move");
+        assert_ne!(plain.divider, boosted.divider, "the lines did not move");
+        assert_eq!(plain.bg_primary, boosted.bg_primary, "the ground must not move");
+
+        // On a light palette the ink gets darker, not lighter.
+        assert!(boosted.text_primary.r < plain.text_primary.r);
+
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        assert_eq!(pal().text_primary, plain.text_primary);
+    }
+
+    /// The three list tints answer three different questions and must never be
+    /// confusable - on ANY palette, which is what a fixed hex could not promise.
+    #[test]
+    fn the_list_tints_stay_distinguishable_on_every_palette() {
+        let mut checked = 0;
+        for family in colony_ui::THEME_FAMILIES {
+            for variant in family.variants {
+                apply(family.key, variant.key, None, false);
+                let tints = [
+                    ("selection", sel_bg()),
+                    ("origin", origin_bg()),
+                    ("wins", conflict_wins_bg()),
+                    ("loses", conflict_loses_bg()),
+                ];
+                for (i, (an, a)) in tints.iter().enumerate() {
+                    for (bn, b) in tints.iter().skip(i + 1) {
+                        let d = (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+                        assert!(
+                            d > 0.04,
+                            "{}/{}: {an} and {bn} are indistinguishable ({d})",
+                            family.key,
+                            variant.key
+                        );
+                    }
+                }
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 57, "the catalogue should carry 57 palettes");
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+    }
+}

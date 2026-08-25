@@ -24,20 +24,6 @@ impl std::fmt::Display for DefaultGameChoice {
     }
 }
 
-/// A wrapped theme for the theme `pick_list`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ThemeChoice(PrefTheme);
-
-impl std::fmt::Display for ThemeChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self.0 {
-            PrefTheme::System => "Follow system",
-            PrefTheme::Light => "Light",
-            PrefTheme::Dark => "Dark",
-        })
-    }
-}
-
 /// The cached "show adult content" answer for the signed-in account: `Some(true)`
 /// shown, `Some(false)` turned off by the user, `None` not known.
 ///
@@ -59,6 +45,174 @@ fn adult_content_state() -> Option<bool> {
 /// and this was the first of them. The name is `preferences_page` rather than
 /// `settings_dialog` because it is no longer a dialog, and a function whose name
 /// disagrees with what it returns is how the next reader is misled.
+/// The theme picker: Eidos's own parchment first, then the 25 families of the
+/// shared Colony catalogue, 57 palettes in all.
+///
+/// Drawn here rather than with `colony_ui::widgets::theme_picker`. The catalogue
+/// is the valuable part and it is shared; the widget is a hundred lines built to
+/// Colony's type scale, whose body text is 13 where this window's is 12 - a
+/// picker a size and a half larger than the page around it. The DATA is shared,
+/// the drawing is this program's.
+fn theme_picker<'a>(app: &App) -> Element<'a, Message> {
+    let chosen = (app.prefs.theme_family.as_str(), app.prefs.theme_variant.as_str());
+
+    // Eidos's own, on its own row, because it is not in the catalogue and must
+    // still be reachable - a picker you cannot come back through is a trap.
+    let mut col = Column::new().spacing(10).push(
+        Column::new()
+            .spacing(4)
+            .push(text(theme::OWN_LABEL).size(12.0))
+            .push(
+                Row::new().spacing(6).push(theme_card(
+                    theme::OWN_VARIANT_LABEL,
+                    theme::PARCHMENT.bg_primary,
+                    theme::PARCHMENT.accent_blue,
+                    chosen == (theme::OWN_FAMILY, theme::OWN_VARIANT),
+                    Message::ThemeChanged(
+                        theme::OWN_FAMILY.to_string(),
+                        theme::OWN_VARIANT.to_string(),
+                    ),
+                )),
+            ),
+    );
+
+    // And the catalogue, straight from `THEME_FAMILIES`. Adding a family
+    // upstream needs no change here and no new arm: that is the whole point of
+    // the generated catalogue.
+    for family in colony_ui::THEME_FAMILIES {
+        let mut variants = Row::new().spacing(6);
+        for variant in family.variants {
+            variants = variants.push(theme_card(
+                colony_ui::i18n::t(variant.label_key),
+                variant.swatch_bg_color(),
+                variant.swatch_accent_color(),
+                chosen == (family.key, variant.key),
+                Message::ThemeChanged(family.key.to_string(), variant.key.to_string()),
+            ));
+        }
+        col = col.push(
+            Column::new()
+                .spacing(4)
+                .push(text(colony_ui::i18n::t(family.label_key)).size(12.0))
+                .push(variants),
+        );
+    }
+
+    scrollable(col).height(Length::Fixed(300.0)).into()
+}
+
+/// One card: a field of the variant's background crossed by a bar of its accent,
+/// its name underneath, a border when it is the chosen one.
+///
+/// The swatch comes from the tokens rather than being recomputed, so a card
+/// always resembles the theme it selects. A picker whose cards do not is a
+/// picker that lies.
+fn theme_card<'a>(
+    label: &'a str,
+    bg: Color,
+    accent_of: Color,
+    active: bool,
+    msg: Message,
+) -> Element<'a, Message> {
+    let swatch = container(
+        container(Space::new().width(Length::Fill).height(Length::Fixed(3.0))).style(
+            move |_t: &Theme| container::Style {
+                background: Some(Background::Color(accent_of)),
+                border: Border { radius: 2.0.into(), ..Default::default() },
+                ..Default::default()
+            },
+        ),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(24.0))
+    .padding(iced::Padding { top: 16.0, right: 5.0, bottom: 3.0, left: 5.0 })
+    .style(move |_t: &Theme| container::Style {
+        background: Some(Background::Color(bg)),
+        border: Border { radius: 4.0.into(), ..Default::default() },
+        ..Default::default()
+    });
+
+    button(
+        Column::new()
+            .spacing(2)
+            .width(Length::Fixed(78.0))
+            .push(swatch)
+            .push(text(label).size(10.0)),
+    )
+    .padding(3)
+    .on_press(msg)
+    .style(move |_t: &Theme, status: button::Status| button::Style {
+        background: Some(Background::Color(pal().bg_card)),
+        text_color: pal().text_primary,
+        border: Border {
+            color: if active {
+                accent()
+            } else if matches!(status, button::Status::Hovered) {
+                pal().text_dimmer
+            } else {
+                pal().border_subtle
+            },
+            width: if active { 2.0 } else { 1.0 },
+            radius: 5.0.into(),
+        },
+        ..Default::default()
+    })
+    .into()
+}
+
+/// The eight accent overrides, plus the way back to the theme's own.
+///
+/// The list and its ORDER come from `ACCENT_OVERRIDES`, generated from
+/// `tokens/accents.toml`. Copying it here would be the mistake Colony had made:
+/// the order is load-bearing across the ecosystem.
+fn accent_picker<'a>(app: &App) -> Element<'a, Message> {
+    let chosen = app.prefs.accent.as_deref();
+    let mut row = Row::new().spacing(6).align_y(iced::Alignment::Center);
+
+    for a in colony_ui::ACCENT_OVERRIDES {
+        let active = chosen == Some(a.key);
+        let dot = colony_ui::hex(a.color);
+        row = row.push(
+            button(Space::new().width(Length::Fixed(20.0)).height(Length::Fixed(20.0)))
+                .padding(0)
+                .on_press(Message::AccentChanged(Some(a.key.to_string())))
+                .style(move |_t: &Theme, status: button::Status| button::Style {
+                    background: Some(Background::Color(dot)),
+                    border: Border {
+                        color: if active {
+                            pal().text_primary
+                        } else if matches!(status, button::Status::Hovered) {
+                            pal().text_dimmer
+                        } else {
+                            Color::TRANSPARENT
+                        },
+                        width: if active { 2.0 } else { 0.0 },
+                        radius: 10.0.into(),
+                    },
+                    ..Default::default()
+                }),
+        );
+    }
+
+    // "Auto" is the ABSENCE of an override, not a ninth colour - so it is a
+    // button that clears, not a swatch that sets.
+    let clear = button(text("Theme's own").size(11.0))
+        .padding([3, 8])
+        .on_press(Message::AccentChanged(None))
+        .style(if chosen.is_none() { button::secondary } else { button::text });
+
+    Column::new()
+        .spacing(6)
+        .push(row)
+        .push(clear)
+        .push(
+            text("With no accent picked, the theme's own is used.")
+                .size(10.0)
+                .color(text_muted()),
+        )
+        .into()
+}
+
 pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
     // "Preferences", not "Settings". The convention settles the user-facing word
     // and Colony, Grape and Xion all say Preferences; only the code here is still
@@ -186,31 +340,21 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
                 ))
                 .into()
         }
-        SettingsTab::Appearance => {
-            let themes = vec![
-                ThemeChoice(PrefTheme::System),
-                ThemeChoice(PrefTheme::Light),
-                ThemeChoice(PrefTheme::Dark),
-            ];
-            let picker = pick_list(themes, Some(ThemeChoice(app.prefs.theme)), |c: ThemeChoice| {
-                Message::ThemeChanged(c.0)
-            })
-            .text_size(12.0)
-            .padding(6);
-            Column::new()
-                .spacing(2)
-                .push(settings_section(
-                    "theme",
-                    "Theme",
-                    open("theme"),
-                    settings_row(
-                        "Colour theme",
-                        "System follows your desktop's light/dark preference.",
-                        picker.into(),
-                    ),
-                ))
-                .into()
-        }
+        SettingsTab::Appearance => Column::new()
+            .spacing(2)
+            .push(settings_section(
+                "theme",
+                "Theme",
+                open("theme"),
+                theme_picker(app),
+            ))
+            .push(settings_section(
+                "accent",
+                "Colours",
+                open("accent"),
+                accent_picker(app),
+            ))
+            .into(),
         // The convention puts motion under Accessibility, not Appearance, and
         // the distinction is not filing: Appearance is what the window looks
         // like, Accessibility is what it does to somebody who needs it to do
@@ -232,18 +376,28 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
                 ),
             ))
             .push(settings_section(
-                "a11y_todo",
-                "Vision and reading",
-                open("a11y_todo"),
-                settings_row(
-                    "Not implemented yet",
-                    "The convention also asks for a high-contrast palette, a dyslexia-friendly \
-                     font and a text scale here. Eidos has none of the three: every size in \
-                     this window is a literal, so a scale is a change to the whole GUI rather \
-                     than a setting. Said out loud rather than shown as switches that do \
-                     nothing.",
-                    Space::new().into(),
-                ),
+                "vision",
+                "Vision",
+                open("vision"),
+                Column::new()
+                    .spacing(2)
+                    .push(settings_toggle(
+                        "High contrast",
+                        "Strengthens the separation between surfaces and text. Derived from \
+                         whichever theme is on, so it works on the parchment and on all 57 \
+                         palettes - no theme ships a separate high-contrast twin.",
+                        app.prefs.high_contrast,
+                        Message::ToggleHighContrast(!app.prefs.high_contrast),
+                    ))
+                    .push(settings_row(
+                        "Text size",
+                        "Not implemented. The convention asks for a text scale and a \
+                         dyslexia-friendly font here; every size in this window is a literal, \
+                         so a scale is a change to the whole GUI rather than a setting. Said \
+                         out loud rather than shown as a switch that does nothing.",
+                        Space::new().into(),
+                    ))
+                    .into(),
             ))
             .into(),
         SettingsTab::ModList => {
@@ -325,7 +479,7 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
             }
             if let Some(err) = &app.nexus_error {
                 account = account
-                    .push(text(format!("Error: {err}")).size(11.0).color(Color::from_rgb8(0x8A, 0x2A, 0x2A)));
+                    .push(text(format!("Error: {err}")).size(11.0).color(pal().error));
             }
 
             Column::new()
@@ -465,7 +619,7 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
     let titled = Column::new()
         .spacing(2)
         .push(text(app.settings_tab.label()).size(16.0))
-        .push(text(app.settings_tab.description()).size(11.0).color(TEXT_MUTED))
+        .push(text(app.settings_tab.description()).size(11.0).color(text_muted()))
         .push(Space::new().height(Length::Fixed(8.0)))
         .push(body);
 
@@ -825,9 +979,9 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
             container(text(cmd).size(11.0))
                 .padding([2, 8])
                 .style(|_| container::Style {
-                    background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+                    background: Some(Background::Color(pal().bg_card)),
                     border: Border {
-                        color: Color::from_rgb8(0xB0, 0x6A, 0x10),
+                        color: pal().warning,
                         width: 1.0,
                         radius: 3.0.into(),
                     },
@@ -840,13 +994,13 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
         .width(Length::Fill)
         .padding([4, 8])
         .style(|_| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xF6, 0xE3, 0xC0))),
+            background: Some(Background::Color(pal().warning_bg)),
             border: Border {
-                color: Color::from_rgb8(0xB0, 0x6A, 0x10),
+                color: pal().warning,
                 width: 1.0,
                 radius: 4.0.into(),
             },
-            text_color: Some(Color::from_rgb8(0x6B, 0x42, 0x0A)),
+            text_color: Some(pal().warning),
             ..Default::default()
         })
         .into()
@@ -875,7 +1029,7 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
         .push(
             text("Unlock re-enables the GUI but leaves the game running.")
                 .size(10.0)
-                .color(Color::from_rgb8(0x6A, 0x5A, 0x40)),
+                .color(text_muted()),
         );
     container(card).max_width(470.0).padding(20).style(card_style).into()
 }
@@ -923,9 +1077,9 @@ pub(crate) fn split_markdown_links(text: &str) -> Vec<(String, Option<String>)> 
 pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, Message> {
     use eidos_loot::MessageType;
     let (prefix, color) = match m.kind {
-        MessageType::Error => ("Error: ", Color::from_rgb8(0x8A, 0x2A, 0x2A)),
-        MessageType::Warn => ("Warning: ", Color::from_rgb8(0xB0, 0x6A, 0x10)),
-        MessageType::Say => ("", Color::from_rgb8(0x4A, 0x40, 0x30)),
+        MessageType::Error => ("Error: ", pal().error),
+        MessageType::Warn => ("Warning: ", pal().warning),
+        MessageType::Say => ("", pal().text_secondary),
     };
     let parts = split_markdown_links(&m.text);
     if parts.iter().all(|(_, url)| url.is_none()) {
@@ -938,7 +1092,7 @@ pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, M
     for (label, url) in parts {
         row = match url {
             Some(u) => row.push(
-                button(text(label).size(11.0).color(Color::from_rgb8(0x2B, 0x4F, 0x8A)))
+                button(text(label).size(11.0).color(accent()))
                     .padding(0)
                     .on_press(Message::OpenUrl(u))
                     .style(button::text),
@@ -993,7 +1147,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
             sec = sec.push(
                 text(format!("Missing masters: {}", p.missing_masters.join(", ")))
                     .size(11.0)
-                    .color(Color::from_rgb8(0x8A, 0x2A, 0x2A)),
+                    .color(pal().error),
             );
         }
         for m in &p.messages {
@@ -1007,7 +1161,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                     d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
                 ))
                 .size(11.0)
-                .color(Color::from_rgb8(0xB0, 0x6A, 0x10)),
+                .color(pal().warning),
             );
         }
         body = body.push(sec);
@@ -1555,8 +1709,8 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
     }
     for (lvl, msg) in &state.lines {
         let colour = match lvl {
-            Level::Error => Some(CONFLICT_LOSES_FG),
-            Level::Warn => Some(Color::from_rgb8(0x8A, 0x5A, 0x00)),
+            Level::Error => Some(conflict_loses_fg()),
+            Level::Warn => Some(pal().warning),
             _ => None,
         };
         let mut line = text(format!("{:<5} {msg}", lvl.as_str())).size(11.0).font(iced::Font::MONOSPACE);
@@ -1609,7 +1763,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .push(
                     text(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
                         .size(13.0)
-                        .color(CONFLICT_LOSES_FG),
+                        .color(conflict_loses_fg()),
                 )
                 .push(text(format!("refused: {why}")).size(11.0)),
         );
@@ -1754,7 +1908,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
         },
     );
     if state.picked().is_empty() {
-        cols = cols.push(text("Tick at least one column.").size(11.0).color(CONFLICT_LOSES_FG));
+        cols = cols.push(text("Tick at least one column.").size(11.0).color(conflict_loses_fg()));
     }
 
     let run = button(text("Export...").size(12.0))
@@ -1984,7 +2138,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
     let mut card = Column::new().spacing(10).push(header).push(field);
 
     if let Some(e) = &state.error {
-        card = card.push(text(e.clone()).size(12.0).color(CONFLICT_LOSES_FG));
+        card = card.push(text(e.clone()).size(12.0).color(conflict_loses_fg()));
     }
 
     if let Some(rev) = &state.revision {
@@ -2048,9 +2202,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         let mut rows = Column::new().spacing(1);
         for (i, (m, st)) in rev.mods.iter().zip(&state.states).enumerate() {
             let (label, colour) = match st {
-                MemberState::Installed => ("installed", Some(CONFLICT_WINS_FG)),
+                MemberState::Installed => ("installed", Some(conflict_wins_fg())),
                 MemberState::Downloaded => ("downloaded", None),
-                MemberState::Missing => ("missing", Some(CONFLICT_LOSES_FG)),
+                MemberState::Missing => ("missing", Some(conflict_loses_fg())),
             };
             let mut status = text(label.to_string()).size(11.0).width(Length::Fixed(84.0));
             if let Some(c) = colour {

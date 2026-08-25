@@ -21,7 +21,7 @@ use iced::widget;
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::settings::{Settings, Theme as PrefTheme};
+use eidos_instance::settings::Settings;
 use eidos_instance::{ExportScope, Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
@@ -47,7 +47,8 @@ mod widgets;
 mod wizard;
 
 use dialogs::*;
-use fomod::{fomod_wizard_view, FOMOD_INK_FAINT, FOMOD_INK_SOFT};
+use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
+use theme::pal;
 use modinfo::*;
 use state::*;
 use update::*;
@@ -415,7 +416,13 @@ enum Message {
     /// Forget the stored Nexus session.
     NexusSignOut,
     /// Set the preferred colour theme.
-    ThemeChanged(PrefTheme),
+    /// Pick a palette: a `(family, variant)` pair from the shared catalogue, or
+    /// Eidos's own parchment.
+    ThemeChanged(String, String),
+    /// Pick an accent override, or `None` to go back to the theme's own.
+    AccentChanged(Option<String>),
+    /// Boost the separation between surfaces and text on whatever theme is on.
+    ToggleHighContrast(bool),
     /// Set the default game id to open (`None` = none).
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
@@ -2693,7 +2700,7 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
     }
 
-    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(FOMOD_INK_FAINT));
+    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(fomod_ink_faint()));
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -2703,9 +2710,9 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
             .spacing(8)
             .push(text(v.clone()).size(11.0).width(Length::Fixed(150.0)))
             .push(text(label).size(11.0).color(if missing {
-                Color::from_rgb8(0x8A, 0x2A, 0x2A)
+                pal().error
             } else {
-                FOMOD_INK_SOFT
+                fomod_ink_soft()
             }));
         col = if missing {
             col.push(
@@ -2722,7 +2729,7 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         col = col.push(
             text("Downloads run in the background; the status bar reports when they finish.")
                 .size(10.0)
-                .color(FOMOD_INK_FAINT),
+                .color(fomod_ink_faint()),
         );
     }
     col.into()
@@ -3319,6 +3326,90 @@ mod tests {
     /// "Do not reorder the first three. They are what a user hunting for a
     /// setting scans first" - the ecosystem convention is explicit, and this is
     /// exactly the kind of constraint a reshuffle breaks without noticing.
+    #[test]
+    fn picking_a_theme_takes_effect_at_once_and_is_written_down() {
+        let mut app = nav_app(&[]);
+        // Everyone starts on the parchment - an upgrade repaints nobody.
+        assert_eq!(app.prefs.theme_family, "eidos");
+        assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
+
+        let _ = update(
+            &mut app,
+            Message::ThemeChanged("nord".to_string(), "dark".to_string()),
+        );
+        assert_eq!(app.prefs.theme_family, "nord");
+        // The palette is a global that every style closure reads: changing the
+        // preference alone would leave the window drawing the old theme.
+        assert_ne!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
+        assert_eq!(theme::pal().bg_primary, colony_ui::resolve("nord", "dark").bg_primary);
+
+        // And it survives the file.
+        assert_eq!(
+            eidos_instance::Settings::parse(&app.prefs.to_ini()).theme_family,
+            "nord"
+        );
+
+        let _ = update(
+            &mut app,
+            Message::ThemeChanged(
+                theme::OWN_FAMILY.to_string(),
+                theme::OWN_VARIANT.to_string(),
+            ),
+        );
+        assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary, "no way back");
+    }
+
+    #[test]
+    fn an_accent_can_be_picked_and_given_back() {
+        let mut app = nav_app(&[]);
+        let own = theme::accent();
+
+        let _ = update(&mut app, Message::AccentChanged(Some("green".to_string())));
+        assert_eq!(app.prefs.accent.as_deref(), Some("green"));
+        assert_ne!(theme::accent(), own, "the override did not reach the window");
+
+        // "Auto" is the absence of an override, not a ninth colour.
+        let _ = update(&mut app, Message::AccentChanged(None));
+        assert_eq!(app.prefs.accent, None);
+        assert_eq!(theme::accent(), own);
+        assert!(!app.prefs.to_ini().contains("accent="));
+    }
+
+    #[test]
+    fn high_contrast_reaches_the_window_and_is_saved() {
+        let mut app = nav_app(&[]);
+        let plain = theme::pal().text_primary;
+
+        let _ = update(&mut app, Message::ToggleHighContrast(true));
+        assert!(app.prefs.high_contrast);
+        assert_ne!(theme::pal().text_primary, plain, "the boost never took effect");
+        assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).high_contrast);
+
+        let _ = update(&mut app, Message::ToggleHighContrast(false));
+        assert_eq!(theme::pal().text_primary, plain);
+    }
+
+    /// The catalogue is data, not code: the picker draws whatever it holds, so a
+    /// family added upstream needs no arm here. This states the size it has, so
+    /// a bump that silently loses half of it is visible.
+    #[test]
+    fn the_shared_catalogue_carries_what_it_should() {
+        let families = colony_ui::THEME_FAMILIES.len();
+        let variants: usize =
+            colony_ui::THEME_FAMILIES.iter().map(|f| f.variants.len()).sum();
+        assert_eq!(families, 25, "theme families");
+        assert_eq!(variants, 57, "theme palettes");
+        assert_eq!(colony_ui::ACCENT_OVERRIDES.len(), 8, "accent overrides");
+
+        // Every one of them resolves to a palette that is actually filled in.
+        for f in colony_ui::THEME_FAMILIES {
+            for v in f.variants {
+                let p = colony_ui::resolve(f.key, v.key);
+                assert_eq!(p.bg_primary.a, 1.0, "{}/{} has no background", f.key, v.key);
+            }
+        }
+    }
+
     #[test]
     fn the_first_three_categories_are_the_imposed_ones_in_order() {
         assert_eq!(
@@ -4104,8 +4195,8 @@ mod tests {
         app.conflicts = Some(ConflictMap { files: Default::default(), mods, names: HashMap::new() });
 
         app.selected_mod = Some(1);
-        assert_eq!(conflict_tint(&app, 0), Some(CONFLICT_WINS_BG), "the row it beats");
-        assert_eq!(conflict_tint(&app, 2), Some(CONFLICT_LOSES_BG), "the row that beats it");
+        assert_eq!(conflict_tint(&app, 0), Some(conflict_wins_bg()), "the row it beats");
+        assert_eq!(conflict_tint(&app, 2), Some(conflict_loses_bg()), "the row that beats it");
         assert_eq!(conflict_tint(&app, 1), None, "the focused row keeps its selection colour");
 
         // Nothing focused, nothing tinted.
@@ -7962,21 +8053,21 @@ mod tests {
     fn the_row_colour_has_exactly_one_owner() {
         // The fill and the fade must agree, always. They agree because they ask
         // the same function - this pins the precedence they both inherit.
-        let conflict = Some(CONFLICT_WINS_BG);
+        let conflict = Some(conflict_wins_bg());
         assert_eq!(
             row_background(true, true, conflict, None),
-            SEL_BG,
+            sel_bg(),
             "selection outranks the conflict tint"
         );
-        assert_eq!(row_background(true, false, conflict, None), CONFLICT_WINS_BG);
+        assert_eq!(row_background(true, false, conflict, None), conflict_wins_bg());
         assert_eq!(row_background(true, false, None, None), row_bg(true));
         assert_eq!(row_background(false, false, None, None), row_bg(false));
         // A user colour paints when nothing more urgent is asking for the row,
         // and yields to both selection and a live conflict answer.
         let tint = mod_tint([0x2e, 0x5e, 0x8b], true);
         assert_eq!(row_background(true, false, None, Some(tint)), tint);
-        assert_eq!(row_background(true, false, conflict, Some(tint)), CONFLICT_WINS_BG);
-        assert_eq!(row_background(true, true, None, Some(tint)), SEL_BG);
+        assert_eq!(row_background(true, false, conflict, Some(tint)), conflict_wins_bg());
+        assert_eq!(row_background(true, true, None, Some(tint)), sel_bg());
         // And it is a WASH: closer to the stripe than to the raw colour.
         let raw = Color::from_rgb8(0x2e, 0x5e, 0x8b);
         let d = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();

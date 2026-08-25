@@ -3,7 +3,7 @@
 //!
 //! Split out of `main.rs` unchanged, and by far the largest single block in it.
 
-use crate::fomod::{FOMOD_INK_FAINT, FOMOD_INK_SOFT};
+use crate::fomod::{fomod_ink_faint, fomod_ink_soft};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
@@ -426,9 +426,9 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .height(Length::Fixed(460.0))
         .padding(16)
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xEC, 0xDF, 0xC2))),
+            background: Some(Background::Color(pal().bg_primary)),
             border: Border {
-                color: Color::from_rgb8(0x6E, 0x24, 0x2E),
+                color: accent(),
                 width: 2.0,
                 radius: 4.0.into(),
             },
@@ -512,7 +512,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // The colour is the one the mod list already uses for "this wins the
         // file", because that is exactly what the row is saying.
         let label: Element<'a, Message> = if r.row.conflicted {
-            text(format!("{} *", r.row.name)).size(12.0).color(CONFLICT_WINS_FG).into()
+            text(format!("{} *", r.row.name)).size(12.0).color(conflict_wins_fg()).into()
         } else {
             text(r.row.name.clone()).size(12.0).into()
         };
@@ -697,7 +697,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(text(r.name).size(11.5));
         if let Some(n) = r.files {
             // How much is under a folder, so a closed one still says something.
-            row = row.push(text(format!("  {n}")).size(10.0).color(FOMOD_INK_FAINT));
+            row = row.push(text(format!("  {n}")).size(10.0).color(fomod_ink_faint()));
         }
         c = c.push(row);
     }
@@ -1163,7 +1163,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // the download went forwards.
             let readout = text(label)
                 .size(9.5)
-                .color(FOMOD_INK_SOFT)
+                .color(fomod_ink_soft())
                 .width(Length::Fixed(DL_READOUT_W))
                 .align_x(iced::alignment::Horizontal::Right);
             let cell = Row::new()
@@ -1938,9 +1938,9 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text(summary).size(12.0));
     for d in checks {
         let (tag, color) = match d.level {
-            DiagLevel::Problem => ("PROBLEM", Color::from_rgb8(0x8A, 0x2A, 0x2A)),
-            DiagLevel::Advice => ("ADVICE", Color::from_rgb8(0xB0, 0x6A, 0x10)),
-            DiagLevel::Ok => ("OK", Color::from_rgb8(0x3E, 0x73, 0x50)),
+            DiagLevel::Problem => ("PROBLEM", pal().error),
+            DiagLevel::Advice => ("ADVICE", pal().warning),
+            DiagLevel::Ok => ("OK", pal().success),
         };
         let mut card = Column::new()
             .spacing(2)
@@ -1951,7 +1951,7 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                     .push(text(tag).size(9.0).color(color).width(Length::Fixed(58.0)))
                     .push(text(d.title).size(12.0).width(Length::Fill)),
             )
-            .push(text(d.detail).size(10.5).color(Color::from_rgb8(0x6A, 0x5A, 0x40)));
+            .push(text(d.detail).size(10.5).color(text_muted()));
         if !d.actions.is_empty() {
             let mut row = Row::new().spacing(6);
             for (label, msg) in d.actions {
@@ -2451,7 +2451,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
         let painted: Element<'a, Message> = if selected || from_selected_mod {
-            let bg = if selected { SEL_BG } else { ORIGIN_BG };
+            let bg = if selected { sel_bg() } else { origin_bg() };
             container(row)
                 .width(Length::Fill)
                 .padding(2)
@@ -2476,7 +2476,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             Message::PluginDragDrop,
         ));
         rows = rows.push(grab);
-        marks.push(from_selected_mod.then_some(ORIGIN_BG));
+        marks.push(from_selected_mod.then_some(origin_bg()));
     }
     // The trailing strip: hovering a row always means "above it", so this is the
     // only way to aim at the end of the load order.
@@ -2673,7 +2673,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
                 text(verdict)
                     .size(11.0)
                     .width(Length::Fixed(260.0))
-                    .color(if wins { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+                    .color(if wins { conflict_wins_fg() } else { conflict_loses_fg() }),
             );
         rows = rows.push(striped(row.into(), n.is_multiple_of(2)));
     }
@@ -2840,9 +2840,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .height(Length::Fill)
             .style(move |_: &Theme| container::Style {
                 background: Some(Background::Color(if held {
-                    crate::theme::DIVIDER_HELD
+                    crate::theme::divider_held()
                 } else {
-                    crate::theme::DIVIDER
+                    crate::theme::divider()
                 })),
                 border: iced::Border { radius: 3.0.into(), ..Default::default() },
                 ..Default::default()
@@ -4084,9 +4084,9 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                         })
                         .size(11.0)
                         .color(if valid {
-                            Color::from_rgb8(0x2E, 0x6E, 0x31)
+                            pal().success
                         } else {
-                            Color::from_rgb8(0x8E, 0x2A, 0x2A)
+                            pal().error
                         }),
                     )
                     // MO2 warns but still lets you through: the checker only knows
@@ -4196,7 +4196,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                 format!("{orphans} will not load")
             })
             .size(11.0)
-            .color(if orphans == 0 { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+            .color(if orphans == 0 { conflict_wins_fg() } else { conflict_loses_fg() }),
         );
 
     let col_header = Row::new()
@@ -4215,7 +4215,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
             (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
             (None, false) => text("nothing loads it - it is dead weight")
                 .size(11.0)
-                .color(CONFLICT_LOSES_FG)
+                .color(conflict_loses_fg())
                 .into(),
         };
         let row = Row::new()

@@ -246,36 +246,6 @@ pub fn settings_path() -> PathBuf {
     config_home().join("settings.ini")
 }
 
-/// Which color theme the app renders in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Theme {
-    /// Follow the platform, or fall back to dark.
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-impl Theme {
-    /// The on-disk token (lowercase, stable across releases).
-    fn as_str(self) -> &'static str {
-        match self {
-            Theme::System => "system",
-            Theme::Light => "light",
-            Theme::Dark => "dark",
-        }
-    }
-
-    /// Parse a stored token; unknown values fall back to the default.
-    fn parse(s: &str) -> Theme {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "light" => Theme::Light,
-            "dark" => Theme::Dark,
-            _ => Theme::System,
-        }
-    }
-}
-
 /// The app-global preferences that are not secret. The Nexus API key is stored
 /// separately (see `load_nexus_key`/`save_nexus_key`) so it never lands in this
 /// file.
@@ -284,7 +254,26 @@ impl Theme {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// The color theme to render in.
-    pub theme: Theme,
+    /// The theme family, either `eidos` for this program's own parchment or one
+    /// of the 25 in the shared Colony catalogue.
+    ///
+    /// This replaces a `theme = system | light | dark` key that had never done
+    /// anything: the GUI's `theme()` ignored its argument, so all three choices
+    /// drew the same parchment. An old file's `theme=` is simply an unknown key
+    /// now, which the parser ignores - so an upgrade leaves everybody on the
+    /// parchment, which is what they were looking at whatever they had picked.
+    pub theme_family: String,
+    /// The variant within the family.
+    pub theme_variant: String,
+    /// The accent override the user picked, or `None` for the theme's own.
+    ///
+    /// Never stores a colour, only a key: "auto" is the ABSENCE of an override,
+    /// not a value, and writing a resolved colour here would freeze it against
+    /// the theme it was resolved from.
+    pub accent: Option<String>,
+    /// Boost the separation between surfaces and text, on any palette. Derived
+    /// from the active theme rather than shipped as a second palette.
+    pub high_contrast: bool,
     /// The game id to open by default when none is given (e.g. `skyrimse`).
     pub default_game: Option<String>,
     /// The last window size in logical pixels, `(width, height)`.
@@ -343,7 +332,12 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            theme: Theme::default(),
+            // The look this program has always worn. An upgrade must not repaint
+            // anybody's window.
+            theme_family: "eidos".to_string(),
+            theme_variant: "parchment".to_string(),
+            accent: None,
+            high_contrast: false,
             default_game: None,
             window_size: None,
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
@@ -428,7 +422,16 @@ impl Settings {
             let Some((k, v)) = line.split_once('=') else { continue };
             let v = v.trim();
             match k.trim() {
-                "theme" => s.theme = Theme::parse(v),
+                "theme_family" if !v.is_empty() => s.theme_family = v.to_string(),
+                "theme_variant" if !v.is_empty() => s.theme_variant = v.to_string(),
+                // An empty value is meaningful: it is how "no override" is
+                // written back, and it must read as None rather than as an
+                // accent named "".
+                "accent" => s.accent = (!v.is_empty()).then(|| v.to_string()),
+                "high_contrast" => {
+                    s.high_contrast =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                }
                 "default_game" if !v.is_empty() => s.default_game = Some(v.to_string()),
                 "window_width" => width = v.parse().ok(),
                 "window_height" => height = v.parse().ok(),
@@ -513,14 +516,19 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nmotion={}\nremember_window={}\n",
-            self.theme.as_str(),
+            "[eidos]\ntheme_family={}\ntheme_variant={}\nhigh_contrast={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nmotion={}\nremember_window={}\n",
+            self.theme_family,
+            self.theme_variant,
+            self.high_contrast,
             self.lock_gui,
             self.drag_scroll_speed,
             self.split,
             self.motion,
             self.remember_window
         );
+        if let Some(a) = &self.accent {
+            out.push_str(&format!("accent={a}\n"));
+        }
         if self.offline {
             out.push_str("offline=true\n");
         }
@@ -566,7 +574,10 @@ mod tests {
         let s = Settings::parse(
             "[eidos]\ntheme=dark\nlock_gui=false\nconflict_marks=false\nremember_window=false\n",
         );
-        assert_eq!(s.theme, Theme::Dark);
+        // `theme=dark` is itself one of these now: it named a setting that never
+        // did anything, so it is read by nobody and written back by nobody, and
+        // the keys beside it still survive.
+        assert!(!s.to_ini().contains("theme=dark"));
         assert!(!s.lock_gui);
         assert!(!s.remember_window);
         // And the key is not written back: nothing reads it any more.
@@ -724,29 +735,50 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
+    /// The default is Eidos's own parchment, so an upgrade repaints nobody's
+    /// window - whatever they had picked, the parchment is what they saw.
     #[test]
-    fn theme_round_trips_each_variant() {
-        for theme in [Theme::System, Theme::Light, Theme::Dark] {
-            assert_eq!(Theme::parse(theme.as_str()), theme);
-        }
-    }
-
-    #[test]
-    fn theme_parse_is_case_insensitive_and_falls_back() {
-        assert_eq!(Theme::parse("DARK"), Theme::Dark);
-        assert_eq!(Theme::parse("Light"), Theme::Light);
-        assert_eq!(Theme::parse("nonsense"), Theme::System);
-        assert_eq!(Theme::parse(""), Theme::System);
-    }
-
-    #[test]
-    fn defaults_are_empty() {
+    fn the_default_theme_is_eidoss_own() {
         let s = Settings::default();
-        assert_eq!(s.theme, Theme::System);
-        assert_eq!(s.default_game, None);
-        assert_eq!(s.window_size, None);
-        assert!(s.lock_gui, "locking the GUI during a run is on by default (MO2 parity)");
+        assert_eq!(s.theme_family, "eidos");
+        assert_eq!(s.theme_variant, "parchment");
+        assert_eq!(s.accent, None);
+        assert!(!s.high_contrast);
+
+        // And a file that predates all four keys lands there too.
+        let old = Settings::parse("[eidos]\ntheme=dark\nlock_gui=true\n");
+        assert_eq!(old.theme_family, "eidos");
+        assert_eq!(old.accent, None);
     }
+
+    #[test]
+    fn a_theme_choice_survives_the_file() {
+        let s = Settings {
+            theme_family: "kanagawa".to_string(),
+            theme_variant: "journal".to_string(),
+            accent: Some("violet".to_string()),
+            high_contrast: true,
+            ..Settings::default()
+        };
+        let back = Settings::parse(&s.to_ini());
+        assert_eq!(back.theme_family, "kanagawa");
+        assert_eq!(back.theme_variant, "journal");
+        assert_eq!(back.accent.as_deref(), Some("violet"));
+        assert!(back.high_contrast);
+    }
+
+    /// "Auto" is the ABSENCE of an override, never a colour and never a key
+    /// named for one. An accent that is unset must not come back as `Some("")`.
+    #[test]
+    fn no_accent_is_none_and_not_an_empty_name() {
+        let s = Settings { accent: None, ..Settings::default() };
+        let ini = s.to_ini();
+        assert!(!ini.contains("accent="), "an absent accent must not be written");
+        assert_eq!(Settings::parse(&ini).accent, None);
+        // And an empty value on disk reads as no override, not as an accent.
+        assert_eq!(Settings::parse("accent=\n").accent, None);
+    }
+
 
     #[test]
     fn settings_round_trip_full() {
@@ -756,7 +788,10 @@ mod tests {
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
-            theme: Theme::Dark,
+            theme_family: "gruvbox".to_string(),
+            theme_variant: "dark".to_string(),
+            accent: Some("green".to_string()),
+            high_contrast: true,
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
             lock_gui: false,
@@ -771,7 +806,7 @@ mod tests {
 
     #[test]
     fn settings_round_trip_minimal() {
-        let s = Settings { theme: Theme::Light, ..Settings::default() };
+        let s = Settings { theme_family: "nord".to_string(), ..Settings::default() };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
     }
@@ -850,7 +885,9 @@ mod tests {
     fn parse_ignores_unknown_and_malformed() {
         let text = "[eidos]\ntheme=dark\nbogus_key=whatever\nno-equals-sign\ndefault_game=fallout4\n";
         let s = Settings::parse(text);
-        assert_eq!(s.theme, Theme::Dark);
+        // `theme=dark` joins the unknown keys: it named a setting that never
+        // changed a pixel, and nothing reads it now.
+        assert_eq!(s.theme_family, "eidos");
         assert_eq!(s.default_game.as_deref(), Some("fallout4"));
     }
 
@@ -882,7 +919,10 @@ mod tests {
             preferred_servers: Vec::new(),
             mod_columns: None,
             tools_dir: None,
-            theme: Theme::Dark,
+            theme_family: "gruvbox".to_string(),
+            theme_variant: "dark".to_string(),
+            accent: Some("green".to_string()),
+            high_contrast: true,
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
             lock_gui: false,
