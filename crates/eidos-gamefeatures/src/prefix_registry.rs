@@ -147,9 +147,31 @@ fn registry_matches(system_reg: &str, registry_name: &str, want: &str) -> bool {
     })
 }
 
+/// What `ensure_registry` did, and when it did nothing, why.
+///
+/// This was a bare `bool` and the caller printed nothing for `false`. Three very
+/// different situations shared that one value - already correct, prefix not born
+/// yet, prefix in use - and only the first is harmless. The other two end with a
+/// Bethesda tool opening on a path that does not exist and a user with no thread
+/// to pull: the tool names a folder, nothing names Eidos. So the reason travels
+/// back to the caller, which says it out loud.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RegistryOutcome {
+    /// The import ran; the key now holds the current path in both views.
+    Imported,
+    /// Both views already held it. Nothing to do, nothing to say.
+    AlreadyCorrect,
+    /// Proton has not created `user.reg` yet. Importing now would race its own
+    /// bootstrap, so the game has to be started through Steam once first.
+    PrefixUninitialised,
+    /// A wineserver is live and caches the registry in memory, rewriting it at
+    /// shutdown - an import now would be silently undone. Carries what is
+    /// holding it, so the message can name the process.
+    PrefixBusy(Vec<(u32, String)>),
+}
+
 /// Write the registry entries into the prefix, unless they are already there.
 ///
-/// Returns `Ok(true)` when an import ran, `Ok(false)` when it was unnecessary.
 /// Callers treat a failure as non-fatal: a tool that cannot find its game path
 /// is an inconvenience, not a reason to refuse the launch.
 ///
@@ -161,17 +183,18 @@ pub fn ensure_registry(
     registry_name: &str,
     proton_argv: impl FnOnce(&Path) -> Vec<String>,
     proton_env: &[(String, String)],
-) -> io::Result<bool> {
+) -> io::Result<RegistryOutcome> {
     let prefix = compatdata.join("pfx");
     // Never touch an uninitialised prefix: Proton creates user.reg on first run,
     // and importing before that races its own bootstrap.
     if !prefix.join("user.reg").is_file() {
-        return Ok(false);
+        return Ok(RegistryOutcome::PrefixUninitialised);
     }
     // A live wineserver caches the registry in memory and rewrites it on
     // shutdown, so importing now would be silently undone. Refuse instead.
-    if !crate::prefix_busy(&prefix, compatdata).is_empty() {
-        return Ok(false);
+    let busy = crate::prefix_busy(&prefix, compatdata);
+    if !busy.is_empty() {
+        return Ok(RegistryOutcome::PrefixBusy(busy));
     }
 
     let marker = marker_path(compatdata, registry_name);
@@ -185,7 +208,7 @@ pub fn ensure_registry(
     let still_correct = fs::read_to_string(prefix.join("system.reg"))
         .is_ok_and(|reg| registry_matches(&reg, registry_name, &want));
     if already_written && still_correct {
-        return Ok(false);
+        return Ok(RegistryOutcome::AlreadyCorrect);
     }
 
     let blob = registry_blob(registry_name, install_path);
@@ -213,7 +236,7 @@ pub fn ensure_registry(
         return Err(io::Error::other(format!("regedit import failed: {status}")));
     }
     fs::write(&marker, &want)?;
-    Ok(true)
+    Ok(RegistryOutcome::Imported)
 }
 
 #[cfg(test)]
@@ -270,7 +293,14 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert!(!ran, "must not import into a prefix Proton has not created yet");
+        // And it must say WHICH kind of nothing it did. A bare "no" here is the
+        // shape of the bug this enum exists to prevent: a tool then fails on a
+        // path that was never registered, and the log is empty.
+        assert_eq!(
+            ran,
+            RegistryOutcome::PrefixUninitialised,
+            "must not import into a prefix Proton has not created yet, and must say so"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

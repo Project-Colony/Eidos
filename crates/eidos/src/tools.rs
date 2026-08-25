@@ -2,6 +2,7 @@
 
 use std::process::exit;
 
+use eidos_gamefeatures::RegistryOutcome;
 use eidos_games::{home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind};
 
@@ -191,14 +192,22 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // Softworks\<game> "installed path", which the game's own installer
             // writes - and which Steam under Proton never runs. Without it xEdit,
             // Wrye Bash and DynDOLOD open on an empty path. Idempotent, additive,
-            // and skipped entirely if the prefix is uninitialised or in use.
-            if let Some(reg) = eidos_games::GameDef::for_id(id).map(|g| g.registry_name) {
+            // and skipped when the prefix is uninitialised or in use.
+            //
+            // `game.def`, NOT a second lookup keyed on `id`: `id` is whatever the
+            // caller named the instance with, and the GUI names it by PATH
+            // (`eidos tool /mnt/Jeux/Eidos-Fallout4 run ...`). `GameDef::for_id`
+            // returned None for every such path, so this whole block was skipped
+            // for every run started from the GUI - the one way anyone starts one.
+            // `game` is the already-resolved target a dozen lines above; there is
+            // no second lookup left to get wrong.
+            {
                 let proton = run.proton.clone();
                 let env = run.env.clone();
                 match eidos_gamefeatures::ensure_registry(
                     compat,
                     &game.install_path,
-                    reg,
+                    game.def.registry_name,
                     |reg_file| {
                         vec![
                             proton.to_string_lossy().into_owned(),
@@ -212,8 +221,30 @@ pub(crate) fn cmd_tool(args: &[String]) {
                     },
                     &env,
                 ) {
-                    Ok(true) => eidos_log::info!("eidos: registered the game path in the Wine prefix"),
-                    Ok(false) => {}
+                    Ok(RegistryOutcome::Imported) => {
+                        eidos_log::info!("eidos: registered the game path in the Wine prefix")
+                    }
+                    Ok(RegistryOutcome::AlreadyCorrect) => {}
+                    // The two silences that used to cost a support thread. The
+                    // tool is about to name a folder that does not exist; these
+                    // lines are the only thing that connects that to Eidos.
+                    Ok(RegistryOutcome::PrefixUninitialised) => eidos_log::warn!(
+                        "eidos: the Wine prefix has not been created yet, so the game path is not \
+                         registered - launch {} once through Steam first, or '{title}' may open on \
+                         an empty folder.",
+                        game.def.name
+                    ),
+                    Ok(RegistryOutcome::PrefixBusy(busy)) => {
+                        let who = busy
+                            .first()
+                            .map(|(pid, cmd)| format!("{} (pid {pid})", cmd.split_whitespace().next().unwrap_or(cmd)))
+                            .unwrap_or_else(|| "another program".to_string());
+                        eidos_log::warn!(
+                            "eidos: the Wine prefix is in use by {who}, so the game path could not \
+                             be registered - close it and run '{title}' again if it opens on an \
+                             empty folder."
+                        );
+                    }
                     Err(e) => eidos_log::warn!("eidos: could not write the prefix registry ({e}); tools may ask for the game path"),
                 }
             }
@@ -308,7 +339,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 }
             }
             run_through_view(
-                id,
+                // The RESOLVED game, not the CLI argument: see the note in
+                // `run_through_view`. `id` here is "/mnt/Jeux/Eidos-Fallout4".
+                game.def.id,
                 &game,
                 &inst,
                 command,
