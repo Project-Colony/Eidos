@@ -178,7 +178,11 @@ pub(crate) struct ToolOpts<'a> {
 }
 
 pub(crate) fn run_through_view(
-    id: &str,
+    // Named `game_id`, not `id`: the CLI takes an instance SELECTOR - a name or a
+    // path - and `eidos tool /mnt/Jeux/Eidos-Fallout4 run ...` passed that straight
+    // through to here for every run the GUI started. Every lookup below then missed,
+    // silently, and a tool ran with none of the profile prepared.
+    game_id: &str,
     game: &DetectedGame,
     inst: &Instance,
     command: Vec<String>,
@@ -242,9 +246,9 @@ pub(crate) fn run_through_view(
         exit(1);
     }
 
-    let inis = prepare_inis(id, game, inst, &prof);
-    let plugin_bind = prepare_plugins(id, game, inst, &prof);
-    let save_bind = prepare_saves(id, game, &prof);
+    let inis = prepare_inis(game_id, game, inst, &prof);
+    let plugin_bind = prepare_plugins(game_id, game, inst, &prof);
+    let save_bind = prepare_saves(game_id, game, &prof);
 
     // Soft advisory: an ENB (game root, outside the Data mount) and Community
     // Shaders (an enabled SKSE-plugin mod) both inject into the D3D11 pipeline.
@@ -398,7 +402,7 @@ pub(crate) fn run_through_view(
     // crash artifact written straight into the profile) is flagged against the
     // pre-session snapshot, loudly, with the restore one GUI click away.
     if plugin_bind.is_some() {
-        let post_loss = eidos_plugins::GameSpec::for_id(id)
+        let post_loss = eidos_plugins::GameSpec::for_id(game_id)
             .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
         if let Some(reason) = post_loss {
             eidos_log::info!(

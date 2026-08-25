@@ -27,7 +27,7 @@ pub use native_dll::{
 };
 
 mod prefix_registry;
-pub use prefix_registry::{ensure_registry, registry_blob};
+pub use prefix_registry::{ensure_registry, registry_blob, RegistryOutcome};
 
 mod se_log;
 pub use se_log::{parse_se_log, se_log_path, SePluginLoad};
