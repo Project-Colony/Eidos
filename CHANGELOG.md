@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.1](https://github.com/Project-Colony/Eidos/compare/v1.11.0...v1.11.1) (2026-08-25)
+
+
+### Fixes
+
+* **instance:** the lock table and the kernel could disagree, and it failed a release ([#36](https://github.com/Project-Colony/Eidos/issues/36)) ([63735b4](https://github.com/Project-Colony/Eidos/commit/63735b4a4b39f979b919fdd76a1f7d934dfc73bd))
+
 ## [1.11.0](https://github.com/Project-Colony/Eidos/compare/v1.10.0...v1.11.0) (2026-08-25)
 
 
