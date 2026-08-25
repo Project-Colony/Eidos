@@ -191,6 +191,20 @@ pub(crate) fn settings_dialog<'a>(app: &App) -> Element<'a, Message> {
                         picker.into(),
                     ),
                 ))
+                .push(settings_section(
+                    "motion",
+                    "Motion",
+                    open("motion"),
+                    settings_toggle(
+                        "Animate the window",
+                        "The tab strips cross-fade and a new status message fades in. \
+                         Off means they change instantly - nothing is animated more \
+                         quickly, and no frame timer runs at all. Nothing here moves \
+                         the layout either way, so turning it off changes no spacing.",
+                        app.prefs.motion,
+                        Message::ToggleMotion(!app.prefs.motion),
+                    ),
+                ))
                 .into()
         }
         SettingsTab::ModList => {

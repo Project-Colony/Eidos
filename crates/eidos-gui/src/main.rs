@@ -34,6 +34,7 @@ use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 //
 // The three modules main.rs no longer imports from - theme, widgets, fomod - are
 // the measure of the split: nothing at the root draws anything any more.
+mod anim;
 mod dialogs;
 mod fomod;
 mod health;
@@ -400,6 +401,8 @@ enum Message {
     /// Toggle the conflict marks on the mod list's scrollbar.
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
+    /// Turn the window's animations on or off (Preferences -> Appearance).
+    ToggleMotion(bool),
     /// MO2's offline mode: cut every Nexus request.
     ToggleOffline(bool),
     /// Editing the preferred-CDN list. Saved on submit, not per keystroke.
@@ -702,6 +705,11 @@ enum Message {
     PointerAt(iced::Point),
     /// The divider between the mod list and the right pane was grabbed.
     SplitGrab,
+    /// One animation frame. Carries nothing: every animated value is derived
+    /// from elapsed time, so the tick's only job is to make iced redraw.
+    ///
+    /// Only subscribed while something is actually moving - see `subscription`.
+    AnimationTick,
     WindowResized(iced::Size),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
@@ -1815,6 +1823,28 @@ struct App {
     split: f32,
     /// Whether the divider is being dragged right now.
     split_drag: bool,
+    // ---- motion ----
+    /// Whether this window animates at all (Preferences -> Appearance -> Motion,
+    /// mirroring `prefs.motion`). Off means every animated value is drawn at its
+    /// destination and the frame timer is never subscribed.
+    motion: bool,
+    /// The main tab strip's crossfade, and the tab it is fading AWAY from.
+    ///
+    /// The previous tab is kept because a crossfade needs both ends: without it
+    /// the arriving tab fades in while the leaving one snaps, which reads as a
+    /// glitch rather than as a transition.
+    tab_anim: anim::Phase,
+    tab_prev: Option<Tab>,
+    /// The same for the mod-information strip on the right.
+    info_anim: anim::Phase,
+    info_prev: Option<InfoTab>,
+    /// The status line's fade-in, and the text it is currently showing.
+    ///
+    /// The copy is what makes the fade fire at all: `status` is assigned from a
+    /// dozen places across `state.rs`, and instrumenting each of them is a rule
+    /// somebody would forget. Comparing after every message cannot be forgotten.
+    status_anim: anim::Phase,
+    status_shown: Option<String>,
     ui_statusbar_visible: bool,
     /// The View dropdown is open (iced has no native menu, so it's a floating card).
     view_menu_open: bool,
@@ -2211,6 +2241,14 @@ const DOWNLOAD_IDLE_TICK: std::time::Duration = std::time::Duration::from_secs(2
 fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
+    // 60 Hz, and ONLY while something is actually moving. An idle window
+    // subscribes to nothing here, so the cost of having animations at all is
+    // zero rather than small - which is the whole reason this is a condition
+    // and not an always-on timer that most frames ignore.
+    let frames = anim::animating(app).then(|| {
+        iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
+    });
+
     // Track held modifiers from every key press AND release (a release with no
     // remaining keys still carries the updated modifier set).
     // One stream now: `listen` yields every keyboard event and all three variants
@@ -2465,6 +2503,10 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             iced::time::every(std::time::Duration::from_millis(600)).map(|_| Message::PollRunning),
         );
     }
+    // Pushed last so the condition sits beside every other conditional timer
+    // above, all of which follow the same rule: subscribe only while the thing
+    // they watch is actually happening.
+    subs.extend(frames);
     iced::Subscription::batch(subs)
 }
 
@@ -6072,6 +6114,10 @@ mod tests {
             Message::DownloadTick,
             Message::SavesTick,
             Message::LogRefresh,
+            // The sharpest case: this one fires sixty times a second, so
+            // treating it as an action would not shorten a confirmation's life,
+            // it would end it between the two clicks every time.
+            Message::AnimationTick,
             Message::PointerAt(iced::Point::ORIGIN),
             Message::ModifiersChanged(iced::keyboard::Modifiers::default()),
         ] {
@@ -7416,6 +7462,108 @@ mod tests {
             Message::ModifiersChanged(iced::keyboard::Modifiers::CTRL),
         );
         assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
+    }
+
+    #[test]
+    fn a_frame_of_animation_does_not_cancel_an_armed_confirmation() {
+        // Sixty a second while a tab is cross-fading. Arm Delete, switch tabs so
+        // the strip animates, and the arming must survive every frame of it.
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
+
+        for _ in 0..12 {
+            let _ = update(&mut app, Message::AnimationTick);
+        }
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "the frame timer disarmed the user's confirmation"
+        );
+    }
+
+    #[test]
+    fn changing_tab_crossfades_from_the_one_being_left() {
+        let mut app = nav_app(&[]);
+        app.tab = Tab::Data;
+        assert!(!anim::animating(&app), "an idle window must ask for no frames");
+
+        let _ = update(&mut app, Message::SelectTab(Tab::Saves));
+        assert_eq!(app.tab, Tab::Saves);
+        assert_eq!(app.tab_prev, Some(Tab::Data), "the strip needs both ends to cross-fade");
+        assert!(anim::animating(&app), "the frame timer should be running now");
+
+        // Mid-flight the two ends share the transition between them.
+        let t = anim::at(&app, &app.tab_anim);
+        let arriving = anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves);
+        let leaving = anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data);
+        assert!((arriving + leaving - 1.0).abs() < 1e-6);
+        // And a tab that took no part in it is simply unselected.
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Archives), 0.0);
+    }
+
+    #[test]
+    fn re_selecting_the_tab_already_open_starts_nothing() {
+        // Otherwise clicking the current tab restarts a transition from itself
+        // to itself, which flashes.
+        let mut app = nav_app(&[]);
+        app.tab = Tab::Data;
+        let _ = update(&mut app, Message::SelectTab(Tab::Data));
+        assert_eq!(app.tab_prev, None);
+        assert!(!anim::animating(&app));
+    }
+
+    #[test]
+    fn a_new_status_message_fades_in_however_it_was_set() {
+        // The fade is armed by comparison after the message, not by each of the
+        // dozen places that assign `status` - so this must work for a path that
+        // knows nothing about animation.
+        let mut app = nav_app(&[]);
+        assert!(!anim::animating(&app));
+
+        app.status = Some("Installed 3 mods.".to_string());
+        let _ = update(&mut app, Message::Noop);
+        assert!(anim::animating(&app), "a new status message must fade in");
+        assert_eq!(app.status_shown.as_deref(), Some("Installed 3 mods."));
+
+        // The SAME message arriving again is not a new one, and must not restart
+        // the fade - otherwise a repeating status strobes.
+        app.status_anim = anim::Phase::default();
+        let _ = update(&mut app, Message::Noop);
+        assert!(!anim::animating(&app), "an unchanged status restarted the fade");
+    }
+
+    #[test]
+    fn with_motion_off_nothing_animates_and_no_frames_are_asked_for() {
+        // "Reduced motion" has to mean none, not faster: every animated value is
+        // drawn at its destination and the frame timer is never subscribed.
+        let mut app = nav_app(&[]);
+        let _ = update(&mut app, Message::ToggleMotion(false));
+        assert!(!app.prefs.motion, "the preference is what gets saved");
+        assert!(!app.motion, "the live copy has to follow, or it keeps animating");
+
+        app.tab = Tab::Data;
+        let _ = update(&mut app, Message::SelectTab(Tab::Saves));
+        app.status = Some("Something happened.".to_string());
+        let _ = update(&mut app, Message::Noop);
+
+        assert!(!anim::animating(&app), "motion is off; nothing may ask for frames");
+        // Drawn at the end state: the selected tab is fully selected, the one
+        // left behind fully unselected, on the very first frame.
+        let t = anim::at(&app, &app.tab_anim);
+        assert_eq!(t, 1.0);
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves), 1.0);
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data), 0.0);
+        assert_eq!(anim::at(&app, &app.status_anim), 1.0);
+    }
+
+    #[test]
+    fn the_motion_preference_survives_a_round_trip_through_the_file() {
+        let mut app = nav_app(&[]);
+        assert!(app.prefs.motion, "on by default");
+        let _ = update(&mut app, Message::ToggleMotion(false));
+        let reloaded = eidos_instance::Settings::parse(&app.prefs.to_ini());
+        assert!(!reloaded.motion);
     }
 
     #[test]

@@ -8,11 +8,18 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
 
-pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, active: bool) -> Element<'a, Message> {
+/// One tab of the mod-information strip. Same contract as [`tab_btn`].
+pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, mix: f32) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .padding([4, 10])
         .on_press(Message::InfoSelectTab(tab))
-        .style(if active { button::primary } else { button::secondary })
+        .style(move |theme, status| {
+            crate::anim::mix_button(
+                button::secondary(theme, status),
+                button::primary(theme, status),
+                mix,
+            )
+        })
         .into()
 }
 
@@ -394,11 +401,11 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let tabs = Row::new()
         .spacing(4)
-        .push(info_tab_btn("General", InfoTab::General, app.info_tab == InfoTab::General))
-        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, app.info_tab == InfoTab::Conflicts))
-        .push(info_tab_btn("Filetree", InfoTab::Filetree, app.info_tab == InfoTab::Filetree))
-        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, app.info_tab == InfoTab::IniTweaks))
-        .push(info_tab_btn("Notes", InfoTab::Notes, app.info_tab == InfoTab::Notes));
+        .push(info_tab_btn("General", InfoTab::General, info_mix(app, InfoTab::General)))
+        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, info_mix(app, InfoTab::Conflicts)))
+        .push(info_tab_btn("Filetree", InfoTab::Filetree, info_mix(app, InfoTab::Filetree)))
+        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, info_mix(app, InfoTab::IniTweaks)))
+        .push(info_tab_btn("Notes", InfoTab::Notes, info_mix(app, InfoTab::Notes)));
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
@@ -1957,11 +1964,49 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     scrollable(col).height(Length::Fill).into()
 }
 
-pub(crate) fn tab_btn<'a>(label: String, t: Tab, selected: bool) -> Element<'a, Message> {
+/// How selected a main-strip tab should look right now.
+///
+/// Split out so the eight call sites below say which tab they are and nothing
+/// else - threading the phase, the previous tab and the motion preference
+/// through each of them is how one of the eight ends up different.
+fn main_mix(app: &App, this: Tab) -> f32 {
+    crate::anim::tab_mix(
+        crate::anim::at(app, &app.tab_anim),
+        &app.tab,
+        app.tab_prev.as_ref(),
+        &this,
+    )
+}
+
+/// The same for the mod-information strip.
+fn info_mix(app: &App, this: InfoTab) -> f32 {
+    crate::anim::tab_mix(
+        crate::anim::at(app, &app.info_anim),
+        &app.info_tab,
+        app.info_prev.as_ref(),
+        &this,
+    )
+}
+
+/// One tab of the main strip.
+///
+/// `mix` is how selected it should LOOK, 0.0 to 1.0, rather than whether it is:
+/// mid-transition the arriving tab and the one being left behind are both
+/// somewhere in between. A window with motion off only ever passes 0.0 or 1.0,
+/// and then this draws exactly what it drew before animation existed.
+pub(crate) fn tab_btn<'a>(label: String, t: Tab, mix: f32) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .padding(6)
         .on_press(Message::SelectTab(t))
-        .style(if selected { button::primary } else { button::secondary })
+        // Both ends are iced's own styles, resolved against the live theme, so
+        // no colour is named here and the blend follows the palette.
+        .style(move |theme, status| {
+            crate::anim::mix_button(
+                button::secondary(theme, status),
+                button::primary(theme, status),
+                mix,
+            )
+        })
         .into()
 }
 
@@ -2680,21 +2725,21 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let tab = effective_tab(app);
     let mut tabs = Row::new()
         .spacing(4)
-        .push(tab_btn("Data".to_string(), Tab::Data, tab == Tab::Data));
+        .push(tab_btn("Data".to_string(), Tab::Data, main_mix(app, Tab::Data)));
     // Only for a game whose plugins Eidos actually manages. Stellar Blade is the
     // first game with no plugin system at all, and every other pane keys off the
     // same `GameSpec::for_id` - so without this the tab is there, opens, and
     // shows an empty list for a game that will never have one.
     if game_manages_plugins(app) {
-        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, tab == Tab::Plugins));
+        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, main_mix(app, Tab::Plugins)));
     }
     let tabs = tabs
-        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, tab == Tab::Conflicts))
-        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, tab == Tab::Overwrite))
-        .push(tab_btn("Archives".to_string(), Tab::Archives, tab == Tab::Archives))
-        .push(tab_btn("Saves".to_string(), Tab::Saves, tab == Tab::Saves))
-        .push(tab_btn("Downloads".to_string(), Tab::Downloads, tab == Tab::Downloads))
-        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, tab == Tab::Diagnostics));
+        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, main_mix(app, Tab::Conflicts)))
+        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, main_mix(app, Tab::Overwrite)))
+        .push(tab_btn("Archives".to_string(), Tab::Archives, main_mix(app, Tab::Archives)))
+        .push(tab_btn("Saves".to_string(), Tab::Saves, main_mix(app, Tab::Saves)))
+        .push(tab_btn("Downloads".to_string(), Tab::Downloads, main_mix(app, Tab::Downloads)))
+        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, main_mix(app, Tab::Diagnostics)));
 
     let content = match tab {
         Tab::Data => data_panel(app),
@@ -2742,9 +2787,19 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         Some(a) => format!("Nexus: {} ({})", a.name, if a.is_premium { "Premium" } else { "free" }),
         None => "not logged in".to_string(),
     };
+    // The left slot fades in when its message changes, so a status that
+    // replaces another is visibly a NEW one rather than a word that quietly
+    // became a different word. Colour only - the row keeps its height whatever
+    // the fade is doing, so the status bar never nudges the panes above it.
+    let fg = crate::theme::palette().text;
+    let ink = crate::anim::mix(
+        Color { a: 0.0, ..fg },
+        fg,
+        crate::anim::at(app, &app.status_anim),
+    );
     let mut row = Row::new()
         .align_y(iced::Alignment::Center)
-        .push(text(left).size(11.0).width(Length::Fill));
+        .push(text(left).size(11.0).color(ink).width(Length::Fill));
     if showing_status {
         // A tiny dismiss so a stale message stops masking the selection count and
         // instance summary.

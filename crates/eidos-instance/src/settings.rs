@@ -302,6 +302,14 @@ pub struct Settings {
     /// the right pane's tab strip runs out of room and "Diagnostics (2)" gets
     /// clipped on a narrow window, with no way to give it more.
     pub split: f32,
+    /// Whether the window animates at all (on by default).
+    ///
+    /// Named for what it controls rather than for the preference that usually
+    /// turns it off: the Colony convention calls this Accessibility -> Motion,
+    /// and requires that a program which animates can be told not to. Off means
+    /// every animated value jumps straight to its target - not a faster
+    /// animation, none - and the frame timer is never even subscribed.
+    pub motion: bool,
     /// Restore the window to its last size on launch (on by default). Off means
     /// the size is neither read nor written, so the compositor decides.
     pub remember_window: bool,
@@ -342,6 +350,7 @@ impl Default for Settings {
             lock_gui: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
+            motion: true,
             remember_window: true,
             offline: false,
             tools_dir: None,
@@ -483,6 +492,12 @@ impl Settings {
                 "lock_gui" => {
                     s.lock_gui = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
                 }
+                // On unless explicitly off, like lock_gui. A user who has never
+                // heard of this key gets the animations; one who wrote
+                // `motion=off` gets a window that never moves on its own.
+                "motion" => {
+                    s.motion = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                }
                 _ => {}
             }
         }
@@ -498,11 +513,12 @@ impl Settings {
     /// Render these settings as a `settings.ini` body. Split out for unit tests.
     pub fn to_ini(&self) -> String {
         let mut out = format!(
-            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nremember_window={}\n",
+            "[eidos]\ntheme={}\nlock_gui={}\ndrag_scroll_speed={}\nsplit={}\nmotion={}\nremember_window={}\n",
             self.theme.as_str(),
             self.lock_gui,
             self.drag_scroll_speed,
             self.split,
+            self.motion,
             self.remember_window
         );
         if self.offline {
@@ -746,6 +762,7 @@ mod tests {
             lock_gui: false,
             drag_scroll_speed: 1.0,
             split: 0.6,
+            motion: false,
             remember_window: false,
         };
         let parsed = Settings::parse(&s.to_ini());
@@ -774,6 +791,29 @@ mod tests {
         }
         let s = Settings { split: 0.42, ..Settings::default() };
         assert_eq!(Settings::parse(&s.to_ini()).split, 0.42);
+    }
+
+    /// On unless told otherwise, and only an explicit off turns it off. A user
+    /// who has never heard of the key must get the animations; the key exists
+    /// for the one who does not want them.
+    #[test]
+    fn motion_is_on_unless_explicitly_refused() {
+        assert!(Settings::default().motion);
+        assert!(Settings::parse("").motion);
+        assert!(Settings::parse("motion=true\n").motion);
+
+        for off in ["false", "0", "no", "off", "OFF", "No"] {
+            assert!(
+                !Settings::parse(&format!("motion={off}\n")).motion,
+                "{off} should have turned motion off"
+            );
+        }
+        // Anything else is not an off switch. Nonsense leaves it on rather than
+        // silently stopping the window from animating.
+        assert!(Settings::parse("motion=maybe\n").motion);
+
+        let s = Settings { motion: false, ..Settings::default() };
+        assert!(!Settings::parse(&s.to_ini()).motion);
     }
 
     #[test]
@@ -848,6 +888,7 @@ mod tests {
             lock_gui: false,
             drag_scroll_speed: 1.0,
             split: 0.6,
+            motion: false,
             remember_window: false,
         };
         fs::write(&path, s.to_ini()).unwrap();
