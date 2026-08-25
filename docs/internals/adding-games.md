@@ -38,6 +38,23 @@ game overrides that built-in; any other `id` is added.
 | `load_order` | no | `"None"` | `Asterisk`, `PlainList`, `FileTime`, or `None` |
 | `primary_plugins` | no | `[]` | Implicit master plugins (omitted from `plugins.txt`) |
 | `script_extender` | no | none | `{ launcher = "...", loader = "..." }` |
+| `known_tools` | no | `[]` | `[[known_tools]]` entries, `exe` + `title`: executables Eidos recognises wherever it finds them |
+
+### Tools the game has
+
+Eidos looks for these by FILE NAME, in the game folder, inside enabled mods, and
+in the shared tools directory from Settings, and lists any it finds ready to run.
+Declare the ones a Bethesda-shaped game would never have:
+
+```toml
+[[known_tools]]
+exe = "WolvenKit.exe"
+title = "WolvenKit"
+```
+
+A descriptor that overrides a built-in game and declares none inherits that
+game's list, so overriding `fallout4` to change one field does not cost you
+FO4Edit.
 
 ### Telling Eidos what a mod looks like
 

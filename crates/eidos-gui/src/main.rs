@@ -2958,9 +2958,21 @@ mod tests {
     fn temp_portable(game_id: &str) -> PathBuf {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static N: AtomicUsize = AtomicUsize::new(0);
+        // Named after the test that asked for it. The harness names each test
+        // thread after the test, and an instance lock refusal prints the ROOT -
+        // so when one test trips over another's lock, the message says which
+        // test owns it instead of leaving a bare number to correlate by hand.
+        let owner = std::thread::current()
+            .name()
+            .unwrap_or("unnamed")
+            .rsplit("::")
+            .next()
+            .unwrap_or("unnamed")
+            .to_string();
         let root = std::env::temp_dir().join(format!(
-            "eidos-portable-{}-{}",
+            "eidos-portable-{}-{}-{}",
             std::process::id(),
+            owner,
             N.fetch_add(1, Ordering::Relaxed)
         ));
         let _ = fs::remove_dir_all(&root);

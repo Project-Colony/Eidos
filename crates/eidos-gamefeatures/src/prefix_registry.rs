@@ -115,11 +115,17 @@ fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
 /// prefix is not ours: the game's own 32-bit launcher writes `installed path`
 /// too, through whatever drive letter Wine happened to offer it. Observed on a
 /// real prefix (2026-07-30): Eidos wrote `Z:\...\steamapps\common\...` to both
-/// views, `SkyrimSELauncher.exe` later rewrote the `Wow6432Node` view as
-/// `S:\common\...`, and Steam subsequently repointed `S:` from
-/// `<library>/steamapps` to `<library>` - leaving a key that had been correct
-/// when written and now resolved to a directory that does not exist. TexGen
-/// then died with `EDirectoryNotFoundException`.
+/// views, and `SkyrimSELauncher.exe` later rewrote the `Wow6432Node` view as
+/// `S:\common\...` - a path that resolves to a directory which does not exist.
+/// TexGen then died with `EDirectoryNotFoundException`.
+///
+/// This comment used to claim the launcher's value had been CORRECT when written
+/// and was invalidated later by Steam moving the `S:` drive. That was a guess
+/// dressed as a finding, and acting on it cost a user 267 MB of BodySlide output
+/// written outside the mount - see `library_path` in `eidos-games`. The value was
+/// simply wrong the moment it was written, which is why the repair does not depend
+/// on any drive letter: Eidos writes the absolute `Z:` form, and `Z:` is `/` in
+/// every Proton prefix.
 ///
 /// So the question has to be "is the key right NOW", which is what this asks.
 /// Anything unparsed reads as "does not match", because re-importing is cheap

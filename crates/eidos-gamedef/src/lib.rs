@@ -513,12 +513,22 @@ struct RawGameDef {
     registry_name: String,
     #[serde(default)]
     script_extender: Option<RawScriptExtender>,
+    #[serde(default)]
+    known_tools: Vec<RawKnownTool>,
 }
 
 #[derive(serde::Deserialize)]
 struct RawScriptExtender {
     launcher: String,
     loader: String,
+}
+
+/// One entry of a user game's `[[known_tools]]`: an executable Eidos should
+/// recognise wherever it finds it, and the title to list it under.
+#[derive(serde::Deserialize)]
+struct RawKnownTool {
+    exe: String,
+    title: String,
 }
 
 fn default_load_order() -> String {
@@ -548,12 +558,23 @@ impl RawGameDef {
                 launcher: leak(s.launcher),
                 loader: leak(s.loader),
             }),
-            // A user-defined game inherits the built-in row's tools when it
-            // overrides one, and otherwise declares none. Nothing in the TOML
-            // schema names third-party editors: xEdit is per ENGINE, and a
-            // hand-written game row is for a game Eidos does not know, which by
-            // definition has no xEdit build.
-            known_tools: inherited_tools,
+            // Declared tools win; an empty list inherits, which is what makes a
+            // TOML that overrides a built-in row keep that row's editors without
+            // restating them.
+            //
+            // This list used to be inheritance-only, on the reasoning that xEdit
+            // is per ENGINE and a hand-written row is for a game Eidos does not
+            // know, which by definition has no xEdit build. True of xEdit, and
+            // wrong about everything else: the detection is generic and
+            // name-based, and a game somebody adds by hand is exactly the game
+            // whose tools Eidos cannot possibly know - WolvenKit, a BepInEx
+            // configuration editor, whatever the community uses. Refusing to let
+            // the descriptor say so left the one mechanism that could have helped
+            // available only to games that did not need it.
+            known_tools: match self.known_tools.is_empty() {
+                true => inherited_tools,
+                false => leak_tools(self.known_tools),
+            },
         }
     }
 }
@@ -589,6 +610,12 @@ fn leak(s: String) -> &'static str {
 
 fn leak_vec(v: Vec<String>) -> &'static [&'static str] {
     Box::leak(v.into_iter().map(leak).collect::<Vec<_>>().into_boxed_slice())
+}
+
+fn leak_tools(v: Vec<RawKnownTool>) -> &'static [(&'static str, &'static str)] {
+    Box::leak(
+        v.into_iter().map(|t| (leak(t.exe), leak(t.title))).collect::<Vec<_>>().into_boxed_slice(),
+    )
 }
 
 #[cfg(test)]
@@ -700,6 +727,64 @@ mod tests {
         assert_eq!(g.ini_files, ["Skyrim.ini", "SkyrimPrefs.ini"].as_slice());
         assert_eq!(g.primary_plugins, ["Skyrim.esm", "Update.esm"].as_slice());
         assert_eq!(g.script_extender.unwrap().loader, "skse64_loader.exe");
+    }
+
+    #[test]
+    fn a_user_game_can_declare_its_own_tools() {
+        // The gap this closes: the detection is generic and name-based, but the
+        // descriptor could not name anything, so it only ever helped games that
+        // already shipped with Eidos.
+        let g = parse_game(
+            r#"
+            id = "cyberpunk2077"
+            name = "Cyberpunk 2077"
+            steam_app_id = 1091500
+            data_dir = "."
+            [[known_tools]]
+            exe = "WolvenKit.exe"
+            title = "WolvenKit"
+            [[known_tools]]
+            exe = "REDmodTool.exe"
+            title = "REDmod"
+            "#,
+        )
+        .expect("a game with tools must parse");
+        assert_eq!(
+            g.known_tools,
+            &[("WolvenKit.exe", "WolvenKit"), ("REDmodTool.exe", "REDmod")]
+        );
+    }
+
+    #[test]
+    fn a_user_game_that_declares_no_tools_inherits_the_built_in_row_s() {
+        // Overriding a built-in to change one field must not silently cost the
+        // user xEdit.
+        let g = parse_game(
+            r#"
+            id = "fallout4"
+            name = "Fallout 4"
+            steam_app_id = 377160
+            data_dir = "Data"
+            "#,
+        )
+        .expect("an override must parse");
+        let built_in = GameDef::for_id("fallout4").unwrap();
+        assert_eq!(g.known_tools, built_in.known_tools);
+        assert!(!g.known_tools.is_empty(), "fallout4 ships with FO4Edit declared");
+    }
+
+    #[test]
+    fn a_brand_new_game_with_no_tools_declares_none() {
+        let g = parse_game(
+            r#"
+            id = "nosuchgame"
+            name = "No Such Game"
+            steam_app_id = 1
+            data_dir = "Mods"
+            "#,
+        )
+        .expect("must parse");
+        assert!(g.known_tools.is_empty());
     }
 
     #[test]
