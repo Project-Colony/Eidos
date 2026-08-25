@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/Project-Colony/Eidos/compare/v1.11.1...v1.11.2) (2026-08-25)
+
+
+### Internals
+
+* **docs:** one directory per language, mirroring the repo root ([#38](https://github.com/Project-Colony/Eidos/issues/38)) ([bfa2998](https://github.com/Project-Colony/Eidos/commit/bfa299862b1e9dbcb3124edfb374e1e141081eea))
+
 ## [1.11.1](https://github.com/Project-Colony/Eidos/compare/v1.11.0...v1.11.1) (2026-08-25)
 
 
