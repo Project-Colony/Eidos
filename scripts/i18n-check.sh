@@ -20,7 +20,14 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 fix=0
-[ "${1:-}" = "--fix" ] && fix=1
+stamp=0
+case "${1:-}" in
+    --fix) fix=1 ;;
+    # Adds a missing header to a translated file. An authoring convenience, kept
+    # separate from --fix on purpose: CI must keep FAILING on an unstamped file,
+    # because a translation with no stamp is one nothing can ever tell is stale.
+    --stamp) stamp=1 ;;
+esac
 
 stale=0
 missing=0
@@ -46,6 +53,12 @@ while IFS= read -r t; do
     want="$(git hash-object "$src")"
     have="$(sed -n 's/.*eidos-i18n: source=[^ ]* sha=\([0-9a-f]*\).*/\1/p' "$t" | head -1)"
     if [ -z "$have" ]; then
+        if [ "$stamp" = 1 ]; then
+            printf '<!-- eidos-i18n: source=%s sha=%s -->\n\n%s\n' "$src" "$want" "$(cat "$t")" > "$t.tmp"
+            mv "$t.tmp" "$t"
+            printf 'STAMPED %s\n' "$t"
+            continue
+        fi
         printf 'NO STAMP %s\n         add: <!-- eidos-i18n: source=%s sha=%s -->\n' "$t" "$src" "$want"
         missing=$((missing + 1))
         continue
