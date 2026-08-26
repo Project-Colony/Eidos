@@ -700,6 +700,8 @@ enum Message {
     KeyNav(Nav),
     /// The pointer moved, or the window was resized. Only stored.
     PointerAt(iced::Point),
+    /// The divider between the mod list and the right pane was grabbed.
+    SplitGrab,
     WindowResized(iced::Size),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
@@ -1807,6 +1809,12 @@ struct App {
     // ---- menu-bar UI toggles + About ----
     /// The toolbar / status bar are visible (View menu toggles).
     ui_toolbar_visible: bool,
+    /// Fraction of the window width given to the mod list, 0.15 to 0.85.
+    /// Mirrors `prefs.split`; kept here because it changes on every pointer
+    /// move during a drag and the preferences are only written when it stops.
+    split: f32,
+    /// Whether the divider is being dragged right now.
+    split_drag: bool,
     ui_statusbar_visible: bool,
     /// The View dropdown is open (iced has no native menu, so it's a floating card).
     view_menu_open: bool,
@@ -4914,6 +4922,39 @@ mod tests {
             None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
         }
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_divider_resizes_the_panes_and_refuses_to_collapse_one() {
+        let mut app = app_for_game("skyrimse");
+        app.window = iced::Size::new(1000.0, 800.0);
+        let before = app.split;
+
+        // Moving the pointer without grabbing must not move anything: the
+        // divider is a handle, not a hover target.
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(300.0, 400.0)));
+        assert_eq!(app.split, before, "the pointer alone must not resize");
+
+        let _ = update_inner(&mut app, Message::SplitGrab);
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(300.0, 400.0)));
+        assert!((app.split - 0.3).abs() < 0.001, "split={}", app.split);
+
+        // Dragged past the edge, both panes must survive: a pane at zero width
+        // takes the divider with it and there is no way to get either back.
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(-500.0, 400.0)));
+        assert_eq!(app.split, 0.15);
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(5000.0, 400.0)));
+        assert_eq!(app.split, 0.85);
+
+        // Releasing stops the drag and hands the value to the preferences, which
+        // is what makes it survive a restart.
+        let _ = update_inner(&mut app, Message::PointerReleased);
+        assert!(!app.split_drag);
+        assert_eq!(app.prefs.split, 0.85);
+
+        // And a pointer move after release is inert again.
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(100.0, 400.0)));
+        assert_eq!(app.split, 0.85);
     }
 
     #[test]

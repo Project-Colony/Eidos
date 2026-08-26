@@ -1281,7 +1281,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .push(list_area)
         .push(overwrite);
 
-    container(inner).width(Length::FillPortion(3)).height(Length::Fill).padding(8).style(panel_style).into()
+    // The two panes share the width by a ratio the user drags, not by a constant.
+    // A thousandth of the window is finer than a pixel on any screen this runs on.
+    let portion = (app.split * 1000.0) as u16;
+    container(inner).width(Length::FillPortion(portion)).height(Length::Fill).padding(8).style(panel_style).into()
 }
 
 /// A single left-aligned action in the mod context menu.

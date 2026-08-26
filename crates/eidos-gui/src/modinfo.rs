@@ -2708,7 +2708,8 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     };
 
     let inner = Column::new().spacing(8).push(top).push(tabs).push(content);
-    container(inner).width(Length::FillPortion(2)).height(Length::Fill).padding(8).style(panel_style).into()
+    let portion = 1000_u16.saturating_sub((app.split * 1000.0) as u16);
+    container(inner).width(Length::FillPortion(portion)).height(Length::Fill).padding(8).style(panel_style).into()
 }
 
 pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
@@ -2773,10 +2774,32 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         .push(Space::new().width(Length::Fill))
         .push(tool_btn("New instance", Message::Restart));
 
+    // A grabbable divider rather than a gap. The panes were a fixed 3:2, which is
+    // a guess about somebody else's screen: on a narrow window the right pane's
+    // tab strip runs out of room and clips "Diagnostics", with nothing to do
+    // about it. Six pixels wide because a hairline is hard to hit and a bar is
+    // furniture; it lights up while held so the drag is visibly in progress.
+    let held = app.split_drag;
+    let divider = mouse_area(
+        container(Space::new().width(Length::Fixed(6.0)).height(Length::Fill))
+            .height(Length::Fill)
+            .style(move |_: &Theme| container::Style {
+                background: Some(Background::Color(if held {
+                    crate::theme::DIVIDER_HELD
+                } else {
+                    crate::theme::DIVIDER
+                })),
+                border: iced::Border { radius: 3.0.into(), ..Default::default() },
+                ..Default::default()
+            }),
+    )
+    .on_press(Message::SplitGrab);
+
     let body = Row::new()
-        .spacing(8)
+        .spacing(4)
         .height(Length::Fill)
         .push(modlist_pane(app))
+        .push(divider)
         .push(right_pane(app));
 
     let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());

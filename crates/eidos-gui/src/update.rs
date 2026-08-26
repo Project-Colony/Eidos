@@ -48,6 +48,9 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
     match m {
         Message::PointerAt(_)
         | Message::WindowResized(_)
+        // Grabbing the divider resizes the window's furniture; it is not the
+        // user deciding anything about the row a confirmation is armed on.
+        | Message::SplitGrab
         | Message::FomodHover(_)
         | Message::FomodUnhover(..)
         // The downloads tick fires twice a second on its own. Left out of
@@ -5782,6 +5785,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // from a drop exactly as they do from the Install button.
             return update(app, Message::ModPicked(Some(d.path)));
         }
+        Message::PointerReleased if app.split_drag => {
+            app.split_drag = false;
+            // Written once, on release, rather than on every pointer move: the
+            // drag emits a message per frame and settings.ini is a file.
+            app.prefs.split = app.split;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save the pane width: {e}"));
+            }
+        }
         Message::PointerReleased => {
             // Letting go is a DROP wherever a gap is aimed, and a cancel
             // otherwise - regardless of where the pointer happens to be. A user
@@ -6018,7 +6030,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             commit_plugin_order(app, &spec);
         }
-        Message::PointerAt(p) => app.cursor = p,
+        Message::PointerAt(p) => {
+            app.cursor = p;
+            if app.split_drag && app.window.width > 1.0 {
+                // Clamped well inside the edges: a pane dragged to zero is a
+                // pane the user cannot grab again, and the divider goes with it.
+                app.split = (p.x / app.window.width).clamp(0.15, 0.85);
+            }
+        }
+        Message::SplitGrab => app.split_drag = true,
         Message::WindowResized(s) => {
             app.window = s;
             // "Remember the window size" is a real setting now: it was stored,
