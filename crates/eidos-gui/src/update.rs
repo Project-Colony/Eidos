@@ -14,12 +14,40 @@ use crate::*;
 /// function has 68 early returns and a refresh reachable from only some of them
 /// is worse than none - the tab count would be right or wrong depending on which
 /// branch ran.
+/// Put a theme choice into force and write it down.
+///
+/// The palette lives in a global - a style closure inside `iced` cannot reach
+/// `App` - so changing the preference is not enough on its own: it has to be
+/// pushed into `theme::apply` or the window keeps drawing the old one until the
+/// next launch. One function, so the three pickers cannot each get it half right.
+fn repaint(app: &mut App) {
+    crate::theme::apply(
+        &app.prefs.theme_family,
+        &app.prefs.theme_variant,
+        app.prefs.accent.as_deref(),
+        app.prefs.high_contrast,
+    );
+    if let Err(e) = app.prefs.save() {
+        app.status = Some(format!("Could not save preferences: {e}"));
+    }
+}
+
 pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
     // popped the last item must not re-arm itself off its own empty queue.
     let draining = !app.dropped.is_empty();
     let task = update_inner(app, message);
     refresh_diagnostics(app);
+    // A new status message fades in. Detected by comparison HERE rather than by
+    // starting the phase at each assignment: `app.status` is written from about
+    // a dozen places across `state.rs`, and "remember to also start the fade" is
+    // a rule that would be forgotten by the second one. The comparison is a
+    // string compare per message; the clone happens only when it actually
+    // changed, which is also the only time anything is drawn differently.
+    if app.status != app.status_shown {
+        app.status_shown = app.status.clone();
+        app.status_anim.start();
+    }
     // A multi-file drop is walked one file at a time, because each install can
     // open a modal that has to be answered before the next archive is touched.
     // Re-armed here rather than at the end of every install path, because the
@@ -64,6 +92,11 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // click can land, which is exactly what the note above describes.
         | Message::SavesTick
         | Message::LogRefresh
+        // And the frame timer, for exactly the same reason and more sharply:
+        // it fires SIXTY times a second, so leaving it out would not merely
+        // shorten a confirmation's life, it would end it before the finger
+        // came back down.
+        | Message::AnimationTick
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
         // still is not the user deciding anything.
@@ -303,6 +336,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             mods_changed(app);
         }
         Message::SelectTab(t) => {
+            if app.tab != t {
+                app.tab_prev = Some(app.tab);
+                app.tab_anim.start();
+            }
             app.tab = t;
             if t == Tab::Plugins && app.plugins.is_none() {
                 app.plugins = compute_plugins(app);
@@ -2082,7 +2119,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::CloseInfo => app.info_mod = None,
-        Message::InfoSelectTab(t) => app.info_tab = t,
+        Message::InfoSelectTab(t) => {
+            if app.info_tab != t {
+                app.info_prev = Some(app.info_tab);
+                app.info_anim.start();
+            }
+            app.info_tab = t;
+        }
         Message::NotesChanged(s) => {
             app.typing = true;
             app.notes_edit = s;
@@ -2630,6 +2673,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("Could not save preferences: {e}"));
             }
         }
+        Message::ToggleMotion(on) => {
+            app.prefs.motion = on;
+            // The live copy too, not only the saved one: every animated value is
+            // read through `anim::at`, which asks `app.motion`. Saving alone
+            // would leave the window animating until the next launch.
+            app.motion = on;
+            if let Err(e) = app.prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
         Message::ToggleOffline(on) => {
             app.prefs.offline = on;
             if let Err(e) = app.prefs.save() {
@@ -2658,11 +2711,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // double space does not survive in the field looking meaningful.
             app.servers_edit = app.prefs.preferred_servers.join(", ");
         }
-        Message::ThemeChanged(t) => {
-            app.prefs.theme = t;
-            if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
-            }
+        Message::ThemeChanged(family, variant) => {
+            app.prefs.theme_family = family;
+            app.prefs.theme_variant = variant;
+            repaint(app);
+        }
+        Message::AccentChanged(key) => {
+            app.prefs.accent = key;
+            repaint(app);
+        }
+        Message::ToggleHighContrast(on) => {
+            app.prefs.high_contrast = on;
+            repaint(app);
         }
         Message::DefaultGameChanged(g) => {
             app.prefs.default_game = g;
@@ -6039,6 +6099,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SplitGrab => app.split_drag = true,
+        // Nothing to store. Every animated value is a function of the instant
+        // its phase began, so a frame's whole job is to have arrived: reaching
+        // `update` is what makes iced call `view` again.
+        Message::AnimationTick => {}
         Message::WindowResized(s) => {
             app.window = s;
             // "Remember the window size" is a real setting now: it was stored,

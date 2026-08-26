@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use iced::widget::{button, container, image, mouse_area, text, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
-use crate::theme::{row_bg, CONFLICT_LOSES_BG, CONFLICT_WINS_BG, SEL_BG};
+use crate::theme::{accent, conflict_loses_bg, conflict_wins_bg, pal, row_bg, sel_bg};
 use crate::{App, Message};
 
 /// A collapsible settings section: a title row that toggles, and its body when
@@ -29,7 +29,13 @@ pub(crate) fn settings_section<'a>(
         Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(title).size(13.0).width(Length::Fill))
+            // The convention says 15 for a section title. That number assumes
+            // Colony's type scale, whose body text is 13; Eidos's is 12, and 15
+            // here would leave a section title as loud as the category heading
+            // above it. What the convention is actually specifying is the
+            // HIERARCHY - page, category, section, body - and that is what this
+            // keeps: 22 / 16 / 14 / 12.
+            .push(text(title).size(14.0).width(Length::Fill))
             .push(text(chevron).size(10.0)),
     )
     .padding([7, 4])
@@ -42,7 +48,7 @@ pub(crate) fn settings_section<'a>(
     }
     let rule = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).style(
         |_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xC9, 0xB8, 0x90))),
+            background: Some(Background::Color(pal().border_subtle)),
             ..Default::default()
         },
     );
@@ -66,7 +72,7 @@ pub(crate) fn settings_toggle<'a>(
 ) -> Element<'a, Message> {
     let knob = container(Space::new().width(Length::Fixed(13.0)).height(Length::Fixed(13.0)))
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xF3, 0xEA, 0xD3))),
+            background: Some(Background::Color(pal().bg_card)),
             border: Border { radius: 7.0.into(), ..Default::default() },
             ..Default::default()
         });
@@ -80,9 +86,9 @@ pub(crate) fn settings_toggle<'a>(
     .align_y(iced::alignment::Vertical::Center)
     .style(move |_t: &Theme| container::Style {
         background: Some(Background::Color(if on {
-            Color::from_rgb8(0x7A, 0x1F, 0x2B)
+            accent()
         } else {
-            Color::from_rgb8(0xC9, 0xB8, 0x90)
+            pal().border_subtle
         })),
         border: Border { radius: 9.0.into(), ..Default::default() },
         ..Default::default()
@@ -249,7 +255,7 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
                 container(Space::new().width(Length::Fixed(12.0)).height(Length::Fixed(12.0)))
                     .style(move |_t: &Theme| container::Style {
                         background: Some(Background::Color(c)),
-                        border: Border { color: Color::from_rgb8(0x6E, 0x24, 0x2E), width: 1.0, radius: 2.0.into() },
+                        border: Border { color: accent(), width: 1.0, radius: 2.0.into() },
                         ..Default::default()
                     }),
             )
@@ -260,10 +266,10 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
     let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
     row = row.push(text(format!("{name} conflicts:")).size(11.0));
     if over > 0 {
-        row = row.push(swatch(CONFLICT_WINS_BG, format!("{over} it overwrites")));
+        row = row.push(swatch(conflict_wins_bg(), format!("{over} it overwrites")));
     }
     if under > 0 {
-        row = row.push(swatch(CONFLICT_LOSES_BG, format!("{under} overwrite it")));
+        row = row.push(swatch(conflict_loses_bg(), format!("{under} overwrite it")));
     }
     Some(row.into())
 }
@@ -287,9 +293,9 @@ pub(crate) fn conflict_tint(app: &App, i: usize) -> Option<Color> {
     let me = map.mods.get(&((focus + 1) as u32))?;
     let other = (i + 1) as u32;
     if me.overwrites.contains(&other) {
-        Some(CONFLICT_WINS_BG)
+        Some(conflict_wins_bg())
     } else if me.overwritten_by.contains(&other) {
-        Some(CONFLICT_LOSES_BG)
+        Some(conflict_loses_bg())
     } else {
         None
     }
@@ -331,7 +337,7 @@ pub(crate) fn drop_gap<'a>(
     let bar = container(Space::new().width(Length::Fill).height(Length::Fixed(if active { 2.0 } else { 0.0 })))
         .width(Length::Fill)
         .style(move |_t: &Theme| container::Style {
-            background: active.then(|| Background::Color(Color::from_rgb8(0x6E, 0x24, 0x2E))),
+            background: active.then(|| Background::Color(accent())),
             ..Default::default()
         });
     // `center_y(len)` is `height(len) + align`, so passing Fill here silently
@@ -371,7 +377,7 @@ pub(crate) fn row_background(
     // The user's own colour is last of the three because it is permanent: it can
     // afford to be covered for a moment, and it comes back on its own.
     if selected {
-        SEL_BG
+        sel_bg()
     } else {
         conflict.or(tint).unwrap_or_else(|| row_bg(even))
     }

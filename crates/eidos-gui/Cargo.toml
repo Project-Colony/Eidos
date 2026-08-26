@@ -33,3 +33,10 @@ eidos-gamefeatures = { path = "../eidos-gamefeatures" }
 eidos-install = { path = "../eidos-install" }
 eidos-fomod = { path = "../eidos-fomod" }
 rfd = "0.17"
+# The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
+# overrides, the high-contrast derivation and the shared pickers - generated from
+# the design tokens in Project-Colony-Resources rather than copied here.
+#
+# Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
+# to alter this window without a deliberate bump.
+colony-ui = { git = "https://github.com/Project-Colony/Project-Colony-Resources", tag = "v0.1.0" }

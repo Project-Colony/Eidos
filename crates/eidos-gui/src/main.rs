@@ -21,7 +21,7 @@ use iced::widget;
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
 use eidos_games::{detect, home, DetectedGame};
-use eidos_instance::settings::{Settings, Theme as PrefTheme};
+use eidos_instance::settings::Settings;
 use eidos_instance::{ExportScope, Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
@@ -34,6 +34,7 @@ use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 //
 // The three modules main.rs no longer imports from - theme, widgets, fomod - are
 // the measure of the split: nothing at the root draws anything any more.
+mod anim;
 mod dialogs;
 mod fomod;
 mod health;
@@ -46,7 +47,8 @@ mod widgets;
 mod wizard;
 
 use dialogs::*;
-use fomod::{fomod_wizard_view, FOMOD_INK_FAINT, FOMOD_INK_SOFT};
+use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
+use theme::pal;
 use modinfo::*;
 use state::*;
 use update::*;
@@ -117,33 +119,59 @@ enum InfoTab {
 enum SettingsTab {
     General,
     Appearance,
+    Accessibility,
     ModList,
     Nexus,
     About,
 }
 
 impl SettingsTab {
-    /// Every section, in the order the sidebar lists them.
-    pub(crate) const ALL: [SettingsTab; 5] = [
+    /// Every category, in the order the rail lists them.
+    ///
+    /// The first three are imposed by the Colony convention and must stay in
+    /// this order: they are what somebody hunting for a setting scans first, and
+    /// they hold the same things in every program in the ecosystem. After them
+    /// come Eidos's own, and About last. `the_first_three_categories_are_the_imposed_ones`
+    /// fails if that is disturbed.
+    pub(crate) const ALL: [SettingsTab; 6] = [
         SettingsTab::General,
         SettingsTab::Appearance,
+        SettingsTab::Accessibility,
         SettingsTab::ModList,
         SettingsTab::Nexus,
         SettingsTab::About,
     ];
 
-    /// The sections open the first time Settings is shown - one per category, so
-    /// every page says something without a click.
-    pub(crate) const DEFAULT_OPEN: [&'static str; 5] =
-        ["startup", "theme", "dragging", "account", "paths"];
+    /// The sections open the first time Preferences is shown - one per category,
+    /// so every page says something without a click.
+    pub(crate) const DEFAULT_OPEN: [&'static str; 6] =
+        ["startup", "theme", "motion", "dragging", "account", "paths"];
 
     pub(crate) fn label(self) -> &'static str {
         match self {
             SettingsTab::General => "General",
             SettingsTab::Appearance => "Appearance",
+            SettingsTab::Accessibility => "Accessibility",
             SettingsTab::ModList => "Mod list",
             SettingsTab::Nexus => "Nexus",
             SettingsTab::About => "About",
+        }
+    }
+
+    /// The line under the category's own heading: what it changes, not its name
+    /// said again.
+    pub(crate) fn description(self) -> &'static str {
+        match self {
+            // This sentence is imposed by the convention, near enough word for
+            // word, because it carries the contract that matters most on this
+            // page: there is no Save button, and its absence has to be explained
+            // somewhere rather than left to be discovered.
+            SettingsTab::General => "Preferences are saved automatically.",
+            SettingsTab::Appearance => "Applies immediately - nothing here needs a restart.",
+            SettingsTab::Accessibility => "Changes how the window behaves, on any theme.",
+            SettingsTab::ModList => "How the list of mods behaves under the pointer.",
+            SettingsTab::Nexus => "The account downloads are fetched with, and what is cached.",
+            SettingsTab::About => "Version, licence and where this instance lives.",
         }
     }
 }
@@ -388,7 +416,13 @@ enum Message {
     /// Forget the stored Nexus session.
     NexusSignOut,
     /// Set the preferred colour theme.
-    ThemeChanged(PrefTheme),
+    /// Pick a palette: a `(family, variant)` pair from the shared catalogue, or
+    /// Eidos's own parchment.
+    ThemeChanged(String, String),
+    /// Pick an accent override, or `None` to go back to the theme's own.
+    AccentChanged(Option<String>),
+    /// Boost the separation between surfaces and text on whatever theme is on.
+    ToggleHighContrast(bool),
     /// Set the default game id to open (`None` = none).
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
@@ -400,6 +434,8 @@ enum Message {
     /// Toggle the conflict marks on the mod list's scrollbar.
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
+    /// Turn the window's animations on or off (Preferences -> Appearance).
+    ToggleMotion(bool),
     /// MO2's offline mode: cut every Nexus request.
     ToggleOffline(bool),
     /// Editing the preferred-CDN list. Saved on submit, not per keystroke.
@@ -702,6 +738,11 @@ enum Message {
     PointerAt(iced::Point),
     /// The divider between the mod list and the right pane was grabbed.
     SplitGrab,
+    /// One animation frame. Carries nothing: every animated value is derived
+    /// from elapsed time, so the tick's only job is to make iced redraw.
+    ///
+    /// Only subscribed while something is actually moving - see `subscription`.
+    AnimationTick,
     WindowResized(iced::Size),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
@@ -1815,6 +1856,28 @@ struct App {
     split: f32,
     /// Whether the divider is being dragged right now.
     split_drag: bool,
+    // ---- motion ----
+    /// Whether this window animates at all (Preferences -> Appearance -> Motion,
+    /// mirroring `prefs.motion`). Off means every animated value is drawn at its
+    /// destination and the frame timer is never subscribed.
+    motion: bool,
+    /// The main tab strip's crossfade, and the tab it is fading AWAY from.
+    ///
+    /// The previous tab is kept because a crossfade needs both ends: without it
+    /// the arriving tab fades in while the leaving one snaps, which reads as a
+    /// glitch rather than as a transition.
+    tab_anim: anim::Phase,
+    tab_prev: Option<Tab>,
+    /// The same for the mod-information strip on the right.
+    info_anim: anim::Phase,
+    info_prev: Option<InfoTab>,
+    /// The status line's fade-in, and the text it is currently showing.
+    ///
+    /// The copy is what makes the fade fire at all: `status` is assigned from a
+    /// dozen places across `state.rs`, and instrumenting each of them is a rule
+    /// somebody would forget. Comparing after every message cannot be forgotten.
+    status_anim: anim::Phase,
+    status_shown: Option<String>,
     ui_statusbar_visible: bool,
     /// The View dropdown is open (iced has no native menu, so it's a floating card).
     view_menu_open: bool,
@@ -2211,6 +2274,14 @@ const DOWNLOAD_IDLE_TICK: std::time::Duration = std::time::Duration::from_secs(2
 fn subscription(app: &App) -> iced::Subscription<Message> {
     use iced::keyboard::{self, key::Named, Key};
 
+    // 60 Hz, and ONLY while something is actually moving. An idle window
+    // subscribes to nothing here, so the cost of having animations at all is
+    // zero rather than small - which is the whole reason this is a condition
+    // and not an always-on timer that most frames ignore.
+    let frames = anim::animating(app).then(|| {
+        iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
+    });
+
     // Track held modifiers from every key press AND release (a release with no
     // remaining keys still carries the updated modifier set).
     // One stream now: `listen` yields every keyboard event and all three variants
@@ -2465,6 +2536,10 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
             iced::time::every(std::time::Duration::from_millis(600)).map(|_| Message::PollRunning),
         );
     }
+    // Pushed last so the condition sits beside every other conditional timer
+    // above, all of which follow the same rule: subscribe only while the thing
+    // they watch is actually happening.
+    subs.extend(frames);
     iced::Subscription::batch(subs)
 }
 
@@ -2625,7 +2700,7 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
     }
 
-    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(FOMOD_INK_FAINT));
+    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(fomod_ink_faint()));
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -2635,9 +2710,9 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
             .spacing(8)
             .push(text(v.clone()).size(11.0).width(Length::Fixed(150.0)))
             .push(text(label).size(11.0).color(if missing {
-                Color::from_rgb8(0x8A, 0x2A, 0x2A)
+                pal().error
             } else {
-                FOMOD_INK_SOFT
+                fomod_ink_soft()
             }));
         col = if missing {
             col.push(
@@ -2654,7 +2729,7 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         col = col.push(
             text("Downloads run in the background; the status bar reports when they finish.")
                 .size(10.0)
-                .color(FOMOD_INK_FAINT),
+                .color(fomod_ink_faint()),
         );
     }
     col.into()
@@ -3231,6 +3306,165 @@ mod tests {
         // Ending the drag stops it, so no timer outlives the gesture.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_scroll.is_none());
+    }
+
+    /// The rank each category is required to hold, written out separately from
+    /// `ALL`. The match is exhaustive, so adding a category without giving it a
+    /// rank does not compile - which is the point, because `ALL` is a
+    /// hand-written array and nothing else would force the question.
+    fn expected_rank(tab: SettingsTab) -> usize {
+        match tab {
+            SettingsTab::General => 0,
+            SettingsTab::Appearance => 1,
+            SettingsTab::Accessibility => 2,
+            SettingsTab::ModList => 3,
+            SettingsTab::Nexus => 4,
+            SettingsTab::About => 5,
+        }
+    }
+
+    /// "Do not reorder the first three. They are what a user hunting for a
+    /// setting scans first" - the ecosystem convention is explicit, and this is
+    /// exactly the kind of constraint a reshuffle breaks without noticing.
+    #[test]
+    fn picking_a_theme_takes_effect_at_once_and_is_written_down() {
+        let mut app = nav_app(&[]);
+        // Everyone starts on the parchment - an upgrade repaints nobody.
+        assert_eq!(app.prefs.theme_family, "eidos");
+        assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
+
+        let _ = update(
+            &mut app,
+            Message::ThemeChanged("nord".to_string(), "dark".to_string()),
+        );
+        assert_eq!(app.prefs.theme_family, "nord");
+        // The palette is a global that every style closure reads: changing the
+        // preference alone would leave the window drawing the old theme.
+        assert_ne!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
+        assert_eq!(theme::pal().bg_primary, colony_ui::resolve("nord", "dark").bg_primary);
+
+        // And it survives the file.
+        assert_eq!(
+            eidos_instance::Settings::parse(&app.prefs.to_ini()).theme_family,
+            "nord"
+        );
+
+        let _ = update(
+            &mut app,
+            Message::ThemeChanged(
+                theme::OWN_FAMILY.to_string(),
+                theme::OWN_VARIANT.to_string(),
+            ),
+        );
+        assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary, "no way back");
+    }
+
+    #[test]
+    fn an_accent_can_be_picked_and_given_back() {
+        let mut app = nav_app(&[]);
+        let own = theme::accent();
+
+        let _ = update(&mut app, Message::AccentChanged(Some("green".to_string())));
+        assert_eq!(app.prefs.accent.as_deref(), Some("green"));
+        assert_ne!(theme::accent(), own, "the override did not reach the window");
+
+        // "Auto" is the absence of an override, not a ninth colour.
+        let _ = update(&mut app, Message::AccentChanged(None));
+        assert_eq!(app.prefs.accent, None);
+        assert_eq!(theme::accent(), own);
+        assert!(!app.prefs.to_ini().contains("accent="));
+    }
+
+    #[test]
+    fn high_contrast_reaches_the_window_and_is_saved() {
+        let mut app = nav_app(&[]);
+        let plain = theme::pal().text_primary;
+
+        let _ = update(&mut app, Message::ToggleHighContrast(true));
+        assert!(app.prefs.high_contrast);
+        assert_ne!(theme::pal().text_primary, plain, "the boost never took effect");
+        assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).high_contrast);
+
+        let _ = update(&mut app, Message::ToggleHighContrast(false));
+        assert_eq!(theme::pal().text_primary, plain);
+    }
+
+    /// The catalogue is data, not code: the picker draws whatever it holds, so a
+    /// family added upstream needs no arm here. This states the size it has, so
+    /// a bump that silently loses half of it is visible.
+    #[test]
+    fn the_shared_catalogue_carries_what_it_should() {
+        let families = colony_ui::THEME_FAMILIES.len();
+        let variants: usize =
+            colony_ui::THEME_FAMILIES.iter().map(|f| f.variants.len()).sum();
+        assert_eq!(families, 25, "theme families");
+        assert_eq!(variants, 57, "theme palettes");
+        assert_eq!(colony_ui::ACCENT_OVERRIDES.len(), 8, "accent overrides");
+
+        // Every one of them resolves to a palette that is actually filled in.
+        for f in colony_ui::THEME_FAMILIES {
+            for v in f.variants {
+                let p = colony_ui::resolve(f.key, v.key);
+                assert_eq!(p.bg_primary.a, 1.0, "{}/{} has no background", f.key, v.key);
+            }
+        }
+    }
+
+    #[test]
+    fn the_first_three_categories_are_the_imposed_ones_in_order() {
+        assert_eq!(
+            &SettingsTab::ALL[..3],
+            &[SettingsTab::General, SettingsTab::Appearance, SettingsTab::Accessibility],
+        );
+    }
+
+    /// "About last where it exists."
+    #[test]
+    fn about_comes_last() {
+        assert_eq!(SettingsTab::ALL.last(), Some(&SettingsTab::About));
+        for (rank, tab) in SettingsTab::ALL.into_iter().enumerate() {
+            assert_eq!(rank, expected_rank(tab), "{tab:?} is in the wrong place");
+        }
+    }
+
+    /// The contract the page lives by: no Save button, so the sentence that
+    /// explains its absence has to be somewhere the user will read.
+    #[test]
+    fn general_carries_the_no_save_button_contract() {
+        assert!(
+            SettingsTab::General.description().contains("saved automatically"),
+            "General must say preferences save themselves; it says {:?}",
+            SettingsTab::General.description(),
+        );
+    }
+
+    /// A description that repeats the title teaches nothing. The convention asks
+    /// it to say the CONSEQUENCE of the category, so no two may be the same and
+    /// none may echo its own label.
+    #[test]
+    fn each_category_explains_itself_and_says_something_different() {
+        let mut seen: Vec<&str> = SettingsTab::ALL.into_iter().map(|t| t.description()).collect();
+        seen.sort_unstable();
+        let before = seen.len();
+        seen.dedup();
+        assert_eq!(before, seen.len(), "two categories share a description");
+
+        for tab in SettingsTab::ALL {
+            assert_ne!(tab.label(), tab.description(), "{tab:?} repeats its own name");
+            assert!(!tab.description().is_empty());
+        }
+    }
+
+    /// Reduced motion belongs to Accessibility, not to Appearance. Appearance is
+    /// what the window looks like; Accessibility is what it does to somebody who
+    /// needs it to do less.
+    #[test]
+    fn motion_is_filed_under_accessibility() {
+        let rank = expected_rank(SettingsTab::Accessibility);
+        assert_eq!(
+            SettingsTab::DEFAULT_OPEN[rank], "motion",
+            "Accessibility must open on its motion section",
+        );
     }
 
     #[test]
@@ -3961,8 +4195,8 @@ mod tests {
         app.conflicts = Some(ConflictMap { files: Default::default(), mods, names: HashMap::new() });
 
         app.selected_mod = Some(1);
-        assert_eq!(conflict_tint(&app, 0), Some(CONFLICT_WINS_BG), "the row it beats");
-        assert_eq!(conflict_tint(&app, 2), Some(CONFLICT_LOSES_BG), "the row that beats it");
+        assert_eq!(conflict_tint(&app, 0), Some(conflict_wins_bg()), "the row it beats");
+        assert_eq!(conflict_tint(&app, 2), Some(conflict_loses_bg()), "the row that beats it");
         assert_eq!(conflict_tint(&app, 1), None, "the focused row keeps its selection colour");
 
         // Nothing focused, nothing tinted.
@@ -6072,6 +6306,10 @@ mod tests {
             Message::DownloadTick,
             Message::SavesTick,
             Message::LogRefresh,
+            // The sharpest case: this one fires sixty times a second, so
+            // treating it as an action would not shorten a confirmation's life,
+            // it would end it between the two clicks every time.
+            Message::AnimationTick,
             Message::PointerAt(iced::Point::ORIGIN),
             Message::ModifiersChanged(iced::keyboard::Modifiers::default()),
         ] {
@@ -7419,6 +7657,108 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_of_animation_does_not_cancel_an_armed_confirmation() {
+        // Sixty a second while a tab is cross-fading. Arm Delete, switch tabs so
+        // the strip animates, and the arming must survive every frame of it.
+        let mut app = nav_app(&[]);
+        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
+
+        for _ in 0..12 {
+            let _ = update(&mut app, Message::AnimationTick);
+        }
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "the frame timer disarmed the user's confirmation"
+        );
+    }
+
+    #[test]
+    fn changing_tab_crossfades_from_the_one_being_left() {
+        let mut app = nav_app(&[]);
+        app.tab = Tab::Data;
+        assert!(!anim::animating(&app), "an idle window must ask for no frames");
+
+        let _ = update(&mut app, Message::SelectTab(Tab::Saves));
+        assert_eq!(app.tab, Tab::Saves);
+        assert_eq!(app.tab_prev, Some(Tab::Data), "the strip needs both ends to cross-fade");
+        assert!(anim::animating(&app), "the frame timer should be running now");
+
+        // Mid-flight the two ends share the transition between them.
+        let t = anim::at(&app, &app.tab_anim);
+        let arriving = anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves);
+        let leaving = anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data);
+        assert!((arriving + leaving - 1.0).abs() < 1e-6);
+        // And a tab that took no part in it is simply unselected.
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Archives), 0.0);
+    }
+
+    #[test]
+    fn re_selecting_the_tab_already_open_starts_nothing() {
+        // Otherwise clicking the current tab restarts a transition from itself
+        // to itself, which flashes.
+        let mut app = nav_app(&[]);
+        app.tab = Tab::Data;
+        let _ = update(&mut app, Message::SelectTab(Tab::Data));
+        assert_eq!(app.tab_prev, None);
+        assert!(!anim::animating(&app));
+    }
+
+    #[test]
+    fn a_new_status_message_fades_in_however_it_was_set() {
+        // The fade is armed by comparison after the message, not by each of the
+        // dozen places that assign `status` - so this must work for a path that
+        // knows nothing about animation.
+        let mut app = nav_app(&[]);
+        assert!(!anim::animating(&app));
+
+        app.status = Some("Installed 3 mods.".to_string());
+        let _ = update(&mut app, Message::Noop);
+        assert!(anim::animating(&app), "a new status message must fade in");
+        assert_eq!(app.status_shown.as_deref(), Some("Installed 3 mods."));
+
+        // The SAME message arriving again is not a new one, and must not restart
+        // the fade - otherwise a repeating status strobes.
+        app.status_anim = anim::Phase::default();
+        let _ = update(&mut app, Message::Noop);
+        assert!(!anim::animating(&app), "an unchanged status restarted the fade");
+    }
+
+    #[test]
+    fn with_motion_off_nothing_animates_and_no_frames_are_asked_for() {
+        // "Reduced motion" has to mean none, not faster: every animated value is
+        // drawn at its destination and the frame timer is never subscribed.
+        let mut app = nav_app(&[]);
+        let _ = update(&mut app, Message::ToggleMotion(false));
+        assert!(!app.prefs.motion, "the preference is what gets saved");
+        assert!(!app.motion, "the live copy has to follow, or it keeps animating");
+
+        app.tab = Tab::Data;
+        let _ = update(&mut app, Message::SelectTab(Tab::Saves));
+        app.status = Some("Something happened.".to_string());
+        let _ = update(&mut app, Message::Noop);
+
+        assert!(!anim::animating(&app), "motion is off; nothing may ask for frames");
+        // Drawn at the end state: the selected tab is fully selected, the one
+        // left behind fully unselected, on the very first frame.
+        let t = anim::at(&app, &app.tab_anim);
+        assert_eq!(t, 1.0);
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves), 1.0);
+        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data), 0.0);
+        assert_eq!(anim::at(&app, &app.status_anim), 1.0);
+    }
+
+    #[test]
+    fn the_motion_preference_survives_a_round_trip_through_the_file() {
+        let mut app = nav_app(&[]);
+        assert!(app.prefs.motion, "on by default");
+        let _ = update(&mut app, Message::ToggleMotion(false));
+        let reloaded = eidos_instance::Settings::parse(&app.prefs.to_ini());
+        assert!(!reloaded.motion);
+    }
+
+    #[test]
     fn moving_the_mouse_does_not_cancel_an_armed_confirmation() {
         // The reported bug: arm Delete on a download, twitch the mouse, and the
         // confirmation is gone. The pointer HAS to move to reach the button, so
@@ -7713,21 +8053,21 @@ mod tests {
     fn the_row_colour_has_exactly_one_owner() {
         // The fill and the fade must agree, always. They agree because they ask
         // the same function - this pins the precedence they both inherit.
-        let conflict = Some(CONFLICT_WINS_BG);
+        let conflict = Some(conflict_wins_bg());
         assert_eq!(
             row_background(true, true, conflict, None),
-            SEL_BG,
+            sel_bg(),
             "selection outranks the conflict tint"
         );
-        assert_eq!(row_background(true, false, conflict, None), CONFLICT_WINS_BG);
+        assert_eq!(row_background(true, false, conflict, None), conflict_wins_bg());
         assert_eq!(row_background(true, false, None, None), row_bg(true));
         assert_eq!(row_background(false, false, None, None), row_bg(false));
         // A user colour paints when nothing more urgent is asking for the row,
         // and yields to both selection and a live conflict answer.
         let tint = mod_tint([0x2e, 0x5e, 0x8b], true);
         assert_eq!(row_background(true, false, None, Some(tint)), tint);
-        assert_eq!(row_background(true, false, conflict, Some(tint)), CONFLICT_WINS_BG);
-        assert_eq!(row_background(true, true, None, Some(tint)), SEL_BG);
+        assert_eq!(row_background(true, false, conflict, Some(tint)), conflict_wins_bg());
+        assert_eq!(row_background(true, true, None, Some(tint)), sel_bg());
         // And it is a WASH: closer to the stripe than to the raw colour.
         let raw = Color::from_rgb8(0x2e, 0x5e, 0x8b);
         let d = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();

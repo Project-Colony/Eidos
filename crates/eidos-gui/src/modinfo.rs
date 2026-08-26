@@ -3,16 +3,23 @@
 //!
 //! Split out of `main.rs` unchanged, and by far the largest single block in it.
 
-use crate::fomod::{FOMOD_INK_FAINT, FOMOD_INK_SOFT};
+use crate::fomod::{fomod_ink_faint, fomod_ink_soft};
 use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
 
-pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, active: bool) -> Element<'a, Message> {
+/// One tab of the mod-information strip. Same contract as [`tab_btn`].
+pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, mix: f32) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .padding([4, 10])
         .on_press(Message::InfoSelectTab(tab))
-        .style(if active { button::primary } else { button::secondary })
+        .style(move |theme, status| {
+            crate::anim::mix_button(
+                button::secondary(theme, status),
+                button::primary(theme, status),
+                mix,
+            )
+        })
         .into()
 }
 
@@ -394,11 +401,11 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let tabs = Row::new()
         .spacing(4)
-        .push(info_tab_btn("General", InfoTab::General, app.info_tab == InfoTab::General))
-        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, app.info_tab == InfoTab::Conflicts))
-        .push(info_tab_btn("Filetree", InfoTab::Filetree, app.info_tab == InfoTab::Filetree))
-        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, app.info_tab == InfoTab::IniTweaks))
-        .push(info_tab_btn("Notes", InfoTab::Notes, app.info_tab == InfoTab::Notes));
+        .push(info_tab_btn("General", InfoTab::General, info_mix(app, InfoTab::General)))
+        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, info_mix(app, InfoTab::Conflicts)))
+        .push(info_tab_btn("Filetree", InfoTab::Filetree, info_mix(app, InfoTab::Filetree)))
+        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, info_mix(app, InfoTab::IniTweaks)))
+        .push(info_tab_btn("Notes", InfoTab::Notes, info_mix(app, InfoTab::Notes)));
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
@@ -419,9 +426,9 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .height(Length::Fixed(460.0))
         .padding(16)
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(Color::from_rgb8(0xEC, 0xDF, 0xC2))),
+            background: Some(Background::Color(pal().bg_primary)),
             border: Border {
-                color: Color::from_rgb8(0x6E, 0x24, 0x2E),
+                color: accent(),
                 width: 2.0,
                 radius: 4.0.into(),
             },
@@ -505,7 +512,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // The colour is the one the mod list already uses for "this wins the
         // file", because that is exactly what the row is saying.
         let label: Element<'a, Message> = if r.row.conflicted {
-            text(format!("{} *", r.row.name)).size(12.0).color(CONFLICT_WINS_FG).into()
+            text(format!("{} *", r.row.name)).size(12.0).color(conflict_wins_fg()).into()
         } else {
             text(r.row.name.clone()).size(12.0).into()
         };
@@ -690,7 +697,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(text(r.name).size(11.5));
         if let Some(n) = r.files {
             // How much is under a folder, so a closed one still says something.
-            row = row.push(text(format!("  {n}")).size(10.0).color(FOMOD_INK_FAINT));
+            row = row.push(text(format!("  {n}")).size(10.0).color(fomod_ink_faint()));
         }
         c = c.push(row);
     }
@@ -1156,7 +1163,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // the download went forwards.
             let readout = text(label)
                 .size(9.5)
-                .color(FOMOD_INK_SOFT)
+                .color(fomod_ink_soft())
                 .width(Length::Fixed(DL_READOUT_W))
                 .align_x(iced::alignment::Horizontal::Right);
             let cell = Row::new()
@@ -1931,9 +1938,9 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text(summary).size(12.0));
     for d in checks {
         let (tag, color) = match d.level {
-            DiagLevel::Problem => ("PROBLEM", Color::from_rgb8(0x8A, 0x2A, 0x2A)),
-            DiagLevel::Advice => ("ADVICE", Color::from_rgb8(0xB0, 0x6A, 0x10)),
-            DiagLevel::Ok => ("OK", Color::from_rgb8(0x3E, 0x73, 0x50)),
+            DiagLevel::Problem => ("PROBLEM", pal().error),
+            DiagLevel::Advice => ("ADVICE", pal().warning),
+            DiagLevel::Ok => ("OK", pal().success),
         };
         let mut card = Column::new()
             .spacing(2)
@@ -1944,7 +1951,7 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                     .push(text(tag).size(9.0).color(color).width(Length::Fixed(58.0)))
                     .push(text(d.title).size(12.0).width(Length::Fill)),
             )
-            .push(text(d.detail).size(10.5).color(Color::from_rgb8(0x6A, 0x5A, 0x40)));
+            .push(text(d.detail).size(10.5).color(text_muted()));
         if !d.actions.is_empty() {
             let mut row = Row::new().spacing(6);
             for (label, msg) in d.actions {
@@ -1957,11 +1964,49 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     scrollable(col).height(Length::Fill).into()
 }
 
-pub(crate) fn tab_btn<'a>(label: String, t: Tab, selected: bool) -> Element<'a, Message> {
+/// How selected a main-strip tab should look right now.
+///
+/// Split out so the eight call sites below say which tab they are and nothing
+/// else - threading the phase, the previous tab and the motion preference
+/// through each of them is how one of the eight ends up different.
+fn main_mix(app: &App, this: Tab) -> f32 {
+    crate::anim::tab_mix(
+        crate::anim::at(app, &app.tab_anim),
+        &app.tab,
+        app.tab_prev.as_ref(),
+        &this,
+    )
+}
+
+/// The same for the mod-information strip.
+fn info_mix(app: &App, this: InfoTab) -> f32 {
+    crate::anim::tab_mix(
+        crate::anim::at(app, &app.info_anim),
+        &app.info_tab,
+        app.info_prev.as_ref(),
+        &this,
+    )
+}
+
+/// One tab of the main strip.
+///
+/// `mix` is how selected it should LOOK, 0.0 to 1.0, rather than whether it is:
+/// mid-transition the arriving tab and the one being left behind are both
+/// somewhere in between. A window with motion off only ever passes 0.0 or 1.0,
+/// and then this draws exactly what it drew before animation existed.
+pub(crate) fn tab_btn<'a>(label: String, t: Tab, mix: f32) -> Element<'a, Message> {
     button(text(label).size(12.0))
         .padding(6)
         .on_press(Message::SelectTab(t))
-        .style(if selected { button::primary } else { button::secondary })
+        // Both ends are iced's own styles, resolved against the live theme, so
+        // no colour is named here and the blend follows the palette.
+        .style(move |theme, status| {
+            crate::anim::mix_button(
+                button::secondary(theme, status),
+                button::primary(theme, status),
+                mix,
+            )
+        })
         .into()
 }
 
@@ -2406,7 +2451,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // Same padding as `striped`, or a selected row would be a different
         // height from its neighbours and the list would twitch as focus moves.
         let painted: Element<'a, Message> = if selected || from_selected_mod {
-            let bg = if selected { SEL_BG } else { ORIGIN_BG };
+            let bg = if selected { sel_bg() } else { origin_bg() };
             container(row)
                 .width(Length::Fill)
                 .padding(2)
@@ -2431,7 +2476,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             Message::PluginDragDrop,
         ));
         rows = rows.push(grab);
-        marks.push(from_selected_mod.then_some(ORIGIN_BG));
+        marks.push(from_selected_mod.then_some(origin_bg()));
     }
     // The trailing strip: hovering a row always means "above it", so this is the
     // only way to aim at the end of the load order.
@@ -2628,7 +2673,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
                 text(verdict)
                     .size(11.0)
                     .width(Length::Fixed(260.0))
-                    .color(if wins { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+                    .color(if wins { conflict_wins_fg() } else { conflict_loses_fg() }),
             );
         rows = rows.push(striped(row.into(), n.is_multiple_of(2)));
     }
@@ -2680,21 +2725,21 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let tab = effective_tab(app);
     let mut tabs = Row::new()
         .spacing(4)
-        .push(tab_btn("Data".to_string(), Tab::Data, tab == Tab::Data));
+        .push(tab_btn("Data".to_string(), Tab::Data, main_mix(app, Tab::Data)));
     // Only for a game whose plugins Eidos actually manages. Stellar Blade is the
     // first game with no plugin system at all, and every other pane keys off the
     // same `GameSpec::for_id` - so without this the tab is there, opens, and
     // shows an empty list for a game that will never have one.
     if game_manages_plugins(app) {
-        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, tab == Tab::Plugins));
+        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, main_mix(app, Tab::Plugins)));
     }
     let tabs = tabs
-        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, tab == Tab::Conflicts))
-        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, tab == Tab::Overwrite))
-        .push(tab_btn("Archives".to_string(), Tab::Archives, tab == Tab::Archives))
-        .push(tab_btn("Saves".to_string(), Tab::Saves, tab == Tab::Saves))
-        .push(tab_btn("Downloads".to_string(), Tab::Downloads, tab == Tab::Downloads))
-        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, tab == Tab::Diagnostics));
+        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, main_mix(app, Tab::Conflicts)))
+        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, main_mix(app, Tab::Overwrite)))
+        .push(tab_btn("Archives".to_string(), Tab::Archives, main_mix(app, Tab::Archives)))
+        .push(tab_btn("Saves".to_string(), Tab::Saves, main_mix(app, Tab::Saves)))
+        .push(tab_btn("Downloads".to_string(), Tab::Downloads, main_mix(app, Tab::Downloads)))
+        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, main_mix(app, Tab::Diagnostics)));
 
     let content = match tab {
         Tab::Data => data_panel(app),
@@ -2742,9 +2787,19 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         Some(a) => format!("Nexus: {} ({})", a.name, if a.is_premium { "Premium" } else { "free" }),
         None => "not logged in".to_string(),
     };
+    // The left slot fades in when its message changes, so a status that
+    // replaces another is visibly a NEW one rather than a word that quietly
+    // became a different word. Colour only - the row keeps its height whatever
+    // the fade is doing, so the status bar never nudges the panes above it.
+    let fg = crate::theme::palette().text;
+    let ink = crate::anim::mix(
+        Color { a: 0.0, ..fg },
+        fg,
+        crate::anim::at(app, &app.status_anim),
+    );
     let mut row = Row::new()
         .align_y(iced::Alignment::Center)
-        .push(text(left).size(11.0).width(Length::Fill));
+        .push(text(left).size(11.0).color(ink).width(Length::Fill));
     if showing_status {
         // A tiny dismiss so a stale message stops masking the selection count and
         // instance summary.
@@ -2785,9 +2840,9 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .height(Length::Fill)
             .style(move |_: &Theme| container::Style {
                 background: Some(Background::Color(if held {
-                    crate::theme::DIVIDER_HELD
+                    crate::theme::divider_held()
                 } else {
-                    crate::theme::DIVIDER
+                    crate::theme::divider()
                 })),
                 border: iced::Border { radius: 3.0.into(), ..Default::default() },
                 ..Default::default()
@@ -2795,12 +2850,22 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     )
     .on_press(Message::SplitGrab);
 
-    let body = Row::new()
-        .spacing(4)
-        .height(Length::Fill)
-        .push(modlist_pane(app))
-        .push(divider)
-        .push(right_pane(app));
+    // Preferences REPLACE the content area - they are not a modal, a separate
+    // window or a popover, which the Colony convention names as the three things
+    // this must not be. The header, the menu bar, the toolbar and the status bar
+    // all stay exactly where they are: the program's chrome does not move
+    // because the user went to configure it.
+    let body: Element<'_, Message> = if app.settings_open {
+        preferences_page(app)
+    } else {
+        Row::new()
+            .spacing(4)
+            .height(Length::Fill)
+            .push(modlist_pane(app))
+            .push(divider)
+            .push(right_pane(app))
+            .into()
+    };
 
     let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());
     if app.ui_toolbar_visible {
@@ -2856,14 +2921,6 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim =
             mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
         let dialog = container(collision_dialog(c)).center(Length::Fill);
-        layers = layers.push(scrim).push(dialog);
-    }
-
-    // The Preferences modal (MO2's Settings dialog).
-    if app.settings_open {
-        let scrim =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseSettings);
-        let dialog = container(settings_dialog(app)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 
@@ -4027,9 +4084,9 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                         })
                         .size(11.0)
                         .color(if valid {
-                            Color::from_rgb8(0x2E, 0x6E, 0x31)
+                            pal().success
                         } else {
-                            Color::from_rgb8(0x8E, 0x2A, 0x2A)
+                            pal().error
                         }),
                     )
                     // MO2 warns but still lets you through: the checker only knows
@@ -4139,7 +4196,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                 format!("{orphans} will not load")
             })
             .size(11.0)
-            .color(if orphans == 0 { CONFLICT_WINS_FG } else { CONFLICT_LOSES_FG }),
+            .color(if orphans == 0 { conflict_wins_fg() } else { conflict_loses_fg() }),
         );
 
     let col_header = Row::new()
@@ -4158,7 +4215,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
             (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
             (None, false) => text("nothing loads it - it is dead weight")
                 .size(11.0)
-                .color(CONFLICT_LOSES_FG)
+                .color(conflict_loses_fg())
                 .into(),
         };
         let row = Row::new()

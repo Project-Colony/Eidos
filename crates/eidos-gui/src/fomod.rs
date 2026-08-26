@@ -58,17 +58,37 @@ pub(crate) const FOMOD_PREVIEW_H: f32 = 420.0;
 // window uses; the wizard only ever looked out of place because it was drawn with
 // iced's stock `button::secondary` and an ASCII `[x]`, not because it was missing
 // anything iced cannot do.
-pub(crate) const FOMOD_RULE: Color = Color::from_rgb(0.81, 0.75, 0.63); // hairlines and dividers
-pub(crate) const FOMOD_ROW_BG: Color = Color::from_rgb(0.89, 0.84, 0.72); // an unselected option
-pub(crate) const FOMOD_ROW_HOVER: Color = Color::from_rgb(0.93, 0.88, 0.78);
+/// The colour of the installer's hairlines and dividers. (`fomod_rule` below
+/// is the widget that draws one.)
+pub(crate) fn fomod_rule_color() -> Color {
+    pal().border_subtle
+}
+/// An option nobody has ticked.
+pub(crate) fn fomod_row_bg() -> Color {
+    pal().bg_card_hover
+}
+pub(crate) fn fomod_row_hover() -> Color {
+    pal().bg_card
+}
 // Both inks are measured against the page (0xECDFC2): SOFT reaches 6.2:1 and FAINT
 // 4.5:1, the WCAG floor for text this small. The first pass had FAINT at 2.9:1,
 // which is a decorative grey, not a legible one - and it was carrying "required"
 // and "recommended", the only guidance the mod author gives. Below ~10px there is
 // no room for a genuinely faint tier, so the hierarchy lives in size and weight.
-pub(crate) const FOMOD_INK_SOFT: Color = Color::from_rgb(0.36, 0.30, 0.23); // descriptions, tags
-pub(crate) const FOMOD_INK_FAINT: Color = Color::from_rgb(0.44, 0.38, 0.30); // group metadata
-pub(crate) const FOMOD_PARCHMENT: Color = Color::from_rgb(0.95, 0.92, 0.83); // ink on burgundy
+/// Descriptions and tags.
+pub(crate) fn fomod_ink_soft() -> Color {
+    pal().text_secondary
+}
+/// Group metadata.
+pub(crate) fn fomod_ink_faint() -> Color {
+    pal().text_muted
+}
+/// Ink ON the accent. Not a fixed pale colour: on a dark palette the accent can
+/// be light, and pale ink on it is unreadable. `contrast_on` picks the side that
+/// can actually be read.
+pub(crate) fn fomod_on_accent() -> Color {
+    colony_ui::contrast_on(accent())
+}
 
 /// The circle or square in front of an option, drawn rather than written.
 ///
@@ -84,11 +104,11 @@ pub(crate) fn fomod_marker<'a>(on: bool, usable: bool, radio: bool) -> Element<'
     // `!usable` first painted the marker in dark ink on that burgundy, so an option
     // that was both ticked and forbidden showed a tick you could not see.
     let ink = if on {
-        FOMOD_PARCHMENT
+        fomod_on_accent()
     } else if !usable {
-        FOMOD_INK_FAINT
+        fomod_ink_faint()
     } else {
-        FOMOD_INK_SOFT
+        fomod_ink_soft()
     };
     // The dot fills what the 4px inset leaves it, rather than being a fixed size
     // that gets centred. Centring a 7px dot in a 14px ring asks the renderer for a
@@ -138,7 +158,7 @@ pub(crate) fn fomod_rule<'a>(vertical: bool) -> Element<'a, Message> {
         .width(w)
         .height(h)
         .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(FOMOD_RULE)),
+            background: Some(Background::Color(fomod_rule_color())),
             ..Default::default()
         })
         .into()
@@ -195,13 +215,13 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         .align_y(iced::Alignment::Center)
         .push(text(config.module_name.clone()).size(17.0).font(bold).width(Length::Fill));
     if let Some(s) = step {
-        title = title.push(text(s.name.clone()).size(12.0).color(FOMOD_INK_FAINT));
+        title = title.push(text(s.name.clone()).size(12.0).color(fomod_ink_faint()));
     }
     let head = title.push(
         // The step counter as a chip, so it reads as status rather than as one
         // more sentence competing with the mod's name.
         container(
-            text(format!("Step {shown_no} of {total}")).size(11.0).color(FOMOD_PARCHMENT),
+            text(format!("Step {shown_no} of {total}")).size(11.0).color(fomod_on_accent()),
         )
             .padding([3, 9])
             .style(|t: &Theme| container::Style {
@@ -232,14 +252,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                         .push(
                             text(group.name.clone())
                                 .size(11.0)
-                                .color(FOMOD_INK_SOFT)
+                                .color(fomod_ink_soft())
                                 .width(Length::Fill),
                         )
-                        .push(text("·").size(11.0).color(FOMOD_INK_FAINT))
+                        .push(text("·").size(11.0).color(fomod_ink_faint()))
                         .push(
                             text(group_type_label(group.group_type))
                                 .size(11.0)
-                                .color(FOMOD_INK_FAINT),
+                                .color(fomod_ink_faint()),
                         ),
                 )
                 .padding([9, 4]),
@@ -285,11 +305,11 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     _ => "",
                 };
                 let label = if on {
-                    FOMOD_PARCHMENT
+                    fomod_on_accent()
                 } else if usable {
                     palette().text
                 } else {
-                    FOMOD_INK_FAINT
+                    fomod_ink_faint()
                 };
                 let row = Row::new()
                     .spacing(8)
@@ -299,9 +319,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     // 10px, not 9.5, and in the darker ink: this string carries the
                     // author's own guidance and was being rendered at 2.7:1.
                     .push(text(tag).size(10.0).color(if on {
-                        FOMOD_PARCHMENT
+                        fomod_on_accent()
                     } else {
-                        FOMOD_INK_SOFT
+                        fomod_ink_soft()
                     }));
                 let mut b = button(row)
                     .padding([7, 9])
@@ -313,17 +333,17 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                         let bg = if on {
                             t.palette().primary
                         } else if !usable {
-                            Color { a: 0.35, ..FOMOD_ROW_BG }
+                            Color { a: 0.35, ..fomod_row_bg() }
                         } else if hovered {
-                            FOMOD_ROW_HOVER
+                            fomod_row_hover()
                         } else {
-                            FOMOD_ROW_BG
+                            fomod_row_bg()
                         };
                         button::Style {
                             background: Some(Background::Color(bg)),
                             text_color: label,
                             border: Border {
-                                color: if on { t.palette().primary } else { FOMOD_RULE },
+                                color: if on { t.palette().primary } else { fomod_rule_color() },
                                 width: 1.0,
                                 radius: 5.0.into(),
                             },
@@ -360,7 +380,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             .into(),
         // INK_SOFT, not FAINT: this sits on the preview fill, which is darker than
         // the page, so the faint ink fell to 2.4:1 and the box just read as blank.
-        None => container(text("No preview for this option.").size(12.0).color(FOMOD_INK_SOFT))
+        None => container(text("No preview for this option.").size(12.0).color(fomod_ink_soft()))
             .center_x(Length::Fill)
             .center_y(Length::Fill)
             .into(),
@@ -371,9 +391,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             .height(Length::Fixed(FOMOD_PREVIEW_H))
             .padding(8)
             .style(|_t: &Theme| container::Style {
-                background: Some(Background::Color(Color::from_rgb8(0xD9, 0xC9, 0xA8))),
+                background: Some(Background::Color(pal().bg_progress)),
                 border: Border {
-                    color: FOMOD_RULE,
+                    color: fomod_rule_color(),
                     width: 1.0,
                     radius: 6.0.into(),
                 },
@@ -389,7 +409,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             .push(text(p.name.clone()).size(13.0).font(bold).width(Length::Fill));
         if !p.description.is_empty() {
             d = d.push(
-                text(p.description.clone()).size(12.0).color(FOMOD_INK_SOFT).width(Length::Fill),
+                text(p.description.clone()).size(12.0).color(fomod_ink_soft()).width(Length::Fill),
             );
         }
         // Scrollable, because the preview box above it is a hard 420px and the pane
@@ -409,7 +429,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let mut nav = Row::new().spacing(8).align_y(iced::Alignment::Center);
     if !valid {
         nav = nav.push(
-            text("Select the required option(s) to continue.").size(11.0).color(FOMOD_INK_FAINT),
+            text("Select the required option(s) to continue.").size(11.0).color(fomod_ink_faint()),
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
@@ -476,17 +496,17 @@ pub(crate) fn fomod_btn<'a>(label: &'a str, msg: Option<Message>, primary: bool)
             // moment the user most needs to read a button is when it will not let
             // them past. Opaque fill, dark ink: readable, and unmistakably inert.
             let (bg, fg) = match (primary, live, hovered) {
-                (true, true, false) => (p, FOMOD_PARCHMENT),
-                (true, true, true) => (Color { a: 0.85, ..p }, FOMOD_PARCHMENT),
-                (true, false, _) => (FOMOD_ROW_BG, FOMOD_INK_SOFT),
-                (false, _, true) => (FOMOD_ROW_HOVER, t.palette().text),
-                (false, _, false) => (FOMOD_ROW_BG, t.palette().text),
+                (true, true, false) => (p, fomod_on_accent()),
+                (true, true, true) => (Color { a: 0.85, ..p }, fomod_on_accent()),
+                (true, false, _) => (fomod_row_bg(), fomod_ink_soft()),
+                (false, _, true) => (fomod_row_hover(), t.palette().text),
+                (false, _, false) => (fomod_row_bg(), t.palette().text),
             };
             button::Style {
                 background: Some(Background::Color(bg)),
                 text_color: fg,
                 border: Border {
-                    color: if primary && live { Color { a: 0.0, ..p } } else { FOMOD_RULE },
+                    color: if primary && live { Color { a: 0.0, ..p } } else { fomod_rule_color() },
                     width: 1.0,
                     radius: 5.0.into(),
                 },
