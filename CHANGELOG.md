@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.0](https://github.com/Project-Colony/Eidos/compare/v1.11.2...v1.12.0) (2026-08-26)
+
+
+### Features
+
+* **gui:** animation, Preferences to the Colony convention, and the 57 shared palettes ([#41](https://github.com/Project-Colony/Eidos/issues/41)) ([7f71b25](https://github.com/Project-Colony/Eidos/commit/7f71b2545b470040ecc11cffbb9df8ebedeec86f))
+* **gui:** drag the divider to resize the two panes ([#40](https://github.com/Project-Colony/Eidos/issues/40)) ([97c68e5](https://github.com/Project-Colony/Eidos/commit/97c68e566931f2d624f7f194b125a1241e19ebf4))
+
 ## [1.11.2](https://github.com/Project-Colony/Eidos/compare/v1.11.1...v1.11.2) (2026-08-25)
 
 
