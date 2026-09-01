@@ -39,4 +39,4 @@ rfd = "0.17"
 #
 # Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
 # to alter this window without a deliberate bump.
-colony-ui = { git = "https://github.com/Project-Colony/Project-Colony-Resources", tag = "v0.1.0" }
+colony-ui = "0.1.1"
