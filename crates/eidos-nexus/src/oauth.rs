@@ -39,6 +39,7 @@
 //! There is no personal-API-key fallback either: Nexus requires personal keys
 //! absent from a distributed client - absent, not merely unused.
 
+use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -107,13 +108,40 @@ impl Config {
     }
 }
 
+/// Stands in for a secret in `Debug` output. Reports whether the value is there
+/// and how long it is - everything a bug report needs to distinguish "missing"
+/// from "wrong" - and never what it is.
+struct Redacted<'a>(&'a str);
+
+impl fmt::Debug for Redacted<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.0.is_empty() {
+            f.write_str("\"\"")
+        } else {
+            write!(f, "<redacted, {} chars>", self.0.len())
+        }
+    }
+}
+
 /// A PKCE pair: the secret kept in this process, and the digest handed to the
 /// browser. Without it, anything able to intercept the redirect could redeem the
 /// authorization code - which is the whole reason a public client uses PKCE.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Pkce {
     pub verifier: String,
     pub challenge: String,
+}
+
+/// Hand-written: a derived `Debug` would print the verifier, and the verifier is
+/// the entire protection PKCE provides. The challenge is the public half - it
+/// travels in the authorize URL - so it stays legible.
+impl fmt::Debug for Pkce {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Pkce")
+            .field("verifier", &Redacted(&self.verifier))
+            .field("challenge", &self.challenge)
+            .finish()
+    }
 }
 
 impl Pkce {
@@ -381,7 +409,7 @@ fn handle_callback(mut stream: TcpStream, expected_state: &str) -> Callback {
 }
 
 /// A completed sign-in.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Tokens {
     pub access_token: String,
     pub refresh_token: String,
@@ -390,6 +418,22 @@ pub struct Tokens {
     /// Unix seconds. Absolute rather than a duration, because it has to survive
     /// being written to disk and read back in a later session.
     pub expires_at: u64,
+}
+
+/// Hand-written so the credentials cannot reach a log. `Tokens` is returned
+/// through `Result` chains that callers format on failure, and a derived `Debug`
+/// would print the refresh token in full - the one secret here that outlives the
+/// session and can mint fresh access tokens on its own.
+impl fmt::Debug for Tokens {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tokens")
+            .field("access_token", &Redacted(&self.access_token))
+            .field("refresh_token", &Redacted(&self.refresh_token))
+            .field("scope", &self.scope)
+            .field("token_type", &self.token_type)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 impl Tokens {
@@ -878,6 +922,50 @@ mod tests {
         // Nexus requires personal-key usage gone from the client entirely, and a
         // key that is read "just in case" is exactly what that rules out.
         assert!(!format!("{t:?}").contains("api_key"));
+    }
+
+    /// The refresh token outlives the session and can mint fresh access tokens on
+    /// its own, so a `{:?}` that reaches a log or a formatted error hands over
+    /// durable access. Locked here rather than left to whoever next adds a log
+    /// line near a `Tokens`.
+    #[test]
+    fn a_debug_of_tokens_never_prints_the_tokens() {
+        let t = Tokens {
+            access_token: "sup3r-secret-access".into(),
+            refresh_token: "sup3r-secret-refresh".into(),
+            scope: "openid".into(),
+            token_type: "Bearer".into(),
+            expires_at: 4_600,
+        };
+        let shown = format!("{t:?}");
+        assert!(!shown.contains(&t.access_token), "{shown}");
+        assert!(!shown.contains(&t.refresh_token), "{shown}");
+        // Still worth printing: the non-secret fields stay readable, and a secret
+        // that is set reads differently from one that is missing - which is the
+        // whole reason anyone reaches for `{:?}` on this type.
+        assert!(shown.contains("openid"), "{shown}");
+        assert!(shown.contains("4600"), "{shown}");
+        assert!(
+            shown.contains(&format!("{} chars", t.access_token.len())),
+            "the length stands in for the value: {shown}"
+        );
+        assert!(
+            format!("{:?}", Tokens::default()).contains("\"\""),
+            "and an absent secret reads as absent, not as redacted"
+        );
+    }
+
+    /// Same rule one type over: the verifier is the entire protection PKCE gives,
+    /// and it sits next to a challenge that is public by design.
+    #[test]
+    fn a_debug_of_pkce_never_prints_the_verifier() {
+        let p = Pkce::from_verifier("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk");
+        let shown = format!("{p:?}");
+        assert!(!shown.contains(&p.verifier), "{shown}");
+        assert!(
+            shown.contains(&p.challenge),
+            "the challenge travels in the authorize URL, it stays legible: {shown}"
+        );
     }
 
     #[test]
