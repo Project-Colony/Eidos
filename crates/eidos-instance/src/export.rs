@@ -123,14 +123,19 @@ pub fn fmt_mtime(path: &Path) -> String {
     let Ok(secs) = std::fs::metadata(path)
         .and_then(|m| m.modified())
         .and_then(|t| {
-            t.duration_since(std::time::UNIX_EPOCH).map_err(|_| std::io::Error::other("pre-epoch"))
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| std::io::Error::other("pre-epoch"))
         })
         .map(|d| d.as_secs() as i64)
     else {
         return String::new();
     };
     let (days, rem) = (secs.div_euclid(86400), secs.rem_euclid(86400));
-    let (h, mi, s) = ((rem / 3600) as u32, ((rem % 3600) / 60) as u32, (rem % 60) as u32);
+    let (h, mi, s) = (
+        (rem / 3600) as u32,
+        ((rem % 3600) / 60) as u32,
+        (rem % 60) as u32,
+    );
     // Howard Hinnant's civil_from_days.
     let z = days + 719_468;
     let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
@@ -166,8 +171,11 @@ pub fn mod_list_csv(
     nexus_domain: &str,
 ) -> (String, usize) {
     let factory = inst.category_factory();
-    let mut csv: String =
-        columns.iter().map(|c| c.header()).collect::<Vec<_>>().join(",");
+    let mut csv: String = columns
+        .iter()
+        .map(|c| c.header())
+        .collect::<Vec<_>>()
+        .join(",");
     csv.push_str("\r\n");
 
     let mut count = 0usize;
@@ -231,7 +239,6 @@ pub fn mod_list_csv(
     (csv, count)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,19 +265,35 @@ mod tests {
     fn row(name: &str, enabled: bool, root: &std::path::Path) -> ModEntry {
         let p = root.join("mods").join(name);
         let _ = std::fs::create_dir_all(&p);
-        ModEntry { name: name.to_string(), enabled, path: p, unmanaged: false }
+        ModEntry {
+            name: name.to_string(),
+            enabled,
+            path: p,
+            unmanaged: false,
+        }
     }
 
     #[test]
     fn the_full_export_is_mo2s_own_shape() {
         let (inst, root) = fixture();
         let rows = vec![row("Alpha", true, &root), row("Bravo", false, &root)];
-        let (csv, n) =
-            mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, "skyrimspecialedition");
+        let (csv, n) = mod_list_csv(
+            &inst,
+            &rows,
+            ExportScope::All,
+            Column::ALL,
+            "skyrimspecialedition",
+        );
         assert_eq!(n, 2);
         // CRLF, and the header MO2 writes verbatim.
-        assert!(csv.starts_with("#Mod_Priority,#Mod_Status,#Mod_Name,"), "{csv}");
-        assert!(csv.contains("\r\n"), "MO2 writes CRLF and a parser may rely on it");
+        assert!(
+            csv.starts_with("#Mod_Priority,#Mod_Status,#Mod_Name,"),
+            "{csv}"
+        );
+        assert!(
+            csv.contains("\r\n"),
+            "MO2 writes CRLF and a parser may rely on it"
+        );
         let first = csv.lines().nth(1).unwrap();
         // Every string quoted, the Nexus id bare - the one asymmetry MO2 has.
         assert!(first.starts_with("\"0000\",\"+\",\"Alpha\","), "{first}");
@@ -281,7 +304,11 @@ mod tests {
     #[test]
     fn the_priority_column_is_a_position_not_a_running_count() {
         let (inst, root) = fixture();
-        let rows = vec![row("Off1", false, &root), row("On1", true, &root), row("On2", true, &root)];
+        let rows = vec![
+            row("Off1", false, &root),
+            row("On1", true, &root),
+            row("On2", true, &root),
+        ];
         let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::Active, Column::ALL, "");
         assert_eq!(n, 2);
         // 0001 and 0002 - the positions they hold in the list. A priority that
@@ -308,7 +335,10 @@ mod tests {
     #[test]
     fn separators_are_not_mods_and_are_never_exported() {
         let (inst, root) = fixture();
-        let rows = vec![row("Gear_separator", true, &root), row("Alpha", true, &root)];
+        let rows = vec![
+            row("Gear_separator", true, &root),
+            row("Alpha", true, &root),
+        ];
         let (csv, n) = mod_list_csv(&inst, &rows, ExportScope::All, Column::ALL, "");
         assert_eq!(n, 1);
         assert!(!csv.contains("Gear"), "{csv}");

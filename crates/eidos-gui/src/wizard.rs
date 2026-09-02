@@ -24,7 +24,10 @@ pub(crate) fn frame<'a>(
         .push(text("Eidos").size(26.0))
         .push(text(step).size(12.0));
 
-    let card = container(content).width(Length::Fill).padding(18).style(card_style);
+    let card = container(content)
+        .width(Length::Fill)
+        .padding(18)
+        .style(card_style);
 
     let footer = Row::new()
         .push(nav("Back", back, false))
@@ -67,10 +70,22 @@ pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
             .push(text("Or open an existing instance:").size(13.0))
             .push(scrollable(list).height(Length::Fixed(160.0)));
     }
-    frame("Step 1 of 5", "Welcome", content.into(), None, "Next", Some(Message::Next))
+    frame(
+        "Step 1 of 5",
+        "Welcome",
+        content.into(),
+        None,
+        "Next",
+        Some(Message::Next),
+    )
 }
 
-pub(crate) fn kind_card<'a>(label: &'a str, desc: &'a str, selected: bool, msg: Message) -> Element<'a, Message> {
+pub(crate) fn kind_card<'a>(
+    label: &'a str,
+    desc: &'a str,
+    selected: bool,
+    msg: Message,
+) -> Element<'a, Message> {
     let inner = Column::new()
         .spacing(4)
         .push(text(label).size(16.0))
@@ -79,7 +94,11 @@ pub(crate) fn kind_card<'a>(label: &'a str, desc: &'a str, selected: bool, msg: 
         .width(Length::Fill)
         .padding(12)
         .on_press(msg)
-        .style(if selected { button::primary } else { button::secondary })
+        .style(if selected {
+            button::primary
+        } else {
+            button::secondary
+        })
         .into()
 }
 
@@ -98,7 +117,14 @@ pub(crate) fn kind_screen<'a>(app: &App) -> Element<'a, Message> {
             app.kind == InstanceKind::Portable,
             Message::PickKind(InstanceKind::Portable),
         ));
-    frame("Step 2 of 5", "Instance type", content.into(), Some(Message::Back), "Next", Some(Message::Next))
+    frame(
+        "Step 2 of 5",
+        "Instance type",
+        content.into(),
+        Some(Message::Back),
+        "Next",
+        Some(Message::Next),
+    )
 }
 
 pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
@@ -115,27 +141,51 @@ pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
                     .width(Length::Fill)
                     .padding(10)
                     .on_press(Message::PickGame(i))
-                    .style(if app.selected == Some(i) { button::primary } else { button::secondary }),
+                    .style(if app.selected == Some(i) {
+                        button::primary
+                    } else {
+                        button::secondary
+                    }),
             );
         }
         scrollable(list).height(Length::Fixed(240.0)).into()
     };
     let next = app.selected.map(|_| Message::Next);
-    frame("Step 3 of 5", "Choose the game to mod", content, Some(Message::Back), "Next", next)
+    frame(
+        "Step 3 of 5",
+        "Choose the game to mod",
+        content,
+        Some(Message::Back),
+        "Next",
+        next,
+    )
 }
 
 pub(crate) fn nameloc_screen<'a>(app: &App) -> Element<'a, Message> {
     let mut content = Column::new()
         .spacing(8)
         .push(text("Instance name").size(13.0))
-        .push(text_input("My Skyrim setup", &app.name).on_input(Message::NameChanged).padding(8));
+        .push(
+            text_input("My Skyrim setup", &app.name)
+                .on_input(Message::NameChanged)
+                .padding(8),
+        );
     if app.kind == InstanceKind::Portable {
         content = content.push(text("Portable folder").size(13.0)).push(
-            text_input("~/Eidos/skyrimse", &app.portable_path).on_input(Message::PortableChanged).padding(8),
+            text_input("~/Eidos/skyrimse", &app.portable_path)
+                .on_input(Message::PortableChanged)
+                .padding(8),
         );
     }
     let next = (!app.name.trim().is_empty()).then_some(Message::Next);
-    frame("Step 4 of 5", "Name and location", content.into(), Some(Message::Back), "Next", next)
+    frame(
+        "Step 4 of 5",
+        "Name and location",
+        content.into(),
+        Some(Message::Back),
+        "Next",
+        next,
+    )
 }
 
 pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
@@ -144,13 +194,21 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
         InstanceKind::Portable => "Portable",
     };
     let game = selected_game(app);
-    let location = planned_instance(app).map(|i| i.root.display().to_string()).unwrap_or_default();
+    let location = planned_instance(app)
+        .map(|i| i.root.display().to_string())
+        .unwrap_or_default();
 
     let mut content = Column::new()
         .spacing(8)
         .push(text(format!("Name:     {}", app.name)).size(14.0))
         .push(text(format!("Type:     {kind}")).size(14.0))
-        .push(text(format!("Game:     {}", game.map(|g| g.def.name).unwrap_or("(none)"))).size(14.0))
+        .push(
+            text(format!(
+                "Game:     {}",
+                game.map(|g| g.def.name).unwrap_or("(none)")
+            ))
+            .size(14.0),
+        )
         .push(text(format!("Location: {location}")).size(13.0));
     if let Some(g) = game {
         content = content.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
@@ -171,6 +229,17 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
     if let Some(err) = &app.error {
         content = content.push(text(format!("Error: {err}")).size(13.0));
     }
-    let next_label = if adopts { "Open instance" } else { "Create instance" };
-    frame("Step 5 of 5", "Review and create", content.into(), Some(Message::Back), next_label, Some(Message::Finish))
+    let next_label = if adopts {
+        "Open instance"
+    } else {
+        "Create instance"
+    };
+    frame(
+        "Step 5 of 5",
+        "Review and create",
+        content.into(),
+        Some(Message::Back),
+        next_label,
+        Some(Message::Finish),
+    )
 }

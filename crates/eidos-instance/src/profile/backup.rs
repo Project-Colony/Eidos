@@ -94,7 +94,10 @@ pub fn format_stamp(secs: u64) -> String {
 }
 
 fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 impl Profile {
@@ -137,7 +140,10 @@ impl Profile {
     /// Where each slot's stamped copies are keyed from.
     fn backup_sources(&self, kind: BackupKind) -> Vec<PathBuf> {
         let dir = self.backups_dir();
-        Self::backup_slots(kind).iter().map(|n| dir.join(n)).collect()
+        Self::backup_slots(kind)
+            .iter()
+            .map(|n| dir.join(n))
+            .collect()
     }
 
     /// Take a restore point, and prune the oldest beyond [`KEEP_BACKUPS`].
@@ -202,13 +208,17 @@ impl Profile {
     /// that fails on click.
     pub fn backups(&self, kind: BackupKind) -> Vec<Backup> {
         let sources = self.backup_sources(kind);
-        let Some(first) = sources.first() else { return Vec::new() };
+        let Some(first) = sources.first() else {
+            return Vec::new();
+        };
         let mut out: Vec<Backup> = stamps_for(first)
             .into_iter()
             .filter_map(|stamp| {
-                let files: Vec<PathBuf> =
-                    sources.iter().map(|s| stamped_path(s, stamp)).collect();
-                files.iter().all(|f| f.is_file()).then_some(Backup { stamp, files })
+                let files: Vec<PathBuf> = sources.iter().map(|s| stamped_path(s, stamp)).collect();
+                files
+                    .iter()
+                    .all(|f| f.is_file())
+                    .then_some(Backup { stamp, files })
             })
             .collect();
         out.sort_by_key(|b| std::cmp::Reverse(b.stamp));
@@ -221,12 +231,14 @@ impl Profile {
     pub fn restore_backup(&self, kind: BackupKind, stamp: u64) -> io::Result<()> {
         let slots = Self::backup_slots(kind);
         let sources = self.backup_sources(kind);
-        let stamped: Vec<PathBuf> =
-            sources.iter().map(|s| stamped_path(s, stamp)).collect();
+        let stamped: Vec<PathBuf> = sources.iter().map(|s| stamped_path(s, stamp)).collect();
         if let Some(missing) = stamped.iter().find(|p| !p.is_file()) {
             return Err(io::Error::new(
                 io::ErrorKind::NotFound,
-                format!("that backup is incomplete: {} is missing", missing.display()),
+                format!(
+                    "that backup is incomplete: {} is missing",
+                    missing.display()
+                ),
             ));
         }
         // Read the restore point BEFORE the safety copy runs, so the order of
@@ -281,8 +293,12 @@ impl Profile {
     /// Drop the oldest restore points past [`KEEP_BACKUPS`]. Best-effort: a
     /// backup that cannot be pruned is clutter, not a failure worth reporting.
     fn prune_backups(&self, kind: BackupKind) {
-        let keep: Vec<u64> =
-            self.backups(kind).into_iter().take(KEEP_BACKUPS).map(|b| b.stamp).collect();
+        let keep: Vec<u64> = self
+            .backups(kind)
+            .into_iter()
+            .take(KEEP_BACKUPS)
+            .map(|b| b.stamp)
+            .collect();
         // Every stamped file of every slot, not just the complete points:
         // otherwise an interrupted backup leaves halves that `backups` cannot
         // see and that nothing would ever remove.
@@ -320,8 +336,7 @@ fn stamped_path(src: &Path, stamp: u64) -> PathBuf {
 /// hand-made copies like `modlist.txt.before-cosmos`, and neither is a restore
 /// point this code wrote or knows how to interpret.
 fn stamps_for(src: &Path) -> Vec<u64> {
-    let (Some(dir), Some(base)) = (src.parent(), src.file_name().and_then(|n| n.to_str()))
-    else {
+    let (Some(dir), Some(base)) = (src.parent(), src.file_name().and_then(|n| n.to_str())) else {
         return Vec::new();
     };
     let prefix = format!("{base}.");
@@ -346,10 +361,12 @@ mod tests {
     /// A profile with a real modlist and plugin order on disk.
     fn profile() -> Profile {
         let n = N.fetch_add(1, Ordering::Relaxed);
-        let root =
-            std::env::temp_dir().join(format!("eidos-bk-{}-{}", std::process::id(), n));
+        let root = std::env::temp_dir().join(format!("eidos-bk-{}-{}", std::process::id(), n));
         let _ = fs::remove_dir_all(&root);
-        let p = Profile { instance_root: root, name: "Default".to_string() };
+        let p = Profile {
+            instance_root: root,
+            name: "Default".to_string(),
+        };
         fs::create_dir_all(p.dir()).unwrap();
         fs::write(p.dir().join("modlist.txt"), "+A\n-B\n").unwrap();
         fs::create_dir_all(p.plugins_txt_path().parent().unwrap()).unwrap();
@@ -369,7 +386,10 @@ mod tests {
         let b = p.create_backup(BackupKind::ModList).unwrap();
         fs::write(p.dir().join("modlist.txt"), "+RUINED\n").unwrap();
         p.restore_backup(BackupKind::ModList, b.stamp).unwrap();
-        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+A\n-B\n");
+        assert_eq!(
+            fs::read_to_string(p.dir().join("modlist.txt")).unwrap(),
+            "+A\n-B\n"
+        );
         cleanup(&p);
     }
 
@@ -383,8 +403,14 @@ mod tests {
         fs::write(p.plugins_txt_path(), "*Wrong.esp\n").unwrap();
         fs::write(p.loadorder_txt_path(), "Wrong.esp\n").unwrap();
         p.restore_backup(BackupKind::LoadOrder, b.stamp).unwrap();
-        assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), "*Skyrim.esm\n");
-        assert_eq!(fs::read_to_string(p.loadorder_txt_path()).unwrap(), "Skyrim.esm\n");
+        assert_eq!(
+            fs::read_to_string(p.plugins_txt_path()).unwrap(),
+            "*Skyrim.esm\n"
+        );
+        assert_eq!(
+            fs::read_to_string(p.loadorder_txt_path()).unwrap(),
+            "Skyrim.esm\n"
+        );
         cleanup(&p);
     }
 
@@ -400,7 +426,10 @@ mod tests {
             .iter()
             .map(|b| fs::read_to_string(&b.files[0]).unwrap())
             .collect();
-        assert!(saved.contains(&"+CURRENT\n".to_string()), "the replaced state was kept: {saved:?}");
+        assert!(
+            saved.contains(&"+CURRENT\n".to_string()),
+            "the replaced state was kept: {saved:?}"
+        );
         cleanup(&p);
     }
 
@@ -411,7 +440,10 @@ mod tests {
         let b = p.create_backup(BackupKind::LoadOrder).unwrap();
         fs::remove_file(&b.files[1]).unwrap();
         assert!(p.backups(BackupKind::LoadOrder).is_empty(), "not offered");
-        assert!(p.restore_backup(BackupKind::LoadOrder, b.stamp).is_err(), "not restorable");
+        assert!(
+            p.restore_backup(BackupKind::LoadOrder, b.stamp).is_err(),
+            "not restorable"
+        );
         cleanup(&p);
     }
 
@@ -423,7 +455,11 @@ mod tests {
         fs::write(p.dir().join("modlist.txt.bak"), "x").unwrap();
         fs::write(p.dir().join("modlist.txt.before-cosmos"), "x").unwrap();
         p.create_backup(BackupKind::ModList).unwrap();
-        assert_eq!(p.backups(BackupKind::ModList).len(), 1, "only the stamped one counts");
+        assert_eq!(
+            p.backups(BackupKind::ModList).len(),
+            1,
+            "only the stamped one counts"
+        );
         cleanup(&p);
     }
 
@@ -450,8 +486,15 @@ mod tests {
         p.create_backup(BackupKind::ModList).unwrap();
         let left = p.backups(BackupKind::ModList);
         assert_eq!(left.len(), KEEP_BACKUPS, "pruned to the cap");
-        assert_eq!(left[0].stamp, left.iter().map(|b| b.stamp).max().unwrap(), "newest first");
-        assert!(left.iter().all(|b| b.stamp >= 1_005), "the oldest went, not the newest");
+        assert_eq!(
+            left[0].stamp,
+            left.iter().map(|b| b.stamp).max().unwrap(),
+            "newest first"
+        );
+        assert!(
+            left.iter().all(|b| b.stamp >= 1_005),
+            "the oldest went, not the newest"
+        );
         cleanup(&p);
     }
 
@@ -468,7 +511,11 @@ mod tests {
 
         let b = p.create_backup(BackupKind::LoadOrder).unwrap();
         assert_eq!(b.files.len(), 2, "both halves captured despite the case");
-        assert_eq!(p.backups(BackupKind::LoadOrder).len(), 1, "and it is listed");
+        assert_eq!(
+            p.backups(BackupKind::LoadOrder).len(),
+            1,
+            "and it is listed"
+        );
 
         fs::write(&recased, "*Ruined.esp\n").unwrap();
         p.restore_backup(BackupKind::LoadOrder, b.stamp).unwrap();
@@ -504,8 +551,15 @@ mod tests {
             .flatten()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(before.len(), after.len(), "the game's view is untouched: {after:?}");
-        assert!(p.backups_dir().is_dir(), "they went to the profile's backups dir");
+        assert_eq!(
+            before.len(),
+            after.len(),
+            "the game's view is untouched: {after:?}"
+        );
+        assert!(
+            p.backups_dir().is_dir(),
+            "they went to the profile's backups dir"
+        );
         cleanup(&p);
     }
 
@@ -516,7 +570,10 @@ mod tests {
         let p = profile();
         fs::remove_file(p.plugins_txt_path()).unwrap();
         let err = p.create_backup(BackupKind::LoadOrder).unwrap_err();
-        assert!(format!("{err}").contains("plugins.txt"), "it says what is missing: {err}");
+        assert!(
+            format!("{err}").contains("plugins.txt"),
+            "it says what is missing: {err}"
+        );
         assert!(p.backups(BackupKind::LoadOrder).is_empty());
         cleanup(&p);
     }
@@ -533,7 +590,10 @@ mod tests {
         assert_ne!(a.stamp, b.stamp, "each got its own slot");
         assert_eq!(p.backups(BackupKind::ModList).len(), 2);
         p.restore_backup(BackupKind::ModList, a.stamp).unwrap();
-        assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+A\n-B\n");
+        assert_eq!(
+            fs::read_to_string(p.dir().join("modlist.txt")).unwrap(),
+            "+A\n-B\n"
+        );
         cleanup(&p);
     }
 
@@ -545,7 +605,10 @@ mod tests {
         fs::create_dir_all(p.backups_dir()).unwrap();
         let orphan = stamped_path(&p.backups_dir().join("loadorder.txt"), 42);
         fs::write(&orphan, "x").unwrap();
-        assert!(p.backups(BackupKind::LoadOrder).is_empty(), "not a restore point");
+        assert!(
+            p.backups(BackupKind::LoadOrder).is_empty(),
+            "not a restore point"
+        );
         p.create_backup(BackupKind::LoadOrder).unwrap();
         assert!(!orphan.exists(), "the orphan was swept");
         cleanup(&p);

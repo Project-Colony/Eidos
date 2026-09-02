@@ -141,15 +141,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::ClearOverwrite) {
             app.confirm_clear = false;
         }
-        if !matches!(message, Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)) {
+        if !matches!(
+            message,
+            Message::DeleteSave(_) | Message::ConfirmDeleteSave(_)
+        ) {
             app.confirm_delete_save = None;
         }
-        if !matches!(message, Message::DeleteDownload(_) | Message::ConfirmDeleteDownload(_)) {
+        if !matches!(
+            message,
+            Message::DeleteDownload(_) | Message::ConfirmDeleteDownload(_)
+        ) {
             app.confirm_delete_download = None;
         }
         // The batch-remove confirmation is armed by the first click; any other
         // action (including merely re-rendering on a modifier change) cancels it.
-        if !matches!(message, Message::BatchRemoveMods | Message::ConfirmBatchRemove) {
+        if !matches!(
+            message,
+            Message::BatchRemoveMods | Message::ConfirmBatchRemove
+        ) {
             app.confirm_batch_remove = false;
         }
         // Same rule for the bulk enable/disable: any other action disarms it.
@@ -165,13 +174,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         if !matches!(message, Message::SavesDeleteSelected) {
             app.confirm_saves_delete = false;
         }
-        if !matches!(message, Message::PurgeInstalledDownloads | Message::ConfirmPurgeInstalled) {
+        if !matches!(
+            message,
+            Message::PurgeInstalledDownloads | Message::ConfirmPurgeInstalled
+        ) {
             app.confirm_purge_installed = false;
         }
-        if !matches!(message, Message::FiletreeDelete(..) | Message::ConfirmFiletreeDelete(..)) {
+        if !matches!(
+            message,
+            Message::FiletreeDelete(..) | Message::ConfirmFiletreeDelete(..)
+        ) {
             app.tree_delete_armed = None;
         }
-        if !matches!(message, Message::ModRestoreBackup(_) | Message::ConfirmModRestoreBackup(_)) {
+        if !matches!(
+            message,
+            Message::ModRestoreBackup(_) | Message::ConfirmModRestoreBackup(_)
+        ) {
             app.confirm_restore = None;
         }
         if !matches!(message, Message::CollectionFetchMissing) {
@@ -327,7 +345,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Creation Club content: they are not in modlist.txt, so a flipped
             // flag would be silently lost on the next save, which reads as the
             // click having done nothing.
-            if app.mods.get(i).is_some_and(|m| m.is_separator() || m.is_unmanaged()) {
+            if app
+                .mods
+                .get(i)
+                .is_some_and(|m| m.is_separator() || m.is_unmanaged())
+            {
                 return Task::none();
             }
             if let Some(m) = app.mods.get_mut(i) {
@@ -370,8 +392,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // bind-mounted into the live session - switching under it corrupted
             // the profile that was never played.
             if app.running.is_some() {
-                app.status =
-                    Some("Cannot switch profiles while the game is running.".to_string());
+                app.status = Some("Cannot switch profiles while the game is running.".to_string());
                 return Task::none();
             }
             // One shared path (switch_to_profile) so the reload steps - incl.
@@ -479,7 +500,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ProfileCopyCommit => {
-            if let (Some(inst), Some((src_name, edited))) = (&app.created, app.profile_copy.clone()) {
+            if let (Some(inst), Some((src_name, edited))) = (&app.created, app.profile_copy.clone())
+            {
                 let new = edited.trim().to_string();
                 if new.is_empty() || new.contains('/') || new.contains('\\') {
                     app.status = Some("Invalid profile name.".to_string());
@@ -571,12 +593,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // the extracted tree instead of being unpacked a second time.
             match eidos_install::open_archive(&path, &mods_dir, &name, &gid) {
                 Ok(eidos_install::Opened::Fomod(session)) => {
-                    let enabled_roots: Vec<std::path::PathBuf> =
-                        app.mods.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
-                    let disabled_roots: Vec<std::path::PathBuf> =
-                        app.mods.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
+                    let enabled_roots: Vec<std::path::PathBuf> = app
+                        .mods
+                        .iter()
+                        .filter(|m| m.is_active())
+                        .map(|m| m.path.clone())
+                        .collect();
+                    let disabled_roots: Vec<std::path::PathBuf> = app
+                        .mods
+                        .iter()
+                        .filter(|m| !m.is_active() && !m.is_separator())
+                        .map(|m| m.path.clone())
+                        .collect();
                     let ctx = match selected_game(app) {
-                        Some(g) => eidos_install::fomod_context(&g.data_path, &enabled_roots, &disabled_roots),
+                        Some(g) => eidos_install::fomod_context(
+                            &g.data_path,
+                            &enabled_roots,
+                            &disabled_roots,
+                        ),
                         None => eidos_fomod::Context::default(),
                     };
                     let session = *session;
@@ -595,8 +629,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             .iter()
                             .position(|v| *v)
                             .unwrap_or(0);
-                        app.fomod =
-                            Some(FomodWizard {
+                        app.fomod = Some(FomodWizard {
                             session,
                             step: first,
                             selection,
@@ -605,7 +638,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             ctx,
                             hover: None,
                         });
-                        app.status = Some("FOMOD installer: choose your options, then Install.".to_string());
+                        app.status =
+                            Some("FOMOD installer: choose your options, then Install.".to_string());
                     }
                 }
                 Ok(eidos_install::Opened::Simple(tree)) => {
@@ -634,7 +668,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                 tree: Some(tree),
                                 pick: None,
                             });
-                            app.status = Some(format!("'{name}' already exists - choose how to install."));
+                            app.status =
+                                Some(format!("'{name}' already exists - choose how to install."));
                         }
                         Err(e) => app.status = Some(format!("Install failed: {e}")),
                     }
@@ -642,7 +677,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // Wrye Bash complex package: let the user tick sub-packages. MO2
                 // pre-ticks the `00`-prefixed ones plus whatever the last install
                 // of this mod used, which its meta.ini remembers.
-                Ok(eidos_install::Opened::Bain { tree, subpackages, invalid }) => {
+                Ok(eidos_install::Opened::Bain {
+                    tree,
+                    subpackages,
+                    invalid,
+                }) => {
                     let previous = app
                         .created
                         .as_ref()
@@ -663,14 +702,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         game_id: gid,
                         tree,
                         // `invalid` folders are MO2's cue to ASK rather than assume.
-                        mode: PickerMode::Bain { subpackages, picked, asking: invalid > 0 },
+                        mode: PickerMode::Bain {
+                            subpackages,
+                            picked,
+                            asking: invalid > 0,
+                        },
                     });
                 }
                 // No heuristic recognised the layout. Rather than refuse the
                 // archive, show its tree and let the user point at the data root.
                 Ok(eidos_install::Opened::Manual(tree)) => {
-                    app.status =
-                        Some(format!("'{name}': pick the folder that holds the game data."));
+                    app.status = Some(format!(
+                        "'{name}': pick the folder that holds the game data."
+                    ));
                     let archive_tree = parsed_tree(&tree);
                     app.picker = Some(InstallPicker {
                         rows: archive_tree.flatten(),
@@ -679,26 +723,33 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         name,
                         game_id: gid,
                         tree,
-                        mode: PickerMode::Manual { root: String::new() },
+                        mode: PickerMode::Manual {
+                            root: String::new(),
+                        },
                     });
                 }
                 Err(e) => app.status = Some(format!("Install failed: {e}")),
             }
         }
         Message::PickerBainToggle(i) => {
-            if let Some(PickerMode::Bain { picked, .. }) = app.picker.as_mut().map(|p| &mut p.mode) {
+            if let Some(PickerMode::Bain { picked, .. }) = app.picker.as_mut().map(|p| &mut p.mode)
+            {
                 if let Some(b) = picked.get_mut(i) {
                     *b = !*b;
                 }
             }
         }
         Message::PickerBainConfirm(yes) => {
-            let Some(p) = app.picker.as_mut() else { return Task::none() };
+            let Some(p) = app.picker.as_mut() else {
+                return Task::none();
+            };
             match (&mut p.mode, yes) {
                 (PickerMode::Bain { asking, .. }, true) => *asking = false,
                 // "No, it is not a BAIN package": same extraction, manual picker.
                 (PickerMode::Bain { .. }, false) => {
-                    p.mode = PickerMode::Manual { root: String::new() };
+                    p.mode = PickerMode::Manual {
+                        root: String::new(),
+                    };
                     app.status = Some("Pick the folder that holds the game data.".to_string());
                 }
                 _ => {}
@@ -723,12 +774,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // the NEXT one to pick up.
             app.install_at = None;
             app.status = Some("Install cancelled.".to_string());
-                }
+        }
         Message::FomodToggle(gi, pi) => {
             if let Some(w) = &mut app.fomod {
                 let si = w.step;
-                let gtype =
-                    w.session.config.steps.get(si).and_then(|s| s.groups.get(gi)).map(|g| g.group_type);
+                let gtype = w
+                    .session
+                    .config
+                    .steps
+                    .get(si)
+                    .and_then(|s| s.groups.get(gi))
+                    .map(|g| g.group_type);
                 if let (Some(gtype), Some(g)) =
                     (gtype, w.selection.get_mut(si).and_then(|s| s.get_mut(gi)))
                 {
@@ -763,11 +819,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FomodNext => {
             if let Some(w) = &mut app.fomod {
-                let vis = eidos_fomod::visible_steps(
-                    &w.session.config,
-                    &w.selection,
-                    &w.ctx,
-                );
+                let vis = eidos_fomod::visible_steps(&w.session.config, &w.selection, &w.ctx);
                 let mut s = w.step + 1;
                 while s < vis.len() && !vis[s] {
                     s += 1;
@@ -780,11 +832,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FomodBack => {
             if let Some(w) = &mut app.fomod {
-                let vis = eidos_fomod::visible_steps(
-                    &w.session.config,
-                    &w.selection,
-                    &w.ctx,
-                );
+                let vis = eidos_fomod::visible_steps(&w.session.config, &w.selection, &w.ctx);
                 let mut s = w.step;
                 while s > 0 {
                     s -= 1;
@@ -839,7 +887,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.fomod = None;
             app.install_at = None;
             app.status = Some("FOMOD install cancelled.".to_string());
-                }
+        }
         Message::ToolPicked(choice) => {
             app.tool_choice = (choice != RUN_GAME).then_some(choice);
         }
@@ -850,7 +898,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // Unlock only drops the overlay - it deliberately KEEPS the run
                 // tracked so the post-exit refresh still happens - so telling the
                 // user to unlock was advice that could not work.
-                let what = app.running.as_ref().map(|r| r.title.clone()).unwrap_or_default();
+                let what = app
+                    .running
+                    .as_ref()
+                    .map(|r| r.title.clone())
+                    .unwrap_or_default();
                 app.status = Some(format!(
                     "{what} is still running. Eidos re-enables launching and LOOT sorting when it exits."
                 ));
@@ -890,7 +942,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     .filter(|m| m.is_active())
                     .map(|m| m.path)
                     .collect();
-                let both_active = eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
+                let both_active =
+                    eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots);
                 // How the child names the instance: the portable folder when one
                 // is open, the game id otherwise.
                 let inst_arg = instance_arg(app).unwrap_or_else(|| id.to_string());
@@ -939,7 +992,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CopyLootReport => {
             // No report open means this arrived from the Ctrl+C shortcut with
             // nothing to copy; leaving the clipboard alone is the right answer.
-            let Some(report) = &app.loot_report else { return Task::none() };
+            let Some(report) = &app.loot_report else {
+                return Task::none();
+            };
             let text = loot_report_text(report);
             let lines = text.lines().count();
             app.status = Some(format!("LOOT report copied ({lines} lines)."));
@@ -957,7 +1012,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 for &t in &targets {
                     let origin = (t + 1) as u32;
                     if let Some(mc) = map.mods.get(&origin) {
-                        let set = if first { &mc.overwrites } else { &mc.overwritten_by };
+                        let set = if first {
+                            &mc.overwrites
+                        } else {
+                            &mc.overwritten_by
+                        };
                         related.extend(
                             set.iter()
                                 .filter(|&&o| o != 0 && o != u32::MAX)
@@ -966,16 +1025,28 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             }
-            let dest = if first { related.iter().min() } else { related.iter().max() };
+            let dest = if first {
+                related.iter().min()
+            } else {
+                related.iter().max()
+            };
             let Some(&dest) = dest else {
                 app.status = Some(
-                    if first { "This mod overrides nothing." } else { "Nothing overrides this mod." }
-                        .to_string(),
+                    if first {
+                        "This mod overrides nothing."
+                    } else {
+                        "Nothing overrides this mod."
+                    }
+                    .to_string(),
                 );
                 return Task::none();
             };
             // "Just below the last mod that overrides it" is one slot past it.
-            let dest = if first { dest } else { (dest + 1).min(app.mods.len()) };
+            let dest = if first {
+                dest
+            } else {
+                (dest + 1).min(app.mods.len())
+            };
             let hidden = hidden_by_folds(app);
             let at = move_block(&mut app.mods, &targets, dest);
             app.selected_mod = Some(at);
@@ -1005,7 +1076,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::SendToPriorityCommit => {
-            let Some((i, text)) = app.send_priority.take() else { return Task::none() };
+            let Some((i, text)) = app.send_priority.take() else {
+                return Task::none();
+            };
             let Ok(dest) = text.trim().parse::<usize>() else {
                 app.status = Some("Enter a priority number.".to_string());
                 return Task::none();
@@ -1033,7 +1106,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.send_separator = Some(i);
         }
         Message::SendToSeparatorPick(sep) => {
-            let Some(i) = app.send_separator.take() else { return Task::none() };
+            let Some(i) = app.send_separator.take() else {
+                return Task::none();
+            };
             let targets = selection_or(app, i);
             // Land in the chosen separator's GROUP: the slot just before the next
             // separator, or the end of the list when it is the last group.
@@ -1062,7 +1137,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::OverwriteToModStart => {
             if app.created.as_ref().is_some_and(|i| i.overwrite_is_empty()) {
-                app.status = Some("The Overwrite is empty - nothing to turn into a mod.".to_string());
+                app.status =
+                    Some("The Overwrite is empty - nothing to turn into a mod.".to_string());
             } else {
                 // Default to a fresh, non-colliding name, like the installer does.
                 let suggestion = app
@@ -1108,17 +1184,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::ImportMo2Picked(picked) => {
-            let Some(dir) = picked else { return Task::none() };
+            let Some(dir) = picked else {
+                return Task::none();
+            };
             // Same gates as every other mutation: the import rewrites the modlist
             // AND the plugin state dir, which is bind-mounted into a running
             // session - importing under the game's feet mixed the two states and
             // half-undid the import at the next launch.
             if app.running.is_some() {
-                app.status =
-                    Some("Cannot import while the game is running.".to_string());
+                app.status = Some("Cannot import while the game is running.".to_string());
                 return Task::none();
             }
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -1160,7 +1239,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(name) = app.overwrite_to_mod.take().map(|s| s.trim().to_string()) else {
                 return Task::none();
             };
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let existing = inst.mods_dir().join(&name).exists();
             // Same reason as Clear: this MOVES the whole Overwrite into a mod
             // folder, so doing it mid-session pulls the write layer out from under
@@ -1177,7 +1258,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // Highest priority (the end of the display order), which is where
                     // the Overwrite's content effectively sat.
                     if !app.mods.iter().any(|m| m.name == name) {
-                        app.mods.push(ModEntry { name: name.clone(), enabled: true, path: dest, unmanaged: false });
+                        app.mods.push(ModEntry {
+                            name: name.clone(),
+                            enabled: true,
+                            path: dest,
+                            unmanaged: false,
+                        });
                     }
                     drop_files_cache(app, None);
                     mods_changed(app);
@@ -1303,7 +1389,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if !can_reorder(app) {
                 return Task::none();
             }
-            app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
+            app.drag_state = Some(DragState {
+                from: i,
+                gap: i,
+                aimed: false,
+            });
         }
         Message::SelectModToggle(i) => {
             // A modifier click is still a press on this list: it has to take the
@@ -1447,8 +1537,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ModVisitNexus(i) => {
             app.menu_mod = None;
-            let domain = selected_game(app).map(|g| g.def.nexus_game).filter(|s| !s.is_empty());
-            let mod_id = app.mods.get(i).and_then(|m| app.meta_cache.get(&m.name)).and_then(|r| r.mod_id);
+            let domain = selected_game(app)
+                .map(|g| g.def.nexus_game)
+                .filter(|s| !s.is_empty());
+            let mod_id = app
+                .mods
+                .get(i)
+                .and_then(|m| app.meta_cache.get(&m.name))
+                .and_then(|r| r.mod_id);
             match (domain, mod_id) {
                 (Some(domain), Some(id)) => {
                     let url = format!("https://www.nexusmods.com/{domain}/mods/{id}");
@@ -1487,7 +1583,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // (launched from a terminal, app.running knows nothing about it),
                 // and deleting it mid-session takes the playing game's meshes and
                 // scripts with it. Same guard, same wording as ToggleFileHidden.
-                let Some(inst) = app.created.as_ref() else { return Task::none() };
+                let Some(inst) = app.created.as_ref() else {
+                    return Task::none();
+                };
                 let _lock = match inst.try_lock("the Eidos window") {
                     Ok(l) => l,
                     Err(e) => {
@@ -1512,8 +1610,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             } else {
                 app.confirm_remove = Some(i);
                 if let Some(m) = app.mods.get(i) {
-                    app.status =
-                        Some(format!("Click Remove again to permanently delete '{}' from disk.", m.name));
+                    app.status = Some(format!(
+                        "Click Remove again to permanently delete '{}' from disk.",
+                        m.name
+                    ));
                 }
             }
         }
@@ -1542,13 +1642,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let old = app.mods.get(i).cloned();
                 if let Some(old) = old {
                     // A separator keeps its `_separator` suffix on disk + in modlist.txt.
-                    let new_name =
-                        if old.is_separator() { format!("{typed}_separator") } else { typed.clone() };
+                    let new_name = if old.is_separator() {
+                        format!("{typed}_separator")
+                    } else {
+                        typed.clone()
+                    };
                     if typed.is_empty() || typed.contains('/') || typed.contains('\\') {
                         app.status = Some("Invalid name.".to_string());
                     } else if new_name == old.name {
                         // no-op
-                    } else if let Some(mods_dir) = app.created.as_ref().map(|inst| inst.mods_dir()) {
+                    } else if let Some(mods_dir) = app.created.as_ref().map(|inst| inst.mods_dir())
+                    {
                         let dest = mods_dir.join(&new_name);
                         if dest.exists() {
                             app.status = Some(format!("'{typed}' already exists."));
@@ -1564,8 +1668,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             let _lock = match inst.try_lock("the Eidos window") {
                                 Ok(l) => l,
                                 Err(e) => {
-                                    app.status =
-                                        Some(format!("Cannot rename a mod now: {e}."));
+                                    app.status = Some(format!("Cannot rename a mod now: {e}."));
                                     return Task::none();
                                 }
                             };
@@ -1618,7 +1721,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         // Minimal meta.ini, mirroring MO2's createMod.
                         let _ = fs::write(dest.join("meta.ini"), "[General]\nmodid=0\nversion=\n");
                         let idx = i.min(app.mods.len());
-                        app.mods.insert(idx, ModEntry { name: folder, enabled: true, path: dest, unmanaged: false });
+                        app.mods.insert(
+                            idx,
+                            ModEntry {
+                                name: folder,
+                                enabled: true,
+                                path: dest,
+                                unmanaged: false,
+                            },
+                        );
                         // Indices at/after the insertion point shifted.
                         app.selected_mods.clear();
                         mods_changed(app);
@@ -1641,7 +1752,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 (Some(m), Some(inst)) if !m.is_unmanaged() => {
                     let mut meta = inst.mod_meta(&m.name);
                     meta.set_color(rgb);
-                    Some((m.name.clone(), m.display_name().to_string(), meta.write(&inst.meta_path(&m.name))))
+                    Some((
+                        m.name.clone(),
+                        m.display_name().to_string(),
+                        meta.write(&inst.meta_path(&m.name)),
+                    ))
                 }
                 // Refused, and said out loud: a menu entry that does nothing at
                 // all reads as a bug, not as a rule.
@@ -1680,17 +1795,36 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Compute the spec + prefix dir up front (immutable borrows of `app`)
             // before mutating `app.plugins`.
             let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
-            let name = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.name.clone());
-            let forced = app.plugins.as_ref().and_then(|l| l.plugins.get(i)).map(|p| p.force_disabled).unwrap_or(false);
+            let name = app
+                .plugins
+                .as_ref()
+                .and_then(|l| l.plugins.get(i))
+                .map(|p| p.name.clone());
+            let forced = app
+                .plugins
+                .as_ref()
+                .and_then(|l| l.plugins.get(i))
+                .map(|p| p.force_disabled)
+                .unwrap_or(false);
             let implicit = app
                 .plugins
                 .as_ref()
-                .and_then(|l| l.plugins.get(i).map(|p| l.implicit.contains(&p.name.to_ascii_lowercase())))
+                .and_then(|l| {
+                    l.plugins
+                        .get(i)
+                        .map(|p| l.implicit.contains(&p.name.to_ascii_lowercase()))
+                })
                 .unwrap_or(false);
             if let (Some(spec), Some(name)) = (spec, name) {
                 // Base-game masters are implicit and always loaded; refuse to toggle.
-                if spec.primary_plugins.iter().any(|p| p.eq_ignore_ascii_case(&name)) {
-                    app.status = Some(format!("{name} is a base-game master and is always loaded."));
+                if spec
+                    .primary_plugins
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(&name))
+                {
+                    app.status = Some(format!(
+                        "{name} is a base-game master and is always loaded."
+                    ));
                 } else if implicit {
                     // Creation Club content the engine loads from the .ccc file.
                     // It is deliberately kept out of plugins.txt (writing it in
@@ -1702,8 +1836,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         "{name} is Creation Club content the engine loads itself - it cannot be turned off here."
                     ));
                 } else if forced {
-                    app.status =
-                        Some(format!("{name} is a light plugin this game can't load and stays off."));
+                    app.status = Some(format!(
+                        "{name} is a light plugin this game can't load and stays off."
+                    ));
                 } else if app.plugins.is_some() {
                     let held = hold_plugin_selection(app);
                     let mut now = false;
@@ -1740,8 +1875,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // starting it just wastes a masterlist download to throw the result
             // away - and shows a "Sorting..." status for a sort that cannot land.
             if app.running.is_some() {
-                app.status =
-                    Some("Cannot sort while the game is running.".to_string());
+                app.status = Some("Cannot sort while the game is running.".to_string());
                 return Task::none();
             }
             // One at a time. Without this every impatient click during the
@@ -1754,16 +1888,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             // Gather everything the (static) async closure needs, cloned out of
             // `app`, then run the masterlist fetch + LOOT sort off the UI thread.
-            let Some(game) = selected_game(app) else { return Task::none() };
+            let Some(game) = selected_game(app) else {
+                return Task::none();
+            };
             let id = game.def.id;
             if !eidos_loot::is_supported(id) {
                 app.status = Some(format!("LOOT sorting is not available for {id}."));
                 return Task::none();
             }
-            let Some(spec) = GameSpec::for_id(id) else { return Task::none() };
+            let Some(spec) = GameSpec::for_id(id) else {
+                return Task::none();
+            };
             let Some(cd) = game.compatdata.as_ref() else {
-                app.status =
-                    Some("Launch the game once through Steam first so its prefix exists.".to_string());
+                app.status = Some(
+                    "Launch the game once through Steam first so its prefix exists.".to_string(),
+                );
                 return Task::none();
             };
             let Some(list) = app.plugins.as_ref() else {
@@ -1787,8 +1926,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .as_ref()
                 .map(|i| i.root.join("loot"))
                 .unwrap_or_else(|| eidos_instance::Instance::global(&id).root.join("loot"));
-            let plugins: Vec<(String, PathBuf)> =
-                list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+            let plugins: Vec<(String, PathBuf)> = list
+                .plugins
+                .iter()
+                .map(|p| (p.name.clone(), p.path.clone()))
+                .collect();
             // Where LOOT must look besides the vanilla Data dir. Highest priority
             // first, Overwrite ahead of everything, matching the union's own
             // precedence - without these every file-conditioned masterlist rule
@@ -1813,8 +1955,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 names: list.plugins.iter().map(|p| p.name.clone()).collect(),
             };
             app.sorting = true;
-            app.status =
-                Some("Sorting plugins with LOOT (updating the masterlist)...".to_string());
+            app.status = Some("Sorting plugins with LOOT (updating the masterlist)...".to_string());
             return Task::perform(
                 async move {
                     // `is_supported(id)` was checked above and loot_support is a pure
@@ -1900,8 +2041,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // or disabled, a mod installed - it silently rearranges plugins
             // nobody asked about, and everything downstream reports a clean sort.
             let now = SortFingerprint {
-                game: selected_game(app).map(|g| g.def.id.to_string()).unwrap_or_default(),
-                profile: app.created.as_ref().map(|i| i.active_profile()).unwrap_or_default(),
+                game: selected_game(app)
+                    .map(|g| g.def.id.to_string())
+                    .unwrap_or_default(),
+                profile: app
+                    .created
+                    .as_ref()
+                    .map(|i| i.active_profile())
+                    .unwrap_or_default(),
                 names: app
                     .plugins
                     .as_ref()
@@ -1961,9 +2108,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Say when the sort was partly overruled, rather than reporting a
             // clean LOOT sort the list does not actually match.
             let pinned = app.plugins.as_ref().map(|l| l.locked.len()).unwrap_or(0);
-            let held = if pinned > 0 { format!(" ({pinned} pinned position(s) kept)") } else { String::new() };
-            let written =
-                app.plugins.as_ref().map(|list| write_plugin_state(app, list, &spec)).transpose();
+            let held = if pinned > 0 {
+                format!(" ({pinned} pinned position(s) kept)")
+            } else {
+                String::new()
+            };
+            let written = app
+                .plugins
+                .as_ref()
+                .map(|list| write_plugin_state(app, list, &spec))
+                .transpose();
             let landed = written.is_ok();
             // The same numbers, into the log. The status bar carries them already,
             // but it is gone the moment anything else sets a status - and these
@@ -1976,7 +2130,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             eidos_log::info!(
                 "eidos loot: sorted {} plugins, {changed} moved{}",
                 sorted.len(),
-                if pinned > 0 { format!(", {pinned} pinned position(s) kept") } else { String::new() }
+                if pinned > 0 {
+                    format!(", {pinned} pinned position(s) kept")
+                } else {
+                    String::new()
+                }
             );
             app.status = Some(match written {
                 Ok(_) => {
@@ -1986,7 +2144,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             sorted.len()
                         )
                     } else {
-                        format!("LOOT sorted {} plugins - {changed} moved.{held}", sorted.len())
+                        format!(
+                            "LOOT sorted {} plugins - {changed} moved.{held}",
+                            sorted.len()
+                        )
                     }
                 }
                 Err(e) => {
@@ -2040,7 +2201,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::CollisionRenameCommit => {
-            if let Some(new) = app.collision.as_ref().map(|c| c.rename_to.trim().to_string()) {
+            if let Some(new) = app
+                .collision
+                .as_ref()
+                .map(|c| c.rename_to.trim().to_string())
+            {
                 if new.is_empty() {
                     app.status = Some("Enter a name to install under.".to_string());
                 } else {
@@ -2052,7 +2217,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.collision = None;
             app.install_at = None;
             app.status = Some("Install cancelled.".to_string());
-                }
+        }
         Message::ChangeGame => {
             // Re-open the game picker; keep detection and any selection.
             app.menu_mod = None;
@@ -2069,7 +2234,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.screen = Screen::Game;
         }
         Message::OpenNexusGame => {
-            let domain = selected_game(app).map(|g| g.def.nexus_game).filter(|s| !s.is_empty());
+            let domain = selected_game(app)
+                .map(|g| g.def.nexus_game)
+                .filter(|s| !s.is_empty());
             let url = match domain {
                 Some(d) => format!("https://www.nexusmods.com/{d}"),
                 None => "https://www.nexusmods.com".to_string(),
@@ -2079,7 +2246,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SetupPrereqs => {
             let arg = instance_arg(app);
-            let has_prefix = selected_game(app).and_then(|g| g.compatdata.as_ref()).is_some();
+            let has_prefix = selected_game(app)
+                .and_then(|g| g.compatdata.as_ref())
+                .is_some();
             let log = app.created.as_ref().map(|i| i.root.join("prereqs.log"));
             match (arg, log) {
                 // A runtime needs no prefix and no Proton - it is a directory and
@@ -2107,7 +2276,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let seeded = match (app.created.as_ref(), app.mods.get(i)) {
                 (Some(inst), Some(m)) => {
                     let meta = inst.mod_meta(&m.name);
-                    Some((meta.notes().unwrap_or_default(), meta.url().unwrap_or_default()))
+                    Some((
+                        meta.notes().unwrap_or_default(),
+                        meta.url().unwrap_or_default(),
+                    ))
                 }
                 _ => None,
             };
@@ -2138,7 +2310,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // The game's own content has no folder under mods/, so there is
             // nowhere to put a meta.ini - and inventing one would plant an empty
             // directory the next reconcile lists as a real mod.
-            if app.info_mod.and_then(|i| app.mods.get(i)).is_some_and(|m| m.is_unmanaged()) {
+            if app
+                .info_mod
+                .and_then(|i| app.mods.get(i))
+                .is_some_and(|m| m.is_unmanaged())
+            {
                 app.status =
                     Some("The game's own content has no Eidos metadata to write.".to_string());
                 return Task::none();
@@ -2150,7 +2326,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // looks live.
             let is_web_link = typed.starts_with("http://") || typed.starts_with("https://");
             if !typed.is_empty() && !is_web_link {
-                app.status = Some("A mod page has to be an http:// or https:// address.".to_string());
+                app.status =
+                    Some("A mod page has to be an http:// or https:// address.".to_string());
                 return Task::none();
             }
             let result = match (app.info_mod, app.created.as_ref()) {
@@ -2170,7 +2347,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::NotesSave => {
-            if app.info_mod.and_then(|i| app.mods.get(i)).is_some_and(|m| m.is_unmanaged()) {
+            if app
+                .info_mod
+                .and_then(|i| app.mods.get(i))
+                .is_some_and(|m| m.is_unmanaged())
+            {
                 app.status =
                     Some("The game's own content has no Eidos metadata to write.".to_string());
                 return Task::none();
@@ -2225,7 +2406,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.diag_dirty = true;
             app.status = Some(match app.addon_rejected.len() {
                 0 => format!("Loaded {} extension(s).", app.addons.len()),
-                n => format!("Loaded {} extension(s); {n} manifest(s) refused.", app.addons.len()),
+                n => format!(
+                    "Loaded {} extension(s); {n} manifest(s) refused.",
+                    app.addons.len()
+                ),
             });
         }
         Message::RunAddon(id) => {
@@ -2319,19 +2503,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // The file LIST is re-read too: a launch started while the pane
                 // is open creates a new session, and it is the one worth seeing.
                 let files = eidos_log::sessions();
-                let current =
-                    if files.contains(&pane.current) { pane.current.clone() } else {
-                        match files.first() {
-                            Some(f) => f.clone(),
-                            None => return Task::none(),
-                        }
-                    };
+                let current = if files.contains(&pane.current) {
+                    pane.current.clone()
+                } else {
+                    match files.first() {
+                        Some(f) => f.clone(),
+                        None => return Task::none(),
+                    }
+                };
                 let level = pane.level;
                 app.log_pane = Some(load_log_pane(files, current, level));
             }
         }
         Message::LogCopy => {
-            let Some(pane) = &app.log_pane else { return Task::none() };
+            let Some(pane) = &app.log_pane else {
+                return Task::none();
+            };
             let text: String = pane
                 .lines
                 .iter()
@@ -2369,8 +2556,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::CloseIniEditor => app.ini_editor = None,
         Message::IniEditorPick(name) => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(ed) = &app.ini_editor else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(ed) = &app.ini_editor else {
+                return Task::none();
+            };
             if ed.current == name {
                 return Task::none();
             }
@@ -2399,8 +2590,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::IniEditorSave => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(ed) = &mut app.ini_editor else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(ed) = &mut app.ini_editor else {
+                return Task::none();
+            };
             let path = inst.active().ini_path(&ed.current);
             if ed.unreadable {
                 app.status = Some(format!(
@@ -2437,12 +2632,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::IniEditorOpenExternal => {
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
-            let Some(ed) = &app.ini_editor else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            let Some(ed) = &app.ini_editor else {
+                return Task::none();
+            };
             let path = inst.active().ini_path(&ed.current);
             if !path.is_file() {
-                app.status =
-                    Some(format!("{} does not exist yet - save once to create it.", ed.current));
+                app.status = Some(format!(
+                    "{} does not exist yet - save once to create it.",
+                    ed.current
+                ));
                 return Task::none();
             }
             let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
@@ -2481,8 +2682,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // The DIRECTORY, not the file: xdg-open on a .esp hands it to
             // whatever claims that type, which on a modding machine is usually
             // nothing, and on an unlucky one is an editor that rewrites it.
-            let target = if path.is_dir() { path.clone() } else {
-                path.parent().map(std::path::Path::to_path_buf).unwrap_or(path.clone())
+            let target = if path.is_dir() {
+                path.clone()
+            } else {
+                path.parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or(path.clone())
             };
             let _ = std::process::Command::new("xdg-open").arg(&target).spawn();
             app.status = Some(format!("Opened {}", target.display()));
@@ -2493,7 +2698,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ToggleFileHidden(i, rel) => {
-            let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
+            let Some(m) = app.mods.get(i).cloned() else {
+                return Task::none();
+            };
             let hide = !path_is_hidden(&rel);
             // What actually gets renamed. Unhiding a row that sits UNDER a
             // hidden directory ("meshes.mohidden/foo.nif") must strip the
@@ -2526,7 +2733,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // out from under a playing game. Every other mutating handler here
             // takes it; this one did not, and the omission is invisible until it
             // is not.
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -2578,12 +2787,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::RestoreHiddenFiles(i) => {
             app.menu_mod = None;
-            let Some(m) = app.mods.get(i).cloned() else { return Task::none() };
+            let Some(m) = app.mods.get(i).cloned() else {
+                return Task::none();
+            };
             // The bulk twin of ToggleFileHidden's rename, behind the same flock:
             // "Unhide all" strips dozens of .mohidden suffixes inside a layer of
             // a live mount - the exact mutation the single-file handler's guard
             // exists for, reachable one menu item away.
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -2640,22 +2853,24 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     app.status = Some(format!(
                         "Signed in to Nexus as {} ({}).",
                         account.name,
-                        if account.is_premium { "Premium" } else { "free" }
+                        if account.is_premium {
+                            "Premium"
+                        } else {
+                            "free"
+                        }
                     ));
                     app.nexus_account = Some(account);
                 }
                 Err(e) => app.nexus_error = Some(e),
             }
         }
-        Message::NexusSignOut => {
-            match eidos_instance::settings::clear_nexus_tokens() {
-                Ok(()) => {
-                    app.nexus_account = None;
-                    app.status = Some("Signed out of Nexus.".to_string());
-                }
-                Err(e) => app.nexus_error = Some(format!("could not sign out: {e}")),
+        Message::NexusSignOut => match eidos_instance::settings::clear_nexus_tokens() {
+            Ok(()) => {
+                app.nexus_account = None;
+                app.status = Some("Signed out of Nexus.".to_string());
             }
-        }
+            Err(e) => app.nexus_error = Some(format!("could not sign out: {e}")),
+        },
         Message::DragScrollSpeedChanged(v) => {
             app.prefs.drag_scroll_speed = v.clamp(0.25, 4.0);
             if let Err(e) = app.prefs.save() {
@@ -2780,7 +2995,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             });
             return Task::perform(
                 async move {
-                    rx.recv().unwrap_or_else(|_| Err("the lookup stopped unexpectedly".into()))
+                    rx.recv()
+                        .unwrap_or_else(|_| Err("the lookup stopped unexpectedly".into()))
                 },
                 Message::IdentifiedDownload,
             );
@@ -2855,7 +3071,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Right-clicking inside a multi-selection acts on the whole set,
             // outside it on that row alone - the same rule the mod list uses,
             // applied by OpenPluginMenu above.
-            let Some(anchor) = anchor else { return Task::none() };
+            let Some(anchor) = anchor else {
+                return Task::none();
+            };
             let rows = plugin_selection_or(app, anchor);
             if rows.is_empty() {
                 return Task::none();
@@ -2893,7 +3111,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::PluginSendToPriorityStart => {
             // The anchor lives on the menu, and the field replaces a row INSIDE
             // that menu - so the menu must stay open.
-            let Some(row) = app.menu_plugin.or(app.selected_plugin) else { return Task::none() };
+            let Some(row) = app.menu_plugin.or(app.selected_plugin) else {
+                return Task::none();
+            };
             app.menu_plugin = Some(row);
             app.plugin_send_priority = Some((row, String::new()));
         }
@@ -2904,7 +3124,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::PluginSendToPriorityCommit => {
-            let Some((row, typed)) = app.plugin_send_priority.take() else { return Task::none() };
+            let Some((row, typed)) = app.plugin_send_priority.take() else {
+                return Task::none();
+            };
             app.menu_plugin = None;
             let Ok(dest) = typed.trim().parse::<usize>() else {
                 // "Row number", not "load index": the only numeric column this
@@ -2965,7 +3187,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // By NAME, like the batch toggle: enabling changes the tier a plugin
             // sorts into, so the rows move under any index collected first.
             let names: Vec<String> = {
-                let Some(list) = app.plugins.as_ref() else { return Task::none() };
+                let Some(list) = app.plugins.as_ref() else {
+                    return Task::none();
+                };
                 list.plugins
                     .iter()
                     .filter(|p| {
@@ -2986,7 +3210,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(if on {
                     "Every plugin that can be active already is.".to_string()
                 } else {
-                    "Nothing left to deactivate: the rest are loaded by the game itself.".to_string()
+                    "Nothing left to deactivate: the rest are loaded by the game itself."
+                        .to_string()
                 });
                 return Task::none();
             }
@@ -3031,23 +3256,33 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let sel = real_selection(app);
             let targets: Vec<usize> = if sel.len() > 1 && sel.contains(&row) {
                 sel
-            } else if app.mods.get(row).is_some_and(|m| !m.is_separator() && !m.is_unmanaged()) {
+            } else if app
+                .mods
+                .get(row)
+                .is_some_and(|m| !m.is_separator() && !m.is_unmanaged())
+            {
                 vec![row]
             } else {
                 Vec::new()
             };
             if targets.is_empty() {
-                app.status = Some("Separators and the game's own content have no categories.".to_string());
+                app.status =
+                    Some("Separators and the game's own content have no categories.".to_string());
                 return Task::none();
             }
-            let names: Vec<String> =
-                targets.iter().filter_map(|&i| app.mods.get(i)).map(|m| m.name.clone()).collect();
+            let names: Vec<String> = targets
+                .iter()
+                .filter_map(|&i| app.mods.get(i))
+                .map(|m| m.name.clone())
+                .collect();
             // The starting selection is the FIRST target's, so a single mod opens
             // on what it actually has. Across a multi-selection MO2 does the same
             // and applying overwrites the rest - the dialog says so.
             let chosen = names
                 .first()
-                .map(|n| eidos_instance::parse_all(&inst.mod_meta(n).category().unwrap_or_default()))
+                .map(|n| {
+                    eidos_instance::parse_all(&inst.mod_meta(n).category().unwrap_or_default())
+                })
                 .unwrap_or_default();
             app.categories_dialog = Some(CategoriesDialogState {
                 names,
@@ -3153,8 +3388,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::FetchNexusCategories => {
             if !eidos_nexus::Nexus::have_credentials() {
-                app.status =
-                    Some("Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string());
+                app.status = Some(
+                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
+                        .to_string(),
+                );
                 return Task::none();
             }
             let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
@@ -3170,7 +3407,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::NexusCategoriesFetched(result) => {
-            let Some(d) = &mut app.categories_dialog else { return Task::none() };
+            let Some(d) = &mut app.categories_dialog else {
+                return Task::none();
+            };
             let remote = match result {
                 Ok(r) => r,
                 Err(e) => {
@@ -3231,12 +3470,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             ));
         }
         Message::AssignCategoriesFromNexus => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(d) = &mut app.categories_dialog else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(d) = &mut app.categories_dialog else {
+                return Task::none();
+            };
             if d.catalog.all().iter().all(|c| c.nexus.is_empty()) {
-                app.status = Some(
-                    "No Nexus mappings yet - use 'Fetch from Nexus' first.".to_string(),
-                );
+                app.status =
+                    Some("No Nexus mappings yet - use 'Fetch from Nexus' first.".to_string());
                 return Task::none();
             }
             // Only the targeted mods, so this stays the dialog's own action and
@@ -3244,7 +3486,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // categorise one mod. Batch-select to do more.
             let mut hits: Vec<i32> = Vec::new();
             for name in &d.names {
-                let Some(remote) = nexus_category_of(&inst, name) else { continue };
+                let Some(remote) = nexus_category_of(&inst, name) else {
+                    continue;
+                };
                 if let Some(local) = d.catalog.for_nexus_id(remote) {
                     hits.push(local);
                 }
@@ -3275,8 +3519,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ApplyCategories => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(d) = app.categories_dialog.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(d) = app.categories_dialog.as_ref() else {
+                return Task::none();
+            };
             // The catalog first: if it fails, nothing has been written yet, and a
             // mod pointing at an id the catalog does not carry would show a bare
             // number with no way to name it.
@@ -3288,7 +3536,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("Could not save the category list: {e}"));
                 return Task::none();
             }
-            let Some(d) = app.categories_dialog.take() else { return Task::none() };
+            let Some(d) = app.categories_dialog.take() else {
+                return Task::none();
+            };
             let (primary, others) = match d.chosen.split_first() {
                 Some((p, rest)) => (Some(*p), rest),
                 None => (None, &[][..]),
@@ -3321,7 +3571,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
             } else {
-                format!("{written} mod(s) updated, {} failed: {}", failed.len(), failed.join("; "))
+                format!(
+                    "{written} mod(s) updated, {} failed: {}",
+                    failed.len(),
+                    failed.join("; ")
+                )
             });
         }
         Message::ShowBackupsDialog => {
@@ -3333,18 +3587,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::CloseBackupsDialog => app.backups = None,
         Message::CreateBackup(kind) => {
-            let Some(prof) = app.created.as_ref().map(|i| i.active()) else { return Task::none() };
+            let Some(prof) = app.created.as_ref().map(|i| i.active()) else {
+                return Task::none();
+            };
             match prof.create_backup(kind) {
                 Ok(b) => {
-                    app.status =
-                        Some(format!("Backed up the {} ({}).", kind.label(), b.when()));
+                    app.status = Some(format!("Backed up the {} ({}).", kind.label(), b.when()));
                     app.backups = load_backups(app);
                 }
                 Err(e) => app.status = Some(format!("Could not back up the {}: {e}", kind.label())),
             }
         }
         Message::RestoreBackup(kind, stamp) => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
             // Restoring rewrites the same files a running game is deploying
             // from, so it takes the instance lock like every other mutation.
             let _lock = match inst.try_lock("the Eidos window") {
@@ -3392,7 +3649,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::AddExecutableTool => {
             if let Some(state) = &mut app.executables {
                 state.commit_buffers();
-                let tool = Tool { title: "New Tool".to_string(), ..Default::default() };
+                let tool = Tool {
+                    title: "New Tool".to_string(),
+                    ..Default::default()
+                };
                 // User tools sit at the front, ahead of the read-only defaults.
                 state.merged.insert(state.user_len, tool);
                 state.selected = Some(state.user_len);
@@ -3498,7 +3758,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     title.is_empty() || title.chars().any(char::is_control)
                 });
                 if bad.is_some() {
-                    app.status = Some("Every tool needs a non-empty, single-line title.".to_string());
+                    app.status =
+                        Some("Every tool needs a non-empty, single-line title.".to_string());
                     return Task::none();
                 }
                 // A tool with no executable is a row that write_tools drops on
@@ -3521,7 +3782,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // itself still comes from the default.
                 for d in &state.merged[state.user_len..] {
                     if (d.hidden || d.pinned)
-                        && !user_tools.iter().any(|t| t.title.eq_ignore_ascii_case(&d.title))
+                        && !user_tools
+                            .iter()
+                            .any(|t| t.title.eq_ignore_ascii_case(&d.title))
                     {
                         user_tools.push(d.clone());
                     }
@@ -3548,18 +3811,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // and must not run on the UI thread.
             if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
-                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
+                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
+                        .to_string(),
                 );
                 return Task::none();
             }
             let domain = selected_game(app).map(|g| g.def.nexus_game.to_string());
             let folder = app.mods.get(i).map(|m| m.name.clone()).unwrap_or_default();
-            let info = app.created.as_ref().zip(app.mods.get(i)).filter(|(_, m)| !m.is_separator()).map(
-                |(inst, m)| {
+            let info = app
+                .created
+                .as_ref()
+                .zip(app.mods.get(i))
+                .filter(|(_, m)| !m.is_separator())
+                .map(|(inst, m)| {
                     let meta = inst.mod_meta(&m.name);
-                    (meta.mod_id(), meta.version().unwrap_or_default(), meta.endorsed())
-                },
-            );
+                    (
+                        meta.mod_id(),
+                        meta.version().unwrap_or_default(),
+                        meta.endorsed(),
+                    )
+                });
             let (Some(domain), Some((Some(mod_id), version, endorsed))) = (domain, info) else {
                 app.status = Some("This mod has no Nexus id to endorse.".to_string());
                 return Task::none();
@@ -3567,13 +3838,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Toggle: endorse when not yet endorsed, abstain when already endorsed.
             let endorse = !endorsed;
             app.endorsing = Some(i);
-            app.status = Some(
-                if endorse { "Endorsing on Nexus...".to_string() } else { "Abstaining on Nexus...".to_string() },
-            );
+            app.status = Some(if endorse {
+                "Endorsing on Nexus...".to_string()
+            } else {
+                "Abstaining on Nexus...".to_string()
+            });
             return Task::perform(
                 async move {
-                    eidos_nexus::Nexus::connect()?
-                        .set_endorsed(&domain, mod_id, &version, endorse)
+                    eidos_nexus::Nexus::connect()?.set_endorsed(&domain, mod_id, &version, endorse)
                 },
                 move |r| Message::ModEndorsed(folder.clone(), r),
             );
@@ -3584,15 +3856,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Ok(now_endorsed) => {
                     // Persist by folder name: the row index from before the network
                     // round-trip may point at a different mod by now.
-                    if let (Some(inst), Some(m)) =
-                        (app.created.as_ref(), app.mods.iter().find(|m| m.name == folder))
-                    {
+                    if let (Some(inst), Some(m)) = (
+                        app.created.as_ref(),
+                        app.mods.iter().find(|m| m.name == folder),
+                    ) {
                         let mut meta = inst.mod_meta(&m.name);
                         meta.set("endorsed", if now_endorsed { "1" } else { "0" });
                         let _ = meta.write(&inst.meta_path(&m.name));
                         app.status = Some(format!(
                             "{} '{}' on Nexus.",
-                            if now_endorsed { "Endorsed" } else { "Abstained from" },
+                            if now_endorsed {
+                                "Endorsed"
+                            } else {
+                                "Abstained from"
+                            },
                             m.display_name()
                         ));
                     }
@@ -3692,14 +3969,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::FolderPicked(picked) => {
-            let Some(src) = picked else { return Task::none() };
+            let Some(src) = picked else {
+                return Task::none();
+            };
             let mods_dir = app.created.as_ref().map(|i| i.mods_dir());
             let Some(mods_dir) = mods_dir else {
                 return Task::none();
             };
             // Name the new mod after the chosen folder (sanitized + de-duplicated).
-            let raw = src.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-            let base = eidos_install::fix_directory_name(&raw).unwrap_or_else(|| "New Mod".to_string());
+            let raw = src
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let base =
+                eidos_install::fix_directory_name(&raw).unwrap_or_else(|| "New Mod".to_string());
             let name = suggest_free_name(&mods_dir, &base);
             let dest = mods_dir.join(&name);
             // Copy the folder's CONTENTS into mods/<name>/ (not the folder itself),
@@ -3719,7 +4002,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
-                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`).".to_string(),
+                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
+                        .to_string(),
                 );
                 return Task::none();
             }
@@ -3767,11 +4051,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         msg.push_str(&format!(
                             " {} mod(s) are no longer on Nexus: {}.",
                             r.unavailable.len(),
-                            r.unavailable.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                            r.unavailable
+                                .iter()
+                                .take(3)
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         ));
                     }
                     if r.rate_limited {
-                        msg.push_str(" Hourly Nexus limit reached - some mods were left unchecked.");
+                        msg.push_str(
+                            " Hourly Nexus limit reached - some mods were left unchecked.",
+                        );
                     }
                     app.status = Some(msg);
                 }
@@ -3795,7 +4086,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             app.confirm_sync = false;
-            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
             // The instance lock, like every other mutation: this moves files the
             // mount is serving from.
             let _lock = match inst.try_lock("the Eidos window") {
@@ -3852,7 +4145,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 confirm_fetch: false,
                 asked: std::collections::HashSet::new(),
             });
-            if app.collection.as_ref().is_some_and(|c| !c.link.trim().is_empty()) {
+            if app
+                .collection
+                .as_ref()
+                .is_some_and(|c| !c.link.trim().is_empty())
+            {
                 return update(app, Message::CollectionFetch);
             }
         }
@@ -3865,7 +4162,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::CollectionFetch => {
-            let Some(c) = &mut app.collection else { return Task::none() };
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
             let parsed = match eidos_nexus::NxmLink::parse(c.link.trim()) {
                 Ok(eidos_nexus::NxmLink::Collection(c)) => c,
                 Ok(eidos_nexus::NxmLink::Mod(_)) => {
@@ -3926,7 +4225,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::CollectionFetched(result) => {
-            let Some(c) = &mut app.collection else { return Task::none() };
+            let Some(c) = &mut app.collection else {
+                return Task::none();
+            };
             c.loading = false;
             match result {
                 Ok(rev) => {
@@ -3943,7 +4244,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             recompute_collection_states(app);
         }
         Message::CollectionOpenMod(i) => {
-            let Some(c) = app.collection.as_ref() else { return Task::none() };
+            let Some(c) = app.collection.as_ref() else {
+                return Task::none();
+            };
             let Some(m) = c.revision.as_ref().and_then(|r| r.mods.get(i)) else {
                 return Task::none();
             };
@@ -3959,8 +4262,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             return update(app, Message::OpenUrl(url));
         }
         Message::CollectionFetchMissing => {
-            let Some(c) = app.collection.as_ref() else { return Task::none() };
-            let Some(rev) = c.revision.as_ref() else { return Task::none() };
+            let Some(c) = app.collection.as_ref() else {
+                return Task::none();
+            };
+            let Some(rev) = c.revision.as_ref() else {
+                return Task::none();
+            };
             // The pane's instance, not whatever `eidos nxm` would resolve on its
             // own. The handler picks by game domain, so with two instances of
             // one game it can send a collection's downloads somewhere other than
@@ -4058,11 +4365,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             app.confirm_forget = None;
-            let Some(k) = app.known.get(i).cloned() else { return Task::none() };
+            let Some(k) = app.known.get(i).cloned() else {
+                return Task::none();
+            };
             if !k.portable {
-                app.status =
-                    Some("A global instance is derived from the game id - there is nothing to forget."
-                        .to_string());
+                app.status = Some(
+                    "A global instance is derived from the game id - there is nothing to forget."
+                        .to_string(),
+                );
                 return Task::none();
             }
             let mut reg = eidos_instance::Registry::load_from(&app.registry_path);
@@ -4084,9 +4394,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::InstanceRenameStart(i) => {
             app.confirm_forget = None;
-            let Some(k) = app.known.get(i) else { return Task::none() };
-            let current =
-                k.inst.root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let Some(k) = app.known.get(i) else {
+                return Task::none();
+            };
+            let current = k
+                .inst
+                .root
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
             app.instance_rename = Some((i, current));
         }
         Message::InstanceRenameChanged(t) => {
@@ -4096,8 +4412,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::InstanceRenameCommit => {
-            let Some((i, typed)) = app.instance_rename.take() else { return Task::none() };
-            let Some(k) = app.known.get(i).cloned() else { return Task::none() };
+            let Some((i, typed)) = app.instance_rename.take() else {
+                return Task::none();
+            };
+            let Some(k) = app.known.get(i).cloned() else {
+                return Task::none();
+            };
             let name = typed.trim().to_string();
             if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
                 app.status = Some("That is not a folder name.".to_string());
@@ -4128,7 +4448,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("That instance is in use: {e}."));
                 return Task::none();
             }
-            let Some(parent) = k.inst.root.parent() else { return Task::none() };
+            let Some(parent) = k.inst.root.parent() else {
+                return Task::none();
+            };
             let dest = parent.join(&name);
             if dest.exists() {
                 app.status = Some(format!("{} already exists.", dest.display()));
@@ -4192,7 +4514,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ExportRun => {
-            let Some(d) = &app.export else { return Task::none() };
+            let Some(d) = &app.export else {
+                return Task::none();
+            };
             if d.picked().is_empty() {
                 app.status = Some("Tick at least one column.".to_string());
                 return Task::none();
@@ -4212,9 +4536,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             );
         }
         Message::ExportPicked(picked) => {
-            let Some(path) = picked else { return Task::none() };
-            let Some(inst) = app.created.clone() else { return Task::none() };
-            let Some(d) = app.export.take() else { return Task::none() };
+            let Some(path) = picked else {
+                return Task::none();
+            };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
+            let Some(d) = app.export.take() else {
+                return Task::none();
+            };
             // Re-checked HERE, not only at the click that opened the picker: the
             // window keeps handling events while the native save dialog is up,
             // so the ticks can be cleared in between.
@@ -4230,8 +4560,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 eidos_instance::mod_list_csv(&inst, &app.mods, d.scope, &d.picked(), domain);
             match std::fs::write(&path, csv) {
                 Ok(()) => {
-                    app.status =
-                        Some(format!("Exported {count} mod(s) to {}.", path.display()))
+                    app.status = Some(format!("Exported {count} mod(s) to {}.", path.display()))
                 }
                 Err(e) => app.status = Some(format!("Could not write {}: {e}", path.display())),
             }
@@ -4323,7 +4652,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // reload. The MULTI-selection matters as much as the focus - it
                 // is what the batch bar is built on, and losing it mid-gesture
                 // takes the bar off screen with the ticks in it.
-                let focus = app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone());
+                let focus = app
+                    .selected_save
+                    .and_then(|i| app.saves.get(i))
+                    .map(|s| s.path.clone());
                 let picked: Vec<std::path::PathBuf> = app
                     .selected_saves
                     .iter()
@@ -4359,8 +4691,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // By PATH, collected before anything is removed: deleting by index
             // shifts every index after it, so the second removal would take the
             // wrong file.
-            let paths: Vec<std::path::PathBuf> =
-                targets.iter().filter_map(|&i| app.saves.get(i)).map(|s| s.path.clone()).collect();
+            let paths: Vec<std::path::PathBuf> = targets
+                .iter()
+                .filter_map(|&i| app.saves.get(i))
+                .map(|s| s.path.clone())
+                .collect();
             let mut gone = 0usize;
             let mut failed = 0usize;
             for p in &paths {
@@ -4382,7 +4717,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             });
         }
         Message::SavesCopyToProfile(target) => {
-            let Some(inst) = app.created.clone() else { return Task::none() };
+            let Some(inst) = app.created.clone() else {
+                return Task::none();
+            };
             let targets: Vec<usize> = app.selected_saves.iter().copied().collect();
             if targets.is_empty() {
                 app.status = Some("Select the saves to copy first (Ctrl+click).".to_string());
@@ -4397,7 +4734,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let mut skipped = 0usize;
             let mut failed: Vec<String> = Vec::new();
             for i in targets {
-                let Some(save) = app.saves.get(i) else { continue };
+                let Some(save) = app.saves.get(i) else {
+                    continue;
+                };
                 // Every file that belongs to this save: the save itself and its
                 // co-saves. Copying one without the others produces a save the
                 // script extender cannot restore its state for.
@@ -4420,7 +4759,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let mut written: Vec<std::path::PathBuf> = Vec::new();
                 let mut ok = true;
                 for src in &group {
-                    let Some(name) = src.file_name() else { continue };
+                    let Some(name) = src.file_name() else {
+                        continue;
+                    };
                     let dest = dest_dir.join(name);
                     // COPY, never move: this is somebody's character.
                     if let Err(e) = std::fs::copy(src, &dest) {
@@ -4466,8 +4807,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::FixSaveMods => {
             // Enable every mod that supplies one of the save's missing plugins.
             // MO2 stops at naming them; doing it is the whole point of knowing.
-            let wanted: HashSet<String> =
-                app.save_missing.iter().flat_map(|m| m.providers.iter().cloned()).collect();
+            let wanted: HashSet<String> = app
+                .save_missing
+                .iter()
+                .flat_map(|m| m.providers.iter().cloned())
+                .collect();
             let mut enabled = 0usize;
             for m in app.mods.iter_mut() {
                 if !m.enabled && wanted.contains(&m.name) {
@@ -4508,7 +4852,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some("Cannot restore while the game is running.".to_string());
                 return Task::none();
             }
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -4533,7 +4879,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some("Cannot do that while the game is running.".to_string());
                 return Task::none();
             }
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -4584,13 +4932,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(format!("Found {} download(s).", app.downloads.len()));
         }
         Message::CleanInstallDebris => {
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let dir = inst.mods_dir();
             let mut gone = 0usize;
             let mut in_use = 0usize;
             let mut failed: Vec<String> = Vec::new();
             for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
-                let Ok(name) = e.file_name().into_string() else { continue };
+                let Ok(name) = e.file_name().into_string() else {
+                    continue;
+                };
                 // The prefix is the whole guard, and it is checked HERE rather
                 // than trusted from the diagnostic: the card the user clicked
                 // may have been built before a refresh, and this loop deletes.
@@ -4624,7 +4976,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(if failed.is_empty() {
                 format!("Removed {gone} leftover extraction folder(s).{busy}")
             } else {
-                format!("Removed {gone}; could not remove {}{busy}", failed.join(", "))
+                format!(
+                    "Removed {gone}; could not remove {}{busy}",
+                    failed.join(", ")
+                )
             });
             app.diag_dirty = true;
             reload_mods(app);
@@ -4669,7 +5024,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // to tell the user, and the one that says something went wrong.
             let _ = eidos_nexus::set_download_meta_key(&path, "paused", "true");
             if eidos_nexus::stop_download(&path) {
-                app.status = Some(format!("Paused '{name}'. Resume picks up where it stopped."));
+                app.status = Some(format!(
+                    "Paused '{name}'. Resume picks up where it stopped."
+                ));
             } else {
                 // No live process: it had already stopped. The flag still tells
                 // the truth about what the user wants.
@@ -4699,7 +5056,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let _ = std::fs::create_dir_all(eidos_log::log_dir());
             let sink = std::fs::File::create(&log).ok();
             let mut cmd = std::process::Command::new(find_eidos_binary());
-            cmd.arg("nxm").arg("--resume").arg(&path).stdin(std::process::Stdio::null());
+            cmd.arg("nxm")
+                .arg("--resume")
+                .arg(&path)
+                .stdin(std::process::Stdio::null());
             match sink {
                 Some(f) => {
                     let dup = f.try_clone().ok();
@@ -4709,7 +5069,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     }
                 }
                 None => {
-                    cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+                    cmd.stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null());
                 }
             }
             match cmd.spawn() {
@@ -4749,8 +5110,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     match archive_res {
                         Ok(()) => app.status = Some(format!("Deleted download '{name}'.")),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound && had_partial => {
-                            app.status =
-                                Some(format!("Removed the unfinished download '{name}'."));
+                            app.status = Some(format!("Removed the unfinished download '{name}'."));
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                             app.status = Some(format!("Download '{name}' was already gone."));
@@ -4795,7 +5155,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.view_menu_open = false;
             // A collapsed group hides rows exactly as a filter does, and the
             // status has to admit either.
-            let total = app.mods.iter().filter(|m| !m.is_separator() && !m.is_unmanaged()).count();
+            let total = app
+                .mods
+                .iter()
+                .filter(|m| !m.is_separator() && !m.is_unmanaged())
+                .count();
             let narrowed = targets.len() < total;
             app.status = Some(format!(
                 "{} {changed} mod(s){}.",
@@ -4816,7 +5180,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some("Select one or more mods first.".to_string());
                 return Task::none();
             }
-            let any_on = targets.iter().any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
+            let any_on = targets
+                .iter()
+                .any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
             let new_state = !any_on;
             for &i in &targets {
                 if let Some(m) = app.mods.get_mut(i) {
@@ -4838,8 +5204,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             app.confirm_batch_remove = true;
-            app.status =
-                Some(format!("Click Remove again to permanently delete {n} mod(s) from disk."));
+            app.status = Some(format!(
+                "Click Remove again to permanently delete {n} mod(s) from disk."
+            ));
         }
         Message::ConfirmBatchRemove => {
             app.confirm_batch_remove = false;
@@ -4847,7 +5214,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Same flock as the single-row Remove, before the first deletion: a
             // batch of remove_dir_all against layers of a live union is the same
             // hazard multiplied, and refusing after the loop would protect nothing.
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
@@ -4927,24 +5296,25 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.menu_mod = None;
                 app.rename = None;
                 app.confirm_remove = None;
-            // Only in load order. Under a sort or a grouping the insertion gaps
-            // address the REAL list while the rows on screen are somewhere
-            // else, so a drop moves a mod nobody aimed at - and an armed drag
-            // also hijacks the edge auto-scroll on its way to being refused.
-            // Here, at the press, because this is where a row actually arms one:
-            // a mod row's `on_press` is `DragStart`, never `SelectMod`.
-            if !can_reorder(app) {
-                return Task::none();
-            }
-                app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
+                // Only in load order. Under a sort or a grouping the insertion gaps
+                // address the REAL list while the rows on screen are somewhere
+                // else, so a drop moves a mod nobody aimed at - and an armed drag
+                // also hijacks the edge auto-scroll on its way to being refused.
+                // Here, at the press, because this is where a row actually arms one:
+                // a mod row's `on_press` is `DragStart`, never `SelectMod`.
+                if !can_reorder(app) {
+                    return Task::none();
+                }
+                app.drag_state = Some(DragState {
+                    from: i,
+                    gap: i,
+                    aimed: false,
+                });
                 return Task::none();
             }
             // Arm a drag and (re)select the row, unless a modifier means the click
             // was a multi-select gesture (then leave the existing selection alone).
-            if app.modifiers.control()
-                || app.modifiers.command()
-                || app.modifiers.shift()
-            {
+            if app.modifiers.control() || app.modifiers.command() || app.modifiers.shift() {
                 return update(app, Message::SelectMod(i));
             }
             app.selected_mod = Some(i);
@@ -4966,7 +5336,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if !can_reorder(app) {
                 return Task::none();
             }
-            app.drag_state = Some(DragState { from: i, gap: i, aimed: false });
+            app.drag_state = Some(DragState {
+                from: i,
+                gap: i,
+                aimed: false,
+            });
         }
         Message::ModDoubleClick(i) => {
             // The modifier set is read HERE, not in the closure that emitted
@@ -5020,9 +5394,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if let Some(state) = app.executables.as_mut() {
                 state.commit_buffers();
             }
-            let (Some(state), Some(inst), Some(game)) =
-                (app.executables.as_ref(), app.created.as_ref(), selected_game(app))
-            else {
+            let (Some(state), Some(inst), Some(game)) = (
+                app.executables.as_ref(),
+                app.created.as_ref(),
+                selected_game(app),
+            ) else {
                 return Task::none();
             };
             let Some(tool) = state.selected.and_then(|i| state.merged.get(i)).cloned() else {
@@ -5059,7 +5435,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             let src = m.path.clone();
             let name = m.name.clone();
-            let label = dest.file_name().unwrap_or_default().to_string_lossy().into_owned();
+            let label = dest
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
             // The lock covers the WRITE and nothing else. Held across the
             // refresh below it would deadlock this very handler: `flock` denies
             // a second descriptor even to the process that already holds one,
@@ -5108,9 +5488,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.confirm_restore = None;
             // Resolved by NAME at commit time, so a reload between the two
             // clicks cannot aim this at a different backup.
-            let (Some(inst), Some(m)) =
-                (app.created.as_ref(), app.mods.iter().find(|m| m.name == name))
-            else {
+            let (Some(inst), Some(m)) = (
+                app.created.as_ref(),
+                app.mods.iter().find(|m| m.name == name),
+            ) else {
                 return Task::none();
             };
             if !m.is_backup() {
@@ -5125,8 +5506,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             let target = inst.mods_dir().join(orig);
             if !target.is_dir() {
-                app.error =
-                    Some(format!("{orig} is not in this instance any more - nothing to restore over."));
+                app.error = Some(format!(
+                    "{orig} is not in this instance any more - nothing to restore over."
+                ));
                 return Task::none();
             }
             let src = m.path.clone();
@@ -5176,9 +5558,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::FiletreeOpen(i, rel) => {
-            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else { return Task::none() };
+            let Some(base) = app.mods.get(i).map(|m| m.path.clone()) else {
+                return Task::none();
+            };
             let Some(path) = resolve_in_mod(&base, &rel) else {
-                app.error = Some(format!("Refused to open {rel}: not a path inside this mod."));
+                app.error = Some(format!(
+                    "Refused to open {rel}: not a path inside this mod."
+                ));
                 return Task::none();
             };
             return update(app, Message::OpenFolder(path));
@@ -5187,8 +5573,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Prefill with the NAME, not the path: a rename box holding
             // `Meshes/armour/x.nif` invites somebody to edit the directories,
             // which is a move, which is not what this is.
-            app.tree_rename_text =
-                rel.rsplit('/').next().unwrap_or(&rel).to_string();
+            app.tree_rename_text = rel.rsplit('/').next().unwrap_or(&rel).to_string();
             app.tree_rename = app.mods.get(i).map(|m| (m.name.clone(), rel));
             app.tree_delete_armed = None;
         }
@@ -5201,12 +5586,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.tree_rename_text.clear();
         }
         Message::FiletreeRenameCommit => {
-            let Some((mod_name, rel)) = app.tree_rename.take() else { return Task::none() };
+            let Some((mod_name, rel)) = app.tree_rename.take() else {
+                return Task::none();
+            };
             let name = app.tree_rename_text.trim().to_string();
             app.tree_rename_text.clear();
             // By name, resolved now: an index would have been read against a
             // list anything could have reloaded while the box was open.
-            let Some(base) = app.mods.iter().find(|m| m.name == mod_name).map(|m| m.path.clone())
+            let Some(base) = app
+                .mods
+                .iter()
+                .find(|m| m.name == mod_name)
+                .map(|m| m.path.clone())
             else {
                 return Task::none();
             };
@@ -5217,9 +5608,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 Some(p) => format!("{p}/{name}"),
                 None => name.clone(),
             };
-            let (Some(from), Some(to)) =
-                (resolve_in_mod(&base, &rel), resolve_in_mod(&base, &dest_rel))
-            else {
+            let (Some(from), Some(to)) = (
+                resolve_in_mod(&base, &rel),
+                resolve_in_mod(&base, &dest_rel),
+            ) else {
                 app.error = Some(format!("Refused to rename to {name}: not a name."));
                 return Task::none();
             };
@@ -5267,12 +5659,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // By name, so a reload between the clicks cannot point this at
             // another mod's folder - where the same relative path may well
             // exist, and would be deleted without a word.
-            let Some(base) = app.mods.iter().find(|m| m.name == name).map(|m| m.path.clone())
+            let Some(base) = app
+                .mods
+                .iter()
+                .find(|m| m.name == name)
+                .map(|m| m.path.clone())
             else {
                 return Task::none();
             };
             let Some(path) = resolve_in_mod(&base, &rel) else {
-                app.error = Some(format!("Refused to delete {rel}: not a path inside this mod."));
+                app.error = Some(format!(
+                    "Refused to delete {rel}: not a path inside this mod."
+                ));
                 return Task::none();
             };
             // The instance lock spans the delete and nothing else - see
@@ -5316,7 +5714,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // The mod is captured HERE. Reading `app.info_mod` at commit time
             // put the folder in whichever mod the panel happened to be showing
             // by then, which is not the one the button was pressed in.
-            let Some(name) = app.mods.get(i).map(|m| m.name.clone()) else { return Task::none() };
+            let Some(name) = app.mods.get(i).map(|m| m.name.clone()) else {
+                return Task::none();
+            };
             app.tree_new_folder = Some((name, String::new()));
             app.tree_rename = None;
             app.tree_delete_armed = None;
@@ -5328,9 +5728,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::FiletreeNewFolderCommit => {
-            let Some((mod_name, name)) = app.tree_new_folder.take() else { return Task::none() };
+            let Some((mod_name, name)) = app.tree_new_folder.take() else {
+                return Task::none();
+            };
             let name = name.trim().to_string();
-            let Some(base) = app.mods.iter().find(|m| m.name == mod_name).map(|m| m.path.clone())
+            let Some(base) = app
+                .mods
+                .iter()
+                .find(|m| m.name == mod_name)
+                .map(|m| m.path.clone())
             else {
                 return Task::none();
             };
@@ -5403,8 +5809,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     .filter(|c| app.mod_columns.contains(c))
                     .collect();
             }
-            app.prefs.mod_columns =
-                Some(app.mod_columns.iter().map(|c| c.key().to_string()).collect());
+            app.prefs.mod_columns = Some(
+                app.mod_columns
+                    .iter()
+                    .map(|c| c.key().to_string())
+                    .collect(),
+            );
             if let Err(e) = app.prefs.save() {
                 app.error = Some(format!("Could not save settings: {e}"));
             }
@@ -5415,11 +5825,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // be one click away: it is the only order in which dragging works,
             // and a list somebody cannot un-sort is a list they cannot reorder.
             app.mod_sort = match app.mod_sort {
-                Some(s) if s.by == key && s.ascending => {
-                    Some(ModSort { by: key, ascending: false })
-                }
+                Some(s) if s.by == key && s.ascending => Some(ModSort {
+                    by: key,
+                    ascending: false,
+                }),
                 Some(s) if s.by == key => None,
-                _ => Some(ModSort { by: key, ascending: true }),
+                _ => Some(ModSort {
+                    by: key,
+                    ascending: true,
+                }),
             };
             // A drag armed under the old order would drop somewhere that no
             // longer means what the user aimed at.
@@ -5430,7 +5844,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // MO2's `removed=` in the sidecar, so hiding here hides there too -
             // and, crucially, the ARCHIVE stays. That is the whole point: the
             // list is a library, and putting a book away is not burning it.
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let archive = inst.downloads_dir().join(&name);
             // Toggle, so the same button brings it back - a one-way hide with no
             // visible undo is how a library loses things.
@@ -5474,7 +5890,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ConfirmPurgeInstalled => {
             app.confirm_purge_installed = false;
-            let Some(inst) = app.created.as_ref() else { return Task::none() };
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
             let dir = inst.downloads_dir();
             // Only what is on screen AND installed. Not every installed archive
             // in the folder: the filter is how the user said which ones they
@@ -5580,12 +5998,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|sel| rows.iter().position(|&r| r == sel))
                 .map(|p| p + 1)
                 .unwrap_or(0);
-            let hit = (0..rows.len()).map(|k| (start + k) % rows.len()).find(|&pos| {
-                app.mods
-                    .get(rows[pos])
-                    .and_then(|m| m.display_name().chars().next())
-                    .is_some_and(|f| f.to_ascii_lowercase() == want)
-            });
+            let hit = (0..rows.len())
+                .map(|k| (start + k) % rows.len())
+                .find(|&pos| {
+                    app.mods
+                        .get(rows[pos])
+                        .and_then(|m| m.display_name().chars().next())
+                        .is_some_and(|f| f.to_ascii_lowercase() == want)
+                });
             let Some(pos) = hit else { return Task::none() };
             app.selected_mod = Some(rows[pos]);
             app.sel_anchor = Some(rows[pos]);
@@ -5598,7 +6018,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // One tick of rest, not zero: brushing past a collapsed group on the
             // way somewhere else must not open it. Two ticks would be safer and
             // slower than the gesture is worth.
-            let Some((name, ticks)) = app.drag_hover_group.take() else { return Task::none() };
+            let Some((name, ticks)) = app.drag_hover_group.take() else {
+                return Task::none();
+            };
             if ticks == 0 {
                 app.drag_hover_group = Some((name, 1));
                 return Task::none();
@@ -5642,7 +6064,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DragDrop => {
             app.drag_hover_group = None;
-            let Some(d) = app.drag_state.take() else { return Task::none() };
+            let Some(d) = app.drag_state.take() else {
+                return Task::none();
+            };
             if !can_reorder(app) {
                 return Task::none();
             }
@@ -5703,7 +6127,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.drag_scroll_depth = d.clamp(0.0, 1.0);
         }
         Message::DragScrollTick => {
-            let Some(edge) = app.drag_scroll else { return Task::none() };
+            let Some(edge) = app.drag_scroll else {
+                return Task::none();
+            };
             if app.drag_state.is_none() && app.download_drag.is_none() {
                 app.drag_scroll = None;
                 return Task::none();
@@ -5741,7 +6167,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.fomod.is_some() || app.picker.is_some() || app.collision.is_some() {
                 return Task::none();
             }
-            let Some(path) = app.dropped.first().cloned() else { return Task::none() };
+            let Some(path) = app.dropped.first().cloned() else {
+                return Task::none();
+            };
             app.dropped.remove(0);
             if app.created.is_none() {
                 app.dropped.clear();
@@ -5796,13 +6224,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         // ---- Installing a download AT a priority (MO2's drop onto the list) --
         Message::DownloadDragStart(row) => {
-            let Some(d) = app.downloads.get(row) else { return Task::none() };
+            let Some(d) = app.downloads.get(row) else {
+                return Task::none();
+            };
             // A partial has nothing to install; MO2 refuses the same gesture.
             if d.state == DownloadState::Downloading {
                 return Task::none();
             }
-            app.download_drag =
-                Some(DownloadDrag { path: d.path.clone(), gap: app.mods.len(), aimed: false });
+            app.download_drag = Some(DownloadDrag {
+                path: d.path.clone(),
+                gap: app.mods.len(),
+                aimed: false,
+            });
         }
         Message::DownloadDragOverGap(gap) => {
             if let Some(d) = &mut app.download_drag {
@@ -5818,7 +6251,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::DownloadDragDrop => {
             app.drag_scroll = None;
-            let Some(d) = app.download_drag.take() else { return Task::none() };
+            let Some(d) = app.download_drag.take() else {
+                return Task::none();
+            };
             if !d.aimed {
                 return Task::none();
             }
@@ -5958,11 +6393,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // do not, and a batch that half-applied would be worse than one that
             // did not start.
             let (names, refused) = {
-                let Some(list) = app.plugins.as_ref() else { return Task::none() };
+                let Some(list) = app.plugins.as_ref() else {
+                    return Task::none();
+                };
                 let mut names = Vec::new();
                 let mut refused = 0usize;
                 for &i in &rows {
-                    let Some(p) = list.plugins.get(i) else { continue };
+                    let Some(p) = list.plugins.get(i) else {
+                        continue;
+                    };
                     let engine_owned = spec
                         .primary_plugins
                         .iter()
@@ -5977,9 +6416,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 (names, refused)
             };
             if names.is_empty() {
-                app.status = Some(
-                    "Nothing to change: the game loads those plugins itself.".to_string(),
-                );
+                app.status =
+                    Some("Nothing to change: the game loads those plugins itself.".to_string());
                 return Task::none();
             }
             let held = hold_plugin_selection(app);
@@ -6012,8 +6450,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|g| GameSpec::for_id(g.def.id))
                 .zip(app.plugins.as_ref())
                 .and_then(|(spec, list)| list.block_movable_range(&block, &spec));
-            app.plugin_drag =
-                range.map(|range| PluginDrag { from: i, gap: i, block, range, aimed: false });
+            app.plugin_drag = range.map(|range| PluginDrag {
+                from: i,
+                gap: i,
+                block,
+                range,
+                aimed: false,
+            });
         }
         Message::PluginDragOverGap(gap) => {
             if let Some(d) = &mut app.plugin_drag {
@@ -6041,7 +6484,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.plugin_drag = None;
         }
         Message::PluginDragDrop => {
-            let Some(d) = app.plugin_drag.take() else { return Task::none() };
+            let Some(d) = app.plugin_drag.take() else {
+                return Task::none();
+            };
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
                 return Task::none();
             };
@@ -6155,8 +6600,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.selected_mods = drawn_mod_rows(app).into_iter().collect();
                 let first = app.selected_mods.iter().min().copied();
                 // The focus stays only if it is one of the rows just selected.
-                app.selected_mod =
-                    app.selected_mod.filter(|i| app.selected_mods.contains(i)).or(first);
+                app.selected_mod = app
+                    .selected_mod
+                    .filter(|i| app.selected_mods.contains(i))
+                    .or(first);
             }
             Pane::Plugins => {
                 let len = app.plugins.as_ref().map(|l| l.plugins.len()).unwrap_or(0);
@@ -6173,7 +6620,6 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
     Task::none()
 }
 
-
 /// The real (non-separator) mods in the current multi-selection, as indices into
 /// `app.mods`. Falls back to the single focus row when the set is empty, so a batch
 /// action invoked with just one row selected still does the obvious thing.
@@ -6188,9 +6634,14 @@ fn nexus_category_of(inst: &eidos_instance::Instance, mod_name: &str) -> Option<
     let archive = inst.mod_meta(mod_name).installation_file()?;
     // MO2 stores a full path here on Windows instances; take the file name so an
     // imported instance resolves against OUR downloads directory.
-    let file = std::path::Path::new(&archive.replace('\\', "/")).file_name()?.to_owned();
+    let file = std::path::Path::new(&archive.replace('\\', "/"))
+        .file_name()?
+        .to_owned();
     let sidecar = inst.downloads_dir().join(&file).with_extension({
-        let mut ext = std::path::Path::new(&file).extension().unwrap_or_default().to_owned();
+        let mut ext = std::path::Path::new(&file)
+            .extension()
+            .unwrap_or_default()
+            .to_owned();
         ext.push(".meta");
         ext
     });
@@ -6273,7 +6724,11 @@ pub(crate) fn real_selection(app: &App) -> Vec<usize> {
         // batch-enable read the always-on DLC rows as "something is enabled"
         // and disabled everything forever; a batch-remove aimed
         // remove_dir_all at files inside the game's own Data.
-        .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_separator() && !m.is_unmanaged()))
+        .filter(|&i| {
+            app.mods
+                .get(i)
+                .is_some_and(|m| !m.is_separator() && !m.is_unmanaged())
+        })
         .collect()
 }
 
@@ -6315,7 +6770,9 @@ fn normalize_fomod_step(w: &mut FomodWizard) {
         .get(si)
         .map(|s| s.groups.iter().map(|g| g.group_type).collect())
         .unwrap_or_default();
-    let Some(step_sel) = w.selection.get_mut(si) else { return };
+    let Some(step_sel) = w.selection.get_mut(si) else {
+        return;
+    };
     for (gi, g) in step_sel.iter_mut().enumerate() {
         let Some(ts) = types.get(gi) else { continue };
         for (pi, on) in g.iter_mut().enumerate() {
@@ -6390,7 +6847,6 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     recompute_counts(app);
 }
 
-
 /// Read one of a profile's INIs into a fresh editor state.
 fn load_ini_editor(
     prof: &eidos_instance::Profile,
@@ -6417,7 +6873,6 @@ fn load_ini_editor(
         current,
     }
 }
-
 
 /// How much of a session log the pane reads. A launch log runs to megabytes and
 /// the interesting part is always the end, so only the tail is taken.
@@ -6478,9 +6933,15 @@ pub(crate) fn load_log_pane(
             }
         }
     }
-    LogPaneState { files, current, lines, level, total, truncated }
+    LogPaneState {
+        files,
+        current,
+        lines,
+        level,
+        total,
+        truncated,
+    }
 }
-
 
 /// Which mod should take each Overwrite file back, keyed by lowercased relative
 /// path.
@@ -6504,7 +6965,9 @@ pub(crate) fn overwrite_owners(app: &App) -> Option<HashMap<String, String>> {
         let Some(&origin) = node.alternatives.iter().find(|&&o| o != 0 && o != u32::MAX) else {
             continue;
         };
-        let Some(m) = app.mods.get((origin as usize).saturating_sub(1)) else { continue };
+        let Some(m) = app.mods.get((origin as usize).saturating_sub(1)) else {
+            continue;
+        };
         if m.is_separator() || m.is_unmanaged() {
             continue;
         }
@@ -6512,7 +6975,6 @@ pub(crate) fn overwrite_owners(app: &App) -> Option<HashMap<String, String>> {
     }
     Some(out)
 }
-
 
 /// Set a file's modification time. `std::fs` has no portable setter, and a
 /// transferred save that carries the COPY date sorts to the top of the
@@ -6528,7 +6990,10 @@ fn set_file_mtime(path: &Path, when: std::time::SystemTime) -> std::io::Result<(
     let times = [
         // atime is left to now: nothing reads it and pinning it would be a
         // second claim this function has no business making.
-        libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT },
+        libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_OMIT,
+        },
         libc::timespec {
             tv_sec: secs.as_secs() as libc::time_t,
             tv_nsec: i64::from(secs.subsec_nanos()),
@@ -6543,7 +7008,6 @@ fn set_file_mtime(path: &Path, when: std::time::SystemTime) -> std::io::Result<(
         Err(std::io::Error::last_os_error())
     }
 }
-
 
 /// Join a fetched collection's members against what the instance already holds.
 ///
@@ -6591,8 +7055,12 @@ pub(crate) fn next_fetch_batch(
 }
 
 pub(crate) fn recompute_collection_states(app: &mut App) {
-    let Some(state) = app.collection.as_ref() else { return };
-    let Some(rev) = state.revision.as_ref() else { return };
+    let Some(state) = app.collection.as_ref() else {
+        return;
+    };
+    let Some(rev) = state.revision.as_ref() else {
+        return;
+    };
 
     let installed: std::collections::HashSet<u64> =
         app.meta_cache.values().filter_map(|r| r.mod_id).collect();

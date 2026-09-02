@@ -11,7 +11,12 @@ use crate::*;
 /// sentinel in the instance dir), so a re-run is a no-op and the tool warning is quiet.
 pub(crate) fn satisfied_prereqs(inst: &Instance) -> std::collections::BTreeSet<String> {
     std::fs::read_to_string(inst.root.join("prereqs.done"))
-        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -42,7 +47,10 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     let install = args.iter().any(|a| a == "--install");
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
         exit(1);
     };
     let inst = target.inst;
@@ -55,15 +63,26 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     for t in &tools {
         verbs.extend(t.prereqs.iter().cloned());
     }
-    let tier1: Vec<String> = verbs.iter().filter(|v| eidos_gamefeatures::is_tier1_dll(v)).cloned().collect();
-    let tier2: Vec<String> = verbs.iter().filter(|v| eidos_gamefeatures::is_tier2_verb(v)).cloned().collect();
+    let tier1: Vec<String> = verbs
+        .iter()
+        .filter(|v| eidos_gamefeatures::is_tier1_dll(v))
+        .cloned()
+        .collect();
+    let tier2: Vec<String> = verbs
+        .iter()
+        .filter(|v| eidos_gamefeatures::is_tier2_verb(v))
+        .cloned()
+        .collect();
     // A verb that is neither a bundled DLL nor a known winetricks verb (a tools.ini
     // typo, or one Eidos hasn't catalogued): surface it rather than silently drop it.
     // Tier 3: a self-contained runtime Eidos fetches itself. Not a bundled DLL
     // and not a winetricks verb, so it needs its own bucket - and must not fall
     // into `unknown`, which exists to catch typos.
-    let tier3: Vec<String> =
-        verbs.iter().filter(|v| eidos_gamefeatures::is_runtime_verb(v)).cloned().collect();
+    let tier3: Vec<String> = verbs
+        .iter()
+        .filter(|v| eidos_gamefeatures::is_runtime_verb(v))
+        .cloned()
+        .collect();
     let unknown: Vec<String> = verbs
         .iter()
         .filter(|v| {
@@ -75,11 +94,18 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         .collect();
     let pending3: Vec<String> = tier3
         .iter()
-        .filter(|v| eidos_gamefeatures::runtime(v).is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r)))
+        .filter(|v| {
+            eidos_gamefeatures::runtime(v)
+                .is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r))
+        })
         .cloned()
         .collect();
     let satisfied = satisfied_prereqs_in(&inst, game.compatdata.as_ref());
-    let pending2: Vec<String> = tier2.iter().filter(|v| !satisfied.contains(*v)).cloned().collect();
+    let pending2: Vec<String> = tier2
+        .iter()
+        .filter(|v| !satisfied.contains(*v))
+        .cloned()
+        .collect();
 
     if !install {
         println!("Tool prerequisites for {id}:");
@@ -88,14 +114,27 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 println!("  {:<16} {}", t.title, t.prereqs.join(", "));
             }
         }
-        let t1 = if tier1.is_empty() { "(none)".to_string() } else { tier1.join(", ") };
+        let t1 = if tier1.is_empty() {
+            "(none)".to_string()
+        } else {
+            tier1.join(", ")
+        };
         println!("\nTier 1 (bundled, applied at launch, no download): {t1}");
         let t2 = if tier2.is_empty() {
             "(none)".to_string()
         } else {
             tier2
                 .iter()
-                .map(|v| format!("{v} [{}]", if satisfied.contains(v) { "done" } else { "pending" }))
+                .map(|v| {
+                    format!(
+                        "{v} [{}]",
+                        if satisfied.contains(v) {
+                            "done"
+                        } else {
+                            "pending"
+                        }
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -113,10 +152,12 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
             println!("Tier 3 (runtime, DOWNLOADS once, shared by every instance): {t3}");
         }
         if !unknown.is_empty() {
-            println!("Unknown verbs (ignored - typo or uncatalogued): {}", unknown.join(", "));
+            println!(
+                "Unknown verbs (ignored - typo or uncatalogued): {}",
+                unknown.join(", ")
+            );
         }
-        let waiting: Vec<String> =
-            pending2.iter().chain(pending3.iter()).cloned().collect();
+        let waiting: Vec<String> = pending2.iter().chain(pending3.iter()).cloned().collect();
         if !waiting.is_empty() {
             println!(
                 "\nRun `eidos prereqs {id} --install` to download + install: {}",
@@ -127,7 +168,10 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     }
 
     if !unknown.is_empty() {
-        eidos_log::warn!("eidos prereqs: ignoring unknown verb(s): {}", unknown.join(", "));
+        eidos_log::warn!(
+            "eidos prereqs: ignoring unknown verb(s): {}",
+            unknown.join(", ")
+        );
     }
 
     // --install: Tier 1 (copy bundled DLLs) then the consented Tier 2 (winetricks).
@@ -209,7 +253,9 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         None => println!("Done."),
         Some((v, e)) => {
             eidos_log::warn!("winetricks failed on '{v}': {e}");
-            eidos_log::info!("(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)");
+            eidos_log::info!(
+                "(earlier verbs were recorded; re-run `eidos prereqs {id} --install` to resume.)"
+            );
             exit(1);
         }
     }

@@ -99,8 +99,10 @@ impl ConflictMap {
     /// Analyse `layers`, given **highest priority first** (e.g. the mod list with
     /// the game data appended as origin 0). Walks each layer once.
     pub fn build(layers: &[Layer]) -> ConflictMap {
-        let parts: Vec<(Layer, (Vec<String>, bool))> =
-            layers.iter().map(|l| (l.clone(), collect_files(&l.root))).collect();
+        let parts: Vec<(Layer, (Vec<String>, bool))> = layers
+            .iter()
+            .map(|l| (l.clone(), collect_files(&l.root)))
+            .collect();
         Self::build_from(&parts)
     }
 
@@ -198,7 +200,10 @@ impl ConflictMap {
             };
         }
 
-        let names = parts.iter().map(|(l, _)| (l.origin, l.name.clone())).collect();
+        let names = parts
+            .iter()
+            .map(|(l, _)| (l.origin, l.name.clone()))
+            .collect();
         ConflictMap { files, mods, names }
     }
 
@@ -209,7 +214,10 @@ impl ConflictMap {
 
     /// The conflict state of a mod (None if it has no files).
     pub fn state(&self, origin: OriginId) -> ConflictState {
-        self.mods.get(&origin).map(|m| m.state).unwrap_or(ConflictState::None)
+        self.mods
+            .get(&origin)
+            .map(|m| m.state)
+            .unwrap_or(ConflictState::None)
     }
 }
 
@@ -293,7 +301,11 @@ mod tests {
                 fs::create_dir_all(p.parent().unwrap()).unwrap();
                 fs::write(p, b"x").unwrap();
             }
-            Layer { origin, name: name.to_string(), root }
+            Layer {
+                origin,
+                name: name.to_string(),
+                root,
+            }
         }
     }
     impl Drop for Tmp {
@@ -434,19 +446,26 @@ mod tests {
         // Every MO2 mod folder carries meta.ini; fomod/ and *.mohidden are
         // manager artifacts too. None of them may produce conflicts.
         let layers = [
-            t.layer(1, "A", &[
-                "meta.ini",
-                "readme.txt",
-                "fomod/ModuleConfig.xml",
-                "textures/old.dds.mohidden",
-                "meshes.mohidden/body.nif",
-                "textures/real.dds",
-            ]),
+            t.layer(
+                1,
+                "A",
+                &[
+                    "meta.ini",
+                    "readme.txt",
+                    "fomod/ModuleConfig.xml",
+                    "textures/old.dds.mohidden",
+                    "meshes.mohidden/body.nif",
+                    "textures/real.dds",
+                ],
+            ),
             t.layer(2, "B", &["meta.ini", "textures/real.dds"]),
         ];
         let map = ConflictMap::build(&layers);
         // Only the real content file is in the tree.
-        assert_eq!(map.files.keys().collect::<Vec<_>>(), vec!["textures/real.dds"]);
+        assert_eq!(
+            map.files.keys().collect::<Vec<_>>(),
+            vec!["textures/real.dds"]
+        );
         assert_eq!(map.state(1), ConflictState::Overwrites);
         assert_eq!(map.state(2), ConflictState::Redundant);
     }
@@ -455,16 +474,23 @@ mod tests {
     fn mohidden_sets_has_hidden_and_whiteouts_are_skipped() {
         let t = Tmp::new();
         let layers = [
-            t.layer(1, "A", &[
-                "textures/real.dds",
-                "textures/old.dds.mohidden",  // hidden -> has_hidden, out of the tree
-                ".eidoswh.deleted.esp",       // overwrite whiteout marker -> skipped
-            ]),
+            t.layer(
+                1,
+                "A",
+                &[
+                    "textures/real.dds",
+                    "textures/old.dds.mohidden", // hidden -> has_hidden, out of the tree
+                    ".eidoswh.deleted.esp",      // overwrite whiteout marker -> skipped
+                ],
+            ),
             t.layer(2, "B", &["textures/real.dds"]),
         ];
         let map = ConflictMap::build(&layers);
         // Neither the whiteout marker nor the .mohidden file is a conflicting file.
-        assert_eq!(map.files.keys().collect::<Vec<_>>(), vec!["textures/real.dds"]);
+        assert_eq!(
+            map.files.keys().collect::<Vec<_>>(),
+            vec!["textures/real.dds"]
+        );
         // A carries hidden files (MO2's hasHiddenFiles flag); B does not.
         assert!(map.mods[&1].has_hidden);
         assert!(!map.mods[&2].has_hidden);

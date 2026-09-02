@@ -70,11 +70,16 @@ pub fn registry_blob(registry_name: &str, install_path: &Path) -> String {
             out.push_str(&format!(
                 "\r\n[HKEY_LOCAL_MACHINE\\{view}\\Bethesda Softworks\\{registry_name}]\r\n"
             ));
-            out.push_str(&format!("\"installed path\"=\"{}\"\r\n", escape_reg(&win_path)));
+            out.push_str(&format!(
+                "\"installed path\"=\"{}\"\r\n",
+                escape_reg(&win_path)
+            ));
         }
     }
     for exe in xedit_exes() {
-        out.push_str(&format!("\r\n[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\{exe}]\r\n"));
+        out.push_str(&format!(
+            "\r\n[HKEY_CURRENT_USER\\Software\\Wine\\AppDefaults\\{exe}]\r\n"
+        ));
         out.push_str("\"Version\"=\"winxp\"\r\n");
     }
     out
@@ -105,7 +110,11 @@ fn escape_reg(s: &str) -> String {
 /// of keeping a blob that no longer says everything it should. `v2` added the
 /// `QuickAutoClean` executables.
 fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
-    let key = if registry_name.is_empty() { "xedit" } else { registry_name };
+    let key = if registry_name.is_empty() {
+        "xedit"
+    } else {
+        registry_name
+    };
     compatdata.join(".eidos_registry").join(format!("{key}.v2"))
 }
 
@@ -140,7 +149,10 @@ fn installed_path_in(system_reg: &str, registry_name: &str, view: &str) -> Optio
     if registry_name.is_empty() {
         return None;
     }
-    let header = format!("[{}]", escape_reg(&format!("{view}\\Bethesda Softworks\\{registry_name}")));
+    let header = format!(
+        "[{}]",
+        escape_reg(&format!("{view}\\Bethesda Softworks\\{registry_name}"))
+    );
     let section = system_reg.split(&header).nth(1)?;
     // Stop at the next section so a later key's value cannot be mistaken for
     // this one's.
@@ -164,9 +176,9 @@ fn registry_matches(system_reg: &str, registry_name: &str, want: &str) -> bool {
         return true;
     }
     let want_escaped = escape_reg(want);
-    VIEWS
-        .iter()
-        .all(|view| installed_path_in(system_reg, registry_name, view).as_deref() == Some(want_escaped.as_str()))
+    VIEWS.iter().all(|view| {
+        installed_path_in(system_reg, registry_name, view).as_deref() == Some(want_escaped.as_str())
+    })
 }
 
 /// What the prefix's game path looks like RIGHT NOW, without changing anything.
@@ -190,7 +202,11 @@ pub enum RegistryStatus {
 
 /// Read-only counterpart to [`ensure_registry`]: answers "would a Windows tool
 /// find this game?" without touching the prefix or starting a wineserver.
-pub fn registry_status(compatdata: &Path, install_path: &Path, registry_name: &str) -> RegistryStatus {
+pub fn registry_status(
+    compatdata: &Path,
+    install_path: &Path,
+    registry_name: &str,
+) -> RegistryStatus {
     if registry_name.is_empty() {
         return RegistryStatus::NotApplicable;
     }
@@ -314,7 +330,9 @@ mod tests {
             Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Skyrim Special Edition"),
         );
         // Wine does not mirror the two views: 32-bit tools read Wow6432Node.
-        assert!(blob.contains("[HKEY_LOCAL_MACHINE\\Software\\Bethesda Softworks\\Skyrim Special Edition]"));
+        assert!(blob.contains(
+            "[HKEY_LOCAL_MACHINE\\Software\\Bethesda Softworks\\Skyrim Special Edition]"
+        ));
         assert!(blob.contains(
             "[HKEY_LOCAL_MACHINE\\Software\\Wow6432Node\\Bethesda Softworks\\Skyrim Special Edition]"
         ));
@@ -394,14 +412,21 @@ mod tests {
     #[test]
     fn both_views_correct_is_a_match() {
         let esc = escape_reg(WANT);
-        assert!(registry_matches(&system_reg(&esc, &esc), "Skyrim Special Edition", WANT));
+        assert!(registry_matches(
+            &system_reg(&esc, &esc),
+            "Skyrim Special Edition",
+            WANT
+        ));
     }
 
     #[test]
     fn the_exact_failure_that_killed_texgen_is_detected() {
         // Plain view still ours, Wow6432Node view rewritten via a drive letter
         // that has since moved. The marker would have said "done"; this must not.
-        let reg = system_reg(&escape_reg(WANT), &escape_reg(r"S:\common\Skyrim Special Edition\"));
+        let reg = system_reg(
+            &escape_reg(WANT),
+            &escape_reg(r"S:\common\Skyrim Special Edition\"),
+        );
         assert!(
             !registry_matches(&reg, "Skyrim Special Edition", WANT),
             "a clobbered 32-bit view was reported as correct"
@@ -410,7 +435,11 @@ mod tests {
 
     #[test]
     fn a_missing_key_is_not_a_match() {
-        assert!(!registry_matches("WINE REGISTRY Version 2\n", "Skyrim Special Edition", WANT));
+        assert!(!registry_matches(
+            "WINE REGISTRY Version 2\n",
+            "Skyrim Special Edition",
+            WANT
+        ));
     }
 
     #[test]
@@ -442,7 +471,11 @@ mod tests {
         // SEPARATE executable from the editor. Listing the editors by hand is
         // how it was missed.
         let blob = registry_blob("Skyrim Special Edition", Path::new("/games/skyrim"));
-        for exe in ["SSEEdit.exe", "SSEEditQuickAutoClean.exe", "FO4EditQuickAutoClean.exe"] {
+        for exe in [
+            "SSEEdit.exe",
+            "SSEEditQuickAutoClean.exe",
+            "FO4EditQuickAutoClean.exe",
+        ] {
             assert!(
                 blob.contains(&format!("AppDefaults\\{exe}]")),
                 "{exe} missing from the blob"
@@ -458,7 +491,10 @@ mod tests {
         assert_eq!(names.len(), XEDIT_BASES.len() * 2);
         for base in XEDIT_BASES {
             assert!(names.contains(&format!("{base}.exe")), "{base}");
-            assert!(names.contains(&format!("{base}QuickAutoClean.exe")), "{base} cleaner");
+            assert!(
+                names.contains(&format!("{base}QuickAutoClean.exe")),
+                "{base} cleaner"
+            );
         }
     }
 
@@ -482,13 +518,22 @@ mod tests {
         let as_system_reg: String = blob
             .replace("\r\n", "\n")
             .lines()
-            .map(|l| match l.strip_prefix("[HKEY_LOCAL_MACHINE\\").and_then(|r| r.strip_suffix(']')) {
-                Some(key) => format!("[{}] 1\n", escape_reg(key)),
-                None => format!("{l}\n"),
+            .map(|l| {
+                match l
+                    .strip_prefix("[HKEY_LOCAL_MACHINE\\")
+                    .and_then(|r| r.strip_suffix(']'))
+                {
+                    Some(key) => format!("[{}] 1\n", escape_reg(key)),
+                    None => format!("{l}\n"),
+                }
             })
             .collect();
         assert!(
-            registry_matches(&as_system_reg, "Skyrim Special Edition", &to_windows_path(path)),
+            registry_matches(
+                &as_system_reg,
+                "Skyrim Special Edition",
+                &to_windows_path(path)
+            ),
             "blob and check disagree:\n{as_system_reg}"
         );
     }

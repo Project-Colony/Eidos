@@ -168,7 +168,9 @@ pub(crate) fn nexus_checks(f: &NexusFacts) -> Vec<Diagnostic> {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
             title: "The last Nexus request failed".to_string(),
-            detail: format!("{e}  Downloads and update checks will keep failing until this clears."),
+            detail: format!(
+                "{e}  Downloads and update checks will keep failing until this clears."
+            ),
             actions: Vec::new(),
         });
     }
@@ -219,7 +221,10 @@ mod tests {
         assert_eq!(d.len(), 1);
         // Without the bad value printed, the card cannot be connected to the
         // "There are no modules in the data folder" the user is staring at.
-        assert!(d[0].detail.contains(r"S:\common\Fallout 4\"), "the wrong path must be shown");
+        assert!(
+            d[0].detail.contains(r"S:\common\Fallout 4\"),
+            "the wrong path must be shown"
+        );
         assert!(d[0].detail.contains("xEdit"), "name the tools it breaks");
     }
 
@@ -260,17 +265,28 @@ mod tests {
             want: r"Z:\real\Fallout 4\".to_string(),
         });
         f.gamedrive_found = Some(PathBuf::from("/mnt/Jeux/SteamLibrary"));
-        assert_eq!(prefix_checks(&f).len(), 2, "one card per fault, not one card for both");
+        assert_eq!(
+            prefix_checks(&f).len(),
+            2,
+            "one card per fault, not one card for both"
+        );
     }
 
     #[test]
     fn a_working_nexus_says_nothing() {
-        assert!(nexus_checks(&NexusFacts { signed_in: true, last_error: None }).is_empty());
+        assert!(nexus_checks(&NexusFacts {
+            signed_in: true,
+            last_error: None
+        })
+        .is_empty());
     }
 
     #[test]
     fn signed_out_names_both_things_it_breaks() {
-        let d = nexus_checks(&NexusFacts { signed_in: false, last_error: None });
+        let d = nexus_checks(&NexusFacts {
+            signed_in: false,
+            last_error: None,
+        });
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].level, DiagLevel::Advice);
         // Both symptoms, because they are reported as two separate bugs when
@@ -314,7 +330,10 @@ mod tests {
         // And nothing here may walk a directory tree: that is the one thing that
         // would make the Diagnostics tab expensive on a large mod pool.
         for forbidden in ["read_dir", "WalkDir", "walkdir", "rglob"] {
-            assert!(!body.contains(forbidden), "no directory walking in a per-refresh check");
+            assert!(
+                !body.contains(forbidden),
+                "no directory walking in a per-refresh check"
+            );
         }
     }
 }

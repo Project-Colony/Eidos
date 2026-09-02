@@ -76,7 +76,10 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
         let line = line.trim();
         if let Some(section) = eidos_ini::section_header(line) {
             if let Some(title) = section.strip_prefix("Tool/") {
-                out.push(Tool { title: title.to_string(), ..Default::default() });
+                out.push(Tool {
+                    title: title.to_string(),
+                    ..Default::default()
+                });
             }
             continue;
         }
@@ -88,7 +91,10 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             "exe" => tool.exe = PathBuf::from(v),
             // One key per argument, written in order as arg0=, arg1=, ... (file
             // order == argument order). Lossless for arguments containing spaces.
-            _ if k.len() > 3 && k.starts_with("arg") && k.as_bytes()[3..].iter().all(u8::is_ascii_digit) => {
+            _ if k.len() > 3
+                && k.starts_with("arg")
+                && k.as_bytes()[3..].iter().all(u8::is_ascii_digit) =>
+            {
                 tool.args.push(v.to_string());
             }
             // Legacy single-line form (pre-per-key tools.ini): space-split.
@@ -98,8 +104,12 @@ pub fn read_tools(path: &Path) -> Vec<Tool> {
             "workdir" if !v.is_empty() => tool.workdir = Some(PathBuf::from(v)),
             // Comma-separated prerequisite verbs (names are `[a-z0-9_]`, no escaping).
             "prereqs" if !v.is_empty() => {
-                tool.prereqs =
-                    v.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+                tool.prereqs = v
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
             }
             // A mods/ folder NAME. Rejected here rather than at the capture, so
             // a hand-edited or migrated file cannot point the move at `..`, at
@@ -241,7 +251,9 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
         if depth > TOOL_SEARCH_DEPTH || want.is_empty() {
             return;
         }
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
         let mut subdirs = Vec::new();
         for e in entries.flatten() {
             let Ok(ft) = e.file_type() else { continue };
@@ -254,8 +266,13 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
                 subdirs.push(e.path());
                 continue;
             }
-            let Ok(name) = e.file_name().into_string() else { continue };
-            if let Some(pos) = want.iter().position(|(exe, _)| exe.eq_ignore_ascii_case(&name)) {
+            let Ok(name) = e.file_name().into_string() else {
+                continue;
+            };
+            if let Some(pos) = want
+                .iter()
+                .position(|(exe, _)| exe.eq_ignore_ascii_case(&name))
+            {
                 let (_, title) = want.remove(pos);
                 out.push(Tool {
                     prereqs: default_prereqs(&title),
@@ -276,8 +293,10 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
         }
     }
 
-    let mut want: Vec<(String, String)> =
-        known.iter().map(|(e, t)| ((*e).to_string(), (*t).to_string())).collect();
+    let mut want: Vec<(String, String)> = known
+        .iter()
+        .map(|(e, t)| ((*e).to_string(), (*t).to_string()))
+        .collect();
     let mut out = Vec::new();
     for root in roots {
         if want.is_empty() {
@@ -335,7 +354,12 @@ pub fn default_tools_in(
     let install = &search;
     let mut v = Vec::new();
     if let Some(loader) = execs.script_extender.filter(|s| !s.is_empty()) {
-        push_tool_if_present(&mut v, install, loader.trim_end_matches(".exe").to_string(), loader);
+        push_tool_if_present(
+            &mut v,
+            install,
+            loader.trim_end_matches(".exe").to_string(),
+            loader,
+        );
     }
     if let Some(launcher) = execs.launcher.filter(|s| !s.is_empty()) {
         let title = if execs.game_name.is_empty() {
@@ -427,18 +451,28 @@ mod tests {
         // Only the launcher + binary exist; SKSE is not installed yet.
         std::fs::write(dir.join("SkyrimSELauncher.exe"), b"").unwrap();
         std::fs::write(dir.join("SkyrimSE.exe"), b"").unwrap();
-        let titles: Vec<String> =
-            default_tools(execs, &dir).into_iter().map(|t| t.title).collect();
+        let titles: Vec<String> = default_tools(execs, &dir)
+            .into_iter()
+            .map(|t| t.title)
+            .collect();
         assert!(titles.contains(&"Skyrim Special Edition Launcher".to_string()));
         assert!(titles.contains(&"Skyrim Special Edition".to_string()));
-        assert!(!titles.iter().any(|t| t.contains("skse")), "absent SKSE is not listed");
+        assert!(
+            !titles.iter().any(|t| t.contains("skse")),
+            "absent SKSE is not listed"
+        );
 
         // Install SKSE afterwards: a fresh detection (MO2 re-runs this on every load)
         // picks it up automatically, no user action.
         std::fs::write(dir.join("skse64_loader.exe"), b"").unwrap();
-        let titles2: Vec<String> =
-            default_tools(execs, &dir).into_iter().map(|t| t.title).collect();
-        assert!(titles2.contains(&"skse64_loader".to_string()), "SKSE auto-detected after install");
+        let titles2: Vec<String> = default_tools(execs, &dir)
+            .into_iter()
+            .map(|t| t.title)
+            .collect();
+        assert!(
+            titles2.contains(&"skse64_loader".to_string()),
+            "SKSE auto-detected after install"
+        );
         // The script extender comes first (the usual play target).
         assert_eq!(titles2.first().map(String::as_str), Some("skse64_loader"));
 
@@ -457,7 +491,11 @@ mod tests {
         // particular, so every user added them by hand or did without.
         let root = tmp_dir();
         // The three real layouts, all at once.
-        let in_mod = root.join("mods").join("Some Tool Mod").join("Tools").join("BodySlide");
+        let in_mod = root
+            .join("mods")
+            .join("Some Tool Mod")
+            .join("Tools")
+            .join("BodySlide");
         let in_tools = root.join("Tools").join("FO4Edit 4.1.5f");
         fs::create_dir_all(&in_mod).unwrap();
         fs::create_dir_all(&in_tools).unwrap();
@@ -474,20 +512,34 @@ mod tests {
         let found = find_known_tools(&[root.join("mods"), root.join("Tools")], known);
         let mut titles: Vec<&str> = found.iter().map(|t| t.title.as_str()).collect();
         titles.sort_unstable();
-        assert_eq!(titles, vec!["BodySlide", "FO4Edit", "FO4Edit QuickAutoClean"]);
-        assert!(!found.iter().any(|t| t.title == "Nothing"), "absent means absent");
+        assert_eq!(
+            titles,
+            vec!["BodySlide", "FO4Edit", "FO4Edit QuickAutoClean"]
+        );
+        assert!(
+            !found.iter().any(|t| t.title == "Nothing"),
+            "absent means absent"
+        );
 
         // The QuickAutoClean twin matters on its own: it is the button for the
         // dirty edits LOOT keeps warning about, and finding the editor without
         // it would leave the warning with no answer.
-        let qac = found.iter().find(|t| t.title.contains("QuickAutoClean")).unwrap();
+        let qac = found
+            .iter()
+            .find(|t| t.title.contains("QuickAutoClean"))
+            .unwrap();
         assert!(qac.exe.ends_with("FO4EditQuickAutoClean.exe"));
 
         // And the runtime comes from the title, so a found tool is configured
         // exactly like one the user typed in.
         let bs = found.iter().find(|t| t.title == "BodySlide").unwrap();
         assert_eq!(bs.prereqs, vec!["d3dx9_43", "d3dcompiler_47"]);
-        assert!(found.iter().find(|t| t.title == "FO4Edit").unwrap().prereqs.is_empty());
+        assert!(found
+            .iter()
+            .find(|t| t.title == "FO4Edit")
+            .unwrap()
+            .prereqs
+            .is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -500,7 +552,10 @@ mod tests {
         fs::create_dir_all(&deep).unwrap();
         fs::write(deep.join("FO4Edit.exe"), b"x").unwrap();
         let known: &[(&str, &str)] = &[("FO4Edit.exe", "FO4Edit")];
-        assert!(find_known_tools(&[root.clone()], known).is_empty(), "past the depth cap");
+        assert!(
+            find_known_tools(&[root.clone()], known).is_empty(),
+            "past the depth cap"
+        );
 
         // And a symlink is not followed - it can point anywhere, including at a
         // cycle, and a mod pool is full of them.
@@ -574,8 +629,24 @@ mod tests {
         // file; write_tools must drop such an entry, not emit it.
         let p = tmp();
         let tools = vec![
-            Tool { title: "Bad\nTitle".into(), exe: PathBuf::from("/x/a.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None, ..Default::default() },
-            Tool { title: "Good".into(), exe: PathBuf::from("/x/b.exe"), args: vec![], workdir: None, prereqs: vec![], output_mod: None, ..Default::default() },
+            Tool {
+                title: "Bad\nTitle".into(),
+                exe: PathBuf::from("/x/a.exe"),
+                args: vec![],
+                workdir: None,
+                prereqs: vec![],
+                output_mod: None,
+                ..Default::default()
+            },
+            Tool {
+                title: "Good".into(),
+                exe: PathBuf::from("/x/b.exe"),
+                args: vec![],
+                workdir: None,
+                prereqs: vec![],
+                output_mod: None,
+                ..Default::default()
+            },
         ];
         write_tools(&p, &tools).unwrap();
         let back = read_tools(&p);
@@ -602,10 +673,13 @@ mod tests {
             workdir: None,
             prereqs: vec![],
             output_mod: Some("../escape".into()),
-                    ..Default::default()
+            ..Default::default()
         };
         write_tools(&p, &[t]).unwrap();
-        assert!(!fs::read_to_string(&p).unwrap().contains("output_mod"), "not written");
+        assert!(
+            !fs::read_to_string(&p).unwrap().contains("output_mod"),
+            "not written"
+        );
         // And a file that already carries one is not trusted on read either.
         fs::write(&p, "[Tool/T]\nexe=/x/t.exe\noutput_mod=../escape\n").unwrap();
         assert_eq!(read_tools(&p)[0].output_mod, None);
@@ -621,7 +695,7 @@ mod tests {
             workdir: None,
             prereqs: Vec::new(),
             output_mod: None,
-                ..Default::default()
+            ..Default::default()
         }];
         let defaults = vec![
             Tool {
@@ -652,7 +726,10 @@ mod tests {
     #[test]
     fn default_prereqs_maps_known_tools() {
         assert_eq!(default_prereqs("Synthesis"), vec!["dotnet8", "vcrun2022"]);
-        assert_eq!(default_prereqs("BodySlide x64"), vec!["d3dx9_43", "d3dcompiler_47"]);
+        assert_eq!(
+            default_prereqs("BodySlide x64"),
+            vec!["d3dx9_43", "d3dcompiler_47"]
+        );
         assert_eq!(default_prereqs("FNIS"), vec!["dotnet48"]);
         assert!(default_prereqs("SSEEdit").is_empty()); // Delphi, needs nothing extra
         assert!(default_prereqs("skse64_loader").is_empty());

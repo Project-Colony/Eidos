@@ -128,10 +128,18 @@ impl Default for CategoryFactory {
 impl CategoryFactory {
     /// MO2's built-in default catalog.
     pub fn defaults() -> Self {
-        let mut f = CategoryFactory { rows: Vec::new(), by_id: HashMap::new() };
+        let mut f = CategoryFactory {
+            rows: Vec::new(),
+            by_id: HashMap::new(),
+        };
         // Insertion order matters: MO2's id collisions resolve last-write-wins.
         for &(id, name, parent) in DEFAULTS {
-            f.put(Category { id, name: name.to_string(), parent, nexus: Vec::new() });
+            f.put(Category {
+                id,
+                name: name.to_string(),
+                parent,
+                nexus: Vec::new(),
+            });
         }
         f
     }
@@ -165,7 +173,10 @@ impl CategoryFactory {
     /// cells, what MO2 writes) or the legacy `id|name|nexusIDs|parentID` (4 cells,
     /// which MO2 still reads - the ids it recovers get the name `Unknown`).
     fn parse_dat(text: &str) -> Self {
-        let mut f = CategoryFactory { rows: Vec::new(), by_id: HashMap::new() };
+        let mut f = CategoryFactory {
+            rows: Vec::new(),
+            by_id: HashMap::new(),
+        };
         for line in text.lines() {
             if line.trim().is_empty() {
                 continue;
@@ -179,9 +190,17 @@ impl CategoryFactory {
             if let (Ok(id), Ok(parent)) = (id.trim().parse::<i32>(), parent.trim().parse::<i32>()) {
                 let nexus = parse_id_list(nexus)
                     .into_iter()
-                    .map(|id| NexusCategory { id, name: "Unknown".to_string() })
+                    .map(|id| NexusCategory {
+                        id,
+                        name: "Unknown".to_string(),
+                    })
                     .collect();
-                f.put(Category { id, name: name.trim().to_string(), parent, nexus });
+                f.put(Category {
+                    id,
+                    name: name.trim().to_string(),
+                    parent,
+                    nexus,
+                });
             }
         }
         if f.rows.is_empty() {
@@ -199,7 +218,9 @@ impl CategoryFactory {
             if line.trim().is_empty() {
                 continue;
             }
-            let [cat, name, nexus] = line.split('|').collect::<Vec<_>>()[..] else { continue };
+            let [cat, name, nexus] = line.split('|').collect::<Vec<_>>()[..] else {
+                continue;
+            };
             let (Ok(cat), Ok(nexus)) = (cat.trim().parse::<i32>(), nexus.trim().parse::<i32>())
             else {
                 continue;
@@ -210,7 +231,10 @@ impl CategoryFactory {
                 row.nexus.retain(|n| n.id != nexus);
             }
             if let Some(&at) = self.by_id.get(&cat) {
-                self.rows[at].nexus.push(NexusCategory { id: nexus, name: name.trim().to_string() });
+                self.rows[at].nexus.push(NexusCategory {
+                    id: nexus,
+                    name: name.trim().to_string(),
+                });
             }
         }
     }
@@ -313,7 +337,11 @@ impl CategoryFactory {
         if let Some(c) = self.get(id) {
             out.push((id, c.name.clone(), depth));
         }
-        let mut kids: Vec<&Category> = self.rows.iter().filter(|c| c.parent == id && c.id != id).collect();
+        let mut kids: Vec<&Category> = self
+            .rows
+            .iter()
+            .filter(|c| c.parent == id && c.id != id)
+            .collect();
         kids.sort_by(|a, b| a.name.cmp(&b.name));
         for k in kids {
             self.walk(k.id, depth + 1, out);
@@ -339,7 +367,10 @@ impl CategoryFactory {
 
     /// The local category a Nexus category id maps to (MO2's `resolveNexusID`).
     pub fn for_nexus_id(&self, nexus_id: i32) -> Option<i32> {
-        self.rows.iter().find(|c| c.nexus.iter().any(|n| n.id == nexus_id)).map(|c| c.id)
+        self.rows
+            .iter()
+            .find(|c| c.nexus.iter().any(|n| n.id == nexus_id))
+            .map(|c| c.id)
     }
 
     /// Point a Nexus category id at a local category, returning true if that
@@ -353,8 +384,15 @@ impl CategoryFactory {
             row.nexus.retain(|n| n.id != nexus_id);
         }
         let at = self.by_id[&local];
-        let name = if name.trim().is_empty() { "Unknown" } else { name.trim() };
-        self.rows[at].nexus.push(NexusCategory { id: nexus_id, name: name.to_string() });
+        let name = if name.trim().is_empty() {
+            "Unknown"
+        } else {
+            name.trim()
+        };
+        self.rows[at].nexus.push(NexusCategory {
+            id: nexus_id,
+            name: name.to_string(),
+        });
         true
     }
 
@@ -373,7 +411,8 @@ impl CategoryFactory {
     pub fn free_id(&self) -> i32 {
         let max = self.rows.iter().map(|c| c.id).max().unwrap_or(0).max(0);
         // Only if a hand-edited file has already reached i32::MAX.
-        max.checked_add(1).unwrap_or_else(|| (1..).find(|id| !self.by_id.contains_key(id)).unwrap_or(1))
+        max.checked_add(1)
+            .unwrap_or_else(|| (1..).find(|id| !self.by_id.contains_key(id)).unwrap_or(1))
     }
 
     /// Add a category, returning its id. Reuses a free id; the name is trimmed and
@@ -389,7 +428,12 @@ impl CategoryFactory {
         // reachable whenever the parent dropdown still names a category that was
         // deleted in the same dialog session.
         let parent = if parent == id { 0 } else { parent };
-        self.put(Category { id, name: clean_name(name), parent, nexus: Vec::new() });
+        self.put(Category {
+            id,
+            name: clean_name(name),
+            parent,
+            nexus: Vec::new(),
+        });
         id
     }
 
@@ -426,7 +470,9 @@ impl CategoryFactory {
     /// whether to rewrite their `meta.ini`, and doing it silently would rewrite
     /// every mod in the instance behind a single click in a settings dialog.
     pub fn remove(&mut self, id: i32) -> bool {
-        let Some(&at) = self.by_id.get(&id) else { return false };
+        let Some(&at) = self.by_id.get(&id) else {
+            return false;
+        };
         let parent = self.rows[at].parent;
         self.rows.remove(at);
         for c in &mut self.rows {
@@ -439,7 +485,12 @@ impl CategoryFactory {
     }
 
     fn reindex(&mut self) {
-        self.by_id = self.rows.iter().enumerate().map(|(at, c)| (c.id, at)).collect();
+        self.by_id = self
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(at, c)| (c.id, at))
+            .collect();
     }
 }
 
@@ -461,7 +512,9 @@ fn clean_name(name: &str) -> String {
 
 /// Parse a comma-separated id list, ignoring blanks and junk.
 fn parse_id_list(raw: &str) -> Vec<i32> {
-    raw.split(',').filter_map(|s| s.trim().parse::<i32>().ok()).collect()
+    raw.split(',')
+        .filter_map(|s| s.trim().parse::<i32>().ok())
+        .collect()
 }
 
 /// Every category id in a raw `meta.ini` `category=` value, primary first, in
@@ -656,7 +709,10 @@ mod tests {
         // A pipe in a name would split the row on the next parse.
         f.rename(id, "a|b");
         assert_eq!(f.name_for_id(id), Some("a/b"));
-        assert_eq!(CategoryFactory::parse_dat(&f.to_dat()).name_for_id(id), Some("a/b"));
+        assert_eq!(
+            CategoryFactory::parse_dat(&f.to_dat()).name_for_id(id),
+            Some("a/b")
+        );
     }
 
     #[test]
@@ -675,7 +731,7 @@ mod tests {
         assert_eq!(f.name_for_id(2), None);
         assert_eq!(f.parent_id(3), Some(1));
         assert!(!f.remove(2)); // already gone
-        // The index kept up with the removal.
+                               // The index kept up with the removal.
         assert_eq!(f.name_for_id(3), Some("Low"));
     }
 
@@ -697,8 +753,15 @@ mod tests {
         let mut f = CategoryFactory::defaults();
         assert!(f.remove(47), "Miscellaneous");
         let fresh = f.add("Mounts", 0);
-        assert_ne!(fresh, 47, "a new category must not inherit the deleted one's mods");
-        assert_eq!(f.name_for_id(47), None, "and 47 stays unresolvable, as documented");
+        assert_ne!(
+            fresh, 47,
+            "a new category must not inherit the deleted one's mods"
+        );
+        assert_eq!(
+            f.name_for_id(47),
+            None,
+            "and 47 stays unresolvable, as documented"
+        );
 
         // Holds after a round trip too: the high-water mark is derived from the
         // rows, so it cannot go backwards when the file is re-read.
@@ -715,8 +778,15 @@ mod tests {
         let mut f = CategoryFactory::parse_dat("1|A|0\n");
         let id = f.add("Self", 2); // 2 is what free_id will return
         assert_eq!(id, 2);
-        assert_eq!(f.parent_id(id), Some(0), "silently re-rooted rather than orphaned");
-        assert!(f.tree().iter().any(|&(i, _, _)| i == id), "and it is visible");
+        assert_eq!(
+            f.parent_id(id),
+            Some(0),
+            "silently re-rooted rather than orphaned"
+        );
+        assert!(
+            f.tree().iter().any(|&(i, _, _)| i == id),
+            "and it is visible"
+        );
     }
 
     #[test]
@@ -726,7 +796,7 @@ mod tests {
         let pos = |id: i32| t.iter().position(|&(i, _, _)| i == id).unwrap();
         assert!(pos(1) < pos(2));
         assert_eq!(t[pos(2)].2, 1); // depth
-        // The parent 777 does not exist: the row is shown at top level, not lost.
+                                    // The parent 777 does not exist: the row is shown at top level, not lost.
         assert_eq!(t[pos(3)].2, 0);
         assert_eq!(t.len(), 3);
     }

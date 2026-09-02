@@ -70,12 +70,19 @@ pub(crate) fn settings_toggle<'a>(
     on: bool,
     msg: Message,
 ) -> Element<'a, Message> {
-    let knob = container(Space::new().width(Length::Fixed(13.0)).height(Length::Fixed(13.0)))
-        .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(pal().bg_card)),
-            border: Border { radius: 7.0.into(), ..Default::default() },
+    let knob = container(
+        Space::new()
+            .width(Length::Fixed(13.0))
+            .height(Length::Fixed(13.0)),
+    )
+    .style(|_t: &Theme| container::Style {
+        background: Some(Background::Color(pal().bg_card)),
+        border: Border {
+            radius: 7.0.into(),
             ..Default::default()
-        });
+        },
+        ..Default::default()
+    });
     let track = container(
         Row::new()
             .push(Space::new().width(Length::Fixed(if on { 16.0 } else { 2.0 })))
@@ -90,7 +97,10 @@ pub(crate) fn settings_toggle<'a>(
         } else {
             pal().border_subtle
         })),
-        border: Border { radius: 9.0.into(), ..Default::default() },
+        border: Border {
+            radius: 9.0.into(),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
@@ -166,7 +176,9 @@ pub(crate) fn scroll_marks<'a>(tints: &[Option<Color>]) -> Element<'a, Message> 
     if tints.is_empty() || tints.iter().all(Option::is_none) {
         return Space::new().width(Length::Fixed(0.0)).into();
     }
-    let mut col = Column::new().width(Length::Fixed(SCROLL_MARKS_W)).height(Length::Fill);
+    let mut col = Column::new()
+        .width(Length::Fixed(SCROLL_MARKS_W))
+        .height(Length::Fill);
     let mut i = 0;
     while i < tints.len() {
         let tint = tints[i];
@@ -211,9 +223,17 @@ pub(crate) fn floating_at<'a>(
     let below = at.y > win.height * 0.5;
     let pad = iced::Padding {
         top: if below { 0.0 } else { at.y },
-        bottom: if below { (win.height - at.y).max(0.0) } else { 0.0 },
+        bottom: if below {
+            (win.height - at.y).max(0.0)
+        } else {
+            0.0
+        },
         left: if right { 0.0 } else { at.x },
-        right: if right { (win.width - at.x).max(0.0) } else { 0.0 },
+        right: if right {
+            (win.width - at.x).max(0.0)
+        } else {
+            0.0
+        },
     };
     container(card)
         .width(Length::Fill)
@@ -252,17 +272,29 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
             .spacing(4)
             .align_y(iced::Alignment::Center)
             .push(
-                container(Space::new().width(Length::Fixed(12.0)).height(Length::Fixed(12.0)))
-                    .style(move |_t: &Theme| container::Style {
-                        background: Some(Background::Color(c)),
-                        border: Border { color: accent(), width: 1.0, radius: 2.0.into() },
-                        ..Default::default()
-                    }),
+                container(
+                    Space::new()
+                        .width(Length::Fixed(12.0))
+                        .height(Length::Fixed(12.0)),
+                )
+                .style(move |_t: &Theme| container::Style {
+                    background: Some(Background::Color(c)),
+                    border: Border {
+                        color: accent(),
+                        width: 1.0,
+                        radius: 2.0.into(),
+                    },
+                    ..Default::default()
+                }),
             )
             .push(text(label).size(11.0))
             .into()
     };
-    let name = app.mods.get(focus).map(|m| m.display_name().to_string()).unwrap_or_default();
+    let name = app
+        .mods
+        .get(focus)
+        .map(|m| m.display_name().to_string())
+        .unwrap_or_default();
     let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
     row = row.push(text(format!("{name} conflicts:")).size(11.0));
     if over > 0 {
@@ -334,12 +366,16 @@ pub(crate) fn drop_gap<'a>(
     over: fn(usize) -> Message,
     drop: Message,
 ) -> Element<'a, Message> {
-    let bar = container(Space::new().width(Length::Fill).height(Length::Fixed(if active { 2.0 } else { 0.0 })))
-        .width(Length::Fill)
-        .style(move |_t: &Theme| container::Style {
-            background: active.then(|| Background::Color(accent())),
-            ..Default::default()
-        });
+    let bar = container(
+        Space::new()
+            .width(Length::Fill)
+            .height(Length::Fixed(if active { 2.0 } else { 0.0 })),
+    )
+    .width(Length::Fill)
+    .style(move |_t: &Theme| container::Style {
+        background: active.then(|| Background::Color(accent())),
+        ..Default::default()
+    });
     // `center_y(len)` is `height(len) + align`, so passing Fill here silently
     // REPLACED the fixed height: every strip then demanded the whole viewport,
     // the rows were squeezed to nothing and the list rendered blank mid-drag.
@@ -351,7 +387,10 @@ pub(crate) fn drop_gap<'a>(
     if !interactive {
         return strip.into();
     }
-    mouse_area(strip).on_enter(over(gap)).on_release(drop).into()
+    mouse_area(strip)
+        .on_enter(over(gap))
+        .on_release(drop)
+        .into()
 }
 
 /// The colour behind a mod row.
@@ -396,7 +435,12 @@ pub(crate) fn mod_tint(rgb: [u8; 3], even: bool) -> Color {
     let base = row_bg(even);
     let [r, g, b] = rgb;
     let mix = |a: f32, b8: u8| a + (f32::from(b8) / 255.0 - a) * WASH;
-    Color { r: mix(base.r, r), g: mix(base.g, g), b: mix(base.b, b), a: base.a }
+    Color {
+        r: mix(base.r, r),
+        g: mix(base.g, g),
+        b: mix(base.b, b),
+        a: base.a,
+    }
 }
 
 /// Every mod row is exactly this tall, whatever its name.
@@ -442,12 +486,20 @@ pub(crate) fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> El
 }
 
 pub(crate) fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0)).padding(6).on_press(msg).style(button::secondary).into()
+    button(text(label).size(12.0))
+        .padding(6)
+        .on_press(msg)
+        .style(button::secondary)
+        .into()
 }
 
 /// A flat, menu/toolbar-style button (no chrome until hovered).
 pub(crate) fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(13.0)).padding(6).on_press(msg).style(button::text).into()
+    button(text(label).size(13.0))
+        .padding(6)
+        .on_press(msg)
+        .style(button::text)
+        .into()
 }
 
 /// The decoded handle for each icon, made ONCE and handed out by address.
@@ -462,8 +514,9 @@ pub(crate) fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message>
 ///
 /// Keyed by the address of the `&'static [u8]`, which is stable and unique per
 /// icon constant - the bytes themselves are never copied again.
-pub(crate) static ICON_HANDLES: std::sync::LazyLock<std::sync::Mutex<HashMap<usize, image::Handle>>> =
-    std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
+pub(crate) static ICON_HANDLES: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<usize, image::Handle>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 pub(crate) fn icon<'a>(bytes: &'static [u8], size: f32) -> Element<'a, Message> {
     let handle = {
@@ -473,27 +526,46 @@ pub(crate) fn icon<'a>(bytes: &'static [u8], size: f32) -> Element<'a, Message> 
             .or_insert_with(|| image::Handle::from_bytes(bytes))
             .clone()
     };
-    image(handle).width(Length::Fixed(size)).height(Length::Fixed(size)).into()
+    image(handle)
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .into()
 }
 
 /// A flat toolbar button: icon + label (MO2's icons-and-text mode).
-pub(crate) fn icon_text_btn<'a>(bytes: &'static [u8], label: &'a str, msg: Message) -> Element<'a, Message> {
+pub(crate) fn icon_text_btn<'a>(
+    bytes: &'static [u8],
+    label: &'a str,
+    msg: Message,
+) -> Element<'a, Message> {
     let content = Row::new()
         .spacing(5)
         .push(icon(bytes, 16.0))
         .push(text(label).size(12.0));
-    button(content).padding(5).on_press(msg).style(button::text).into()
+    button(content)
+        .padding(5)
+        .on_press(msg)
+        .style(button::text)
+        .into()
 }
 
 /// A flat text-only toolbar button, for an action with no icon in the MO2 set
 /// Eidos borrows. Same padding and style as [`icon_text_btn`] so the row does
 /// not visibly change height where one appears.
 pub(crate) fn text_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0)).padding(5).on_press(msg).style(button::text).into()
+    button(text(label).size(12.0))
+        .padding(5)
+        .on_press(msg)
+        .style(button::text)
+        .into()
 }
 
 /// A flat icon-only button (toolbar right group, row arrows).
-pub(crate) fn icon_btn<'a>(bytes: &'static [u8], size: f32, msg: Option<Message>) -> Element<'a, Message> {
+pub(crate) fn icon_btn<'a>(
+    bytes: &'static [u8],
+    size: f32,
+    msg: Option<Message>,
+) -> Element<'a, Message> {
     let mut b = button(icon(bytes, size)).padding(3).style(button::text);
     if let Some(m) = msg {
         b = b.on_press(m);

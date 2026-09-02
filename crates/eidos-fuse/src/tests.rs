@@ -22,16 +22,28 @@ fn rename_over_an_interned_destination_keeps_the_survivor_mapped() {
     let src = inodes.lookup("Skyrim.ini.tmp");
     let (_, clobbered) = inodes.rename("Skyrim.ini.tmp", "Skyrim.ini");
 
-    assert_eq!(inodes.intern("Skyrim.ini"), src, "the renamed inode owns the path");
+    assert_eq!(
+        inodes.intern("Skyrim.ini"),
+        src,
+        "the renamed inode owns the path"
+    );
     // The victim is REPORTED, because its FORGET can no longer do the reporting:
     // discard removed its count, so forget() finds nothing and frees nothing,
     // and the side tables keyed by it (aliases, negatives) would have been
     // retained for the life of the mount - on the very pattern every INI and
     // save write uses.
-    assert_eq!(clobbered, vec![victim], "the clobbered inode must be handed back for pruning");
+    assert_eq!(
+        clobbered,
+        vec![victim],
+        "the clobbered inode must be handed back for pruning"
+    );
     // Forgetting the clobbered inode must not unmap the survivor.
     inodes.forget(victim, 1);
-    assert_eq!(inodes.intern("Skyrim.ini"), src, "forget() unmapped a live inode");
+    assert_eq!(
+        inodes.intern("Skyrim.ini"),
+        src,
+        "forget() unmapped a live inode"
+    );
 }
 
 #[test]
@@ -42,7 +54,10 @@ fn renaming_a_directory_rebinds_its_children() {
     inodes.rename("tools", "tools_bak");
 
     assert_eq!(inodes.path(child).as_deref(), Some("tools_bak/xedit.exe"));
-    assert_eq!(inodes.path(grandchild).as_deref(), Some("tools_bak/sub/deep.txt"));
+    assert_eq!(
+        inodes.path(grandchild).as_deref(),
+        Some("tools_bak/sub/deep.txt")
+    );
     // And they resolve from the new path without minting fresh inodes.
     assert_eq!(inodes.intern("tools_bak/xedit.exe"), child);
     assert_eq!(inodes.intern("tools_bak/sub/deep.txt"), grandchild);
@@ -54,7 +69,7 @@ fn intern_is_stable_and_uncounted() {
     let a = inodes.intern("foo/bar");
     let b = inodes.intern("foo/bar");
     assert_eq!(a, b); // same path -> same inode
-    // readdir interns without taking a kernel reference.
+                      // readdir interns without taking a kernel reference.
     assert!(!inodes.counts.contains_key(&a));
     assert_eq!(inodes.path(a).as_deref(), Some("foo/bar"));
 }
@@ -79,8 +94,8 @@ fn inode_numbers_are_never_reused() {
     let first = inodes.lookup("x");
     inodes.forget(first, 1); // freed
     let second = inodes.lookup("x"); // same path, fresh lookup
-    // Monotonic allocation: a freed number is never handed out again, so the
-    // kernel (ino, generation) pair stays unambiguous with generation == 0.
+                                     // Monotonic allocation: a freed number is never handed out again, so the
+                                     // kernel (ino, generation) pair stays unambiguous with generation == 0.
     assert_ne!(first, second);
 }
 
@@ -135,10 +150,16 @@ fn timings_report_milliseconds_and_a_total() {
     // command line, and two dumps from two arms used to be indistinguishable.
     assert!(out.contains("summed across"), "{out}");
     assert!(
-        out.contains(&format!("across {} thread(s)", crate::config::fuse_threads())),
+        out.contains(&format!(
+            "across {} thread(s)",
+            crate::config::fuse_threads()
+        )),
         "the report must name the thread count it summed over: {out}"
     );
-    assert!(!out.contains('%'), "no ratio between two things that do not nest: {out}");
+    assert!(
+        !out.contains('%'),
+        "no ratio between two things that do not nest: {out}"
+    );
     assert!(out.contains("read 240"), "{out}");
     assert!(out.contains("lookup 60"), "{out}");
     // Handlers that never ran are still listed, at zero: their absence is
@@ -207,8 +228,12 @@ fn reads_are_attributed_to_files_and_named_only_at_report_time() {
     }
     s.note_read(2, 8 * 1024, 10, 0, 0, 0);
     let out = s.read_shape(&names);
-    let hot = out.find("Skyrim - Textures0.bsa").expect("named at report time");
-    let cold = out.find("textures/armor/steel.dds").expect("second file listed");
+    let hot = out
+        .find("Skyrim - Textures0.bsa")
+        .expect("named at report time");
+    let cold = out
+        .find("textures/armor/steel.dds")
+        .expect("second file listed");
     assert!(hot < cold, "busiest file must lead: {out}");
     assert!(out.contains("0.6 MiB"), "bytes per file reported: {out}");
     // An inode that has since been forgotten is still counted, and says so
@@ -247,7 +272,11 @@ fn surveying_a_read_does_not_inflate_the_time_it_reports() {
     // expensive the moment you started measuring them.
     let s = Stats::default();
     s.note_read(1, 4096, 10, 5_000_000, 0, 0); // 5 ms
-    assert_eq!(s.ns_read.load(Ordering::Relaxed), 0, "note_read must not touch the clock");
+    assert_eq!(
+        s.ns_read.load(Ordering::Relaxed),
+        0,
+        "note_read must not touch the clock"
+    );
 }
 
 #[test]
@@ -258,13 +287,18 @@ fn the_timer_charges_the_early_returns_too() {
     // way from the truth.
     let total = AtomicU64::new(0);
     {
-        let _t = Timed { total: &total, start: std::time::Instant::now() };
+        let _t = Timed {
+            total: &total,
+            start: std::time::Instant::now(),
+        };
         std::thread::sleep(std::time::Duration::from_millis(2));
         // falls out of scope on an early return, exactly like a handler
     }
-    assert!(total.load(Ordering::Relaxed) >= 1_000_000, "at least 1ms was charged");
+    assert!(
+        total.load(Ordering::Relaxed) >= 1_000_000,
+        "at least 1ms was charged"
+    );
 }
-
 
 #[test]
 fn this_crate_never_makes_a_name_appear_or_vanish_by_itself() {
@@ -352,7 +386,10 @@ fn a_slot_can_never_report_more_time_than_its_workers_could_spend() {
         s.note_read(1, 4096, tid, 100_999_999, 0, 0);
     }
     let p = pct(&s.read_shape(&names));
-    assert!(p <= 100.5, "a barely-over-one-slice read exceeded capacity: {p}");
+    assert!(
+        p <= 100.5,
+        "a barely-over-one-slice read exceeded capacity: {p}"
+    );
 }
 
 #[test]
@@ -365,6 +402,9 @@ fn the_peak_points_at_a_slot_that_saw_reads() {
         s.note_read(1, 4096, 10, 0, 3, 0); // t = +0.3 s
     }
     let out = s.read_shape(&names);
-    assert!(out.contains("at t=+0.3s"), "peak must sit where the reads are: {out}");
+    assert!(
+        out.contains("at t=+0.3s"),
+        "peak must sit where the reads are: {out}"
+    );
     assert!(out.contains("busiest 1000 reads"), "{out}");
 }

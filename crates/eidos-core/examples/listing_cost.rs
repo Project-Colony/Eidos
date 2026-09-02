@@ -38,7 +38,11 @@ fn main() {
     dirs.sort();
     dirs.dedup();
     dirs.truncate(500);
-    println!("{} layers, {} distinct virtual directories sampled\n", layers.len(), dirs.len());
+    println!(
+        "{} layers, {} distinct virtual directories sampled\n",
+        layers.len(),
+        dirs.len()
+    );
 
     let indexed = eidos_core::LayerStack::new(layers.clone(), PathBuf::from(&overwrite));
     let with = run(&indexed, &dirs);
@@ -51,18 +55,27 @@ fn main() {
     println!("                     with index   forced walk        ratio");
     row("probes", with.0, without.0);
     row("directory scans", with.1, without.1);
-    println!("  {:<18} {:>10.2?}   {:>11.2?}", "wall clock", with.2, without.2);
+    println!(
+        "  {:<18} {:>10.2?}   {:>11.2?}",
+        "wall clock", with.2, without.2
+    );
 }
 
 fn row(label: &str, a: u64, b: u64) {
-    let ratio =
-        if a == 0 { "-".to_string() } else { format!("{:.1}x", b as f64 / a.max(1) as f64) };
+    let ratio = if a == 0 {
+        "-".to_string()
+    } else {
+        format!("{:.1}x", b as f64 / a.max(1) as f64)
+    };
     println!("  {label:<18} {a:>10}   {b:>11}   {ratio:>10}");
 }
 
 fn run(stack: &eidos_core::LayerStack, dirs: &[String]) -> (u64, u64, std::time::Duration) {
     let s = stack.resolve_stats();
-    let (p0, c0) = (s.probes.load(Ordering::Relaxed), s.scans.load(Ordering::Relaxed));
+    let (p0, c0) = (
+        s.probes.load(Ordering::Relaxed),
+        s.scans.load(Ordering::Relaxed),
+    );
     let t = std::time::Instant::now();
     for d in dirs {
         let _ = stack.list_dir_typed(d);
@@ -84,7 +97,11 @@ fn collect(root: &std::path::Path, dir: &std::path::Path, out: &mut Vec<String>,
         let p = e.path();
         if p.is_dir() {
             if let Ok(rel) = p.strip_prefix(root) {
-                out.push(rel.to_string_lossy().replace('\\', "/").to_ascii_lowercase());
+                out.push(
+                    rel.to_string_lossy()
+                        .replace('\\', "/")
+                        .to_ascii_lowercase(),
+                );
             }
             collect(root, &p, out, depth + 1);
         }

@@ -12,9 +12,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::SystemTime;
 
-
-
-
 use super::*;
 
 /// Move every top-level entry of `src` into `dest` (rename, so same-filesystem
@@ -27,7 +24,9 @@ pub(crate) fn move_dir_contents(src: &Path, dest: &Path) -> io::Result<()> {
 }
 
 pub(crate) fn is_nonempty_dir(p: &Path) -> bool {
-    fs::read_dir(p).map(|mut rd| rd.next().is_some()).unwrap_or(false)
+    fs::read_dir(p)
+        .map(|mut rd| rd.next().is_some())
+        .unwrap_or(false)
 }
 
 /// Find a directory entry by case-insensitive name.
@@ -35,7 +34,11 @@ pub(crate) fn find_ci(dir: &Path, name_lower: &str) -> Option<PathBuf> {
     fs::read_dir(dir)
         .ok()?
         .flatten()
-        .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(name_lower))
+        .find(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name_lower)
+        })
         .map(|e| e.path())
 }
 
@@ -163,7 +166,10 @@ pub(crate) fn resolve_dir_collisions(dir: &Path) -> io::Result<()> {
     let mut groups: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for e in fs::read_dir(dir)?.flatten() {
         match e.file_name().to_str() {
-            Some(s) => groups.entry(s.to_ascii_lowercase()).or_default().push(e.path()),
+            Some(s) => groups
+                .entry(s.to_ascii_lowercase())
+                .or_default()
+                .push(e.path()),
             None => eprintln!(
                 "eidos install: skipping case-normalisation of non-UTF8 name {:?}",
                 e.file_name()
@@ -207,15 +213,25 @@ pub(crate) fn resolve_group(parent: &Path, key: &str, members: Vec<PathBuf>) -> 
 /// Merge `dirs` (case-variants of one name in `parent`) into a single directory
 /// named `target_name`. Staged under a fresh temp name first so an in-place rename
 /// can never clobber a doomed sibling on case-sensitive ext4, then published.
-pub(crate) fn merge_dirs_into(parent: &Path, target_name: &str, dirs: &[PathBuf]) -> io::Result<()> {
-    let staging = parent.join(format!(".eidos-case-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+pub(crate) fn merge_dirs_into(
+    parent: &Path,
+    target_name: &str,
+    dirs: &[PathBuf],
+) -> io::Result<()> {
+    let staging = parent.join(format!(
+        ".eidos-case-{}",
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     fs::create_dir(&staging)?;
     for d in dirs {
         merge_into(d, &staging)?;
         // `d` should be empty now; remove it. If a skipped non-UTF8 collision left a
         // child behind, leave the residual dir (no data loss) and note it.
         if fs::remove_dir(d).is_err() {
-            eprintln!("eidos install: left residual dir after case-merge: {}", d.display());
+            eprintln!(
+                "eidos install: left residual dir after case-merge: {}",
+                d.display()
+            );
         }
     }
     // Belt-and-braces: settle any collision the staged union still holds.
@@ -283,24 +299,35 @@ pub(crate) fn merge_into(src: &Path, dst: &Path) -> io::Result<()> {
 pub(crate) fn pick_oldest(paths: &[PathBuf]) -> PathBuf {
     paths
         .iter()
-        .min_by(|a, b| mtime(a).cmp(&mtime(b)).then_with(|| a.file_name().cmp(&b.file_name())))
+        .min_by(|a, b| {
+            mtime(a)
+                .cmp(&mtime(b))
+                .then_with(|| a.file_name().cmp(&b.file_name()))
+        })
         .cloned()
         .expect("a collision group is never empty")
 }
 
 pub(crate) fn mtime(p: &Path) -> SystemTime {
-    fs::symlink_metadata(p).and_then(|m| m.modified()).unwrap_or(SystemTime::UNIX_EPOCH)
+    fs::symlink_metadata(p)
+        .and_then(|m| m.modified())
+        .unwrap_or(SystemTime::UNIX_EPOCH)
 }
 
 /// A real directory, NOT a symlink to one (symlinks are treated as opaque).
 pub(crate) fn is_real_dir(p: &Path) -> bool {
-    fs::symlink_metadata(p).map(|m| m.file_type().is_dir()).unwrap_or(false)
+    fs::symlink_metadata(p)
+        .map(|m| m.file_type().is_dir())
+        .unwrap_or(false)
 }
 
 /// The existing child of `dir` whose name lower-cases to `key`, if any.
 pub(crate) fn ci_find(dir: &Path, key: &str) -> io::Result<Option<PathBuf>> {
     for e in fs::read_dir(dir)?.flatten() {
-        if e.file_name().to_str().is_some_and(|s| s.eq_ignore_ascii_case(key)) {
+        if e.file_name()
+            .to_str()
+            .is_some_and(|s| s.eq_ignore_ascii_case(key))
+        {
             return Ok(Some(e.path()));
         }
     }

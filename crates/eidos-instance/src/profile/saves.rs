@@ -12,8 +12,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
-
 use super::*;
 
 /// The save-file extensions across the supported game families: Bethesda's
@@ -24,7 +22,9 @@ pub(crate) const SAVE_EXTS: &[&str] = &["ess", "fos", "sfs"];
 pub(crate) const COSAVE_EXTS: &[&str] = &["skse", "f4se", "nvse", "fose", "sfse", "obse"];
 
 pub(crate) fn ext_of(name: &str) -> String {
-    name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default()
+    name.rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default()
 }
 
 /// Save DATA: a save or its co-save - what the seed and the cloud sync move.
@@ -45,10 +45,15 @@ pub fn is_save_listing(name: &str) -> bool {
 /// operations that must treat the pair as one unit - deleting a save while
 /// leaving its co-save made an invisible orphan the cloud sync pushed forever.
 pub fn cosave_siblings(save: &Path) -> Vec<PathBuf> {
-    let Some(stem) = save.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()) else {
+    let Some(stem) = save
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_ascii_lowercase())
+    else {
         return Vec::new();
     };
-    let Some(dir) = save.parent() else { return Vec::new() };
+    let Some(dir) = save.parent() else {
+        return Vec::new();
+    };
     // Case-insensitive on BOTH halves, like every other save predicate: the game
     // wrote these on a filesystem it thought folded case, so `Quicksave.SKSE`
     // next to `quicksave.ess` is normal - and an exact-case join recreated the
@@ -59,7 +64,9 @@ pub fn cosave_siblings(save: &Path) -> Vec<PathBuf> {
         .flatten()
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_ascii_lowercase();
-            let Some((s, ext)) = name.rsplit_once('.') else { return false };
+            let Some((s, ext)) = name.rsplit_once('.') else {
+                return false;
+            };
             s == stem && COSAVE_EXTS.contains(&ext) && e.path().is_file()
         })
         .map(|e| e.path())
@@ -71,7 +78,9 @@ pub fn cosave_siblings(save: &Path) -> Vec<PathBuf> {
 /// seed time there is no user history to defer to, and deriving from discovery
 /// beats founding a profile on a wreck.
 pub(crate) fn looks_like_crash_artifact(path: &Path) -> bool {
-    let Some(text) = eidos_plugins::read_decoded(path) else { return false };
+    let Some(text) = eidos_plugins::read_decoded(path) else {
+        return false;
+    };
     let mut listed = 0usize;
     let mut active = 0usize;
     for line in text.lines() {
@@ -127,8 +136,9 @@ impl Profile {
         };
         fs::create_dir_all(&dst)?;
         if !resuming {
-            let already =
-                fs::read_dir(&dst).map(|it| it.flatten().next().is_some()).unwrap_or(false);
+            let already = fs::read_dir(&dst)
+                .map(|it| it.flatten().next().is_some())
+                .unwrap_or(false);
             if already {
                 // Pre-marker profiles: their saves are the adoption. Record and stop.
                 let _ = fs::write(&marker, b"done");

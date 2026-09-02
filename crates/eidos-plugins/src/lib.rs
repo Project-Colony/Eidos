@@ -203,7 +203,6 @@ pub struct PluginList {
     pub locked: std::collections::BTreeMap<String, usize>,
 }
 
-
 /// The plugins the ENGINE loads on its own, read from the game root's `.ccc` file
 /// (`Skyrim.ccc`, `Fallout4.ccc`). Names are lowercased.
 ///
@@ -231,18 +230,23 @@ pub struct PluginList {
 /// content and the mod list wants to show it that way. Callers that only need
 /// membership collect it into a set.
 pub fn implicit_plugins(game_root: &Path) -> Vec<String> {
-    let Ok(rd) = std::fs::read_dir(game_root) else { return Vec::new() };
+    let Ok(rd) = std::fs::read_dir(game_root) else {
+        return Vec::new();
+    };
     let mut files: Vec<PathBuf> = rd
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
-            p.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("ccc"))
+            p.extension()
+                .is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("ccc"))
         })
         .collect();
     files.sort();
     let mut out = Vec::new();
     for f in files {
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
+        let Ok(text) = std::fs::read_to_string(&f) else {
+            continue;
+        };
         out.extend(
             text.lines()
                 .map(|l| l.trim().to_ascii_lowercase())
@@ -270,7 +274,9 @@ impl PluginList {
             .unwrap_or_default();
 
         for (origin, dir) in sources {
-            let Ok(rd) = std::fs::read_dir(dir) else { continue };
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                continue;
+            };
             let mut found: Vec<(String, PathBuf)> = rd
                 .flatten()
                 .filter_map(|e| {
@@ -329,7 +335,11 @@ impl PluginList {
         }
         // Discovery reads the game and the mods; the pins live in the profile and
         // are loaded over the top of this by the caller.
-        PluginList { plugins, implicit, locked: Default::default() }
+        PluginList {
+            plugins,
+            implicit,
+            locked: Default::default(),
+        }
     }
 
     /// Re-sort to satisfy the ordering invariants, then assign mod indexes. Call
@@ -396,7 +406,10 @@ impl PluginList {
         self.locked
             .iter()
             .filter_map(|(name, &want)| {
-                let at = self.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(name))?;
+                let at = self
+                    .plugins
+                    .iter()
+                    .position(|p| p.name.eq_ignore_ascii_case(name))?;
                 let reachable = want.min(last);
                 (at != reachable).then(|| (name.clone(), want, at))
             })
@@ -441,7 +454,11 @@ impl PluginList {
             if !self.locked.contains_key(&key) {
                 continue;
             }
-            if let Some(i) = self.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(name)) {
+            if let Some(i) = self
+                .plugins
+                .iter()
+                .position(|p| p.name.eq_ignore_ascii_case(name))
+            {
                 self.locked.insert(key, i);
             }
         }
@@ -514,7 +531,11 @@ impl PluginList {
     /// Set a plugin's enabled state by name (case-insensitive). Returns whether it
     /// matched. Call `refresh` afterwards to recompute indexes.
     pub fn set_enabled(&mut self, name: &str, enabled: bool) -> bool {
-        if let Some(p) = self.plugins.iter_mut().find(|p| p.name.eq_ignore_ascii_case(name)) {
+        if let Some(p) = self
+            .plugins
+            .iter_mut()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+        {
             p.enabled = enabled;
             true
         } else {
@@ -534,8 +555,11 @@ impl PluginList {
             .map(|(i, n)| (n.to_ascii_lowercase(), i))
             .collect();
         let tail = sorted.len();
-        self.plugins
-            .sort_by_key(|p| rank.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(tail));
+        self.plugins.sort_by_key(|p| {
+            rank.get(&p.name.to_ascii_lowercase())
+                .copied()
+                .unwrap_or(tail)
+        });
     }
 
     /// Whether a ONE-SLOT move is legal, checked against the immediate neighbour
@@ -543,9 +567,13 @@ impl PluginList {
     /// instead of the O(n) [`movable_range`] needs. The arrow buttons ask this
     /// per row on every frame, so the difference matters.
     pub fn can_move(&self, index: usize, up: bool, spec: &GameSpec) -> bool {
-        let Some(me) = self.plugins.get(index) else { return false };
+        let Some(me) = self.plugins.get(index) else {
+            return false;
+        };
         let is_primary = |n: &str| {
-            spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n))
+            spec.primary_plugins
+                .iter()
+                .any(|pp| pp.eq_ignore_ascii_case(n))
                 || self.implicit.contains(&n.to_ascii_lowercase())
         };
         if is_primary(&me.name) {
@@ -569,7 +597,11 @@ impl PluginList {
             if is_primary(&other.name) {
                 return false;
             }
-            if me.masters.iter().any(|m| m.eq_ignore_ascii_case(&other.name)) {
+            if me
+                .masters
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&other.name))
+            {
                 return false;
             }
             if !me.loads_as_master() && other.loads_as_master() {
@@ -578,7 +610,11 @@ impl PluginList {
         } else {
             // Cannot sink below something that declares me as its master, and a
             // master cannot sink into the normal block.
-            if other.masters.iter().any(|m| m.eq_ignore_ascii_case(&me.name)) {
+            if other
+                .masters
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(&me.name))
+            {
                 return false;
             }
             if me.loads_as_master() && !other.loads_as_master() {
@@ -671,7 +707,9 @@ impl PluginList {
         // then the next discovery put it back where the engine says - a move
         // that looked like it worked and silently was not.
         let is_primary = |n: &str| {
-            spec.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(n))
+            spec.primary_plugins
+                .iter()
+                .any(|pp| pp.eq_ignore_ascii_case(n))
                 || self.implicit.contains(&n.to_ascii_lowercase())
         };
         if is_primary(&me.name) {
@@ -684,7 +722,11 @@ impl PluginList {
             });
         }
         // Tier boundaries. The list is sorted, so both blocks are contiguous.
-        let primaries_end = self.plugins.iter().position(|p| !is_primary(&p.name)).unwrap_or(len);
+        let primaries_end = self
+            .plugins
+            .iter()
+            .position(|p| !is_primary(&p.name))
+            .unwrap_or(len);
         let normals_start = self
             .plugins
             .iter()
@@ -761,7 +803,11 @@ impl PluginList {
     /// row binds tightest, so the explanation the UI shows names the plugin that
     /// is actually in the way.
     pub fn block_movable_range(&self, rows: &[usize], spec: &GameSpec) -> Option<MovableRange> {
-        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        let mut idx: Vec<usize> = rows
+            .iter()
+            .copied()
+            .filter(|&i| i < self.plugins.len())
+            .collect();
         idx.sort_unstable();
         idx.dedup();
         let (&first, &last) = (idx.first()?, idx.last()?);
@@ -820,7 +866,11 @@ impl PluginList {
     /// pin has claimed. `None` when the selection is already there, or when the
     /// rows have no destination in common.
     pub fn edge_gap(&self, rows: &[usize], to_top: bool, spec: &GameSpec) -> Option<usize> {
-        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        let mut idx: Vec<usize> = rows
+            .iter()
+            .copied()
+            .filter(|&i| i < self.plugins.len())
+            .collect();
         idx.sort_unstable();
         idx.dedup();
         if idx.is_empty() {
@@ -861,12 +911,20 @@ impl PluginList {
         // the same order back to disk.
         let first = *idx.first()?;
         let last = *idx.last()?;
-        let unchanged = if to_top { first == gap } else { last + 1 == gap };
+        let unchanged = if to_top {
+            first == gap
+        } else {
+            last + 1 == gap
+        };
         (!unchanged).then_some(gap)
     }
 
     pub fn move_plugins_to(&mut self, rows: &[usize], gap: usize, spec: &GameSpec) -> bool {
-        let mut idx: Vec<usize> = rows.iter().copied().filter(|&i| i < self.plugins.len()).collect();
+        let mut idx: Vec<usize> = rows
+            .iter()
+            .copied()
+            .filter(|&i| i < self.plugins.len())
+            .collect();
         idx.sort_unstable();
         idx.dedup();
         if idx.is_empty() {
@@ -931,8 +989,11 @@ fn parse_header(path: &Path, game_id: GameId) -> Option<(bool, bool, bool, Vec<S
 /// time from a second copy of the same closure is exactly how the sort and the
 /// pin pass would drift apart.
 fn tier_order(plugins: &[Plugin], spec: &GameSpec) -> (Vec<usize>, Vec<u8>) {
-    let primary_pos =
-        |name: &str| spec.primary_plugins.iter().position(|p| p.eq_ignore_ascii_case(name));
+    let primary_pos = |name: &str| {
+        spec.primary_plugins
+            .iter()
+            .position(|p| p.eq_ignore_ascii_case(name))
+    };
     let tier: Vec<u8> = plugins
         .iter()
         .map(|p| {
@@ -946,7 +1007,13 @@ fn tier_order(plugins: &[Plugin], spec: &GameSpec) -> (Vec<usize>, Vec<u8>) {
         })
         .collect();
     let mut base: Vec<usize> = (0..plugins.len()).collect();
-    base.sort_by_key(|&i| (tier[i], primary_pos(&plugins[i].name).unwrap_or(usize::MAX), i));
+    base.sort_by_key(|&i| {
+        (
+            tier[i],
+            primary_pos(&plugins[i].name).unwrap_or(usize::MAX),
+            i,
+        )
+    });
     (base, tier)
 }
 
@@ -987,7 +1054,9 @@ fn topo_stable(plugins: &[Plugin], base: &[usize], tier: &[u8]) -> Vec<usize> {
         // be unblocked was emitted while two mutually-mastering .esm files were
         // stuck, and both masters ended up BELOW it: a load order the engine
         // cannot honour, produced in silence.
-        let Some(head) = base.iter().copied().find(|&i| !placed[i]) else { break };
+        let Some(head) = base.iter().copied().find(|&i| !placed[i]) else {
+            break;
+        };
         let tier_end = base
             .iter()
             .position(|&i| !placed[i] && tier[i] != tier[head])
@@ -1050,7 +1119,11 @@ mod tests {
     #[test]
     fn primaries_pinned_first_in_canonical_order() {
         let mut list = PluginList {
-            plugins: vec![p("ZMod.esp", &[]), p("Update.esm", &["Skyrim.esm"]), p("Skyrim.esm", &[])],
+            plugins: vec![
+                p("ZMod.esp", &[]),
+                p("Update.esm", &["Skyrim.esm"]),
+                p("Skyrim.esm", &[]),
+            ],
             implicit: Default::default(),
             locked: Default::default(),
         };
@@ -1061,13 +1134,21 @@ mod tests {
     #[test]
     fn masters_sort_above_normals_keeping_input_order() {
         let mut list = PluginList {
-            plugins: vec![p("aaa.esp", &[]), p("zzz.esm", &[]), p("bbb.esp", &[]), p("mmm.esm", &[])],
+            plugins: vec![
+                p("aaa.esp", &[]),
+                p("zzz.esm", &[]),
+                p("bbb.esp", &[]),
+                p("mmm.esm", &[]),
+            ],
             implicit: Default::default(),
             locked: Default::default(),
         };
         list.sort(&se());
         // masters first (input order zzz, mmm), then normals (aaa, bbb).
-        assert_eq!(names(&list), vec!["zzz.esm", "mmm.esm", "aaa.esp", "bbb.esp"]);
+        assert_eq!(
+            names(&list),
+            vec!["zzz.esm", "mmm.esm", "aaa.esp", "bbb.esp"]
+        );
     }
 
     #[test]
@@ -1103,16 +1184,33 @@ mod tests {
         // can never be activated, distinct from a merely default-inactive plugin.
         let le = GameSpec::for_id("skyrim").unwrap();
         let listed = PluginList::discover(&sources, &le);
-        let le_p = listed.plugins.iter().find(|p| p.name == "Patch.esl").unwrap();
-        assert!(le_p.force_disabled, ".esl must be force-disabled on a no-light game");
+        let le_p = listed
+            .plugins
+            .iter()
+            .find(|p| p.name == "Patch.esl")
+            .unwrap();
+        assert!(
+            le_p.force_disabled,
+            ".esl must be force-disabled on a no-light game"
+        );
         assert!(!le_p.enabled);
 
         // Skyrim SE supports light plugins, so the same file is NOT force-disabled
         // and, coming from an enabled mod, is active by default (MO2's opt-out model).
         let se_list = PluginList::discover(&sources, &se());
-        let se_p = se_list.plugins.iter().find(|p| p.name == "Patch.esl").unwrap();
-        assert!(!se_p.force_disabled, ".esl is enableable on a light-capable game");
-        assert!(se_p.enabled, "a plugin from an enabled mod is active by default");
+        let se_p = se_list
+            .plugins
+            .iter()
+            .find(|p| p.name == "Patch.esl")
+            .unwrap();
+        assert!(
+            !se_p.force_disabled,
+            ".esl is enableable on a light-capable game"
+        );
+        assert!(
+            se_p.enabled,
+            "a plugin from an enabled mod is active by default"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1126,7 +1224,11 @@ mod tests {
         std::fs::write(dir.join("Skyrim.esm"), b"").unwrap(); // a primary master
         std::fs::write(dir.join("MyMod.esp"), b"").unwrap(); // a normal mod plugin
         let list = PluginList::discover(&[(String::new(), dir.clone())], &se());
-        let esm = list.plugins.iter().find(|p| p.name.eq_ignore_ascii_case("Skyrim.esm")).unwrap();
+        let esm = list
+            .plugins
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case("Skyrim.esm"))
+            .unwrap();
         let esp = list.plugins.iter().find(|p| p.name == "MyMod.esp").unwrap();
         // MO2 opt-out model: a plugin from an enabled mod is active by default; the
         // user disables the ones they don't want.
@@ -1146,7 +1248,10 @@ mod tests {
             x.is_light = true;
             x
         };
-        assert!(!espfe.loads_as_master(), "light-flagged .esp must stay in the normal tier");
+        assert!(
+            !espfe.loads_as_master(),
+            "light-flagged .esp must stay in the normal tier"
+        );
 
         // A plain master and a real .esl still hoist (extension-based).
         assert!(p("Base.esm", &[]).loads_as_master());
@@ -1174,12 +1279,25 @@ mod tests {
         list.refresh(&se());
         let order = names(&list);
         let pos = |n: &str| order.iter().position(|x| x == n).unwrap();
-        assert!(pos("Base.esm") < pos("Patch.esp"), ".esm master loads before the ESPFE patch");
-        assert!(pos("Light.esl") < pos("Patch.esp"), ".esl master loads before the ESPFE patch");
+        assert!(
+            pos("Base.esm") < pos("Patch.esp"),
+            ".esm master loads before the ESPFE patch"
+        );
+        assert!(
+            pos("Light.esl") < pos("Patch.esp"),
+            ".esl master loads before the ESPFE patch"
+        );
 
         // Base.esm is the only non-light plugin -> normal index 00; both lights
         // get FE: indexes, the patch sorting after Light.esl.
-        let by = |n: &str| list.plugins.iter().find(|p| p.name == n).unwrap().index.clone();
+        let by = |n: &str| {
+            list.plugins
+                .iter()
+                .find(|p| p.name == n)
+                .unwrap()
+                .index
+                .clone()
+        };
         assert_eq!(by("Base.esm"), Some("00".to_string()));
         assert_eq!(by("Light.esl"), Some("FE:000".to_string()));
         assert_eq!(by("Patch.esp"), Some("FE:001".to_string()));
@@ -1206,7 +1324,14 @@ mod tests {
             locked: Default::default(),
         };
         list.refresh(&se());
-        let by = |n: &str| list.plugins.iter().find(|p| p.name == n).unwrap().index.clone();
+        let by = |n: &str| {
+            list.plugins
+                .iter()
+                .find(|p| p.name == n)
+                .unwrap()
+                .index
+                .clone()
+        };
         assert_eq!(by("Skyrim.esm"), Some("00".to_string())); // first normal/master
         assert_eq!(by("Normal.esp"), Some("01".to_string())); // second normal
         assert_eq!(by("Light.esl"), Some("FE:000".to_string())); // first light
@@ -1216,19 +1341,28 @@ mod tests {
     #[test]
     fn missing_masters_are_flagged() {
         let mut list = PluginList {
-            plugins: vec![p("Skyrim.esm", &[]), p("Patch.esp", &["Skyrim.esm", "Ghost.esm"])],
+            plugins: vec![
+                p("Skyrim.esm", &[]),
+                p("Patch.esp", &["Skyrim.esm", "Ghost.esm"]),
+            ],
             implicit: Default::default(),
             locked: Default::default(),
         };
         list.refresh(&se());
         let missing = list.missing_masters();
-        assert_eq!(missing, vec![("Patch.esp".to_string(), "Ghost.esm".to_string())]);
+        assert_eq!(
+            missing,
+            vec![("Patch.esp".to_string(), "Ghost.esm".to_string())]
+        );
     }
 
     #[test]
     fn game_spec_mechanisms() {
         assert_eq!(se().mechanism, LoadOrderMechanism::Asterisk);
-        assert_eq!(GameSpec::for_id("skyrim").unwrap().mechanism, LoadOrderMechanism::PlainList);
+        assert_eq!(
+            GameSpec::for_id("skyrim").unwrap().mechanism,
+            LoadOrderMechanism::PlainList
+        );
         assert!(GameSpec::for_id("nonsuch").is_none());
         assert!(se().light_supported());
         assert!(!se().medium_supported());
@@ -1393,10 +1527,17 @@ mod tests {
             plugins: vec![
                 p("KuroneSoulTomb.esp", &[]),
                 p("KuroneSoulTomb_EX1.esp", &["KuroneSoulTomb.esp"]),
-                p("KuroneSoulTomb_EX2.esp", &["KuroneSoulTomb.esp", "KuroneSoulTomb_EX1.esp"]),
+                p(
+                    "KuroneSoulTomb_EX2.esp",
+                    &["KuroneSoulTomb.esp", "KuroneSoulTomb_EX1.esp"],
+                ),
                 p(
                     "KuroneSoulTomb_EX3.esp",
-                    &["KuroneSoulTomb.esp", "KuroneSoulTomb_EX1.esp", "KuroneSoulTomb_EX2.esp"],
+                    &[
+                        "KuroneSoulTomb.esp",
+                        "KuroneSoulTomb_EX1.esp",
+                        "KuroneSoulTomb_EX2.esp",
+                    ],
                 ),
             ],
             implicit: Default::default(),
@@ -1520,7 +1661,11 @@ mod tests {
         shorter.locked = l.locked.clone();
         shorter.refresh(&se());
         assert_eq!(names(&shorter), ["a.esp", "b.esp", "c.esp"]);
-        assert!(shorter.violated_locks().is_empty(), "{:?}", shorter.violated_locks());
+        assert!(
+            shorter.violated_locks().is_empty(),
+            "{:?}",
+            shorter.violated_locks()
+        );
     }
 
     #[test]
@@ -1664,13 +1809,19 @@ mod tests {
         assert!(!l.can_move(1, false, &se()));
         assert!(!l.move_plugins_to(&[1], 0, &se()));
         assert!(!l.move_plugins_to(&[1], 3, &se()));
-        assert_eq!(names(&l), ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Mod.esp", "Other.esp"]);
+        assert_eq!(
+            names(&l),
+            ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Mod.esp", "Other.esp"]
+        );
 
         // Real mods next to it are still free to move around each other.
         assert!(l.movable_range(2, &se()).is_some_and(|r| !r.is_stuck(2)));
         assert!(l.move_plugins_to(&[2], 4, &se()));
         l.refresh(&se());
-        assert_eq!(names(&l), ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Other.esp", "Mod.esp"]);
+        assert_eq!(
+            names(&l),
+            ["Skyrim.esm", "ccBGSSSE001-Fish.esm", "Other.esp", "Mod.esp"]
+        );
     }
 
     #[test]
@@ -1691,7 +1842,16 @@ mod tests {
             locked: Default::default(),
         };
         l.refresh(&se());
-        assert_eq!(names(&l), ["Base.esm", "Pair1.esp", "Pair2.esp", "Free1.esp", "Free2.esp"]);
+        assert_eq!(
+            names(&l),
+            [
+                "Base.esm",
+                "Pair1.esp",
+                "Pair2.esp",
+                "Free1.esp",
+                "Free2.esp"
+            ]
+        );
 
         // Pair1 alone cannot pass Pair2 - it is its master.
         assert_eq!(l.movable_range(1, &se()).unwrap().hi, 2);
@@ -1700,7 +1860,16 @@ mod tests {
         assert_eq!((r.lo, r.hi), (1, 5));
         assert!(l.move_plugins_to(&[1, 2], 5, &se()));
         l.refresh(&se());
-        assert_eq!(names(&l), ["Base.esm", "Free1.esp", "Free2.esp", "Pair1.esp", "Pair2.esp"]);
+        assert_eq!(
+            names(&l),
+            [
+                "Base.esm",
+                "Free1.esp",
+                "Free2.esp",
+                "Pair1.esp",
+                "Pair2.esp"
+            ]
+        );
     }
 
     #[test]

@@ -29,21 +29,18 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::Metadata;
-use std::os::unix::fs::{MetadataExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::UNIX_EPOCH;
 
 use eidos_core::LayerStack;
-use fuser::{
-    BackgroundSession, FileAttr, FileType,
-    Generation, INodeNo, ReplyEntry,
-};
+use fuser::{BackgroundSession, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
 
 mod config;
-mod ops;
 mod inodes;
+mod ops;
 mod stats;
 mod sys;
 #[cfg(test)]
@@ -70,7 +67,10 @@ impl<T> LockExt<T> for Mutex<T> {
 
 impl<'a> Timed<'a> {
     fn start(total: &'a AtomicU64) -> Option<Timed<'a>> {
-        STATS_ON.then(|| Timed { total, start: std::time::Instant::now() })
+        STATS_ON.then(|| Timed {
+            total,
+            start: std::time::Instant::now(),
+        })
     }
 }
 
@@ -283,9 +283,12 @@ impl Eidos {
     fn invalidate_stale_aliases(&self, ino: u64, kept_parent: u64, kept_name: &str) {
         let stale: Vec<(u64, String)> = {
             let mut aliases = self.aliases.lock_recover();
-            let Some(entry) = aliases.get_mut(&ino) else { return };
-            let (stale, keep): (Vec<_>, Vec<_>) =
-                entry.drain(..).partition(|(p, n)| !(*p == kept_parent && n == kept_name));
+            let Some(entry) = aliases.get_mut(&ino) else {
+                return;
+            };
+            let (stale, keep): (Vec<_>, Vec<_>) = entry
+                .drain(..)
+                .partition(|(p, n)| !(*p == kept_parent && n == kept_name));
             *entry = keep;
             stale
         };
@@ -294,7 +297,9 @@ impl Eidos {
         }
         // Off the handler thread: see `invalidate_folded_negatives` - notifying
         // the kernel from inside a request deadlocks the mount.
-        let Some(notifier) = self.notifier.lock_recover().clone() else { return };
+        let Some(notifier) = self.notifier.lock_recover().clone() else {
+            return;
+        };
         std::thread::spawn(move || {
             for (parent, name) in stale {
                 let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&name));
@@ -315,7 +320,9 @@ impl Eidos {
     ///
     /// `(0, 0)` means the whole inode.
     fn invalidate_page_cache(&self, ino: u64) {
-        let Some(notifier) = self.notifier.lock_recover().clone() else { return };
+        let Some(notifier) = self.notifier.lock_recover().clone() else {
+            return;
+        };
         // Detached, for the same reason as `invalidate_folded_negatives`: a
         // notification sent from inside a request handler can deadlock the mount.
         std::thread::spawn(move || {
@@ -341,11 +348,14 @@ impl Eidos {
     fn invalidate_folded_negatives(&self, parent: u64, name: &str) {
         let stale: Vec<String> = {
             let mut neg = self.negatives.lock_recover();
-            let Some(names) = neg.get_mut(&parent) else { return };
+            let Some(names) = neg.get_mut(&parent) else {
+                return;
+            };
             // Exact matches are handled by the kernel itself when it instantiates
             // the new dentry; only the OTHER spellings need a nudge.
-            let (stale, keep): (Vec<String>, Vec<String>) =
-                names.drain(..).partition(|n| n.eq_ignore_ascii_case(name) && n != name);
+            let (stale, keep): (Vec<String>, Vec<String>) = names
+                .drain(..)
+                .partition(|n| n.eq_ignore_ascii_case(name) && n != name);
             *names = keep;
             stale
         };
@@ -357,7 +367,9 @@ impl Eidos {
         // calling inval_entry from inside a handler deadlocks the mount (observed:
         // the create never returns). Hand it to a detached thread; the kernel
         // applies it as soon as this request completes.
-        let Some(notifier) = self.notifier.lock_recover().clone() else { return };
+        let Some(notifier) = self.notifier.lock_recover().clone() else {
+            return;
+        };
         std::thread::spawn(move || {
             for s in stale {
                 let _ = notifier.inval_entry(INodeNo(parent), OsStr::new(&s));

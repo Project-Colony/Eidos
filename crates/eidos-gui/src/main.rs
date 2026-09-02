@@ -20,11 +20,11 @@ use iced::widget::{
 use iced::widget;
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
+use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::settings::Settings;
 use eidos_instance::{ExportScope, Instance, InstanceKind, ModEntry, SaveEntry, Tool};
 use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
-use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 
 // The GUI, split by what each half does rather than by what it is about.
 //
@@ -48,9 +48,9 @@ mod wizard;
 
 use dialogs::*;
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
-use theme::pal;
 use modinfo::*;
 use state::*;
+use theme::pal;
 use update::*;
 use view::*;
 use wizard::*;
@@ -919,7 +919,11 @@ impl ExecutablesDialogState {
             Some(t) => {
                 self.title = t.title.clone();
                 self.exe = t.exe.display().to_string();
-                self.workdir = t.workdir.as_ref().map(|w| w.display().to_string()).unwrap_or_default();
+                self.workdir = t
+                    .workdir
+                    .as_ref()
+                    .map(|w| w.display().to_string())
+                    .unwrap_or_default();
                 self.args_editor =
                     iced::widget::text_editor::Content::with_text(&t.args.join("\n"));
                 self.prereqs = t.prereqs.join(", ");
@@ -949,12 +953,18 @@ impl ExecutablesDialogState {
             return;
         }
         let Some(i) = self.selected else { return };
-        let Some(t) = self.merged.get_mut(i) else { return };
+        let Some(t) = self.merged.get_mut(i) else {
+            return;
+        };
         t.title = self.title.trim().to_string();
         t.exe = PathBuf::from(self.exe.trim());
         t.workdir = {
             let w = self.workdir.trim();
-            if w.is_empty() { None } else { Some(PathBuf::from(w)) }
+            if w.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(w))
+            }
         };
         t.args = self
             .args_editor
@@ -963,8 +973,12 @@ impl ExecutablesDialogState {
             .map(|l| l.trim().to_string())
             .filter(|l| !l.is_empty())
             .collect();
-        t.prereqs =
-            self.prereqs.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+        t.prereqs = self
+            .prereqs
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
         // Only a name that still names a mod. The list is read when the dialog
         // opens, so a mod deleted behind it would otherwise be saved as a target
         // that silently captures nothing.
@@ -1166,9 +1180,16 @@ enum PickerChoice {
 /// "what does this config actually say", and those are a PNG and a text file.
 #[derive(Debug, Clone)]
 pub(crate) enum Preview {
-    Image { path: PathBuf, handle: iced::widget::image::Handle },
+    Image {
+        path: PathBuf,
+        handle: iced::widget::image::Handle,
+    },
     /// The head of a text file, and whether there was more.
-    Text { path: PathBuf, body: String, truncated: bool },
+    Text {
+        path: PathBuf,
+        body: String,
+        truncated: bool,
+    },
     /// Nothing could be shown, and this says why rather than showing an empty
     /// box - "no preview" with no reason reads as the feature being broken.
     Unsupported { path: PathBuf, why: String },
@@ -1384,8 +1405,12 @@ enum DownloadSort {
 }
 
 impl DownloadSort {
-    const ALL: [DownloadSort; 4] =
-        [DownloadSort::Newest, DownloadSort::Name, DownloadSort::Size, DownloadSort::State];
+    const ALL: [DownloadSort; 4] = [
+        DownloadSort::Newest,
+        DownloadSort::Name,
+        DownloadSort::Size,
+        DownloadSort::State,
+    ];
     fn label(self) -> &'static str {
         match self {
             DownloadSort::Newest => "Newest",
@@ -1513,8 +1538,14 @@ enum Pane {
 /// about, the sorted names, and the report - or why the run failed. The report
 /// is a nested `Result` because it is advisory: losing it must not lose the
 /// order that was successfully computed.
-type SortOutcome =
-    Result<(SortFingerprint, Vec<String>, Result<eidos_loot::LootReport, String>), String>;
+type SortOutcome = Result<
+    (
+        SortFingerprint,
+        Vec<String>,
+        Result<eidos_loot::LootReport, String>,
+    ),
+    String,
+>;
 
 /// What a LOOT sort was computed against, so a stale answer can be recognised.
 ///
@@ -2200,15 +2231,14 @@ impl std::fmt::Display for CategoryChoice {
     }
 }
 
-
 fn view(app: &App) -> Element<'_, Message> {
     if let Some(w) = &app.fomod {
         let base = fomod_wizard_view(w);
         // A reinstall collision raised from inside the wizard must be able to
         // show over it (the wizard replaces the whole view).
         if let Some(c) = &app.collision {
-            let scrim =
-                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
+            let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_press(Message::CollisionCancel);
             let dialog = container(collision_dialog(c)).center(Length::Fill);
             return Stack::new().push(base).push(scrim).push(dialog).into();
         }
@@ -2225,8 +2255,11 @@ fn view(app: &App) -> Element<'_, Message> {
         Screen::Summary => summary_screen(app),
         Screen::Main => welcome(app),
     };
-    let base: Element<'_, Message> =
-        container(inner).width(Length::Fill).height(Length::Fill).padding(20).into();
+    let base: Element<'_, Message> = container(inner)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .into();
     // The collection pane also belongs here, not only on the main screen.
     // `eidos-gui --collection` opens it before anything else, and with no
     // instance yet the window lands on the welcome screen - where a pane drawn
@@ -2337,55 +2370,63 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // App shortcuts. `on_key_press` takes a plain `fn`, so it cannot read `app`;
     // the handlers themselves no-op off the main screen / while a modal is open.
     let shortcuts = keyboard::listen().filter_map(|event| {
-        let keyboard::Event::KeyPressed { key, modifiers: mods, .. } = event else {
+        let keyboard::Event::KeyPressed {
+            key,
+            modifiers: mods,
+            ..
+        } = event
+        else {
             return None;
         };
         match key.as_ref() {
-        Key::Named(Named::F5) => Some(Message::Refresh),
-        // Ctrl+R launches the current run target (MO2's Run accelerator).
-        Key::Character("r") if mods.control() => Some(Message::Run),
-        Key::Named(Named::Escape) => Some(Message::ClearSelection),
-        Key::Character("a") if mods.control() || mods.command() => {
-            Some(Message::SelectAllInFocus)
-        }
-        // Ctrl+C over the LOOT report copies it whole. `update` no-ops when the
-        // report is not open, since this closure cannot see the app.
-        Key::Character("c") if mods.control() || mods.command() => {
-            Some(Message::CopyLootReport)
-        }
-        // Navigation. Which list answers is decided in `update` - this closure
-        // is a plain `fn` and cannot see the app.
-        Key::Named(Named::Tab) => Some(Message::CycleFocus),
-        // Ctrl moves the ROW; plain moves the focus. Checked first, or the
-        // plain arms below would swallow it.
-        Key::Named(Named::ArrowUp) if mods.control() || mods.command() => {
-            Some(Message::KeyNav(Nav::ShiftUp))
-        }
-        Key::Named(Named::ArrowDown) if mods.control() || mods.command() => {
-            Some(Message::KeyNav(Nav::ShiftDown))
-        }
-        Key::Named(Named::ArrowUp) => Some(Message::KeyNav(Nav::Up)),
-        Key::Named(Named::ArrowDown) => Some(Message::KeyNav(Nav::Down)),
-        Key::Named(Named::PageUp) => Some(Message::KeyNav(Nav::PageUp)),
-        Key::Named(Named::PageDown) => Some(Message::KeyNav(Nav::PageDown)),
-        Key::Named(Named::Home) => Some(Message::KeyNav(Nav::First)),
-        Key::Named(Named::End) => Some(Message::KeyNav(Nav::Last)),
-        Key::Named(Named::Space) => Some(Message::KeyNav(Nav::Toggle)),
-        Key::Named(Named::Enter) => Some(Message::KeyNav(Nav::Activate)),
-        Key::Named(Named::Delete) => Some(Message::KeyNav(Nav::Remove)),
-        // Ctrl+F puts the caret in the filter box - the one shortcut everybody
-        // tries first in a list this long.
-        Key::Character("f") if mods.control() || mods.command() => Some(Message::FocusFilter),
-        // A bare letter jumps to the next mod starting with it, the way every
-        // desktop list has since before Explorer. Checked LAST so it can never
-        // shadow a modified shortcut, and only for a single character with no
-        // Ctrl/Alt held - the `typing` gate below keeps it out of text fields.
-        Key::Character(c)
-            if !mods.control() && !mods.command() && !mods.alt() && c.chars().count() == 1 =>
-        {
-            c.chars().next().filter(|ch| ch.is_alphanumeric()).map(Message::JumpToLetter)
-        }
-        _ => None,
+            Key::Named(Named::F5) => Some(Message::Refresh),
+            // Ctrl+R launches the current run target (MO2's Run accelerator).
+            Key::Character("r") if mods.control() => Some(Message::Run),
+            Key::Named(Named::Escape) => Some(Message::ClearSelection),
+            Key::Character("a") if mods.control() || mods.command() => {
+                Some(Message::SelectAllInFocus)
+            }
+            // Ctrl+C over the LOOT report copies it whole. `update` no-ops when the
+            // report is not open, since this closure cannot see the app.
+            Key::Character("c") if mods.control() || mods.command() => {
+                Some(Message::CopyLootReport)
+            }
+            // Navigation. Which list answers is decided in `update` - this closure
+            // is a plain `fn` and cannot see the app.
+            Key::Named(Named::Tab) => Some(Message::CycleFocus),
+            // Ctrl moves the ROW; plain moves the focus. Checked first, or the
+            // plain arms below would swallow it.
+            Key::Named(Named::ArrowUp) if mods.control() || mods.command() => {
+                Some(Message::KeyNav(Nav::ShiftUp))
+            }
+            Key::Named(Named::ArrowDown) if mods.control() || mods.command() => {
+                Some(Message::KeyNav(Nav::ShiftDown))
+            }
+            Key::Named(Named::ArrowUp) => Some(Message::KeyNav(Nav::Up)),
+            Key::Named(Named::ArrowDown) => Some(Message::KeyNav(Nav::Down)),
+            Key::Named(Named::PageUp) => Some(Message::KeyNav(Nav::PageUp)),
+            Key::Named(Named::PageDown) => Some(Message::KeyNav(Nav::PageDown)),
+            Key::Named(Named::Home) => Some(Message::KeyNav(Nav::First)),
+            Key::Named(Named::End) => Some(Message::KeyNav(Nav::Last)),
+            Key::Named(Named::Space) => Some(Message::KeyNav(Nav::Toggle)),
+            Key::Named(Named::Enter) => Some(Message::KeyNav(Nav::Activate)),
+            Key::Named(Named::Delete) => Some(Message::KeyNav(Nav::Remove)),
+            // Ctrl+F puts the caret in the filter box - the one shortcut everybody
+            // tries first in a list this long.
+            Key::Character("f") if mods.control() || mods.command() => Some(Message::FocusFilter),
+            // A bare letter jumps to the next mod starting with it, the way every
+            // desktop list has since before Explorer. Checked LAST so it can never
+            // shadow a modified shortcut, and only for a single character with no
+            // Ctrl/Alt held - the `typing` gate below keeps it out of text fields.
+            Key::Character(c)
+                if !mods.control() && !mods.command() && !mods.alt() && c.chars().count() == 1 =>
+            {
+                c.chars()
+                    .next()
+                    .filter(|ch| ch.is_alphanumeric())
+                    .map(Message::JumpToLetter)
+            }
+            _ => None,
         }
     });
 
@@ -2465,7 +2506,12 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // for exactly those two keys, mutually exclusive with the main one.
     if app.screen == Screen::Main && app.loot_report.is_some() {
         let report_keys = keyboard::listen().filter_map(|event| {
-            let keyboard::Event::KeyPressed { key, modifiers: mods, .. } = event else {
+            let keyboard::Event::KeyPressed {
+                key,
+                modifiers: mods,
+                ..
+            } = event
+            else {
                 return None;
             };
             match key.as_ref() {
@@ -2488,9 +2534,15 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // slower otherwise, because the idle case only has to notice that a download
     // has begun.
     if app.tab == Tab::Downloads {
-        let arriving =
-            app.downloads.iter().any(|d| d.state == DownloadState::Downloading);
-        let period = if arriving { DOWNLOAD_TICK } else { DOWNLOAD_IDLE_TICK };
+        let arriving = app
+            .downloads
+            .iter()
+            .any(|d| d.state == DownloadState::Downloading);
+        let period = if arriving {
+            DOWNLOAD_TICK
+        } else {
+            DOWNLOAD_IDLE_TICK
+        };
         subs.push(iced::time::every(period).map(|_| Message::DownloadTick));
     }
     // Watch the saves directory while its tab is open. The game writes there
@@ -2549,9 +2601,8 @@ fn main() -> iced::Result {
     // Its own rotation bucket, distinct from the CLI's: the window and an
     // `eidos` child are separate processes writing the same directory, and
     // sharing a bucket would let one rotate the other's session away.
-    let _ = eidos_log::init_with(
-        eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")),
-    );
+    let _ =
+        eidos_log::init_with(eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")));
     // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
     // reads a setting. Copies rather than moves, runs once, and cannot fail a
     // launch: see `eidos_paths::migrate_legacy_layout`. Logged rather than
@@ -2694,13 +2745,20 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         .created
         .as_ref()
         .and_then(|i| std::fs::read_to_string(i.root.join("prereqs.done")).ok())
-        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default();
     if let Some(prefix) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
         done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
     }
 
-    let mut col = Column::new().spacing(2).push(text("Status").size(11.0).color(fomod_ink_faint()));
+    let mut col = Column::new()
+        .spacing(2)
+        .push(text("Status").size(11.0).color(fomod_ink_faint()));
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -2735,14 +2793,6 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
     col.into()
 }
 
-
-
-
-
-
-
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2755,7 +2805,12 @@ mod tests {
     fn mods(names: &[&str]) -> Vec<ModEntry> {
         names
             .iter()
-            .map(|n| ModEntry { name: n.to_string(), enabled: true, path: PathBuf::new(), unmanaged: false })
+            .map(|n| ModEntry {
+                name: n.to_string(),
+                enabled: true,
+                path: PathBuf::new(),
+                unmanaged: false,
+            })
             .collect()
     }
     #[test]
@@ -2767,9 +2822,15 @@ mod tests {
         app.selected_mod = Some(0);
         let origins = selected_mod_origins(&app);
         assert!(plugin_from_selected_mod(&origins, "Armour Pack"));
-        assert!(!plugin_from_selected_mod(&origins, "Quest Mod"), "another mod's plugin");
+        assert!(
+            !plugin_from_selected_mod(&origins, "Quest Mod"),
+            "another mod's plugin"
+        );
         // The game's own Data has no origin mod, so it can never light up.
-        assert!(!plugin_from_selected_mod(&origins, ""), "vanilla content belongs to no mod");
+        assert!(
+            !plugin_from_selected_mod(&origins, ""),
+            "vanilla content belongs to no mod"
+        );
     }
 
     #[test]
@@ -2793,7 +2854,10 @@ mod tests {
         let origins = selected_mod_origins(&app);
         assert!(plugin_from_selected_mod(&origins, "A"));
         assert!(plugin_from_selected_mod(&origins, "C"));
-        assert!(!plugin_from_selected_mod(&origins, "B"), "B was never selected");
+        assert!(
+            !plugin_from_selected_mod(&origins, "B"),
+            "B was never selected"
+        );
     }
 
     #[test]
@@ -2812,7 +2876,10 @@ mod tests {
     #[test]
     fn no_mod_selected_marks_nothing() {
         let app = nav_app(&["A", "B"]);
-        assert!(selected_mod_origins(&app).is_empty(), "nothing selected, nothing lit");
+        assert!(
+            selected_mod_origins(&app).is_empty(),
+            "nothing selected, nothing lit"
+        );
     }
 
     /// A plugin row for the menu tests: name plus the mod that ships it.
@@ -2852,9 +2919,14 @@ mod tests {
     /// The args `play_command` will hand to `eidos play`, i.e. everything after `--`.
     fn played(game_id: &str, command: &[String]) -> (Vec<String>, Option<String>) {
         let (cmd, warning) = play_command(game_id, game_id, command);
-        let args: Vec<String> =
-            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        let after = args.iter().position(|a| a == "--").map(|i| args[i + 1..].to_vec());
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let after = args
+            .iter()
+            .position(|a| a == "--")
+            .map(|i| args[i + 1..].to_vec());
         (after.unwrap_or_default(), warning)
     }
 
@@ -2864,12 +2936,21 @@ mod tests {
         // Bethesda launcher is a settings app that rewrites plugins.txt - running
         // it through a mod manager undoes the load order that was just deployed.
         let d = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe"]);
-        let cmd = vec!["proton".to_string(), d.join("SkyrimSELauncher.exe").display().to_string()];
+        let cmd = vec![
+            "proton".to_string(),
+            d.join("SkyrimSELauncher.exe").display().to_string(),
+        ];
 
         let (args, warning) = played("skyrimse", &cmd);
         assert!(args[1].ends_with("SkyrimSE.exe"), "{args:?}");
         // And the user is told why their SKSE mods will do nothing.
-        assert!(warning.as_deref().unwrap_or_default().contains("skse64_loader.exe"), "{warning:?}");
+        assert!(
+            warning
+                .as_deref()
+                .unwrap_or_default()
+                .contains("skse64_loader.exe"),
+            "{warning:?}"
+        );
         fs::remove_dir_all(&d).ok();
     }
 
@@ -2952,7 +3033,11 @@ mod tests {
 
     /// The rows `visible_rows` says to draw, by name, for a readable assertion.
     fn drawn<'a>(v: &'a [ModEntry], vis: &[bool]) -> Vec<&'a str> {
-        v.iter().zip(vis).filter(|(_, &s)| s).map(|(m, _)| m.name.as_str()).collect()
+        v.iter()
+            .zip(vis)
+            .filter(|(_, &s)| s)
+            .map(|(m, _)| m.name.as_str())
+            .collect()
     }
 
     #[test]
@@ -2961,11 +3046,22 @@ mod tests {
         // inside a folded group was dropped and the list said "no mods match" -
         // a WRONG answer, not a slow one. The user then reasonably concludes the
         // mod is not installed.
-        let v = mods(&["armour_separator", "iron armour", "steel armour", "misc_separator", "a map"]);
+        let v = mods(&[
+            "armour_separator",
+            "iron armour",
+            "steel armour",
+            "misc_separator",
+            "a map",
+        ]);
         let folded: HashSet<String> = ["armour".to_string()].into_iter().collect();
 
-        let vis = visible_rows(&v, &folded, true, |_, m| m.display_name().contains("armour"));
-        assert_eq!(drawn(&v, &vis), ["armour_separator", "iron armour", "steel armour"]);
+        let vis = visible_rows(&v, &folded, true, |_, m| {
+            m.display_name().contains("armour")
+        });
+        assert_eq!(
+            drawn(&v, &vis),
+            ["armour_separator", "iron armour", "steel armour"]
+        );
 
         // The group that contributed nothing is gone, header included, so the
         // filter does not leave a wall of empty headers behind.
@@ -2980,7 +3076,10 @@ mod tests {
         // No filter: the fold is honoured, and both headers stay - a header is
         // the handle you unfold by, so hiding it would strand the group.
         let vis = visible_rows(&v, &folded, false, |_, _| true);
-        assert_eq!(drawn(&v, &vis), ["armour_separator", "misc_separator", "a map"]);
+        assert_eq!(
+            drawn(&v, &vis),
+            ["armour_separator", "misc_separator", "a map"]
+        );
     }
 
     #[test]
@@ -3017,7 +3116,10 @@ mod tests {
     /// somebody's mod list was four entries long.
     fn nav_app(mod_names: &[&str]) -> App {
         let mut app = new(Vec::new()).0;
-        assert!(app.created.is_none(), "a test App must never hold a real instance");
+        assert!(
+            app.created.is_none(),
+            "a test App must never hold a real instance"
+        );
         app.mods = mods(mod_names);
         app.screen = Screen::Main;
         app
@@ -3077,11 +3179,17 @@ mod tests {
             label: "Skyrim SE - portable".into(),
             inst: Instance::portable(root.clone()),
             game_index: 0,
-        portable: true,
+            portable: true,
         }];
         let _ = update_inner(&mut app, Message::OpenKnown(0));
-        assert_eq!(app.created.as_ref().map(|i| i.root.clone()), Some(root.clone()));
-        assert!(matches!(app.screen, Screen::Main), "opening must land on the main screen");
+        assert_eq!(
+            app.created.as_ref().map(|i| i.root.clone()),
+            Some(root.clone())
+        );
+        assert!(
+            matches!(app.screen, Screen::Main),
+            "opening must land on the main screen"
+        );
         assert_eq!(app.selected, Some(0));
         let _ = fs::remove_dir_all(&root);
     }
@@ -3094,13 +3202,16 @@ mod tests {
             label: "gone".into(),
             inst: Instance::portable(PathBuf::from("/nonexistent/eidos-test-root")),
             game_index: 0,
-        portable: true,
+            portable: true,
         }];
         let _ = update_inner(&mut app, Message::OpenKnown(0));
         assert!(app.created.is_none(), "a dead root must not fake an open");
         assert!(matches!(app.screen, Screen::Welcome));
         assert!(
-            app.status.as_deref().unwrap_or("").contains("not reachable"),
+            app.status
+                .as_deref()
+                .unwrap_or("")
+                .contains("not reachable"),
             "the skip must be said, not silent: {:?}",
             app.status
         );
@@ -3138,13 +3249,19 @@ mod tests {
         // app_for_game's install_path is /nowhere.
         app.portable_path = "/nowhere/Eidos".into();
         let _ = update_inner(&mut app, Message::Finish);
-        assert!(app.created.is_none(), "an instance inside the install must not be created");
+        assert!(
+            app.created.is_none(),
+            "an instance inside the install must not be created"
+        );
         assert!(
             app.error.as_deref().unwrap_or("").contains("own folder"),
             "the refusal must explain itself: {:?}",
             app.error
         );
-        assert!(!Path::new("/nowhere/Eidos").exists(), "nothing may be created on refusal");
+        assert!(
+            !Path::new("/nowhere/Eidos").exists(),
+            "nothing may be created on refusal"
+        );
     }
 
     #[test]
@@ -3157,7 +3274,10 @@ mod tests {
         app.name = "Mine".into();
         app.portable_path = root.display().to_string();
         let _ = update_inner(&mut app, Message::Finish);
-        assert_eq!(app.created.as_ref().map(|i| i.root.clone()), Some(root.clone()));
+        assert_eq!(
+            app.created.as_ref().map(|i| i.root.clone()),
+            Some(root.clone())
+        );
         assert!(matches!(app.screen, Screen::Main));
         assert!(
             app.mods.iter().any(|m| m.name == "Existing Mod"),
@@ -3184,7 +3304,11 @@ mod tests {
             !roots.iter().any(|r| r.starts_with("/nonexistent")),
             "a missing root is skipped (not offered), never listed dead"
         );
-        assert_eq!(roots.iter().filter(|r| **r == a).count(), 1, "last + MRU must not duplicate");
+        assert_eq!(
+            roots.iter().filter(|r| **r == a).count(),
+            1,
+            "last + MRU must not duplicate"
+        );
         let _ = fs::remove_dir_all(&a);
         let _ = fs::remove_dir_all(&b);
     }
@@ -3208,36 +3332,52 @@ mod tests {
         app.portable_path = root.to_string_lossy().into_owned();
 
         // Stand in for what browsing the previous instance's Data tab leaves behind.
-        app.data_listing
+        app.data_listing.borrow_mut().insert(
+            String::new(),
+            (
+                app.view_generation.get(),
+                vec![DataRow {
+                    name: "SKSE".into(),
+                    source: "[skyrimse]".into(),
+                    is_dir: true,
+                    real: PathBuf::from("/old/SKSE"),
+                    size: None,
+                    mtime: None,
+                    conflicted: false,
+                }],
+            ),
+        );
+        app.listing_cache.borrow_mut().insert(
+            PathBuf::from("/old"),
+            (
+                app.view_generation.get(),
+                std::rc::Rc::new(vec!["stale".to_string()]),
+            ),
+        );
+        app.files_cache
             .borrow_mut()
-            .insert(
-                String::new(),
-                (
-                    app.view_generation.get(),
-                    vec![DataRow {
-                        name: "SKSE".into(),
-                        source: "[skyrimse]".into(),
-                        is_dir: true,
-                        real: PathBuf::from("/old/SKSE"),
-                        size: None,
-                        mtime: None,
-                        conflicted: false,
-                    }],
-                ),
-            );
-        app.listing_cache
-            .borrow_mut()
-            .insert(PathBuf::from("/old"), (app.view_generation.get(), std::rc::Rc::new(vec!["stale".to_string()])));
-        app.files_cache.borrow_mut().insert("OldMod".into(), (vec!["a.esp".into()], false));
+            .insert("OldMod".into(), (vec!["a.esp".into()], false));
         app.data_expanded.insert("meshes".to_string());
 
         let _ = update(&mut app, Message::Finish);
         assert!(app.created.is_some(), "the instance was created");
 
-        assert!(app.data_listing.borrow().is_empty(), "the merged listing survived the switch");
-        assert!(app.listing_cache.borrow().is_empty(), "a directory listing survived the switch");
-        assert!(app.files_cache.borrow().is_empty(), "a mod's file list survived the switch");
-        assert!(app.data_expanded.is_empty(), "expanded paths from the old game survived");
+        assert!(
+            app.data_listing.borrow().is_empty(),
+            "the merged listing survived the switch"
+        );
+        assert!(
+            app.listing_cache.borrow().is_empty(),
+            "a directory listing survived the switch"
+        );
+        assert!(
+            app.files_cache.borrow().is_empty(),
+            "a mod's file list survived the switch"
+        );
+        assert!(
+            app.data_expanded.is_empty(),
+            "expanded paths from the old game survived"
+        );
 
         let _ = fs::remove_dir_all(&root);
     }
@@ -3251,12 +3391,19 @@ mod tests {
         let mut app = nav_app(&["a", "b", "c", "d"]);
         let _ = update(&mut app, Message::DragStart(3));
         let _ = update(&mut app, Message::DragOverGap(1));
-        assert!(app.drag_state.is_some_and(|d| d.aimed), "the gap was aimed at");
+        assert!(
+            app.drag_state.is_some_and(|d| d.aimed),
+            "the gap was aimed at"
+        );
 
         // Released with the pointer anywhere at all.
         let _ = update(&mut app, Message::PointerReleased);
         assert!(app.drag_state.is_none(), "the drag ended");
-        assert_eq!(names(&app.mods), vec!["a", "d", "b", "c"], "it moved where it aimed");
+        assert_eq!(
+            names(&app.mods),
+            vec!["a", "d", "b", "c"],
+            "it moved where it aimed"
+        );
     }
 
     #[test]
@@ -3274,11 +3421,21 @@ mod tests {
         // The list scrolls under the pointer; the aim does not change.
         let _ = update(&mut app, Message::DragScrollEdge(Some(ScrollEdge::Up)));
         let _ = update(&mut app, Message::DragScrollTick);
-        assert!(app.drag_state.is_some_and(|d| d.aimed), "the scroll disarmed the drag");
+        assert!(
+            app.drag_state.is_some_and(|d| d.aimed),
+            "the scroll disarmed the drag"
+        );
 
         let _ = update(&mut app, Message::PointerReleased);
-        assert_eq!(names(&app.mods), vec!["d", "e", "a", "b", "c"], "the block did not land");
-        assert!(app.drag_scroll.is_none(), "the scroll timer outlived the drag");
+        assert_eq!(
+            names(&app.mods),
+            vec!["d", "e", "a", "b", "c"],
+            "the block did not land"
+        );
+        assert!(
+            app.drag_scroll.is_none(),
+            "the scroll timer outlived the drag"
+        );
     }
 
     #[test]
@@ -3341,7 +3498,10 @@ mod tests {
         // The palette is a global that every style closure reads: changing the
         // preference alone would leave the window drawing the old theme.
         assert_ne!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
-        assert_eq!(theme::pal().bg_primary, colony_ui::resolve("nord", "dark").bg_primary);
+        assert_eq!(
+            theme::pal().bg_primary,
+            colony_ui::resolve("nord", "dark").bg_primary
+        );
 
         // And it survives the file.
         assert_eq!(
@@ -3356,7 +3516,11 @@ mod tests {
                 theme::OWN_VARIANT.to_string(),
             ),
         );
-        assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary, "no way back");
+        assert_eq!(
+            theme::pal().bg_primary,
+            theme::PARCHMENT.bg_primary,
+            "no way back"
+        );
     }
 
     #[test]
@@ -3366,7 +3530,11 @@ mod tests {
 
         let _ = update(&mut app, Message::AccentChanged(Some("green".to_string())));
         assert_eq!(app.prefs.accent.as_deref(), Some("green"));
-        assert_ne!(theme::accent(), own, "the override did not reach the window");
+        assert_ne!(
+            theme::accent(),
+            own,
+            "the override did not reach the window"
+        );
 
         // "Auto" is the absence of an override, not a ninth colour.
         let _ = update(&mut app, Message::AccentChanged(None));
@@ -3382,7 +3550,11 @@ mod tests {
 
         let _ = update(&mut app, Message::ToggleHighContrast(true));
         assert!(app.prefs.high_contrast);
-        assert_ne!(theme::pal().text_primary, plain, "the boost never took effect");
+        assert_ne!(
+            theme::pal().text_primary,
+            plain,
+            "the boost never took effect"
+        );
         assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).high_contrast);
 
         let _ = update(&mut app, Message::ToggleHighContrast(false));
@@ -3395,10 +3567,16 @@ mod tests {
     #[test]
     fn the_shared_catalogue_carries_what_it_should() {
         let families = colony_ui::THEME_FAMILIES.len();
-        let variants: usize =
-            colony_ui::THEME_FAMILIES.iter().map(|f| f.variants.len()).sum();
-        assert_eq!(families, 25, "theme families");
-        assert_eq!(variants, 57, "theme palettes");
+        let variants: usize = colony_ui::THEME_FAMILIES
+            .iter()
+            .map(|f| f.variants.len())
+            .sum();
+        // Lower bounds, not exact counts. The point of the catalogue is that it
+        // grows without a consumer changing, so an equality here would have to
+        // be edited every time one is added — and would be the only thing
+        // standing in the way. What must never happen is losing what is there.
+        assert!(families >= 25, "theme families shrank to {families}");
+        assert!(variants >= 57, "theme palettes shrank to {variants}");
         assert_eq!(colony_ui::ACCENT_OVERRIDES.len(), 8, "accent overrides");
 
         // Every one of them resolves to a palette that is actually filled in.
@@ -3414,7 +3592,11 @@ mod tests {
     fn the_first_three_categories_are_the_imposed_ones_in_order() {
         assert_eq!(
             &SettingsTab::ALL[..3],
-            &[SettingsTab::General, SettingsTab::Appearance, SettingsTab::Accessibility],
+            &[
+                SettingsTab::General,
+                SettingsTab::Appearance,
+                SettingsTab::Accessibility
+            ],
         );
     }
 
@@ -3432,7 +3614,9 @@ mod tests {
     #[test]
     fn general_carries_the_no_save_button_contract() {
         assert!(
-            SettingsTab::General.description().contains("saved automatically"),
+            SettingsTab::General
+                .description()
+                .contains("saved automatically"),
             "General must say preferences save themselves; it says {:?}",
             SettingsTab::General.description(),
         );
@@ -3443,14 +3627,21 @@ mod tests {
     /// none may echo its own label.
     #[test]
     fn each_category_explains_itself_and_says_something_different() {
-        let mut seen: Vec<&str> = SettingsTab::ALL.into_iter().map(|t| t.description()).collect();
+        let mut seen: Vec<&str> = SettingsTab::ALL
+            .into_iter()
+            .map(|t| t.description())
+            .collect();
         seen.sort_unstable();
         let before = seen.len();
         seen.dedup();
         assert_eq!(before, seen.len(), "two categories share a description");
 
         for tab in SettingsTab::ALL {
-            assert_ne!(tab.label(), tab.description(), "{tab:?} repeats its own name");
+            assert_ne!(
+                tab.label(),
+                tab.description(),
+                "{tab:?} repeats its own name"
+            );
             assert!(!tab.description().is_empty());
         }
     }
@@ -3462,7 +3653,8 @@ mod tests {
     fn motion_is_filed_under_accessibility() {
         let rank = expected_rank(SettingsTab::Accessibility);
         assert_eq!(
-            SettingsTab::DEFAULT_OPEN[rank], "motion",
+            SettingsTab::DEFAULT_OPEN[rank],
+            "motion",
             "Accessibility must open on its motion section",
         );
     }
@@ -3475,7 +3667,10 @@ mod tests {
         let app = nav_app(&[]);
         assert_eq!(SettingsTab::DEFAULT_OPEN.len(), SettingsTab::ALL.len());
         for key in SettingsTab::DEFAULT_OPEN {
-            assert!(app.settings_expanded.contains(key), "{key} did not start open");
+            assert!(
+                app.settings_expanded.contains(key),
+                "{key} did not start open"
+            );
         }
     }
 
@@ -3484,9 +3679,15 @@ mod tests {
         let mut app = nav_app(&[]);
         assert!(app.settings_expanded.contains("startup"));
         let _ = update(&mut app, Message::SettingsToggleSection("startup"));
-        assert!(!app.settings_expanded.contains("startup"), "it did not close");
+        assert!(
+            !app.settings_expanded.contains("startup"),
+            "it did not close"
+        );
         let _ = update(&mut app, Message::SettingsToggleSection("startup"));
-        assert!(app.settings_expanded.contains("startup"), "it did not reopen");
+        assert!(
+            app.settings_expanded.contains("startup"),
+            "it did not reopen"
+        );
     }
 
     #[test]
@@ -3545,7 +3746,10 @@ mod tests {
         let mut app = nav_app(&["a", "b", "c"]);
         app.drag_scroll = Some(ScrollEdge::Up);
         let _ = update(&mut app, Message::DragScrollTick);
-        assert!(app.drag_scroll.is_none(), "a tick with no drag left the edge armed");
+        assert!(
+            app.drag_scroll.is_none(),
+            "a tick with no drag left the edge armed"
+        );
     }
 
     #[test]
@@ -3557,10 +3761,16 @@ mod tests {
         let mut app = nav_app(&["a", "b", "c"]);
         let _ = update(&mut app, Message::DragStart(1));
         assert!(app.drag_state.is_some(), "the press armed a drag");
-        assert!(!app.drag_state.is_some_and(|d| d.aimed), "but nothing is aimed at yet");
+        assert!(
+            !app.drag_state.is_some_and(|d| d.aimed),
+            "but nothing is aimed at yet"
+        );
 
         let _ = update(&mut app, Message::DragOverGap(0));
-        assert!(app.drag_state.is_some_and(|d| d.aimed), "crossing a gap is a real drag");
+        assert!(
+            app.drag_state.is_some_and(|d| d.aimed),
+            "crossing a gap is a real drag"
+        );
     }
 
     #[test]
@@ -3613,7 +3823,10 @@ mod tests {
 
         // And an ordinary mod says nothing at all: the hint is for the dead end,
         // not a remark on every archive that fails the check.
-        assert_eq!(nested_archive_hint(&rows(&["Mod/thing_P.pak", "Mod/notes.txt"])), None);
+        assert_eq!(
+            nested_archive_hint(&rows(&["Mod/thing_P.pak", "Mod/notes.txt"])),
+            None
+        );
         // A directory that merely ends in an archive extension is not one.
         assert_eq!(nested_archive_hint(&rows(&["Mod/backup.zip/x.pak"])), None);
     }
@@ -3637,7 +3850,10 @@ mod tests {
         assert!(game_has_plugins(&sky) && game_manages_plugins(&sky));
 
         let mw = app_for_game("morrowind");
-        assert!(game_has_plugins(&mw), "Morrowind has .esp files and a load order");
+        assert!(
+            game_has_plugins(&mw),
+            "Morrowind has .esp files and a load order"
+        );
         assert!(!game_manages_plugins(&mw), "Eidos just does not write it");
 
         let sb = app_for_game("stellarblade");
@@ -3650,9 +3866,8 @@ mod tests {
 
     #[test]
     fn a_game_without_plugins_gets_no_plugin_diagnostics() {
-        let titles = |app: &App| -> Vec<String> {
-            diagnostics(app).into_iter().map(|d| d.title).collect()
-        };
+        let titles =
+            |app: &App| -> Vec<String> { diagnostics(app).into_iter().map(|d| d.title).collect() };
         let sb = titles(&app_for_game("stellarblade"));
         for needle in ["LOOT", "Load order", "load order"] {
             assert!(
@@ -3674,14 +3889,28 @@ mod tests {
         // not show. The panel must follow what is on screen, not what was.
         let mut app = app_for_game("stellarblade");
         app.tab = Tab::Plugins;
-        assert_eq!(effective_tab(&app), Tab::Data, "an invisible tab must not draw");
+        assert_eq!(
+            effective_tab(&app),
+            Tab::Data,
+            "an invisible tab must not draw"
+        );
 
         let mut app = app_for_game("skyrimse");
         app.tab = Tab::Plugins;
-        assert_eq!(effective_tab(&app), Tab::Plugins, "and a visible one still does");
+        assert_eq!(
+            effective_tab(&app),
+            Tab::Plugins,
+            "and a visible one still does"
+        );
 
         // Every other tab is untouched by this.
-        for t in [Tab::Data, Tab::Conflicts, Tab::Overwrite, Tab::Saves, Tab::Downloads] {
+        for t in [
+            Tab::Data,
+            Tab::Conflicts,
+            Tab::Overwrite,
+            Tab::Saves,
+            Tab::Downloads,
+        ] {
             let mut app = app_for_game("stellarblade");
             app.tab = t;
             assert_eq!(effective_tab(&app), t);
@@ -3745,7 +3974,14 @@ mod tests {
     #[test]
     fn an_empty_list_swallows_every_navigation_key() {
         let mut app = nav_app(&[]);
-        for nav in [Nav::Down, Nav::Up, Nav::First, Nav::Last, Nav::PageDown, Nav::Toggle] {
+        for nav in [
+            Nav::Down,
+            Nav::Up,
+            Nav::First,
+            Nav::Last,
+            Nav::PageDown,
+            Nav::Toggle,
+        ] {
             let _ = key_nav(&mut app, nav);
             assert_eq!(app.selected_mod, None, "{nav:?} on an empty list");
         }
@@ -3855,21 +4091,58 @@ mod tests {
 
         let mut app = new(Vec::new()).0;
         app.mods = vec![
-            ModEntry { name: "RealMod".into(), enabled: true, path: d.join("RealMod"), unmanaged: false },
+            ModEntry {
+                name: "RealMod".into(),
+                enabled: true,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
             // The shape that broke it: enabled, not a separator, and a FILE.
-            ModEntry { name: "Dawnguard.esm".into(), enabled: true, path: d.join("Dawnguard.esm"), unmanaged: true },
+            ModEntry {
+                name: "Dawnguard.esm".into(),
+                enabled: true,
+                path: d.join("Dawnguard.esm"),
+                unmanaged: true,
+            },
             // And one that is simply gone from disk.
-            ModEntry { name: "Vanished".into(), enabled: true, path: d.join("Vanished"), unmanaged: false },
-            ModEntry { name: "Off".into(), enabled: false, path: d.join("RealMod"), unmanaged: false },
-            ModEntry { name: "grp_separator".into(), enabled: true, path: d.join("RealMod"), unmanaged: false },
+            ModEntry {
+                name: "Vanished".into(),
+                enabled: true,
+                path: d.join("Vanished"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "Off".into(),
+                enabled: false,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "grp_separator".into(),
+                enabled: true,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
         ];
         let paths = loot_data_paths(&app);
         // The invariant that matters: nothing here may be anything but a real
         // directory. An Overwrite dir from the live instance may lead the list.
-        assert!(paths.iter().all(|p| p.is_dir()), "a non-directory got through: {paths:?}");
-        assert!(paths.contains(&d.join("RealMod")), "the real mod is missing: {paths:?}");
-        assert!(!paths.contains(&d.join("Dawnguard.esm")), "an unmanaged FILE got through");
-        assert!(!paths.contains(&d.join("Vanished")), "a path that is gone got through");
+        assert!(
+            paths.iter().all(|p| p.is_dir()),
+            "a non-directory got through: {paths:?}"
+        );
+        assert!(
+            paths.contains(&d.join("RealMod")),
+            "the real mod is missing: {paths:?}"
+        );
+        assert!(
+            !paths.contains(&d.join("Dawnguard.esm")),
+            "an unmanaged FILE got through"
+        );
+        assert!(
+            !paths.contains(&d.join("Vanished")),
+            "a path that is gone got through"
+        );
         // Disabled rows and separators contribute nothing, so RealMod appears once.
         assert_eq!(paths.iter().filter(|p| **p == d.join("RealMod")).count(), 1);
         fs::remove_dir_all(&d).ok();
@@ -3891,7 +4164,11 @@ mod tests {
         let _ = key_nav(&mut app, Nav::Down);
         assert_eq!(app.selected_mod, Some(3), "one step skips the hidden rows");
         let _ = key_nav(&mut app, Nav::Down);
-        assert_eq!(app.selected_mod, Some(3), "and stops at the last visible row");
+        assert_eq!(
+            app.selected_mod,
+            Some(3),
+            "and stops at the last visible row"
+        );
         let _ = key_nav(&mut app, Nav::Up);
         assert_eq!(app.selected_mod, Some(0));
 
@@ -3911,7 +4188,10 @@ mod tests {
         app.selected_mod = Some(0);
         let before = app.mods[0].enabled;
         let _ = update(&mut app, Message::ToggleMod(0));
-        assert_eq!(app.mods[0].enabled, before, "unmanaged content is not togglable");
+        assert_eq!(
+            app.mods[0].enabled, before,
+            "unmanaged content is not togglable"
+        );
 
         // And Delete refuses it outright.
         let _ = key_nav(&mut app, Nav::Remove);
@@ -3926,7 +4206,11 @@ mod tests {
         app.selected_mod = Some(1);
         let _ = key_nav(&mut app, Nav::Remove);
         assert_eq!(app.confirm_remove, Some(1));
-        assert!(app.status.as_deref().unwrap_or_default().contains("Delete again"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Delete again"));
 
         // Escape is the advertised way out.
         let _ = update(&mut app, Message::ClearSelection);
@@ -3965,9 +4249,16 @@ mod tests {
         app.selected_mods = [0, 2, 4].into_iter().collect();
         app.selected_mod = Some(2);
         let _ = update(&mut app, Message::DragStart(2));
-        assert!(app.drag_state.is_some_and(|d| !d.aimed), "a press has aimed at nothing yet");
+        assert!(
+            app.drag_state.is_some_and(|d| !d.aimed),
+            "a press has aimed at nothing yet"
+        );
         let _ = update(&mut app, Message::DragDrop);
-        assert_eq!(names(&app.mods), ["a", "b", "c", "d", "e"], "a click moved rows");
+        assert_eq!(
+            names(&app.mods),
+            ["a", "b", "c", "d", "e"],
+            "a click moved rows"
+        );
 
         // Actually aiming somewhere still works.
         let _ = update(&mut app, Message::DragStart(2));
@@ -3986,9 +4277,16 @@ mod tests {
     fn group_children_stops_at_the_next_separator() {
         let v = mods(&["Head_separator", "a", "b", "Tail_separator", "c"]);
         assert_eq!(group_children(&v, 0), 1..3);
-        assert_eq!(group_children(&v, 3), 4..5, "the last group runs to the end");
+        assert_eq!(
+            group_children(&v, 3),
+            4..5,
+            "the last group runs to the end"
+        );
         let empty = mods(&["Head_separator", "Tail_separator"]);
-        assert!(group_children(&empty, 0).is_empty(), "a header with nothing under it");
+        assert!(
+            group_children(&empty, 0).is_empty(),
+            "a header with nothing under it"
+        );
         assert!(group_children(&empty, 1).is_empty());
     }
 
@@ -4003,7 +4301,10 @@ mod tests {
         let _ = update(&mut app, Message::DragStart(0));
         let _ = update(&mut app, Message::DragOverGap(4));
         let _ = update(&mut app, Message::DragDrop);
-        assert_eq!(names(&app.mods), ["a", "b", "Tail_separator", "Head_separator", "c"]);
+        assert_eq!(
+            names(&app.mods),
+            ["a", "b", "Tail_separator", "Head_separator", "c"]
+        );
     }
 
     #[test]
@@ -4017,8 +4318,14 @@ mod tests {
         let _ = update(&mut app, Message::DragStart(0));
         let _ = update(&mut app, Message::DragOverGap(3));
         let _ = update(&mut app, Message::DragDrop);
-        assert_eq!(names(&app.mods), ["a", "Tail_separator", "Head_separator", "b"]);
-        assert!(!app.collapsed.contains("Head"), "a header that now hides rows must be open");
+        assert_eq!(
+            names(&app.mods),
+            ["a", "Tail_separator", "Head_separator", "b"]
+        );
+        assert!(
+            !app.collapsed.contains("Head"),
+            "a header that now hides rows must be open"
+        );
 
         // Landing with nothing under it hides nothing, so the fold is left alone -
         // the user's choice is only overridden where keeping it would mislead.
@@ -4028,7 +4335,10 @@ mod tests {
         let _ = update(&mut app, Message::DragOverGap(3));
         let _ = update(&mut app, Message::DragDrop);
         assert_eq!(names(&app.mods), ["a", "b", "Head_separator"]);
-        assert!(app.collapsed.contains("Head"), "nothing is hidden, so nothing was unfolded");
+        assert!(
+            app.collapsed.contains("Head"),
+            "nothing is hidden, so nothing was unfolded"
+        );
     }
 
     #[test]
@@ -4040,9 +4350,14 @@ mod tests {
         let mut app = nav_app(&["Armour_separator", "a", "Weapons_separator", "w1", "w2"]);
         app.collapsed.insert("Armour".to_string());
         let _ = update(&mut app, Message::ModSendBottom(2));
-        assert_eq!(names(&app.mods), ["Armour_separator", "a", "w1", "w2", "Weapons_separator"]);
+        assert_eq!(
+            names(&app.mods),
+            ["Armour_separator", "a", "w1", "w2", "Weapons_separator"]
+        );
         assert!(
-            app.status.as_deref().is_some_and(|s| s.contains("folded group")),
+            app.status
+                .as_deref()
+                .is_some_and(|s| s.contains("folded group")),
             "two mods went off screen unremarked: {:?}",
             app.status
         );
@@ -4061,7 +4376,11 @@ mod tests {
         app.selected_mod = Some(1);
         let _ = key_nav(&mut app, Nav::ShiftUp);
         assert_eq!(names(&app.mods), ["Sec_separator", "a", "b"]);
-        assert_eq!(app.selected_mod, Some(0), "the focus follows the row it moved");
+        assert_eq!(
+            app.selected_mod,
+            Some(0),
+            "the focus follows the row it moved"
+        );
     }
 
     #[test]
@@ -4082,10 +4401,18 @@ mod tests {
         let mut app = nav_app(&["Head_separator", "a", "b", "Tail_separator", "c"]);
         app.modifiers = iced::keyboard::Modifiers::ALT;
         let _ = update(&mut app, Message::DragStart(0));
-        assert_eq!(sel(&app), vec![0, 1, 2], "header plus its group, stopping at the next header");
+        assert_eq!(
+            sel(&app),
+            vec![0, 1, 2],
+            "header plus its group, stopping at the next header"
+        );
 
         let _ = update(&mut app, Message::DragStart(3));
-        assert_eq!(sel(&app), vec![3, 4], "the last group runs to the end of the list");
+        assert_eq!(
+            sel(&app),
+            vec![3, 4],
+            "the last group runs to the end of the list"
+        );
 
         // Alt on an ordinary row is not this gesture.
         let _ = update(&mut app, Message::DragStart(1));
@@ -4099,8 +4426,15 @@ mod tests {
         let _ = update(&mut app, Message::DragStart(0));
         let _ = update(&mut app, Message::DragOverGap(5));
         let _ = update(&mut app, Message::DragDrop);
-        assert_eq!(names(&app.mods), ["Tail_separator", "c", "Head_separator", "a", "b"]);
-        assert_eq!(sel(&app), vec![2, 3, 4], "a block stays selected so it can be dragged again");
+        assert_eq!(
+            names(&app.mods),
+            ["Tail_separator", "c", "Head_separator", "a", "b"]
+        );
+        assert_eq!(
+            sel(&app),
+            vec![2, 3, 4],
+            "a block stays selected so it can be dragged again"
+        );
     }
 
     #[test]
@@ -4133,9 +4467,17 @@ mod tests {
     #[test]
     fn send_to_separator_will_not_send_a_separator_into_itself() {
         let app = nav_app(&["A_separator", "a", "B_separator", "b"]);
-        assert_eq!(separator_choices(&app, 0), vec![2], "a header is not a destination for itself");
+        assert_eq!(
+            separator_choices(&app, 0),
+            vec![2],
+            "a header is not a destination for itself"
+        );
         assert_eq!(separator_choices(&app, 2), vec![0]);
-        assert_eq!(separator_choices(&app, 1), vec![0, 2], "an ordinary mod may go anywhere");
+        assert_eq!(
+            separator_choices(&app, 1),
+            vec![0, 2],
+            "an ordinary mod may go anywhere"
+        );
     }
 
     #[test]
@@ -4146,7 +4488,11 @@ mod tests {
         let mut app = nav_app(&["a", "b"]);
         let _ = update(&mut app, Message::OpenModMenu(1));
         let _ = update(&mut app, Message::SendToPriorityStart(1));
-        assert_eq!(app.menu_mod, Some(1), "the card holding the editor was dismissed");
+        assert_eq!(
+            app.menu_mod,
+            Some(1),
+            "the card holding the editor was dismissed"
+        );
         assert!(app.send_priority.is_some());
 
         let _ = update(&mut app, Message::SendToPriorityChanged("0".to_string()));
@@ -4170,7 +4516,11 @@ mod tests {
         app.selected_mods = [0, 1].into_iter().collect();
         app.selected_mod = Some(2);
         let rows = selection_or(&app, 2);
-        assert_eq!(rows, vec![2], "selection_or answers about the row it is asked about");
+        assert_eq!(
+            rows,
+            vec![2],
+            "selection_or answers about the row it is asked about"
+        );
         // Which is exactly why the batch handler must not ask it about the
         // focus: it consults the SET first. Documented here so the two do not
         // get "unified" back into the bug.
@@ -4192,12 +4542,28 @@ mod tests {
                 ..Default::default()
             },
         );
-        app.conflicts = Some(ConflictMap { files: Default::default(), mods, names: HashMap::new() });
+        app.conflicts = Some(ConflictMap {
+            files: Default::default(),
+            mods,
+            names: HashMap::new(),
+        });
 
         app.selected_mod = Some(1);
-        assert_eq!(conflict_tint(&app, 0), Some(conflict_wins_bg()), "the row it beats");
-        assert_eq!(conflict_tint(&app, 2), Some(conflict_loses_bg()), "the row that beats it");
-        assert_eq!(conflict_tint(&app, 1), None, "the focused row keeps its selection colour");
+        assert_eq!(
+            conflict_tint(&app, 0),
+            Some(conflict_wins_bg()),
+            "the row it beats"
+        );
+        assert_eq!(
+            conflict_tint(&app, 2),
+            Some(conflict_loses_bg()),
+            "the row that beats it"
+        );
+        assert_eq!(
+            conflict_tint(&app, 1),
+            None,
+            "the focused row keeps its selection colour"
+        );
 
         // Nothing focused, nothing tinted.
         app.selected_mod = None;
@@ -4277,16 +4643,28 @@ mod tests {
         // to modlist.txt with MO2's `*` now, so nothing is lost by going there.
         app.selected_mod = Some(1);
         let _ = key_nav(&mut app, Nav::ShiftUp);
-        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "a row could not pass the game content");
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "a row could not pass the game content"
+        );
 
         // The ends still hold.
         app.selected_mod = Some(0);
         let _ = key_nav(&mut app, Nav::ShiftUp);
-        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "the first row has nowhere to go");
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "the first row has nowhere to go"
+        );
 
         app.selected_mod = Some(2);
         let _ = key_nav(&mut app, Nav::ShiftDown);
-        assert_eq!(names(&app.mods), ["a", "dlc", "b"], "the last row has nowhere to go");
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "the last row has nowhere to go"
+        );
     }
 
     #[test]
@@ -4368,11 +4746,20 @@ mod tests {
             vec![("no links here".to_string(), None)]
         );
         // Unclosed / empty forms are not links and must round-trip unchanged.
-        for s in ["[label](", "[label] (url)", "[](url)", "[label]()", "a [b c"] {
+        for s in [
+            "[label](",
+            "[label] (url)",
+            "[](url)",
+            "[label]()",
+            "a [b c",
+        ] {
             let parts = split_markdown_links(s);
             let rebuilt: String = parts.iter().map(|(t, _)| t.as_str()).collect();
             assert_eq!(rebuilt, s, "{s:?} must survive unchanged");
-            assert!(parts.iter().all(|(_, u)| u.is_none()), "{s:?} is not a link");
+            assert!(
+                parts.iter().all(|(_, u)| u.is_none()),
+                "{s:?} is not a link"
+            );
         }
     }
 
@@ -4415,9 +4802,15 @@ mod tests {
         );
         assert_eq!(
             tree_children(&e, "Root"),
-            vec![("meshes".to_string(), Some(2)), ("d3dx9_42.log".to_string(), None)]
+            vec![
+                ("meshes".to_string(), Some(2)),
+                ("d3dx9_42.log".to_string(), None)
+            ]
         );
-        assert_eq!(tree_children(&e, "Root/meshes/actors"), vec![("body.nif".to_string(), None)]);
+        assert_eq!(
+            tree_children(&e, "Root/meshes/actors"),
+            vec![("body.nif".to_string(), None)]
+        );
     }
 
     #[test]
@@ -4437,7 +4830,11 @@ mod tests {
         ]);
         let app = nav_app(&[]);
         let rows = overwrite_tree_rows(&app, &e, 3000);
-        assert_eq!(rows.len(), 2, "two folders closed, and none of their contents");
+        assert_eq!(
+            rows.len(),
+            2,
+            "two folders closed, and none of their contents"
+        );
         assert!(rows.iter().all(|r| r.depth == 0));
     }
 
@@ -4458,7 +4855,11 @@ mod tests {
 
         app.overwrite_expanded.insert("Root/meshes".to_string());
         let deep = overwrite_tree_rows(&app, &e, 3000);
-        assert_eq!(deep.iter().filter(|r| r.depth == 2).count(), 2, "actors and armor");
+        assert_eq!(
+            deep.iter().filter(|r| r.depth == 2).count(),
+            2,
+            "actors and armor"
+        );
     }
 
     #[test]
@@ -4468,7 +4869,6 @@ mod tests {
         app.overwrite_expanded.insert("d".to_string());
         assert_eq!(overwrite_tree_rows(&app, &many, 10).len(), 10);
     }
-
 
     #[test]
     fn a_criterion_cycles_off_only_except_and_back() {
@@ -4493,7 +4893,11 @@ mod tests {
         assert_eq!(vis, vec![true, false], "only the enabled one");
         app.filters.active = Criterion::Exclude;
         let vis = mod_row_visibility(&app, None);
-        assert_eq!(vis, vec![false, true], "and the inverse is the other question");
+        assert_eq!(
+            vis,
+            vec![false, true],
+            "and the inverse is the other question"
+        );
     }
 
     #[test]
@@ -4527,7 +4931,11 @@ mod tests {
         // The visible set changes underneath every row index they hold.
         let mut app = nav_app(&["a", "b", "c"]);
         app.selected_mods.extend([0, 2]);
-        app.drag_state = Some(DragState { from: 0, gap: 2, aimed: true });
+        app.drag_state = Some(DragState {
+            from: 0,
+            gap: 2,
+            aimed: true,
+        });
         let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Conflicted));
         assert!(app.drag_state.is_none());
         // `Conflicted -> only` with no conflict map hides everything, so nothing
@@ -4552,20 +4960,34 @@ mod tests {
         // why clearing only that set was never enough.
         let _ = update_inner(&mut app, Message::SelectMod(1));
         assert_eq!(app.selected_mod, Some(1));
-        assert!(app.selected_mods.is_empty(), "a plain click never populates the set");
+        assert!(
+            app.selected_mods.is_empty(),
+            "a plain click never populates the set"
+        );
 
         let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
         let _ = update_inner(&mut app, Message::CycleFilter(FilterField::Active));
         assert_eq!(app.filters.active, Criterion::Exclude);
-        assert_eq!(mod_row_visibility(&app, None), vec![true, false], "Ivy is off screen");
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![true, false],
+            "Ivy is off screen"
+        );
 
         assert_eq!(app.selected_mod, None, "the focus went with the row");
         assert_eq!(app.sel_anchor, None, "and so did the shift-select anchor");
         // The proof that matters: the keys that ACT are now inert.
         let _ = update_inner(&mut app, Message::KeyNav(Nav::Toggle));
-        assert!(app.mods[1].enabled, "Space must not toggle a mod that is not drawn");
+        assert!(
+            app.mods[1].enabled,
+            "Space must not toggle a mod that is not drawn"
+        );
         let _ = update_inner(&mut app, Message::KeyNav(Nav::Remove));
-        assert_ne!(app.confirm_remove, Some(1), "Delete must not arm on a hidden row");
+        assert_ne!(
+            app.confirm_remove,
+            Some(1),
+            "Delete must not arm on a hidden row"
+        );
     }
 
     #[test]
@@ -4587,7 +5009,10 @@ mod tests {
         // Ivy is hidden. `real_selection` falls back to `selected_mod` when the
         // set is empty, so a stale focus here would aim the batch Remove at the
         // one row nobody can see.
-        assert!(!real_selection(&app).contains(&2), "the hidden row is not a batch target");
+        assert!(
+            !real_selection(&app).contains(&2),
+            "the hidden row is not a batch target"
+        );
     }
 
     #[test]
@@ -4601,7 +5026,11 @@ mod tests {
         let _ = update_inner(&mut app, Message::SelectMod(1));
         assert_eq!(app.selected_mod, Some(1));
         let _ = update_inner(&mut app, Message::ToggleCollapse(key));
-        assert_eq!(mod_row_visibility(&app, None), vec![true, false], "the group folded");
+        assert_eq!(
+            mod_row_visibility(&app, None),
+            vec![true, false],
+            "the group folded"
+        );
         assert_eq!(app.selected_mod, None, "the focus did not survive the fold");
     }
 
@@ -4619,8 +5048,15 @@ mod tests {
         // Not `0..mods.len()`: Ctrl+A used to sweep in every hidden row, and the
         // batch Remove then aimed remove_dir_all at all of them.
         assert_eq!(app.selected_mods.len(), 2);
-        assert!(!app.selected_mods.contains(&2), "the hidden row is not selected");
-        assert_eq!(app.selected_mod, Some(0), "the focus lands on a row that is drawn");
+        assert!(
+            !app.selected_mods.contains(&2),
+            "the hidden row is not selected"
+        );
+        assert_eq!(
+            app.selected_mod,
+            Some(0),
+            "the focus lands on a row that is drawn"
+        );
     }
 
     /// A download row dragged onto an insertion strip.
@@ -4656,7 +5092,10 @@ mod tests {
         // Releasing without ever crossing a strip is a plain click: no install.
         let _ = update_inner(&mut app, Message::PointerReleased);
         assert!(app.download_drag.is_none());
-        assert_eq!(app.install_at, None, "a click on a download row installs nothing");
+        assert_eq!(
+            app.install_at, None,
+            "a click on a download row installs nothing"
+        );
 
         // Now with an aim.
         let _ = update_inner(&mut app, Message::DownloadDragStart(0));
@@ -4678,7 +5117,10 @@ mod tests {
         row.state = DownloadState::Downloading;
         app.downloads = vec![row];
         let _ = update_inner(&mut app, Message::DownloadDragStart(0));
-        assert!(app.download_drag.is_none(), "there is nothing to install out of a partial");
+        assert!(
+            app.download_drag.is_none(),
+            "there is nothing to install out of a partial"
+        );
     }
 
     #[test]
@@ -4695,7 +5137,10 @@ mod tests {
         // moment later and would overwrite anything said here.
         assert_eq!(app.install_at, None);
         assert!(
-            app.pending_note.as_deref().unwrap_or("").contains("end of the list"),
+            app.pending_note
+                .as_deref()
+                .unwrap_or("")
+                .contains("end of the list"),
             "{:?}",
             app.pending_note
         );
@@ -4743,13 +5188,19 @@ mod tests {
         // delete and rename do not bump the view generation.
         let _ = update_inner(&mut app, Message::ProfileDeleteCommit("Second".into()));
         let (names, _) = cached_profiles(&app);
-        assert!(names.contains(&"Third".to_string()), "the memo fell: {names:?}");
+        assert!(
+            names.contains(&"Third".to_string()),
+            "the memo fell: {names:?}"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_menu_label_names_the_host_not_the_whole_url() {
-        assert_eq!(url_host("https://www.loverslab.com/files/file/123-x/"), "loverslab.com");
+        assert_eq!(
+            url_host("https://www.loverslab.com/files/file/123-x/"),
+            "loverslab.com"
+        );
         assert_eq!(url_host("https://github.com/a/b"), "github.com");
         assert_eq!(url_host("http://example.org"), "example.org");
         // Anything unparseable falls back to the whole string rather than
@@ -4823,8 +5274,18 @@ mod tests {
         let mut app = app_for_game("skyrimse");
         app.created = Some(inst);
         app.mods = vec![
-            ModEntry { name: "Good".into(), enabled: true, path: mods.join("Good"), unmanaged: false },
-            ModEntry { name: "Dead".into(), enabled: true, path: mods.join("Dead"), unmanaged: false },
+            ModEntry {
+                name: "Good".into(),
+                enabled: true,
+                path: mods.join("Good"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "Dead".into(),
+                enabled: true,
+                path: mods.join("Dead"),
+                unmanaged: false,
+            },
         ];
         let mut list = PluginList::default();
         list.plugins.push(plugin_row("Mine.esp", "Good"));
@@ -4837,7 +5298,10 @@ mod tests {
         assert_eq!(by("Mine.bsa").by_plugin.as_deref(), Some("Mine.esp"));
         assert!(by("Mine.bsa").loaded());
         // The engine's " - <suffix>" rule, not MO2's looser starts-with.
-        assert_eq!(by("Mine - Textures.bsa").by_plugin.as_deref(), Some("Mine.esp"));
+        assert_eq!(
+            by("Mine - Textures.bsa").by_plugin.as_deref(),
+            Some("Mine.esp")
+        );
         assert!(!by("Nobody.bsa").loaded(), "nothing names it");
         assert_eq!(by("Nobody.bsa").by_plugin, None);
         let _ = fs::remove_dir_all(&root);
@@ -4933,7 +5397,11 @@ mod tests {
 
         let st = &app.collection.as_ref().unwrap().states;
         assert_eq!(st[0], MemberState::Installed, "matched on the Nexus mod id");
-        assert_eq!(st[1], MemberState::Downloaded, "matched on the exact file id");
+        assert_eq!(
+            st[1],
+            MemberState::Downloaded,
+            "matched on the exact file id"
+        );
         assert!(st[2..].iter().all(|s| *s == MemberState::Missing));
         let _ = fs::remove_dir_all(&root);
     }
@@ -4957,7 +5425,11 @@ mod tests {
 
         let (batch, left) = next_fetch_batch(&rev, &states, &asked, FETCH_BATCH);
         assert_eq!(batch.len(), FETCH_BATCH, "capped");
-        assert_eq!(left, 20 - FETCH_BATCH, "and it says how many are behind them");
+        assert_eq!(
+            left,
+            20 - FETCH_BATCH,
+            "and it says how many are behind them"
+        );
 
         // Clicking again advances instead of restarting the same few: the first
         // batch is still `Missing` (its downloads are running), so only `asked`
@@ -4966,7 +5438,9 @@ mod tests {
         let (second, _) = next_fetch_batch(&rev, &states, &asked, FETCH_BATCH);
         assert_eq!(second.len(), FETCH_BATCH);
         assert!(
-            second.iter().all(|(_, f, _)| !batch.iter().any(|(_, g, _)| g == f)),
+            second
+                .iter()
+                .all(|(_, f, _)| !batch.iter().any(|(_, g, _)| g == f)),
             "no overlap with the first batch"
         );
 
@@ -4992,14 +5466,22 @@ mod tests {
         });
         recompute_collection_states(&mut app);
         assert!(
-            app.collection.as_ref().unwrap().states.iter().all(|s| *s == MemberState::Missing),
+            app.collection
+                .as_ref()
+                .unwrap()
+                .states
+                .iter()
+                .all(|s| *s == MemberState::Missing),
             "the fixture instance has none of them"
         );
 
         // First click arms and spawns nothing.
         let _ = update_inner(&mut app, Message::CollectionFetchMissing);
         assert!(app.collection.as_ref().unwrap().confirm_fetch);
-        assert!(app.collection.as_ref().unwrap().asked.is_empty(), "nothing started yet");
+        assert!(
+            app.collection.as_ref().unwrap().asked.is_empty(),
+            "nothing started yet"
+        );
 
         // And any other action disarms it, so a stray click cannot start a
         // dozen transfers a minute later.
@@ -5028,7 +5510,10 @@ mod tests {
         recompute_collection_states(&mut app);
 
         let _ = update_inner(&mut app, Message::CollectionFetchMissing);
-        assert!(!app.collection.as_ref().unwrap().confirm_fetch, "nothing to confirm");
+        assert!(
+            !app.collection.as_ref().unwrap().confirm_fetch,
+            "nothing to confirm"
+        );
         let s = app.status.clone().unwrap_or_default();
         assert!(s.contains("already started"), "{s}");
         assert!(s.contains("Look up again"), "and how to retry: {s}");
@@ -5045,7 +5530,9 @@ mod tests {
         let ini = root.join("Skyrim.ini");
         fs::write(&ini, b"[Display]\niSize=1920\nname=Andr\xe9\n").unwrap();
         match build_preview(&ini) {
-            Preview::Text { body, truncated, .. } => {
+            Preview::Text {
+                body, truncated, ..
+            } => {
                 assert!(body.contains("iSize=1920"));
                 assert!(!truncated);
             }
@@ -5073,7 +5560,10 @@ mod tests {
         // A folder is not a file.
         assert!(matches!(build_preview(&root), Preview::Unsupported { .. }));
         // And something that is not there at all.
-        assert!(matches!(build_preview(&root.join("nope.txt")), Preview::Unsupported { .. }));
+        assert!(matches!(
+            build_preview(&root.join("nope.txt")),
+            Preview::Unsupported { .. }
+        ));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -5087,7 +5577,9 @@ mod tests {
         fs::write(&log, "x".repeat(PREVIEW_TEXT_CAP * 2)).unwrap();
 
         match build_preview(&log) {
-            Preview::Text { body, truncated, .. } => {
+            Preview::Text {
+                body, truncated, ..
+            } => {
                 assert_eq!(body.len(), PREVIEW_TEXT_CAP);
                 assert!(truncated, "and it says the rest is there");
             }
@@ -5114,7 +5606,11 @@ mod tests {
         let mut listed: Vec<&Tool> = tools.iter().filter(|t| !t.hidden).collect();
         listed.sort_by_key(|t| !t.pinned);
         let titles: Vec<&str> = listed.iter().map(|t| t.title.as_str()).collect();
-        assert_eq!(titles, vec!["SSEEdit", "Launcher"], "pinned first, hidden gone");
+        assert_eq!(
+            titles,
+            vec!["SSEEdit", "Launcher"],
+            "pinned first, hidden gone"
+        );
     }
 
     #[test]
@@ -5146,7 +5642,10 @@ mod tests {
             body.contains(&format!("\"{}\"", inst.root.display())),
             "the whole path is one quoted argument:\n{body}"
         );
-        assert!(inst.root.display().to_string().contains(' '), "the fixture has a space in it");
+        assert!(
+            inst.root.display().to_string().contains(' '),
+            "the fixture has a space in it"
+        );
         assert!(body.contains("tool "), "{body}");
         assert!(body.contains("run \"SSEEdit\""), "{body}");
 
@@ -5175,9 +5674,15 @@ mod tests {
 
         // Dragged past the edge, both panes must survive: a pane at zero width
         // takes the divider with it and there is no way to get either back.
-        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(-500.0, 400.0)));
+        let _ = update_inner(
+            &mut app,
+            Message::PointerAt(iced::Point::new(-500.0, 400.0)),
+        );
         assert_eq!(app.split, 0.15);
-        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(5000.0, 400.0)));
+        let _ = update_inner(
+            &mut app,
+            Message::PointerAt(iced::Point::new(5000.0, 400.0)),
+        );
         assert_eq!(app.split, 0.85);
 
         // Releasing stops the drag and hands the value to the preferences, which
@@ -5206,10 +5711,19 @@ mod tests {
 
         let i = app.mods.iter().position(|m| m.name == "Armour").unwrap();
         let _ = update_inner(&mut app, Message::ModBackup(i));
-        assert!(root.join("mods").join("Armour_backup").join("Meshes").join("a.nif").is_file());
+        assert!(root
+            .join("mods")
+            .join("Armour_backup")
+            .join("Meshes")
+            .join("a.nif")
+            .is_file());
 
         // Inert: it contributes nothing to the game, whatever modlist.txt says.
-        let backup = app.mods.iter().find(|m| m.name == "Armour_backup").expect("in the list");
+        let backup = app
+            .mods
+            .iter()
+            .find(|m| m.name == "Armour_backup")
+            .expect("in the list");
         assert!(backup.is_backup());
         assert!(!backup.is_active(), "a backup must never reach the game");
 
@@ -5217,15 +5731,29 @@ mod tests {
         // state somebody took a backup to keep.
         let i = app.mods.iter().position(|m| m.name == "Armour").unwrap();
         let _ = update_inner(&mut app, Message::ModBackup(i));
-        assert!(root.join("mods").join("Armour_backup2").is_dir(), "status={:?}", app.status);
+        assert!(
+            root.join("mods").join("Armour_backup2").is_dir(),
+            "status={:?}",
+            app.status
+        );
 
         // Now break the mod, and restore.
         fs::write(modd.join("Meshes").join("a.nif"), b"broken").unwrap();
-        let b = app.mods.iter().position(|m| m.name == "Armour_backup").unwrap();
+        let b = app
+            .mods
+            .iter()
+            .position(|m| m.name == "Armour_backup")
+            .unwrap();
         let _ = update_inner(&mut app, Message::ModRestoreBackup(b));
-        assert_eq!(fs::read(modd.join("Meshes").join("a.nif")).unwrap(), b"broken", "one click arms");
-        let _ =
-            update_inner(&mut app, Message::ConfirmModRestoreBackup("Armour_backup".to_string()));
+        assert_eq!(
+            fs::read(modd.join("Meshes").join("a.nif")).unwrap(),
+            b"broken",
+            "one click arms"
+        );
+        let _ = update_inner(
+            &mut app,
+            Message::ConfirmModRestoreBackup("Armour_backup".to_string()),
+        );
         assert_eq!(
             fs::read(modd.join("Meshes").join("a.nif")).unwrap(),
             b"original",
@@ -5248,13 +5776,19 @@ mod tests {
         };
         assert!(mk("Armour", true).is_active());
         assert!(!mk("Armour", false).is_active(), "disabled");
-        assert!(!mk("SEP_separator", true).is_active(), "a separator has no files");
+        assert!(
+            !mk("SEP_separator", true).is_active(),
+            "a separator has no files"
+        );
         // The case this predicate was introduced for: a backup is not merely
         // disabled, because a user who ticked it would deploy two copies of one
         // mod over each other.
         assert!(!mk("Armour_backup", true).is_active());
         assert!(!mk("Armour_backup7", true).is_active());
-        assert!(mk("Armour_backups", true).is_active(), "only the exact suffix");
+        assert!(
+            mk("Armour_backups", true).is_active(),
+            "only the exact suffix"
+        );
     }
 
     #[test]
@@ -5332,7 +5866,10 @@ mod tests {
         // box is a move, which this is not.
         assert_eq!(app.tree_rename_text, "a.nif");
 
-        let _ = update_inner(&mut app, Message::FiletreeRenameChanged("b.nif".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeRenameChanged("b.nif".to_string()),
+        );
         let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
         assert!(
             modd.join("Meshes").join("b.nif").is_file(),
@@ -5348,10 +5885,19 @@ mod tests {
             &mut app,
             Message::FiletreeRenameStart(0, "Meshes/b.nif".to_string()),
         );
-        let _ = update_inner(&mut app, Message::FiletreeRenameChanged("taken.nif".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeRenameChanged("taken.nif".to_string()),
+        );
         let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
-        assert!(modd.join("Meshes").join("b.nif").is_file(), "the rename was refused");
-        assert_eq!(fs::read(modd.join("Meshes").join("taken.nif")).unwrap(), b"b");
+        assert!(
+            modd.join("Meshes").join("b.nif").is_file(),
+            "the rename was refused"
+        );
+        assert_eq!(
+            fs::read(modd.join("Meshes").join("taken.nif")).unwrap(),
+            b"b"
+        );
         assert!(app.error.is_some());
         let _ = fs::remove_dir_all(&root);
     }
@@ -5374,8 +5920,14 @@ mod tests {
         }];
         app.screen = Screen::Main;
 
-        let _ = update_inner(&mut app, Message::FiletreeDelete(0, "Meshes/a.nif".to_string()));
-        assert!(modd.join("Meshes").join("a.nif").is_file(), "one click only arms");
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeDelete(0, "Meshes/a.nif".to_string()),
+        );
+        assert!(
+            modd.join("Meshes").join("a.nif").is_file(),
+            "one click only arms"
+        );
         assert!(app.tree_delete_armed.is_some());
 
         // And any other action disarms it, like every other confirmation here.
@@ -5383,7 +5935,10 @@ mod tests {
         assert!(app.tree_delete_armed.is_none());
         assert!(modd.join("Meshes").join("a.nif").is_file());
 
-        let _ = update_inner(&mut app, Message::FiletreeDelete(0, "Meshes/a.nif".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::FiletreeDelete(0, "Meshes/a.nif".to_string()),
+        );
         let _ = update_inner(
             &mut app,
             Message::ConfirmFiletreeDelete("Armour".to_string(), "Meshes/a.nif".to_string()),
@@ -5452,14 +6007,26 @@ mod tests {
             app.status
         );
         assert_eq!(app.mods.len(), total, "no row appeared or vanished");
-        let after = app.mods.iter().position(|m| m.name == "Renamed").expect("still listed");
+        let after = app
+            .mods
+            .iter()
+            .position(|m| m.name == "Renamed")
+            .expect("still listed");
         assert_eq!(after, before, "same position - status={:?}", app.status);
-        assert!(app.mods[after].enabled, "still enabled - status={:?}", app.status);
+        assert!(
+            app.mods[after].enabled,
+            "still enabled - status={:?}",
+            app.status
+        );
 
         // And it survives a reload, which is what proves modlist.txt was written
         // rather than merely the in-memory list being right.
         reload_mods(&mut app);
-        let reloaded = app.mods.iter().position(|m| m.name == "Renamed").expect("in modlist.txt");
+        let reloaded = app
+            .mods
+            .iter()
+            .position(|m| m.name == "Renamed")
+            .expect("in modlist.txt");
         assert_eq!(reloaded, before);
         assert!(app.mods[reloaded].enabled);
         let _ = fs::remove_dir_all(&root);
@@ -5493,12 +6060,19 @@ mod tests {
         fs::write(root.join("mods").join("A").join("f.txt"), b"broken").unwrap();
         let i = app.mods.iter().position(|m| m.name == "A_backup").unwrap();
         let _ = update_inner(&mut app, Message::ModRestoreBackup(i));
-        assert_eq!(app.confirm_restore.as_deref(), Some("A_backup"), "armed by name");
+        assert_eq!(
+            app.confirm_restore.as_deref(),
+            Some("A_backup"),
+            "armed by name"
+        );
 
         // Now the list moves under it - a refresh, an install, anything.
         app.mods.reverse();
 
-        let _ = update_inner(&mut app, Message::ConfirmModRestoreBackup("A_backup".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::ConfirmModRestoreBackup("A_backup".to_string()),
+        );
         assert_eq!(
             fs::read(root.join("mods").join("A").join("f.txt")).unwrap(),
             b"a",
@@ -5533,7 +6107,10 @@ mod tests {
             other => panic!("expected a header, got {other:?}"),
         };
         let _ = update_inner(&mut app, Message::ToggleGroupFold(label));
-        assert!(drawn_mod_rows(&app).is_empty(), "everything is inside the folded group");
+        assert!(
+            drawn_mod_rows(&app).is_empty(),
+            "everything is inside the folded group"
+        );
         // Select-all, which feeds the batch Remove that DELETES FROM DISK.
         assert!(
             mods_visible_for_bulk(&app).is_empty(),
@@ -5604,7 +6181,10 @@ mod tests {
         // so folding them would be a menu entry that visibly does nothing.
         let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
         let _ = update_inner(&mut app, Message::CollapseAllGroups);
-        assert!(!app.groups_collapsed.is_empty(), "the headers that ARE drawn");
+        assert!(
+            !app.groups_collapsed.is_empty(),
+            "the headers that ARE drawn"
+        );
         assert!(drawn_mod_rows(&app).is_empty());
         let _ = update_inner(&mut app, Message::ExpandAllGroups);
         assert!(app.groups_collapsed.is_empty());
@@ -5628,14 +6208,23 @@ mod tests {
     fn a_group_header_counts_only_the_rows_it_actually_heads() {
         let (mut app, root) = list_app(&["Alpha", "Beta"]);
         let _ = update_inner(&mut app, Message::SetGroupBy(Some(GroupBy::Source)));
-        assert!(matches!(display_entries(&app).first(), Some(ListEntry::Group(_, 2))));
+        assert!(matches!(
+            display_entries(&app).first(),
+            Some(ListEntry::Group(_, 2))
+        ));
 
         // Filter one out: the count follows, and a header left with nothing does
         // not draw at all.
         let _ = update_inner(&mut app, Message::SearchChanged("alpha".to_string()));
-        assert!(matches!(display_entries(&app).first(), Some(ListEntry::Group(_, 1))));
+        assert!(matches!(
+            display_entries(&app).first(),
+            Some(ListEntry::Group(_, 1))
+        ));
         let _ = update_inner(&mut app, Message::SearchChanged("nothing".to_string()));
-        assert!(display_entries(&app).is_empty(), "no header with nothing under it");
+        assert!(
+            display_entries(&app).is_empty(),
+            "no header with nothing under it"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -5647,7 +6236,10 @@ mod tests {
         // Signing in opens a BROWSER before any request is made, so the guard in
         // `Nexus::connect` is not on this path at all.
         assert!(!app.nexus_signing_in, "it must not start");
-        assert_eq!(app.nexus_error.as_deref(), Some(eidos_nexus::OFFLINE_MESSAGE));
+        assert_eq!(
+            app.nexus_error.as_deref(),
+            Some(eidos_nexus::OFFLINE_MESSAGE)
+        );
     }
 
     #[test]
@@ -5661,7 +6253,10 @@ mod tests {
         let _ = update_inner(&mut app, Message::HideDownload("ByHand.7z".to_string()));
         assert!(app.error.is_none(), "{:?}", app.error);
         assert!(app.downloads.is_empty(), "it is hidden");
-        assert!(root.join("downloads").join("ByHand.7z").is_file(), "and still there");
+        assert!(
+            root.join("downloads").join("ByHand.7z").is_file(),
+            "and still there"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -5672,12 +6267,20 @@ mod tests {
         inst.create().unwrap();
         // Two with a category, one without, plus a separator - which grouping
         // must drop, because it heads rows the grouping has moved.
-        for (name, cat) in [("Helm", "5"), ("Sword", "5"), ("Loose", ""), ("SEP_separator", "")] {
+        for (name, cat) in [
+            ("Helm", "5"),
+            ("Sword", "5"),
+            ("Loose", ""),
+            ("SEP_separator", ""),
+        ] {
             let dir = root.join("mods").join(name);
             fs::create_dir_all(&dir).unwrap();
             if !cat.is_empty() {
-                fs::write(dir.join("meta.ini"), format!("[General]\ncategory=\"{cat},\"\n"))
-                    .unwrap();
+                fs::write(
+                    dir.join("meta.ini"),
+                    format!("[General]\ncategory=\"{cat},\"\n"),
+                )
+                .unwrap();
             }
         }
         let mut app = app_for_game("skyrimse");
@@ -5808,7 +6411,11 @@ mod tests {
         let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Name));
         // A separator is a HEADING; ordered by name it heads nothing, so it
         // leaves the list rather than floating into the middle of it.
-        assert_eq!(display_order(&app), vec![2, 3, 0], "Alpha, Mid, Zeta - no separator");
+        assert_eq!(
+            display_order(&app),
+            vec![2, 3, 0],
+            "Alpha, Mid, Zeta - no separator"
+        );
         // And the underlying list is untouched: sorting is a view, not a move.
         assert_eq!(app.mods[0].name, "Zeta");
 
@@ -5826,7 +6433,10 @@ mod tests {
         // Ordering a list by a column nobody can see is a list that looks
         // shuffled for no reason.
         let mut app = app_for_game("skyrimse");
-        let _ = update_inner(&mut app, Message::CycleModSort(SortKey::Column(ModColumn::Version)));
+        let _ = update_inner(
+            &mut app,
+            Message::CycleModSort(SortKey::Column(ModColumn::Version)),
+        );
         assert!(app.mod_sort.is_some());
         assert!(app.mod_columns.contains(&ModColumn::Version));
 
@@ -5844,13 +6454,19 @@ mod tests {
 
         // Redrawn canonically, so toggling one on cannot move another.
         let after: Vec<&str> = app.mod_columns.iter().map(|c| c.title()).collect();
-        assert_eq!(after, vec!["Category", "Content", "Version", "Author", "Game", "Flags"]);
+        assert_eq!(
+            after,
+            vec!["Category", "Content", "Version", "Author", "Game", "Flags"]
+        );
 
         // And a hand-edited settings file cannot produce a header that
         // disagrees with the rows either.
         let mut prefs = eidos_instance::settings::Settings::default();
         prefs.mod_columns = Some(vec!["game".into(), "category".into()]);
-        let back: Vec<&str> = columns_from_settings(&prefs).iter().map(|c| c.title()).collect();
+        let back: Vec<&str> = columns_from_settings(&prefs)
+            .iter()
+            .map(|c| c.title())
+            .collect();
         assert_eq!(back, vec!["Category", "Game"]);
 
         // An EMPTY list is a choice, not "never chosen" - it has to survive a
@@ -5888,7 +6504,11 @@ mod tests {
         assert_eq!(app.downloads.len(), 2);
 
         let _ = update_inner(&mut app, Message::HideDownload("Stale.7z".to_string()));
-        assert_eq!(app.downloads.len(), 1, "hidden rows are dropped from the list");
+        assert_eq!(
+            app.downloads.len(),
+            1,
+            "hidden rows are dropped from the list"
+        );
         // The whole point: putting a book away is not burning it.
         assert!(
             root.join("downloads").join("Stale.7z").is_file(),
@@ -5923,9 +6543,18 @@ mod tests {
         assert!(root.join("downloads").join("AlsoDone.7z").is_file());
 
         let _ = update_inner(&mut app, Message::ConfirmPurgeInstalled);
-        assert!(!root.join("downloads").join("AlsoDone.7z").exists(), "the filtered one went");
-        assert!(root.join("downloads").join("Done.7z").is_file(), "the one off screen did not");
-        assert!(root.join("downloads").join("NotYet.7z").is_file(), "and nor did the uninstalled");
+        assert!(
+            !root.join("downloads").join("AlsoDone.7z").exists(),
+            "the filtered one went"
+        );
+        assert!(
+            root.join("downloads").join("Done.7z").is_file(),
+            "the one off screen did not"
+        );
+        assert!(
+            root.join("downloads").join("NotYet.7z").is_file(),
+            "and nor did the uninstalled"
+        );
         // The sidecar goes with the archive, or the row comes back as a ghost.
         assert!(!root.join("downloads").join("AlsoDone.7z.meta").exists());
         let _ = fs::remove_dir_all(&root);
@@ -5943,7 +6572,10 @@ mod tests {
 
         // The friendly mod name is searched too: an archive called
         // `SkyUI_5_2_SE-12604.7z` is found by typing "skyui" only if it is.
-        let _ = update_inner(&mut app, Message::DownloadFilterChanged("zebra".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::DownloadFilterChanged("zebra".to_string()),
+        );
         assert_eq!(app.downloads.len(), 1);
         assert_eq!(app.downloads[0].name, "bbb.7z");
         let _ = fs::remove_dir_all(&root);
@@ -5973,7 +6605,10 @@ mod tests {
         app.screen = Screen::Main;
         refresh_meta_cache(&mut app);
 
-        assert!(!app.meta_cache["Good"].invalid_data, "Meshes/ is data this game loads");
+        assert!(
+            !app.meta_cache["Good"].invalid_data,
+            "Meshes/ is data this game loads"
+        );
         assert!(app.meta_cache["Junk"].invalid_data, "docs/ alone is not");
         assert!(
             !app.meta_cache["RootOnly"].invalid_data,
@@ -5984,7 +6619,10 @@ mod tests {
         let _ = update_inner(&mut app, Message::ModMarkValid(1));
         assert!(!app.meta_cache["Junk"].invalid_data);
         let text = fs::read_to_string(root.join("mods").join("Junk").join("meta.ini")).unwrap();
-        assert!(text.contains("validated=true"), "MO2 reads this key too: {text}");
+        assert!(
+            text.contains("validated=true"),
+            "MO2 reads this key too: {text}"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -5997,7 +6635,11 @@ mod tests {
             let dir = root.join("mods").join(name);
             fs::create_dir_all(dir.join("Meshes")).unwrap();
             if !game.is_empty() {
-                fs::write(dir.join("meta.ini"), format!("[General]\ngameName={game}\n")).unwrap();
+                fs::write(
+                    dir.join("meta.ini"),
+                    format!("[General]\ngameName={game}\n"),
+                )
+                .unwrap();
             }
         }
         let mut app = app_for_game("skyrimse");
@@ -6015,7 +6657,10 @@ mod tests {
         refresh_meta_cache(&mut app);
 
         assert_eq!(app.meta_cache["Ours"].other_game, None);
-        assert_eq!(app.meta_cache["Theirs"].other_game.as_deref(), Some("Fallout4"));
+        assert_eq!(
+            app.meta_cache["Theirs"].other_game.as_deref(),
+            Some("Fallout4")
+        );
         // "Does not say" must look identical to "same game". A mod installed
         // from a folder never had a game recorded, and warning about that would
         // flag half a list.
@@ -6040,7 +6685,11 @@ mod tests {
         let _ = update_inner(&mut app, Message::JumpToLetter('a'));
         assert_eq!(app.selected_mod, Some(0), "the first A");
         let _ = update_inner(&mut app, Message::JumpToLetter('a'));
-        assert_eq!(app.selected_mod, Some(2), "the next one, not the same one again");
+        assert_eq!(
+            app.selected_mod,
+            Some(2),
+            "the next one, not the same one again"
+        );
         // And it wraps, so the list has no dead end.
         let _ = update_inner(&mut app, Message::JumpToLetter('a'));
         assert_eq!(app.selected_mod, Some(0));
@@ -6069,7 +6718,11 @@ mod tests {
         app.search = "amber".to_string();
 
         let _ = update_inner(&mut app, Message::JumpToLetter('a'));
-        assert_eq!(app.selected_mod, Some(1), "only the row the filter still draws");
+        assert_eq!(
+            app.selected_mod,
+            Some(1),
+            "only the row the filter still draws"
+        );
     }
 
     #[test]
@@ -6096,7 +6749,10 @@ mod tests {
         app.info_mod = None;
         app.modifiers = iced::keyboard::Modifiers::SHIFT;
         let _ = update_inner(&mut app, Message::ModDoubleClick(0));
-        assert!(app.info_mod.is_none(), "Shift is the Nexus page, not Information");
+        assert!(
+            app.info_mod.is_none(),
+            "Shift is the Nexus page, not Information"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6120,9 +6776,20 @@ mod tests {
 
         let _ = update_inner(&mut app, Message::CollapseOthers(keep.clone()));
 
-        assert!(!app.collapsed.contains(&keep), "the one you asked to keep is open");
-        for m in app.mods.iter().filter(|m| m.is_separator() && m.display_name() != keep) {
-            assert!(app.collapsed.contains(m.display_name()), "{} should be folded", m.name);
+        assert!(
+            !app.collapsed.contains(&keep),
+            "the one you asked to keep is open"
+        );
+        for m in app
+            .mods
+            .iter()
+            .filter(|m| m.is_separator() && m.display_name() != keep)
+        {
+            assert!(
+                app.collapsed.contains(m.display_name()),
+                "{} should be folded",
+                m.name
+            );
         }
     }
 
@@ -6144,12 +6811,18 @@ mod tests {
 
         let _ = update_inner(&mut app, Message::DragStart(1));
         let _ = update_inner(&mut app, Message::DragOverGap(2));
-        assert_eq!(app.drag_hover_group.as_ref().map(|(n, t)| (n.clone(), *t)), Some((folded.clone(), 0)));
+        assert_eq!(
+            app.drag_hover_group.as_ref().map(|(n, t)| (n.clone(), *t)),
+            Some((folded.clone(), 0))
+        );
 
         // One tick is not enough - brushing past a group on the way somewhere
         // else must not open it.
         let _ = update_inner(&mut app, Message::DragHoverTick);
-        assert!(app.collapsed.contains(&folded), "still folded after one tick");
+        assert!(
+            app.collapsed.contains(&folded),
+            "still folded after one tick"
+        );
 
         // Resting does open it.
         let _ = update_inner(&mut app, Message::DragHoverTick);
@@ -6185,7 +6858,11 @@ mod tests {
         );
         let _ = update_inner(&mut app, Message::PreferredServersSave);
 
-        assert_eq!(app.prefs.preferred_servers, vec!["Paris", "Nexus CDN"], "trimmed, blanks gone");
+        assert_eq!(
+            app.prefs.preferred_servers,
+            vec!["Paris", "Nexus CDN"],
+            "trimmed, blanks gone"
+        );
         // Echoed back as stored, so a trailing comma does not sit in the field
         // looking like it means something.
         assert_eq!(app.servers_edit, "Paris, Nexus CDN");
@@ -6206,7 +6883,10 @@ mod tests {
 
         let before = app.prefs.lock_gui;
         let _ = update_inner(&mut app, Message::ToggleLockGui(!before));
-        assert_eq!(app.prefs.lock_gui, !before, "the toggle still works in memory");
+        assert_eq!(
+            app.prefs.lock_gui, !before,
+            "the toggle still works in memory"
+        );
         // And saving it is a no-op rather than a write, so no arm in update.rs
         // can reach the real file by accident either.
         assert!(app.prefs.save().is_ok());
@@ -6234,7 +6914,10 @@ mod tests {
         );
         let c = app.collection.as_ref().unwrap();
         let err = c.error.clone().unwrap_or_default();
-        assert!(err.contains("skyrimspecialedition"), "it names the collection's game: {err}");
+        assert!(
+            err.contains("skyrimspecialedition"),
+            "it names the collection's game: {err}"
+        );
         assert!(err.contains("Fallout"), "and the one that is open: {err}");
         assert!(!c.loading, "and no request was dispatched");
         assert!(c.revision.is_none());
@@ -6260,7 +6943,9 @@ mod tests {
         // It gets as far as the credential check, which is the next gate - the
         // game guard is not what stopped it.
         assert!(
-            c.error.as_deref().is_none_or(|e| !e.contains("instance is")),
+            c.error
+                .as_deref()
+                .is_none_or(|e| !e.contains("instance is")),
             "{:?}",
             c.error
         );
@@ -6278,7 +6963,13 @@ mod tests {
             ),
         );
         let _ = update_inner(&mut app, Message::CollectionFetch);
-        let err = app.collection.as_ref().unwrap().error.clone().unwrap_or_default();
+        let err = app
+            .collection
+            .as_ref()
+            .unwrap()
+            .error
+            .clone()
+            .unwrap_or_default();
         // Not "bad link": it IS a valid link, to the wrong kind of thing, and
         // saying which sends the user to the button that handles it.
         assert!(err.contains("single mod"), "{err}");
@@ -6326,15 +7017,26 @@ mod tests {
         assert!(app.confirm_saves_delete);
         // The watcher runs on its own, between the two clicks.
         let _ = update(&mut app, Message::SavesTick);
-        assert!(app.confirm_saves_delete, "the tick cancelled the user's arming");
+        assert!(
+            app.confirm_saves_delete,
+            "the tick cancelled the user's arming"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_saves_reload_keeps_the_whole_selection_not_just_the_focus() {
         let (mut app, root) = saves_app();
-        let a = app.saves.iter().position(|s| s.filename == "Save1.ess").unwrap();
-        let b = app.saves.iter().position(|s| s.filename == "Save2.ess").unwrap();
+        let a = app
+            .saves
+            .iter()
+            .position(|s| s.filename == "Save1.ess")
+            .unwrap();
+        let b = app
+            .saves
+            .iter()
+            .position(|s| s.filename == "Save2.ess")
+            .unwrap();
         let _ = update_inner(&mut app, Message::SaveToggleSelect(a));
         let _ = update_inner(&mut app, Message::SaveToggleSelect(b));
         assert_eq!(app.selected_saves.len(), 2);
@@ -6363,8 +7065,17 @@ mod tests {
         let (mut app, root) = saves_app();
         let inst = app.created.clone().unwrap();
         let dest = inst.profile("Second").saves_dir();
-        let idx = app.saves.iter().position(|s| s.filename == "Save1.ess").unwrap();
-        let stem = app.saves[idx].path.file_stem().unwrap().to_string_lossy().into_owned();
+        let idx = app
+            .saves
+            .iter()
+            .position(|s| s.filename == "Save1.ess")
+            .unwrap();
+        let stem = app.saves[idx]
+            .path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
 
         // The destination already holds a DIFFERENT character's save under that
         // stem. Guarding per file copied the co-save anyway - a co-save that
@@ -6373,12 +7084,19 @@ mod tests {
 
         let _ = update_inner(&mut app, Message::SaveToggleSelect(idx));
         let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
-        assert_eq!(fs::read(dest.join(format!("{stem}.ess"))).unwrap(), b"SOMEONE ELSE");
+        assert_eq!(
+            fs::read(dest.join(format!("{stem}.ess"))).unwrap(),
+            b"SOMEONE ELSE"
+        );
         assert!(
             !dest.join(format!("{stem}.skse")).exists(),
             "the co-save must not be planted beside a save it does not belong to"
         );
-        assert!(app.status.as_deref().unwrap_or("").contains("already existed"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("already existed"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6397,7 +7115,10 @@ mod tests {
         // Both gone, INCLUDING the co-save - which the game does not know about
         // and which orphans invisibly if it is left.
         assert!(!dir.join("Save1.ess").exists());
-        assert!(!dir.join("Save1.skse").exists(), "the co-save travels with its save");
+        assert!(
+            !dir.join("Save1.skse").exists(),
+            "the co-save travels with its save"
+        );
         assert!(!dir.join("Save2.ess").exists());
         assert!(app.saves.is_empty());
         let _ = fs::remove_dir_all(&root);
@@ -6411,13 +7132,26 @@ mod tests {
 
         // The list is newest-first, so pick the one that HAS a co-save by name
         // rather than assuming an index.
-        let idx = app.saves.iter().position(|s| s.filename == "Save1.ess").expect("Save1");
+        let idx = app
+            .saves
+            .iter()
+            .position(|s| s.filename == "Save1.ess")
+            .expect("Save1");
         let _ = update_inner(&mut app, Message::SaveToggleSelect(idx));
         let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
 
         let moved = app.saves[idx].clone();
-        let stem = moved.path.file_stem().unwrap().to_string_lossy().into_owned();
-        assert!(dest.join(format!("{stem}.ess")).is_file(), "{:?}", app.status);
+        let stem = moved
+            .path
+            .file_stem()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            dest.join(format!("{stem}.ess")).is_file(),
+            "{:?}",
+            app.status
+        );
         // The co-save comes too: a save without it is one the script extender
         // cannot restore its state for.
         assert!(dest.join(format!("{stem}.skse")).is_file());
@@ -6427,8 +7161,15 @@ mod tests {
         // A second copy must not clobber somebody's character.
         fs::write(dest.join(format!("{stem}.ess")), b"DIFFERENT").unwrap();
         let _ = update_inner(&mut app, Message::SavesCopyToProfile("Second".into()));
-        assert_eq!(fs::read(dest.join(format!("{stem}.ess"))).unwrap(), b"DIFFERENT");
-        assert!(app.status.as_deref().unwrap_or("").contains("already existed"));
+        assert_eq!(
+            fs::read(dest.join(format!("{stem}.ess"))).unwrap(),
+            b"DIFFERENT"
+        );
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("already existed"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6452,7 +7193,9 @@ mod tests {
         let _ = update_inner(&mut app, Message::SavesTick);
         assert_eq!(app.saves.len(), 3);
         assert_eq!(
-            app.selected_save.and_then(|i| app.saves.get(i)).map(|s| s.path.clone()),
+            app.selected_save
+                .and_then(|i| app.saves.get(i))
+                .map(|s| s.path.clone()),
             Some(picked),
             "the pane must not silently start describing a different save"
         );
@@ -6478,7 +7221,10 @@ mod tests {
         assert!(app.confirm_sync, "the first click only arms");
         let _ = update_inner(&mut app, Message::OverwriteSyncToMods);
         assert!(
-            app.status.as_deref().unwrap_or("").contains("Conflicts tab"),
+            app.status
+                .as_deref()
+                .unwrap_or("")
+                .contains("Conflicts tab"),
             "{:?}",
             app.status
         );
@@ -6504,18 +7250,29 @@ mod tests {
         // A file only the game provides underneath: nowhere to send it.
         map.files.insert(
             "vanilla.esm".to_string(),
-            FileNode { winner: u32::MAX, alternatives: vec![0], display_path: "vanilla.esm".into() },
+            FileNode {
+                winner: u32::MAX,
+                alternatives: vec![0],
+                display_path: "vanilla.esm".into(),
+            },
         );
         // A file the Overwrite does NOT win is not its business at all.
         map.files.insert(
             "other.txt".to_string(),
-            FileNode { winner: 2, alternatives: vec![1], display_path: "other.txt".into() },
+            FileNode {
+                winner: 2,
+                alternatives: vec![1],
+                display_path: "other.txt".into(),
+            },
         );
         app.conflicts = Some(map);
 
         let owners = overwrite_owners(&app).unwrap();
         assert_eq!(owners.get("meshes/a.nif").map(String::as_str), Some("High"));
-        assert!(!owners.contains_key("vanilla.esm"), "the game's Data is not a destination");
+        assert!(
+            !owners.contains_key("vanilla.esm"),
+            "the game's Data is not a destination"
+        );
         assert!(!owners.contains_key("other.txt"));
     }
 
@@ -6526,7 +7283,10 @@ mod tests {
         inst.create().unwrap();
         let mut app = app_for_game("skyrimse");
         // NEVER the real user registry: these handlers persist.
-        app.registry_path = root.parent().unwrap().join(format!("reg-{}.ini", std::process::id()));
+        app.registry_path = root
+            .parent()
+            .unwrap()
+            .join(format!("reg-{}.ini", std::process::id()));
         app.known = vec![KnownInstance {
             label: "Skyrim - portable".into(),
             inst: inst.clone(),
@@ -6535,12 +7295,17 @@ mod tests {
         }];
         app.instances_open = true;
 
-        let dest = root.parent().unwrap().join(format!("renamed-{}", std::process::id()));
+        let dest = root
+            .parent()
+            .unwrap()
+            .join(format!("renamed-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dest);
         let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
         let _ = update_inner(
             &mut app,
-            Message::InstanceRenameChanged(dest.file_name().unwrap().to_string_lossy().into_owned()),
+            Message::InstanceRenameChanged(
+                dest.file_name().unwrap().to_string_lossy().into_owned(),
+            ),
         );
         let _ = update_inner(&mut app, Message::InstanceRenameCommit);
 
@@ -6555,7 +7320,10 @@ mod tests {
         let inst = Instance::portable(root.clone());
         inst.create().unwrap();
         let mut app = app_for_game("skyrimse");
-        app.registry_path = root.parent().unwrap().join(format!("reg2-{}.ini", std::process::id()));
+        app.registry_path = root
+            .parent()
+            .unwrap()
+            .join(format!("reg2-{}.ini", std::process::id()));
         app.created = Some(inst.clone());
         app.known = vec![KnownInstance {
             label: "Skyrim - portable".into(),
@@ -6565,12 +7333,19 @@ mod tests {
         }];
 
         let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
-        let _ = update_inner(&mut app, Message::InstanceRenameChanged("something-else".into()));
+        let _ = update_inner(
+            &mut app,
+            Message::InstanceRenameChanged("something-else".into()),
+        );
         let _ = update_inner(&mut app, Message::InstanceRenameCommit);
         // Every cached path in the window - and the lock it holds - points at
         // the old root.
         assert!(root.is_dir(), "it was renamed anyway");
-        assert!(app.status.as_deref().unwrap_or("").contains("Switch to another"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("Switch to another"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6580,9 +7355,16 @@ mod tests {
         let inst = Instance::portable(root.clone());
         inst.create().unwrap();
         let mut app = app_for_game("skyrimse");
-        app.registry_path = root.parent().unwrap().join(format!("reg3-{}.ini", std::process::id()));
-        app.known =
-            vec![KnownInstance { label: "x".into(), inst, game_index: 0, portable: true }];
+        app.registry_path = root
+            .parent()
+            .unwrap()
+            .join(format!("reg3-{}.ini", std::process::id()));
+        app.known = vec![KnownInstance {
+            label: "x".into(),
+            inst,
+            game_index: 0,
+            portable: true,
+        }];
         for bad in ["", "  ", "..", ".", "a/b", "a\\b"] {
             let _ = update_inner(&mut app, Message::InstanceRenameStart(0));
             let _ = update_inner(&mut app, Message::InstanceRenameChanged(bad.into()));
@@ -6598,9 +7380,16 @@ mod tests {
         let inst = Instance::portable(root.clone());
         inst.create().unwrap();
         let mut app = app_for_game("skyrimse");
-        app.registry_path = root.parent().unwrap().join(format!("reg4-{}.ini", std::process::id()));
-        app.known =
-            vec![KnownInstance { label: "x".into(), inst, game_index: 0, portable: true }];
+        app.registry_path = root
+            .parent()
+            .unwrap()
+            .join(format!("reg4-{}.ini", std::process::id()));
+        app.known = vec![KnownInstance {
+            label: "x".into(),
+            inst,
+            game_index: 0,
+            portable: true,
+        }];
 
         let _ = update_inner(&mut app, Message::InstanceForget(0));
         assert_eq!(app.confirm_forget, Some(0), "the first click only arms");
@@ -6608,7 +7397,11 @@ mod tests {
         // Forgotten is not deleted, and that distinction is the whole design: an
         // instance is a mod pool, not a preference.
         assert!(root.is_dir(), "the folder must survive");
-        assert!(app.status.as_deref().unwrap_or("").contains("Nothing on disk"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("Nothing on disk"));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6624,7 +7417,11 @@ mod tests {
         }];
         let _ = update_inner(&mut app, Message::InstanceForget(0));
         let _ = update_inner(&mut app, Message::InstanceForget(0));
-        assert!(app.status.as_deref().unwrap_or("").contains("derived from the game id"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("derived from the game id"));
     }
 
     #[test]
@@ -6638,20 +7435,31 @@ mod tests {
         let row = diag.iter().find(|d| d.title.contains("file manager"));
         if on_wayland() {
             let row = row.expect("a Wayland session must be told");
-            assert_eq!(row.level, DiagLevel::Advice, "nothing is broken - it is a limitation");
+            assert_eq!(
+                row.level,
+                DiagLevel::Advice,
+                "nothing is broken - it is a limitation"
+            );
             // And it must point at the two paths that DO work, or it is a
             // complaint rather than help.
             assert!(row.detail.contains("Install Mod"), "{}", row.detail);
             assert!(row.detail.contains("Downloads"), "{}", row.detail);
         } else {
-            assert!(row.is_none(), "an X11 session must not be told its drops are broken");
+            assert!(
+                row.is_none(),
+                "an X11 session must not be told its drops are broken"
+            );
         }
     }
 
     #[test]
     fn the_nexus_budget_shows_only_once_the_server_has_answered() {
         let mut app = nav_app(&[]);
-        assert_eq!(nexus_budget_suffix(&app), "", "no invented number before the first call");
+        assert_eq!(
+            nexus_budget_suffix(&app),
+            "",
+            "no invented number before the first call"
+        );
 
         // The smaller of the two buckets is the one that matters: the daily
         // budget is large enough to be uninteresting until the hourly is spent.
@@ -6711,7 +7519,10 @@ mod tests {
         let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
         let _ = update_inner(&mut app, Message::PluginSendToPriorityChanged("2".into()));
         let _ = update_inner(&mut app, Message::OpenPluginMenu(1));
-        assert!(app.plugin_send_priority.is_none(), "a new menu starts clean");
+        assert!(
+            app.plugin_send_priority.is_none(),
+            "a new menu starts clean"
+        );
     }
 
     #[test]
@@ -6723,8 +7534,14 @@ mod tests {
         }
         app.plugins = Some(list);
         app.screen = Screen::Main;
-        let before: Vec<String> =
-            app.plugins.as_ref().unwrap().plugins.iter().map(|p| p.name.clone()).collect();
+        let before: Vec<String> = app
+            .plugins
+            .as_ref()
+            .unwrap()
+            .plugins
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
 
         let _ = update_inner(&mut app, Message::OpenPluginMenu(1));
         let _ = update_inner(&mut app, Message::PluginSendToPriorityStart);
@@ -6733,10 +7550,19 @@ mod tests {
         // "Row number", not "load index": the only numeric column the pane
         // draws is the game's hex load index, which this field does NOT take.
         assert!(app.status.as_deref().unwrap_or("").contains("row number"));
-        let after: Vec<String> =
-            app.plugins.as_ref().unwrap().plugins.iter().map(|p| p.name.clone()).collect();
+        let after: Vec<String> = app
+            .plugins
+            .as_ref()
+            .unwrap()
+            .plugins
+            .iter()
+            .map(|p| p.name.clone())
+            .collect();
         assert_eq!(before, after);
-        assert!(app.plugin_send_priority.is_none(), "the field closes either way");
+        assert!(
+            app.plugin_send_priority.is_none(),
+            "the field closes either way"
+        );
     }
 
     #[test]
@@ -6774,7 +7600,11 @@ mod tests {
         assert!(downloads.is_dir(), "opening it created it");
         // The card builds without an open Proton prefix - that entry is simply
         // the inert one, which is the whole point of drawing rather than hiding.
-        assert!(app.games.first().and_then(|g| g.compatdata.as_ref()).is_none());
+        assert!(app
+            .games
+            .first()
+            .and_then(|g| g.compatdata.as_ref())
+            .is_none());
         let _ = file_menu_card(&app);
         let _ = fs::remove_dir_all(&root);
     }
@@ -6788,7 +7618,12 @@ mod tests {
         fs::create_dir_all(root.join("mods/Real")).unwrap();
         app.created = Some(inst);
         app.mods = vec![
-            ModEntry { name: "Real".into(), enabled: true, path: root.join("mods/Real"), unmanaged: false },
+            ModEntry {
+                name: "Real".into(),
+                enabled: true,
+                path: root.join("mods/Real"),
+                unmanaged: false,
+            },
             ModEntry {
                 name: "Skyrim.esm".into(),
                 enabled: true,
@@ -6798,14 +7633,27 @@ mod tests {
         ];
         app.screen = Screen::Main;
 
-        let _ = update_inner(&mut app, Message::SetSeparatorColor(0, Some([0x2e, 0x5e, 0x8b])));
+        let _ = update_inner(
+            &mut app,
+            Message::SetSeparatorColor(0, Some([0x2e, 0x5e, 0x8b])),
+        );
         let meta = app.created.as_ref().unwrap().mod_meta("Real");
-        assert_eq!(meta.color(), Some([0x2e, 0x5e, 0x8b]), "an ordinary mod takes a colour now");
+        assert_eq!(
+            meta.color(),
+            Some([0x2e, 0x5e, 0x8b]),
+            "an ordinary mod takes a colour now"
+        );
 
         // The game's own Data is never written to.
         let before = app.status.clone();
-        let _ = update_inner(&mut app, Message::SetSeparatorColor(1, Some([0x8b, 0x2e, 0x2e])));
-        assert_ne!(app.status, before, "it says something rather than silently doing it");
+        let _ = update_inner(
+            &mut app,
+            Message::SetSeparatorColor(1, Some([0x8b, 0x2e, 0x2e])),
+        );
+        assert_ne!(
+            app.status, before,
+            "it says something rather than silently doing it"
+        );
         assert!(!PathBuf::from("/game/Data/Skyrim.esm/meta.ini").exists());
         let _ = fs::remove_dir_all(&root);
     }
@@ -6833,7 +7681,10 @@ mod tests {
         let _ = update_inner(&mut app, Message::NotesSave);
         // Without dropping the cached row the glyph would not appear until the
         // next full refresh - which is exactly the first time anyone adds a note.
-        assert_eq!(app.meta_cache["Real"].notes.as_deref(), Some("needs the AE patch"));
+        assert_eq!(
+            app.meta_cache["Real"].notes.as_deref(),
+            Some("needs the AE patch")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -6842,11 +7693,21 @@ mod tests {
         let mut app = nav_app(&["a", "b", "c"]);
         // "Install below b" = the gap after index 1.
         let _ = update_inner(&mut app, Message::InstallAt(2));
-        assert_eq!(app.install_gap, Some(2), "the place is held until an archive names itself");
-        assert_eq!(app.install_at, None, "and it is NOT an aim yet - there is no archive");
+        assert_eq!(
+            app.install_gap,
+            Some(2),
+            "the place is held until an archive names itself"
+        );
+        assert_eq!(
+            app.install_at, None,
+            "and it is NOT an aim yet - there is no archive"
+        );
 
         // The picker returns one: now it becomes a real aim, paired.
-        let _ = update_inner(&mut app, Message::ModPicked(Some(PathBuf::from("/tmp/M.7z"))));
+        let _ = update_inner(
+            &mut app,
+            Message::ModPicked(Some(PathBuf::from("/tmp/M.7z"))),
+        );
         assert_eq!(app.install_gap, None, "consumed");
         assert_eq!(
             app.install_at,
@@ -6860,7 +7721,10 @@ mod tests {
         let mut app = nav_app(&["a", "b"]);
         let _ = update_inner(&mut app, Message::InstallAt(1));
         let _ = update_inner(&mut app, Message::ModPicked(None));
-        assert_eq!(app.install_gap, None, "a cancelled pick must not aim the NEXT install");
+        assert_eq!(
+            app.install_gap, None,
+            "a cancelled pick must not aim the NEXT install"
+        );
         assert_eq!(app.install_at, None);
     }
 
@@ -6872,7 +7736,11 @@ mod tests {
         // The gap between two visible rows means nothing when rows are hidden -
         // the same promise the drag makes, made the same way.
         assert_eq!(app.install_gap, None);
-        assert!(app.pending_note.as_deref().unwrap_or("").contains("end of the list"));
+        assert!(app
+            .pending_note
+            .as_deref()
+            .unwrap_or("")
+            .contains("end of the list"));
     }
 
     #[test]
@@ -6887,9 +7755,16 @@ mod tests {
 
         let _ = update_inner(&mut app, Message::CreateEmptyModAt(1));
         assert_eq!(app.mods.len(), 4);
-        assert_eq!(app.selected_mod, Some(1), "the new row is where it was asked for");
+        assert_eq!(
+            app.selected_mod,
+            Some(1),
+            "the new row is where it was asked for"
+        );
         assert!(app.mods[1].name.starts_with("New Mod"));
-        assert_eq!(app.mods[2].name, "b", "everything after it shifted, not got overwritten");
+        assert_eq!(
+            app.mods[2].name, "b",
+            "everything after it shifted, not got overwritten"
+        );
         assert!(app.selected_mods.is_empty(), "stale indices are dropped");
         let _ = fs::remove_dir_all(&root);
     }
@@ -6948,10 +7823,19 @@ mod tests {
         let before: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
 
         // A DIFFERENT archive finishes installing.
-        after_install(&mut app, "c", PathBuf::from("/tmp/x"), false, Some(Path::new("/tmp/Other.7z")));
+        after_install(
+            &mut app,
+            "c",
+            PathBuf::from("/tmp/x"),
+            false,
+            Some(Path::new("/tmp/Other.7z")),
+        );
         let after: Vec<String> = app.mods.iter().map(|m| m.name.clone()).collect();
         assert_eq!(before, after, "the unrelated mod was moved by a stale aim");
-        assert!(app.install_at.is_some(), "and the aim is still waiting for ITS archive");
+        assert!(
+            app.install_at.is_some(),
+            "and the aim is still waiting for ITS archive"
+        );
     }
 
     #[test]
@@ -6981,7 +7865,11 @@ mod tests {
     #[test]
     fn a_cancelled_install_does_not_leave_its_target_for_the_next_one() {
         let mut app = nav_app(&["a"]);
-        for cancel in [Message::FomodCancel, Message::PickerCancel, Message::CollisionCancel] {
+        for cancel in [
+            Message::FomodCancel,
+            Message::PickerCancel,
+            Message::CollisionCancel,
+        ] {
             app.install_at = Some((0, PathBuf::from("/tmp/Mod.7z")));
             let _ = update_inner(&mut app, cancel);
             assert_eq!(app.install_at, None);
@@ -6993,7 +7881,10 @@ mod tests {
         let mut app = nav_app(&["a"]);
         // Three files arrive as three messages, not one.
         for n in ["one.7z", "two.zip", "three.rar"] {
-            let _ = update_inner(&mut app, Message::FileDropped(PathBuf::from("/tmp").join(n)));
+            let _ = update_inner(
+                &mut app,
+                Message::FileDropped(PathBuf::from("/tmp").join(n)),
+            );
         }
         assert_eq!(app.dropped.len(), 3, "queued, not handled inline");
 
@@ -7002,7 +7893,11 @@ mod tests {
         assert!(app.created.is_none());
         let _ = update_inner(&mut app, Message::DrainDrops);
         assert!(app.dropped.is_empty());
-        assert!(app.status.as_deref().unwrap_or("").contains("game instance"));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or("")
+            .contains("game instance"));
     }
 
     #[test]
@@ -7069,7 +7964,10 @@ mod tests {
         let _ = fs::create_dir_all(&dir);
         let f = dir.join("gui.20260824-170411.1234.log");
         fs::write(&f, body).unwrap();
-        (load_log_pane(vec![f.clone()], f, eidos_log::Level::Info), dir)
+        (
+            load_log_pane(vec![f.clone()], f, eidos_log::Level::Info),
+            dir,
+        )
     }
 
     #[test]
@@ -7090,18 +7988,26 @@ mod tests {
             "install",
             "data",
         ] {
-            assert!(ctx.values.contains_key(key), "{key} is documented but not provided");
+            assert!(
+                ctx.values.contains_key(key),
+                "{key} is documented but not provided"
+            );
             assert!(!ctx.values[key].is_empty(), "{key} resolved to nothing");
         }
         assert_eq!(ctx.values["game"], "skyrimse");
-        assert!(ctx.expand("--root {instance}").contains(&root.display().to_string()));
+        assert!(ctx
+            .expand("--root {instance}")
+            .contains(&root.display().to_string()));
         let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_tool_extension_with_an_unresolvable_placeholder_is_refused_not_run() {
         let mut app = nav_app(&[]);
-        assert!(app.created.is_none(), "no instance, so the instance placeholder cannot resolve");
+        assert!(
+            app.created.is_none(),
+            "no instance, so the instance placeholder cannot resolve"
+        );
         app.addons = vec![eidos_addons::parse_addon(
             "id='x'\nname='X'\nkind='tool'\nexec='sh'\nargs=['-c','ls {instance}']\n",
             std::path::Path::new("/x.toml"),
@@ -7151,7 +8057,10 @@ mod tests {
         refresh_diagnostics(&mut app);
         // It runs on the refresh that follows every click, so a hanging one
         // would freeze the window with nothing on screen to blame.
-        assert!(started.elapsed() < std::time::Duration::from_secs(10), "it was not stopped");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "it was not stopped"
+        );
         let row = app
             .diag
             .iter()
@@ -7172,7 +8081,10 @@ mod tests {
         .unwrap()];
         app.diag_dirty = true;
         refresh_diagnostics(&mut app);
-        assert!(!app.diag.iter().any(|d| d.title.contains("Should not appear")));
+        assert!(!app
+            .diag
+            .iter()
+            .any(|d| d.title.contains("Should not appear")));
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7185,12 +8097,19 @@ mod tests {
         );
         assert_eq!(pane.total, 3, "every record is counted, filtered or not");
         assert_eq!(pane.lines.len(), 2, "Debug is below the floor");
-        assert_eq!(pane.lines[0], (eidos_log::Level::Info, "mounted 412 layers".to_string()));
+        assert_eq!(
+            pane.lines[0],
+            (eidos_log::Level::Info, "mounted 412 layers".to_string())
+        );
         assert_eq!(pane.lines[1].0, eidos_log::Level::Error);
         assert!(!pane.truncated);
 
         // Lowering the floor shows everything.
-        let all = load_log_pane(pane.files.clone(), pane.current.clone(), eidos_log::Level::Debug);
+        let all = load_log_pane(
+            pane.files.clone(),
+            pane.current.clone(),
+            eidos_log::Level::Debug,
+        );
         assert_eq!(all.lines.len(), 3);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -7206,11 +8125,19 @@ mod tests {
         // nothing claimed.
         assert_eq!(pane.total, 1);
         assert_eq!(pane.lines.len(), 1);
-        assert!(pane.lines[0].1.contains("device not found"), "{:?}", pane.lines[0].1);
+        assert!(
+            pane.lines[0].1.contains("device not found"),
+            "{:?}",
+            pane.lines[0].1
+        );
         assert!(pane.lines[0].1.contains("modprobe fuse"));
 
         // And filtering it out takes its continuations with it.
-        let quiet = load_log_pane(pane.files.clone(), pane.current.clone(), eidos_log::Level::Debug);
+        let quiet = load_log_pane(
+            pane.files.clone(),
+            pane.current.clone(),
+            eidos_log::Level::Debug,
+        );
         assert_eq!(quiet.lines.len(), 1);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -7239,9 +8166,7 @@ mod tests {
         // Reading only the END of a big file lands mid-line. That fragment
         // belongs to a record that is not in the buffer, so there is nothing to
         // attach it to and nothing honest to say about its level.
-        let (pane, dir) = log_fixture(
-            "ount 412 layers\n2026-08-24 17:04:11.239 INFO  mounted\n",
-        );
+        let (pane, dir) = log_fixture("ount 412 layers\n2026-08-24 17:04:11.239 INFO  mounted\n");
         assert_eq!(pane.lines.len(), 1);
         assert_eq!(pane.lines[0].1, "mounted");
         let _ = fs::remove_dir_all(&dir);
@@ -7274,7 +8199,10 @@ mod tests {
         let _ = update_inner(&mut app, Message::ShowIniEditor);
         let ed = app.ini_editor.as_ref().expect("the editor opened");
         assert_eq!(ed.current, "Skyrim.ini");
-        assert!(ed.cp1252, "the file was not UTF-8 and must be written back as it was read");
+        assert!(
+            ed.cp1252,
+            "the file was not UTF-8 and must be written back as it was read"
+        );
         assert!(ed.original.contains("Français"), "decoded: {}", ed.original);
         assert!(!ed.dirty, "opening a file is not an edit");
         assert!(!ed.missing);
@@ -7298,7 +8226,10 @@ mod tests {
             let ed = app.ini_editor.as_mut().unwrap();
             ed.dirty = true;
         }
-        let _ = update_inner(&mut app, Message::IniEditorPick("SkyrimPrefs.ini".to_string()));
+        let _ = update_inner(
+            &mut app,
+            Message::IniEditorPick("SkyrimPrefs.ini".to_string()),
+        );
         assert_eq!(
             app.ini_editor.as_ref().unwrap().current,
             "Skyrim.ini",
@@ -7315,12 +8246,21 @@ mod tests {
         let ed = app.ini_editor.as_ref().unwrap();
         assert!(ed.missing, "a fresh profile owns none of them");
         assert!(ed.original.is_empty());
-        assert!(!ed.cp1252, "an absent file is not CP1252 - it would be written back wrong");
+        assert!(
+            !ed.cp1252,
+            "an absent file is not CP1252 - it would be written back wrong"
+        );
 
         // Saving creates it, and the flag clears.
         let _ = update_inner(&mut app, Message::IniEditorSave);
         assert!(!app.ini_editor.as_ref().unwrap().missing);
-        assert!(app.created.as_ref().unwrap().active().ini_path("Skyrim.ini").is_file());
+        assert!(app
+            .created
+            .as_ref()
+            .unwrap()
+            .active()
+            .ini_path("Skyrim.ini")
+            .is_file());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -7334,11 +8274,15 @@ mod tests {
             &[("mod.esp", "from the mod")],
             &[(&format!("{}Skyrim.esm", eidos_core::WHITEOUT_PREFIX), "")],
         );
-        let names: Vec<String> =
-            merged_listing(&app, "").into_iter().map(|r| r.name).collect();
+        let names: Vec<String> = merged_listing(&app, "")
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
         assert!(names.contains(&"mod.esp".to_string()), "{names:?}");
         assert!(
-            !names.iter().any(|n| n.starts_with(eidos_core::WHITEOUT_PREFIX)),
+            !names
+                .iter()
+                .any(|n| n.starts_with(eidos_core::WHITEOUT_PREFIX)),
             "the marker is bookkeeping, not a file: {names:?}"
         );
         assert!(
@@ -7353,7 +8297,10 @@ mod tests {
         let (app, root) = data_app(&[("mod.esp", "x")], &[("gen.json", "y")]);
         let rows = merged_listing(&app, "");
         let by = |n: &str| {
-            rows.iter().find(|r| r.name == n).map(|r| r.source.clone()).unwrap_or_default()
+            rows.iter()
+                .find(|r| r.name == n)
+                .map(|r| r.source.clone())
+                .unwrap_or_default()
         };
         assert_eq!(by("gen.json"), "[Overwrite]");
         assert_eq!(by("mod.esp"), "AAA");
@@ -7372,16 +8319,31 @@ mod tests {
             &[],
         );
         // Unfiltered and unexpanded: only the top level draws.
-        let top: Vec<String> = data_tree_rows(&app, 500).into_iter().map(|r| r.rel).collect();
+        let top: Vec<String> = data_tree_rows(&app, 500)
+            .into_iter()
+            .map(|r| r.rel)
+            .collect();
         assert!(top.contains(&"meshes".to_string()));
-        assert!(!top.iter().any(|r| r.contains('/')), "nothing is expanded: {top:?}");
+        assert!(
+            !top.iter().any(|r| r.contains('/')),
+            "nothing is expanded: {top:?}"
+        );
 
         // A filter looks THROUGH folders - the match is somewhere in the tree,
         // not necessarily on the level the user happens to have open.
         app.data_query = "thing".to_string();
-        let hits: Vec<String> = data_tree_rows(&app, 500).into_iter().map(|r| r.rel).collect();
-        assert!(hits.contains(&"meshes/actors/thing.nif".to_string()), "{hits:?}");
-        assert!(hits.contains(&"meshes".to_string()), "its parents stay, to reach it: {hits:?}");
+        let hits: Vec<String> = data_tree_rows(&app, 500)
+            .into_iter()
+            .map(|r| r.rel)
+            .collect();
+        assert!(
+            hits.contains(&"meshes/actors/thing.nif".to_string()),
+            "{hits:?}"
+        );
+        assert!(
+            hits.contains(&"meshes".to_string()),
+            "its parents stay, to reach it: {hits:?}"
+        );
         assert!(
             !hits.iter().any(|r| r.starts_with("scripts")),
             "a branch with no match is dropped whole: {hits:?}"
@@ -7440,9 +8402,14 @@ mod tests {
         list.plugins[0].is_master = true;
         // C is last; sending it to the top must land it above A, not above the
         // master.
-        let gap = list.edge_gap(&[3], true, &spec).expect("a reachable destination");
+        let gap = list
+            .edge_gap(&[3], true, &spec)
+            .expect("a reachable destination");
         assert!(gap >= 1, "never above the game's own master, got {gap}");
-        assert!(list.move_plugins_to(&[3], gap, &spec), "and the move is accepted");
+        assert!(
+            list.move_plugins_to(&[3], gap, &spec),
+            "and the move is accepted"
+        );
         list.refresh(&spec);
         let names: Vec<&str> = list.plugins.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names[0], "Skyrim.esm", "the master did not move");
@@ -7479,7 +8446,13 @@ mod tests {
         app.plugins = Some(list);
         let _ = update_inner(&mut app, Message::PluginsSetAll(true));
         let list = app.plugins.as_ref().unwrap();
-        assert!(list.plugins.iter().find(|p| p.name == "Mine.esp").unwrap().enabled);
+        assert!(
+            list.plugins
+                .iter()
+                .find(|p| p.name == "Mine.esp")
+                .unwrap()
+                .enabled
+        );
         // And saying nothing changed is itself an outcome worth stating.
         let _ = update_inner(&mut app, Message::PluginsSetAll(true));
         assert!(
@@ -7505,7 +8478,11 @@ mod tests {
         let mut app = nav_app(&[]);
         app.identifying_download = Some("a.zip".into());
         let _ = update_inner(&mut app, Message::IdentifyDownload("b.zip".into()));
-        assert_eq!(app.identifying_download.as_deref(), Some("a.zip"), "the first one still owns it");
+        assert_eq!(
+            app.identifying_download.as_deref(),
+            Some("a.zip"),
+            "the first one still owns it"
+        );
     }
 
     #[test]
@@ -7518,7 +8495,11 @@ mod tests {
         list.plugins.push(plugin_row("Armour.esp", "Armour Pack"));
         list.plugins.push(plugin_row("Skyrim.esm", ""));
         app.plugins = Some(list);
-        assert_eq!(plugin_origin_row(&app, 0), Some(1), "matched to the mod row");
+        assert_eq!(
+            plugin_origin_row(&app, 0),
+            Some(1),
+            "matched to the mod row"
+        );
         // Vanilla content belongs to no mod: a real answer, not a failure.
         assert_eq!(plugin_origin_row(&app, 1), None);
     }
@@ -7545,7 +8526,6 @@ mod tests {
         assert_eq!(app.selected_plugins.len(), 2, "the set survives");
     }
 
-
     #[test]
     fn opening_the_origin_of_a_vanilla_plugin_says_so_instead_of_doing_nothing() {
         // A menu action that silently no-ops reads as a broken button.
@@ -7555,7 +8535,10 @@ mod tests {
         app.plugins = Some(list);
         let _ = update_inner(&mut app, Message::OpenPluginOrigin(0));
         assert!(
-            app.status.as_deref().unwrap_or("").contains("game's own Data"),
+            app.status
+                .as_deref()
+                .unwrap_or("")
+                .contains("game's own Data"),
             "{:?}",
             app.status
         );
@@ -7582,7 +8565,10 @@ mod tests {
         // Destroy the list, restore it through the message the button sends.
         fs::write(prof.dir().join("modlist.txt"), "+Ruined\n").unwrap();
         let _ = update_inner(&mut app, Message::RestoreBackup(BackupKind::ModList, stamp));
-        assert_eq!(fs::read_to_string(prof.dir().join("modlist.txt")).unwrap(), "+Kept\n");
+        assert_eq!(
+            fs::read_to_string(prof.dir().join("modlist.txt")).unwrap(),
+            "+Kept\n"
+        );
         assert!(app.backups.is_none(), "the dialog closes on a restore");
         assert!(
             app.status.as_deref().unwrap_or("").contains("Restored"),
@@ -7619,8 +8605,11 @@ mod tests {
         // different door: the release emits the cancel, the cancel counts as an
         // action, and the confirmation is gone before the second click lands.
         let mut app = nav_app(&[]);
-        for cancel in [Message::DragCancel, Message::PluginDragCancel, Message::DownloadDragCancel]
-        {
+        for cancel in [
+            Message::DragCancel,
+            Message::PluginDragCancel,
+            Message::DownloadDragCancel,
+        ] {
             app.confirm_delete_download = Some("a.zip".into());
             update_inner(&mut app, cancel.clone());
             assert_eq!(
@@ -7636,10 +8625,17 @@ mod tests {
         // The exemption is not blanket: a release that DROPS a dragged mod is a
         // real action, and it must cancel an armed confirmation like any other.
         let mut app = nav_app(&["a", "b", "c"]);
-        app.drag_state = Some(DragState { from: 0, gap: 2, aimed: true });
+        app.drag_state = Some(DragState {
+            from: 0,
+            gap: 2,
+            aimed: true,
+        });
         update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
         update_inner(&mut app, Message::PointerReleased);
-        assert_eq!(app.confirm_delete_download, None, "a committed drop is an action");
+        assert_eq!(
+            app.confirm_delete_download, None,
+            "a committed drop is an action"
+        );
     }
 
     #[test]
@@ -7678,12 +8674,22 @@ mod tests {
     fn changing_tab_crossfades_from_the_one_being_left() {
         let mut app = nav_app(&[]);
         app.tab = Tab::Data;
-        assert!(!anim::animating(&app), "an idle window must ask for no frames");
+        assert!(
+            !anim::animating(&app),
+            "an idle window must ask for no frames"
+        );
 
         let _ = update(&mut app, Message::SelectTab(Tab::Saves));
         assert_eq!(app.tab, Tab::Saves);
-        assert_eq!(app.tab_prev, Some(Tab::Data), "the strip needs both ends to cross-fade");
-        assert!(anim::animating(&app), "the frame timer should be running now");
+        assert_eq!(
+            app.tab_prev,
+            Some(Tab::Data),
+            "the strip needs both ends to cross-fade"
+        );
+        assert!(
+            anim::animating(&app),
+            "the frame timer should be running now"
+        );
 
         // Mid-flight the two ends share the transition between them.
         let t = anim::at(&app, &app.tab_anim);
@@ -7691,7 +8697,10 @@ mod tests {
         let leaving = anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data);
         assert!((arriving + leaving - 1.0).abs() < 1e-6);
         // And a tab that took no part in it is simply unselected.
-        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Archives), 0.0);
+        assert_eq!(
+            anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Archives),
+            0.0
+        );
     }
 
     #[test]
@@ -7722,7 +8731,10 @@ mod tests {
         // the fade - otherwise a repeating status strobes.
         app.status_anim = anim::Phase::default();
         let _ = update(&mut app, Message::Noop);
-        assert!(!anim::animating(&app), "an unchanged status restarted the fade");
+        assert!(
+            !anim::animating(&app),
+            "an unchanged status restarted the fade"
+        );
     }
 
     #[test]
@@ -7732,20 +8744,32 @@ mod tests {
         let mut app = nav_app(&[]);
         let _ = update(&mut app, Message::ToggleMotion(false));
         assert!(!app.prefs.motion, "the preference is what gets saved");
-        assert!(!app.motion, "the live copy has to follow, or it keeps animating");
+        assert!(
+            !app.motion,
+            "the live copy has to follow, or it keeps animating"
+        );
 
         app.tab = Tab::Data;
         let _ = update(&mut app, Message::SelectTab(Tab::Saves));
         app.status = Some("Something happened.".to_string());
         let _ = update(&mut app, Message::Noop);
 
-        assert!(!anim::animating(&app), "motion is off; nothing may ask for frames");
+        assert!(
+            !anim::animating(&app),
+            "motion is off; nothing may ask for frames"
+        );
         // Drawn at the end state: the selected tab is fully selected, the one
         // left behind fully unselected, on the very first frame.
         let t = anim::at(&app, &app.tab_anim);
         assert_eq!(t, 1.0);
-        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves), 1.0);
-        assert_eq!(anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data), 0.0);
+        assert_eq!(
+            anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Saves),
+            1.0
+        );
+        assert_eq!(
+            anim::tab_mix(t, &app.tab, app.tab_prev.as_ref(), &Tab::Data),
+            0.0
+        );
         assert_eq!(anim::at(&app, &app.status_anim), 1.0);
     }
 
@@ -7765,10 +8789,17 @@ mod tests {
         // the two-click guard could never be completed.
         let mut app = nav_app(&[]);
         update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
-        assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"), "the first click arms it");
+        assert_eq!(
+            app.confirm_delete_download.as_deref(),
+            Some("a.zip"),
+            "the first click arms it"
+        );
 
         update_inner(&mut app, Message::PointerAt(iced::Point::new(10.0, 10.0)));
-        update_inner(&mut app, Message::WindowResized(iced::Size::new(800.0, 600.0)));
+        update_inner(
+            &mut app,
+            Message::WindowResized(iced::Size::new(800.0, 600.0)),
+        );
         assert_eq!(
             app.confirm_delete_download.as_deref(),
             Some("a.zip"),
@@ -7810,7 +8841,6 @@ mod tests {
         );
     }
 
-
     /// Build an instance whose downloads dir holds the given `(name, bytes)`
     /// entries, then scan it. Real files, because the whole feature is "notice
     /// what another process is writing to disk".
@@ -7845,13 +8875,19 @@ mod tests {
         // it is done and Refresh is pressed. The partial IS the evidence.
         let app = downloads_app(
             &[("Cool Mod.zip.unfinished", b"1234567890")],
-            &[("Cool Mod.zip.meta", "[General]\nmodName=Cool Mod\ntotalSize=100\n")],
+            &[(
+                "Cool Mod.zip.meta",
+                "[General]\nmodName=Cool Mod\ntotalSize=100\n",
+            )],
         );
         assert_eq!(app.downloads.len(), 1, "the partial must produce a row");
         let r = &app.downloads[0];
         assert_eq!(r.state, DownloadState::Downloading);
         assert_eq!(r.name, "Cool Mod.zip", "named for what it will BE");
-        assert!(r.path.ends_with("Cool Mod.zip"), "Install must aim at the final path");
+        assert!(
+            r.path.ends_with("Cool Mod.zip"),
+            "Install must aim at the final path"
+        );
         assert_eq!(r.downloaded, 10);
         assert_eq!(r.total, 100);
         assert_eq!(r.mod_name.as_deref(), Some("Cool Mod"));
@@ -7863,12 +8899,19 @@ mod tests {
     #[test]
     fn a_partial_that_stopped_growing_reads_as_stalled() {
         let app = downloads_app(&[("x.zip.unfinished", b"abc")], &[]);
-        assert_eq!(app.downloads[0].state, DownloadState::Downloading, "fresh mtime");
+        assert_eq!(
+            app.downloads[0].state,
+            DownloadState::Downloading,
+            "fresh mtime"
+        );
 
         // Backdate it well past the window: the writing process is gone.
         let dl = app.created.as_ref().unwrap().downloads_dir();
         let old = std::time::SystemTime::now() - STALLED_AFTER - std::time::Duration::from_secs(30);
-        let f = fs::File::options().write(true).open(dl.join("x.zip.unfinished")).unwrap();
+        let f = fs::File::options()
+            .write(true)
+            .open(dl.join("x.zip.unfinished"))
+            .unwrap();
         f.set_modified(old).unwrap();
         // No sidecar exists in this case, so the partial's own mtime decides.
         let mut app = app;
@@ -7913,7 +8956,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(120));
         fs::write(dl.join("s.zip.unfinished"), b"a").unwrap();
         load_downloads(&mut app);
-        assert_eq!(app.downloads[0].speed, None, "a shrinking partial reports no rate");
+        assert_eq!(
+            app.downloads[0].speed, None,
+            "a shrinking partial reports no rate"
+        );
     }
 
     #[test]
@@ -7931,7 +8977,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn deleting_a_stalled_download_takes_the_partial_with_it() {
         // Otherwise the file that produced the row is still there, and the row
@@ -7946,18 +8991,25 @@ mod tests {
         // user a Delete button aimed at a live transfer.
         let old = std::time::SystemTime::now() - STALLED_AFTER - std::time::Duration::from_secs(30);
         for f in ["dead.zip.unfinished", "dead.zip.meta"] {
-            fs::File::options().write(true).open(dl.join(f)).unwrap().set_modified(old).unwrap();
+            fs::File::options()
+                .write(true)
+                .open(dl.join(f))
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
         }
         load_downloads(&mut app);
         assert_eq!(app.downloads[0].state, DownloadState::Stalled);
 
         update_inner(&mut app, Message::DeleteDownload("dead.zip".into()));
         update_inner(&mut app, Message::ConfirmDeleteDownload("dead.zip".into()));
-        assert!(!dl.join("dead.zip.unfinished").exists(), "the partial must go");
+        assert!(
+            !dl.join("dead.zip.unfinished").exists(),
+            "the partial must go"
+        );
         assert!(!dl.join("dead.zip.meta").exists(), "and its sidecar");
         assert!(app.downloads.is_empty(), "so the row does not come back");
     }
-
 
     #[test]
     fn a_resumed_download_is_not_called_stalled_while_it_waits_on_the_network() {
@@ -8001,7 +9053,6 @@ mod tests {
         assert_eq!(app.downloads[0].state, DownloadState::Stalled);
     }
 
-
     #[test]
     fn cleaning_debris_only_touches_eidos_install_folders() {
         // The handler deletes recursively inside `mods/`, which is where every
@@ -8035,11 +9086,24 @@ mod tests {
 
         assert!(!mods.join(".eidos-install-4194305-0").exists());
         assert!(!mods.join(".eidos-install-4194306-0").exists());
-        assert!(mods.join(&live).is_dir(), "a live install's temp is not debris");
-        assert_eq!(fs::read(mods.join("A Real Mod/meshes/m.nif")).unwrap(), b"keep");
+        assert!(
+            mods.join(&live).is_dir(),
+            "a live install's temp is not debris"
+        );
+        assert_eq!(
+            fs::read(mods.join("A Real Mod/meshes/m.nif")).unwrap(),
+            b"keep"
+        );
         assert!(mods.join("Group_separator").is_dir());
-        assert!(mods.join(".git").is_dir(), "a dotfile that is not ours is not ours to delete");
-        assert!(app.status.as_deref().unwrap_or("").contains('2'), "{:?}", app.status);
+        assert!(
+            mods.join(".git").is_dir(),
+            "a dotfile that is not ours is not ours to delete"
+        );
+        assert!(
+            app.status.as_deref().unwrap_or("").contains('2'),
+            "{:?}",
+            app.status
+        );
         assert!(
             app.status.as_deref().unwrap_or("").contains("in use"),
             "the skip must be said, not silent: {:?}",
@@ -8047,7 +9111,6 @@ mod tests {
         );
         let _ = fs::remove_dir_all(&root);
     }
-
 
     #[test]
     fn the_row_colour_has_exactly_one_owner() {
@@ -8059,26 +9122,34 @@ mod tests {
             sel_bg(),
             "selection outranks the conflict tint"
         );
-        assert_eq!(row_background(true, false, conflict, None), conflict_wins_bg());
+        assert_eq!(
+            row_background(true, false, conflict, None),
+            conflict_wins_bg()
+        );
         assert_eq!(row_background(true, false, None, None), row_bg(true));
         assert_eq!(row_background(false, false, None, None), row_bg(false));
         // A user colour paints when nothing more urgent is asking for the row,
         // and yields to both selection and a live conflict answer.
         let tint = mod_tint([0x2e, 0x5e, 0x8b], true);
         assert_eq!(row_background(true, false, None, Some(tint)), tint);
-        assert_eq!(row_background(true, false, conflict, Some(tint)), conflict_wins_bg());
+        assert_eq!(
+            row_background(true, false, conflict, Some(tint)),
+            conflict_wins_bg()
+        );
         assert_eq!(row_background(true, true, None, Some(tint)), sel_bg());
         // And it is a WASH: closer to the stripe than to the raw colour.
         let raw = Color::from_rgb8(0x2e, 0x5e, 0x8b);
         let d = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
-        assert!(d(tint, row_bg(true)) < d(tint, raw), "the colour must not become the page");
+        assert!(
+            d(tint, row_bg(true)) < d(tint, raw),
+            "the colour must not become the page"
+        );
         assert_ne!(
             row_bg(true),
             row_bg(false),
             "the stripes differ, so a fade into the wrong one would show"
         );
     }
-
 
     #[test]
     fn a_cold_plugin_cache_does_not_silence_the_missing_master_check() {
@@ -8095,7 +9166,6 @@ mod tests {
             out.iter().map(|d| &d.title).collect::<Vec<_>>()
         );
     }
-
 
     // ---- the LOOT report as a worklist ---------------------------------------
 
@@ -8156,7 +9226,10 @@ mod tests {
     fn an_unnamed_cleaning_utility_does_not_print_an_empty_gap() {
         let mut r = sample_report();
         r.plugins[0].dirty[0].cleaning_utility = String::new();
-        assert!(loot_report_text(&r).contains("Dirty - ? found"), "empty utility left a hole");
+        assert!(
+            loot_report_text(&r).contains("Dirty - ? found"),
+            "empty utility left a hole"
+        );
     }
 
     // ---- the prerequisite status line ---------------------------------------
@@ -8204,9 +9277,15 @@ mod tests {
         let installed = eidos_gamefeatures::runtime("dotnet10")
             .is_some_and(eidos_gamefeatures::runtime_is_installed);
         let (label, missing) = prereq_state("dotnet10", &none);
-        assert_eq!(missing, !installed, "state disagrees with the cache: {label}");
+        assert_eq!(
+            missing, !installed,
+            "state disagrees with the cache: {label}"
+        );
         if missing {
-            assert!(label.contains("click"), "a missing runtime must say what to do: {label}");
+            assert!(
+                label.contains("click"),
+                "a missing runtime must say what to do: {label}"
+            );
         }
     }
 
@@ -8236,7 +9315,11 @@ mod tests {
         ModEntry {
             name: name.into(),
             enabled: true,
-            path: if unmanaged { PathBuf::new() } else { PathBuf::from("/mods").join(name) },
+            path: if unmanaged {
+                PathBuf::new()
+            } else {
+                PathBuf::from("/mods").join(name)
+            },
             unmanaged,
         }
     }
@@ -8244,8 +9327,10 @@ mod tests {
     /// The reconciliation, extracted from the filesystem so it can be tested:
     /// `listed` is what the profile holds, `real` what the game ships.
     fn reconcile(listed: Vec<ModEntry>, real: Vec<ModEntry>) -> Vec<String> {
-        let mut by_name: std::collections::HashMap<String, ModEntry> =
-            real.into_iter().map(|m| (m.name.to_ascii_lowercase(), m)).collect();
+        let mut by_name: std::collections::HashMap<String, ModEntry> = real
+            .into_iter()
+            .map(|m| (m.name.to_ascii_lowercase(), m))
+            .collect();
         let mut placed: Vec<ModEntry> = Vec::new();
         for m in listed {
             if !m.unmanaged {
@@ -8281,7 +9366,11 @@ mod tests {
     fn a_dlc_the_game_no_longer_ships_is_dropped() {
         // Uninstalling a DLC must not leave a row pointing at nothing - it has no
         // path, and every consumer would have to defend against that.
-        let listed = vec![entry("Dawnguard", true), entry("Dragonborn", true), entry("SkyUI", false)];
+        let listed = vec![
+            entry("Dawnguard", true),
+            entry("Dragonborn", true),
+            entry("SkyUI", false),
+        ];
         let real = vec![entry("Dawnguard", true)];
         assert_eq!(reconcile(listed, real), ["Dawnguard", "SkyUI"]);
     }
@@ -8292,7 +9381,10 @@ mod tests {
         // content first - so lowest priority, which is the top of the display.
         let listed = vec![entry("Dawnguard", true), entry("SkyUI", false)];
         let real = vec![entry("Dawnguard", true), entry("Anniversary", true)];
-        assert_eq!(reconcile(listed, real), ["Anniversary", "Dawnguard", "SkyUI"]);
+        assert_eq!(
+            reconcile(listed, real),
+            ["Anniversary", "Dawnguard", "SkyUI"]
+        );
     }
 
     #[test]
@@ -8302,7 +9394,11 @@ mod tests {
         let listed = vec![entry("dawnguard", true), entry("SkyUI", false)];
         let real = vec![entry("Dawnguard", true)];
         let got = reconcile(listed, real);
-        assert_eq!(got, ["Dawnguard", "SkyUI"], "a case difference split one row into two");
+        assert_eq!(
+            got,
+            ["Dawnguard", "SkyUI"],
+            "a case difference split one row into two"
+        );
     }
 
     #[test]

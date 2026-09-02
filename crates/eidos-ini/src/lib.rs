@@ -22,7 +22,9 @@ pub fn newline_style(text: &str) -> &'static str {
 /// brackets). INI section names are matched case-insensitively by callers.
 pub fn section_header(line: &str) -> Option<&str> {
     let t = line.trim();
-    t.strip_prefix('[').and_then(|s| s.strip_suffix(']')).map(str::trim)
+    t.strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .map(str::trim)
 }
 
 /// Split a `key=value` line into `(trimmed key, raw value)`. The value keeps
@@ -201,8 +203,14 @@ mod tests {
         let src = "[Display]\r\nsResourceArchiveList=wrong.bsa\r\n\r\n[Archive]\r\n\
                    sResourceArchiveList= a.bsa, b.bsa \r\nsResourceArchiveList2=c.bsa\r\n";
         // Section-scoped: the same key in another section is not picked up.
-        assert_eq!(get_key(src, "Archive", "sResourceArchiveList"), Some(" a.bsa, b.bsa "));
-        assert_eq!(get_key(src, "archive", "SRESOURCEARCHIVELIST2"), Some("c.bsa")); // case-insensitive
+        assert_eq!(
+            get_key(src, "Archive", "sResourceArchiveList"),
+            Some(" a.bsa, b.bsa ")
+        );
+        assert_eq!(
+            get_key(src, "archive", "SRESOURCEARCHIVELIST2"),
+            Some("c.bsa")
+        ); // case-insensitive
         assert_eq!(get_key(src, "Archive", "missing"), None);
         assert_eq!(get_key(src, "Missing", "sResourceArchiveList"), None);
         assert_eq!(get_key("", "Archive", "k"), None);
@@ -214,7 +222,7 @@ mod tests {
         let src = "[Archive\nnoequals\n=orphanvalue\n[Archive]\nk=v";
         assert_eq!(get_key(src, "Archive", "k"), Some("v")); // last line, no trailing newline
         assert_eq!(get_key(src, "Archive", ""), None); // the `=orphanvalue` line is in no section
-        // A duplicated key keeps the first, like the engine's parser.
+                                                       // A duplicated key keeps the first, like the engine's parser.
         assert_eq!(get_key("[A]\nk=1\nk=2\n", "A", "k"), Some("1"));
     }
 
@@ -227,10 +235,22 @@ mod tests {
         // read back "0". One matching rule for the whole crate.
         let text = "[ Archive ]\nbInvalidateOlderFiles=0\n";
         let out = set_key(text, "Archive", "bInvalidateOlderFiles", "1");
-        assert_eq!(get_key(&out, "Archive", "bInvalidateOlderFiles"), Some("1"), "{out}");
-        assert_eq!(out.matches("Archive").count(), 1, "no duplicate section: {out}");
+        assert_eq!(
+            get_key(&out, "Archive", "bInvalidateOlderFiles"),
+            Some("1"),
+            "{out}"
+        );
+        assert_eq!(
+            out.matches("Archive").count(),
+            1,
+            "no duplicate section: {out}"
+        );
         let gone = delete_key(text, "Archive", "bInvalidateOlderFiles");
-        assert_eq!(get_key(&gone, "Archive", "bInvalidateOlderFiles"), None, "{gone}");
+        assert_eq!(
+            get_key(&gone, "Archive", "bInvalidateOlderFiles"),
+            None,
+            "{gone}"
+        );
     }
 
     #[test]
@@ -250,7 +270,12 @@ mod tests {
         assert!(out.contains("\r\n"));
 
         // Add a key to an existing section.
-        let out2 = set_key("[Archive]\nsResourceArchiveList=x.bsa\n", "Archive", "bInvalidateOlderFiles", "1");
+        let out2 = set_key(
+            "[Archive]\nsResourceArchiveList=x.bsa\n",
+            "Archive",
+            "bInvalidateOlderFiles",
+            "1",
+        );
         assert!(out2.contains("bInvalidateOlderFiles=1"));
         assert!(out2.contains("sResourceArchiveList=x.bsa"));
     }

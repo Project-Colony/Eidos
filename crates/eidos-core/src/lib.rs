@@ -14,9 +14,9 @@
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
-use std::sync::atomic::AtomicU64;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU64;
 
 /// Prefix marking a "whiteout" in the overwrite layer: an empty file
 /// `<dir>/.eidoswh.<name>` means `<name>` is deleted and any lower-layer copy
@@ -187,8 +187,15 @@ impl LowerIndex {
         for layer in layers {
             walk_layer(layer, &mut Vec::new(), 0, &mut build)?;
         }
-        let dirs = build.dirs.into_iter().map(|(k, v)| (k, v.into_boxed_slice())).collect();
-        Some(std::sync::Arc::new(LowerIndex { entries: build.entries, dirs }))
+        let dirs = build
+            .dirs
+            .into_iter()
+            .map(|(k, v)| (k, v.into_boxed_slice()))
+            .collect();
+        Some(std::sync::Arc::new(LowerIndex {
+            entries: build.entries,
+            dirs,
+        }))
     }
 
     /// The merged lower-layer listing of a directory.
@@ -252,18 +259,26 @@ fn walk_layer(dir: &Path, rel: &mut Vec<u8>, depth: usize, build: &mut IndexBuil
         if ambiguous {
             build.entries.insert(key, Resolved::Ambiguous);
         } else {
-            build.entries.entry(key).or_insert_with(|| Resolved::One(real.clone()));
+            build
+                .entries
+                .entry(key)
+                .or_insert_with(|| Resolved::One(real.clone()));
         }
 
         // The merged listing. A hidden name is skipped BEFORE claiming its slot,
         // so the copy it was shadowing in a lower layer takes the name instead.
-        if !is_hidden_name(text) && build.claimed.entry(parent.clone()).or_default().insert(folded_name)
-        {
-            build
-                .dirs
+        if !is_hidden_name(text)
+            && build
+                .claimed
                 .entry(parent.clone())
                 .or_default()
-                .push((text.to_string(), real.clone(), entry.file_type().ok()));
+                .insert(folded_name)
+        {
+            build.dirs.entry(parent.clone()).or_default().push((
+                text.to_string(),
+                real.clone(),
+                entry.file_type().ok(),
+            ));
         }
 
         // `is_dir` FOLLOWS symlinks, exactly as `ci_lookup`'s `exists` and
@@ -284,7 +299,9 @@ fn walk_layer(dir: &Path, rel: &mut Vec<u8>, depth: usize, build: &mut IndexBuil
 fn fold_vpath(vpath: &str) -> Vec<u8> {
     let mut key: Vec<u8> = Vec::with_capacity(vpath.len());
     for comp in normalize(vpath).components() {
-        let Some(text) = comp.as_os_str().to_str() else { return Vec::new() };
+        let Some(text) = comp.as_os_str().to_str() else {
+            return Vec::new();
+        };
         if !key.is_empty() {
             key.push(b'/');
         }
@@ -302,8 +319,9 @@ impl LayerStack {
     /// Build a stack from mod layers (highest priority first) and the writable
     /// overwrite layer.
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
-        let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> =
-            (0..PATH_LOCK_SHARDS).map(|_| std::sync::Mutex::new(())).collect();
+        let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> = (0..PATH_LOCK_SHARDS)
+            .map(|_| std::sync::Mutex::new(()))
+            .collect();
         // Built here, synchronously, so "is the index ready" is never a question
         // any caller can ask. `None` is a complete answer: it means every query
         // walks the layers exactly as it did before this existed.
@@ -327,7 +345,9 @@ impl LayerStack {
         let shard = (h.finish() as usize) % PATH_LOCK_SHARDS;
         // Recover from a poisoned lock: it guards no data, only ordering, so a
         // panicking holder must not take the whole mount down.
-        self.path_locks[shard].lock().unwrap_or_else(|e| e.into_inner())
+        self.path_locks[shard]
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// The overwrite-layer path where a whiteout marker for `vpath` is written.
@@ -335,11 +355,18 @@ impl LayerStack {
     /// [`Self::find_whiteout`], so it does not matter.
     fn whiteout_path(&self, vpath: &str) -> PathBuf {
         let norm = normalize(vpath);
-        let name = norm.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let parent = norm.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = norm
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let parent = norm
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
         // Resolve the parent case-insensitively so the marker lands in the same
         // real directory the file resolves to (not a second case-variant dir).
-        self.resolve_write(&parent).join(format!("{WHITEOUT_PREFIX}{name}"))
+        self.resolve_write(&parent)
+            .join(format!("{WHITEOUT_PREFIX}{name}"))
     }
 
     /// Find an existing whiteout marker for `vpath`, matching the final path
@@ -350,13 +377,15 @@ impl LayerStack {
     fn find_whiteout(&self, vpath: &str) -> Option<PathBuf> {
         let norm = normalize(vpath);
         let name = norm.file_name()?.to_string_lossy().to_ascii_lowercase();
-        let parent = norm.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        let parent = norm
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let parent_dir = self.ci_lookup(&self.overwrite, &parent)?;
         let want = format!("{WHITEOUT_PREFIX}{name}");
-        fs::read_dir(&parent_dir)
-            .ok()?
-            .flatten()
-            .find_map(|e| (e.file_name().to_string_lossy().to_ascii_lowercase() == want).then(|| e.path()))
+        fs::read_dir(&parent_dir).ok()?.flatten().find_map(|e| {
+            (e.file_name().to_string_lossy().to_ascii_lowercase() == want).then(|| e.path())
+        })
     }
 
     /// Drop any whiteout marker for `vpath` (case-insensitively): writing or
@@ -453,8 +482,10 @@ impl LayerStack {
         let Some(arc) = slot.as_mut() else { return };
         let idx = std::sync::Arc::make_mut(arc);
         let norm = normalize(vpath);
-        let comps: Vec<String> =
-            norm.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+        let comps: Vec<String> = norm
+            .components()
+            .map(|c| c.as_os_str().to_string_lossy().into_owned())
+            .collect();
         // Real ancestors, aligned with the vpath components: real is the leaf,
         // its parent the leaf's parent, and so on up to the overwrite root.
         let mut reals: Vec<PathBuf> = Vec::with_capacity(comps.len());
@@ -492,11 +523,17 @@ impl LayerStack {
             // disagreed with the walk in the one direction that matters. Pinned
             // by `a_create_must_not_resurrect_a_file_deleted_with_its_directory`.
             if i + 1 == comps.len() && idx.wh.remove(&key) {
-                if let (Some(parent), Some(name)) = (normalize(&prefix).parent(), normalize(&prefix).file_name()) {
+                if let (Some(parent), Some(name)) =
+                    (normalize(&prefix).parent(), normalize(&prefix).file_name())
+                {
                     let marker = if parent.as_os_str().is_empty() {
                         format!("{WHITEOUT_PREFIX}{}", name.to_string_lossy())
                     } else {
-                        format!("{}/{WHITEOUT_PREFIX}{}", parent.to_string_lossy(), name.to_string_lossy())
+                        format!(
+                            "{}/{WHITEOUT_PREFIX}{}",
+                            parent.to_string_lossy(),
+                            name.to_string_lossy()
+                        )
                     };
                     idx.entries.remove(&fold_vpath(&marker));
                 }
@@ -523,7 +560,10 @@ impl LayerStack {
     /// layer that does not have the file misses its very first component and
     /// pays an enumeration to be sure the name is not merely spelled otherwise.
     fn ci_lookup(&self, root: &Path, vpath: &str) -> Option<PathBuf> {
-        let comps: Vec<_> = normalize(vpath).components().map(|c| c.as_os_str().to_owned()).collect();
+        let comps: Vec<_> = normalize(vpath)
+            .components()
+            .map(|c| c.as_os_str().to_owned())
+            .collect();
         self.ci_descend(root.to_path_buf(), &comps)
     }
 
@@ -536,14 +576,21 @@ impl LayerStack {
     /// wrong one here: it would silently drop everything in the variant it did
     /// not pick.
     fn ci_lookup_all(&self, root: &Path, vpath: &str) -> Vec<PathBuf> {
-        let comps: Vec<_> =
-            normalize(vpath).components().map(|c| c.as_os_str().to_owned()).collect();
+        let comps: Vec<_> = normalize(vpath)
+            .components()
+            .map(|c| c.as_os_str().to_owned())
+            .collect();
         let mut out = Vec::new();
         self.ci_descend_all(root.to_path_buf(), &comps, &mut out);
         out
     }
 
-    fn ci_descend_all(&self, current: PathBuf, rest: &[std::ffi::OsString], out: &mut Vec<PathBuf>) {
+    fn ci_descend_all(
+        &self,
+        current: PathBuf,
+        rest: &[std::ffi::OsString],
+        out: &mut Vec<PathBuf>,
+    ) {
         use std::sync::atomic::Ordering::Relaxed;
         let Some((want, tail)) = rest.split_first() else {
             if current.is_dir() {
@@ -552,7 +599,9 @@ impl LayerStack {
             return;
         };
         self.resolve.scans.fetch_add(1, Relaxed);
-        let Ok(entries) = fs::read_dir(&current) else { return };
+        let Ok(entries) = fs::read_dir(&current) else {
+            return;
+        };
         for entry in entries.filter_map(Result::ok) {
             if eq_ignore_case(entry.file_name().as_os_str(), want) {
                 self.ci_descend_all(entry.path(), tail, out);
@@ -579,7 +628,9 @@ impl LayerStack {
     /// that fold to the same name.
     fn ci_descend(&self, current: PathBuf, rest: &[std::ffi::OsString]) -> Option<PathBuf> {
         use std::sync::atomic::Ordering::Relaxed;
-        let Some((want, tail)) = rest.split_first() else { return Some(current) };
+        let Some((want, tail)) = rest.split_first() else {
+            return Some(current);
+        };
 
         let exact = current.join(want);
         self.resolve.probes.fetch_add(1, Relaxed);
@@ -615,7 +666,10 @@ impl LayerStack {
         }
         let t = std::time::Instant::now();
         let r = self.resolve_read_inner(vpath);
-        self.resolve.ns.fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.resolve.ns.fetch_add(
+            t.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
         r
     }
 
@@ -662,11 +716,15 @@ impl LayerStack {
             // probes and scans.
             let lower = match self.lower.as_ref().map(|i| i.get(&folded)) {
                 Some(Ok(Some(path))) => {
-                    self.resolve.idx_hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.resolve
+                        .idx_hits
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     path.clone()
                 }
                 Some(Ok(None)) => {
-                    self.resolve.idx_negatives.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.resolve
+                        .idx_negatives
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     return None;
                 }
                 verdict @ (Some(Err(())) | None) => {
@@ -680,7 +738,9 @@ impl LayerStack {
                             .idx_absent
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                     };
-                    self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath))?
+                    self.layers
+                        .iter()
+                        .find_map(|layer| self.ci_lookup(layer, vpath))?
                 }
             };
             if ow.hides(&folded) {
@@ -697,7 +757,10 @@ impl LayerStack {
     /// against.
     fn resolve_read_walk(&self, vpath: &str) -> Option<PathBuf> {
         use std::sync::atomic::Ordering::Relaxed;
-        let (p0, s0) = (self.resolve.probes.load(Relaxed), self.resolve.scans.load(Relaxed));
+        let (p0, s0) = (
+            self.resolve.probes.load(Relaxed),
+            self.resolve.scans.load(Relaxed),
+        );
         let ow = self.ci_lookup(&self.overwrite, vpath);
         self.resolve
             .ow_probes
@@ -736,9 +799,14 @@ impl LayerStack {
                     Some(Err(())) => self.resolve.idx_fallbacks.fetch_add(1, Relaxed),
                     _ => self.resolve.idx_absent.fetch_add(1, Relaxed),
                 };
-                let (p0, s0) =
-                    (self.resolve.probes.load(Relaxed), self.resolve.scans.load(Relaxed));
-                let found = self.layers.iter().find_map(|layer| self.ci_lookup(layer, vpath));
+                let (p0, s0) = (
+                    self.resolve.probes.load(Relaxed),
+                    self.resolve.scans.load(Relaxed),
+                );
+                let found = self
+                    .layers
+                    .iter()
+                    .find_map(|layer| self.ci_lookup(layer, vpath));
                 self.resolve
                     .walk_probes
                     .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
@@ -779,9 +847,10 @@ impl LayerStack {
                 current = exact;
                 continue;
             }
-            let matched = fs::read_dir(&current)
-                .ok()
-                .and_then(|rd| rd.flatten().find(|e| eq_ignore_case(e.file_name().as_os_str(), want)));
+            let matched = fs::read_dir(&current).ok().and_then(|rd| {
+                rd.flatten()
+                    .find(|e| eq_ignore_case(e.file_name().as_os_str(), want))
+            });
             current = matched.map(|e| e.path()).unwrap_or(exact);
         }
         current
@@ -791,7 +860,10 @@ impl LayerStack {
     /// layer but not yet in the overwrite layer.
     pub fn needs_copy_up(&self, vpath: &str) -> bool {
         self.ci_lookup(&self.overwrite, vpath).is_none()
-            && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some())
+            && self
+                .layers
+                .iter()
+                .any(|l| self.ci_lookup(l, vpath).is_some())
     }
 
     /// Ensure `vpath` is writable in the overwrite layer and return the real
@@ -857,7 +929,11 @@ impl LayerStack {
                     clone_metadata(&src, &dest);
                 }
             }
-        } else if self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
+        } else if self
+            .layers
+            .iter()
+            .any(|l| self.ci_lookup(l, vpath).is_some())
+        {
             // A destination that already exists AND is shadowing a lower layer is
             // an orphaned copy-up from an earlier run, which may carry that run's
             // 0444. Heal it - but only in that case: a file living solely in the
@@ -887,7 +963,10 @@ impl LayerStack {
         let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
         let needs_opacity = was_deleted
-            && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir()));
+            && self
+                .layers
+                .iter()
+                .any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir()));
 
         // ORDER IS THE WHOLE POINT: opacity goes down while the whiteout is still
         // standing, so a failure here leaves the delete intact.
@@ -965,8 +1044,11 @@ impl LayerStack {
     /// something that resolves but has no overwrite copy).
     pub fn set_len(&self, vpath: &str, size: u64) -> std::io::Result<PathBuf> {
         let dest = self.open_for_write(vpath)?;
-        let file =
-            fs::OpenOptions::new().create(true).write(true).truncate(false).open(&dest)?;
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(&dest)?;
         file.set_len(size)?;
         Ok(dest)
     }
@@ -992,7 +1074,12 @@ impl LayerStack {
         // EACCES even though we are about to replace the contents wholesale. Only
         // for a path a lower layer also provides, so a user-set read-only mode on
         // their own Overwrite file is not silently undone.
-        if dest.exists() && self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
+        if dest.exists()
+            && self
+                .layers
+                .iter()
+                .any(|l| self.ci_lookup(l, vpath).is_some())
+        {
             ensure_owner_writable(&dest);
         }
         Ok(dest)
@@ -1008,7 +1095,11 @@ impl LayerStack {
         } else if dest.exists() {
             fs::remove_file(&dest)?;
         }
-        if self.layers.iter().any(|l| self.ci_lookup(l, vpath).is_some()) {
+        if self
+            .layers
+            .iter()
+            .any(|l| self.ci_lookup(l, vpath).is_some())
+        {
             let wh = self.whiteout_path(vpath);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -1037,7 +1128,11 @@ impl LayerStack {
         }
         fs::rename(&src, &dst)?;
         self.clear_whiteout(to);
-        if self.layers.iter().any(|l| self.ci_lookup(l, from).is_some()) {
+        if self
+            .layers
+            .iter()
+            .any(|l| self.ci_lookup(l, from).is_some())
+        {
             let wh = self.whiteout_path(from);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -1067,7 +1162,10 @@ impl LayerStack {
     ///
     /// Used by the FUSE daemon to answer `readdir`.
     pub fn list_dir(&self, vpath: &str) -> Vec<(String, PathBuf)> {
-        self.list_dir_typed(vpath).into_iter().map(|(name, real, _)| (name, real)).collect()
+        self.list_dir_typed(vpath)
+            .into_iter()
+            .map(|(name, real, _)| (name, real))
+            .collect()
     }
 
     /// [`LayerStack::list_dir`] plus each entry's file type AS THE DIRECTORY
@@ -1087,7 +1185,10 @@ impl LayerStack {
 
         // Overwrite layer first: collect whiteouts (and hide the markers).
         let mut opaque = false;
-        if let Some(dir) = self.ci_lookup(&self.overwrite, vpath).filter(|d| d.is_dir()) {
+        if let Some(dir) = self
+            .ci_lookup(&self.overwrite, vpath)
+            .filter(|d| d.is_dir())
+        {
             if let Ok(entries) = fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().into_owned();
@@ -1141,8 +1242,14 @@ impl LayerStack {
                 // Every fold-equal directory, not just the winner: a layer with
                 // both `meshes/` and `Meshes/` shows ONE directory here, holding
                 // the union of the two.
-                for dir in self.layers.iter().flat_map(|l| self.ci_lookup_all(l, vpath)) {
-                    let Ok(entries) = fs::read_dir(&dir) else { continue };
+                for dir in self
+                    .layers
+                    .iter()
+                    .flat_map(|l| self.ci_lookup_all(l, vpath))
+                {
+                    let Ok(entries) = fs::read_dir(&dir) else {
+                        continue;
+                    };
                     for entry in entries.flatten() {
                         let name = entry.file_name().to_string_lossy().into_owned();
                         let key = name.to_ascii_lowercase();
@@ -1195,7 +1302,10 @@ fn ntfs_order_key(name: &str) -> Vec<u16> {
 /// (defence in depth - the kernel never forwards `..` to FUSE lookups, but a vpath
 /// constructed any other way stays contained).
 fn normalize(vpath: &str) -> PathBuf {
-    vpath.split('/').filter(|s| !s.is_empty() && *s != "." && *s != "..").collect()
+    vpath
+        .split('/')
+        .filter(|s| !s.is_empty() && *s != "." && *s != "..")
+        .collect()
 }
 
 /// Join a child entry name onto a virtual directory path.
@@ -1284,8 +1394,11 @@ impl OwIndex {
             let Ok(rd) = fs::read_dir(dir) else { return };
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let vpath =
-                    if vprefix.is_empty() { name.clone() } else { format!("{vprefix}/{name}") };
+                let vpath = if vprefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{vprefix}/{name}")
+                };
                 if name == OPAQUE_MARKER {
                     out.opaque.insert(fold_vpath(vprefix));
                     continue;
@@ -1329,7 +1442,10 @@ impl OwIndex {
         }
         let mut from = 0usize;
         loop {
-            let end = folded[from..].iter().position(|&b| b == b'/').map(|i| from + i);
+            let end = folded[from..]
+                .iter()
+                .position(|&b| b == b'/')
+                .map(|i| from + i);
             let prefix = &folded[..end.unwrap_or(folded.len())];
             if self.wh.contains(prefix) {
                 return true;
@@ -1348,18 +1464,14 @@ impl OwIndex {
 /// Whether the overwrite membership index is on. `EIDOS_NO_OW_INDEX=1` turns it
 /// off, the same escape hatch shape as `EIDOS_NO_INDEX` for the layer index:
 /// when a stale-view bug is suspected, disabling the suspect is one env var.
-static OW_INDEX_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-    !std::env::var("EIDOS_NO_OW_INDEX").is_ok_and(|v| v != "0")
-});
+static OW_INDEX_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| !std::env::var("EIDOS_NO_OW_INDEX").is_ok_and(|v| v != "0"));
 
 /// Whether to time resolution. Same switch as the FUSE stats, read once: the
 /// counters above are two relaxed adds on a path that already syscalls, but a
 /// clock read twice per resolve is worth gating.
-static TIMING_ON: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
-    std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0")
-});
-
-
+static TIMING_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("EIDOS_FUSE_STATS").is_ok_and(|v| v != "0"));
 
 /// Case-insensitive name comparison.
 ///
@@ -1384,7 +1496,9 @@ fn ensure_owner_writable(path: &Path) {
     // symlink would land on its TARGET - which can be a pristine game or mod
     // file, breaking the one guarantee this whole filesystem exists to make.
     // A symlink's own mode is meaningless on Linux, so there is nothing to do.
-    let Ok(meta) = fs::symlink_metadata(path) else { return };
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return;
+    };
     if meta.file_type().is_symlink() {
         return;
     }
@@ -1410,7 +1524,10 @@ fn clone_metadata(src: &Path, dst: &Path) {
 
 fn to_timespec(t: std::time::SystemTime) -> libc::timespec {
     let d = t.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    libc::timespec { tv_sec: d.as_secs() as libc::time_t, tv_nsec: d.subsec_nanos() as libc::c_long }
+    libc::timespec {
+        tv_sec: d.as_secs() as libc::time_t,
+        tv_nsec: d.subsec_nanos() as libc::c_long,
+    }
 }
 
 fn cpath(p: &Path) -> std::io::Result<std::ffi::CString> {
@@ -1429,27 +1546,46 @@ fn copy_user_xattrs(src: &Path, dst: &Path) {
         return;
     }
     let mut names = vec![0u8; len as usize];
-    let got =
-        unsafe { libc::llistxattr(csrc.as_ptr(), names.as_mut_ptr() as *mut libc::c_char, names.len()) };
+    let got = unsafe {
+        libc::llistxattr(
+            csrc.as_ptr(),
+            names.as_mut_ptr() as *mut libc::c_char,
+            names.len(),
+        )
+    };
     if got <= 0 {
         return;
     }
     names.truncate(got as usize);
     for name in names.split(|&b| b == 0).filter(|s| s.starts_with(b"user.")) {
-        let Ok(cname) = std::ffi::CString::new(name) else { continue };
-        let vlen = unsafe { libc::lgetxattr(csrc.as_ptr(), cname.as_ptr(), std::ptr::null_mut(), 0) };
+        let Ok(cname) = std::ffi::CString::new(name) else {
+            continue;
+        };
+        let vlen =
+            unsafe { libc::lgetxattr(csrc.as_ptr(), cname.as_ptr(), std::ptr::null_mut(), 0) };
         if vlen < 0 {
             continue;
         }
         let mut val = vec![0u8; vlen as usize];
         let vgot = unsafe {
-            libc::lgetxattr(csrc.as_ptr(), cname.as_ptr(), val.as_mut_ptr() as *mut libc::c_void, val.len())
+            libc::lgetxattr(
+                csrc.as_ptr(),
+                cname.as_ptr(),
+                val.as_mut_ptr() as *mut libc::c_void,
+                val.len(),
+            )
         };
         if vgot < 0 {
             continue;
         }
         unsafe {
-            libc::lsetxattr(cdst.as_ptr(), cname.as_ptr(), val.as_ptr() as *const libc::c_void, vgot as usize, 0)
+            libc::lsetxattr(
+                cdst.as_ptr(),
+                cname.as_ptr(),
+                val.as_ptr() as *const libc::c_void,
+                vgot as usize,
+                0,
+            )
         };
     }
 }
@@ -1521,7 +1657,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        assert_eq!(secs, 1_400_000_000, "copy-up must keep the lower file's mtime, not stamp 'now'");
+        assert_eq!(
+            secs, 1_400_000_000,
+            "copy-up must keep the lower file's mtime, not stamp 'now'"
+        );
     }
 
     #[test]
@@ -1542,7 +1681,10 @@ mod tests {
             .open(&dest)
             .expect("a copied-up file must be writable by its owner");
         // The lower layer is untouched, read-only mode included.
-        assert_eq!(fs::metadata(&dest).unwrap().permissions().mode() & 0o200, 0o200);
+        assert_eq!(
+            fs::metadata(&dest).unwrap().permissions().mode() & 0o200,
+            0o200
+        );
     }
 
     #[test]
@@ -1561,8 +1703,15 @@ mod tests {
         let _ = stack.open_for_write("link.esp");
         let _ = stack.prepare_overwrite("link.esp");
 
-        let mode = fs::symlink_metadata(game.join("pristine.esp")).unwrap().permissions().mode();
-        assert_eq!(mode & 0o777, 0o444, "the game file's mode was changed through a symlink");
+        let mode = fs::symlink_metadata(game.join("pristine.esp"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o777,
+            0o444,
+            "the game file's mode was changed through a symlink"
+        );
     }
 
     #[test]
@@ -1573,12 +1722,23 @@ mod tests {
         // Lives ONLY in the overwrite layer: the user's own file, which they set
         // read-only on purpose (the classic "stop the launcher rewriting my INI").
         put(&over, "SkyrimPrefs.ini", "mine");
-        fs::set_permissions(over.join("SkyrimPrefs.ini"), fs::Permissions::from_mode(0o444)).unwrap();
+        fs::set_permissions(
+            over.join("SkyrimPrefs.ini"),
+            fs::Permissions::from_mode(0o444),
+        )
+        .unwrap();
         let stack = LayerStack::new(vec![game], over.clone());
 
         let _ = stack.open_for_write("SkyrimPrefs.ini");
-        let mode = fs::metadata(over.join("SkyrimPrefs.ini")).unwrap().permissions().mode();
-        assert_eq!(mode & 0o200, 0, "a user-set read-only mode must not be silently undone");
+        let mode = fs::metadata(over.join("SkyrimPrefs.ini"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o200,
+            0,
+            "a user-set read-only mode must not be silently undone"
+        );
     }
 
     #[test]
@@ -1619,7 +1779,10 @@ mod tests {
         put(&game, "meshes.dat", "vanilla mesh");
 
         let stack = LayerStack::new(vec![a, game], over);
-        assert_eq!(read(&stack.resolve_read("meshes.dat").unwrap()), "vanilla mesh");
+        assert_eq!(
+            read(&stack.resolve_read("meshes.dat").unwrap()),
+            "vanilla mesh"
+        );
     }
 
     #[test]
@@ -1641,7 +1804,10 @@ mod tests {
 
         let stack = LayerStack::new(vec![game], over);
         // The game engine asks with completely different casing.
-        assert_eq!(read(&stack.resolve_read("textures/armor.dds").unwrap()), "tex");
+        assert_eq!(
+            read(&stack.resolve_read("textures/armor.dds").unwrap()),
+            "tex"
+        );
     }
 
     #[test]
@@ -1653,7 +1819,9 @@ mod tests {
         assert_eq!(normalize("../../etc/passwd"), PathBuf::from("etc/passwd"));
         assert_eq!(normalize("a/./b//c"), PathBuf::from("a/b/c"));
         // No component is ever ParentDir / RootDir.
-        assert!(normalize("../x/..").components().all(|c| matches!(c, std::path::Component::Normal(_))));
+        assert!(normalize("../x/..")
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_))));
     }
 
     #[test]
@@ -1722,16 +1890,26 @@ mod tests {
         let (game, modd, over) = (t.sub("game"), t.sub("mod"), t.sub("over"));
         put(&game, "textures/rock.dds", "vanilla");
         // What hiding actually produces on disk: the override renamed, not removed.
-        put(&modd, "textures/rock.dds.mohidden", "the override we suppressed");
+        put(
+            &modd,
+            "textures/rock.dds.mohidden",
+            "the override we suppressed",
+        );
         put(&modd, "textures/tree.dds", "still active");
 
         let stack = LayerStack::new(vec![modd, game], over);
-        let mut names: Vec<String> =
-            stack.list_dir("textures").into_iter().map(|(n, _)| n).collect();
+        let mut names: Vec<String> = stack
+            .list_dir("textures")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
         names.sort();
         // The suffixed name never appears, and rock.dds is the vanilla file again.
         assert_eq!(names, vec!["rock.dds", "tree.dds"]);
-        assert_eq!(read(&stack.resolve_read("textures/rock.dds").unwrap()), "vanilla");
+        assert_eq!(
+            read(&stack.resolve_read("textures/rock.dds").unwrap()),
+            "vanilla"
+        );
         // Nor can it be reached by asking for the suffixed path directly.
         assert!(stack.resolve_read("textures/rock.dds.mohidden").is_none());
     }
@@ -1748,7 +1926,9 @@ mod tests {
         // Mixed case, because a mod folder round-tripped through Windows comes
         // back shouting.
         assert_eq!(names, vec!["meshes"]);
-        assert!(stack.resolve_read("meshes.MOHIDDEN/actors/body.nif").is_none());
+        assert!(stack
+            .resolve_read("meshes.MOHIDDEN/actors/body.nif")
+            .is_none());
         assert!(stack.resolve_read("meshes/actors/head.nif").is_some());
     }
 
@@ -1758,7 +1938,12 @@ mod tests {
         // what a `&name[len - 9..]` slice panics on. Real mod folders look like
         // this: the pool this was found in had `至真女性皮肤4K-Zhizhen's female
         // skin 4K`. A panic here kills the mount in the middle of a read.
-        for n in ["abcdefg日日日h", "至真女性皮肤4K.bsa", "Épées Légendaires.esp", "日本語"] {
+        for n in [
+            "abcdefg日日日h",
+            "至真女性皮肤4K.bsa",
+            "Épées Légendaires.esp",
+            "日本語",
+        ] {
             assert!(!is_hidden_name(n), "{n}");
             assert!(!under_hidden(&format!("meshes/{n}/x.nif")));
         }
@@ -1801,7 +1986,11 @@ mod tests {
             })
             .collect();
 
-        let kind = |name: &str| got.iter().find(|(n, _, _)| n == name).map(|(_, d, l)| (*d, *l));
+        let kind = |name: &str| {
+            got.iter()
+                .find(|(n, _, _)| n == name)
+                .map(|(_, d, l)| (*d, *l))
+        };
         assert_eq!(kind("Scripts"), Some((true, false)), "{got:?}");
         assert_eq!(kind("meshes"), Some((true, false)), "{got:?}");
         assert_eq!(kind("plain.esm"), Some((false, false)), "{got:?}");
@@ -1810,7 +1999,10 @@ mod tests {
         assert_eq!(kind("link.esm"), Some((false, true)), "{got:?}");
         // And the plain listing still agrees, entry for entry.
         let plain: Vec<String> = stack.list_dir("").into_iter().map(|(n, _)| n).collect();
-        assert_eq!(plain, got.iter().map(|(n, _, _)| n.clone()).collect::<Vec<_>>());
+        assert_eq!(
+            plain,
+            got.iter().map(|(n, _, _)| n.clone()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -1849,7 +2041,10 @@ mod tests {
         assert_eq!(read(&game.join("config/settings.ini")), "vanilla");
 
         // And the resolver now serves the overwrite version.
-        assert_eq!(read(&stack.resolve_read("config/settings.ini").unwrap()), "tweaked");
+        assert_eq!(
+            read(&stack.resolve_read("config/settings.ini").unwrap()),
+            "tweaked"
+        );
     }
 
     #[test]
@@ -1932,7 +2127,11 @@ mod tests {
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n.eq_ignore_ascii_case("foo.txt"))
             .collect();
-        assert_eq!(variants.len(), 1, "exactly one overwrite copy, got {variants:?}");
+        assert_eq!(
+            variants.len(),
+            1,
+            "exactly one overwrite copy, got {variants:?}"
+        );
 
         // Deleting via yet another casing removes the real copy and hides the lower
         // file - a literal-case delete would have missed the `Foo.txt` copy.
@@ -1953,7 +2152,10 @@ mod tests {
         stack.rename("tools", "tools_bak").unwrap();
         // Every (lower-only) child arrived at the destination, nesting included...
         assert_eq!(read(&stack.resolve_read("tools_bak/a.txt").unwrap()), "a");
-        assert_eq!(read(&stack.resolve_read("tools_bak/sub/b.txt").unwrap()), "b");
+        assert_eq!(
+            read(&stack.resolve_read("tools_bak/sub/b.txt").unwrap()),
+            "b"
+        );
         // ...the source is gone (hidden), and the game install stays pristine.
         assert!(stack.resolve_read("tools/a.txt").is_none());
         assert!(stack.resolve_read("tools").is_none());
@@ -1974,7 +2176,11 @@ mod tests {
         // BOTH the lower and the overwrite child move - the lower one is not lost.
         assert_eq!(read(&stack.resolve_read("data2/lower.esp").unwrap()), "L");
         assert_eq!(read(&stack.resolve_read("data2/over.esp").unwrap()), "O");
-        let mut names: Vec<String> = stack.list_dir("data2").into_iter().map(|(n, _)| n).collect();
+        let mut names: Vec<String> = stack
+            .list_dir("data2")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
         names.sort();
         assert_eq!(names, vec!["lower.esp", "over.esp"]);
         // Source hidden.
@@ -2050,10 +2256,23 @@ mod tests {
 
         // NTFS: a recreated directory is empty. The deleted lower files must NOT
         // resurface in lookups or the listing.
-        assert!(stack.resolve_read("cache/a.txt").is_none(), "a.txt resurrected");
-        assert!(stack.resolve_read("cache/b.txt").is_none(), "b.txt resurrected");
-        let names: Vec<String> = stack.list_dir("cache").into_iter().map(|(n, _)| n).collect();
-        assert!(names.is_empty(), "recreated dir should be empty, got {names:?}");
+        assert!(
+            stack.resolve_read("cache/a.txt").is_none(),
+            "a.txt resurrected"
+        );
+        assert!(
+            stack.resolve_read("cache/b.txt").is_none(),
+            "b.txt resurrected"
+        );
+        let names: Vec<String> = stack
+            .list_dir("cache")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(
+            names.is_empty(),
+            "recreated dir should be empty, got {names:?}"
+        );
         // The game install stays pristine.
         assert_eq!(read(&game.join("cache/a.txt")), "lower-a");
     }
@@ -2086,7 +2305,10 @@ mod tests {
         let stack = LayerStack::new(vec![a, b.clone()], over);
 
         let st = stack.resolve_stats();
-        let (p0, s0) = (st.probes.load(Ordering::Relaxed), st.scans.load(Ordering::Relaxed));
+        let (p0, s0) = (
+            st.probes.load(Ordering::Relaxed),
+            st.scans.load(Ordering::Relaxed),
+        );
         assert_eq!(
             stack.resolve_read("textures/actors/skin.dds"),
             Some(b.join("textures/actors/skin.dds"))
@@ -2100,7 +2322,10 @@ mod tests {
         // one probe and one scan per resolve - now answers from its membership
         // index. This assertion is the whole point of that index: the cost of a
         // resolve no longer contains a single directory operation.
-        assert_eq!(probes, 0, "nothing may be probed on a fully indexed resolve, got {probes}");
+        assert_eq!(
+            probes, 0,
+            "nothing may be probed on a fully indexed resolve, got {probes}"
+        );
         assert_eq!(scans, 0, "and nothing may enumerate, got {scans}");
     }
 
@@ -2191,23 +2416,49 @@ mod tests {
         let (_, mut f) = stack.create_truncated("Data/new.ini").unwrap();
         use std::io::Write as _;
         writeln!(f, "x").unwrap();
-        assert!(stack.resolve_read("data/NEW.ini").is_some(), "create_truncated was invisible");
+        assert!(
+            stack.resolve_read("data/NEW.ini").is_some(),
+            "create_truncated was invisible"
+        );
 
         stack.make_dir("Fresh/Sub").unwrap();
-        assert!(stack.resolve_read("fresh/sub").is_some(), "make_dir was invisible");
+        assert!(
+            stack.resolve_read("fresh/sub").is_some(),
+            "make_dir was invisible"
+        );
 
-        stack.create_symlink("Data/link.esp", Path::new("/nonexistent")).unwrap();
-        assert!(stack.resolve_read("data/link.ESP").is_some(), "create_symlink was invisible");
+        stack
+            .create_symlink("Data/link.esp", Path::new("/nonexistent"))
+            .unwrap();
+        assert!(
+            stack.resolve_read("data/link.ESP").is_some(),
+            "create_symlink was invisible"
+        );
 
         let dest = stack.open_for_write("Data/lower.esp").unwrap();
-        assert_eq!(stack.resolve_read("DATA/lower.esp"), Some(dest), "copy-up was invisible");
+        assert_eq!(
+            stack.resolve_read("DATA/lower.esp"),
+            Some(dest),
+            "copy-up was invisible"
+        );
 
         stack.remove("Data/lower.esp").unwrap();
-        assert_eq!(stack.resolve_read("Data/lower.esp"), None, "remove was invisible");
+        assert_eq!(
+            stack.resolve_read("Data/lower.esp"),
+            None,
+            "remove was invisible"
+        );
 
         stack.rename("Data/new.ini", "Data/renamed.ini").unwrap();
-        assert!(stack.resolve_read("Data/renamed.ini").is_some(), "rename target invisible");
-        assert_eq!(stack.resolve_read("Data/new.ini"), None, "rename source survived");
+        assert!(
+            stack.resolve_read("Data/renamed.ini").is_some(),
+            "rename target invisible"
+        );
+        assert_eq!(
+            stack.resolve_read("Data/new.ini"),
+            None,
+            "rename source survived"
+        );
     }
 
     #[test]
@@ -2227,10 +2478,24 @@ mod tests {
         for i in 0..50 {
             let v = format!("ShaderCache/entry{i}.bin");
             stack.create_truncated(&v).unwrap();
-            let (p0, s0) = (st.probes.load(Ordering::Relaxed), st.scans.load(Ordering::Relaxed));
-            assert!(stack.resolve_read(&v.to_ascii_uppercase()).is_some(), "{v} not visible");
-            assert_eq!(st.probes.load(Ordering::Relaxed) - p0, 0, "a resolve paid a probe after {v}");
-            assert_eq!(st.scans.load(Ordering::Relaxed) - s0, 0, "a resolve paid a scan after {v}");
+            let (p0, s0) = (
+                st.probes.load(Ordering::Relaxed),
+                st.scans.load(Ordering::Relaxed),
+            );
+            assert!(
+                stack.resolve_read(&v.to_ascii_uppercase()).is_some(),
+                "{v} not visible"
+            );
+            assert_eq!(
+                st.probes.load(Ordering::Relaxed) - p0,
+                0,
+                "a resolve paid a probe after {v}"
+            );
+            assert_eq!(
+                st.scans.load(Ordering::Relaxed) - s0,
+                0,
+                "a resolve paid a scan after {v}"
+            );
         }
     }
 
@@ -2245,7 +2510,11 @@ mod tests {
         fs::create_dir_all(&over).unwrap();
         let stack = LayerStack::new(vec![l.clone()], over);
 
-        for spelling in ["textures/skin.dds", "TEXTURES/SKIN.DDS", "Textures/Skin.DDS"] {
+        for spelling in [
+            "textures/skin.dds",
+            "TEXTURES/SKIN.DDS",
+            "Textures/Skin.DDS",
+        ] {
             assert_eq!(
                 stack.resolve_read(spelling),
                 Some(l.join("Textures/Skin.DDS")),
@@ -2270,8 +2539,14 @@ mod tests {
 
         // Each exact spelling still finds its own file - the property the index
         // would have broken by picking a winner at build time.
-        assert_eq!(fs::read_to_string(stack.resolve_read("t/Skin.dds").unwrap()).unwrap(), "one");
-        assert_eq!(fs::read_to_string(stack.resolve_read("t/SKIN.DDS").unwrap()).unwrap(), "two");
+        assert_eq!(
+            fs::read_to_string(stack.resolve_read("t/Skin.dds").unwrap()).unwrap(),
+            "one"
+        );
+        assert_eq!(
+            fs::read_to_string(stack.resolve_read("t/SKIN.DDS").unwrap()).unwrap(),
+            "two"
+        );
         // And it cost a walk, which is the point: declining is the safe answer.
         let before = stack.resolve_stats().probes.load(Ordering::Relaxed);
         let _ = stack.resolve_read("t/skin.dds");
@@ -2299,11 +2574,24 @@ mod tests {
         let walked = LayerStack::new(vec![a.clone(), b.clone()], over);
         unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
 
-        for q in ["shared.esp", "SHARED.ESP", "only-low.esp", "absent.esp", "a/b/c.esp"] {
-            assert_eq!(indexed.resolve_read(q), walked.resolve_read(q), "disagreed on {q}");
+        for q in [
+            "shared.esp",
+            "SHARED.ESP",
+            "only-low.esp",
+            "absent.esp",
+            "a/b/c.esp",
+        ] {
+            assert_eq!(
+                indexed.resolve_read(q),
+                walked.resolve_read(q),
+                "disagreed on {q}"
+            );
         }
         // And priority is the layer order, not the disk order.
-        assert_eq!(indexed.resolve_read("shared.esp"), Some(a.join("shared.esp")));
+        assert_eq!(
+            indexed.resolve_read("shared.esp"),
+            Some(a.join("shared.esp"))
+        );
     }
 
     // ---- a layer holding two spellings of one directory ----------------------
@@ -2334,7 +2622,10 @@ mod tests {
     fn a_file_under_the_other_spelling_is_still_found() {
         let (_d, stack) = case_variant_layer();
         let got = stack.resolve_read("meshes/actors/real.nif");
-        assert!(got.is_some(), "the greedy walk lost the whole Meshes/ subtree");
+        assert!(
+            got.is_some(),
+            "the greedy walk lost the whole Meshes/ subtree"
+        );
         assert_eq!(fs::read(got.unwrap()).unwrap(), b"real");
         // And the one that IS under the exact-case spelling still resolves.
         assert!(stack.resolve_read("meshes/actors/decoy.nif").is_some());
@@ -2343,10 +2634,19 @@ mod tests {
     #[test]
     fn both_spellings_merge_into_one_listing() {
         let (_d, stack) = case_variant_layer();
-        let names: Vec<String> =
-            stack.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
-        assert!(names.iter().any(|n| n == "real.nif"), "missing from listing: {names:?}");
-        assert!(names.iter().any(|n| n == "decoy.nif"), "missing from listing: {names:?}");
+        let names: Vec<String> = stack
+            .list_dir("meshes/actors")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "real.nif"),
+            "missing from listing: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "decoy.nif"),
+            "missing from listing: {names:?}"
+        );
         assert_eq!(names.len(), 2, "{names:?}");
     }
 
@@ -2368,15 +2668,27 @@ mod tests {
         let walked = LayerStack::new(vec![layer], over);
         unsafe { std::env::remove_var("EIDOS_NO_INDEX") };
 
-        for p in ["meshes/actors/real.nif", "meshes/actors/decoy.nif", "MESHES/ACTORS/REAL.NIF"] {
+        for p in [
+            "meshes/actors/real.nif",
+            "meshes/actors/decoy.nif",
+            "MESHES/ACTORS/REAL.NIF",
+        ] {
             assert_eq!(
                 indexed.resolve_read(p).is_some(),
                 walked.resolve_read(p).is_some(),
                 "index and walk disagree on {p}"
             );
         }
-        let mut a: Vec<String> = indexed.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
-        let mut b: Vec<String> = walked.list_dir("meshes/actors").into_iter().map(|(n, _)| n).collect();
+        let mut a: Vec<String> = indexed
+            .list_dir("meshes/actors")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        let mut b: Vec<String> = walked
+            .list_dir("meshes/actors")
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
         a.sort();
         b.sort();
         assert_eq!(a, b, "index and walk disagree on the listing");
@@ -2404,7 +2716,10 @@ mod tests {
         // And the union still serves the symlink from the lower layer.
         let served = stack.resolve_read("link").expect("still resolvable");
         assert!(
-            fs::symlink_metadata(&served).unwrap().file_type().is_symlink(),
+            fs::symlink_metadata(&served)
+                .unwrap()
+                .file_type()
+                .is_symlink(),
             "the served entry must still BE the symlink"
         );
     }
@@ -2425,7 +2740,10 @@ mod tests {
         let stack = LayerStack::new(vec![game.clone()], over.clone());
 
         stack.remove("Data").unwrap();
-        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden by the delete");
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "hidden by the delete"
+        );
         let _ = stack.resolve_read("Data/probe"); // warm the index
 
         // Make the overwrite's Data directory unwritable so the marker cannot be
@@ -2445,7 +2763,11 @@ mod tests {
         assert!(
             !stack.list_dir("Data").iter().any(|(n, _)| n == "old.esp"),
             "the listing must not show it either: {:?}",
-            stack.list_dir("Data").iter().map(|(n, _)| n).collect::<Vec<_>>()
+            stack
+                .list_dir("Data")
+                .iter()
+                .map(|(n, _)| n)
+                .collect::<Vec<_>>()
         );
     }
 
@@ -2462,8 +2784,14 @@ mod tests {
         let stack = LayerStack::new(vec![game.clone()], over);
 
         let dest = stack.open_for_write("meshes/actors").unwrap();
-        assert!(dest.exists(), "open_for_write handed back a path that does not exist");
-        assert!(dest.is_dir(), "a lower directory must copy up as a directory");
+        assert!(
+            dest.exists(),
+            "open_for_write handed back a path that does not exist"
+        );
+        assert!(
+            dest.is_dir(),
+            "a lower directory must copy up as a directory"
+        );
         // And the lower file underneath it is still readable through the union.
         assert!(stack.resolve_read("meshes/actors/keep.nif").is_some());
     }
@@ -2479,7 +2807,10 @@ mod tests {
         let stack = LayerStack::new(vec![game.clone()], over);
 
         stack.remove("Data").unwrap();
-        assert!(stack.resolve_read("Data/old.esp").is_none(), "hidden right after the delete");
+        assert!(
+            stack.resolve_read("Data/old.esp").is_none(),
+            "hidden right after the delete"
+        );
 
         // Warming matters: a live daemon resolves thousands of times a second, so
         // the index is always built by the time a write arrives. And the write

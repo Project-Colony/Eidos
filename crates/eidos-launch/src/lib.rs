@@ -354,7 +354,10 @@ pub fn utf8_locale_env(
     lc_ctype: Option<&str>,
     lang: Option<&str>,
 ) -> Vec<(String, String)> {
-    let effective = [lc_all, lc_ctype, lang].into_iter().flatten().find(|v| !v.is_empty());
+    let effective = [lc_all, lc_ctype, lang]
+        .into_iter()
+        .flatten()
+        .find(|v| !v.is_empty());
     let is_utf8 = effective.is_some_and(|v| {
         let v = v.to_ascii_lowercase();
         v.contains("utf-8") || v.contains("utf8")
@@ -371,7 +374,11 @@ pub fn utf8_locale_env(
 /// [`utf8_locale_env`] applied to this process's own environment.
 pub fn utf8_locale_env_from_process() -> Vec<(String, String)> {
     let get = |k: &str| std::env::var(k).ok();
-    utf8_locale_env(get("LC_ALL").as_deref(), get("LC_CTYPE").as_deref(), get("LANG").as_deref())
+    utf8_locale_env(
+        get("LC_ALL").as_deref(),
+        get("LC_CTYPE").as_deref(),
+        get("LANG").as_deref(),
+    )
 }
 
 /// Whether `binary` carries CAP_SYS_ADMIN in its file capabilities (the
@@ -387,7 +394,12 @@ pub fn binary_has_cap_sys_admin(binary: &Path) -> bool {
     let mut buf = [0u8; 64];
     // SAFETY: valid NUL-terminated strings and a correctly-sized buffer.
     let n = unsafe {
-        libc::getxattr(path.as_ptr(), name.as_ptr(), buf.as_mut_ptr().cast(), buf.len())
+        libc::getxattr(
+            path.as_ptr(),
+            name.as_ptr(),
+            buf.as_mut_ptr().cast(),
+            buf.len(),
+        )
     };
     // VFS cap data (v2/v3): u32 magic+flags, then permitted-lo at bytes 4..8.
     // CAP_SYS_ADMIN is capability 21, in the low word.

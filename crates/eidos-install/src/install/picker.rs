@@ -8,17 +8,19 @@
 
 use std::path::{Path, PathBuf};
 
-
-
-
 use super::*;
 
 /// Resolve chosen BAIN sub-package names to directories inside the extraction temp,
 /// in the order given. Every fallible check lives here so a caller can run it BEFORE
 /// the destructive step and never wipe a mod over a stale pick.
-pub(crate) fn resolve_bain_sources(tmp: &Path, chosen: &[String]) -> Result<Vec<PathBuf>, InstallError> {
+pub(crate) fn resolve_bain_sources(
+    tmp: &Path,
+    chosen: &[String],
+) -> Result<Vec<PathBuf>, InstallError> {
     if chosen.is_empty() {
-        return Err(InstallError::BadSelection("no sub-package selected".to_string()));
+        return Err(InstallError::BadSelection(
+            "no sub-package selected".to_string(),
+        ));
     }
     let mut out = Vec::with_capacity(chosen.len());
     for name in chosen {
@@ -26,7 +28,9 @@ pub(crate) fn resolve_bain_sources(tmp: &Path, chosen: &[String]) -> Result<Vec<
         // relative segment is not one and must never be joined blindly: the list
         // comes from a front end, not necessarily from `bain_subpackages`.
         if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
-            return Err(InstallError::BadSelection(format!("not a sub-package name: '{name}'")));
+            return Err(InstallError::BadSelection(format!(
+                "not a sub-package name: '{name}'"
+            )));
         }
         let exact = tmp.join(name);
         let dir = if is_real_dir(&exact) {
@@ -36,7 +40,9 @@ pub(crate) fn resolve_bain_sources(tmp: &Path, chosen: &[String]) -> Result<Vec<
             // `normalize_case_collisions`), so fall back to a case-insensitive match.
             find_ci(tmp, &name.to_ascii_lowercase())
                 .filter(|p| is_real_dir(p))
-                .ok_or_else(|| InstallError::BadSelection(format!("no such sub-package: '{name}'")))?
+                .ok_or_else(|| {
+                    InstallError::BadSelection(format!("no such sub-package: '{name}'"))
+                })?
         };
         out.push(dir);
     }
@@ -53,7 +59,9 @@ pub(crate) fn resolve_manual_root(tmp: &Path, root: &str) -> Result<PathBuf, Ins
     }
     resolve_ci(tmp, trimmed)
         .filter(|p| is_real_dir(p))
-        .ok_or_else(|| InstallError::BadSelection(format!("no such directory in the archive: '{root}'")))
+        .ok_or_else(|| {
+            InstallError::BadSelection(format!("no such directory in the archive: '{root}'"))
+        })
 }
 
 /// Install the chosen sub-packages of a BAIN (Wrye Bash complex) package, merged
@@ -78,7 +86,15 @@ pub fn install_bain(
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
     let sources = resolve_bain_sources(tree.path(), subpackages)?;
-    install_sources(&sources, archive, mods_dir, name, game_id, policy, String::new())
+    install_sources(
+        &sources,
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        policy,
+        String::new(),
+    )
 }
 
 /// Install from an explicit, user-chosen data root inside the archive - MO2's manual

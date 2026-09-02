@@ -10,9 +10,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
 use crate::RootSplit;
-
 
 use super::*;
 
@@ -55,10 +53,12 @@ pub(crate) struct RootSources {
 /// directory: [`ArchiveTree::from_dir`] classifies with `Path::is_dir`, which follows
 /// symlinks, while [`is_real_dir`] does not - so an archive shipping `Data` as a
 /// symlink is a Dir in the tree and not a directory on disk.
-pub(crate) fn resolve_root_split(tmp: &Path, split: &RootSplit) -> Result<RootSources, InstallError> {
-    let refuse = |what: &str| {
-        InstallError::BadSelection(format!("cannot lay out this archive: {what}"))
-    };
+pub(crate) fn resolve_root_split(
+    tmp: &Path,
+    split: &RootSplit,
+) -> Result<RootSources, InstallError> {
+    let refuse =
+        |what: &str| InstallError::BadSelection(format!("cannot lay out this archive: {what}"));
 
     let data = match split.data_prefix.as_deref() {
         Some(p) => Some(
@@ -124,7 +124,11 @@ pub(crate) fn resolve_root_split(tmp: &Path, split: &RootSplit) -> Result<RootSo
     if data.is_none() && root.is_empty() && data_extra.is_empty() {
         return Err(refuse("it contains no installable content"));
     }
-    Ok(RootSources { data, data_extra, root })
+    Ok(RootSources {
+        data,
+        data_extra,
+        root,
+    })
 }
 
 /// Lay a resolved Root Builder split into `dest`: the Data half becomes the mod

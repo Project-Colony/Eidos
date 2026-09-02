@@ -63,7 +63,9 @@ pub fn is_tier2_verb(verb: &str) -> bool {
 /// Locate a program on `PATH`. `None` if not installed.
 fn on_path(program: &str) -> Option<PathBuf> {
     let paths = std::env::var_os("PATH")?;
-    std::env::split_paths(&paths).map(|d| d.join(program)).find(|p| p.is_file())
+    std::env::split_paths(&paths)
+        .map(|d| d.join(program))
+        .find(|p| p.is_file())
 }
 
 /// Locate `winetricks` on `PATH` (Eidos shells out to the system one rather than
@@ -102,14 +104,22 @@ pub fn install_tier2_verb(
 
     // The proton script lives at `<proton_dir>/proton`; its wine is under `files/bin`.
     let proton_dir = proton.parent().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::NotFound, format!("malformed Proton path: {}", proton.display()))
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("malformed Proton path: {}", proton.display()),
+        )
     })?;
     // Valve's official builds put wine under `files/bin`; several community and
     // distro-repackaged builds use `dist/bin` instead. Try both before giving up,
     // or a perfectly good Proton is rejected on layout alone.
     let (wine, wineserver) = ["files/bin", "dist/bin"]
         .iter()
-        .map(|d| (proton_dir.join(d).join("wine"), proton_dir.join(d).join("wineserver")))
+        .map(|d| {
+            (
+                proton_dir.join(d).join("wine"),
+                proton_dir.join(d).join("wineserver"),
+            )
+        })
         .find(|(w, _)| w.is_file())
         .ok_or_else(|| {
             // Fail loudly rather than letting winetricks silently fall back to a
@@ -155,9 +165,13 @@ pub fn install_tier2_verb(
         Some(c) if installer_success(c) => Ok(()),
         Some(c) => Err(io::Error::other(format!(
             "winetricks {verb} exited with {c}{}",
-            describe_installer_exit(c).map(|d| format!(" ({d})")).unwrap_or_default()
+            describe_installer_exit(c)
+                .map(|d| format!(" ({d})"))
+                .unwrap_or_default()
         ))),
-        None => Err(io::Error::other(format!("winetricks {verb} was killed by a signal"))),
+        None => Err(io::Error::other(format!(
+            "winetricks {verb} was killed by a signal"
+        ))),
     }
 }
 
@@ -206,14 +220,21 @@ fn describe_installer_exit(code: i32) -> Option<&'static str> {
 /// Wine processes carry Windows-style argv that never mentions the Linux prefix
 /// path, so a cmdline match alone misses exactly the processes that matter.
 pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
-    const MARKERS: [&str; 5] =
-        ["wineboot", "wineserver", "pv-adverb", "wine-preloader", "steam.exe"];
+    const MARKERS: [&str; 5] = [
+        "wineboot",
+        "wineserver",
+        "pv-adverb",
+        "wine-preloader",
+        "steam.exe",
+    ];
     let want_prefix = fs::canonicalize(prefix).unwrap_or_else(|_| prefix.to_path_buf());
     let want_compat = fs::canonicalize(compatdata).unwrap_or_else(|_| compatdata.to_path_buf());
     let me = std::process::id();
 
     let mut busy = Vec::new();
-    let Ok(entries) = fs::read_dir("/proc") else { return busy };
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return busy;
+    };
     for e in entries.flatten() {
         let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
             continue;
@@ -222,14 +243,21 @@ pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
             continue;
         }
         // Cheap filter first: only a handful of processes are ever candidates.
-        let Ok(raw_cmd) = fs::read(e.path().join("cmdline")) else { continue };
-        let cmdline = String::from_utf8_lossy(&raw_cmd).replace('\0', " ").trim().to_string();
+        let Ok(raw_cmd) = fs::read(e.path().join("cmdline")) else {
+            continue;
+        };
+        let cmdline = String::from_utf8_lossy(&raw_cmd)
+            .replace('\0', " ")
+            .trim()
+            .to_string();
         if !MARKERS.iter().any(|m| cmdline.contains(m)) {
             continue;
         }
         // Then confirm the process actually belongs to THIS prefix. Unreadable
         // environ means another user's process, which is not ours to worry about.
-        let Ok(raw_env) = fs::read(e.path().join("environ")) else { continue };
+        let Ok(raw_env) = fs::read(e.path().join("environ")) else {
+            continue;
+        };
         if environ_owns_prefix(&raw_env, &want_prefix, &want_compat) {
             busy.push((pid, cmdline));
         }
@@ -241,14 +269,16 @@ pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
 /// names this prefix. Split out from the `/proc` walk so it can be tested against
 /// a synthetic buffer without needing real Wine processes.
 fn environ_owns_prefix(raw: &[u8], prefix: &Path, compatdata: &Path) -> bool {
-    String::from_utf8_lossy(raw).split('\0').any(|kv| match kv.split_once('=') {
-        // Compare canonically where possible so a symlinked or trailing-slash
-        // spelling still matches, and fall back to a literal compare when the
-        // path no longer resolves.
-        Some(("WINEPREFIX", v)) => same_path(v, prefix),
-        Some(("STEAM_COMPAT_DATA_PATH", v)) => same_path(v, compatdata),
-        _ => false,
-    })
+    String::from_utf8_lossy(raw)
+        .split('\0')
+        .any(|kv| match kv.split_once('=') {
+            // Compare canonically where possible so a symlinked or trailing-slash
+            // spelling still matches, and fall back to a literal compare when the
+            // path no longer resolves.
+            Some(("WINEPREFIX", v)) => same_path(v, prefix),
+            Some(("STEAM_COMPAT_DATA_PATH", v)) => same_path(v, compatdata),
+            _ => false,
+        })
 }
 
 fn same_path(value: &str, want: &Path) -> bool {
@@ -307,7 +337,9 @@ mod tests {
             assert!(!installer_success(bad), "{bad} should be failure");
         }
         // The codes a user is most likely to hit get an explanation.
-        assert!(describe_installer_exit(5).unwrap().contains("still running"));
+        assert!(describe_installer_exit(5)
+            .unwrap()
+            .contains("still running"));
         assert!(describe_installer_exit(112).unwrap().contains("disk space"));
         assert!(describe_installer_exit(1603).is_none());
     }
@@ -325,8 +357,7 @@ mod tests {
     fn refuses_a_proton_without_wine() {
         // A proton path whose dir has no files/bin/wine must error (never spawn
         // winetricks, which could fall back to a system wine against the prefix).
-        let dir = std::env::temp_dir()
-            .join(format!("eidos-prq-{}-{}", std::process::id(), "1"));
+        let dir = std::env::temp_dir().join(format!("eidos-prq-{}-{}", std::process::id(), "1"));
         std::fs::create_dir_all(&dir).unwrap();
         let fake_proton = dir.join("proton");
         std::fs::write(&fake_proton, b"#!/bin/sh\n").unwrap();
@@ -366,7 +397,10 @@ mod verbs_in_prefix_tests {
         // A setting is logged like a package; only the name before `=` is a verb,
         // or `fontsmooth=rgb` would never match the verb `fontsmooth`.
         assert!(got.contains("fontsmooth"), "{got:?}");
-        assert!(!got.iter().any(|v| v.contains('=')), "a setting leaked in: {got:?}");
+        assert!(
+            !got.iter().any(|v| v.contains('=')),
+            "a setting leaked in: {got:?}"
+        );
         let _ = std::fs::remove_dir_all(&p);
     }
 
@@ -391,4 +425,3 @@ mod verbs_in_prefix_tests {
         let _ = std::fs::remove_dir_all(&p);
     }
 }
-

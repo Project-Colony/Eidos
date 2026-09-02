@@ -109,8 +109,13 @@ fn bind(src: &Path, dst: &Path) -> bool {
     let (s, d) = (c(src), c(dst));
     // SAFETY: standard mount(2) bind with valid C strings.
     unsafe {
-        libc::mount(s.as_ptr(), d.as_ptr(), std::ptr::null(), libc::MS_BIND | libc::MS_REC, std::ptr::null())
-            == 0
+        libc::mount(
+            s.as_ptr(),
+            d.as_ptr(),
+            std::ptr::null(),
+            libc::MS_BIND | libc::MS_REC,
+            std::ptr::null(),
+        ) == 0
     }
 }
 
@@ -161,7 +166,10 @@ fn case_insensitive_read_through_mount() {
     let _s = mounted!(vec![game], over, &mnt);
 
     // Ask with completely different casing, as a Windows game engine would.
-    assert_eq!(fs::read(mnt.join("textures/armor.dds")).unwrap(), b"texdata");
+    assert_eq!(
+        fs::read(mnt.join("textures/armor.dds")).unwrap(),
+        b"texdata"
+    );
 }
 
 fn write_copies_up_and_keeps_sources_pristine() {
@@ -188,7 +196,10 @@ fn create_new_file_and_dir_land_in_overwrite() {
     assert_eq!(fs::read(mnt.join("saves/save01.ess")).unwrap(), b"savegame");
 
     drop(s);
-    assert_eq!(fs::read(over.join("saves/save01.ess")).unwrap(), b"savegame");
+    assert_eq!(
+        fs::read(over.join("saves/save01.ess")).unwrap(),
+        b"savegame"
+    );
 }
 
 fn delete_hides_file_and_keeps_game_pristine() {
@@ -221,7 +232,10 @@ fn recreate_after_delete_starts_empty() {
     assert_eq!(fs::read(mnt.join("gen.json")).unwrap(), b"new"); // no stale tail
 
     drop(s);
-    assert_eq!(fs::read(game.join("gen.json")).unwrap(), b"OLD-CONTENT-MUCH-LONGER-THAN-NEW"); // game pristine
+    assert_eq!(
+        fs::read(game.join("gen.json")).unwrap(),
+        b"OLD-CONTENT-MUCH-LONGER-THAN-NEW"
+    ); // game pristine
     assert_eq!(fs::read(over.join("gen.json")).unwrap(), b"new"); // overwrite holds only the new bytes
 }
 
@@ -254,14 +268,26 @@ fn xattr_on_a_deleted_file_does_not_resurrect_it() {
 
     // SAFETY: valid fd and NUL-terminated strings.
     let rc = unsafe {
-        libc::fsetxattr(f.as_raw_fd(), c"user.DOSATTRIB".as_ptr(), c"x".as_ptr().cast(), 1, 0)
+        libc::fsetxattr(
+            f.as_raw_fd(),
+            c"user.DOSATTRIB".as_ptr(),
+            c"x".as_ptr().cast(),
+            1,
+            0,
+        )
     };
-    assert_eq!(rc, -1, "an xattr write against a deleted path must fail, not copy it up");
+    assert_eq!(
+        rc, -1,
+        "an xattr write against a deleted path must fail, not copy it up"
+    );
     assert!(!mnt.join("gone.esp").exists(), "the file must stay deleted");
 
     drop(f);
     drop(s);
-    assert!(!over.join("gone.esp").exists(), "no copy-up may have happened");
+    assert!(
+        !over.join("gone.esp").exists(),
+        "no copy-up may have happened"
+    );
     assert_eq!(fs::read(game.join("gone.esp")).unwrap(), b"vanilla"); // game pristine
 }
 
@@ -315,7 +341,8 @@ fn a_create_clears_a_differently_cased_negative_lookup() {
     assert!(!mnt.join("MISSING.ESP").exists());
     fs::write(mnt.join("missing.esp"), b"here").unwrap();
     assert_eq!(
-        settle(|| fs::read(mnt.join("MISSING.ESP")).ok()).expect("a cached negative outlived the create"),
+        settle(|| fs::read(mnt.join("MISSING.ESP")).ok())
+            .expect("a cached negative outlived the create"),
         b"here"
     );
 
@@ -384,15 +411,22 @@ fn a_root_union_can_carry_a_data_union_inside_it() {
         eprintln!("  (cannot bind-mount, skipping)");
         return;
     }
-    let Some(_root) = mount(vec![root_mod, stash.clone()], over_root, &game) else { return };
+    let Some(_root) = mount(vec![root_mod, stash.clone()], over_root, &game) else {
+        return;
+    };
     // Everything the game root should show: vanilla exe, mod-provided loader.
     assert_eq!(fs::read(game.join("SkyrimSE.exe")).unwrap(), b"vanilla exe");
     assert_eq!(fs::read(game.join("skse64_loader.exe")).unwrap(), b"skse");
 
     // The Data union mounts INSIDE the root union.
     let data_mnt = game.join("Data");
-    let Some(_data) = mount(vec![data_mod], over_data, &data_mnt) else { return };
-    assert_eq!(fs::read(data_mnt.join("Interface/thing.swf")).unwrap(), b"ui");
+    let Some(_data) = mount(vec![data_mod], over_data, &data_mnt) else {
+        return;
+    };
+    assert_eq!(
+        fs::read(data_mnt.join("Interface/thing.swf")).unwrap(),
+        b"ui"
+    );
     // The root union is still readable underneath.
     assert_eq!(fs::read(game.join("skse64_loader.exe")).unwrap(), b"skse");
 }
@@ -435,8 +469,9 @@ fn a_walk_survives_the_directory_changing_under_it() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
     // Long names so the kernel's readdir buffer fills several times over.
-    let original: Vec<String> =
-        (0..6000).map(|i| format!("entry_{i:05}_with_a_deliberately_long_name_to_fill_the_buffer.dat")).collect();
+    let original: Vec<String> = (0..6000)
+        .map(|i| format!("entry_{i:05}_with_a_deliberately_long_name_to_fill_the_buffer.dat"))
+        .collect();
     for n in &original {
         put(&game, n, b"x");
     }
@@ -459,7 +494,13 @@ fn a_walk_survives_the_directory_changing_under_it() {
     let mut dedup = seen.clone();
     dedup.sort();
     dedup.dedup();
-    assert_eq!(dedup.len(), seen.len(), "the walk repeated entries: {} vs {}", seen.len(), dedup.len());
+    assert_eq!(
+        dedup.len(),
+        seen.len(),
+        "the walk repeated entries: {} vs {}",
+        seen.len(),
+        dedup.len()
+    );
     // Every name the directory held when the walk STARTED must appear. What the
     // walk does with the two later changes is its own business - it may or may
     // not see them - but it may not lose what was already there.
@@ -472,8 +513,14 @@ fn a_walk_survives_the_directory_changing_under_it() {
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert!(after.contains(&"appeared_during_the_walk.dat".to_string()), "next walk missed the create");
-    assert!(!after.contains(&original[3000]), "next walk still shows the deleted entry");
+    assert!(
+        after.contains(&"appeared_during_the_walk.dat".to_string()),
+        "next walk missed the create"
+    );
+    assert!(
+        !after.contains(&original[3000]),
+        "next walk still shows the deleted entry"
+    );
 }
 
 /// The merged listing is memoised by path, so every mutation must drop it. Each
@@ -503,31 +550,49 @@ fn a_cached_listing_is_dropped_by_every_mutation() {
 
     // create
     fs::write(mnt.join("fresh.dat"), b"f").unwrap();
-    assert!(names(&mnt).contains(&"fresh.dat".to_string()), "create must invalidate");
+    assert!(
+        names(&mnt).contains(&"fresh.dat".to_string()),
+        "create must invalidate"
+    );
 
     // unlink
     fs::remove_file(mnt.join("doomed.dat")).unwrap();
-    assert!(!names(&mnt).contains(&"doomed.dat".to_string()), "unlink must invalidate");
+    assert!(
+        !names(&mnt).contains(&"doomed.dat".to_string()),
+        "unlink must invalidate"
+    );
 
     // mkdir
     fs::create_dir(mnt.join("made")).unwrap();
-    assert!(names(&mnt).contains(&"made".to_string()), "mkdir must invalidate");
+    assert!(
+        names(&mnt).contains(&"made".to_string()),
+        "mkdir must invalidate"
+    );
 
     // rmdir - and the removed directory's OWN cached listing must go too, or a
     // recreated directory of the same name would come back with the old contents.
     let _ = names(&mnt.join("made")); // cache the empty listing
     fs::remove_dir(mnt.join("made")).unwrap();
-    assert!(!names(&mnt).contains(&"made".to_string()), "rmdir must invalidate the parent");
+    assert!(
+        !names(&mnt).contains(&"made".to_string()),
+        "rmdir must invalidate the parent"
+    );
 
     // symlink
     std::os::unix::fs::symlink("keep.dat", mnt.join("alias.dat")).unwrap();
-    assert!(names(&mnt).contains(&"alias.dat".to_string()), "symlink must invalidate");
+    assert!(
+        names(&mnt).contains(&"alias.dat".to_string()),
+        "symlink must invalidate"
+    );
 
     // rename, which changes BOTH parents
     let _ = names(&mnt.join("sub"));
     fs::rename(mnt.join("keep.dat"), mnt.join("sub/moved.dat")).unwrap();
     let top = names(&mnt);
-    assert!(!top.contains(&"keep.dat".to_string()), "rename must invalidate the source dir");
+    assert!(
+        !top.contains(&"keep.dat".to_string()),
+        "rename must invalidate the source dir"
+    );
     assert!(
         names(&mnt.join("sub")).contains(&"moved.dat".to_string()),
         "rename must invalidate the destination dir"
@@ -553,7 +618,10 @@ fn a_recreated_directory_does_not_inherit_the_old_listing() {
     fs::remove_file(mnt.join("d/old.dat")).unwrap();
     fs::remove_dir(mnt.join("d")).unwrap();
     fs::create_dir(mnt.join("d")).unwrap();
-    assert!(names(&mnt.join("d")).is_empty(), "a recreated directory starts empty");
+    assert!(
+        names(&mnt.join("d")).is_empty(),
+        "a recreated directory starts empty"
+    );
 }
 
 fn rmdir_refuses_non_empty_directory() {
@@ -589,7 +657,10 @@ fn symlink_in_a_layer_is_readable() {
 
     let meta = fs::symlink_metadata(mnt.join("link.txt")).unwrap();
     assert!(meta.file_type().is_symlink()); // reported as a symlink
-    assert_eq!(fs::read_link(mnt.join("link.txt")).unwrap(), Path::new("real.txt")); // readlink
+    assert_eq!(
+        fs::read_link(mnt.join("link.txt")).unwrap(),
+        Path::new("real.txt")
+    ); // readlink
     assert_eq!(fs::read(mnt.join("link.txt")).unwrap(), b"target data"); // follows through
 }
 
@@ -600,11 +671,17 @@ fn creating_a_symlink_lands_in_overwrite() {
     let s = mounted!(vec![game], over.clone(), &mnt);
 
     std::os::unix::fs::symlink("real.txt", mnt.join("alias.txt")).unwrap(); // create via the mount
-    assert_eq!(fs::read_link(mnt.join("alias.txt")).unwrap(), Path::new("real.txt"));
+    assert_eq!(
+        fs::read_link(mnt.join("alias.txt")).unwrap(),
+        Path::new("real.txt")
+    );
     assert_eq!(fs::read(mnt.join("alias.txt")).unwrap(), b"hi");
 
     drop(s);
-    assert!(fs::symlink_metadata(over.join("alias.txt")).unwrap().file_type().is_symlink());
+    assert!(fs::symlink_metadata(over.join("alias.txt"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
 }
 
 fn writable_mmap_persists_and_keeps_source_pristine() {
@@ -617,7 +694,11 @@ fn writable_mmap_persists_and_keeps_source_pristine() {
     // Open read+write (copies up to Overwrite), mmap MAP_SHARED, and write
     // through the mapping. msync forces the kernel to flush the dirty pages back
     // through the daemon, which only succeeds with writeback_cache negotiated.
-    let file = std::fs::OpenOptions::new().read(true).write(true).open(mnt.join("patch.dat")).unwrap();
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(mnt.join("patch.dat"))
+        .unwrap();
     let len = 8usize;
     // SAFETY: standard mmap/msync/munmap on a valid fd and length; we check each.
     unsafe {
@@ -652,36 +733,130 @@ fn main() {
     let isolated = match enter_private_namespace() {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("note: running in the host namespace; host services may race the mounts ({e})");
+            eprintln!(
+                "note: running in the host namespace; host services may race the mounts ({e})"
+            );
             false
         }
     };
 
     // (name, test fn, needs an isolated namespace to be deterministic)
     let tests: &[(&str, fn(), bool)] = &[
-        ("mod_shadows_game_and_falls_through", mod_shadows_game_and_falls_through, false),
-        ("case_insensitive_read_through_mount", case_insensitive_read_through_mount, false),
-        ("write_copies_up_and_keeps_sources_pristine", write_copies_up_and_keeps_sources_pristine, false),
-        ("create_new_file_and_dir_land_in_overwrite", create_new_file_and_dir_land_in_overwrite, false),
-        ("delete_hides_file_and_keeps_game_pristine", delete_hides_file_and_keeps_game_pristine, true),
-        ("recreate_after_delete_starts_empty", recreate_after_delete_starts_empty, true),
-        ("same_file_has_one_inode_whatever_the_casing", same_file_has_one_inode_whatever_the_casing, false),
-        ("xattr_on_a_deleted_file_does_not_resurrect_it", xattr_on_a_deleted_file_does_not_resurrect_it, true),
-        ("creating_a_file_after_a_negative_lookup_is_visible", creating_a_file_after_a_negative_lookup_is_visible, false),
-        ("a_negative_lookup_does_not_mint_an_inode", a_negative_lookup_does_not_mint_an_inode, false),
-        ("a_create_clears_a_differently_cased_negative_lookup", a_create_clears_a_differently_cased_negative_lookup, false),
-        ("renaming_a_file_drops_its_other_cached_spellings", renaming_a_file_drops_its_other_cached_spellings, true),
-        ("a_root_union_can_carry_a_data_union_inside_it", a_root_union_can_carry_a_data_union_inside_it, true),
-        ("rename_moves_file_through_mount", rename_moves_file_through_mount, false),
-        ("readdir_lists_merged_deduped_entries", readdir_lists_merged_deduped_entries, false),
-        ("rmdir_refuses_non_empty_directory", rmdir_refuses_non_empty_directory, false),
-        ("a_cached_listing_is_dropped_by_every_mutation", a_cached_listing_is_dropped_by_every_mutation, true),
-        ("a_walk_survives_the_directory_changing_under_it", a_walk_survives_the_directory_changing_under_it, true),
-        ("a_recreated_directory_does_not_inherit_the_old_listing", a_recreated_directory_does_not_inherit_the_old_listing, true),
-        ("large_file_round_trips_through_cached_handle", large_file_round_trips_through_cached_handle, false),
-        ("symlink_in_a_layer_is_readable", symlink_in_a_layer_is_readable, false),
-        ("creating_a_symlink_lands_in_overwrite", creating_a_symlink_lands_in_overwrite, false),
-        ("writable_mmap_persists_and_keeps_source_pristine", writable_mmap_persists_and_keeps_source_pristine, false),
+        (
+            "mod_shadows_game_and_falls_through",
+            mod_shadows_game_and_falls_through,
+            false,
+        ),
+        (
+            "case_insensitive_read_through_mount",
+            case_insensitive_read_through_mount,
+            false,
+        ),
+        (
+            "write_copies_up_and_keeps_sources_pristine",
+            write_copies_up_and_keeps_sources_pristine,
+            false,
+        ),
+        (
+            "create_new_file_and_dir_land_in_overwrite",
+            create_new_file_and_dir_land_in_overwrite,
+            false,
+        ),
+        (
+            "delete_hides_file_and_keeps_game_pristine",
+            delete_hides_file_and_keeps_game_pristine,
+            true,
+        ),
+        (
+            "recreate_after_delete_starts_empty",
+            recreate_after_delete_starts_empty,
+            true,
+        ),
+        (
+            "same_file_has_one_inode_whatever_the_casing",
+            same_file_has_one_inode_whatever_the_casing,
+            false,
+        ),
+        (
+            "xattr_on_a_deleted_file_does_not_resurrect_it",
+            xattr_on_a_deleted_file_does_not_resurrect_it,
+            true,
+        ),
+        (
+            "creating_a_file_after_a_negative_lookup_is_visible",
+            creating_a_file_after_a_negative_lookup_is_visible,
+            false,
+        ),
+        (
+            "a_negative_lookup_does_not_mint_an_inode",
+            a_negative_lookup_does_not_mint_an_inode,
+            false,
+        ),
+        (
+            "a_create_clears_a_differently_cased_negative_lookup",
+            a_create_clears_a_differently_cased_negative_lookup,
+            false,
+        ),
+        (
+            "renaming_a_file_drops_its_other_cached_spellings",
+            renaming_a_file_drops_its_other_cached_spellings,
+            true,
+        ),
+        (
+            "a_root_union_can_carry_a_data_union_inside_it",
+            a_root_union_can_carry_a_data_union_inside_it,
+            true,
+        ),
+        (
+            "rename_moves_file_through_mount",
+            rename_moves_file_through_mount,
+            false,
+        ),
+        (
+            "readdir_lists_merged_deduped_entries",
+            readdir_lists_merged_deduped_entries,
+            false,
+        ),
+        (
+            "rmdir_refuses_non_empty_directory",
+            rmdir_refuses_non_empty_directory,
+            false,
+        ),
+        (
+            "a_cached_listing_is_dropped_by_every_mutation",
+            a_cached_listing_is_dropped_by_every_mutation,
+            true,
+        ),
+        (
+            "a_walk_survives_the_directory_changing_under_it",
+            a_walk_survives_the_directory_changing_under_it,
+            true,
+        ),
+        (
+            "a_recreated_directory_does_not_inherit_the_old_listing",
+            a_recreated_directory_does_not_inherit_the_old_listing,
+            true,
+        ),
+        (
+            "large_file_round_trips_through_cached_handle",
+            large_file_round_trips_through_cached_handle,
+            false,
+        ),
+        (
+            "symlink_in_a_layer_is_readable",
+            symlink_in_a_layer_is_readable,
+            false,
+        ),
+        (
+            "creating_a_symlink_lands_in_overwrite",
+            creating_a_symlink_lands_in_overwrite,
+            false,
+        ),
+        (
+            "writable_mmap_persists_and_keeps_source_pristine",
+            writable_mmap_persists_and_keeps_source_pristine,
+            false,
+        ),
     ];
 
     println!("\nrunning {} union integration tests", tests.len());

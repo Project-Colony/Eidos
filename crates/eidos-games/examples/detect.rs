@@ -20,7 +20,11 @@ fn main() {
     println!("\nInstalled Steam apps scanned: {}", installed.len());
 
     let games = detect(&home);
-    println!("\nSupported games installed: {} / {} in catalog\n", games.len(), catalog().len());
+    println!(
+        "\nSupported games installed: {} / {} in catalog\n",
+        games.len(),
+        catalog().len()
+    );
     if games.is_empty() {
         println!("  (none of the catalogued games are installed here)");
     }

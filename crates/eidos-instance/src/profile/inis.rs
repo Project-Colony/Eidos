@@ -13,8 +13,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
-
 use super::*;
 
 /// Read a text file that may be UTF-8 or Windows ANSI (CP1252): game INIs come
@@ -29,7 +27,10 @@ pub fn read_text_lossy(path: &Path) -> Option<(String, bool)> {
     let bytes = fs::read(path).ok()?;
     match std::str::from_utf8(&bytes) {
         Ok(t) => Some((t.to_string(), false)),
-        Err(_) => Some((encoding_rs::WINDOWS_1252.decode(&bytes).0.into_owned(), true)),
+        Err(_) => Some((
+            encoding_rs::WINDOWS_1252.decode(&bytes).0.into_owned(),
+            true,
+        )),
     }
 }
 
@@ -107,7 +108,9 @@ pub(crate) fn merge_tweak(text: &mut String, fragment: &str, record: &mut Vec<Tw
         if section.is_empty() {
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         let (key, value) = (key.trim(), value.trim());
         if key.is_empty() {
             continue;
@@ -243,8 +246,9 @@ impl Profile {
             // next run, it is the engine's real format and refusing forever
             // would mean in-game settings never persist again.
             let refused_marker = self.dir().join(format!("{f}.refused-len"));
-            let last_refused: Option<u64> =
-                fs::read_to_string(&refused_marker).ok().and_then(|t| t.trim().parse().ok());
+            let last_refused: Option<u64> = fs::read_to_string(&refused_marker)
+                .ok()
+                .and_then(|t| t.trim().parse().ok());
             let stable_repeat = src_len > 0
                 && last_refused.is_some_and(|prev| {
                     // Relative tolerance only: a floor let "empty then anything
@@ -330,7 +334,9 @@ impl Profile {
         };
         let mut any = false;
         for frag in fragments.iter().chain(std::iter::once(&self.tweaks_path())) {
-            let Some((body, _)) = read_text_lossy(frag) else { continue };
+            let Some((body, _)) = read_text_lossy(frag) else {
+                continue;
+            };
             any |= merge_tweak(&mut text, &body, &mut record);
         }
         if any {

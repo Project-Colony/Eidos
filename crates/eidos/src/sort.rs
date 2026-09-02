@@ -22,7 +22,9 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let target = resolve(id);
     let id = &target.game_id;
     if !eidos_loot::is_supported(id) {
-        eidos_log::info!("LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game).");
+        eidos_log::info!(
+            "LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game)."
+        );
         exit(1);
     }
     let Some(game) = find_game(id) else {
@@ -60,8 +62,11 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let state_dir = prof.plugins_state_dir();
 
     // Discover exactly what a launch would use, preserving the current order.
-    let enabled: Vec<ModEntry> =
-        inst.modlist().into_iter().filter(|m| m.is_active()).collect();
+    let enabled: Vec<ModEntry> = inst
+        .modlist()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
     list.apply_prefix_state(&state_dir, &spec);
@@ -88,8 +93,11 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let userlist = cache.join("userlist.yaml");
 
     // Hand LOOT every discovered plugin by (name, real resolved path).
-    let plugins: Vec<(String, PathBuf)> =
-        list.plugins.iter().map(|p| (p.name.clone(), p.path.clone())).collect();
+    let plugins: Vec<(String, PathBuf)> = list
+        .plugins
+        .iter()
+        .map(|p| (p.name.clone(), p.path.clone()))
+        .collect();
     // And where those plugins actually live: under Eidos the game's own Data dir
     // holds only vanilla, so without these every file-conditioned masterlist
     // rule is evaluated against a tree the mods are not in. Highest priority
@@ -137,7 +145,10 @@ pub(crate) fn cmd_sort(args: &[String]) {
         Ok(_) => {
             // Shadow for external tools reading the prefix; never fatal.
             let _ = list.write_load_order(&local_dir, &spec);
-            println!("Sorted {} plugins ({active} active) and wrote the load order.", sorted.len())
+            println!(
+                "Sorted {} plugins ({active} active) and wrote the load order.",
+                sorted.len()
+            )
         }
         Err(e) => {
             eidos_log::warn!("Could not write load order: {e}");

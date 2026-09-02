@@ -14,8 +14,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
-
 use super::*;
 
 /// A list smaller than this is never second-guessed - losing two of five entries
@@ -57,7 +55,9 @@ pub(crate) fn active_loss(
     // re-enabled everything discovery could find - including plugins the user had
     // deliberately turned off. Same rule as the mod list's `ListTrust::judge`.
     if after == 0 {
-        return Some(format!("it clears the active set entirely ({before} plugin(s) lost)"));
+        return Some(format!(
+            "it clears the active set entirely ({before} plugin(s) lost)"
+        ));
     }
     let dropped = before - after;
     let relative = dropped as f64 / before as f64;
@@ -74,7 +74,10 @@ pub(crate) fn active_loss(
         ));
     }
     (dropped > 2 && relative > 0.50).then(|| {
-        format!("it drops {dropped} of {before} active plugins ({:.0}%)", relative * 100.0)
+        format!(
+            "it drops {dropped} of {before} active plugins ({:.0}%)",
+            relative * 100.0
+        )
     })
 }
 
@@ -85,7 +88,10 @@ pub(crate) fn active_loss(
 /// for any list containing one accented plugin name - which made `active_loss`
 /// return `None` too, silently disarming the only guard between a crash artifact
 /// and the profile. A French load order is one translated mod away from that.
-pub(crate) fn count_actives(path: &Path, mechanism: eidos_plugins::LoadOrderMechanism) -> Option<usize> {
+pub(crate) fn count_actives(
+    path: &Path,
+    mechanism: eidos_plugins::LoadOrderMechanism,
+) -> Option<usize> {
     let text = eidos_plugins::read_decoded(path)?;
     let lines = text
         .lines()
@@ -95,9 +101,7 @@ pub(crate) fn count_actives(path: &Path, mechanism: eidos_plugins::LoadOrderMech
         // Asterisk: `*` marks active. Counting `*` on a PlainList file - where
         // NO line ever has one - read every healthy Fallout list as 0 actives
         // and every wipe as no-change, leaving those games without a backstop.
-        eidos_plugins::LoadOrderMechanism::Asterisk => {
-            lines.filter(|l| l.starts_with('*')).count()
-        }
+        eidos_plugins::LoadOrderMechanism::Asterisk => lines.filter(|l| l.starts_with('*')).count(),
         // PlainList: every listed plugin IS active.
         eidos_plugins::LoadOrderMechanism::PlainList => lines.count(),
     })
@@ -214,7 +218,9 @@ impl Profile {
         let dst_dir = self.plugins_state_dir();
         let mut n = 0;
         for name in ["plugins.txt", "loadorder.txt"] {
-            let Some(src) = eidos_plugins::newest_variant(src_dir, name) else { continue };
+            let Some(src) = eidos_plugins::newest_variant(src_dir, name) else {
+                continue;
+            };
             let dst = dst_dir.join(name);
             if eidos_plugins::newest_variant(&dst_dir, name).is_none() {
                 // Adopt VERBATIM, always. An earlier version refused a file that
@@ -252,7 +258,9 @@ impl Profile {
                 n += 1;
             }
         }
-        let Ok(rd) = fs::read_dir(src_dir) else { return Ok(n) };
+        let Ok(rd) = fs::read_dir(src_dir) else {
+            return Ok(n);
+        };
         for e in rd.flatten() {
             let name = e.file_name();
             let lower = name.to_string_lossy().to_ascii_lowercase();
@@ -304,10 +312,7 @@ impl Profile {
     /// Whether the current `plugins.txt` lost too much of the pre-session active
     /// set to look like an edit (see [`active_loss`]) - the post-session half of
     /// the backstop. `None` means healthy, no snapshot, or no state.
-    pub fn plugin_loss_since_snapshot(
-        &self,
-        spec: &eidos_plugins::GameSpec,
-    ) -> Option<String> {
+    pub fn plugin_loss_since_snapshot(&self, spec: &eidos_plugins::GameSpec) -> Option<String> {
         let snap = self.plugins_snapshot_path();
         if !snap.is_file() {
             return None;
@@ -322,7 +327,10 @@ impl Profile {
     pub fn restore_plugin_snapshot(&self) -> io::Result<()> {
         let snap = self.plugins_snapshot_path();
         if !snap.is_file() {
-            return Err(io::Error::new(io::ErrorKind::NotFound, "no pre-session copy exists"));
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no pre-session copy exists",
+            ));
         }
         let dir = self.plugins_state_dir();
         copy_atomic(&snap, &eidos_plugins::canonical_path(&dir, "plugins.txt"))

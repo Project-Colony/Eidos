@@ -42,7 +42,9 @@ pub(crate) fn cached_entries(app: &App, dir: &Path) -> std::rc::Rc<Vec<String>> 
         }
     }
     let entries = std::rc::Rc::new(overwrite_entries(dir));
-    app.listing_cache.borrow_mut().insert(dir.to_path_buf(), (gen, entries.clone()));
+    app.listing_cache
+        .borrow_mut()
+        .insert(dir.to_path_buf(), (gen, entries.clone()));
     entries
 }
 
@@ -66,12 +68,18 @@ pub(crate) struct OwRow {
 ///
 /// Folders first, then files, each alphabetically - the order MO2 uses.
 pub(crate) fn tree_children(entries: &[String], dir: &str) -> Vec<(String, Option<usize>)> {
-    let prefix = if dir.is_empty() { String::new() } else { format!("{dir}/") };
+    let prefix = if dir.is_empty() {
+        String::new()
+    } else {
+        format!("{dir}/")
+    };
     let lo = entries.partition_point(|e| e.as_str() < prefix.as_str());
     let mut dirs: Vec<(String, usize)> = Vec::new();
     let mut files: Vec<String> = Vec::new();
     for e in &entries[lo..] {
-        let Some(rest) = e.strip_prefix(prefix.as_str()) else { break };
+        let Some(rest) = e.strip_prefix(prefix.as_str()) else {
+            break;
+        };
         match rest.split_once('/') {
             // A folder: count every file under it by extending the current run
             // rather than searching again.
@@ -107,9 +115,18 @@ pub(crate) fn overwrite_tree_rows(app: &App, entries: &[String], limit: usize) -
             if out.len() >= limit {
                 return;
             }
-            let rel = if dir.is_empty() { name.clone() } else { format!("{dir}/{name}") };
+            let rel = if dir.is_empty() {
+                name.clone()
+            } else {
+                format!("{dir}/{name}")
+            };
             let expanded = files.is_some() && app.overwrite_expanded.contains(&rel);
-            out.push(OwRow { depth, rel: rel.clone(), name, files });
+            out.push(OwRow {
+                depth,
+                rel: rel.clone(),
+                name,
+                files,
+            });
             if expanded {
                 walk(app, entries, &rel, depth + 1, limit, out);
             }
@@ -138,7 +155,10 @@ pub(crate) fn overwrite_entries(dir: &Path) -> Vec<String> {
         let Ok(rd) = fs::read_dir(dir) else { return };
         for e in rd.flatten() {
             let p = e.path();
-            let is_real_dir = e.file_type().map(|t| t.is_dir() && !t.is_symlink()).unwrap_or(false);
+            let is_real_dir = e
+                .file_type()
+                .map(|t| t.is_dir() && !t.is_symlink())
+                .unwrap_or(false);
             if is_real_dir {
                 walk(root, &p, out, depth + 1);
             } else if let Ok(rel) = p.strip_prefix(root) {
@@ -175,7 +195,9 @@ pub(crate) fn cached_merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
         }
     }
     let entries = merged_listing(app, dir);
-    app.data_listing.borrow_mut().insert(dir.to_string(), (gen, entries.clone()));
+    app.data_listing
+        .borrow_mut()
+        .insert(dir.to_string(), (gen, entries.clone()));
     entries
 }
 
@@ -215,7 +237,9 @@ pub(crate) fn data_stack(app: &App) -> Option<std::rc::Rc<eidos_core::LayerStack
 /// One level at a time, so expanding a node costs one directory read per layer
 /// that has it rather than a full recursive walk of every enabled mod.
 pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
-    let Some(stack) = data_stack(app) else { return Vec::new() };
+    let Some(stack) = data_stack(app) else {
+        return Vec::new();
+    };
     // Where each real path came from, so a winner can be named. Built once per
     // call rather than per row: a deep tree asks this thousands of times.
     let mut sources: Vec<(PathBuf, String)> = Vec::new();
@@ -226,7 +250,11 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     // the game's own Data directory, and a longest-prefix match against that
     // would attribute every vanilla file to whichever DLC row sorted first - and
     // put a Hide button on the pristine game install.
-    for m in app.mods.iter().filter(|m| m.is_active() && !m.is_unmanaged()) {
+    for m in app
+        .mods
+        .iter()
+        .filter(|m| m.is_active() && !m.is_unmanaged())
+    {
         sources.push((m.path.clone(), m.name.clone()));
     }
     if let Some(g) = selected_game(app) {
@@ -261,7 +289,9 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
             };
             let conflicted = !is_dir
                 && conflicts.is_some_and(|c| {
-                    c.files.get(&rel).is_some_and(eidos_conflicts::FileNode::is_conflicted)
+                    c.files
+                        .get(&rel)
+                        .is_some_and(eidos_conflicts::FileNode::is_conflicted)
                 });
             DataRow {
                 name,
@@ -277,7 +307,9 @@ pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
     // Folders first, then files, each alphabetically - the ordering every file
     // browser uses, and the one that makes a deep tree navigable.
     out.sort_by(|a, b| {
-        b.is_dir.cmp(&a.is_dir).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     out
 }
@@ -333,7 +365,10 @@ pub(crate) fn restore_hidden_files(root: &Path) -> std::io::Result<usize> {
             if p.is_dir() {
                 collect(&p, depth + 1, out);
             }
-            if p.file_name().and_then(|n| n.to_str()).is_some_and(eidos_core::is_hidden_name) {
+            if p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(eidos_core::is_hidden_name)
+            {
                 out.push((depth, p));
             }
         }
@@ -383,15 +418,22 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
             if out.len() >= limit {
                 return;
             }
-            let rel =
-                if dir.is_empty() { row.name.clone() } else { format!("{dir}/{}", row.name) };
+            let rel = if dir.is_empty() {
+                row.name.clone()
+            } else {
+                format!("{dir}/{}", row.name)
+            };
             let expanded = row.is_dir && (app.data_expanded.contains(&rel) || filtering);
             let keeps = !filtering
                 || (row.name.to_lowercase().contains(&query)
                     && (!app.data_conflicts_only || row.conflicted));
             let at = out.len();
             let is_dir = row.is_dir;
-            out.push(TreeRow { depth, rel: rel.clone(), row });
+            out.push(TreeRow {
+                depth,
+                rel: rel.clone(),
+                row,
+            });
             if expanded {
                 walk(app, &rel, depth + 1, limit, out);
             }
@@ -425,7 +467,11 @@ pub(crate) fn menu_bar<'a>() -> Element<'a, Message> {
         .push(flat_btn("Run (Ctrl+R)", Message::Run))
         .push(flat_btn("Refresh (F5)", Message::Refresh))
         .push(flat_btn("Help", Message::ShowAbout));
-    container(row).width(Length::Fill).padding(1).style(bar_style).into()
+    container(row)
+        .width(Length::Fill)
+        .padding(1)
+        .style(bar_style)
+        .into()
 }
 
 /// The File dropdown: every folder that matters, in one place.
@@ -474,26 +520,56 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .push(entry("Mods", inst.map(|i| i.mods_dir()), true))
         .push(entry("Downloads", inst.map(|i| i.downloads_dir()), true))
         .push(entry("Overwrite", inst.map(|i| i.overwrite_dir()), true))
-        .push(entry("Active profile", inst.map(|i| i.active().dir()), true))
+        .push(entry(
+            "Active profile",
+            inst.map(|i| i.active().dir()),
+            true,
+        ))
         .push(menu_sep())
-        .push(entry("Game install", game.map(|g| g.install_path.clone()), false))
+        .push(entry(
+            "Game install",
+            game.map(|g| g.install_path.clone()),
+            false,
+        ))
         .push(entry("Game Data", game.map(|g| g.data_path.clone()), false))
-        .push(entry("Game INIs (in the Proton prefix)", prefix_inis, false))
+        .push(entry(
+            "Game INIs (in the Proton prefix)",
+            prefix_inis,
+            false,
+        ))
         .push(menu_sep())
-        .push(menu_item_owned("Open a Nexus collection...".to_string(), Message::ShowCollection(String::new())))
+        .push(menu_item_owned(
+            "Open a Nexus collection...".to_string(),
+            Message::ShowCollection(String::new()),
+        ))
         .push(menu_item("Instances...", Message::ShowInstanceManager))
-        .push(menu_item("Export the mod list...", Message::ShowExportDialog))
+        .push(menu_item(
+            "Export the mod list...",
+            Message::ShowExportDialog,
+        ))
         .push(menu_sep())
         .push(entry("Eidos logs", Some(eidos_log::log_dir()), true))
-        .push(entry("Extensions", Some(eidos_addons::user_addons_dir()), true));
+        .push(entry(
+            "Extensions",
+            Some(eidos_addons::user_addons_dir()),
+            true,
+        ));
     menu_frame(col.into())
 }
 
 /// The View dropdown's contents (floats over the window via the Stack, dismissed
 /// by a click outside). Hosts the toolbar/status-bar toggles + collapse/expand-all.
 pub(crate) fn view_menu_card<'a>(app: &App) -> Element<'a, Message> {
-    let toolbar_label = if app.ui_toolbar_visible { "Hide toolbar" } else { "Show toolbar" };
-    let status_label = if app.ui_statusbar_visible { "Hide status bar" } else { "Show status bar" };
+    let toolbar_label = if app.ui_toolbar_visible {
+        "Hide toolbar"
+    } else {
+        "Show toolbar"
+    };
+    let status_label = if app.ui_statusbar_visible {
+        "Hide status bar"
+    } else {
+        "Show status bar"
+    };
     let mut col = Column::new()
         .spacing(1)
         .push(menu_item(toolbar_label, Message::ToggleToolbar))
@@ -556,7 +632,12 @@ fn set_all_item<'a>(app: &App, enable: bool) -> Element<'a, Message> {
     // group is not drawn, so it is not touched - and saying so only for filters
     // left the commonest case silent. The count already tells the truth; the
     // word is what stops it being read as "everything".
-    let narrowed = is_filtering(app) || n < app.mods.iter().filter(|m| !m.is_separator() && !m.is_unmanaged()).count();
+    let narrowed = is_filtering(app)
+        || n < app
+            .mods
+            .iter()
+            .filter(|m| !m.is_separator() && !m.is_unmanaged())
+            .count();
     let scope = if narrowed { " shown" } else { "" };
     let label = if armed {
         format!("Confirm - {} {n}{scope} mod(s)?", verb.to_lowercase())
@@ -577,27 +658,48 @@ pub(crate) fn toolbar<'a>(app: &App) -> Element<'a, Message> {
     // must be a real mod with a Nexus id to act on.
     let endorse_target = app.selected_mod.filter(|&i| {
         app.mods.get(i).is_some_and(|m| {
-            !m.is_separator()
-                && app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some()
+            !m.is_separator() && app.meta_cache.get(&m.name).and_then(|r| r.mod_id).is_some()
         })
     });
-    let endorse_msg = (app.endorsing.is_none()).then(|| endorse_target.map(Message::ModEndorse)).flatten();
+    let endorse_msg = (app.endorsing.is_none())
+        .then(|| endorse_target.map(Message::ModEndorse))
+        .flatten();
     let update_msg = (!app.update_in_progress).then_some(Message::CheckUpdates);
     let row = Row::new()
         .spacing(2)
-        .push(icon_text_btn(IC_INSTALL, "Install Mod", Message::InstallMod))
+        .push(icon_text_btn(
+            IC_INSTALL,
+            "Install Mod",
+            Message::InstallMod,
+        ))
         .push(icon_text_btn(IC_NEXUS, "Nexus", Message::OpenNexusGame))
-        .push(icon_text_btn(IC_CHANGE_GAME, "Change Game", Message::ChangeGame))
+        .push(icon_text_btn(
+            IC_CHANGE_GAME,
+            "Change Game",
+            Message::ChangeGame,
+        ))
         .push(icon_text_btn(IC_REFRESH, "Refresh", Message::Refresh))
-        .push(icon_text_btn(IC_EXECUTABLES, "Executables", Message::ShowExecutablesDialog))
+        .push(icon_text_btn(
+            IC_EXECUTABLES,
+            "Executables",
+            Message::ShowExecutablesDialog,
+        ))
         .push(text_btn("Backups", Message::ShowBackupsDialog))
         .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
-        .push(icon_text_btn(IC_SETTINGS, "Settings", Message::OpenSettings))
+        .push(icon_text_btn(
+            IC_SETTINGS,
+            "Settings",
+            Message::OpenSettings,
+        ))
         .push(Space::new().width(Length::Fill))
         .push(icon_btn(IC_ENDORSE, 20.0, endorse_msg))
         .push(icon_btn(IC_UPDATE, 20.0, update_msg))
         .push(icon_btn(IC_HELP, 20.0, Some(Message::ShowAbout)));
-    container(row).width(Length::Fill).padding(2).style(bar_style).into()
+    container(row)
+        .width(Length::Fill)
+        .padding(2)
+        .style(bar_style)
+        .into()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -617,7 +719,9 @@ pub(crate) fn name_cell<'a>(name: String, bg: Color) -> Element<'a, Message> {
         // Without this the text wraps and the row grows; with it, and without
         // the clip below, the text would instead paint over the next column -
         // iced does not clip text to its node.
-        text(name).size(13.0).wrapping(iced::widget::text::Wrapping::None),
+        text(name)
+            .size(13.0)
+            .wrapping(iced::widget::text::Wrapping::None),
     )
     .width(Length::Fill)
     .clip(true);
@@ -661,7 +765,9 @@ pub(crate) fn mod_row<'a>(
     let toggle = if m.unmanaged {
         checkbox(true).size(16)
     } else {
-        checkbox(m.enabled).on_toggle(move |_| Message::ToggleMod(i)).size(16)
+        checkbox(m.enabled)
+            .on_toggle(move |_| Message::ToggleMod(i))
+            .size(16)
     };
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
@@ -735,11 +841,16 @@ pub(crate) fn mod_row<'a>(
             .gap(4),
         );
     }
-    if let Some(note) = meta.and_then(|r| r.notes.clone()).filter(|n| !n.trim().is_empty()) {
+    if let Some(note) = meta
+        .and_then(|r| r.notes.clone())
+        .filter(|n| !n.trim().is_empty())
+    {
         flags = flags.push(
             tooltip(
                 text("\u{270E}").size(12.0),
-                container(text(note).size(11.0)).padding(6).style(card_style),
+                container(text(note).size(11.0))
+                    .padding(6)
+                    .style(card_style),
                 tooltip::Position::Left,
             )
             .gap(4),
@@ -754,15 +865,20 @@ pub(crate) fn mod_row<'a>(
         _ => version,
     };
     // MO2's Category column: the mod's primary category, resolved to a name.
-    let category = meta.and_then(|r| r.category_name.clone()).unwrap_or_default();
+    let category = meta
+        .and_then(|r| r.category_name.clone())
+        .unwrap_or_default();
     // MO2's Content column: a compact letters summary of what the mod ships.
     let content = meta.map(|r| r.content_tags.clone()).unwrap_or_default();
 
     // A backup contributes nothing to the game, so its checkbox does nothing -
     // a tick that deployed two copies of one mod over each other would be worse
     // than no tick at all. Drawn inert, like unmanaged content.
-    let toggle: Element<'a, Message> =
-        if m.is_backup() { checkbox(false).size(16).into() } else { toggle.into() };
+    let toggle: Element<'a, Message> = if m.is_backup() {
+        checkbox(false).size(16).into()
+    } else {
+        toggle.into()
+    };
     let mut row = Row::new()
         .spacing(6)
         .height(Length::Fixed(MOD_ROW_H))
@@ -775,24 +891,38 @@ pub(crate) fn mod_row<'a>(
         let w = Length::Fixed(col.width());
         row = match col {
             ModColumn::Category => row.push(
-                text(if m.unmanaged { "Game content".to_string() } else { category.clone() })
-                    .size(11.0)
-                    .width(w),
+                text(if m.unmanaged {
+                    "Game content".to_string()
+                } else {
+                    category.clone()
+                })
+                .size(11.0)
+                .width(w),
             ),
             ModColumn::Content => row.push(text(content.clone()).size(10.0).width(w)),
             ModColumn::Version => row.push(text(version.clone()).size(11.0).width(w)),
             ModColumn::Author => row.push(
-                text(meta.and_then(|r| r.author.clone()).unwrap_or_default()).size(11.0).width(w),
+                text(meta.and_then(|r| r.author.clone()).unwrap_or_default())
+                    .size(11.0)
+                    .width(w),
             ),
             ModColumn::Installed => row.push(
-                text(meta.and_then(|r| r.installed_at).map(fmt_day).unwrap_or_default())
-                    .size(11.0)
-                    .width(w),
+                text(
+                    meta.and_then(|r| r.installed_at)
+                        .map(fmt_day)
+                        .unwrap_or_default(),
+                )
+                .size(11.0)
+                .width(w),
             ),
             ModColumn::ModId => row.push(
-                text(meta.and_then(|r| r.mod_id).map(|n| n.to_string()).unwrap_or_default())
-                    .size(11.0)
-                    .width(w),
+                text(
+                    meta.and_then(|r| r.mod_id)
+                        .map(|n| n.to_string())
+                        .unwrap_or_default(),
+                )
+                .size(11.0)
+                .width(w),
             ),
             ModColumn::Game => row.push(
                 text(meta.and_then(|r| r.game_name.clone()).unwrap_or_default())
@@ -839,13 +969,21 @@ fn group_header_row<'a>(label: String, count: usize, folded: bool) -> Element<'a
         .spacing(6)
         .height(Length::Fixed(MOD_ROW_H))
         .align_y(iced::Alignment::Center)
-        .push(text(if folded { "[+]" } else { "[-]" }).size(11.0).width(C_CHECK))
+        .push(
+            text(if folded { "[+]" } else { "[-]" })
+                .size(11.0)
+                .width(C_CHECK),
+        )
         .push(text(label).size(12.0).width(Length::Fill))
         .push(text(format!("{count}")).size(11.0).width(C_PRIO));
-    mouse_area(container(row).padding([0, 4]).style(|_: &Theme| container::Style {
-        background: Some(Background::Color(group_header_bg())),
-        ..Default::default()
-    }))
+    mouse_area(
+        container(row)
+            .padding([0, 4])
+            .style(|_: &Theme| container::Style {
+                background: Some(Background::Color(group_header_bg())),
+                ..Default::default()
+            }),
+    )
     .on_press(msg)
     .into()
 }
@@ -853,7 +991,10 @@ fn group_header_row<'a>(label: String, count: usize, folded: bool) -> Element<'a
 /// A date with no time: an install date is read as "which week was this", and a
 /// clock on every row is width spent on a precision nobody wants.
 fn fmt_day(t: std::time::SystemTime) -> String {
-    let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0) as i64;
     let (y, m, d, ..) = eidos_log::civil_from_unix(secs);
     format!("{y:04}-{m:02}-{d:02}")
 }
@@ -874,7 +1015,9 @@ pub(crate) fn separator_row<'a>(
     collapsed: bool,
     selected: bool,
 ) -> Element<'a, Message> {
-    let bg = color.map(|[r, g, b]| Color::from_rgb8(r, g, b)).unwrap_or(separator_accent());
+    let bg = color
+        .map(|[r, g, b]| Color::from_rgb8(r, g, b))
+        .unwrap_or(separator_accent());
 
     // The collapse/expand toggle sits in the checkbox column (a separator has no
     // checkbox); it hides/shows the mods grouped beneath this separator.
@@ -887,7 +1030,9 @@ pub(crate) fn separator_row<'a>(
     // a fade would have to work from both ends, and a separator that needs one is
     // a separator whose name should be shorter.
     let name = container(
-        text(m.display_name().to_string()).size(13.0).wrapping(iced::widget::text::Wrapping::None),
+        text(m.display_name().to_string())
+            .size(13.0)
+            .wrapping(iced::widget::text::Wrapping::None),
     )
     .width(Length::Fill)
     .clip(true)
@@ -899,8 +1044,7 @@ pub(crate) fn separator_row<'a>(
         .align_y(iced::Alignment::Center)
         .push(container(collapse).width(C_CHECK))
         .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
-        .push(name)
-        ;
+        .push(name);
 
     container(
         mouse_area(row)
@@ -935,7 +1079,11 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             let chip = button(text(name.clone()).size(12.0))
                 .padding(4)
                 .on_press(Message::SwitchProfile(name.clone()))
-                .style(if selected { button::primary } else { button::secondary });
+                .style(if selected {
+                    button::primary
+                } else {
+                    button::secondary
+                });
             profile = profile
                 .push(mouse_area(chip).on_right_press(Message::ProfileMenuOpen(name.clone())));
         }
@@ -957,7 +1105,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let cats = app.categories.as_ref();
 
     // Category-filter dropdown: "All" + the top-level categories actually in use.
-    let mut choices = vec![CategoryChoice { id: None, label: "All categories".to_string() }];
+    let mut choices = vec![CategoryChoice {
+        id: None,
+        label: "All categories".to_string(),
+    }];
     if let Some(cf) = &cats {
         let mut used: std::collections::BTreeSet<i32> = std::collections::BTreeSet::new();
         for r in app.meta_cache.values() {
@@ -973,11 +1124,17 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         }
         for (id, name) in cf.all_top_level() {
             if used.contains(&id) {
-                choices.push(CategoryChoice { id: Some(id), label: name.to_string() });
+                choices.push(CategoryChoice {
+                    id: Some(id),
+                    label: name.to_string(),
+                });
             }
         }
     }
-    let selected = choices.iter().find(|c| c.id == app.category_filter).cloned();
+    let selected = choices
+        .iter()
+        .find(|c| c.id == app.category_filter)
+        .cloned();
 
     // MO2's mod-list filter box + a category dropdown + a button to drop a separator.
     let search = Row::new()
@@ -990,9 +1147,11 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 .size(12.0),
         )
         .push(
-            pick_list(choices, selected, |c: CategoryChoice| Message::CategoryFilterChanged(c.id))
-                .text_size(12.0)
-                .padding(5),
+            pick_list(choices, selected, |c: CategoryChoice| {
+                Message::CategoryFilterChanged(c.id)
+            })
+            .text_size(12.0)
+            .padding(5),
         )
         .push(filter_button(app))
         .push(tool_btn("+ Separator", Message::AddSeparator(0)))
@@ -1039,7 +1198,8 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let mut tints: Vec<Option<Color>> = Vec::new();
     let mut shown = 0usize;
     if app.mods.is_empty() {
-        list = list.push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
+        list = list
+            .push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
     }
     // Decided up front, because whether a separator draws depends on whether any
     // mod BELOW it survives the filter - which the single downward pass this used
@@ -1059,7 +1219,12 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         .map(|d| d.gap)
         // A download being dropped in has no row in the list yet, so it has no
         // "own edge" to suppress: every aimed gap really would install there.
-        .or_else(|| app.download_drag.as_ref().filter(|d| d.aimed).map(|d| d.gap));
+        .or_else(|| {
+            app.download_drag
+                .as_ref()
+                .filter(|d| d.aimed)
+                .map(|d| d.gap)
+        });
     let dragging = app.drag_state.is_some() || app.download_drag.is_some();
     // Which drag the strips answer to. Only one can be live - a press on a
     // download row cancels a mod drag through the same release ladder - so this
@@ -1106,8 +1271,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             // Every VISIBLE row gets a strip above it, separators included, or the
             // slot just before a group header would be unreachable.
             if reorderable {
-                list = list
-                    .push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+                list = list.push(drop_gap(
+                    i,
+                    live_gap == Some(i),
+                    dragging,
+                    over_gap,
+                    drop_msg.clone(),
+                ));
             }
             list = list.push(separator_row(i, m, color, collapsed, selected));
             tints.push(None); // a separator has no conflict of its own
@@ -1147,8 +1317,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // the game's own content is written to modlist.txt now, so a row landing
         // above it keeps its place.
         if reorderable {
-            list =
-                list.push(drop_gap(i, live_gap == Some(i), dragging, over_gap, drop_msg.clone()));
+            list = list.push(drop_gap(
+                i,
+                live_gap == Some(i),
+                dragging,
+                over_gap,
+                drop_msg.clone(),
+            ));
         }
         // Computed once and handed to both: the row paints this colour, and the
         // name cell fades into it.
@@ -1157,7 +1332,9 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         // The mod's own colour, washed down to a row background. MO2 colours any
         // mod through the Notes column; Eidos already stored the colour per mod
         // and only ever offered the picker on separators.
-        let tint = meta.and_then(|r| r.color).map(|rgb| mod_tint(rgb, i % 2 == 0));
+        let tint = meta
+            .and_then(|r| r.color)
+            .map(|rgb| mod_tint(rgb, i % 2 == 0));
         let bg = row_background(i % 2 == 0, selected, conflict, tint);
         list = list.push(list_row(
             mod_row(i, m, meta, flag_icon, hidden_icon, bg, &app.mod_columns),
@@ -1174,8 +1351,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // nothing else on screen to aim at.
     let end = app.mods.len();
     if reorderable {
-        list =
-            list.push(drop_gap(end, live_gap == Some(end), dragging, over_gap, drop_msg.clone()));
+        list = list.push(drop_gap(
+            end,
+            live_gap == Some(end),
+            dragging,
+            over_gap,
+            drop_msg.clone(),
+        ));
     }
     // `shown` counts mods only, so this cannot fire on a list that is all folded
     // groups - and it only speaks when something was actually asked.
@@ -1190,7 +1372,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             by.push("in this category".to_string());
         }
         if app.filters.any() {
-            by.push(format!("matching the {} active filter(s)", app.filters.active_count()));
+            by.push(format!(
+                "matching the {} active filter(s)",
+                app.filters.active_count()
+            ));
         }
         list = list.push(text(format!("No mods {}.", by.join(", "))).size(12.0));
     }
@@ -1226,7 +1411,10 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // bands existed - which are never drop strips - dragging any distance made
     // it certain.
     let list_area = mouse_area(
-        scrollable(list).id(mod_scroll_id()).width(Length::Fill).height(Length::Fill),
+        scrollable(list)
+            .id(mod_scroll_id())
+            .width(Length::Fill)
+            .height(Length::Fill),
     );
     // The conflict marks go ON the scrollbar, at the same fraction of the list,
     // so the mod a tint refers to can be found without reading every row on the
@@ -1234,7 +1422,9 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // whole list sideways to make room, which is a lot of shifted UI for a hint.
     // Nothing in the strip handles events, so the scrollbar keeps the pointer.
     let mut layers = Stack::new().push(list_area).push(
-        Row::new().push(Space::new().width(Length::Fill)).push(scroll_marks(&tints)),
+        Row::new()
+            .push(Space::new().width(Length::Fill))
+            .push(scroll_marks(&tints)),
     );
     // Auto-scroll bands, and only once the drag is REALLY under way. `DragStart`
     // fires on press, so keying these off "a drag exists" put them under the
@@ -1273,11 +1463,12 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // button came up somewhere that was no longer a row, the armed drag was
     // never released and the next click moved the mod. The same mistake the
     // insertion strips were built to avoid, made again one panel over.
-    let legend = container(conflict_legend(app).unwrap_or_else(|| Space::new().width(0).height(0).into()))
-        // Tall enough for the 12px swatch and the 11pt label without clipping,
-        // and identical whether or not there is anything to show.
-        .height(Length::Fixed(20.0))
-        .align_y(iced::alignment::Vertical::Center);
+    let legend =
+        container(conflict_legend(app).unwrap_or_else(|| Space::new().width(0).height(0).into()))
+            // Tall enough for the 12px swatch and the 11pt label without clipping,
+            // and identical whether or not there is anything to show.
+            .height(Length::Fixed(20.0))
+            .align_y(iced::alignment::Vertical::Center);
 
     let inner = Column::new()
         .spacing(6)
@@ -1291,7 +1482,12 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // The two panes share the width by a ratio the user drags, not by a constant.
     // A thousandth of the window is finer than a pixel on any screen this runs on.
     let portion = (app.split * 1000.0) as u16;
-    container(inner).width(Length::FillPortion(portion)).height(Length::Fill).padding(8).style(panel_style).into()
+    container(inner)
+        .width(Length::FillPortion(portion))
+        .height(Length::Fill)
+        .padding(8)
+        .style(panel_style)
+        .into()
 }
 
 /// A single left-aligned action in the mod context menu.
@@ -1321,10 +1517,16 @@ pub(crate) fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message
 /// a load order, and until now the only answer was the row's hover tooltip.
 pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(list) = app.plugins.as_ref() else {
-        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+        return Space::new()
+            .width(Length::Shrink)
+            .height(Length::Shrink)
+            .into();
     };
     let Some(p) = list.plugins.get(i) else {
-        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+        return Space::new()
+            .width(Length::Shrink)
+            .height(Length::Shrink)
+            .into();
     };
     let picked = app.selected_plugins.len().max(1);
     let mut col = Column::new()
@@ -1337,9 +1539,16 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     // worse than no row.
     match plugin_origin_row(app, i) {
         Some(row) => {
-            let name = app.mods.get(row).map(|m| m.display_name().to_string()).unwrap_or_default();
+            let name = app
+                .mods
+                .get(row)
+                .map(|m| m.display_name().to_string())
+                .unwrap_or_default();
             col = col
-                .push(menu_item_owned(format!("Open mod folder  ({name})"), Message::OpenPluginOrigin(i)))
+                .push(menu_item_owned(
+                    format!("Open mod folder  ({name})"),
+                    Message::OpenPluginOrigin(i),
+                ))
                 .push(menu_item("Mod info", Message::ShowPluginOriginInfo(i)));
         }
         None => {
@@ -1350,7 +1559,11 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     col = col
         .push(menu_sep())
         .push(menu_item_owned(
-            if picked > 1 { format!("Send {picked} to top") } else { "Send to top".to_string() },
+            if picked > 1 {
+                format!("Send {picked} to top")
+            } else {
+                "Send to top".to_string()
+            },
             Message::PluginsSendTop,
         ))
         .push(menu_item_owned(
@@ -1366,7 +1579,11 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         .push(menu_item("Activate all", Message::PluginsSetAll(true)))
         .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
 
-    container(col).width(Length::Fixed(240.0)).padding(6).style(card_style).into()
+    container(col)
+        .width(Length::Fixed(240.0))
+        .padding(6)
+        .style(card_style)
+        .into()
 }
 
 /// The profile names and the active one, memoised against the view generation.
@@ -1435,7 +1652,11 @@ pub(crate) fn nexus_budget_suffix(app: &App) -> String {
 /// list's does - a modal for one number is a lot of ceremony, and the menu is
 /// already floating where the user is looking.
 fn send_to_plugin_priority<'a>(app: &App, i: usize) -> Element<'a, Message> {
-    match app.plugin_send_priority.as_ref().filter(|(row, _)| *row == i) {
+    match app
+        .plugin_send_priority
+        .as_ref()
+        .filter(|(row, _)| *row == i)
+    {
         Some((_, typed)) => text_input("Row number (1 = first)", typed)
             .on_input(Message::PluginSendToPriorityChanged)
             .on_submit(Message::PluginSendToPriorityCommit)
@@ -1450,7 +1671,11 @@ fn send_to_plugin_priority<'a>(app: &App, i: usize) -> Element<'a, Message> {
 /// the list - so a list that looks short always says why.
 pub(crate) fn filter_button<'a>(app: &App) -> Element<'a, Message> {
     let n = app.filters.active_count();
-    let label = if n > 0 { format!("Filters ({n})") } else { "Filters".to_string() };
+    let label = if n > 0 {
+        format!("Filters ({n})")
+    } else {
+        "Filters".to_string()
+    };
     button(text(label).size(12.0))
         .padding(5)
         .on_press(Message::ToggleFilterPane)
@@ -1505,10 +1730,15 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
     // for the same reason: mouse_area captures a right press only when it has a
     // handler, so without it a right-click reached the mod list THROUGH the open
     // pane and opened a context menu underneath it.
-    mouse_area(container(col).width(Length::Fixed(260.0)).padding(6).style(card_style))
-        .on_press(Message::Noop)
-        .on_right_press(Message::Noop)
-        .into()
+    mouse_area(
+        container(col)
+            .width(Length::Fixed(260.0))
+            .padding(6)
+            .style(card_style),
+    )
+    .on_press(Message::Noop)
+    .on_right_press(Message::Noop)
+    .into()
 }
 
 /// A small separator line inside the context menu.
@@ -1527,7 +1757,10 @@ pub(crate) fn menu_sep<'a>() -> Element<'a, Message> {
 /// reinstall, rename, remove). Shows the rename editor when a rename is in flight.
 pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(m) = app.mods.get(i) else {
-        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+        return Space::new()
+            .width(Length::Shrink)
+            .height(Length::Shrink)
+            .into();
     };
 
     // When more than one mod is selected, the right-click menu becomes a batch menu
@@ -1538,9 +1771,16 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let title = Row::new()
         .spacing(6)
-        .push(text(m.display_name().to_string()).size(13.0).width(Length::Fill))
         .push(
-            button(text("x").size(13.0)).padding([1, 6]).on_press(Message::CloseMenu).style(button::text),
+            text(m.display_name().to_string())
+                .size(13.0)
+                .width(Length::Fill),
+        )
+        .push(
+            button(text("x").size(13.0))
+                .padding([1, 6])
+                .on_press(Message::CloseMenu)
+                .style(button::text),
         );
 
     let mut col = Column::new().spacing(1).push(title);
@@ -1605,8 +1845,14 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
             // On a separator, "inside" is the only placement that reads
             // naturally, and it means the END of the group it heads - the same
             // range the fold machinery uses.
-            .push(menu_item("Install mod inside", Message::InstallAt(group_children(&app.mods, i).end)))
-            .push(menu_item("New empty mod inside", Message::CreateEmptyModAt(group_children(&app.mods, i).end)))
+            .push(menu_item(
+                "Install mod inside",
+                Message::InstallAt(group_children(&app.mods, i).end),
+            ))
+            .push(menu_item(
+                "New empty mod inside",
+                Message::CreateEmptyModAt(group_children(&app.mods, i).end),
+            ))
             .push(menu_item("Add separator above", Message::AddSeparator(i)))
             .push(menu_sep())
             .push(menu_item("Open in Explorer", Message::ModOpenFolder(i)))
@@ -1618,7 +1864,10 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     col = col
         .push(menu_item("Information...", Message::ShowModInfo(i)))
         .push(menu_sep())
-        .push(menu_item(if m.enabled { "Disable" } else { "Enable" }, Message::ToggleMod(i)))
+        .push(menu_item(
+            if m.enabled { "Disable" } else { "Enable" },
+            Message::ToggleMod(i),
+        ))
         .push(menu_sep())
         .push(menu_item("Send to Top", Message::ModSendTop(i)))
         .push(menu_item("Send to Bottom", Message::ModSendBottom(i)))
@@ -1646,12 +1895,19 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .as_ref()
         .and_then(|mm| mm.uploader().zip(mm.uploader_url()))
     {
-        col = col.push(menu_item_owned(format!("Visit {who}'s profile"), Message::OpenUrl(url)));
+        col = col.push(menu_item_owned(
+            format!("Visit {who}'s profile"),
+            Message::OpenUrl(url),
+        ));
     }
     if has_nexus {
         col = col.push(menu_item("Visit on Nexus", Message::ModVisitNexus(i)));
         let endorsed = meta.as_ref().is_some_and(|mm| mm.endorsed());
-        let endorse_label = if endorsed { "Abstain (un-endorse)" } else { "Endorse" };
+        let endorse_label = if endorsed {
+            "Abstain (un-endorse)"
+        } else {
+            "Endorse"
+        };
         col = col.push(menu_item(endorse_label, Message::ModEndorse(i)));
         let tracked = meta.as_ref().is_some_and(|mm| mm.tracked());
         let track_label = if tracked { "Untrack" } else { "Track" };
@@ -1687,7 +1943,11 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     }
     // Ignore update is a local flag (MO2 shows it for any mod, Nexus id or not).
     let ignored = meta.as_ref().is_some_and(|mm| mm.ignore_update());
-    let ignore_label = if ignored { "Check for updates" } else { "Ignore updates" };
+    let ignore_label = if ignored {
+        "Check for updates"
+    } else {
+        "Ignore updates"
+    };
     col = col.push(menu_item(ignore_label, Message::ModIgnoreUpdate(i)));
 
     // Bulk unhide, offered only when the mod actually has hidden files - the
@@ -1699,17 +1959,26 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .and_then(|c| c.mods.get(&((i + 1) as u32)))
         .is_some_and(|mc| mc.has_hidden);
     if has_hidden {
-        col = col.push(menu_item("Unhide all files", Message::RestoreHiddenFiles(i)));
+        col = col.push(menu_item(
+            "Unhide all files",
+            Message::RestoreHiddenFiles(i),
+        ));
     }
 
     col = col
         .push(menu_item("Categories...", Message::ShowCategoriesDialog(i)))
-        .push(separator_swatches(i, app.meta_cache.get(&m.name).and_then(|r| r.color)))
+        .push(separator_swatches(
+            i,
+            app.meta_cache.get(&m.name).and_then(|r| r.color),
+        ))
         .push(menu_sep())
         // The gap is an INSERTION index: `i` is above this row, `i + 1` below.
         .push(menu_item("Install mod above", Message::InstallAt(i)))
         .push(menu_item("Install mod below", Message::InstallAt(i + 1)))
-        .push(menu_item("New empty mod above", Message::CreateEmptyModAt(i)))
+        .push(menu_item(
+            "New empty mod above",
+            Message::CreateEmptyModAt(i),
+        ))
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
         .push(menu_item("Rename", Message::RenameStart(i)))
@@ -1728,12 +1997,22 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
     let n = targets.len();
     // Mirror the batch toggle's decision so the label reads true ("Disable" when
     // any selected mod is on, else "Enable").
-    let any_on = targets.iter().any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
-    let toggle_label = if any_on { "Disable selected" } else { "Enable selected" };
+    let any_on = targets
+        .iter()
+        .any(|&i| app.mods.get(i).is_some_and(|m| m.enabled));
+    let toggle_label = if any_on {
+        "Disable selected"
+    } else {
+        "Enable selected"
+    };
 
     let title = Row::new()
         .spacing(6)
-        .push(text(format!("{n} mods selected")).size(13.0).width(Length::Fill))
+        .push(
+            text(format!("{n} mods selected"))
+                .size(13.0)
+                .width(Length::Fill),
+        )
         .push(
             button(text("x").size(13.0))
                 .padding([1, 6])
@@ -1752,7 +2031,11 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(remove_msg)
-        .style(if app.confirm_batch_remove { button::danger } else { button::text });
+        .style(if app.confirm_batch_remove {
+            button::danger
+        } else {
+            button::text
+        });
 
     let col = Column::new()
         .spacing(1)
@@ -1768,7 +2051,10 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
         // and indexing it would panic.
         .push(match targets.first() {
             Some(&first) => menu_item("Categories...", Message::ShowCategoriesDialog(first)),
-            None => Space::new().width(Length::Shrink).height(Length::Shrink).into(),
+            None => Space::new()
+                .width(Length::Shrink)
+                .height(Length::Shrink)
+                .into(),
         })
         .push(menu_sep())
         .push(remove);
@@ -1777,12 +2063,20 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
 
 /// The two-click Remove button shared by the mod and separator menus.
 pub(crate) fn remove_button<'a>(app: &App, i: usize) -> Element<'a, Message> {
-    let label = if app.confirm_remove == Some(i) { "Confirm remove?" } else { "Remove" };
+    let label = if app.confirm_remove == Some(i) {
+        "Confirm remove?"
+    } else {
+        "Remove"
+    };
     button(text(label).size(12.0))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(Message::ModRemove(i))
-        .style(if app.confirm_remove == Some(i) { button::danger } else { button::text })
+        .style(if app.confirm_remove == Some(i) {
+            button::danger
+        } else {
+            button::text
+        })
         .into()
 }
 
@@ -1801,22 +2095,29 @@ pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Elem
         [0x5e, 0x2e, 0x8b],
         [0x55, 0x55, 0x55],
     ];
-    let mut row = Row::new().spacing(3).align_y(iced::Alignment::Center).push(text("Colour").size(10.0));
+    let mut row = Row::new()
+        .spacing(3)
+        .align_y(iced::Alignment::Center)
+        .push(text("Colour").size(10.0));
     for &rgb in PALETTE {
         let [r, g, b] = rgb;
         let sel = current == Some(rgb);
-        let sw = button(Space::new().width(Length::Fixed(15.0)).height(Length::Fixed(13.0)))
-            .padding(0)
-            .on_press(Message::SetSeparatorColor(i, Some(rgb)))
-            .style(move |_t: &Theme, _s: button::Status| button::Style {
-                background: Some(Background::Color(Color::from_rgb8(r, g, b))),
-                border: Border {
-                    color: pal().text_primary,
-                    width: if sel { 2.0 } else { 0.5 },
-                    radius: 2.0.into(),
-                },
-                ..Default::default()
-            });
+        let sw = button(
+            Space::new()
+                .width(Length::Fixed(15.0))
+                .height(Length::Fixed(13.0)),
+        )
+        .padding(0)
+        .on_press(Message::SetSeparatorColor(i, Some(rgb)))
+        .style(move |_t: &Theme, _s: button::Status| button::Style {
+            background: Some(Background::Color(Color::from_rgb8(r, g, b))),
+            border: Border {
+                color: pal().text_primary,
+                width: if sel { 2.0 } else { 0.5 },
+                radius: 2.0.into(),
+            },
+            ..Default::default()
+        });
         row = row.push(sw);
     }
     row.push(

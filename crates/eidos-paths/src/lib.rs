@@ -93,7 +93,9 @@ pub fn config_dir() -> PathBuf {
 
 /// `~/.local/share/Colony/Eidos` - what the program produced and cannot rebuild.
 pub fn data_dir() -> PathBuf {
-    xdg("XDG_DATA_HOME", ".local/share").join(VENDOR).join(PROGRAM)
+    xdg("XDG_DATA_HOME", ".local/share")
+        .join(VENDOR)
+        .join(PROGRAM)
 }
 
 /// `~/.cache/Colony/Eidos` - what the program can rebuild by asking again.
@@ -114,7 +116,9 @@ pub fn cache_dir() -> PathBuf {
 /// The vendor and program components still apply, so a Colony user still finds
 /// one `Colony/Eidos` tree under every root that exists.
 pub fn state_dir() -> PathBuf {
-    xdg("XDG_STATE_HOME", ".local/state").join(VENDOR).join(PROGRAM)
+    xdg("XDG_STATE_HOME", ".local/state")
+        .join(VENDOR)
+        .join(PROGRAM)
 }
 
 /// Create `dir` and hand it back, for the call sites that want the directory
@@ -185,13 +189,19 @@ pub fn migrate_legacy_layout() -> Vec<String> {
     // directory nothing outside the program names would be the wrong trade.
     // A rename across filesystems fails, and then the note says so and the old
     // location keeps working - `runtimes_dir` is the only reader either way.
-    let (legacy_runtimes, runtimes) = (legacy_data_dir().join("runtimes"), data_dir().join("runtimes"));
+    let (legacy_runtimes, runtimes) = (
+        legacy_data_dir().join("runtimes"),
+        data_dir().join("runtimes"),
+    );
     if legacy_runtimes.is_dir() && !runtimes.exists() {
         if let Some(parent) = runtimes.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         match std::fs::rename(&legacy_runtimes, &runtimes) {
-            Ok(()) => notes.push(format!("moved the downloaded runtimes to {}", runtimes.display())),
+            Ok(()) => notes.push(format!(
+                "moved the downloaded runtimes to {}",
+                runtimes.display()
+            )),
             Err(e) => notes.push(format!(
                 "could not move the runtimes from {} to {}: {e} - they will be downloaded again \
                  into the new location unless you move them by hand",
@@ -214,8 +224,7 @@ pub fn migrate_legacy_layout() -> Vec<String> {
                 // unmarked, and a file the user DELETES afterwards is copied
                 // back from the old tree on the next launch - a deletion that
                 // undoes itself.
-                let _ =
-                    std::fs::write(to.join(MIGRATION_MARKER), format!("{}\n", from.display()));
+                let _ = std::fs::write(to.join(MIGRATION_MARKER), format!("{}\n", from.display()));
                 if n > 0 {
                     notes.push(format!(
                         "moved {n} {what} file(s) to {} (the old {} is left in place)",
@@ -315,8 +324,11 @@ mod tests {
     struct Tmp(PathBuf);
     impl Tmp {
         fn new(tag: &str) -> Tmp {
-            let p = std::env::temp_dir()
-                .join(format!("eidos-paths-{}-{tag}-{:?}", std::process::id(), std::thread::current().id()));
+            let p = std::env::temp_dir().join(format!(
+                "eidos-paths-{}-{tag}-{:?}",
+                std::process::id(),
+                std::thread::current().id()
+            ));
             let _ = fs::remove_dir_all(&p);
             fs::create_dir_all(&p).unwrap();
             Tmp(p)
@@ -336,8 +348,12 @@ mod tests {
         // The whole point of the crate: one `Colony/Eidos` pair under every
         // root, so a user finds one tree per program rather than four spellings.
         for dir in [config_dir(), data_dir(), cache_dir(), state_dir()] {
-            let tail: Vec<_> =
-                dir.components().rev().take(2).map(|c| c.as_os_str().to_owned()).collect();
+            let tail: Vec<_> = dir
+                .components()
+                .rev()
+                .take(2)
+                .map(|c| c.as_os_str().to_owned())
+                .collect();
             assert_eq!(tail, vec![PROGRAM, VENDOR], "{}", dir.display());
         }
         // And the four roots are four different places, so clearing the cache
@@ -375,8 +391,14 @@ mod tests {
 
         assert_eq!(n, 1, "only the file that was not already there");
         assert!(skipped.is_empty());
-        assert_eq!(fs::read_to_string(to.join("settings.ini")).unwrap(), "[eidos]\ntheme=light\n");
-        assert_eq!(fs::read_to_string(to.join("games").join("x.toml")).unwrap(), "id=1");
+        assert_eq!(
+            fs::read_to_string(to.join("settings.ini")).unwrap(),
+            "[eidos]\ntheme=light\n"
+        );
+        assert_eq!(
+            fs::read_to_string(to.join("games").join("x.toml")).unwrap(),
+            "id=1"
+        );
         // The old tree is still there. If this migration is wrong about a
         // filename, the user's data has to still exist somewhere.
         assert!(from.join("settings.ini").is_file());
@@ -398,7 +420,10 @@ mod tests {
         let (n, skipped) = copy_tree(&from, &to).unwrap();
 
         assert_eq!(n, 1, "the real file, and nothing through the link");
-        assert!(!to.join("games").exists(), "a link out of the tree is not followed");
+        assert!(
+            !to.join("games").exists(),
+            "a link out of the tree is not followed"
+        );
         // And it SAYS so. A file that is not copied is a file the program will
         // never read again - nothing falls back to the old path - so dropping
         // one in silence while reporting success is how somebody loses their
@@ -425,8 +450,15 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(to.join("nexus.ini")).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o600, "an OAuth token must not become world-readable by moving");
+            let mode = fs::metadata(to.join("nexus.ini"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(
+                mode, 0o600,
+                "an OAuth token must not become world-readable by moving"
+            );
         }
     }
 }

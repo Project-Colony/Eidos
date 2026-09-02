@@ -15,7 +15,10 @@ fn inst_with_mods(mods: &[&str]) -> PathBuf {
 }
 
 fn prof(root: &Path, name: &str) -> Profile {
-    Profile { instance_root: root.to_path_buf(), name: name.to_string() }
+    Profile {
+        instance_root: root.to_path_buf(),
+        name: name.to_string(),
+    }
 }
 
 #[test]
@@ -23,18 +26,35 @@ fn later_fragments_win_and_the_original_value_is_what_gets_restored() {
     let mut ini = "[Display]\nfDefaultFOV=75.0\niSize W=1920\n".to_string();
     let mut rec = Vec::new();
 
-    assert!(merge_tweak(&mut ini, "[Display]\nfDefaultFOV=90.0\n", &mut rec));
+    assert!(merge_tweak(
+        &mut ini,
+        "[Display]\nfDefaultFOV=90.0\n",
+        &mut rec
+    ));
     // A second fragment overwrites the first; `before` must still be vanilla,
     // or disabling both would leave the user on the first tweak's value.
-    assert!(merge_tweak(&mut ini, "[Display]\nfDefaultFOV = 110.0\n", &mut rec));
-    assert_eq!(eidos_ini::get_key(&ini, "Display", "fDefaultFOV"), Some("110.0"));
+    assert!(merge_tweak(
+        &mut ini,
+        "[Display]\nfDefaultFOV = 110.0\n",
+        &mut rec
+    ));
+    assert_eq!(
+        eidos_ini::get_key(&ini, "Display", "fDefaultFOV"),
+        Some("110.0")
+    );
     assert_eq!(rec.len(), 1);
     assert_eq!(rec[0].before.as_deref(), Some("75.0"));
     assert_eq!(rec[0].after, "110.0");
 
     let restored = untweak_ini(&ini, &rec);
-    assert_eq!(eidos_ini::get_key(&restored, "Display", "fDefaultFOV"), Some("75.0"));
-    assert_eq!(eidos_ini::get_key(&restored, "Display", "iSize W"), Some("1920"));
+    assert_eq!(
+        eidos_ini::get_key(&restored, "Display", "fDefaultFOV"),
+        Some("75.0")
+    );
+    assert_eq!(
+        eidos_ini::get_key(&restored, "Display", "iSize W"),
+        Some("1920")
+    );
 }
 
 #[test]
@@ -46,7 +66,10 @@ fn a_key_the_game_changed_in_flight_keeps_its_new_value() {
     // holds what the tweak wrote. Their choice wins over the restore.
     let captured = eidos_ini::set_key(&ini, "Display", "fDefaultFOV", "100.0");
     let restored = untweak_ini(&captured, &rec);
-    assert_eq!(eidos_ini::get_key(&restored, "Display", "fDefaultFOV"), Some("100.0"));
+    assert_eq!(
+        eidos_ini::get_key(&restored, "Display", "fDefaultFOV"),
+        Some("100.0")
+    );
 }
 
 #[test]
@@ -57,7 +80,10 @@ fn a_key_the_tweak_invented_is_deleted_again_not_blanked() {
     assert_eq!(rec[0].before, None);
     let restored = untweak_ini(&ini, &rec);
     // Absent, not `bEnableLogging=`: the engines read those differently.
-    assert_eq!(eidos_ini::get_key(&restored, "Papyrus", "bEnableLogging"), None);
+    assert_eq!(
+        eidos_ini::get_key(&restored, "Papyrus", "bEnableLogging"),
+        None
+    );
     assert!(restored.contains("[Papyrus]"));
 }
 
@@ -69,15 +95,18 @@ fn a_fragment_cannot_corrupt_the_target() {
         "; a comment\n",
         "# another\n",
         "\n",
-        "strayKey=1\n",             // outside any section: dropped
-        "[[not a header\n",         // not a section either
+        "strayKey=1\n",     // outside any section: dropped
+        "[[not a header\n", // not a section either
         "[General]\n",
-        "sTestFile1 = a=b=c\n",     // value keeps its own '='
-        "=novalue\n",               // empty key: dropped
+        "sTestFile1 = a=b=c\n", // value keeps its own '='
+        "=novalue\n",           // empty key: dropped
         "no equals sign at all\n",
     );
     merge_tweak(&mut ini, junk, &mut rec);
-    assert_eq!(eidos_ini::get_key(&ini, "General", "sTestFile1"), Some("a=b=c"));
+    assert_eq!(
+        eidos_ini::get_key(&ini, "General", "sTestFile1"),
+        Some("a=b=c")
+    );
     assert_eq!(rec.len(), 1);
     // The pre-existing key survived untouched.
     assert_eq!(eidos_ini::get_key(&ini, "Display", "iSize W"), Some("1920"));
@@ -98,7 +127,10 @@ fn the_profile_tweak_file_is_applied_after_every_mod() {
     let rec = p.apply_ini_tweaks(&deployed, &[frag]).unwrap();
     let text = fs::read_to_string(&deployed).unwrap();
     // The profile's own file is last, so the user beats the mod.
-    assert_eq!(eidos_ini::get_key(&text, "Display", "fDefaultFOV"), Some("100.0"));
+    assert_eq!(
+        eidos_ini::get_key(&text, "Display", "fDefaultFOV"),
+        Some("100.0")
+    );
     assert_eq!(rec[0].before.as_deref(), Some("75.0"));
     assert_eq!(rec[0].after, "100.0");
     fs::remove_dir_all(&root).ok();
@@ -115,11 +147,19 @@ fn a_separator_above_the_games_content_round_trips() {
     let e = |n: &str, un: bool| ModEntry {
         name: n.into(),
         enabled: true,
-        path: if un { root.join("gamedata").join(n) } else { root.join("mods").join(n) },
+        path: if un {
+            root.join("gamedata").join(n)
+        } else {
+            root.join("mods").join(n)
+        },
         unmanaged: un,
     };
-    p.save_modlist(&[e("Skyrim DLCs_separator", false), e("Dawnguard", true), e("Real", false)])
-        .unwrap();
+    p.save_modlist(&[
+        e("Skyrim DLCs_separator", false),
+        e("Dawnguard", true),
+        e("Real", false),
+    ])
+    .unwrap();
 
     let (back, _) = p.modlist_checked();
     assert_eq!(
@@ -127,11 +167,19 @@ fn a_separator_above_the_games_content_round_trips() {
         ["Skyrim DLCs_separator", "Dawnguard", "Real"],
         "the header did not stay above the game's content"
     );
-    assert!(back[1].unmanaged, "the DLC row is still the game's, not a mod");
+    assert!(
+        back[1].unmanaged,
+        "the DLC row is still the game's, not a mod"
+    );
     // And the header is not a mount layer either - it has no files, and a
     // group of nothing must not shadow anything.
     let mounted = p.load_order();
-    assert!(!mounted.iter().any(|m| m.to_string_lossy().contains("_separator")), "{mounted:?}");
+    assert!(
+        !mounted
+            .iter()
+            .any(|m| m.to_string_lossy().contains("_separator")),
+        "{mounted:?}"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -151,30 +199,49 @@ fn unmanaged_content_keeps_its_position_but_is_never_mounted() {
     let e = |n: &str, un: bool| ModEntry {
         name: n.into(),
         enabled: true,
-        path: if un { root.join("gamedata").join(n) } else { root.join("mods").join(n) },
+        path: if un {
+            root.join("gamedata").join(n)
+        } else {
+            root.join("mods").join(n)
+        },
         unmanaged: un,
     };
-    p.save_modlist(&[e("Dawnguard", true), e("Real", false)]).unwrap();
+    p.save_modlist(&[e("Dawnguard", true), e("Real", false)])
+        .unwrap();
 
     let written = fs::read_to_string(p.modlist_path()).unwrap();
     assert!(written.contains("+Real"), "{written}");
-    assert!(written.contains("*Dawnguard"), "the game's content needs a line to have a place: {written}");
+    assert!(
+        written.contains("*Dawnguard"),
+        "the game's content needs a line to have a place: {written}"
+    );
 
     // Read back, the row is still there, still marked as the game's.
     let (back, _) = p.modlist_checked();
-    let dg = back.iter().find(|m| m.name == "Dawnguard").expect("row survived the round trip");
+    let dg = back
+        .iter()
+        .find(|m| m.name == "Dawnguard")
+        .expect("row survived the round trip");
     assert!(dg.unmanaged, "a `*` line is the game's content, not a mod");
-    assert!(dg.path.as_os_str().is_empty(), "this layer cannot know the game's data dir");
+    assert!(
+        dg.path.as_os_str().is_empty(),
+        "this layer cannot know the game's data dir"
+    );
     // And the order is preserved: display runs lowest priority first, and it
     // was saved ahead of Real.
-    assert_eq!(back.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["Dawnguard", "Real"]);
+    assert_eq!(
+        back.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+        ["Dawnguard", "Real"]
+    );
 
     // It is never a mount layer, whatever a caller hands us. This is what makes
     // writing the row safe: the `*` says "position only", and the one consumer
     // that could act on it refuses by name.
     let mounted = p.load_order();
     assert!(
-        !mounted.iter().any(|m| m.to_string_lossy().contains("Dawnguard")),
+        !mounted
+            .iter()
+            .any(|m| m.to_string_lossy().contains("Dawnguard")),
         "{mounted:?}"
     );
     let _ = fs::remove_dir_all(&root);
@@ -185,20 +252,45 @@ fn modlist_round_trips_per_profile() {
     let root = inst_with_mods(&["A", "B", "C"]);
     let p = prof(&root, "Default");
     let mods = vec![
-        ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
-        ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false },
-        ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
+        ModEntry {
+            name: "B".into(),
+            enabled: true,
+            path: root.join("mods/B"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "A".into(),
+            enabled: false,
+            path: root.join("mods/A"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "C".into(),
+            enabled: true,
+            path: root.join("mods/C"),
+            unmanaged: false,
+        },
     ];
     p.save_modlist(&mods).unwrap();
-    let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-    assert_eq!(read, vec![("B".into(), true), ("A".into(), false), ("C".into(), true)]);
+    let read: Vec<_> = p
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
+    assert_eq!(
+        read,
+        vec![("B".into(), true), ("A".into(), false), ("C".into(), true)]
+    );
 
     // The atomic write must leave no stray ".tmp" sibling behind.
     let leftover_tmp = fs::read_dir(p.dir())
         .unwrap()
         .flatten()
         .any(|e| e.file_name().to_string_lossy().ends_with(".tmp"));
-    assert!(!leftover_tmp, "save_modlist left a leftover .tmp file in the profile dir");
+    assert!(
+        !leftover_tmp,
+        "save_modlist left a leftover .tmp file in the profile dir"
+    );
 
     let _ = fs::remove_dir_all(&root);
 }
@@ -212,24 +304,61 @@ fn save_modlist_is_atomic_and_keeps_a_backup() {
     let root = inst_with_mods(&["A", "B", "C"]);
     let p = prof(&root, "Default");
     let v1 = vec![
-        ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
-        ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B"), unmanaged: false },
-        ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
+        ModEntry {
+            name: "C".into(),
+            enabled: true,
+            path: root.join("mods/C"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "B".into(),
+            enabled: false,
+            path: root.join("mods/B"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "A".into(),
+            enabled: true,
+            path: root.join("mods/A"),
+            unmanaged: false,
+        },
     ];
     p.save_modlist(&v1).unwrap();
 
     // A second save (a toggle/move) over an existing list: backs the old one
     // up and swaps atomically.
     let v2 = vec![
-        ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false },
-        ModEntry { name: "C".into(), enabled: true, path: root.join("mods/C"), unmanaged: false },
-        ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
+        ModEntry {
+            name: "A".into(),
+            enabled: false,
+            path: root.join("mods/A"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "C".into(),
+            enabled: true,
+            path: root.join("mods/C"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "B".into(),
+            enabled: true,
+            path: root.join("mods/B"),
+            unmanaged: false,
+        },
     ];
     p.save_modlist(&v2).unwrap();
 
     // The live file reflects the latest curated order (not the alphabetical default).
-    let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-    assert_eq!(read, vec![("A".into(), false), ("C".into(), true), ("B".into(), true)]);
+    let read: Vec<_> = p
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
+    assert_eq!(
+        read,
+        vec![("A".into(), false), ("C".into(), true), ("B".into(), true)]
+    );
 
     // The one-deep backup holds the previous list and sits in the same dir.
     // The file stores highest-priority first (reverse of the in-memory v1).
@@ -252,15 +381,26 @@ fn create_from_copies_saves_subdir() {
     let saves = src.dir().join("saves");
     fs::create_dir_all(&saves).unwrap();
     fs::write(saves.join("Save1.ess"), b"x").unwrap();
-    src.save_modlist(&[ModEntry { name: "A".into(), enabled: false, path: root.join("mods/A"), unmanaged: false }])
-        .unwrap();
+    src.save_modlist(&[ModEntry {
+        name: "A".into(),
+        enabled: false,
+        path: root.join("mods/A"),
+        unmanaged: false,
+    }])
+    .unwrap();
 
     let dst = prof(&root, "Copy");
     dst.create_from(&src).unwrap();
     // The saves/ subdir is copied recursively (MO2 parity), not skipped...
     assert!(dst.dir().join("saves/Save1.ess").is_file());
     // ...and the modlist file came across too.
-    assert!(!dst.modlist().iter().find(|m| m.name == "A").unwrap().enabled);
+    assert!(
+        !dst.modlist()
+            .iter()
+            .find(|m| m.name == "A")
+            .unwrap()
+            .enabled
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -272,8 +412,15 @@ fn modlist_parses_star_and_trims_names() {
     // MO2 '*' foreign line (enabled), and +/- with padding that must be trimmed.
     // The file is highest-priority first; modlist() returns it reversed (display order).
     fs::write(p.modlist_path(), "*A\n-  B\n+ C \n").unwrap();
-    let got: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-    assert_eq!(got, vec![("C".into(), true), ("B".into(), false), ("A".into(), true)]);
+    let got: Vec<_> = p
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
+    assert_eq!(
+        got,
+        vec![("C".into(), true), ("B".into(), false), ("A".into(), true)]
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -282,18 +429,46 @@ fn two_profiles_share_mods_but_keep_own_order() {
     let root = inst_with_mods(&["A", "B"]);
     prof(&root, "Default")
         .save_modlist(&[
-            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
-            ModEntry { name: "B".into(), enabled: false, path: root.join("mods/B"), unmanaged: false },
+            ModEntry {
+                name: "A".into(),
+                enabled: true,
+                path: root.join("mods/A"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "B".into(),
+                enabled: false,
+                path: root.join("mods/B"),
+                unmanaged: false,
+            },
         ])
         .unwrap();
     prof(&root, "Test")
         .save_modlist(&[
-            ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
-            ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
+            ModEntry {
+                name: "B".into(),
+                enabled: true,
+                path: root.join("mods/B"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "A".into(),
+                enabled: true,
+                path: root.join("mods/A"),
+                unmanaged: false,
+            },
         ])
         .unwrap();
-    let d: Vec<_> = prof(&root, "Default").modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
-    let t: Vec<_> = prof(&root, "Test").modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
+    let d: Vec<_> = prof(&root, "Default")
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
+    let t: Vec<_> = prof(&root, "Test")
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
     assert_eq!(d, vec![("A".into(), true), ("B".into(), false)]);
     assert_eq!(t, vec![("B".into(), true), ("A".into(), true)]);
     let _ = fs::remove_dir_all(&root);
@@ -306,7 +481,11 @@ fn default_profile_falls_back_to_legacy_flat_modlist() {
     fs::write(root.join("modlist.txt"), "-A\n+B\n").unwrap();
     let p = prof(&root, "Default");
     // modlist() returns display order (reverse of the file): B (top) then A.
-    let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
+    let read: Vec<_> = p
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
     assert_eq!(read, vec![("B".into(), true), ("A".into(), false)]);
     let _ = fs::remove_dir_all(&root);
 }
@@ -315,13 +494,23 @@ fn default_profile_falls_back_to_legacy_flat_modlist() {
 fn a_folder_nobody_listed_appears_disabled() {
     let root = inst_with_mods(&["A", "New"]);
     let p = prof(&root, "Default");
-    p.save_modlist(&[ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false }]).unwrap();
+    p.save_modlist(&[ModEntry {
+        name: "A".into(),
+        enabled: true,
+        path: root.join("mods/A"),
+        unmanaged: false,
+    }])
+    .unwrap();
     // "New" exists on disk but not in the saved list. It appears, but DISABLED
     // (MO2 parity): nothing knows where in the conflict order it belongs, and
     // silently enabling it could overwrite half the load order's files on the
     // next launch. A mod installed THROUGH Eidos never takes this path - the
     // installer writes its own modlist entry.
-    let read: Vec<_> = p.modlist().iter().map(|m| (m.name.clone(), m.enabled)).collect();
+    let read: Vec<_> = p
+        .modlist()
+        .iter()
+        .map(|m| (m.name.clone(), m.enabled))
+        .collect();
     assert_eq!(read, vec![("New".into(), false), ("A".into(), true)]);
     let _ = fs::remove_dir_all(&root);
 }
@@ -330,12 +519,20 @@ fn a_folder_nobody_listed_appears_disabled() {
 fn a_mod_whose_folder_is_gone_leaves_the_list_but_not_the_file() {
     let root = inst_with_mods(&["A", "B"]);
     let p = prof(&root, "Default");
-    let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
+    let e = |n: &str| ModEntry {
+        name: n.into(),
+        enabled: true,
+        path: root.join("mods").join(n),
+        unmanaged: false,
+    };
     p.save_modlist(&[e("A"), e("B")]).unwrap();
 
     fs::remove_dir_all(root.join("mods/B")).unwrap();
     let (list, trust) = p.modlist_checked();
-    assert_eq!(list.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["A"]);
+    assert_eq!(
+        list.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(),
+        ["A"]
+    );
     // One of two gone is an ordinary edit, not an accident.
     assert!(trust.is_good(), "{trust:?}");
     // The file still says both until something saves - the drop is a view.
@@ -350,7 +547,12 @@ fn an_unmounted_mods_folder_cannot_flatten_the_order() {
     // every guard that only checks for existence sails straight through.
     let root = inst_with_mods(&["A", "B", "C"]);
     let p = prof(&root, "Default");
-    let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
+    let e = |n: &str| ModEntry {
+        name: n.into(),
+        enabled: true,
+        path: root.join("mods").join(n),
+        unmanaged: false,
+    };
     p.save_modlist(&[e("A"), e("B"), e("C")]).unwrap();
     let before = fs::read_to_string(p.modlist_path()).unwrap();
 
@@ -359,7 +561,10 @@ fn an_unmounted_mods_folder_cannot_flatten_the_order() {
     }
     let (list, trust) = p.modlist_checked();
     assert!(list.is_empty());
-    assert!(!trust.is_good(), "an empty scan against a non-empty list must not be trusted");
+    assert!(
+        !trust.is_good(),
+        "an empty scan against a non-empty list must not be trusted"
+    );
 
     // And the save is refused rather than silently flattening the order.
     let err = p.save_modlist(&[]).unwrap_err();
@@ -373,7 +578,12 @@ fn an_unreadable_mods_folder_is_not_an_empty_one() {
     use std::os::unix::fs::PermissionsExt;
     let root = inst_with_mods(&["A", "B"]);
     let p = prof(&root, "Default");
-    let e = |n: &str| ModEntry { name: n.into(), enabled: true, path: root.join("mods").join(n), unmanaged: false };
+    let e = |n: &str| ModEntry {
+        name: n.into(),
+        enabled: true,
+        path: root.join("mods").join(n),
+        unmanaged: false,
+    };
     p.save_modlist(&[e("A"), e("B")]).unwrap();
 
     let mods = root.join("mods");
@@ -383,7 +593,10 @@ fn an_unreadable_mods_folder_is_not_an_empty_one() {
     // Restore before asserting, so a failure does not leave an unremovable dir.
     fs::set_permissions(&mods, fs::Permissions::from_mode(0o755)).unwrap();
 
-    assert!(!trust.is_good(), "a read error must not read as 'you have no mods'");
+    assert!(
+        !trust.is_good(),
+        "a read error must not read as 'you have no mods'"
+    );
     assert!(refused);
     let _ = fs::remove_dir_all(&root);
 }
@@ -395,8 +608,14 @@ fn a_mod_whose_name_starts_with_a_dot_is_kept() {
     let root = inst_with_mods(&[".NET Script Framework", ".eidos-install-abc123", "A"]);
     let p = prof(&root, "Default");
     let names: Vec<String> = p.modlist().iter().map(|m| m.name.clone()).collect();
-    assert!(names.iter().any(|n| n == ".NET Script Framework"), "{names:?}");
-    assert!(!names.iter().any(|n| n.starts_with(".eidos-install-")), "{names:?}");
+    assert!(
+        names.iter().any(|n| n == ".NET Script Framework"),
+        "{names:?}"
+    );
+    assert!(
+        !names.iter().any(|n| n.starts_with(".eidos-install-")),
+        "{names:?}"
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -434,12 +653,16 @@ fn inis_seed_deploy_and_capture_round_trip() {
     fs::write(p.ini_path("Skyrim.ini"), "[General]\nsLanguage=FRENCH\n").unwrap();
     let prefix2 = root.join("prefix2");
     assert_eq!(p.deploy_inis(&prefix2, &inis).unwrap(), 2);
-    assert!(fs::read_to_string(prefix2.join("Skyrim.ini")).unwrap().contains("FRENCH"));
+    assert!(fs::read_to_string(prefix2.join("Skyrim.ini"))
+        .unwrap()
+        .contains("FRENCH"));
 
     // The game writes to the prefix; capture pulls the change back.
     fs::write(prefix2.join("SkyrimPrefs.ini"), "[Display]\niSize W=2560\n").unwrap();
     assert_eq!(p.capture_inis(&prefix2, &inis).unwrap(), 2);
-    assert!(fs::read_to_string(p.ini_path("SkyrimPrefs.ini")).unwrap().contains("2560"));
+    assert!(fs::read_to_string(p.ini_path("SkyrimPrefs.ini"))
+        .unwrap()
+        .contains("2560"));
 
     let _ = fs::remove_dir_all(&root);
 }
@@ -502,17 +725,33 @@ fn display_order_file_order_and_load_order_stay_consistent() {
     let p = prof(&root, "Default");
     // Display order: Low at the top (lowest priority), High at the bottom (highest).
     p.save_modlist(&[
-        ModEntry { name: "Low".into(), enabled: true, path: root.join("mods/Low"), unmanaged: false },
-        ModEntry { name: "High".into(), enabled: true, path: root.join("mods/High"), unmanaged: false },
+        ModEntry {
+            name: "Low".into(),
+            enabled: true,
+            path: root.join("mods/Low"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "High".into(),
+            enabled: true,
+            path: root.join("mods/High"),
+            unmanaged: false,
+        },
     ])
     .unwrap();
     // The file is highest-priority first (MO2 on-disk convention).
-    assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+High\n+Low\n");
+    assert_eq!(
+        fs::read_to_string(p.dir().join("modlist.txt")).unwrap(),
+        "+High\n+Low\n"
+    );
     // modlist() round-trips the display order.
     let names: Vec<_> = p.modlist().iter().map(|m| m.name.clone()).collect();
     assert_eq!(names, vec!["Low".to_string(), "High".to_string()]);
     // load_order() mounts highest priority first, so High wins same-name conflicts.
-    assert_eq!(p.load_order(), vec![root.join("mods/High"), root.join("mods/Low")]);
+    assert_eq!(
+        p.load_order(),
+        vec![root.join("mods/High"), root.join("mods/Low")]
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -523,22 +762,44 @@ fn separator_round_trips_keeps_position_and_is_excluded_from_load_order() {
     let root = inst_with_mods(&["A", "Sec_separator", "B"]);
     let p = prof(&root, "Default");
     let mods = vec![
-        ModEntry { name: "A".into(), enabled: true, path: root.join("mods/A"), unmanaged: false },
-        ModEntry { name: "Sec_separator".into(), enabled: false, path: root.join("mods/Sec_separator"), unmanaged: false },
-        ModEntry { name: "B".into(), enabled: true, path: root.join("mods/B"), unmanaged: false },
+        ModEntry {
+            name: "A".into(),
+            enabled: true,
+            path: root.join("mods/A"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "Sec_separator".into(),
+            enabled: false,
+            path: root.join("mods/Sec_separator"),
+            unmanaged: false,
+        },
+        ModEntry {
+            name: "B".into(),
+            enabled: true,
+            path: root.join("mods/B"),
+            unmanaged: false,
+        },
     ];
     p.save_modlist(&mods).unwrap();
 
     // modlist.txt is byte-faithful, including the `-` prefix + `_separator` suffix,
     // and stored highest-priority first (reverse of the in-memory display order).
-    assert_eq!(fs::read_to_string(p.dir().join("modlist.txt")).unwrap(), "+B\n-Sec_separator\n+A\n");
+    assert_eq!(
+        fs::read_to_string(p.dir().join("modlist.txt")).unwrap(),
+        "+B\n-Sec_separator\n+A\n"
+    );
 
     // Read back: order + the separator flag preserved, separator at index 1.
     let read = p.modlist();
     let names: Vec<_> = read.iter().map(|m| (m.name.clone(), m.enabled)).collect();
     assert_eq!(
         names,
-        vec![("A".into(), true), ("Sec_separator".into(), false), ("B".into(), true)]
+        vec![
+            ("A".into(), true),
+            ("Sec_separator".into(), false),
+            ("B".into(), true)
+        ]
     );
     assert!(read[1].is_separator());
     assert_eq!(read[1].display_name(), "Sec");
@@ -556,7 +817,9 @@ fn separator_round_trips_keeps_position_and_is_excluded_from_load_order() {
     p2.save_modlist(&[ModEntry {
         name: "Solo_separator".into(),
         enabled: true,
-        path: root2.join("mods/Solo_separator"), unmanaged: false }])
+        path: root2.join("mods/Solo_separator"),
+        unmanaged: false,
+    }])
     .unwrap();
     assert!(p2.load_order().is_empty());
     let _ = fs::remove_dir_all(&root2);
@@ -579,24 +842,43 @@ fn a_crash_mangled_session_is_flagged_and_restorable() {
 
     // The game dies during shutdown and leaves the active set mostly cleared.
     let mangled: String = (0..200)
-        .map(|i| if i < 5 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
+        .map(|i| {
+            if i < 5 {
+                format!("*Mod{i}.esp\n")
+            } else {
+                format!("Mod{i}.esp\n")
+            }
+        })
         .collect();
     fs::write(p.plugins_txt_path(), &mangled).unwrap();
     assert!(
-        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
+        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+            .is_some(),
         "a crash artefact must be flagged, or the user never learns their order died"
     );
     p.restore_plugin_snapshot().unwrap();
     assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), full);
-    assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none(), "restored = healthy");
+    assert!(
+        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+            .is_none(),
+        "restored = healthy"
+    );
 
     // A legitimate edit - the user turning a handful of mods off - is not
     // flagged; sessions that edit must not cry wolf.
     let edited: String = (0..200)
-        .map(|i| if i < 195 { format!("*Mod{i}.esp\n") } else { format!("Mod{i}.esp\n") })
+        .map(|i| {
+            if i < 195 {
+                format!("*Mod{i}.esp\n")
+            } else {
+                format!("Mod{i}.esp\n")
+            }
+        })
         .collect();
     fs::write(p.plugins_txt_path(), &edited).unwrap();
-    assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none());
+    assert!(p
+        .plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+        .is_none());
 
     let _ = fs::remove_dir_all(&root);
 }
@@ -616,11 +898,15 @@ fn small_load_order_losses_follow_the_majority_rule() {
 
     // Two of six off: routine, silent.
     fs::write(p.plugins_txt_path(), "*a\n*b\n*c\n*d\ne\nf\n").unwrap();
-    assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_none());
+    assert!(p
+        .plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+        .is_none());
 
     // Four of six off: majority loss, flagged (dismissable in one click).
     fs::write(p.plugins_txt_path(), "*a\n*b\nc\nd\ne\nf\n").unwrap();
-    assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some());
+    assert!(p
+        .plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+        .is_some());
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -649,7 +935,8 @@ fn an_accented_plugin_name_does_not_disarm_the_wipe_guard() {
     // The game crashes and leaves a header-only artifact.
     fs::write(p.plugins_txt_path(), b"# ruined\r\n").unwrap();
     assert!(
-        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
+        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+            .is_some(),
         "the wipe must be flagged even when the list has accented names"
     );
     p.restore_plugin_snapshot().unwrap();
@@ -676,7 +963,9 @@ fn a_small_load_order_cleared_to_nothing_is_still_refused() {
         "# This file is used by Skyrim to keep track of your downloaded content.\n",
     )
     .unwrap();
-    assert!(p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some());
+    assert!(p
+        .plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+        .is_some());
     p.restore_plugin_snapshot().unwrap();
     assert_eq!(fs::read_to_string(p.plugins_txt_path()).unwrap(), good);
 
@@ -686,7 +975,8 @@ fn a_small_load_order_cleared_to_nothing_is_still_refused() {
     let all_off = "a.esp\nb.esp\nc.esp\nd.esp\ne.esp\nf.esp\ng.esp\n";
     fs::write(p.plugins_txt_path(), all_off).unwrap();
     assert!(
-        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).is_some(),
+        p.plugin_loss_since_snapshot(&eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
+            .is_some(),
         "clearing every active plugin is flagged at any size"
     );
     let _ = fs::remove_dir_all(&root);
@@ -708,13 +998,27 @@ fn plugin_state_is_seeded_and_stays_per_profile() {
     // Seed: the profile adopts the prefix's existing state once.
     let a = prof(&root, "Default");
     assert!(!a.has_plugin_state());
-    assert_eq!(a.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).unwrap(), 3);
+    assert_eq!(
+        a.seed_plugin_state(
+            &prefix,
+            &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()
+        )
+        .unwrap(),
+        3
+    );
     assert!(a.has_plugin_state());
     assert!(a.plugins_state_dir().join("ContentCatalog.txt").is_file());
     assert!(!a.plugins_state_dir().join("plugins.tmp").exists());
     // Seeding again must not clobber the profile's own copy.
     fs::write(a.plugins_txt_path(), b"*Alpha.esp\n").unwrap();
-    assert_eq!(a.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()).unwrap(), 0);
+    assert_eq!(
+        a.seed_plugin_state(
+            &prefix,
+            &eidos_plugins::GameSpec::for_id("skyrimse").unwrap()
+        )
+        .unwrap(),
+        0
+    );
     assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), b"*Alpha.esp\n");
 
     // A second profile has its own, independent state - the bound dir swaps
@@ -769,10 +1073,17 @@ fn seeding_adopts_verbatim_for_every_mechanism() {
     let artifact = b"a.esp\nb.esp\nc.esp\nd.esp\n";
     fs::write(prefix.join("plugins.txt"), artifact).unwrap();
     let p = prof(&root, "Default");
-    p.seed_plugin_state(&prefix, &eidos_plugins::GameSpec::for_id("skyrimse").unwrap())
-        .unwrap();
+    p.seed_plugin_state(
+        &prefix,
+        &eidos_plugins::GameSpec::for_id("skyrimse").unwrap(),
+    )
+    .unwrap();
     assert!(p.has_plugin_state());
-    assert_eq!(fs::read(p.plugins_txt_path()).unwrap(), artifact, "verbatim, not derived");
+    assert_eq!(
+        fs::read(p.plugins_txt_path()).unwrap(),
+        artifact,
+        "verbatim, not derived"
+    );
 
     // PlainList game (Fallout NV): a healthy actives-without-asterisks file
     // is NORMAL and adopts silently.
@@ -782,8 +1093,11 @@ fn seeding_adopts_verbatim_for_every_mechanism() {
     let healthy = b"FalloutNV.esm\nSomeMod.esp\nOtherMod.esp\n";
     fs::write(prefix2.join("plugins.txt"), healthy).unwrap();
     let p2 = prof(&root2, "Default");
-    p2.seed_plugin_state(&prefix2, &eidos_plugins::GameSpec::for_id("falloutnv").unwrap())
-        .unwrap();
+    p2.seed_plugin_state(
+        &prefix2,
+        &eidos_plugins::GameSpec::for_id("falloutnv").unwrap(),
+    )
+    .unwrap();
     assert!(p2.has_plugin_state());
     assert_eq!(fs::read(p2.plugins_txt_path()).unwrap(), healthy);
     let _ = fs::remove_dir_all(&root);
@@ -815,16 +1129,30 @@ fn a_truncated_ini_is_not_captured_over_the_profile() {
     let edited = good.replace("iKey=1", "iKey=2");
     fs::write(docs.join("Skyrim.ini"), &edited).unwrap();
     assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 1);
-    assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), edited);
+    assert_eq!(
+        fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(),
+        edited
+    );
 
     // The engine's own compact rewrite is STABLE: refused once, but the
     // same size on the next run is the real format and must be accepted -
     // refusing forever would mean in-game settings never persist again.
     let compact = "[Display]\niKey=3\n";
     fs::write(docs.join("Skyrim.ini"), compact).unwrap();
-    assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 0, "first sight: refused");
-    assert_eq!(p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(), 1, "stable repeat: accepted");
-    assert_eq!(fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(), compact);
+    assert_eq!(
+        p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(),
+        0,
+        "first sight: refused"
+    );
+    assert_eq!(
+        p.capture_inis(&docs, &["Skyrim.ini"]).unwrap(),
+        1,
+        "stable repeat: accepted"
+    );
+    assert_eq!(
+        fs::read_to_string(p.ini_path("Skyrim.ini")).unwrap(),
+        compact
+    );
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -837,14 +1165,22 @@ fn emptying_the_saves_dir_does_not_resurrect_prefix_saves() {
     fs::write(prefix_saves.join("steam_autocloud.vdf"), b"junk").unwrap();
 
     let p = prof(&root, "Default");
-    assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 1, "junk is not a save");
+    assert_eq!(
+        p.seed_saves(&prefix_saves).unwrap(),
+        1,
+        "junk is not a save"
+    );
     assert!(p.saves_dir().join("ancient.ess").is_file());
     assert!(!p.saves_dir().join("steam_autocloud.vdf").exists());
 
     // The user empties the dir on purpose. The old emptiness probe re-seeded
     // the ancient save with a fresh mtime that sorted above everything.
     fs::remove_file(p.saves_dir().join("ancient.ess")).unwrap();
-    assert_eq!(p.seed_saves(&prefix_saves).unwrap(), 0, "seeding is once, ever");
+    assert_eq!(
+        p.seed_saves(&prefix_saves).unwrap(),
+        0,
+        "seeding is once, ever"
+    );
     assert!(!p.saves_dir().join("ancient.ess").exists());
     let _ = fs::remove_dir_all(&root);
 }
@@ -855,7 +1191,11 @@ fn a_float_reserialised_by_the_engine_still_untweaks() {
     // Text-compare said "user changed it" and kept the tweak forever.
     let mut ini = "[Display]\nfShadowDistance=4000\n".to_string();
     let mut rec = Vec::new();
-    assert!(merge_tweak(&mut ini, "[Display]\nfShadowDistance=8000\n", &mut rec));
+    assert!(merge_tweak(
+        &mut ini,
+        "[Display]\nfShadowDistance=8000\n",
+        &mut rec
+    ));
     let engine_rewritten = ini.replace("fShadowDistance=8000", "fShadowDistance=8000.0000");
     let restored = untweak_ini(&engine_rewritten, &rec);
     assert!(
@@ -883,11 +1223,13 @@ fn the_legacy_top_level_plugin_files_migrate_into_the_plugins_dir() {
     let dir = p.plugins_state_dir();
     assert_eq!(fs::read(dir.join("plugins.txt")).unwrap(), b"*Old.esp\n");
     assert_eq!(fs::read(dir.join("loadorder.txt")).unwrap(), b"Old.esp\n");
-    assert!(!p.dir().join("plugins.txt").exists(), "the legacy copy must MOVE, not fork");
+    assert!(
+        !p.dir().join("plugins.txt").exists(),
+        "the legacy copy must MOVE, not fork"
+    );
     assert!(p.has_plugin_state());
     let _ = fs::remove_dir_all(&root);
 }
-
 
 #[test]
 fn an_unreadable_modlist_is_suspect_but_an_absent_one_is_not() {
@@ -902,20 +1244,29 @@ fn an_unreadable_modlist_is_suspect_but_an_absent_one_is_not() {
 
     // 1. No modlist.txt at all: a hand-filled fresh instance must still launch.
     let (_, trust) = p.modlist_checked();
-    assert!(trust.is_good(), "an absent list must not block a launch: {trust:?}");
+    assert!(
+        trust.is_good(),
+        "an absent list must not block a launch: {trust:?}"
+    );
 
     // 2. Present but truncated to nothing, with mods on disk: the order is lost.
     fs::create_dir_all(p.dir()).unwrap();
     fs::write(p.modlist_path(), "").unwrap();
     let (_, trust) = p.modlist_checked();
-    assert!(!trust.is_good(), "an emptied list with mods present must be Suspect");
+    assert!(
+        !trust.is_good(),
+        "an emptied list with mods present must be Suspect"
+    );
 
     // 3. Present but unreadable.
     fs::write(p.modlist_path(), "+SomeMod\n").unwrap();
     fs::set_permissions(p.modlist_path(), fs::Permissions::from_mode(0o000)).unwrap();
     let (_, trust) = p.modlist_checked();
     fs::set_permissions(p.modlist_path(), fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(!trust.is_good(), "an unreadable list must be Suspect, not silently empty");
+    assert!(
+        !trust.is_good(),
+        "an unreadable list must be Suspect, not silently empty"
+    );
 
     let _ = fs::remove_dir_all(&root);
 }

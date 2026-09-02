@@ -60,13 +60,19 @@ fn parse_shapes(text: &str) -> Vec<Case> {
                 .find_map(|t| t.strip_prefix("game="))
                 .unwrap_or(GAME)
                 .to_string();
-            cases.push(Case { id: header.to_string(), game, entries: Vec::new() });
+            cases.push(Case {
+                id: header.to_string(),
+                game,
+                entries: Vec::new(),
+            });
             continue;
         }
         let case = cases.last_mut().expect("a path line before any `>` header");
         let is_dir = line.ends_with('/');
-        case.entries
-            .push(ArchiveEntry { path: line.trim_end_matches('/').to_string(), is_dir });
+        case.entries.push(ArchiveEntry {
+            path: line.trim_end_matches('/').to_string(),
+            is_dir,
+        });
     }
     cases
 }
@@ -79,7 +85,11 @@ fn parse_shapes(text: &str) -> Vec<Case> {
 /// stops counting, a Root Builder split that stops resolving).
 fn record(tree: &ArchiveTree, rules: LayoutRules) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "  data_looks_valid   = {:?}", tree.data_looks_valid(rules));
+    let _ = writeln!(
+        out,
+        "  data_looks_valid   = {:?}",
+        tree.data_looks_valid(rules)
+    );
     let _ = writeln!(
         out,
         "  simple_archive_base= {}",
@@ -109,7 +119,11 @@ fn real_world_layouts_are_classified_exactly_as_before() {
     let dir = corpus_dir();
     let shapes = std::fs::read_to_string(dir.join("shapes.txt")).expect("corpus/shapes.txt");
     let cases = parse_shapes(&shapes);
-    assert!(cases.len() > 40, "corpus shrank unexpectedly: {} cases", cases.len());
+    assert!(
+        cases.len() > 40,
+        "corpus shrank unexpectedly: {} cases",
+        cases.len()
+    );
 
     let mut actual = String::from(
         "# Golden record of the layout checker's verdicts on corpus/shapes.txt.\n\
@@ -129,9 +143,8 @@ fn real_world_layouts_are_classified_exactly_as_before() {
         return;
     }
 
-    let expected = std::fs::read_to_string(&golden).unwrap_or_else(|_| {
-        panic!("missing {}; create it with EIDOS_BLESS=1", golden.display())
-    });
+    let expected = std::fs::read_to_string(&golden)
+        .unwrap_or_else(|_| panic!("missing {}; create it with EIDOS_BLESS=1", golden.display()));
     if expected != actual {
         // Show the first divergence rather than dumping two 300-line blobs: the
         // failure that matters is "which case changed", not "the file differs".
@@ -164,12 +177,18 @@ fn the_corpus_exercises_both_verdicts() {
         }
         // A non-empty base means a wrapper folder was stripped, which is the part
         // of the checker most likely to break silently.
-        if tree.simple_archive_base(LayoutRules::for_game(&case.game)).is_some_and(|b| !b.is_empty()) {
+        if tree
+            .simple_archive_base(LayoutRules::for_game(&case.game))
+            .is_some_and(|b| !b.is_empty())
+        {
             stripped += 1;
         }
     }
     assert!(valid > 0, "no valid layout in the corpus");
-    assert!(invalid > 0, "no invalid layout in the corpus: it cannot catch a checker that always says Valid");
+    assert!(
+        invalid > 0,
+        "no invalid layout in the corpus: it cannot catch a checker that always says Valid"
+    );
     assert!(stripped > 0, "no wrapper-stripping case in the corpus");
 }
 

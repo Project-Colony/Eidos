@@ -44,13 +44,19 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
     // Resolved once for the whole refresh rather than per mod: both are constant
     // for the instance, and this loop already reads every mod's directory.
     let game = selected_game(app).map(|g| g.def);
-    let rules =
-        game.map(|g| eidos_install::LayoutRules::for_game(g.id)).unwrap_or_default();
+    let rules = game
+        .map(|g| eidos_install::LayoutRules::for_game(g.id))
+        .unwrap_or_default();
     let short = game.map(|g| g.short_name).unwrap_or_default();
     for (name, path) in missing {
         let meta = inst.mod_meta(&name);
-        let category_id = meta.category().as_deref().and_then(eidos_instance::parse_primary);
-        let category_name = category_id.and_then(|id| cats.name_for_id(id)).map(str::to_string);
+        let category_id = meta
+            .category()
+            .as_deref()
+            .and_then(eidos_instance::parse_primary);
+        let category_name = category_id
+            .and_then(|id| cats.name_for_id(id))
+            .map(str::to_string);
         app.meta_cache.insert(
             name,
             RowMeta {
@@ -69,8 +75,7 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
                 // A mod the user vouched for is silent under both rules. That
                 // is what MO2's `validated=` is for, and honouring it means a
                 // mod already vouched for in MO2 arrives here quiet.
-                invalid_data: !meta.validated()
-                    && !eidos_install::folder_looks_valid(&path, rules),
+                invalid_data: !meta.validated() && !eidos_install::folder_looks_valid(&path, rules),
                 other_game: meta
                     .game_name()
                     .filter(|_| !meta.validated())
@@ -86,7 +91,6 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
 pub(crate) fn invalidate_meta(app: &mut App, name: &str) {
     app.meta_cache.remove(name);
 }
-
 
 /// The run-target picker entry meaning "the game itself".
 pub(crate) const RUN_GAME: &str = "Game (Steam command)";
@@ -138,7 +142,12 @@ pub(crate) fn known_instances_from(
         } else {
             format!("{name}  -  global")
         };
-        out.push(KnownInstance { label, inst, game_index, portable });
+        out.push(KnownInstance {
+            label,
+            inst,
+            game_index,
+            portable,
+        });
     };
     // The last-used instance first: it is what the user means by "my setup".
     if let Some(last) = reg.last.clone() {
@@ -154,7 +163,9 @@ pub(crate) fn known_instances_from(
     }
     for root in &reg.portables {
         let inst = Instance::portable(root.clone());
-        let Some(m) = inst.read_manifest() else { continue };
+        let Some(m) = inst.read_manifest() else {
+            continue;
+        };
         if let Some(i) = games.iter().position(|g| g.def.id == m.game_id) {
             push(inst, i, true, games);
         }
@@ -206,7 +217,11 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     let auto = identify_game(&games, &launch_command);
     // Read once: the struct needs it twice, and reading the file twice could give
     // two different answers.
-    let prefs = if cfg!(test) { Settings::default() } else { Settings::load() };
+    let prefs = if cfg!(test) {
+        Settings::default()
+    } else {
+        Settings::load()
+    };
     // Before anything is drawn. The palette is a global that every style closure
     // reads, so a window built before this call would paint its first frame in
     // the previous theme and only correct itself on the next redraw.
@@ -456,7 +471,10 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         }
     } else if let Some(i) = auto {
         app.selected = Some(i);
-        let found = reg.candidates_for(app.games[i].def.id).into_iter().find(|c| c.exists());
+        let found = reg
+            .candidates_for(app.games[i].def.id)
+            .into_iter()
+            .find(|c| c.exists());
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
             app.status =
@@ -511,7 +529,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
 /// defaults), keeping the current pick when it still exists.
 /// The auto-detectable executables for a game (launcher, binary, script extender),
 /// from its `GameDef` - fed to `default_tools` for MO2-style file-existence detection.
-pub(crate) fn game_executables(g: &eidos_games::DetectedGame) -> eidos_instance::GameExecutables<'_> {
+pub(crate) fn game_executables(
+    g: &eidos_games::DetectedGame,
+) -> eidos_instance::GameExecutables<'_> {
     eidos_instance::GameExecutables {
         game_name: g.def.name,
         launcher: g.def.script_extender.as_ref().map(|se| se.launcher),
@@ -528,7 +548,10 @@ pub(crate) fn load_tools(app: &mut App) {
             eidos_instance::default_tools_in(
                 game_executables(g),
                 &g.install_path,
-                &app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default(),
+                &app.created
+                    .as_ref()
+                    .map(|i| i.root_layers())
+                    .unwrap_or_default(),
                 &eidos_instance::tool_search_roots(
                     app.created.as_ref().map(|i| i.mods_dir()).as_deref(),
                     app.prefs.tools_dir.as_deref(),
@@ -569,7 +592,11 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
         .arg(&url)
         .spawn()
         .map_err(|e| format!("could not open your browser: {e}"))?;
-    let code = oauth::wait_for_code(cfg.redirect_port, &state, std::time::Duration::from_secs(300))?;
+    let code = oauth::wait_for_code(
+        cfg.redirect_port,
+        &state,
+        std::time::Duration::from_secs(300),
+    )?;
     let tokens = oauth::exchange_code(&cfg, &code, &pkce)?;
     let mut creds = eidos_instance::settings::load_nexus_creds();
     creds.access_token = Some(tokens.access_token.clone());
@@ -607,7 +634,9 @@ pub(crate) fn plugin_origin_row(app: &App, row: usize) -> Option<usize> {
     if origin.is_empty() {
         return None;
     }
-    app.mods.iter().position(|m| m.name.eq_ignore_ascii_case(origin))
+    app.mods
+        .iter()
+        .position(|m| m.name.eq_ignore_ascii_case(origin))
 }
 
 /// Read both lists' restore points for the Backups dialog, newest first.
@@ -625,14 +654,17 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
     let user_len = user.len();
     // Widened to enabled mods' Root/ dirs, so a script extender installed as a
     // mod is detected; the root union puts it on the game root at launch.
-    let roots = app.created.as_ref().map(|i| i.root_layers()).unwrap_or_default();
-    let defaults =
-        eidos_instance::default_tools_in(
-            game_executables(game),
-            &game.install_path,
-            &roots,
-            &eidos_instance::tool_search_roots(None, None),
-        );
+    let roots = app
+        .created
+        .as_ref()
+        .map(|i| i.root_layers())
+        .unwrap_or_default();
+    let defaults = eidos_instance::default_tools_in(
+        game_executables(game),
+        &game.install_path,
+        &roots,
+        &eidos_instance::tool_search_roots(None, None),
+    );
     let merged = eidos_instance::merge_tools(user, defaults);
     let mut state = ExecutablesDialogState {
         merged,
@@ -705,8 +737,6 @@ pub(crate) fn identify_game(games: &[DetectedGame], command: &[String]) -> Optio
     None
 }
 
-
-
 /// The mod list as the user should see it: the profile's rows, with the game's
 /// own content (DLCs, Creation Club) reconciled into them.
 ///
@@ -719,10 +749,17 @@ pub(crate) fn identify_game(games: &[DetectedGame], command: &[String]) -> Optio
 /// lowest-priority-first and the engine loads its own content before anything
 /// anyone installed. Content the profile lists but the game no longer ships is
 /// dropped - a DLC can be uninstalled, and a row pointing at nothing helps no one.
-pub(crate) fn modlist_with_unmanaged(inst: &Instance, game: Option<&DetectedGame>) -> Vec<ModEntry> {
+pub(crate) fn modlist_with_unmanaged(
+    inst: &Instance,
+    game: Option<&DetectedGame>,
+) -> Vec<ModEntry> {
     let listed = inst.modlist();
-    let Some(game) = game else { return strip_unmanaged(listed) };
-    let Some(spec) = GameSpec::for_id(game.def.id) else { return strip_unmanaged(listed) };
+    let Some(game) = game else {
+        return strip_unmanaged(listed);
+    };
+    let Some(spec) = GameSpec::for_id(game.def.id) else {
+        return strip_unmanaged(listed);
+    };
     // The order the engine imposes on its own content: the primary masters, then
     // whatever the `.ccc` lists. Anything else falls in after, alphabetically.
     let mut engine_order: Vec<String> = spec.primary_plugins.clone();
@@ -732,8 +769,10 @@ pub(crate) fn modlist_with_unmanaged(inst: &Instance, game: Option<&DetectedGame
 
     // What the game actually ships, by name, so a listed row can be matched to it
     // and given the path this layer alone knows.
-    let mut by_name: std::collections::HashMap<String, ModEntry> =
-        real.into_iter().map(|m| (m.name.to_ascii_lowercase(), m)).collect();
+    let mut by_name: std::collections::HashMap<String, ModEntry> = real
+        .into_iter()
+        .map(|m| (m.name.to_ascii_lowercase(), m))
+        .collect();
 
     let mut out: Vec<ModEntry> = Vec::with_capacity(listed.len() + by_name.len());
     let mut placed: Vec<ModEntry> = Vec::new();
@@ -765,11 +804,12 @@ pub(crate) fn strip_unmanaged(mods: Vec<ModEntry>) -> Vec<ModEntry> {
     mods.into_iter().filter(|m| !m.unmanaged).collect()
 }
 
-
 /// Refresh `app.mods` from disk, unmanaged content included. Clones the instance
 /// and the game first so the immutable borrows end before `app.mods` is assigned.
 pub(crate) fn reload_mods(app: &mut App) {
-    let Some(inst) = app.created.clone() else { return };
+    let Some(inst) = app.created.clone() else {
+        return;
+    };
     let game = selected_game(app).cloned();
     // This replaces the list the selection indexes into, so it is carried
     // across by name; anything that disappeared is dropped rather than silently
@@ -802,7 +842,10 @@ pub(crate) fn build_preview(path: &Path) -> Preview {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
-    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     // What iced's image feature can decode. DDS and NIF are deliberately not
     // here - see `Preview`.
     const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
@@ -907,7 +950,13 @@ pub(crate) fn write_desktop_entry(
     let title = clean(tool.title.trim());
     let slug: String = title
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug.trim_matches('-').to_string();
     // A title of nothing but punctuation - or two titles that differ only by
@@ -930,7 +979,11 @@ pub(crate) fn write_desktop_entry(
     let path = dir.join(format!(
         "eidos-{}-{}{:08x}.desktop",
         clean(game_id),
-        if slug.is_empty() { String::new() } else { format!("{slug}-") },
+        if slug.is_empty() {
+            String::new()
+        } else {
+            format!("{slug}-")
+        },
         (h2 & 0xffff_ffff) as u32
     ));
     // Exec arguments are quoted per the Desktop Entry spec, where a literal
@@ -1134,7 +1187,14 @@ pub(crate) fn start_run(app: &mut App, title: String, mut cmd: std::process::Com
         signal.store(true, Ordering::SeqCst);
     });
     let lock = app.prefs.lock_gui;
-    app.running = Some(RunningState { title: title.clone(), pid, done, outcome, log, lock });
+    app.running = Some(RunningState {
+        title: title.clone(),
+        pid,
+        done,
+        outcome,
+        log,
+        lock,
+    });
     app.status = Some(if lock {
         format!("Running {title} - Eidos is locked until it exits (or click Unlock).")
     } else {
@@ -1191,7 +1251,11 @@ pub(crate) fn finish_run(app: &mut App) {
                     // interesting case and `ExitStatus` prints which one.
                     None => writeln!(f, "\n# eidos: {} was killed ({st})", run.title),
                 },
-                None => writeln!(f, "\n# eidos: {} - could not read the exit status", run.title),
+                None => writeln!(
+                    f,
+                    "\n# eidos: {} - could not read the exit status",
+                    run.title
+                ),
             };
         }
     }
@@ -1349,9 +1413,7 @@ pub(crate) fn probe_lock(inst: &Instance) -> std::io::Result<()> {
 /// own row moved (compacted) the block with no line on screen. `aimed` is what
 /// keeps a plain click - which arrives as a drop - from ever counting.
 pub(crate) fn mod_drop_is_noop(app: &App, d: &DragState) -> bool {
-    !d.aimed
-        || (selection_or(app, d.from).len() == 1
-            && (d.gap == d.from || d.gap == d.from + 1))
+    !d.aimed || (selection_or(app, d.from).len() == 1 && (d.gap == d.from || d.gap == d.from + 1))
 }
 
 /// The rows a row-targeted action should act on: the whole multi-selection when
@@ -1447,7 +1509,12 @@ pub(crate) fn hidden_by_folds(app: &App) -> HashSet<String> {
 /// fold is the user's, so it is not overridden - but the disappearance is named,
 /// because a row leaving the screen unbidden and unremarked is the failure mode
 /// this list is most often accused of.
-pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidden_before: &HashSet<String>) {
+pub(crate) fn settle_folds_after_move(
+    app: &mut App,
+    at: usize,
+    len: usize,
+    hidden_before: &HashSet<String>,
+) {
     let opened: Vec<String> = (at..(at + len).min(app.mods.len()))
         .filter(|&i| app.mods[i].is_separator())
         .filter(|&i| !group_children(&app.mods, i).is_empty())
@@ -1463,8 +1530,9 @@ pub(crate) fn settle_folds_after_move(app: &mut App, at: usize, len: usize, hidd
     let swallowed = hidden_by_folds(app);
     let n = swallowed.difference(hidden_before).count();
     if n > 0 {
-        app.status =
-            Some(format!("{n} mod(s) are now inside a folded group. Unfold it to see them."));
+        app.status = Some(format!(
+            "{n} mod(s) are now inside a folded group. Unfold it to see them."
+        ));
     }
 }
 
@@ -1522,7 +1590,9 @@ pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
     // catch-all sinks to the bottom whatever it is called.
     groups.sort_by(|a, b| {
         let sink = |l: &str| l == "Uncategorised" || l == "Installed by hand";
-        sink(&a.0).cmp(&sink(&b.0)).then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
+        sink(&a.0)
+            .cmp(&sink(&b.0))
+            .then_with(|| a.0.to_lowercase().cmp(&b.0.to_lowercase()))
     });
     let mut out = Vec::new();
     for (label, rows) in groups {
@@ -1536,14 +1606,20 @@ pub(crate) fn display_entries(app: &App) -> Vec<ListEntry> {
 }
 
 pub(crate) fn display_order(app: &App) -> Vec<usize> {
-    let Some(sort) = app.mod_sort else { return (0..app.mods.len()).collect() };
-    let mut rows: Vec<usize> =
-        (0..app.mods.len()).filter(|&i| !app.mods[i].is_separator()).collect();
+    let Some(sort) = app.mod_sort else {
+        return (0..app.mods.len()).collect();
+    };
+    let mut rows: Vec<usize> = (0..app.mods.len())
+        .filter(|&i| !app.mods[i].is_separator())
+        .collect();
     let meta = |i: usize| app.meta_cache.get(&app.mods[i].name);
     match sort.by {
         SortKey::Name => rows.sort_by_key(|&i| app.mods[i].display_name().to_lowercase()),
         SortKey::Column(ModColumn::Category) => rows.sort_by_key(|&i| {
-            meta(i).and_then(|r| r.category_name.clone()).unwrap_or_default().to_lowercase()
+            meta(i)
+                .and_then(|r| r.category_name.clone())
+                .unwrap_or_default()
+                .to_lowercase()
         }),
         SortKey::Column(ModColumn::Content) => {
             rows.sort_by_key(|&i| meta(i).map(|r| r.content_tags.clone()).unwrap_or_default())
@@ -1552,15 +1628,22 @@ pub(crate) fn display_order(app: &App) -> Vec<usize> {
             rows.sort_by_key(|&i| meta(i).and_then(|r| r.version.clone()).unwrap_or_default())
         }
         SortKey::Column(ModColumn::Author) => rows.sort_by_key(|&i| {
-            meta(i).and_then(|r| r.author.clone()).unwrap_or_default().to_lowercase()
+            meta(i)
+                .and_then(|r| r.author.clone())
+                .unwrap_or_default()
+                .to_lowercase()
         }),
-        SortKey::Column(ModColumn::Installed) => rows
-            .sort_by_key(|&i| meta(i).and_then(|r| r.installed_at).unwrap_or(UNIX_EPOCH)),
+        SortKey::Column(ModColumn::Installed) => {
+            rows.sort_by_key(|&i| meta(i).and_then(|r| r.installed_at).unwrap_or(UNIX_EPOCH))
+        }
         SortKey::Column(ModColumn::ModId) => {
             rows.sort_by_key(|&i| meta(i).and_then(|r| r.mod_id).unwrap_or(0))
         }
         SortKey::Column(ModColumn::Game) => rows.sort_by_key(|&i| {
-            meta(i).and_then(|r| r.game_name.clone()).unwrap_or_default().to_lowercase()
+            meta(i)
+                .and_then(|r| r.game_name.clone())
+                .unwrap_or_default()
+                .to_lowercase()
         }),
         // Not offered as a sort - the header does not make it clickable - but
         // the match has to be total, and load order is the honest answer.
@@ -1589,7 +1672,9 @@ pub(crate) fn drawn_mod_rows(app: &App) -> Vec<usize> {
         // `display_entries`: this is what the list did before any of this
         // existed, and it must stay exactly that.
         let vis = mod_row_visibility(app, app.categories.as_ref());
-        return (0..app.mods.len()).filter(|&i| vis.get(i).copied().unwrap_or(false)).collect();
+        return (0..app.mods.len())
+            .filter(|&i| vis.get(i).copied().unwrap_or(false))
+            .collect();
     }
     display_entries(app)
         .into_iter()
@@ -1692,7 +1777,13 @@ pub(crate) fn scroll_focus_into_view(id: widget::Id, pos: usize, total: usize) -
     // The offset is per-axis optional in 0.14, so `x: None` says "leave the
     // horizontal scroll where the user put it" instead of yanking it back to 0
     // on every arrow key - which is what passing 0.0 used to do.
-    operation::snap_to(id, operation::RelativeOffset { x: None, y: Some(frac) })
+    operation::snap_to(
+        id,
+        operation::RelativeOffset {
+            x: None,
+            y: Some(frac),
+        },
+    )
 }
 
 /// One criterion of the mod-list filter, and how it is currently set.
@@ -1760,7 +1851,11 @@ impl ModFilters {
             ("Conflicted", self.conflicted, FilterField::Conflicted),
             ("Update available", self.update, FilterField::Update),
             ("Has plugins", self.plugins, FilterField::Plugins),
-            ("No category", self.uncategorised, FilterField::Uncategorised),
+            (
+                "No category",
+                self.uncategorised,
+                FilterField::Uncategorised,
+            ),
         ]
     }
 
@@ -1786,7 +1881,10 @@ impl ModFilters {
 
     /// How many criteria are actually filtering, for the button's badge.
     pub(crate) fn active_count(self) -> usize {
-        self.rows().iter().filter(|(_, c, _)| *c != Criterion::Off).count()
+        self.rows()
+            .iter()
+            .filter(|(_, c, _)| *c != Criterion::Off)
+            .count()
     }
 
     pub(crate) fn any(self) -> bool {
@@ -1807,7 +1905,10 @@ pub(crate) fn is_filtering(app: &App) -> bool {
     !app.search.trim().is_empty() || app.category_filter.is_some() || app.filters.any()
 }
 
-pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::CategoryFactory>) -> Vec<bool> {
+pub(crate) fn mod_row_visibility(
+    app: &App,
+    cats: Option<&eidos_instance::CategoryFactory>,
+) -> Vec<bool> {
     let query = app.search.trim().to_lowercase();
     // Separator folds are suspended under a GROUPING for the same reason they
     // are under a filter, and more strongly: a grouped list has moved the rows
@@ -1837,8 +1938,10 @@ pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::Catego
         f.active.keeps(m.enabled)
             && f.conflicted.keeps(mod_has_conflict(app, i))
             && f.update.keeps(meta.is_some_and(|r| r.update))
-            && f.plugins.keeps(meta.is_some_and(|r| r.content_tags.contains('P')))
-            && f.uncategorised.keeps(meta.is_none_or(|r| r.category_id.is_none()))
+            && f.plugins
+                .keeps(meta.is_some_and(|r| r.content_tags.contains('P')))
+            && f.uncategorised
+                .keeps(meta.is_none_or(|r| r.category_id.is_none()))
     })
 }
 
@@ -1848,7 +1951,9 @@ pub(crate) fn mod_row_visibility(app: &App, cats: Option<&eidos_instance::Catego
 /// selected mod ("does it beat the focused one"), while a filter has to hold
 /// with nothing selected at all.
 pub(crate) fn mod_has_conflict(app: &App, row: usize) -> bool {
-    let Some(map) = app.conflicts.as_ref() else { return false };
+    let Some(map) = app.conflicts.as_ref() else {
+        return false;
+    };
     // Origins are `index + 1`; 0 is the game's own data.
     map.mods
         .get(&((row + 1) as u32))
@@ -1866,7 +1971,9 @@ pub(crate) fn mod_has_conflict(app: &App, row: usize) -> bool {
 /// `GameSpec` has no `plugins.txt` that Eidos writes, so there is no list to show
 /// and no tab worth offering. Stellar Blade is the first such game.
 pub(crate) fn game_manages_plugins(app: &App) -> bool {
-    selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)).is_some()
+    selected_game(app)
+        .and_then(|g| GameSpec::for_id(g.def.id))
+        .is_some()
 }
 
 /// Whether this game has plugins AT ALL, managed by Eidos or not.
@@ -1903,7 +2010,12 @@ pub(crate) fn effective_focus(app: &App) -> Pane {
 /// `neighbour` is the row the user can see next to this one, which under a
 /// filter is not the adjacent index - landing one raw place away would look like
 /// nothing happened.
-pub(crate) fn move_mod_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task<Message> {
+pub(crate) fn move_mod_rows(
+    app: &mut App,
+    from: usize,
+    neighbour: usize,
+    up: bool,
+) -> Task<Message> {
     let block = selection_or(app, from);
     if block.is_empty() {
         return Task::none();
@@ -1926,7 +2038,12 @@ pub(crate) fn move_mod_rows(app: &mut App, from: usize, neighbour: usize, up: bo
 
 /// The plugin twin. The engine's ordering rules decide whether it happens at
 /// all, and say why when they refuse - the same answer a drag gets.
-pub(crate) fn move_plugin_rows(app: &mut App, from: usize, neighbour: usize, up: bool) -> Task<Message> {
+pub(crate) fn move_plugin_rows(
+    app: &mut App,
+    from: usize,
+    neighbour: usize,
+    up: bool,
+) -> Task<Message> {
     let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
         return Task::none();
     };
@@ -2021,8 +2138,9 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
                     }
                     let name = app.mods[i].display_name().to_string();
                     app.confirm_remove = Some(i);
-                    app.status =
-                        Some(format!("Press Delete again to remove '{name}', Escape to cancel."));
+                    app.status = Some(format!(
+                        "Press Delete again to remove '{name}', Escape to cancel."
+                    ));
                     Task::none()
                 }
                 _ => Task::none(),
@@ -2039,7 +2157,9 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
             // Land beside the neighbour the user can SEE, not one raw index
             // away: under a filter those differ, and a move whose effect is
             // invisible reads as a key that did nothing.
-            let Some(here) = rows.iter().position(|&r| r == i) else { return Task::none() };
+            let Some(here) = rows.iter().position(|&r| r == i) else {
+                return Task::none();
+            };
             let neighbour = if up {
                 if here == 0 {
                     return Task::none();
@@ -2100,7 +2220,10 @@ pub(crate) fn key_nav(app: &mut App, nav: Nav) -> Task<Message> {
         Pane::Plugins => {
             if extend {
                 let t = update(app, Message::SelectPluginExtend(next));
-                return Task::batch([t, scroll_focus_into_view(plugin_scroll_id(), pos, rows.len())]);
+                return Task::batch([
+                    t,
+                    scroll_focus_into_view(plugin_scroll_id(), pos, rows.len()),
+                ]);
             }
             app.selected_plugin = Some(next);
             app.plugin_anchor = Some(next);
@@ -2138,7 +2261,11 @@ pub(crate) fn plugin_selection_or(app: &App, row: usize) -> Vec<usize> {
 /// dragged mod one slot short. Every reorder - drag-drop, send to top/bottom, and
 /// the targeted sends - goes through here so the correction exists in one place.
 pub(crate) fn move_block(mods: &mut Vec<ModEntry>, targets: &[usize], dest: usize) -> usize {
-    let mut idx: Vec<usize> = targets.iter().copied().filter(|&i| i < mods.len()).collect();
+    let mut idx: Vec<usize> = targets
+        .iter()
+        .copied()
+        .filter(|&i| i < mods.len())
+        .collect();
     idx.sort_unstable();
     idx.dedup();
     if idx.is_empty() {
@@ -2168,14 +2295,17 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
         Ok(l) => l,
         Err(e) => return Some(format!("Not saved: {e}.")),
     };
-    inst.save_modlist(&app.mods).err().map(|e| format!("Could not save the mod list: {e}"))
+    inst.save_modlist(&app.mods)
+        .err()
+        .map(|e| format!("Could not save the mod list: {e}"))
 }
 
 /// Invalidate every memoised view listing. Cheap: the listings rebuild lazily on
 /// the next redraw that needs them. The stored entries are dropped rather than
 /// left to accumulate one stale copy per directory ever viewed.
 pub(crate) fn bump_views(app: &App) {
-    app.view_generation.set(app.view_generation.get().wrapping_add(1));
+    app.view_generation
+        .set(app.view_generation.get().wrapping_add(1));
     app.data_listing.borrow_mut().clear();
     app.data_stack.borrow_mut().take();
     app.archives_cache.borrow_mut().take();
@@ -2208,8 +2338,14 @@ pub(crate) fn addon_context(app: &App) -> eidos_addons::Context {
     if let Some(inst) = &app.created {
         values.insert("instance".to_string(), inst.root.display().to_string());
         values.insert("mods".to_string(), inst.mods_dir().display().to_string());
-        values.insert("downloads".to_string(), inst.downloads_dir().display().to_string());
-        values.insert("overwrite".to_string(), inst.overwrite_dir().display().to_string());
+        values.insert(
+            "downloads".to_string(),
+            inst.downloads_dir().display().to_string(),
+        );
+        values.insert(
+            "overwrite".to_string(),
+            inst.overwrite_dir().display().to_string(),
+        );
         let prof = inst.active();
         values.insert("profile".to_string(), prof.name.clone());
         values.insert("profile_dir".to_string(), prof.dir().display().to_string());
@@ -2232,7 +2368,9 @@ const ADDON_DIAGNOSE_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 /// Run every applicable `diagnose` add-on and collect what they reported.
 fn run_diagnose_addons(app: &mut App) {
     app.addon_findings.clear();
-    let Some(game_id) = selected_game(app).map(|g| g.def.id.to_string()) else { return };
+    let Some(game_id) = selected_game(app).map(|g| g.def.id.to_string()) else {
+        return;
+    };
     let ctx = addon_context(app);
     let addons: Vec<eidos_addons::Addon> = app
         .addons
@@ -2325,7 +2463,8 @@ fn run_addon_capture_inner(
     let mut err_pipe = child.stderr.take();
     let stdout_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
     let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-    let drain = |pipe: Option<std::process::ChildStdout>, into: std::sync::Arc<std::sync::Mutex<Vec<u8>>>| {
+    let drain = |pipe: Option<std::process::ChildStdout>,
+                 into: std::sync::Arc<std::sync::Mutex<Vec<u8>>>| {
         std::thread::spawn(move || {
             if let Some(mut p) = pipe {
                 let mut buf = Vec::new();
@@ -2367,8 +2506,14 @@ fn run_addon_capture_inner(
     // unless a grandchild still holds them, which is exactly the case the wait
     // above refuses to block on. Bounded join, then take what arrived.
     let joined = out_thread.join().is_ok() && err_thread.join().is_ok();
-    let stdout = stdout_buf.lock().map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
-    let stderr = stderr_buf.lock().map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+    let stdout = stdout_buf
+        .lock()
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .unwrap_or_default();
+    let stderr = stderr_buf
+        .lock()
+        .map(|b| String::from_utf8_lossy(&b).into_owned())
+        .unwrap_or_default();
     let _ = joined;
 
     if !status.success() && stdout.is_empty() {
@@ -2455,7 +2600,9 @@ pub(crate) struct HeldSelection {
 /// Capture the plugin selection by name. Pair every call with
 /// [`put_plugin_selection`] around whatever moves the rows.
 pub(crate) fn hold_plugin_selection(app: &App) -> HeldSelection {
-    let Some(list) = app.plugins.as_ref() else { return HeldSelection::default() };
+    let Some(list) = app.plugins.as_ref() else {
+        return HeldSelection::default();
+    };
     let name = |i: &usize| list.plugins.get(*i).map(|p| p.name.clone());
     HeldSelection {
         focus: app.selected_plugin.as_ref().and_then(name),
@@ -2472,7 +2619,11 @@ pub(crate) fn put_plugin_selection(app: &mut App, held: HeldSelection) {
         app.selected_plugins.clear();
         return;
     };
-    let at = |n: &String| list.plugins.iter().position(|p| p.name.eq_ignore_ascii_case(n));
+    let at = |n: &String| {
+        list.plugins
+            .iter()
+            .position(|p| p.name.eq_ignore_ascii_case(n))
+    };
     app.selected_plugin = held.focus.as_ref().and_then(at);
     app.plugin_anchor = held.anchor.as_ref().and_then(at);
     app.selected_plugins = held.set.iter().filter_map(at).collect();
@@ -2527,7 +2678,10 @@ pub(crate) fn after_hidden_change(app: &mut App, mod_name: &str, rel: &str) {
     drop_files_cache(app, Some(mod_name));
     app.conflicts = compute_conflicts(app);
     let lower = rel.to_ascii_lowercase();
-    if [".esp", ".esm", ".esl"].iter().any(|e| lower.trim_end_matches(".mohidden").ends_with(e)) {
+    if [".esp", ".esm", ".esl"]
+        .iter()
+        .any(|e| lower.trim_end_matches(".mohidden").ends_with(e))
+    {
         invalidate_plugins(app);
     }
 }
@@ -2604,14 +2758,21 @@ pub(crate) fn recompute_counts(app: &mut App) {
 /// The active profile's collapsed-separators file (MO2 keeps this per-profile, out
 /// of `modlist.txt`/`meta.ini` so the load order stays clean).
 pub(crate) fn collapsed_path(app: &App) -> Option<PathBuf> {
-    app.created.as_ref().map(|inst| inst.active().dir().join("collapsed_separators.txt"))
+    app.created
+        .as_ref()
+        .map(|inst| inst.active().dir().join("collapsed_separators.txt"))
 }
 
 /// Load the collapsed-separator set for the active profile.
 pub(crate) fn load_collapsed(app: &App) -> HashSet<String> {
     collapsed_path(app)
         .and_then(|p| fs::read_to_string(p).ok())
-        .map(|s| s.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+        .map(|s| {
+            s.lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
         .unwrap_or_default()
 }
 

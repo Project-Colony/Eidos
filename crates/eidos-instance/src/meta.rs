@@ -80,7 +80,14 @@ impl ModMeta {
         }
         let ini_tweaks = parse_ini_tweaks(&tail);
         let bain_options = parse_bain_options(&tail);
-        ModMeta { general, tail, ini_tweaks, bain_options, crlf, dirty: false }
+        ModMeta {
+            general,
+            tail,
+            ini_tweaks,
+            bain_options,
+            crlf,
+            dirty: false,
+        }
     }
 
     /// The INI-tweak fragments the user enabled for this mod, in application
@@ -168,7 +175,10 @@ impl ModMeta {
 
     /// Raw value (everything after `=`) for a `[General]` key, case-insensitive.
     fn raw(&self, key: &str) -> Option<&str> {
-        self.general.iter().find(|(k, _)| k.eq_ignore_ascii_case(key)).map(|(_, v)| v.as_str())
+        self.general
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+            .map(|(_, v)| v.as_str())
     }
 
     /// A `[General]` string value, unquoted and with empty treated as absent.
@@ -187,7 +197,8 @@ impl ModMeta {
     /// touches - so marking a mod valid here silences it in MO2 too, and a mod
     /// somebody already vouched for over there arrives here already quiet.
     pub fn validated(&self) -> bool {
-        self.raw("validated").is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
+        self.raw("validated")
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
     }
 
     /// Set MO2's `validated=`.
@@ -197,7 +208,9 @@ impl ModMeta {
 
     /// The Nexus mod id (`0`/absent -> `None`).
     pub fn mod_id(&self) -> Option<u64> {
-        self.raw("modid").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+        self.raw("modid")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n != 0)
     }
 
     pub fn version(&self) -> Option<String> {
@@ -288,7 +301,8 @@ impl ModMeta {
     /// message. MO2 lets any mod carry one, which is what stops a non-Nexus mod
     /// being a dead end in the interface.
     pub fn url(&self) -> Option<String> {
-        self.string("url").filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        self.string("url")
+            .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
     }
 
     /// Set (or, with an empty string, clear) that page.
@@ -341,18 +355,24 @@ impl ModMeta {
     /// window to draw a percentage - otherwise a running download can only be
     /// reported as a number of bytes that keeps going up, with no end in sight.
     pub fn total_size(&self) -> Option<u64> {
-        self.raw("totalsize").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+        self.raw("totalsize")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n != 0)
     }
 
     /// The sidecar's `name` (the file entry's name), HTML-stripped like MO2.
     pub fn name(&self) -> Option<String> {
-        self.string("name").map(|s| strip_html(&s)).filter(|s| !s.is_empty())
+        self.string("name")
+            .map(|s| strip_html(&s))
+            .filter(|s| !s.is_empty())
     }
 
     /// The download sidecar's `fileID` - which exact file of a mod this archive
     /// is. Absent from a mod's own `meta.ini`; only a download carries it.
     pub fn file_id(&self) -> Option<u64> {
-        self.raw("fileid").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+        self.raw("fileid")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n != 0)
     }
 
     /// The sidecar's `fileCategory` (the Nexus file category id).
@@ -365,7 +385,10 @@ impl ModMeta {
     }
 
     pub fn endorsed(&self) -> bool {
-        matches!(self.raw("endorsed").map(str::trim), Some("1") | Some("true"))
+        matches!(
+            self.raw("endorsed").map(str::trim),
+            Some("1") | Some("true")
+        )
     }
 
     pub fn tracked(&self) -> bool {
@@ -375,7 +398,10 @@ impl ModMeta {
     /// MO2's "Ignore update": when set, the mod is excluded from the update
     /// markers + count even if Nexus reports a newer version.
     pub fn ignore_update(&self) -> bool {
-        matches!(self.raw("ignoreUpdate").map(str::trim), Some("1") | Some("true"))
+        matches!(
+            self.raw("ignoreUpdate").map(str::trim),
+            Some("1") | Some("true")
+        )
     }
 
     /// Endorse / abstain the mod locally (the network side is handled by the
@@ -411,7 +437,11 @@ impl ModMeta {
     /// Set a `[General]` value (raw - the caller quotes it the way MO2 would, if
     /// needed). Updates in place or appends; a no-op write does not mark dirty.
     pub fn set(&mut self, key: &str, raw_value: &str) {
-        if let Some(slot) = self.general.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(key)) {
+        if let Some(slot) = self
+            .general
+            .iter_mut()
+            .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        {
             if slot.1 == raw_value {
                 return;
             }
@@ -433,7 +463,10 @@ impl ModMeta {
 
     /// The archive has been installed into a mod (`installed=true`).
     pub fn installed(&self) -> bool {
-        matches!(self.raw("installed").map(str::trim), Some("true") | Some("1"))
+        matches!(
+            self.raw("installed").map(str::trim),
+            Some("true") | Some("1")
+        )
     }
 
     /// Mark the archive installed / not installed.
@@ -443,7 +476,10 @@ impl ModMeta {
 
     /// The archive's mod was later removed (`uninstalled=true`).
     pub fn uninstalled(&self) -> bool {
-        matches!(self.raw("uninstalled").map(str::trim), Some("true") | Some("1"))
+        matches!(
+            self.raw("uninstalled").map(str::trim),
+            Some("true") | Some("1")
+        )
     }
 
     pub fn set_uninstalled(&mut self, b: bool) {
@@ -500,7 +536,9 @@ impl ModMeta {
     /// `None`). MO2 tracks this so it can trust the `updated?period=1m` bulk list
     /// only for mods checked within the window, and query the rest individually.
     pub fn last_nexus_update(&self) -> Option<u64> {
-        self.raw("lastNexusUpdate").and_then(|v| v.trim().parse().ok()).filter(|&n| n != 0)
+        self.raw("lastNexusUpdate")
+            .and_then(|v| v.trim().parse().ok())
+            .filter(|&n| n != 0)
     }
 
     pub fn set_last_nexus_update(&mut self, ts: u64) {
@@ -554,7 +592,9 @@ fn section_span(text: &str, name: &str) -> Option<(usize, usize)> {
 
 /// The `key=value` lines of a named section, in file order.
 fn section_entries<'a>(text: &'a str, name: &str) -> Vec<(&'a str, &'a str)> {
-    let Some((start, end)) = section_span(text, name) else { return Vec::new() };
+    let Some((start, end)) = section_span(text, name) else {
+        return Vec::new();
+    };
     text[start..end]
         .lines()
         .skip(1) // the header itself
@@ -741,7 +781,10 @@ fn unescape_variant(s: &str) -> Option<Vec<u8>> {
 /// commas or special characters (e.g. `category="-1,"`); bare values pass through.
 fn unquote(v: &str) -> String {
     let v = v.trim();
-    v.strip_prefix('"').and_then(|s| s.strip_suffix('"')).unwrap_or(v).to_string()
+    v.strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .unwrap_or(v)
+        .to_string()
 }
 
 /// Remove `<...>` tags from a value (MO2's `name` field can carry HTML).
@@ -936,12 +979,18 @@ mod tests {
         let text = fs::read_to_string(&p).unwrap();
         assert!(text.contains("author=\"Arthmoor, Kesta\""), "{text}");
         assert!(text.contains("uploader=\"Arthmoor\""), "{text}");
-        assert!(text.contains("uploaderUrl=\"https://www.nexusmods.com/users/1234\""), "{text}");
+        assert!(
+            text.contains("uploaderUrl=\"https://www.nexusmods.com/users/1234\""),
+            "{text}"
+        );
 
         let back = ModMeta::read(&p);
         assert_eq!(back.author().as_deref(), Some("Arthmoor, Kesta"));
         assert_eq!(back.uploader().as_deref(), Some("Arthmoor"));
-        assert_eq!(back.uploader_url().as_deref(), Some("https://www.nexusmods.com/users/1234"));
+        assert_eq!(
+            back.uploader_url().as_deref(),
+            Some("https://www.nexusmods.com/users/1234")
+        );
 
         // Saved again and again without growing: the quoting is not escaped, so
         // it has to survive its own round trip.
@@ -952,7 +1001,10 @@ mod tests {
             m.set_uploader(&u, &m.uploader_url().unwrap());
             m.write(&p).unwrap();
         }
-        assert_eq!(ModMeta::read(&p).author().as_deref(), Some("Arthmoor, Kesta"));
+        assert_eq!(
+            ModMeta::read(&p).author().as_deref(),
+            Some("Arthmoor, Kesta")
+        );
         let _ = fs::remove_file(&p);
     }
 
@@ -986,8 +1038,14 @@ mod tests {
         m.set_url("https://example.com/a,b?x=1");
         m.write(&p).unwrap();
         let text = fs::read_to_string(&p).unwrap();
-        assert!(text.contains("url=\"https://example.com/a,b?x=1\""), "{text}");
-        assert_eq!(ModMeta::read(&p).url().as_deref(), Some("https://example.com/a,b?x=1"));
+        assert!(
+            text.contains("url=\"https://example.com/a,b?x=1\""),
+            "{text}"
+        );
+        assert_eq!(
+            ModMeta::read(&p).url().as_deref(),
+            Some("https://example.com/a,b?x=1")
+        );
 
         // It must SURVIVE being saved again. Escaping on write with no
         // unescaping on read grew the value on every save - a backslash became
@@ -997,7 +1055,10 @@ mod tests {
             let round = m.url().unwrap();
             m.set_url(&round);
             m.write(&p).unwrap();
-            assert_eq!(ModMeta::read(&p).url().as_deref(), Some("https://example.com/a,b?x=1"));
+            assert_eq!(
+                ModMeta::read(&p).url().as_deref(),
+                Some("https://example.com/a,b?x=1")
+            );
         }
         // A value that could not round-trip is refused rather than mangled.
         let mut m = ModMeta::read(&p);
@@ -1050,12 +1111,21 @@ mod tests {
         // Quoted, or QSettings reads it back as a LIST and MO2 shows no category.
         let on_disk = fs::read_to_string(&p).unwrap();
         assert!(on_disk.contains("category=\"9,27,43,\"\r\n"), "{on_disk}");
-        assert_eq!(on_disk, SAMPLE.replace("category=\"-1,\"", "category=\"9,27,43,\""));
+        assert_eq!(
+            on_disk,
+            SAMPLE.replace("category=\"-1,\"", "category=\"9,27,43,\"")
+        );
 
         // And it round-trips through our own reader.
         let back = ModMeta::read(&p);
-        assert_eq!(crate::categories::parse_primary(&back.category().unwrap()), Some(9));
-        assert_eq!(crate::categories::parse_all(&back.category().unwrap()), vec![9, 27, 43]);
+        assert_eq!(
+            crate::categories::parse_primary(&back.category().unwrap()),
+            Some(9)
+        );
+        assert_eq!(
+            crate::categories::parse_all(&back.category().unwrap()),
+            vec![9, 27, 43]
+        );
 
         // Clearing goes back to exactly what MO2 writes for uncategorised.
         let mut m = ModMeta::read(&p);
@@ -1094,7 +1164,10 @@ mod tests {
         assert_eq!(m.notes(), None);
         m.set_notes("merge with USSEP, keep my patch on top");
         assert!(m.is_dirty());
-        assert_eq!(m.notes().as_deref(), Some("merge with USSEP, keep my patch on top"));
+        assert_eq!(
+            m.notes().as_deref(),
+            Some("merge with USSEP, keep my patch on top")
+        );
         m.write(&p).unwrap();
         assert_eq!(
             ModMeta::read(&p).notes().as_deref(),
@@ -1116,8 +1189,16 @@ mod tests {
 
     #[test]
     fn color_encode_decode_round_trips_through_modmeta() {
-        for rgb in [[0u8, 0, 0], [0xFF, 0xFF, 0xFF], [0x33, 0x66, 0x99], [0x12, 0xAB, 0x7E]] {
-            assert_eq!(variant_qcolor_decode(&variant_qcolor_encode(rgb)), Some(rgb));
+        for rgb in [
+            [0u8, 0, 0],
+            [0xFF, 0xFF, 0xFF],
+            [0x33, 0x66, 0x99],
+            [0x12, 0xAB, 0x7E],
+        ] {
+            assert_eq!(
+                variant_qcolor_decode(&variant_qcolor_encode(rgb)),
+                Some(rgb)
+            );
         }
         // Through the full ModMeta set/read path (the value survives the INI round-trip).
         let p = tmp_ini(SAMPLE);

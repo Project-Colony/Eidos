@@ -82,10 +82,11 @@ impl Addon {
             return Some("no program to run".to_string());
         }
         if has_separator(&self.exec) {
-            return (!self.exec.is_file())
-                .then(|| format!("{} is not there", self.exec.display()));
+            return (!self.exec.is_file()).then(|| format!("{} is not there", self.exec.display()));
         }
-        which(&self.exec).is_none().then(|| format!("{} is not on PATH", self.exec.display()))
+        which(&self.exec)
+            .is_none()
+            .then(|| format!("{} is not on PATH", self.exec.display()))
     }
 }
 
@@ -133,7 +134,9 @@ impl Context {
         let mut out = Vec::new();
         let mut rest = raw;
         while let Some(open) = rest.find('{') {
-            let Some(close) = rest[open..].find('}').map(|i| open + i) else { break };
+            let Some(close) = rest[open..].find('}').map(|i| open + i) else {
+                break;
+            };
             let key = &rest[open + 1..close];
             if !self.values.contains_key(key) && !key.is_empty() {
                 out.push(key.to_string());
@@ -168,11 +171,16 @@ pub fn load_addons_from(dir: &Path) -> Vec<Addon> {
 /// from working. A message on stderr does not reach a window started from a
 /// desktop launcher.
 pub fn scan_addons_from(dir: &Path) -> (Vec<Addon>, Vec<(PathBuf, String)>) {
-    let Ok(rd) = fs::read_dir(dir) else { return (Vec::new(), Vec::new()) };
+    let Ok(rd) = fs::read_dir(dir) else {
+        return (Vec::new(), Vec::new());
+    };
     let mut paths: Vec<PathBuf> = rd
         .flatten()
         .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("toml")))
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("toml"))
+        })
         .collect();
     paths.sort();
     let mut out: Vec<Addon> = Vec::new();
@@ -190,7 +198,10 @@ pub fn scan_addons_from(dir: &Path) -> (Vec<Addon>, Vec<(PathBuf, String)>) {
             // claiming one id is a mistake worth seeing, and the alternative is
             // an add-on that vanishes for no visible reason.
             Some(a) if out.iter().any(|b| b.id.eq_ignore_ascii_case(&a.id)) => {
-                bad.push((p, format!("the id '{}' is already taken by another manifest", a.id)));
+                bad.push((
+                    p,
+                    format!("the id '{}' is already taken by another manifest", a.id),
+                ));
             }
             Some(a) => out.push(a),
             None => bad.push((p, why_rejected(&text))),
@@ -214,7 +225,10 @@ fn why_rejected(text: &str) -> String {
     if raw.exec.trim().is_empty() {
         return "`exec` is empty - there is no program to run".to_string();
     }
-    format!("`kind` is '{}'; it must be 'tool' or 'diagnose'", raw.kind.trim())
+    format!(
+        "`kind` is '{}'; it must be 'tool' or 'diagnose'",
+        raw.kind.trim()
+    )
 }
 
 /// Every user add-on.
@@ -246,7 +260,11 @@ pub fn parse_addon(text: &str, source: &Path) -> Option<Addon> {
         return None;
     }
     Some(Addon {
-        name: if raw.name.trim().is_empty() { id.clone() } else { raw.name.trim().to_string() },
+        name: if raw.name.trim().is_empty() {
+            id.clone()
+        } else {
+            raw.name.trim().to_string()
+        },
         id,
         author: raw.author.trim().to_string(),
         description: raw.description.trim().to_string(),
@@ -291,7 +309,12 @@ pub fn parse_findings(stdout: &str) -> Vec<Finding> {
     let mut out = Vec::new();
     for line in stdout.lines() {
         let mut cells = line.split('\t');
-        let level = match cells.next().map(str::trim).map(str::to_ascii_lowercase).as_deref() {
+        let level = match cells
+            .next()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
             Some("problem") => FindingLevel::Problem,
             Some("advice") => FindingLevel::Advice,
             Some("ok") => FindingLevel::Ok,
@@ -304,7 +327,11 @@ pub fn parse_findings(stdout: &str) -> Vec<Finding> {
         // Any further tabs belong to the detail: a path can contain one, and
         // splitting on all of them would truncate at the first.
         let detail = cells.collect::<Vec<_>>().join("\t").trim().to_string();
-        out.push(Finding { level, title, detail });
+        out.push(Finding {
+            level,
+            title,
+            detail,
+        });
     }
     out
 }
@@ -350,7 +377,10 @@ mod tests {
 
     fn ctx(pairs: &[(&str, &str)]) -> Context {
         Context {
-            values: pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            values: pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
         }
     }
 
@@ -392,7 +422,10 @@ games = ["skyrimse"]
             "id='x'\nkind='tool'\nexec=''\n",
             "not even toml [[[",
         ] {
-            assert!(parse_addon(bad, Path::new("/x")).is_none(), "must refuse: {bad:?}");
+            assert!(
+                parse_addon(bad, Path::new("/x")).is_none(),
+                "must refuse: {bad:?}"
+            );
         }
     }
 
@@ -450,8 +483,11 @@ games = ["skyrimse"]
         // A bare command is looked up on PATH instead of stat'd relative to cwd.
         let sh = parse_addon("id='x'\nkind='tool'\nexec='sh'\n", Path::new("/x")).unwrap();
         assert_eq!(sh.unavailable(), None, "sh is on PATH everywhere this runs");
-        let nope =
-            parse_addon("id='x'\nkind='tool'\nexec='eidos-nope-xyz'\n", Path::new("/x")).unwrap();
+        let nope = parse_addon(
+            "id='x'\nkind='tool'\nexec='eidos-nope-xyz'\n",
+            Path::new("/x"),
+        )
+        .unwrap();
         assert!(nope.unavailable().is_some_and(|m| m.contains("PATH")));
     }
 
@@ -459,16 +495,30 @@ games = ["skyrimse"]
     fn two_manifests_claiming_one_id_do_not_silently_shadow_each_other() {
         let dir = std::env::temp_dir().join(format!("eidos-addons-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        fs::write(dir.join("a.toml"), "id='dup'\nname='First'\nkind='tool'\nexec='sh'\n").unwrap();
-        fs::write(dir.join("b.toml"), "id='dup'\nname='Second'\nkind='tool'\nexec='sh'\n").unwrap();
+        fs::write(
+            dir.join("a.toml"),
+            "id='dup'\nname='First'\nkind='tool'\nexec='sh'\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("b.toml"),
+            "id='dup'\nname='Second'\nkind='tool'\nexec='sh'\n",
+        )
+        .unwrap();
         fs::write(dir.join("c.toml"), "id='ok'\nkind='tool'\nexec='sh'\n").unwrap();
         fs::write(dir.join("notes.txt"), "id='ignored'\n").unwrap();
 
         let addons = load_addons_from(&dir);
         assert_eq!(addons.len(), 2, "{addons:?}");
-        assert_eq!(addons[0].name, "First", "the first file wins, deterministically");
+        assert_eq!(
+            addons[0].name, "First",
+            "the first file wins, deterministically"
+        );
         assert!(addons.iter().any(|a| a.id == "ok"));
-        assert!(!addons.iter().any(|a| a.id == "ignored"), "only .toml is read");
+        assert!(
+            !addons.iter().any(|a| a.id == "ignored"),
+            "only .toml is read"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -488,7 +538,10 @@ games = ["skyrimse"]
         // Each reason names the actual problem: a list that only said "invalid"
         // would leave the user comparing their file to the docs line by line.
         let why = |n: &str| {
-            bad.iter().find(|(p, _)| p.ends_with(n)).map(|(_, w)| w.clone()).unwrap_or_default()
+            bad.iter()
+                .find(|(p, _)| p.ends_with(n))
+                .map(|(_, w)| w.clone())
+                .unwrap_or_default()
         };
         assert!(why("a.toml").contains("space"), "{}", why("a.toml"));
         assert!(why("b.toml").contains("'wat'"), "{}", why("b.toml"));
