@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.13.0](https://github.com/Project-Colony/Eidos/compare/v1.12.0...v1.13.0) (2026-09-02)
+
+
+### Features
+
+* **gamefeatures:** warn when the prefix's C++ runtime is split ([#46](https://github.com/Project-Colony/Eidos/issues/46)) ([c0d726e](https://github.com/Project-Colony/Eidos/commit/c0d726ed73f30d006254252540ec912d0d3cdbd8))
+
+
+### Fixes
+
+* **nexus:** keep the OAuth secrets out of Debug output ([#45](https://github.com/Project-Colony/Eidos/issues/45)) ([54cad22](https://github.com/Project-Colony/Eidos/commit/54cad229d1c8c19228d9dfff848384e1c09857f3))
+
 ## [1.12.0](https://github.com/Project-Colony/Eidos/compare/v1.11.2...v1.12.0) (2026-08-26)
 
 
