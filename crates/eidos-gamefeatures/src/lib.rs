@@ -21,6 +21,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 mod native_dll;
+pub mod crt;
+
 pub use native_dll::{
     community_shaders_in_roots, enb_cs_conflict, enb_in_game_root, ensure_d3dcompiler_47,
     ensure_native_dll, imported_dlls, is_tier1_dll, scan_imports_provisionable, NativeDllError,
