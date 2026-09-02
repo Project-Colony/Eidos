@@ -90,6 +90,7 @@ pub(crate) fn cmd_play(args: &[String]) {
             );
         }
     }
+    warn_if_split_crt(game.compatdata.as_ref(), &command);
     // Playing is the strongest "this is my instance" signal there is: record
     // it (dry listings above deliberately don't) so the GUI welcome screen and
     // the nxm:// handler follow the user here.
@@ -105,6 +106,57 @@ pub(crate) fn cmd_play(args: &[String]) {
         None,
         ToolOpts::default(),
     );
+}
+
+/// Warn when the prefix's Visual C++ runtime is half Proton's and half someone
+/// else's.
+///
+/// A redist installed into the prefix (winetricks `vcrun*`, or any vcredist.exe a
+/// tool ran) replaces some CRT DLLs with Microsoft's, and Proton reinstates its own
+/// builtins for the rest on its next prefix refresh. The halves then disagree:
+/// Wine's `vcruntime140_1` owns `__CxxFrameHandler4`, the unwinder every plugin
+/// built with a modern MSVC relies on, and hands the exception bookkeeping back to
+/// `vcruntime140`. The symbol names resolve against either implementation so
+/// nothing fails at load, but the structures behind them are not interchangeable,
+/// and the first C++ exception thrown is an access violation.
+///
+/// This is worth a paragraph of output because of how it presents: every script
+/// extender plugin that links the CRT dynamically dies while loading, every plugin
+/// that links it statically is fine, and the log says nothing about a runtime. It
+/// reads exactly like a batch of outdated mods, and updating them changes nothing.
+pub(crate) fn warn_if_split_crt(compatdata: Option<&PathBuf>, command: &[String]) {
+    let Some(cd) = compatdata else { return };
+    let Some(script) = eidos_gamefeatures::crt::proton_script_in(command) else {
+        return;
+    };
+    let Some(reference) = eidos_gamefeatures::crt::reference_windows(script) else {
+        return;
+    };
+    let win = cd.join("pfx").join("drive_c").join("windows");
+    let report = eidos_gamefeatures::crt::check(&win, &reference);
+    if report.splits.is_empty() {
+        return;
+    }
+    for s in &report.splits {
+        eidos_log::warn!(
+            "eidos: WARNING - split Visual C++ runtime in {}: {} and {} are from\n\
+             eidos: different builds. The first delegates its C++ exception handling to the\n\
+             eidos: second, and the two are not interchangeable.",
+            s.arch,
+            s.consumer,
+            s.provider
+        );
+        eidos_log::warn!(
+            "eidos: script-extender plugins that link the CRT dynamically will crash as they\n\
+             eidos: load - `couldn't load plugin 998` or `disabled, fatal error occurred while\n\
+             eidos: loading plugin`, with the plugin's own log left empty. Plugins that link it\n\
+             eidos: statically are unaffected, which is the giveaway. This is NOT an outdated\n\
+             eidos: mod, and updating the mods will not fix it. Restore Proton's own copy:\n\
+             eidos:   cp '{}' '{}'",
+            reference.join(s.arch).join(&s.provider).display(),
+            win.join(s.arch).join(&s.provider).display()
+        );
+    }
 }
 
 /// Warn when the resolved Proton belongs to the Flatpak Steam install.
