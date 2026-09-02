@@ -743,6 +743,8 @@ enum Message {
     ///
     /// Only subscribed while something is actually moving - see `subscription`.
     AnimationTick,
+    /// A frame while an archive extracts: check whether the worker finished.
+    InstallPoll,
     WindowResized(iced::Size),
     /// The pointer entered a FOMOD option; drives the preview pane.
     FomodHover(Option<(usize, usize)>),
@@ -1742,6 +1744,8 @@ struct App {
     /// with its archive - the pairing is what stops a cancelled install moving an
     /// unrelated mod - and there is no archive yet at the moment of the click.
     install_gap: Option<usize>,
+    /// The archive currently being extracted on a worker thread, if any.
+    install_job: Option<InstallJob>,
     /// Two-click guard for the bulk enable/disable, holding the TARGET state so
     /// arming "Enable all" and then clicking "Disable all" does not fire.
     confirm_set_all: Option<bool>,
@@ -2157,6 +2161,39 @@ struct CategoriesDialogState {
 /// thread `wait()`s the `eidos` child (which itself outlives the game, holding the
 /// FUSE mount) and flips `done` when it exits; a poll subscription notices and
 /// unlocks. `pid` is shown in the lock overlay (MO2 shows the running process).
+/// An archive being opened on a worker thread.
+///
+/// Extraction used to run inside `update()`, on the window's own thread: a
+/// 350 MB archive meant ~30 s during which iced processed no events at all, so
+/// the compositor declared the window dead ("Eidos is not responding") and any
+/// resize it had sent went unanswered until the extraction finished. The work
+/// is the same; only the thread it runs on changed.
+struct InstallJob {
+    /// The mod's name, for the dialog text.
+    name: String,
+    /// The archive being opened. Kept because the result handler needs it and
+    /// the worker has moved its own copy away.
+    archive: PathBuf,
+    /// The instance's `mods/`, likewise.
+    mods_dir: PathBuf,
+    /// The game the install is for.
+    game_id: String,
+    /// 7-Zip's own percentage, written by the worker as it reads them.
+    percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    /// The worker's result, stored just before `done` flips.
+    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<eidos_install::Opened, eidos_install::InstallError>>>>,
+    /// Flipped to `true` by the worker once `outcome` is filled.
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+// The worker hands `Opened` back across a thread; if that ever stops holding,
+// fail here at compile time rather than at the `spawn` call site.
+const _: fn() = || {
+    fn assert_send<T: Send>() {}
+    assert_send::<eidos_install::Opened>();
+    assert_send::<eidos_install::InstallError>();
+};
+
 struct RunningState {
     /// What is running (the tool title or the game name), for the overlay text.
     title: String,
@@ -2311,7 +2348,13 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // subscribes to nothing here, so the cost of having animations at all is
     // zero rather than small - which is the whole reason this is a condition
     // and not an always-on timer that most frames ignore.
-    let frames = anim::animating(app).then(|| {
+    // One timer, two reasons to want it: something is animating, or an archive
+    // is extracting on a worker thread and its dialog has to repaint (and its
+    // completion be noticed). iced 0.14 requires a non-capturing closure here,
+    // so the tick always carries `AnimationTick` and the handler forwards to
+    // `InstallPoll` when there is a job - which also keeps that message
+    // separately testable.
+    let frames = anim::needs_frames(app).then(|| {
         iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
     });
 
@@ -7714,6 +7757,104 @@ mod tests {
             Some((2, PathBuf::from("/tmp/M.7z"))),
             "paired with the archive, so a later failure cannot move something else"
         );
+    }
+
+    /// The window must come back from `update()` with the archive UNOPENED.
+    /// Doing the extraction here is what froze it: iced processes no events
+    /// while this call is on the stack, so the compositor stops getting pings
+    /// and any resize it sent goes unanswered until 7-Zip finishes.
+    #[test]
+    fn a_picked_archive_is_handed_to_a_worker_instead_of_blocking_the_window() {
+        let (mut app, root) = data_app(&[], &[]);
+        let archive = root.join("Some Mod.7z");
+        fs::write(&archive, b"not really an archive").unwrap();
+
+        let _ = update_inner(&mut app, Message::ModPicked(Some(archive.clone())));
+
+        let job = app.install_job.as_ref().expect("a job was started");
+        assert_eq!(job.archive, archive);
+        assert_eq!(job.name, eidos_install::mod_name_for(&archive));
+        assert!(
+            app.fomod.is_none() && app.picker.is_none() && app.collision.is_none(),
+            "nothing was decided yet - the archive has not been read"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// A job in flight has no animation running, so the old gate left the window
+    /// subscribed to nothing: the dialog would never repaint and the finished
+    /// worker would never be noticed.
+    #[test]
+    fn the_window_keeps_receiving_frames_while_an_archive_extracts() {
+        let mut app = nav_app(&[]);
+        assert!(!anim::needs_frames(&app), "idle asks for nothing");
+        app.install_job = Some(fake_job(None));
+        assert!(anim::needs_frames(&app));
+    }
+
+    /// Polling before the worker is done must leave the job alone - taking the
+    /// (empty) outcome would drop the install on the floor.
+    #[test]
+    fn polling_an_unfinished_job_leaves_it_running() {
+        let mut app = nav_app(&[]);
+        app.install_job = Some(fake_job(None));
+        let _ = update_inner(&mut app, Message::InstallPoll);
+        assert!(app.install_job.is_some(), "still extracting");
+    }
+
+    /// And a failure has to reach the status bar: the worker is off-screen, so
+    /// an error it swallows is an install that silently never happened.
+    #[test]
+    fn a_finished_job_reports_its_failure_and_clears_itself() {
+        let mut app = nav_app(&[]);
+        app.install_job = Some(fake_job(Some(Err(
+            eidos_install::InstallError::Extract("Cannot open the file as archive".into()),
+        ))));
+        let _ = update_inner(&mut app, Message::InstallPoll);
+        assert!(app.install_job.is_none(), "the finished job is taken");
+        let s = app.status.clone().unwrap_or_default();
+        assert!(s.contains("Cannot open the file as archive"), "{s}");
+    }
+
+    /// A multi-file drop is walked one archive at a time. Without this the queue
+    /// would spawn a worker per file at once: several 7-Zip processes competing
+    /// for the disk, and their extractions racing to create `mods/<name>/`.
+    #[test]
+    fn a_queued_archive_waits_for_the_one_being_extracted() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.install_job = Some(fake_job(None));
+        app.dropped = vec![root.join("Second.7z")];
+        fs::write(root.join("Second.7z"), b"x").unwrap();
+
+        let _ = update_inner(&mut app, Message::DrainDrops);
+
+        assert_eq!(app.dropped.len(), 1, "still queued, untouched");
+        assert_eq!(
+            app.install_job.as_ref().map(|j| j.name.clone()).as_deref(),
+            Some("Some Mod"),
+            "and the running job was not replaced"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// An `InstallJob` with no worker behind it: `outcome` decides whether it
+    /// reads as finished, so the state machine can be driven without 7-Zip
+    /// (which CI does not have).
+    fn fake_job(
+        outcome: Option<Result<eidos_install::Opened, eidos_install::InstallError>>,
+    ) -> InstallJob {
+        use std::sync::atomic::{AtomicBool, AtomicU8};
+        use std::sync::{Arc, Mutex};
+        let done = outcome.is_some();
+        InstallJob {
+            name: "Some Mod".into(),
+            archive: PathBuf::from("/tmp/Some Mod.7z"),
+            mods_dir: PathBuf::from("/tmp/mods"),
+            game_id: "skyrimse".into(),
+            percent: Arc::new(AtomicU8::new(0)),
+            outcome: Arc::new(Mutex::new(outcome)),
+            done: Arc::new(AtomicBool::new(done)),
+        }
     }
 
     #[test]

@@ -583,10 +583,10 @@ pub fn bain_default_selection(subpackages: &[String], previous: &[String]) -> Ve
 
 mod install;
 pub use install::{
-    collision_name, extract_to_temp, finish_fomod, fomod_context, install_archive,
-    install_archive_with_policy, install_bain, install_extracted, install_manual, mod_name_for,
-    open_archive, ExtractedTree, FomodSession, InstallError, InstallReport, Opened,
-    OverwritePolicy,
+    collision_name, extract_to_temp, extract_to_temp_with, finish_fomod, fomod_context,
+    install_archive, install_archive_with_policy, install_bain, install_extracted, install_manual,
+    mod_name_for, open_archive, open_archive_with, ExtractedTree, FomodSession, InstallError,
+    InstallReport, Opened, OverwritePolicy,
 };
 
 /// The same check as [`ArchiveTree::data_looks_valid`], against a directory that

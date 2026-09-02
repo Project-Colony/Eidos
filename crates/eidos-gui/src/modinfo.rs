@@ -3345,6 +3345,16 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         }
     }
 
+    // The extraction dialog. No scrim catcher: there is nothing to cancel yet -
+    // 7-Zip is mid-archive - and a click that dismissed it would leave the job
+    // running with nothing watching for its result.
+    if let Some(job) = &app.install_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        layers = layers
+            .push(scrim)
+            .push(container(install_progress_dialog(job)).center(Length::Fill));
+    }
+
     // The manual / BAIN picker (MO2's InstallDialog and BainComplexInstallerDialog).
     // Below the collision chooser in the stack: a collision raised BY the picker
     // has to be the thing you can click.
@@ -4431,6 +4441,43 @@ pub(crate) fn after_install(
 
 /// The install-collision chooser card (MO2's QueryOverwriteDialog): Merge / Replace
 /// / Rename / Cancel for an already-existing `mods/<name>/`.
+/// The extraction dialog: what is being unpacked, and how far along.
+///
+/// MO2 shows one for every archive it opens, and its absence here was not a
+/// missing widget but a missing thread - nothing could report progress while
+/// the extraction held the window's own event loop. It reports 7-Zip's own
+/// percentage, and says so plainly at 100%, when the remaining work (finding
+/// the data root, healing NTFS case collisions) no longer moves the bar.
+pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a, Message> {
+    let pct = job.percent.load(std::sync::atomic::Ordering::SeqCst).min(100);
+    let card = Column::new()
+        .spacing(10)
+        .push(text(format!("Extracting \"{}\"", job.name)).size(15.0))
+        .push(
+            iced::widget::progress_bar(0.0..=100.0, pct as f32)
+                .length(Length::Fill)
+                .girth(Length::Fixed(10.0)),
+        )
+        .push(
+            text(if pct >= 100 {
+                "Finishing up...".to_string()
+            } else {
+                format!("{pct}%")
+            })
+            .size(12.0),
+        )
+        .push(
+            text("Large archives take a while. The window stays responsive.")
+                .size(10.0)
+                .color(text_muted()),
+        );
+    container(card)
+        .max_width(420.0)
+        .padding(16)
+        .style(card_style)
+        .into()
+}
+
 pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> {
     let buttons = Row::new()
         .spacing(8)
