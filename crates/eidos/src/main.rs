@@ -22,9 +22,9 @@ mod prepare;
 mod prereqs;
 mod resolve;
 mod sort;
-mod tools;
 #[cfg(test)]
 mod tests;
+mod tools;
 
 use export::*;
 use games::*;
@@ -105,7 +105,10 @@ fn cmd_nexus(args: &[String]) {
             };
             let target = resolve(id);
             let Some(game) = find_game(&target.game_id) else {
-                eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+                eidos_log::info!(
+                    "Game '{}' is not detected. Run `eidos games`.",
+                    target.game_id
+                );
                 exit(1);
             };
             let inst = target.inst;
@@ -132,7 +135,9 @@ fn cmd_nexus(args: &[String]) {
             let mut rate_limited = false;
             for m in inst.modlist() {
                 let mut meta = inst.mod_meta(&m.name);
-                let Some(mod_id) = meta.mod_id() else { continue };
+                let Some(mod_id) = meta.mod_id() else {
+                    continue;
+                };
                 checked += 1;
                 // MO2: the `updated?period=1m` list is only trustworthy for mods
                 // checked within that window. A mod never checked - or checked over
@@ -152,7 +157,9 @@ fn cmd_nexus(args: &[String]) {
                 // Stop before the request is built, not after Nexus refuses it.
                 if nexus.would_block() {
                     rate_limited = true;
-                    eidos_log::info!("  Nexus request budget spent - stopping; remaining mods unchecked.");
+                    eidos_log::info!(
+                        "  Nexus request budget spent - stopping; remaining mods unchecked."
+                    );
                     break;
                 }
                 match nexus.mod_info(game.def.nexus_game, mod_id) {
@@ -191,11 +198,16 @@ fn cmd_nexus(args: &[String]) {
             );
             let rl = nexus.rate_limits();
             if let Some(h) = rl.hourly_remaining {
-                let daily = rl.daily_remaining.map(|d| format!(", {d} today")).unwrap_or_default();
+                let daily = rl
+                    .daily_remaining
+                    .map(|d| format!(", {d} today"))
+                    .unwrap_or_default();
                 println!("Nexus budget: {h} request(s) left this hour{daily}.");
             }
             if rate_limited {
-                eidos_log::info!("Some mods were not checked (request budget spent). Re-run once it refills.");
+                eidos_log::info!(
+                    "Some mods were not checked (request budget spent). Re-run once it refills."
+                );
             }
         }
         _ => {
@@ -304,14 +316,20 @@ mod bucket_tests {
         // mod and file ids it went after.
         let a = v(&["nxm", "nxm://skyrimspecialedition/mods/36350/files/213426"]);
         assert_eq!(log_bucket(&a), "nxm");
-        let a = v(&["nxm", "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest"]);
+        let a = v(&[
+            "nxm",
+            "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest",
+        ]);
         assert_eq!(log_bucket(&a), "nxm");
     }
 
     #[test]
     fn an_instance_argument_still_buckets_by_instance() {
         assert_eq!(log_bucket(&v(&["play", "skyrimse"])), "skyrimse");
-        assert_eq!(log_bucket(&v(&["play", "/mnt/Jeux/Eidos-Skyrim"])), "/mnt/Jeux/Eidos-Skyrim");
+        assert_eq!(
+            log_bucket(&v(&["play", "/mnt/Jeux/Eidos-Skyrim"])),
+            "/mnt/Jeux/Eidos-Skyrim"
+        );
         // A flag is not an instance, and neither is nothing at all.
         assert_eq!(log_bucket(&v(&["games", "--json"])), "games");
         assert_eq!(log_bucket(&v(&["games"])), "games");

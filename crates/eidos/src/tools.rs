@@ -14,7 +14,10 @@ use crate::*;
 /// `inst` widens the search to enabled mods' `Root/` directories, so a script
 /// extender installed AS A MOD is detected too; at launch the root union puts it
 /// on the game root for real.
-pub(crate) fn default_tools_for(game: &DetectedGame, inst: Option<&Instance>) -> Vec<eidos_instance::Tool> {
+pub(crate) fn default_tools_for(
+    game: &DetectedGame,
+    inst: Option<&Instance>,
+) -> Vec<eidos_instance::Tool> {
     let roots = inst.map(|i| i.root_layers()).unwrap_or_default();
     let prefs = eidos_instance::settings::Settings::load();
     let extra = eidos_instance::tool_search_roots(
@@ -51,7 +54,10 @@ pub(crate) fn cmd_tool(args: &[String]) {
     };
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
         exit(1);
     };
     let inst = target.inst;
@@ -60,14 +66,22 @@ pub(crate) fn cmd_tool(args: &[String]) {
 
     match args.get(1).map(String::as_str) {
         None | Some("list") => {
-            let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
+            let tools =
+                eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
             if tools.is_empty() {
                 println!("No tools. Add one: eidos tool {id} add <title> <exe> [args...]");
                 return;
             }
-            println!("Tools for {} (run: eidos tool {id} run <title>):", game.def.name);
+            println!(
+                "Tools for {} (run: eidos tool {id} run <title>):",
+                game.def.name
+            );
             for t in &tools {
-                let exe = if t.exe.is_absolute() { t.exe.clone() } else { game.install_path.join(&t.exe) };
+                let exe = if t.exe.is_absolute() {
+                    t.exe.clone()
+                } else {
+                    game.install_path.join(&t.exe)
+                };
                 let missing = if exe.is_file() { "" } else { "  [MISSING]" };
                 println!("  {:<18} {}{}", t.title, t.exe.display(), missing);
             }
@@ -82,7 +96,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // the header and corrupt neighbouring tools on the next read).
             let title = title.trim();
             if title.is_empty() || title.chars().any(char::is_control) {
-                eidos_log::warn!("Invalid tool title: must be non-empty and free of control characters.");
+                eidos_log::warn!(
+                    "Invalid tool title: must be non-empty and free of control characters."
+                );
                 exit(2);
             }
             let mut user = inst.tools();
@@ -123,19 +139,24 @@ pub(crate) fn cmd_tool(args: &[String]) {
         }
         Some("run") => {
             let Some(title) = args.get(2) else {
-                eidos_log::info!("usage: eidos tool {id} run <title> [--print] [-- <extra args>...]");
+                eidos_log::info!(
+                    "usage: eidos tool {id} run <title> [--print] [-- <extra args>...]"
+                );
                 exit(2);
             };
             // Everything after `--` is opaque tool args, so scan for --print only
             // BEFORE the separator (a tool may itself take a --print flag).
             let sep = args.iter().position(|a| a == "--");
-            let print_only = args[..sep.unwrap_or(args.len())].iter().any(|a| a == "--print");
+            let print_only = args[..sep.unwrap_or(args.len())]
+                .iter()
+                .any(|a| a == "--print");
             let extra: Vec<String> = match sep {
                 Some(i) => args[i + 1..].to_vec(),
                 None => Vec::new(),
             };
 
-            let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
+            let tools =
+                eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
             let Some(tool) = tools.iter().find(|t| t.title.eq_ignore_ascii_case(title)) else {
                 eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
@@ -170,7 +191,9 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 exe.clone()
             });
             let Some(compat) = game.compatdata.as_ref() else {
-                eidos_log::info!("No Proton prefix for {id} - launch the game once through Steam first.");
+                eidos_log::info!(
+                    "No Proton prefix for {id} - launch the game once through Steam first."
+                );
                 exit(1);
             };
             let Some(run) = eidos_games::proton_command(
@@ -178,8 +201,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 game.def.steam_app_id,
                 compat,
                 &game.install_path,
-            )
-            else {
+            ) else {
                 eidos_log::warn!(
                     "Could not resolve the Proton for {id} (config.vdf CompatToolMapping / \
                      compatibilitytools.d). Is the game set up to run under Proton?"
@@ -256,9 +278,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             let cwd = tool
                 .workdir
                 .clone()
-                .map(|c| {
-                    virtualize_under_data(&c, &layers, &game.data_path).unwrap_or(c)
-                })
+                .map(|c| virtualize_under_data(&c, &layers, &game.data_path).unwrap_or(c))
                 .or_else(|| exe.parent().map(|p| p.to_path_buf()));
             let prereqs = tool.prereqs.clone();
             let output_mod = tool.output_mod.clone();
@@ -272,7 +292,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 .filter(|v| eidos_gamefeatures::is_tier2_verb(v) && !satisfied.contains(*v))
                 .collect();
             if !missing2.is_empty() {
-                let names = missing2.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                let names = missing2
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 eidos_log::info!(
                     "eidos tool: '{title}' needs {names} - run `eidos prereqs {id} --install` to set it up (downloads from Microsoft)."
                 );
@@ -282,7 +306,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // why an absent runtime must contribute nothing rather than a path
             // that does not exist (the .NET host stops looking once it is set).
             let mut run = run;
-            run.env.extend(eidos_gamefeatures::runtime_env_for(&prereqs));
+            run.env
+                .extend(eidos_gamefeatures::runtime_env_for(&prereqs));
             let missing3: Vec<&String> = prereqs
                 .iter()
                 .filter(|v| {
@@ -291,7 +316,11 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 })
                 .collect();
             if !missing3.is_empty() {
-                let names = missing3.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                let names = missing3
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 eidos_log::info!(
                     "eidos tool: '{title}' needs the {names} runtime, which is not downloaded yet - \
                      run `eidos prereqs {id} --install`. Without it DynDOLOD's LODGen dies at startup \
@@ -306,12 +335,16 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // than clearly. Set here, on the env that is about to be handed
             // over, so `--print` shows exactly what the real run would get.
             if let Some(id) = app_id {
-                run.env.retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
+                run.env
+                    .retain(|(k, _)| k != "SteamAppId" && k != "SteamGameId");
                 run.env.push(("SteamAppId".to_string(), id.to_string()));
                 run.env.push(("SteamGameId".to_string(), id.to_string()));
             }
             if print_only {
-                println!("would run (through the merged view at {}):", game.data_path.display());
+                println!(
+                    "would run (through the merged view at {}):",
+                    game.data_path.display()
+                );
                 println!("  argv : {command:?}");
                 for (k, v) in &run.env {
                     println!("  env  : {k}={v}");
@@ -347,7 +380,10 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 command,
                 run.env,
                 cwd,
-                crate::launch::ToolOpts { prereqs: &prereqs, output_mod: output_mod.as_deref() },
+                crate::launch::ToolOpts {
+                    prereqs: &prereqs,
+                    output_mod: output_mod.as_deref(),
+                },
             );
         }
         Some(other) => {

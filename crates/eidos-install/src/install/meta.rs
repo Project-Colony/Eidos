@@ -12,11 +12,7 @@ use std::path::{Path, PathBuf};
 
 use eidos_instance::ModMeta;
 
-use crate::{
-    fix_directory_name, guess_mod_name,
-};
-
-
+use crate::{fix_directory_name, guess_mod_name};
 
 /// Re-apply the user-set fields (endorsement, tracked, category) from a previous
 /// install's meta.ini onto a freshly written one, so a Replace doesn't lose them.
@@ -66,7 +62,12 @@ pub(crate) fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
 /// Write a MO2-compatible `meta.ini`, seeded from the download's `<archive>.meta`
 /// sidecar if MO2/Nexus left one next to the file. `guessed_id` is the mod id
 /// recovered from the filename, used when the sidecar carries none.
-pub(crate) fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id: Option<u64>) -> io::Result<()> {
+pub(crate) fn write_meta(
+    archive: &Path,
+    dest: &Path,
+    game_id: &str,
+    guessed_id: Option<u64>,
+) -> io::Result<()> {
     // The sidecar is the full archive name + ".meta" (e.g. Mod-1234.7z.meta).
     let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
     let from = ModMeta::read(&sidecar);
@@ -80,7 +81,10 @@ pub(crate) fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id:
         .map(|d| d.short_name)
         .filter(|s| !s.is_empty())
         .unwrap_or(game_id);
-    meta.set("gameName", &from.game_name().unwrap_or_else(|| short.to_string()));
+    meta.set(
+        "gameName",
+        &from.game_name().unwrap_or_else(|| short.to_string()),
+    );
     // Mod id: the sidecar's, else the one guessed from the Nexus filename, so a
     // manually-downloaded archive with no sidecar can still be update-checked.
     if let Some(id) = from.mod_id().or(guessed_id) {
@@ -97,7 +101,10 @@ pub(crate) fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id:
     // The sidecar's category is a raw Nexus id we don't map yet; leave uncategorised.
     meta.set("category", "\"-1,\"");
     // nexusFileStatus mirrors the sidecar's fileCategory (1 = main file by default).
-    meta.set("nexusFileStatus", &from.file_category().unwrap_or_else(|| "1".to_string()));
+    meta.set(
+        "nexusFileStatus",
+        &from.file_category().unwrap_or_else(|| "1".to_string()),
+    );
     // Who made it, carried through from the sidecar the download wrote. Without
     // this the mod has no author until the user happens to run an update check,
     // so "Visit X's profile" is missing on exactly the mods just installed -
@@ -115,7 +122,10 @@ pub(crate) fn write_meta(archive: &Path, dest: &Path, game_id: &str, guessed_id:
         .to_string_lossy()
         .into_owned();
     meta.set("installationFile", &install_file);
-    meta.set("repository", &from.repository().unwrap_or_else(|| "Nexus".to_string()));
+    meta.set(
+        "repository",
+        &from.repository().unwrap_or_else(|| "Nexus".to_string()),
+    );
     meta.set("endorsed", "0");
     meta.set("tracked", "0");
     meta.write(&dest.join("meta.ini"))

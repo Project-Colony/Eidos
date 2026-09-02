@@ -30,7 +30,9 @@ fn main() -> std::io::Result<()> {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--layer" => layers.push(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
-            "--overwrite" => overwrite = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--overwrite" => {
+                overwrite = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
+            }
             "-h" | "--help" => usage(),
             _ => mountpoint = Some(PathBuf::from(arg)),
         }

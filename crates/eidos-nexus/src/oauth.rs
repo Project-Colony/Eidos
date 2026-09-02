@@ -126,7 +126,10 @@ impl Pkce {
     /// The S256 transform: `BASE64URL(SHA256(ASCII(verifier)))`, unpadded.
     pub fn from_verifier(verifier: &str) -> Pkce {
         let digest = Sha256::digest(verifier.as_bytes());
-        Pkce { verifier: verifier.to_string(), challenge: URL_SAFE_NO_PAD.encode(digest) }
+        Pkce {
+            verifier: verifier.to_string(),
+            challenge: URL_SAFE_NO_PAD.encode(digest),
+        }
     }
 }
 
@@ -238,7 +241,12 @@ fn callback_params(request_line: &str) -> Option<CallbackParams> {
 /// 127.0.0.1, so any page the user has open could navigate to our callback with
 /// a code of its own choosing; comparing state is what makes that fail.
 pub fn parse_callback(request_line: &str, expected_state: &str) -> Result<String, String> {
-    let Some(CallbackParams { code, state, error, error_desc }) = callback_params(request_line)
+    let Some(CallbackParams {
+        code,
+        state,
+        error,
+        error_desc,
+    }) = callback_params(request_line)
     else {
         return Err("malformed request from the browser".to_string());
     };
@@ -282,7 +290,12 @@ enum Callback {
 /// genuine denial with no state, which times out instead of reporting - the
 /// safe direction.
 fn classify_callback(request_line: &str, expected_state: &str) -> Callback {
-    let Some(CallbackParams { code, state, error, error_desc }) = callback_params(request_line)
+    let Some(CallbackParams {
+        code,
+        state,
+        error,
+        error_desc,
+    }) = callback_params(request_line)
     else {
         return Callback::Noise;
     };
@@ -319,9 +332,8 @@ const DONE_PAGE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf
 /// `state` can end it, one way or the other.
 pub fn wait_for_code(port: u16, expected_state: &str, timeout: Duration) -> Result<String, String> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-    let listener = TcpListener::bind(addr).map_err(|e| {
-        format!("could not listen on 127.0.0.1:{port} for the Nexus reply: {e}")
-    })?;
+    let listener = TcpListener::bind(addr)
+        .map_err(|e| format!("could not listen on 127.0.0.1:{port} for the Nexus reply: {e}"))?;
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     let deadline = SystemTime::now() + timeout;
     loop {
@@ -350,7 +362,9 @@ pub fn wait_for_code(port: u16, expected_state: &str, timeout: Duration) -> Resu
 fn handle_callback(mut stream: TcpStream, expected_state: &str) -> Callback {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut line = String::new();
-    let Ok(reader) = stream.try_clone() else { return Callback::Noise };
+    let Ok(reader) = stream.try_clone() else {
+        return Callback::Noise;
+    };
     if BufReader::new(reader).read_line(&mut line).is_err() {
         return Callback::Noise; // a hung or aborted connection is not the reply
     }
@@ -392,7 +406,10 @@ impl Tokens {
 }
 
 pub fn now_unix() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// Nexus's JWT signing key, PKCS#1 `RSAPublicKey` DER.
@@ -463,8 +480,8 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
     // Pin the algorithm from the header rather than trusting it: accepting
     // whatever `alg` says is the classic JWT hole ("alg":"none" verifies
     // everything).
-    let head: serde_json::Value = serde_json::from_slice(&b64(header)?)
-        .map_err(|e| format!("unreadable JWT header: {e}"))?;
+    let head: serde_json::Value =
+        serde_json::from_slice(&b64(header)?).map_err(|e| format!("unreadable JWT header: {e}"))?;
     if head.get("alg").and_then(|a| a.as_str()) != Some("RS256") {
         return Err("unexpected JWT algorithm (only RS256 is accepted)".to_string());
     }
@@ -481,7 +498,10 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
         serde_json::from_slice(&b64(payload)?).map_err(|e| format!("unreadable JWT body: {e}"))?;
     let user = body.get("user");
     Ok(Claims {
-        user_id: user.and_then(|u| u.get("id")).and_then(|x| x.as_u64()).unwrap_or(0),
+        user_id: user
+            .and_then(|u| u.get("id"))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0),
         username: user
             .and_then(|u| u.get("username"))
             .and_then(|x| x.as_str())
@@ -494,7 +514,10 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
             .and_then(|u| u.get("membership_roles"))
             .and_then(|x| x.as_array())
             .is_some_and(|roles| {
-                roles.iter().filter_map(|r| r.as_str()).any(|r| r.contains("premium"))
+                roles
+                    .iter()
+                    .filter_map(|r| r.as_str())
+                    .any(|r| r.contains("premium"))
             }),
         expires_at: body.get("exp").and_then(|x| x.as_u64()).unwrap_or(0),
     })
@@ -502,7 +525,9 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
 
 /// base64url without padding, which is what JWT segments are.
 fn b64(segment: &str) -> Result<Vec<u8>, String> {
-    URL_SAFE_NO_PAD.decode(segment).map_err(|e| format!("bad base64 in JWT: {e}"))
+    URL_SAFE_NO_PAD
+        .decode(segment)
+        .map_err(|e| format!("bad base64 in JWT: {e}"))
 }
 
 /// Build [`Tokens`] from a token-endpoint reply. `now` is passed in so the
@@ -513,7 +538,10 @@ pub fn tokens_from_json(v: &serde_json::Value, now: u64) -> Result<Tokens, Strin
     if access_token.is_empty() {
         // Surface the server's own words: `invalid_grant` after a refresh means
         // the user revoked us, and that needs a re-login, not a retry.
-        let err = v.get("error").and_then(|x| x.as_str()).unwrap_or("no access_token in reply");
+        let err = v
+            .get("error")
+            .and_then(|x| x.as_str())
+            .unwrap_or("no access_token in reply");
         return Err(format!("Nexus token endpoint: {err}"));
     }
     let expires_in = v.get("expires_in").and_then(|x| x.as_u64()).unwrap_or(0);
@@ -582,8 +610,10 @@ pub fn graphql(
     access_token: Option<&str>,
     body: &serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    let agent: ureq::Agent =
-        ureq::Agent::config_builder().http_status_as_error(false).build().into();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
     let mut req = agent
         .post(GRAPHQL_URL)
         // Attribution, as Nexus's own client sends on every call.
@@ -594,10 +624,12 @@ pub fn graphql(
     }
     let mut resp = req.send_json(body).map_err(|e| e.to_string())?;
     let status = resp.status();
-    let v: serde_json::Value = resp
-        .body_mut()
-        .read_json()
-        .map_err(|_| format!("Nexus answered {} with something that is not JSON", status.as_u16()))?;
+    let v: serde_json::Value = resp.body_mut().read_json().map_err(|_| {
+        format!(
+            "Nexus answered {} with something that is not JSON",
+            status.as_u16()
+        )
+    })?;
     if let Some(errs) = v.get("errors").filter(|e| !e.is_null()) {
         // The first message is the useful one; the rest are usually locations.
         let first = errs
@@ -671,7 +703,10 @@ mod tests {
         };
         let url = authorize_url(&cfg, &Pkce::from_verifier("v".repeat(43).as_str()), "state");
         assert!(url.contains("client_id=eidos"), "{url}");
-        assert!(url.contains("code_challenge"), "PKCE must be on the wire: {url}");
+        assert!(
+            url.contains("code_challenge"),
+            "PKCE must be on the wire: {url}"
+        );
         assert!(!url.to_ascii_lowercase().contains("secret"), "{url}");
         // The redirect Nexus has on file for this registration. Changing it
         // breaks sign-in for everyone until Nexus is told, so it is pinned here.
@@ -726,12 +761,20 @@ mod tests {
     fn a_generated_verifier_is_long_enough_and_unreserved() {
         let p = Pkce::new().unwrap();
         // RFC 7636 section 4.1: 43..=128 characters from the unreserved set.
-        assert!((43..=128).contains(&p.verifier.len()), "got {}", p.verifier.len());
+        assert!(
+            (43..=128).contains(&p.verifier.len()),
+            "got {}",
+            p.verifier.len()
+        );
         assert!(p
             .verifier
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~')));
-        assert_ne!(Pkce::new().unwrap().verifier, p.verifier, "two draws must differ");
+        assert_ne!(
+            Pkce::new().unwrap().verifier,
+            p.verifier,
+            "two draws must differ"
+        );
     }
 
     #[test]
@@ -779,10 +822,16 @@ mod tests {
         // dropping the parameter entirely is not the same request as sending it
         // blank. Asserting both halves is what stops a future edit from
         // silently reintroducing a scope we were never granted.
-        assert!(u.contains("scope=&") || u.ends_with("scope="), "scope not sent empty: {u}");
+        assert!(
+            u.contains("scope=&") || u.ends_with("scope="),
+            "scope not sent empty: {u}"
+        );
         assert!(!u.contains("scope=openid"), "an OIDC scope came back: {u}");
         // The verifier is the secret half: it must never leave this process.
-        assert!(!u.contains("dBjftJeZ4CVP"), "the verifier leaked into the browser URL");
+        assert!(
+            !u.contains("dBjftJeZ4CVP"),
+            "the verifier leaked into the browser URL"
+        );
     }
 
     #[test]
@@ -804,8 +853,7 @@ mod tests {
 
     #[test]
     fn a_refusal_is_reported_in_the_servers_own_words() {
-        let line =
-            "GET /callback?error=access_denied&error_description=User%20said%20no HTTP/1.1";
+        let line = "GET /callback?error=access_denied&error_description=User%20said%20no HTTP/1.1";
         let err = parse_callback(line, "st4te").unwrap_err();
         assert!(err.contains("access_denied"), "{err}");
         assert!(err.contains("User said no"), "{err}");
@@ -834,7 +882,11 @@ mod tests {
 
     #[test]
     fn a_token_about_to_expire_counts_as_expired() {
-        let t = Tokens { access_token: "at".into(), expires_at: 1_000, ..Default::default() };
+        let t = Tokens {
+            access_token: "at".into(),
+            expires_at: 1_000,
+            ..Default::default()
+        };
         let skew = Duration::from_secs(300);
         assert!(!t.is_expired(600, skew), "still good with 400s to run");
         assert!(t.is_expired(701, skew), "inside the skew, so refresh early");
@@ -850,7 +902,12 @@ mod tests {
 
     #[test]
     fn percent_coding_round_trips() {
-        for s in ["openid profile email", "http://127.0.0.1:28638/callback", "a~b-c_d.e", "é"] {
+        for s in [
+            "openid profile email",
+            "http://127.0.0.1:28638/callback",
+            "a~b-c_d.e",
+            "é",
+        ] {
             assert_eq!(urldecode(&urlencode(s)), s, "{s}");
         }
         // The browser sends spaces either way; both have to decode.
@@ -866,7 +923,10 @@ mod tests {
         let port = 28937;
         let _guard = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))).unwrap();
         let elsewhere = TcpListener::bind(SocketAddr::from(([127, 0, 0, 2], port)));
-        assert!(elsewhere.is_ok(), "loopback bind must not have claimed every interface");
+        assert!(
+            elsewhere.is_ok(),
+            "loopback bind must not have claimed every interface"
+        );
     }
 
     #[test]
@@ -885,9 +945,8 @@ mod tests {
         // The single-accept version returned the preconnect's emptiness as the
         // flow's verdict and the genuine redirect found the listener gone.
         let port = 28939;
-        let waiter = std::thread::spawn(move || {
-            wait_for_code(port, "st4te", Duration::from_secs(10))
-        });
+        let waiter =
+            std::thread::spawn(move || wait_for_code(port, "st4te", Duration::from_secs(10)));
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let connect = || loop {
             match TcpStream::connect(addr) {
@@ -903,11 +962,13 @@ mod tests {
         drop(s);
         // 3. A forged refusal WITHOUT our state: must not end the real flow.
         let mut s = connect();
-        s.write_all(b"GET /callback?error=access_denied&state=forged HTTP/1.1\r\n\r\n").unwrap();
+        s.write_all(b"GET /callback?error=access_denied&state=forged HTTP/1.1\r\n\r\n")
+            .unwrap();
         drop(s);
         // 4. The genuine redirect.
         let mut s = connect();
-        s.write_all(b"GET /callback?code=the-real-code&state=st4te HTTP/1.1\r\n\r\n").unwrap();
+        s.write_all(b"GET /callback?code=the-real-code&state=st4te HTTP/1.1\r\n\r\n")
+            .unwrap();
         drop(s);
 
         let got = waiter.join().unwrap();
@@ -919,9 +980,8 @@ mod tests {
         // Pressing Cancel is an ordinary outcome and must be reported, not
         // waited past: Nexus echoes our state on the error redirect (RFC 6749).
         let port = 28941;
-        let waiter = std::thread::spawn(move || {
-            wait_for_code(port, "st4te", Duration::from_secs(10))
-        });
+        let waiter =
+            std::thread::spawn(move || wait_for_code(port, "st4te", Duration::from_secs(10)));
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         let mut s = loop {
             match TcpStream::connect(addr) {
@@ -929,7 +989,8 @@ mod tests {
                 Err(_) => std::thread::sleep(Duration::from_millis(20)),
             }
         };
-        s.write_all(b"GET /callback?error=access_denied&state=st4te HTTP/1.1\r\n\r\n").unwrap();
+        s.write_all(b"GET /callback?error=access_denied&state=st4te HTTP/1.1\r\n\r\n")
+            .unwrap();
         drop(s);
         let err = waiter.join().unwrap().unwrap_err();
         assert!(err.contains("access_denied"), "{err}");
@@ -1001,7 +1062,10 @@ mod tests {
         // "supporter" and "member" must not be mistaken for it.
         let v = serde_json::json!({"user": {"membership_roles": ["member", "supporter"]}});
         let roles = v["user"]["membership_roles"].as_array().unwrap().clone();
-        assert!(!roles.iter().filter_map(|r| r.as_str()).any(|r| r.contains("premium")));
+        assert!(!roles
+            .iter()
+            .filter_map(|r| r.as_str())
+            .any(|r| r.contains("premium")));
     }
 
     #[test]

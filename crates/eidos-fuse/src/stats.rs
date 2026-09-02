@@ -5,8 +5,6 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-
-
 /// Per-mount operation counters, for answering "where did the time go" with data
 /// instead of a guess.
 ///
@@ -116,8 +114,16 @@ pub(crate) struct Stats {
 /// is asked to serve, which is the right input for sizing buffers and judging the
 /// round-trip cost we actually pay. Seeing the game's own request sizes needs
 /// strace on the game side; the daemon structurally cannot.
-pub(crate) const READ_BUCKETS: [u32; 8] =
-    [4 << 10, 16 << 10, 32 << 10, 64 << 10, 128 << 10, 256 << 10, 1 << 20, u32::MAX];
+pub(crate) const READ_BUCKETS: [u32; 8] = [
+    4 << 10,
+    16 << 10,
+    32 << 10,
+    64 << 10,
+    128 << 10,
+    256 << 10,
+    1 << 20,
+    u32::MAX,
+];
 
 /// Width of one timeline slot, in milliseconds.
 pub(crate) const SLOT_MS: u64 = 100;
@@ -215,7 +221,13 @@ impl<'a> TimedRead<'a> {
     /// `None` when `EIDOS_FUSE_STATS` is unset, so a normal run pays one atomic
     /// load for the whole survey and touches none of the maps.
     pub(crate) fn start(stats: &'a Stats, ino: u64, size: u32, tid: u32) -> Option<TimedRead<'a>> {
-        STATS_ON.then(|| TimedRead { stats, ino, size, tid, start: std::time::Instant::now() })
+        STATS_ON.then(|| TimedRead {
+            stats,
+            ino,
+            size,
+            tid,
+            start: std::time::Instant::now(),
+        })
     }
 }
 
@@ -232,7 +244,14 @@ impl Drop for TimedRead<'_> {
         let origin = *self.stats.read_origin.get_or_init(|| self.start);
         let since = self.start.saturating_duration_since(origin).as_nanos() as u64;
         let slot_ns = SLOT_MS * 1_000_000;
-        self.stats.note_read(self.ino, self.size, self.tid, ns, (since / slot_ns) as usize, since % slot_ns);
+        self.stats.note_read(
+            self.ino,
+            self.size,
+            self.tid,
+            ns,
+            (since / slot_ns) as usize,
+            since % slot_ns,
+        );
     }
 }
 
@@ -258,7 +277,8 @@ pub(crate) struct Timed<'a> {
 
 impl Drop for Timed<'_> {
     fn drop(&mut self) {
-        self.total.fetch_add(self.start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        self.total
+            .fetch_add(self.start.elapsed().as_nanos() as u64, Ordering::Relaxed);
     }
 }
 
@@ -296,12 +316,23 @@ impl Stats {
     /// stats are off, so on a normal run this function does not exist at
     /// runtime. Putting the gate at the construction site rather than here is
     /// also what lets a test drive the survey directly.
-    pub(crate) fn note_read(&self, ino: u64, size: u32, tid: u32, ns: u64, slot: usize, offset_ns: u64) {
+    pub(crate) fn note_read(
+        &self,
+        ino: u64,
+        size: u32,
+        tid: u32,
+        ns: u64,
+        slot: usize,
+        offset_ns: u64,
+    ) {
         let mut s = match self.reads.lock() {
             Ok(s) => s,
             Err(p) => p.into_inner(),
         };
-        let b = READ_BUCKETS.iter().position(|&hi| size <= hi).unwrap_or(READ_BUCKETS.len() - 1);
+        let b = READ_BUCKETS
+            .iter()
+            .position(|&hi| size <= hi)
+            .unwrap_or(READ_BUCKETS.len() - 1);
         s.sizes[b] += 1;
         s.bytes += size as u64;
 
@@ -334,7 +365,9 @@ impl Stats {
             let mut k = 0usize;
             let mut room = SLOT_MS * 1_000_000 - offset_ns.min(SLOT_MS * 1_000_000);
             while left > 0 {
-                let Some(sl) = s.slots.get_mut(slot + k) else { break }; // off the end
+                let Some(sl) = s.slots.get_mut(slot + k) else {
+                    break;
+                }; // off the end
                 let take = left.min(room);
                 sl.ns += take;
                 left -= take;
@@ -419,12 +452,7 @@ impl Stats {
             .max_by_key(|(_, x)| (x.ns, x.reads))
             .map(|(i, x)| (i, *x))
             .unwrap_or((0, Slot::default()));
-        let busiest = s
-            .slots
-            .iter()
-            .map(|x| x.reads)
-            .max()
-            .unwrap_or(0);
+        let busiest = s.slots.iter().map(|x| x.reads).max().unwrap_or(0);
         let over = |n: u32| s.slots.iter().filter(|x| x.reads >= n).count();
 
         let mut tids: Vec<(u32, u64)> = s.per_tid.iter().map(|(&t, &c)| (t, c)).collect();
@@ -444,7 +472,10 @@ impl Stats {
             .collect();
 
         let dropped = if s.files_overflow > 0 {
-            format!("\n  ({} reads of further files counted but not attributed)", s.files_overflow)
+            format!(
+                "\n  ({} reads of further files counted but not attributed)",
+                s.files_overflow
+            )
         } else {
             String::new()
         };
@@ -463,7 +494,10 @@ impl Stats {
             String::new()
         };
         let tid_note = if s.tids_overflow > 0 {
-            format!("\n  ({} reads from further threads not attributed)", s.tids_overflow)
+            format!(
+                "\n  ({} reads from further threads not attributed)",
+                s.tids_overflow
+            )
         } else {
             String::new()
         };
@@ -541,8 +575,11 @@ impl Stats {
                 s as f64 * 100.0 / total as f64
             }
         };
-        let top: Vec<String> =
-            v.iter().take(15).map(|(p, c)| format!("  {c:>9}  /{p}")).collect();
+        let top: Vec<String> = v
+            .iter()
+            .take(15)
+            .map(|(p, c)| format!("  {c:>9}  /{p}"))
+            .collect();
         let dropped = self.dirs_overflow.load(Ordering::Relaxed);
         let note = if dropped > 0 {
             format!(
@@ -573,12 +610,24 @@ impl Stats {
         let g = |c: &AtomicU64| c.load(Ordering::Relaxed);
         let (hit, miss) = (g(&self.lookup_hit), g(&self.lookup_miss));
         let total = hit + miss;
-        let miss_pct = if total == 0 { 0.0 } else { miss as f64 * 100.0 / total as f64 };
+        let miss_pct = if total == 0 {
+            0.0
+        } else {
+            miss as f64 * 100.0 / total as f64
+        };
         let (od, probe) = (g(&self.opendir), g(&self.probe));
-        let probe_pct = if od == 0 { 0.0 } else { probe as f64 * 100.0 / od as f64 };
+        let probe_pct = if od == 0 {
+            0.0
+        } else {
+            probe as f64 * 100.0 / od as f64
+        };
         let (snap, dhit) = (g(&self.snapshot), g(&self.dir_hit));
         let builds = snap + dhit;
-        let hit_pct = if builds == 0 { 0.0 } else { dhit as f64 * 100.0 / builds as f64 };
+        let hit_pct = if builds == 0 {
+            0.0
+        } else {
+            dhit as f64 * 100.0 / builds as f64
+        };
         format!(
             "eidos-fuse stats: lookup {total} ({miss} missing, {miss_pct:.1}%), \
              getattr {}, opendir {od} ({probe} probe-only, {probe_pct:.1}%), releasedir {}, \
@@ -619,8 +668,10 @@ impl Stats {
         if total == 0 {
             return String::new();
         }
-        let each: Vec<String> =
-            parts.iter().map(|(n, ns)| format!("{n} {:.0}", ms(*ns))).collect();
+        let each: Vec<String> = parts
+            .iter()
+            .map(|(n, ns)| format!("{n} {:.0}", ms(*ns)))
+            .collect();
         // The counts lead, because they are the only exact figures here. Both
         // millisecond totals are sums over concurrent FUSE worker threads, so
         // neither is wall-clock, and resolution is NOT a subset of the handlers

@@ -10,8 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use libloot::metadata::{
-    MessageContent, MessageType as LootMessageType, PluginCleaningData, PluginMetadata,
-    select_message_content,
+    select_message_content, MessageContent, MessageType as LootMessageType, PluginCleaningData,
+    PluginMetadata,
 };
 use libloot::{EvalMode, Game, GameType, MergeMode};
 
@@ -105,13 +105,17 @@ pub fn ensure_masterlist(
     };
     if update || !masterlist.is_file() {
         refresh(
-            format!("https://raw.githubusercontent.com/loot/{repo}/{MASTERLIST_BRANCH}/masterlist.yaml"),
+            format!(
+                "https://raw.githubusercontent.com/loot/{repo}/{MASTERLIST_BRANCH}/masterlist.yaml"
+            ),
             &masterlist,
         )?;
     }
     if update || !prelude.is_file() {
         refresh(
-            format!("https://raw.githubusercontent.com/loot/prelude/{MASTERLIST_BRANCH}/prelude.yaml"),
+            format!(
+                "https://raw.githubusercontent.com/loot/prelude/{MASTERLIST_BRANCH}/prelude.yaml"
+            ),
             &prelude,
         )?;
     }
@@ -141,7 +145,9 @@ fn fetch(url: &str, dest: &Path) -> Result<(), LootError> {
     // Guard against an HTML error page or a truncated body poisoning the cache:
     // a masterlist is YAML and starts with real content, never a doctype.
     if body.trim_start().starts_with('<') || body.len() < 64 {
-        return Err(LootError::Fetch(format!("{url}: unexpected response (not a masterlist)")));
+        return Err(LootError::Fetch(format!(
+            "{url}: unexpected response (not a masterlist)"
+        )));
     }
     // Atomic replace so a failed/interrupted download never truncates a good
     // cached copy - the cached masterlist keeps working offline.
@@ -186,12 +192,15 @@ pub fn sort(view: &GameView<'_>) -> Result<Vec<String>, LootError> {
 
     {
         let db = game.database();
-        let mut db = db.write().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+        let mut db = db
+            .write()
+            .map_err(|_| LootError::Loot("database lock poisoned".into()))?;
         db.load_masterlist_with_prelude(masterlist, prelude)
             .map_err(|e| LootError::Loot(e.to_string()))?;
         if let Some(ul) = userlist {
             if ul.is_file() {
-                db.load_userlist(ul).map_err(|e| LootError::Loot(e.to_string()))?;
+                db.load_userlist(ul)
+                    .map_err(|e| LootError::Loot(e.to_string()))?;
             }
         }
     }
@@ -211,11 +220,14 @@ pub fn sort(view: &GameView<'_>) -> Result<Vec<String>, LootError> {
     // tie-break is the user's current order - so a dragged plugin stayed where
     // it was dropped, which is precisely what MO2 does not do. MO2's lootcli
     // passes `loadHeadersOnly = false`; this is the same call.
-    game.load_plugins(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
-    game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
+    game.load_plugins(&paths)
+        .map_err(|e| LootError::Loot(e.to_string()))?;
+    game.load_current_load_order_state()
+        .map_err(|e| LootError::Loot(e.to_string()))?;
 
     let names: Vec<&str> = plugins.iter().map(|(n, _)| n.as_str()).collect();
-    game.sort_plugins(&names).map_err(|e| LootError::Loot(e.to_string()))
+    game.sort_plugins(&names)
+        .map_err(|e| LootError::Loot(e.to_string()))
 }
 
 /// Everything LOOT needs to look at one game: who it is, where it lives, and
@@ -321,7 +333,10 @@ impl PluginMetadataBundle {
     /// The highest-severity message level present, if any. Useful for picking a
     /// single status icon (error beats warning beats note).
     pub fn highest_severity(&self) -> Option<MessageType> {
-        self.messages.iter().map(|m| m.kind).max_by_key(severity_rank)
+        self.messages
+            .iter()
+            .map(|m| m.kind)
+            .max_by_key(severity_rank)
     }
 }
 
@@ -381,10 +396,12 @@ fn bundle_from_metadata(metadata: &PluginMetadata, crc: Option<u32>) -> PluginMe
     let messages = metadata
         .messages()
         .iter()
-        .filter_map(|m| english_text(m.content()).map(|text| LootMessage {
-            kind: convert_message_type(m.message_type()),
-            text,
-        }))
+        .filter_map(|m| {
+            english_text(m.content()).map(|text| LootMessage {
+                kind: convert_message_type(m.message_type()),
+                text,
+            })
+        })
         .collect();
 
     PluginMetadataBundle {
@@ -466,7 +483,10 @@ impl LootReport {
 
     /// Number of plugins LOOT reports a missing master for.
     pub fn missing_master_count(&self) -> usize {
-        self.plugins.iter().filter(|p| !p.missing_masters.is_empty()).count()
+        self.plugins
+            .iter()
+            .filter(|p| !p.missing_masters.is_empty())
+            .count()
     }
 
     /// Number of plugins LOOT flagged as dirty (needs cleaning).
@@ -515,12 +535,15 @@ pub fn report(
 
     {
         let db = game.database();
-        let mut db = db.write().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+        let mut db = db
+            .write()
+            .map_err(|_| LootError::Loot("database lock poisoned".into()))?;
         db.load_masterlist_with_prelude(masterlist, prelude)
             .map_err(|e| LootError::Loot(e.to_string()))?;
         if let Some(ul) = userlist {
             if ul.is_file() {
-                db.load_userlist(ul).map_err(|e| LootError::Loot(e.to_string()))?;
+                db.load_userlist(ul)
+                    .map_err(|e| LootError::Loot(e.to_string()))?;
             }
         }
     }
@@ -529,8 +552,10 @@ pub fn report(
     // Whole plugins here too, for the same reason plus one of its own: the
     // report's CRC column comes from `plugin.crc()`, which libloot only computes
     // for a whole-plugin load - so with headers it was permanently blank.
-    game.load_plugins(&paths).map_err(|e| LootError::Loot(e.to_string()))?;
-    game.load_current_load_order_state().map_err(|e| LootError::Loot(e.to_string()))?;
+    game.load_plugins(&paths)
+        .map_err(|e| LootError::Loot(e.to_string()))?;
+    game.load_current_load_order_state()
+        .map_err(|e| LootError::Loot(e.to_string()))?;
 
     // A master is "present" only if it is enabled; a disabled master won't load and
     // will crash any enabled dependent, so it must count as missing (matches
@@ -539,7 +564,9 @@ pub fn report(
 
     let general = {
         let db = game.database();
-        let db = db.read().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+        let db = db
+            .read()
+            .map_err(|_| LootError::Loot("database lock poisoned".into()))?;
         let msgs = db
             .general_messages(MergeMode::WithUserMetadata, EvalMode::Evaluate)
             .map_err(|e| LootError::Loot(e.to_string()))?;
@@ -564,7 +591,9 @@ pub fn report(
 
         let evaluated = {
             let db = game.database();
-            let db = db.read().map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+            let db = db
+                .read()
+                .map_err(|_| LootError::Loot("database lock poisoned".into()))?;
             db.plugin_metadata(name, MergeMode::WithUserMetadata, EvalMode::Evaluate)
                 .map_err(|e| LootError::Loot(e.to_string()))?
         };
@@ -583,19 +612,31 @@ pub fn report(
         let crc = game.plugin(name).and_then(|p| p.crc());
         let bundle = match &evaluated {
             Some(meta) => bundle_from_metadata(meta, crc),
-            None => PluginMetadataBundle { crc, ..PluginMetadataBundle::default() },
+            None => PluginMetadataBundle {
+                crc,
+                ..PluginMetadataBundle::default()
+            },
         };
         if !bundle.is_empty() {
             plugin_meta.insert(name.to_ascii_lowercase(), bundle);
         }
 
-        let entry = PluginReport { name: name.clone(), missing_masters, messages, dirty };
+        let entry = PluginReport {
+            name: name.clone(),
+            missing_masters,
+            messages,
+            dirty,
+        };
         if entry.has_issues() {
             plugin_reports.push(entry);
         }
     }
 
-    Ok(LootReport { general, plugins: plugin_reports, plugin_meta })
+    Ok(LootReport {
+        general,
+        plugins: plugin_reports,
+        plugin_meta,
+    })
 }
 
 #[cfg(test)]
@@ -609,8 +650,14 @@ mod tests {
 
     #[test]
     fn game_support_mapping() {
-        assert!(matches!(loot_support("skyrimse"), Some((GameType::SkyrimSE, "skyrimse"))));
-        assert!(matches!(loot_support("fallout4"), Some((GameType::Fallout4, "fallout4"))));
+        assert!(matches!(
+            loot_support("skyrimse"),
+            Some((GameType::SkyrimSE, "skyrimse"))
+        ));
+        assert!(matches!(
+            loot_support("fallout4"),
+            Some((GameType::Fallout4, "fallout4"))
+        ));
         assert!(loot_support("morrowind").is_none()); // timestamp-ordered, unsupported
         assert!(loot_support("nonsense").is_none());
         assert!(is_supported("skyrimse") && !is_supported("oblivion"));
@@ -619,8 +666,14 @@ mod tests {
     #[test]
     fn message_type_conversion_maps_each_level() {
         assert_eq!(convert_message_type(LootMessageType::Say), MessageType::Say);
-        assert_eq!(convert_message_type(LootMessageType::Warn), MessageType::Warn);
-        assert_eq!(convert_message_type(LootMessageType::Error), MessageType::Error);
+        assert_eq!(
+            convert_message_type(LootMessageType::Warn),
+            MessageType::Warn
+        );
+        assert_eq!(
+            convert_message_type(LootMessageType::Error),
+            MessageType::Error
+        );
     }
 
     #[test]
@@ -678,7 +731,7 @@ mod tests {
         ]);
         meta.set_tags(vec![Tag::new("Relev".into(), TagSuggestion::Addition)]);
         meta.set_dirty_info(vec![
-            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3),
+            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3)
         ]);
 
         let bundle = bundle_from_metadata(&meta, Some(0x1234_5678));
@@ -702,19 +755,28 @@ mod tests {
         assert_eq!(bundle.highest_severity(), None);
 
         // A CRC alone still counts as content worth carrying.
-        let crc_only = PluginMetadataBundle { crc: Some(1), ..PluginMetadataBundle::default() };
+        let crc_only = PluginMetadataBundle {
+            crc: Some(1),
+            ..PluginMetadataBundle::default()
+        };
         assert!(!crc_only.is_empty());
         assert!(!crc_only.needs_cleaning());
     }
 
     fn msg(kind: MessageType, text: &str) -> LootMessage {
-        LootMessage { kind, text: text.to_string() }
+        LootMessage {
+            kind,
+            text: text.to_string(),
+        }
     }
 
     #[test]
     fn loot_report_counts_aggregate_general_and_per_plugin() {
         let report = LootReport {
-            general: vec![msg(MessageType::Warn, "g warn"), msg(MessageType::Say, "g note")],
+            general: vec![
+                msg(MessageType::Warn, "g warn"),
+                msg(MessageType::Say, "g note"),
+            ],
             plugin_meta: Default::default(),
             plugins: vec![
                 PluginReport {
@@ -741,7 +803,11 @@ mod tests {
         assert!(!report.is_empty());
         assert_eq!(report.error_count(), 1, "one per-plugin error");
         assert_eq!(report.warning_count(), 1, "one general warning");
-        assert_eq!(report.missing_master_count(), 1, "only A.esp is missing a master");
+        assert_eq!(
+            report.missing_master_count(),
+            1,
+            "only A.esp is missing a master"
+        );
         assert_eq!(report.dirty_count(), 1, "only B.esp is dirty");
     }
 
@@ -806,7 +872,9 @@ pub fn build_case_bridge(
     let data = out.join("data");
     fs::create_dir_all(&data)?;
 
-    let Ok(text) = fs::read_to_string(masterlist) else { return Ok(Vec::new()) };
+    let Ok(text) = fs::read_to_string(masterlist) else {
+        return Ok(Vec::new());
+    };
     let mut bridged = Vec::new();
     for rel in masterlist_literal_paths(&text) {
         // `..` is the game root; anything else is data-relative.
@@ -847,12 +915,23 @@ pub fn case_bridge_data_dir(out: &Path) -> PathBuf {
 /// metacharacters are skipped: those are matched by the interpreter against
 /// directory listings, which it already does case-insensitively.
 fn masterlist_literal_paths(text: &str) -> Vec<String> {
-    const FNS: [&str; 7] =
-        ["file(", "version(", "product_version(", "checksum(", "readable(", "is_executable(", "active("];
+    const FNS: [&str; 7] = [
+        "file(",
+        "version(",
+        "product_version(",
+        "checksum(",
+        "readable(",
+        "is_executable(",
+        "active(",
+    ];
     let mut out: Vec<String> = Vec::new();
     for line in text.lines() {
         let mut rest = line;
-        while let Some(at) = FNS.iter().filter_map(|f| rest.find(f).map(|i| (i, f.len()))).min() {
+        while let Some(at) = FNS
+            .iter()
+            .filter_map(|f| rest.find(f).map(|i| (i, f.len())))
+            .min()
+        {
             rest = &rest[at.0 + at.1..];
             let Some(open) = rest.find('"') else { break };
             let after = &rest[open + 1..];
@@ -932,13 +1011,15 @@ mod case_bridge_tests {
         fs::write(&ml, "condition: 'not file(\"scripts/skse.pex\")'").unwrap();
 
         let out = root.join("bridge");
-        let bridged =
-            build_case_bridge(&ml, &[mod_dir.clone()], &root.join("game"), &out).unwrap();
+        let bridged = build_case_bridge(&ml, &[mod_dir.clone()], &root.join("game"), &out).unwrap();
         assert_eq!(bridged, vec!["scripts/skse.pex".to_string()]);
 
         // What libloot will actually do: join the relative path onto the base.
         let seen = case_bridge_data_dir(&out).join("scripts/skse.pex");
-        assert!(seen.exists(), "libloot's exists() must succeed through the link");
+        assert!(
+            seen.exists(),
+            "libloot's exists() must succeed through the link"
+        );
         assert_eq!(fs::read(&seen).unwrap(), b"pex", "and read the real file");
     }
 
@@ -953,7 +1034,9 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out).unwrap().is_empty());
+        assert!(build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out)
+            .unwrap()
+            .is_empty());
         assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
     }
 
@@ -972,7 +1055,10 @@ mod case_bridge_tests {
         let bridged = build_case_bridge(&ml, &[], &game, &out).unwrap();
         assert_eq!(bridged.len(), 1);
         let base = case_bridge_data_dir(&out);
-        assert!(base.join("../skse64_loader.exe").exists(), "reached as libloot reaches it");
+        assert!(
+            base.join("../skse64_loader.exe").exists(),
+            "reached as libloot reaches it"
+        );
     }
 
     #[test]
@@ -983,8 +1069,12 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/nothere.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out).unwrap().is_empty());
-        assert!(!case_bridge_data_dir(&out).join("scripts/nothere.pex").exists());
+        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out)
+            .unwrap()
+            .is_empty());
+        assert!(!case_bridge_data_dir(&out)
+            .join("scripts/nothere.pex")
+            .exists());
     }
 
     #[test]
@@ -1007,4 +1097,3 @@ mod case_bridge_tests {
         assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
     }
 }
-

@@ -9,10 +9,7 @@ use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use fuser::{
-    Errno, TimeOrNow,
-};
-
+use fuser::{Errno, TimeOrNow};
 
 /// Read up to `size` bytes at `offset` via `pread`, looping over short reads and
 /// stopping at EOF. `pread` does not disturb a shared file offset, so concurrent
@@ -39,7 +36,12 @@ pub(crate) fn read_full_at(file: &File, mut offset: u64, size: usize) -> std::io
 pub(crate) fn write_all_at(file: &File, mut data: &[u8], mut offset: u64) -> std::io::Result<()> {
     while !data.is_empty() {
         match file.write_at(data, offset) {
-            Ok(0) => return Err(std::io::Error::new(ErrorKind::WriteZero, "write returned 0")),
+            Ok(0) => {
+                return Err(std::io::Error::new(
+                    ErrorKind::WriteZero,
+                    "write returned 0",
+                ))
+            }
             Ok(n) => {
                 data = &data[n..];
                 offset += n as u64;
@@ -54,8 +56,14 @@ pub(crate) fn write_all_at(file: &File, mut data: &[u8], mut offset: u64) -> std
 /// Map a `TimeOrNow` (or its absence) onto a `timespec` for `utimensat`.
 pub(crate) fn to_timespec(t: Option<TimeOrNow>) -> libc::timespec {
     match t {
-        None => libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_OMIT },
-        Some(TimeOrNow::Now) => libc::timespec { tv_sec: 0, tv_nsec: libc::UTIME_NOW },
+        None => libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_OMIT,
+        },
+        Some(TimeOrNow::Now) => libc::timespec {
+            tv_sec: 0,
+            tv_nsec: libc::UTIME_NOW,
+        },
         Some(TimeOrNow::SpecificTime(st)) => {
             let d = st.duration_since(UNIX_EPOCH).unwrap_or_default();
             libc::timespec {
@@ -67,7 +75,11 @@ pub(crate) fn to_timespec(t: Option<TimeOrNow>) -> libc::timespec {
 }
 
 /// Set a file's access/modification times (each optional) via `utimensat`.
-pub(crate) fn set_times(path: &Path, atime: Option<TimeOrNow>, mtime: Option<TimeOrNow>) -> std::io::Result<()> {
+pub(crate) fn set_times(
+    path: &Path,
+    atime: Option<TimeOrNow>,
+    mtime: Option<TimeOrNow>,
+) -> std::io::Result<()> {
     let times = [to_timespec(atime), to_timespec(mtime)];
     let c = cpath(path)?;
     // SAFETY: valid C path and a 2-element timespec array, per utimensat(2).
@@ -102,7 +114,12 @@ pub(crate) fn xattr_get(path: &Path, name: &OsStr) -> std::io::Result<Vec<u8>> {
     }
     let mut buf = vec![0u8; len as usize];
     let got = unsafe {
-        libc::getxattr(p.as_ptr(), n.as_ptr(), buf.as_mut_ptr() as *mut libc::c_void, buf.len())
+        libc::getxattr(
+            p.as_ptr(),
+            n.as_ptr(),
+            buf.as_mut_ptr() as *mut libc::c_void,
+            buf.len(),
+        )
     };
     if got < 0 {
         return Err(std::io::Error::last_os_error());
@@ -112,7 +129,12 @@ pub(crate) fn xattr_get(path: &Path, name: &OsStr) -> std::io::Result<Vec<u8>> {
 }
 
 /// Set extended attribute `name` on `path`.
-pub(crate) fn xattr_set(path: &Path, name: &OsStr, value: &[u8], flags: i32) -> std::io::Result<()> {
+pub(crate) fn xattr_set(
+    path: &Path,
+    name: &OsStr,
+    value: &[u8],
+    flags: i32,
+) -> std::io::Result<()> {
     let p = cpath(path)?;
     let n = CString::new(name.as_bytes())
         .map_err(|_| std::io::Error::new(ErrorKind::InvalidInput, "xattr name contains NUL"))?;

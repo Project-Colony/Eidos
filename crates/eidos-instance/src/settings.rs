@@ -72,7 +72,8 @@ impl NexusCreds {
     /// The cached adult-content preference, or `None` once it has aged out.
     pub fn adult_pref(&self, now: u64) -> Option<bool> {
         let fresh = now.saturating_sub(self.adult_checked_at) < ADULT_PREF_TTL;
-        self.adult_ok.filter(|_| fresh && self.adult_checked_at != 0)
+        self.adult_ok
+            .filter(|_| fresh && self.adult_checked_at != 0)
     }
 }
 
@@ -177,8 +178,13 @@ pub fn clear_nexus_tokens() -> io::Result<()> {
 /// The fields this module owns; anything else in the file is passed through
 /// untouched by [`render_nexus_creds`] - including an `api_key=` line from a
 /// version that still had one, which is neither read nor deleted.
-const OWNED_KEYS: [&str; 5] =
-    ["access_token", "refresh_token", "expires_at", "adult_ok", "adult_checked_at"];
+const OWNED_KEYS: [&str; 5] = [
+    "access_token",
+    "refresh_token",
+    "expires_at",
+    "adult_ok",
+    "adult_checked_at",
+];
 
 fn parse_nexus_creds(text: &str) -> NexusCreds {
     let val = |want: &str| {
@@ -199,7 +205,9 @@ fn parse_nexus_creds(text: &str) -> NexusCreds {
             "0" | "false" => Some(false),
             _ => None,
         }),
-        adult_checked_at: val("adult_checked_at").and_then(|v| v.parse().ok()).unwrap_or(0),
+        adult_checked_at: val("adult_checked_at")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
     }
 }
 
@@ -216,8 +224,14 @@ fn render_nexus_creds(existing: &str, creds: &NexusCreds) -> String {
             out.push('\n');
         }
     };
-    push("access_token", creds.access_token.as_deref().unwrap_or_default().trim());
-    push("refresh_token", creds.refresh_token.as_deref().unwrap_or_default().trim());
+    push(
+        "access_token",
+        creds.access_token.as_deref().unwrap_or_default().trim(),
+    );
+    push(
+        "refresh_token",
+        creds.refresh_token.as_deref().unwrap_or_default().trim(),
+    );
     if creds.expires_at != 0 {
         push("expires_at", &creds.expires_at.to_string());
     }
@@ -419,7 +433,9 @@ impl Settings {
             if line.is_empty() || line.starts_with('[') || line.starts_with('#') {
                 continue;
             }
-            let Some((k, v)) = line.split_once('=') else { continue };
+            let Some((k, v)) = line.split_once('=') else {
+                continue;
+            };
             let v = v.trim();
             match k.trim() {
                 "theme_family" if !v.is_empty() => s.theme_family = v.to_string(),
@@ -460,7 +476,8 @@ impl Settings {
                 // Off unless explicitly on - the opposite default to lock_gui,
                 // and deliberately: a key nobody wrote must not cut the network.
                 "offline" => {
-                    s.offline = matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
+                    s.offline =
+                        matches!(v.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on")
                 }
                 // Comma-separated so one line holds an ordering, which is what
                 // this is - a list where position means something.
@@ -489,17 +506,25 @@ impl Settings {
                         .collect();
                 }
                 "remember_window" => {
-                    s.remember_window =
-                        !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                    s.remember_window = !matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
                 }
                 "lock_gui" => {
-                    s.lock_gui = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                    s.lock_gui = !matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
                 }
                 // On unless explicitly off, like lock_gui. A user who has never
                 // heard of this key gets the animations; one who wrote
                 // `motion=off` gets a window that never moves on its own.
                 "motion" => {
-                    s.motion = !matches!(v.to_ascii_lowercase().as_str(), "false" | "0" | "no" | "off")
+                    s.motion = !matches!(
+                        v.to_ascii_lowercase().as_str(),
+                        "false" | "0" | "no" | "off"
+                    )
                 }
                 _ => {}
             }
@@ -539,7 +564,10 @@ impl Settings {
             out.push_str(&format!("mod_columns={}\n", cols.join(",")));
         }
         if !self.preferred_servers.is_empty() {
-            out.push_str(&format!("preferred_servers={}\n", self.preferred_servers.join(",")));
+            out.push_str(&format!(
+                "preferred_servers={}\n",
+                self.preferred_servers.join(",")
+            ));
         }
         if let Some(game) = &self.default_game {
             out.push_str("default_game=");
@@ -562,7 +590,12 @@ mod tests {
 
     fn tmp(label: &str) -> PathBuf {
         let n = N.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("eidos-settings-{}-{}-{}.ini", label, std::process::id(), n))
+        std::env::temp_dir().join(format!(
+            "eidos-settings-{}-{}-{}.ini",
+            label,
+            std::process::id(),
+            n
+        ))
     }
 
     #[test]
@@ -615,9 +648,17 @@ mod tests {
     fn a_cached_adult_preference_decays_to_unknown_once_it_is_stale() {
         // The user can turn the setting off on the website at any time and we
         // would never hear about it, so a cached "yes" has to expire.
-        let creds = NexusCreds { adult_ok: Some(true), adult_checked_at: 1_000, ..Default::default() };
+        let creds = NexusCreds {
+            adult_ok: Some(true),
+            adult_checked_at: 1_000,
+            ..Default::default()
+        };
         assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL - 1), Some(true));
-        assert_eq!(creds.adult_pref(1_000 + ADULT_PREF_TTL), None, "stale must read as unknown");
+        assert_eq!(
+            creds.adult_pref(1_000 + ADULT_PREF_TTL),
+            None,
+            "stale must read as unknown"
+        );
     }
 
     #[test]
@@ -656,7 +697,10 @@ mod tests {
         let back = parse_nexus_creds(&out);
         assert!(!back.has_oauth());
         assert_eq!(back.expires_at, 0);
-        assert!(out.contains("keep=me"), "an unrelated line was dropped: {out}");
+        assert!(
+            out.contains("keep=me"),
+            "an unrelated line was dropped: {out}"
+        );
     }
 
     #[test]
@@ -666,7 +710,11 @@ mod tests {
         let existing = "[Nexus]\naccess_token=at\nsomething_new=keep-me\n";
         let out = render_nexus_creds(existing, &parse_nexus_creds(existing));
         assert!(out.contains("something_new=keep-me"), "{out}");
-        assert_eq!(out.matches("[Nexus]").count(), 1, "the header was duplicated: {out}");
+        assert_eq!(
+            out.matches("[Nexus]").count(),
+            1,
+            "the header was duplicated: {out}"
+        );
     }
 
     #[test]
@@ -705,7 +753,10 @@ mod tests {
 
         // An empty struct saved over it changes nothing.
         save_nexus_creds(&NexusCreds::default()).unwrap();
-        assert!(load_nexus_creds().has_oauth(), "the stored sign-in survives");
+        assert!(
+            load_nexus_creds().has_oauth(),
+            "the stored sign-in survives"
+        );
 
         // Signing out still works - it is the one caller past the guard.
         clear_nexus_tokens().unwrap();
@@ -771,14 +822,19 @@ mod tests {
     /// named for one. An accent that is unset must not come back as `Some("")`.
     #[test]
     fn no_accent_is_none_and_not_an_empty_name() {
-        let s = Settings { accent: None, ..Settings::default() };
+        let s = Settings {
+            accent: None,
+            ..Settings::default()
+        };
         let ini = s.to_ini();
-        assert!(!ini.contains("accent="), "an absent accent must not be written");
+        assert!(
+            !ini.contains("accent="),
+            "an absent accent must not be written"
+        );
         assert_eq!(Settings::parse(&ini).accent, None);
         // And an empty value on disk reads as no override, not as an accent.
         assert_eq!(Settings::parse("accent=\n").accent, None);
     }
-
 
     #[test]
     fn settings_round_trip_full() {
@@ -806,7 +862,10 @@ mod tests {
 
     #[test]
     fn settings_round_trip_minimal() {
-        let s = Settings { theme_family: "nord".to_string(), ..Settings::default() };
+        let s = Settings {
+            theme_family: "nord".to_string(),
+            ..Settings::default()
+        };
         let parsed = Settings::parse(&s.to_ini());
         assert_eq!(parsed, s);
     }
@@ -824,7 +883,10 @@ mod tests {
                 "split={bad} should have been refused"
             );
         }
-        let s = Settings { split: 0.42, ..Settings::default() };
+        let s = Settings {
+            split: 0.42,
+            ..Settings::default()
+        };
         assert_eq!(Settings::parse(&s.to_ini()).split, 0.42);
     }
 
@@ -847,14 +909,20 @@ mod tests {
         // silently stopping the window from animating.
         assert!(Settings::parse("motion=maybe\n").motion);
 
-        let s = Settings { motion: false, ..Settings::default() };
+        let s = Settings {
+            motion: false,
+            ..Settings::default()
+        };
         assert!(!Settings::parse(&s.to_ini()).motion);
     }
 
     #[test]
     fn the_drag_scroll_speed_round_trips_and_refuses_nonsense() {
         assert_eq!(Settings::default().drag_scroll_speed, 1.0);
-        assert_eq!(Settings::parse("drag_scroll_speed=2.5\n").drag_scroll_speed, 2.5);
+        assert_eq!(
+            Settings::parse("drag_scroll_speed=2.5\n").drag_scroll_speed,
+            2.5
+        );
         // Out of range or unparseable falls back to the default rather than
         // being taken at face value: a bad number here is a list that either
         // will not move or cannot be aimed.
@@ -865,7 +933,10 @@ mod tests {
                 "{bad} was accepted"
             );
         }
-        let s = Settings { drag_scroll_speed: 1.75, ..Settings::default() };
+        let s = Settings {
+            drag_scroll_speed: 1.75,
+            ..Settings::default()
+        };
         assert_eq!(Settings::parse(&s.to_ini()).drag_scroll_speed, 1.75);
     }
 
@@ -875,7 +946,10 @@ mod tests {
         assert!(Settings::parse("[eidos]\ntheme=dark\n").lock_gui);
         // Explicit off forms.
         for off in ["false", "0", "no", "off", "OFF"] {
-            assert!(!Settings::parse(&format!("lock_gui={off}\n")).lock_gui, "{off} should disable");
+            assert!(
+                !Settings::parse(&format!("lock_gui={off}\n")).lock_gui,
+                "{off} should disable"
+            );
         }
         // Anything else stays on.
         assert!(Settings::parse("lock_gui=true\n").lock_gui);
@@ -883,7 +957,8 @@ mod tests {
 
     #[test]
     fn parse_ignores_unknown_and_malformed() {
-        let text = "[eidos]\ntheme=dark\nbogus_key=whatever\nno-equals-sign\ndefault_game=fallout4\n";
+        let text =
+            "[eidos]\ntheme=dark\nbogus_key=whatever\nno-equals-sign\ndefault_game=fallout4\n";
         let s = Settings::parse(text);
         // `theme=dark` joins the unknown keys: it named a setting that never
         // changed a pixel, and nothing reads it now.
@@ -894,11 +969,20 @@ mod tests {
     #[test]
     fn parse_rejects_partial_or_zero_window_size() {
         // width only -> no size
-        assert_eq!(Settings::parse("[eidos]\nwindow_width=1024\n").window_size, None);
+        assert_eq!(
+            Settings::parse("[eidos]\nwindow_width=1024\n").window_size,
+            None
+        );
         // a zero dimension -> no size
-        assert_eq!(Settings::parse("window_width=0\nwindow_height=600\n").window_size, None);
+        assert_eq!(
+            Settings::parse("window_width=0\nwindow_height=600\n").window_size,
+            None
+        );
         // non-numeric -> no size
-        assert_eq!(Settings::parse("window_width=wide\nwindow_height=600\n").window_size, None);
+        assert_eq!(
+            Settings::parse("window_width=wide\nwindow_height=600\n").window_size,
+            None
+        );
     }
 
     #[test]

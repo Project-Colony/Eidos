@@ -77,7 +77,10 @@ fn main() {
     // demanding zero: the overwrite is deliberately not indexed, so its own
     // lookups still scan.
     if with.1 * 4 < without.1 {
-        println!("VERDICT: the index is ACTIVE ({}x fewer scans)", without.1 / with.1.max(1));
+        println!(
+            "VERDICT: the index is ACTIVE ({}x fewer scans)",
+            without.1 / with.1.max(1)
+        );
     } else {
         println!("VERDICT: the index is NOT in use - every resolve is walking the layers.");
         println!("  `LayerStack::new` discarded it. It is abandoned on ANY doubt:");
@@ -88,7 +91,10 @@ fn main() {
 
 fn measure(stack: &eidos_core::LayerStack, probes: &[String]) -> (u64, u64) {
     let s = stack.resolve_stats();
-    let (p0, c0) = (s.probes.load(Ordering::Relaxed), s.scans.load(Ordering::Relaxed));
+    let (p0, c0) = (
+        s.probes.load(Ordering::Relaxed),
+        s.scans.load(Ordering::Relaxed),
+    );
     for p in probes {
         let _ = stack.resolve_read(p);
     }

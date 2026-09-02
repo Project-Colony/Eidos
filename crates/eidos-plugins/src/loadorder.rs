@@ -57,8 +57,11 @@ impl PluginList {
         // Plugins the engine loads by itself must not appear in plugins.txt: the
         // primary masters, and the Creation Club content named in the game's
         // `.ccc` (see `implicit_plugins` for what listing those anyway costs).
-        let mut primaries: std::collections::HashSet<String> =
-            spec.primary_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+        let mut primaries: std::collections::HashSet<String> = spec
+            .primary_plugins
+            .iter()
+            .map(|s| s.to_ascii_lowercase())
+            .collect();
         primaries.extend(self.implicit.iter().cloned());
 
         // MO2 writes both files CRLF; plugins.txt in the Windows ANSI codepage
@@ -176,7 +179,9 @@ impl PluginList {
                         .map(|(i, n)| (n.to_ascii_lowercase(), i))
                         .collect();
                     self.plugins.sort_by_key(|p| {
-                        pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX)
+                        pos.get(&p.name.to_ascii_lowercase())
+                            .copied()
+                            .unwrap_or(usize::MAX)
                     });
 
                     // One exception to loadorder.txt's authority: Eidos writes the
@@ -218,8 +223,11 @@ impl PluginList {
                     active.iter().map(|(n, _)| n.to_ascii_lowercase()).collect();
                 let order_set: HashSet<String> =
                     order.iter().map(|s| s.to_ascii_lowercase()).collect();
-                let primaries: HashSet<String> =
-                    spec.primary_plugins.iter().map(|s| s.to_ascii_lowercase()).collect();
+                let primaries: HashSet<String> = spec
+                    .primary_plugins
+                    .iter()
+                    .map(|s| s.to_ascii_lowercase())
+                    .collect();
                 let plugins_txt_present = !active.is_empty();
                 for p in &mut self.plugins {
                     let lname = p.name.to_ascii_lowercase();
@@ -227,15 +235,24 @@ impl PluginList {
                         // A force-disabled .esl can never be activated, even if a stale
                         // plugins.txt lists it.
                         p.enabled = !p.force_disabled;
-                    } else if plugins_txt_present && order_set.contains(&lname) && !primaries.contains(&lname) {
+                    } else if plugins_txt_present
+                        && order_set.contains(&lname)
+                        && !primaries.contains(&lname)
+                    {
                         // listed in loadorder.txt but not active in plugins.txt
                         p.enabled = false;
                     }
                 }
-                let pos: HashMap<String, usize> =
-                    order.iter().enumerate().map(|(i, n)| (n.to_ascii_lowercase(), i)).collect();
-                self.plugins
-                    .sort_by_key(|p| pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX));
+                let pos: HashMap<String, usize> = order
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| (n.to_ascii_lowercase(), i))
+                    .collect();
+                self.plugins.sort_by_key(|p| {
+                    pos.get(&p.name.to_ascii_lowercase())
+                        .copied()
+                        .unwrap_or(usize::MAX)
+                });
             }
         }
     }
@@ -246,17 +263,25 @@ impl PluginList {
     /// re-validate the invariants and recompute indexes.
     pub fn apply_active(&mut self, active: &[(String, bool)]) {
         use std::collections::HashMap;
-        let enabled: HashMap<String, bool> =
-            active.iter().map(|(n, e)| (n.to_ascii_lowercase(), *e)).collect();
-        let pos: HashMap<String, usize> =
-            active.iter().enumerate().map(|(i, (n, _))| (n.to_ascii_lowercase(), i)).collect();
+        let enabled: HashMap<String, bool> = active
+            .iter()
+            .map(|(n, e)| (n.to_ascii_lowercase(), *e))
+            .collect();
+        let pos: HashMap<String, usize> = active
+            .iter()
+            .enumerate()
+            .map(|(i, (n, _))| (n.to_ascii_lowercase(), i))
+            .collect();
         for p in &mut self.plugins {
             if let Some(&e) = enabled.get(&p.name.to_ascii_lowercase()) {
                 p.enabled = e && !p.force_disabled;
             }
         }
-        self.plugins
-            .sort_by_key(|p| pos.get(&p.name.to_ascii_lowercase()).copied().unwrap_or(usize::MAX));
+        self.plugins.sort_by_key(|p| {
+            pos.get(&p.name.to_ascii_lowercase())
+                .copied()
+                .unwrap_or(usize::MAX)
+        });
     }
 }
 
@@ -279,7 +304,9 @@ pub fn canonical_path(dir: &Path, name: &str) -> PathBuf {
     // Newest first: that is the file the game actually wrote.
     variants.sort_by_key(|p| {
         std::cmp::Reverse(
-            fs::metadata(p).and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH),
+            fs::metadata(p)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH),
         )
     });
     let keep = variants.remove(0);
@@ -329,7 +356,9 @@ fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
         .flatten()
         .flatten()
         .filter(|e| {
-            e.file_name().to_str().is_some_and(|n| n.eq_ignore_ascii_case(name))
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.eq_ignore_ascii_case(name))
                 && e.path().is_file()
         })
         .map(|e| e.path())
@@ -439,7 +468,10 @@ mod tests {
         list.write_load_order(&dir, &spec).unwrap();
 
         let txt = fs::read_to_string(dir.join("plugins.txt")).unwrap();
-        let lines: Vec<&str> = txt.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).collect();
+        let lines: Vec<&str> = txt
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .collect();
         // Only the real mod. Skyrim.esm is primary, the two cc* are implicit.
         assert_eq!(lines, vec!["*SkyUI_SE.esp"], "{txt}");
 
@@ -467,7 +499,7 @@ mod tests {
         let dir = tmp_dir();
         let list = PluginList {
             plugins: vec![
-                pl("Skyrim.esm", true),   // primary -> omitted from plugins.txt
+                pl("Skyrim.esm", true), // primary -> omitted from plugins.txt
                 pl("ActiveMod.esp", true),
                 pl("OffMod.esp", false),
             ],
@@ -494,7 +526,11 @@ mod tests {
     fn read_active_round_trips_the_enabled_set() {
         let dir = tmp_dir();
         let list = PluginList {
-            plugins: vec![pl("Skyrim.esm", true), pl("A.esp", true), pl("B.esp", false)],
+            plugins: vec![
+                pl("Skyrim.esm", true),
+                pl("A.esp", true),
+                pl("B.esp", false),
+            ],
             implicit: Default::default(),
             locked: Default::default(),
         };
@@ -502,7 +538,10 @@ mod tests {
 
         let active = PluginList::read_active(&dir, &se());
         // Skyrim.esm omitted (primary); A active, B inactive.
-        assert_eq!(active, vec![("A.esp".to_string(), true), ("B.esp".to_string(), false)]);
+        assert_eq!(
+            active,
+            vec![("A.esp".to_string(), true), ("B.esp".to_string(), false)]
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -515,10 +554,18 @@ mod tests {
         };
         list.apply_active(&[("A.esp".into(), true), ("B.esp".into(), false)]);
         // Order follows the applied list (A, B), then the rest (C); B now off.
-        let names: Vec<_> = list.plugins.iter().map(|p| (p.name.clone(), p.enabled)).collect();
+        let names: Vec<_> = list
+            .plugins
+            .iter()
+            .map(|p| (p.name.clone(), p.enabled))
+            .collect();
         assert_eq!(
             names,
-            vec![("A.esp".into(), true), ("B.esp".into(), false), ("C.esp".into(), true)]
+            vec![
+                ("A.esp".into(), true),
+                ("B.esp".into(), false),
+                ("C.esp".into(), true)
+            ]
         );
     }
 
@@ -528,12 +575,26 @@ mod tests {
         // active (it would otherwise consume an index slot it can't legally have).
         let mut esl = pl("Light.esl", false);
         esl.force_disabled = true;
-        let mut list = PluginList { plugins: vec![esl, pl("Normal.esp", false)], implicit: Default::default(), locked: Default::default() };
+        let mut list = PluginList {
+            plugins: vec![esl, pl("Normal.esp", false)],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
         list.apply_active(&[("Light.esl".into(), true), ("Normal.esp".into(), true)]);
         let light = list.plugins.iter().find(|p| p.name == "Light.esl").unwrap();
-        let normal = list.plugins.iter().find(|p| p.name == "Normal.esp").unwrap();
-        assert!(!light.enabled, "force-disabled stays off despite an active listing");
-        assert!(normal.enabled, "a normal plugin still honours the active listing");
+        let normal = list
+            .plugins
+            .iter()
+            .find(|p| p.name == "Normal.esp")
+            .unwrap();
+        assert!(
+            !light.enabled,
+            "force-disabled stays off despite an active listing"
+        );
+        assert!(
+            normal.enabled,
+            "a normal plugin still honours the active listing"
+        );
     }
 
     #[test]
@@ -541,7 +602,11 @@ mod tests {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
         let list = PluginList {
-            plugins: vec![pl("Skyrim.esm", true), pl("On.esp", true), pl("Off.esp", false)],
+            plugins: vec![
+                pl("Skyrim.esm", true),
+                pl("On.esp", true),
+                pl("Off.esp", false),
+            ],
             implicit: Default::default(),
             locked: Default::default(),
         };
@@ -558,7 +623,8 @@ mod tests {
     #[test]
     fn plugins_txt_round_trips_a_cp1252_name() {
         let dir = tmp_dir();
-        let list = PluginList { plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)],
+        let list = PluginList {
+            plugins: vec![pl("Caf\u{e9} Society.esp", true), pl("Plain.esp", false)],
             implicit: Default::default(),
             locked: Default::default(),
         };
@@ -566,12 +632,18 @@ mod tests {
         // The on-disk bytes are CP1252 (é = 0xE9), not UTF-8.
         let raw = fs::read(dir.join("plugins.txt")).unwrap();
         assert!(raw.contains(&0xE9), "accented name must be CP1252-encoded");
-        assert!(std::str::from_utf8(&raw).is_err(), "plugins.txt is not valid UTF-8");
+        assert!(
+            std::str::from_utf8(&raw).is_err(),
+            "plugins.txt is not valid UTF-8"
+        );
         // ...and read_active decodes it back instead of discarding the file.
         let active = PluginList::read_active(&dir, &se());
         assert_eq!(
             active,
-            vec![("Caf\u{e9} Society.esp".to_string(), true), ("Plain.esp".to_string(), false)]
+            vec![
+                ("Caf\u{e9} Society.esp".to_string(), true),
+                ("Plain.esp".to_string(), false)
+            ]
         );
         let _ = fs::remove_dir_all(&dir);
     }
@@ -591,7 +663,11 @@ mod tests {
 
         // Writing keeps the spelling the game chose rather than adding a second
         // file the game might read instead.
-        let mut list = PluginList { plugins: vec![], implicit: Default::default(), locked: Default::default() };
+        let mut list = PluginList {
+            plugins: vec![],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
         list.plugins.push(crate::Plugin {
             name: "Written.esp".into(),
             origin_mod: String::new(),
@@ -612,8 +688,14 @@ mod tests {
             .filter_map(|e| e.file_name().into_string().ok())
             .filter(|n| n.eq_ignore_ascii_case("plugins.txt"))
             .collect();
-        assert_eq!(variants, vec!["Plugins.txt".to_string()], "must not create a second variant");
-        assert!(read_decoded(&dir.join("Plugins.txt")).unwrap().contains("Written.esp"));
+        assert_eq!(
+            variants,
+            vec!["Plugins.txt".to_string()],
+            "must not create a second variant"
+        );
+        assert!(read_decoded(&dir.join("Plugins.txt"))
+            .unwrap()
+            .contains("Written.esp"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -658,7 +740,11 @@ mod tests {
         let n = fs::read_dir(&dir)
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case("plugins.txt"))
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("plugins.txt")
+            })
             .count();
         assert_eq!(n, 1, "case variants must be collapsed, not left to drift");
         let _ = fs::remove_dir_all(&dir);
@@ -668,9 +754,18 @@ mod tests {
     fn empty_list_does_not_overwrite_plugins_txt() {
         let dir = tmp_dir();
         fs::write(dir.join("plugins.txt"), b"# precious\n*KeepMe.esp\n").unwrap();
-        PluginList { plugins: vec![], implicit: Default::default(), locked: Default::default() }.write_load_order(&dir, &se()).unwrap();
+        PluginList {
+            plugins: vec![],
+            implicit: Default::default(),
+            locked: Default::default(),
+        }
+        .write_load_order(&dir, &se())
+        .unwrap();
         // MO2 refuses to write an empty list; the good file is untouched.
-        assert_eq!(fs::read_to_string(dir.join("plugins.txt")).unwrap(), "# precious\n*KeepMe.esp\n");
+        assert_eq!(
+            fs::read_to_string(dir.join("plugins.txt")).unwrap(),
+            "# precious\n*KeepMe.esp\n"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -688,7 +783,9 @@ mod tests {
         let dir = tmp_dir();
         let spec = se();
         let implicit: std::collections::HashSet<String> =
-            ["cczeta.esl".to_string(), "ccalpha.esl".to_string()].into_iter().collect();
+            ["cczeta.esl".to_string(), "ccalpha.esl".to_string()]
+                .into_iter()
+                .collect();
 
         // LOOT's verdict: Zeta BEFORE Alpha (`.ccc` file order beats alphabetical).
         let mut sorted = PluginList {
@@ -705,7 +802,10 @@ mod tests {
         sorted.write_load_order(&dir, &spec).unwrap();
         // Precondition of the trap: plugins.txt holds ONLY the real mod.
         let txt = read_decoded(&dir.join("plugins.txt")).unwrap();
-        let listed: Vec<&str> = txt.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).collect();
+        let listed: Vec<&str> = txt
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .collect();
         assert_eq!(listed, vec!["*MyMod.esp"], "{txt}");
 
         // A fresh discovery is alphabetical - the reverted order the bug produced.
@@ -831,21 +931,36 @@ mod tests {
     fn plainlist_disabled_plugin_stays_disabled_via_loadorder() {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
-        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
-        PluginList { plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)], implicit: Default::default(), locked: Default::default() }
-            .write_load_order(&dir, &spec)
-            .unwrap();
+                                                        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
+        PluginList {
+            plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)],
+            implicit: Default::default(),
+            locked: Default::default(),
+        }
+        .write_load_order(&dir, &spec)
+        .unwrap();
 
         // A fresh list in arbitrary order; prefix state decides enabled/disabled.
-        let mut fresh =
-            PluginList { plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)], implicit: Default::default(), locked: Default::default() };
+        let mut fresh = PluginList {
+            plugins: vec![pl("C.esp", true), pl("A.esp", true), pl("B.esp", true)],
+            implicit: Default::default(),
+            locked: Default::default(),
+        };
         fresh.apply_prefix_state(&dir, &spec);
-        let state: Vec<_> = fresh.plugins.iter().map(|p| (p.name.clone(), p.enabled)).collect();
+        let state: Vec<_> = fresh
+            .plugins
+            .iter()
+            .map(|p| (p.name.clone(), p.enabled))
+            .collect();
         // Order follows loadorder.txt (A,B,C); B stays DISABLED (in loadorder.txt
         // but not plugins.txt) instead of silently re-enabling.
         assert_eq!(
             state,
-            vec![("A.esp".into(), true), ("B.esp".into(), false), ("C.esp".into(), true)]
+            vec![
+                ("A.esp".into(), true),
+                ("B.esp".into(), false),
+                ("C.esp".into(), true)
+            ]
         );
         let _ = fs::remove_dir_all(&dir);
     }

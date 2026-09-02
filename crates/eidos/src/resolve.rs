@@ -41,7 +41,9 @@ pub(crate) fn looks_like_path(arg: &str) -> bool {
 /// `eidos play .` from inside the instance folder should just work).
 pub(crate) fn expand(arg: &str) -> PathBuf {
     let home = || {
-        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"))
     };
     let p = if arg == "~" {
         home()
@@ -83,12 +85,14 @@ fn try_resolve_from(arg: &str, env_instance: Option<std::ffi::OsString>) -> Resu
     if looks_like_path(arg) {
         let root = expand(arg);
         let (inst, m) = Instance::open_at(&root)?;
-        return Ok(Target { inst, game_id: m.game_id });
+        return Ok(Target {
+            inst,
+            game_id: m.game_id,
+        });
     }
     if let Some(root) = env_instance.filter(|v| !v.is_empty()) {
         let root = expand(&root.to_string_lossy());
-        let (inst, m) = Instance::open_at(&root)
-            .map_err(|e| format!("EIDOS_INSTANCE: {e}"))?;
+        let (inst, m) = Instance::open_at(&root).map_err(|e| format!("EIDOS_INSTANCE: {e}"))?;
         // The variable redirects the id, it must not overrule it: acting on a
         // Fallout folder because a Skyrim command ran under a stale variable
         // is the kind of surprise that costs a mod list.
@@ -100,9 +104,15 @@ fn try_resolve_from(arg: &str, env_instance: Option<std::ffi::OsString>) -> Resu
                 root.display()
             ));
         }
-        return Ok(Target { inst, game_id: arg.to_string() });
+        return Ok(Target {
+            inst,
+            game_id: arg.to_string(),
+        });
     }
-    Ok(Target { inst: Instance::global(arg), game_id: arg.to_string() })
+    Ok(Target {
+        inst: Instance::global(arg),
+        game_id: arg.to_string(),
+    })
 }
 
 /// Record that an instance was just USED, so the GUI's welcome screen and the
@@ -172,7 +182,10 @@ mod tests {
         assert_eq!(t.inst.root, std::fs::canonicalize(&root).unwrap());
         // Mismatched id: refuse loudly rather than act on the wrong game.
         let err = try_resolve_from("fallout4", env).unwrap_err();
-        assert!(err.contains("skyrimse") && err.contains("fallout4"), "{err}");
+        assert!(
+            err.contains("skyrimse") && err.contains("fallout4"),
+            "{err}"
+        );
         // An explicit path argument ignores the variable entirely.
         let other = std::env::temp_dir().join(format!("eidos-resolve-env2-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&other);
@@ -185,7 +198,10 @@ mod tests {
             Some(std::ffi::OsString::from(root.display().to_string())),
         )
         .unwrap();
-        assert_eq!(t.game_id, "fallout4", "the typed path wins over the variable");
+        assert_eq!(
+            t.game_id, "fallout4",
+            "the typed path wins over the variable"
+        );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&other);
     }

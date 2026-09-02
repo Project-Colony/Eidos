@@ -54,7 +54,9 @@ pub struct DetectedGame {
 
 /// The user's home directory (from `$HOME`).
 pub fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// Every Steam library on the system, canonicalized and de-duplicated.
@@ -73,7 +75,11 @@ pub fn steam_libraries(home: &Path) -> Vec<PathBuf> {
         // some (and older) clients write, and the copy under config/ that current
         // clients also maintain. Reading all three costs three failed opens and
         // avoids a "no games found" the user cannot explain.
-        for rel in ["steamapps/libraryfolders.vdf", "steamapps/libraryfolder.vdf", "config/libraryfolders.vdf"] {
+        for rel in [
+            "steamapps/libraryfolders.vdf",
+            "steamapps/libraryfolder.vdf",
+            "config/libraryfolders.vdf",
+        ] {
             if let Ok(content) = fs::read_to_string(root.join(rel)) {
                 for path in kv_all(&content, "path") {
                     add_lib(&mut libs, Path::new(&path));
@@ -112,7 +118,9 @@ pub fn steam_roots(home: &Path) -> Vec<PathBuf> {
 pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
     let mut apps = Vec::new();
     for library in steam_libraries(home) {
-        let Ok(entries) = fs::read_dir(library.join("steamapps")) else { continue };
+        let Ok(entries) = fs::read_dir(library.join("steamapps")) else {
+            continue;
+        };
         for entry in entries.flatten() {
             let path = entry.path();
             let is_manifest = path
@@ -122,7 +130,9 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
             if !is_manifest {
                 continue;
             }
-            let Ok(content) = fs::read_to_string(&path) else { continue };
+            let Ok(content) = fs::read_to_string(&path) else {
+                continue;
+            };
             let (Some(app_id), Some(name), Some(install_dir)) = (
                 kv_first(&content, "appid").and_then(|s| s.parse().ok()),
                 kv_first(&content, "name"),
@@ -130,7 +140,12 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
             ) else {
                 continue;
             };
-            apps.push(InstalledApp { app_id, name, install_dir, library: library.clone() });
+            apps.push(InstalledApp {
+                app_id,
+                name,
+                install_dir,
+                library: library.clone(),
+            });
         }
     }
     apps
@@ -144,7 +159,10 @@ pub fn detect(home: &Path) -> Vec<DetectedGame> {
             let def = catalog().iter().find(|d| d.steam_app_id == app.app_id)?;
             let install_path = app.library.join("steamapps/common").join(&app.install_dir);
             let data_path = install_path.join(def.data_dir);
-            let compat = app.library.join("steamapps/compatdata").join(app.app_id.to_string());
+            let compat = app
+                .library
+                .join("steamapps/compatdata")
+                .join(app.app_id.to_string());
             Some(DetectedGame {
                 def,
                 install_path,
@@ -202,7 +220,8 @@ mod tests {
     impl Tmp {
         fn new() -> Self {
             let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!("eidos-games-{}-{}", std::process::id(), n));
+            let dir =
+                std::env::temp_dir().join(format!("eidos-games-{}-{}", std::process::id(), n));
             fs::create_dir_all(&dir).unwrap();
             Tmp(dir)
         }
@@ -233,7 +252,10 @@ mod tests {
         assert_eq!(kv_all(vdf, "path"), vec!["/a", "/b"]);
         let acf = acf(489830, "Skyrim Special Edition", "Skyrim Special Edition");
         assert_eq!(kv_first(&acf, "appid").as_deref(), Some("489830"));
-        assert_eq!(kv_first(&acf, "installdir").as_deref(), Some("Skyrim Special Edition"));
+        assert_eq!(
+            kv_first(&acf, "installdir").as_deref(),
+            Some("Skyrim Special Edition")
+        );
     }
 
     #[test]
@@ -253,10 +275,16 @@ mod tests {
             ),
         );
         // An app we do NOT support lives in the main library.
-        t.write(&format!("{main}/steamapps/appmanifest_730.acf"), &acf(730, "Counter-Strike 2", "Counter-Strike Global Offensive"));
+        t.write(
+            &format!("{main}/steamapps/appmanifest_730.acf"),
+            &acf(730, "Counter-Strike 2", "Counter-Strike Global Offensive"),
+        );
 
         // Skyrim SE lives on the second library, with its Data dir and a prefix.
-        t.write("Games/Lib2/steamapps/appmanifest_489830.acf", &acf(489830, "Skyrim Special Edition", "Skyrim Special Edition"));
+        t.write(
+            "Games/Lib2/steamapps/appmanifest_489830.acf",
+            &acf(489830, "Skyrim Special Edition", "Skyrim Special Edition"),
+        );
         t.mkdir("Games/Lib2/steamapps/common/Skyrim Special Edition/Data");
         t.mkdir("Games/Lib2/steamapps/compatdata/489830/pfx");
 
@@ -273,9 +301,18 @@ mod tests {
         let g = &games[0];
         assert_eq!(g.def.id, "skyrimse");
         assert_eq!(g.steam_name, "Skyrim Special Edition");
-        assert_eq!(g.install_path, lib2c.join("steamapps/common/Skyrim Special Edition"));
-        assert_eq!(g.data_path, lib2c.join("steamapps/common/Skyrim Special Edition/Data"));
-        assert_eq!(g.compatdata, Some(lib2c.join("steamapps/compatdata/489830")));
+        assert_eq!(
+            g.install_path,
+            lib2c.join("steamapps/common/Skyrim Special Edition")
+        );
+        assert_eq!(
+            g.data_path,
+            lib2c.join("steamapps/common/Skyrim Special Edition/Data")
+        );
+        assert_eq!(
+            g.compatdata,
+            Some(lib2c.join("steamapps/compatdata/489830"))
+        );
     }
 
     #[test]

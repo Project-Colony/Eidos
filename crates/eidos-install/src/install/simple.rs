@@ -13,10 +13,9 @@ use std::path::{Path, PathBuf};
 use eidos_instance::ModMeta;
 
 use crate::{
-    bain_default_selection, fix_directory_name, guess_mod_name_and_id,
-    ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES,
+    bain_default_selection, fix_directory_name, guess_mod_name_and_id, ArchiveTree, LayoutRules,
+    BAIN_MIN_SUBPACKAGES,
 };
-
 
 use super::*;
 
@@ -231,7 +230,13 @@ pub fn install_extracted(
             move_dir_contents(&src, &dest)?;
         }
         write_meta(archive, &dest, game_id, guessed_id)?;
-        Ok(InstallReport { name: name.clone(), stripped: base, fomod: false, missing: Vec::new(), dest: dest.clone() })
+        Ok(InstallReport {
+            name: name.clone(),
+            stripped: base,
+            fomod: false,
+            missing: Vec::new(),
+            dest: dest.clone(),
+        })
     })();
 
     // A failed FRESH install must not leave half-copied debris that the mod list

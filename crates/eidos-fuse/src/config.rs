@@ -4,10 +4,7 @@
 
 use std::time::Duration;
 
-use fuser::{
-    Config, FopenFlags,
-    MountOption,
-};
+use fuser::{Config, FopenFlags, MountOption};
 
 use crate::*;
 
@@ -128,7 +125,9 @@ pub(crate) fn passthrough_enabled() -> bool {
 /// say HOW MANY, this says WHICH, which is the difference between knowing a
 /// directory is enumerated 50000 times and knowing which directory it is.
 pub(crate) fn trace_enabled(channel: &str) -> bool {
-    let Ok(v) = std::env::var("EIDOS_FUSE_TRACE") else { return false };
+    let Ok(v) = std::env::var("EIDOS_FUSE_TRACE") else {
+        return false;
+    };
     let v = v.trim();
     !v.is_empty() && (v == "1" || v.split(',').any(|c| c.trim().eq_ignore_ascii_case(channel)))
 }
@@ -138,7 +137,10 @@ pub(crate) fn trace_enabled(channel: &str) -> bool {
 pub(crate) fn raise_fd_limit() {
     // SAFETY: getrlimit/setrlimit with a valid, fully-initialised rlimit struct.
     unsafe {
-        let mut lim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+        let mut lim = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
         if libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) != 0 || lim.rlim_cur >= lim.rlim_max {
             return;
         }
@@ -171,9 +173,14 @@ pub(crate) fn mount_config() -> Config {
 /// and overridable with `EIDOS_FUSE_THREADS` (1 makes the daemon single-threaded
 /// again, which is the first thing to try when diagnosing a concurrency bug).
 pub(crate) fn fuse_threads() -> usize {
-    if let Some(n) = std::env::var("EIDOS_FUSE_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
+    if let Some(n) = std::env::var("EIDOS_FUSE_THREADS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
         return n.max(1);
     }
-    let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
     cpus.clamp(1, 4)
 }

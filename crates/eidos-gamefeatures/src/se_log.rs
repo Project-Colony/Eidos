@@ -114,7 +114,10 @@ fn parse_failed_load(rest: &str) -> SePluginLoad {
     let dll = dll_name(path).to_string();
     // Windows error codes worth translating: these two are the whole of what goes
     // wrong with a script-extender plugin in practice, and neither is obvious.
-    let code = tail.split_whitespace().last().and_then(|n| n.parse::<u32>().ok());
+    let code = tail
+        .split_whitespace()
+        .last()
+        .and_then(|n| n.parse::<u32>().ok());
     let status = match code {
         Some(126) => "could not be loaded (error 126: a DLL it depends on is missing)".to_string(),
         Some(193) => {
@@ -124,7 +127,13 @@ fn parse_failed_load(rest: &str) -> SePluginLoad {
         _ if tail.is_empty() => "could not be loaded".to_string(),
         _ => format!("could not be loaded ({tail})"),
     };
-    SePluginLoad { name: dll.clone(), dll, version: None, status, loaded: false }
+    SePluginLoad {
+        name: dll.clone(),
+        dll,
+        version: None,
+        status,
+        loaded: false,
+    }
 }
 
 /// The byte range of the `(<8hex> <name> <8hex>)` group, found by looking for a
@@ -170,12 +179,22 @@ fn decode_version(hex: &str) -> Option<String> {
     if v == 0 {
         return None;
     }
-    Some(format!("{}.{}.{}.{}", v >> 24, (v >> 16) & 0xFF, (v >> 4) & 0xFFF, v & 0xF))
+    Some(format!(
+        "{}.{}.{}.{}",
+        v >> 24,
+        (v >> 16) & 0xFF,
+        (v >> 4) & 0xFFF,
+        v & 0xF
+    ))
 }
 
 /// The file name of a Windows or Unix path, without splitting on the drive letter.
 fn dll_name(path: &str) -> &str {
-    path.trim().rsplit(['\\', '/']).next().unwrap_or(path).trim()
+    path.trim()
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(path)
+        .trim()
 }
 
 /// `str::strip_prefix`, case-insensitively - the extender's own casing has changed
@@ -208,7 +227,11 @@ mod tests {
     fn reads_every_plugin_line_and_nothing_else() {
         let got = parse_se_log(LOG);
         assert_eq!(got.len(), 7, "{got:#?}");
-        let loaded: Vec<&str> = got.iter().filter(|p| p.loaded).map(|p| p.dll.as_str()).collect();
+        let loaded: Vec<&str> = got
+            .iter()
+            .filter(|p| p.loaded)
+            .map(|p| p.dll.as_str())
+            .collect();
         assert_eq!(loaded, ["po3_Tweaks.dll", "EngineFixes.dll", "old.dll"]);
     }
 
@@ -237,9 +260,15 @@ mod tests {
         let got = parse_se_log(LOG);
         let stale = got.iter().find(|p| p.dll == "stale.dll").unwrap();
         assert!(!stale.loaded);
-        assert_eq!(stale.status, "disabled, incompatible with current runtime version");
+        assert_eq!(
+            stale.status,
+            "disabled, incompatible with current runtime version"
+        );
         let bad = got.iter().find(|p| p.dll == "bad.dll").unwrap();
-        assert_eq!(bad.status, "disabled, unsupported version independence method");
+        assert_eq!(
+            bad.status,
+            "disabled, unsupported version independence method"
+        );
         // No version data is a SUCCESS: the extender loads such a plugin anyway.
         let old = got.iter().find(|p| p.dll == "old.dll").unwrap();
         assert!(old.loaded);
@@ -251,9 +280,17 @@ mod tests {
         let got = parse_se_log(LOG);
         let missing = got.iter().find(|p| p.dll == "missing.dll").unwrap();
         assert!(!missing.loaded);
-        assert!(missing.status.contains("depends on is missing"), "{}", missing.status);
+        assert!(
+            missing.status.contains("depends on is missing"),
+            "{}",
+            missing.status
+        );
         let bits = got.iter().find(|p| p.dll == "wrongbits.dll").unwrap();
-        assert!(bits.status.contains("wrong architecture"), "{}", bits.status);
+        assert!(
+            bits.status.contains("wrong architecture"),
+            "{}",
+            bits.status
+        );
     }
 
     #[test]
@@ -272,10 +309,19 @@ mod tests {
             se_log_path("skyrimse", docs, install),
             Some(docs.join("SKSE/skse64.log"))
         );
-        assert_eq!(se_log_path("fallout4", docs, install), Some(docs.join("F4SE/f4se.log")));
+        assert_eq!(
+            se_log_path("fallout4", docs, install),
+            Some(docs.join("F4SE/f4se.log"))
+        );
         // The Gamebryo titles write beside the executable instead.
-        assert_eq!(se_log_path("falloutnv", docs, install), Some(install.join("nvse.log")));
-        assert_eq!(se_log_path("oblivion", docs, install), Some(install.join("obse.log")));
+        assert_eq!(
+            se_log_path("falloutnv", docs, install),
+            Some(install.join("nvse.log"))
+        );
+        assert_eq!(
+            se_log_path("oblivion", docs, install),
+            Some(install.join("obse.log"))
+        );
         // A game with no script extender has no log to look for.
         assert_eq!(se_log_path("morrowind", docs, install), None);
     }

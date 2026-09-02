@@ -16,7 +16,6 @@ use std::path::{Path, PathBuf};
 
 use crate::ModEntry;
 
-
 use super::*;
 
 /// Recursively copy a directory tree, skipping symlinks (matching MO2's `copyDir`
@@ -150,7 +149,10 @@ impl Profile {
     pub fn rename(&self, new_name: &str) -> io::Result<Profile> {
         let dest = self.instance_root.join("profiles").join(new_name);
         fs::rename(self.dir(), &dest)?;
-        Ok(Profile { instance_root: self.instance_root.clone(), name: new_name.to_string() })
+        Ok(Profile {
+            instance_root: self.instance_root.clone(),
+            name: new_name.to_string(),
+        })
     }
 
     pub fn delete(&self) -> io::Result<()> {
@@ -267,7 +269,12 @@ impl Profile {
                         });
                     }
                 } else if present.iter().any(|p| p == name) && seen.insert(name.to_string()) {
-                    out.push(ModEntry { name: name.to_string(), enabled, path: mods_dir.join(name), unmanaged: false });
+                    out.push(ModEntry {
+                        name: name.to_string(),
+                        enabled,
+                        path: mods_dir.join(name),
+                        unmanaged: false,
+                    });
                 }
             }
         }
@@ -277,7 +284,12 @@ impl Profile {
         // the load order's files on the next launch.
         for name in present {
             if seen.insert(name.clone()) {
-                out.push(ModEntry { path: mods_dir.join(&name), name, enabled: false, unmanaged: false });
+                out.push(ModEntry {
+                    path: mods_dir.join(&name),
+                    name,
+                    enabled: false,
+                    unmanaged: false,
+                });
             }
         }
         let trust = if list_lost {

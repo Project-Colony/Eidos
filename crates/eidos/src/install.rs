@@ -13,7 +13,10 @@ pub(crate) fn cmd_install(args: &[String]) {
     };
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
         exit(1);
     };
     let inst = target.inst;
@@ -38,10 +41,16 @@ pub(crate) fn cmd_install(args: &[String]) {
     // disabled mods read Inactive, so a scripted installer's fileDependency /
     // gameDependency options evaluate correctly (MO2 distinguishes the two).
     let ml = inst.modlist();
-    let enabled_roots: Vec<std::path::PathBuf> =
-        ml.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
-    let disabled_roots: Vec<std::path::PathBuf> =
-        ml.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let enabled_roots: Vec<std::path::PathBuf> = ml
+        .iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.path.clone())
+        .collect();
+    let disabled_roots: Vec<std::path::PathBuf> = ml
+        .iter()
+        .filter(|m| !m.is_active() && !m.is_separator())
+        .map(|m| m.path.clone())
+        .collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),
@@ -56,7 +65,12 @@ pub(crate) fn cmd_install(args: &[String]) {
             // like MO2. modlist() is lowest-priority-first, so highest = the END.
             let mut ml = inst.modlist();
             ml.retain(|m| m.name != r.name);
-            ml.push(ModEntry { name: r.name.clone(), enabled: true, path: r.dest.clone(), unmanaged: false });
+            ml.push(ModEntry {
+                name: r.name.clone(),
+                enabled: true,
+                path: r.dest.clone(),
+                unmanaged: false,
+            });
             let _ = inst.save_modlist(&ml);
 
             // If this archive came from a Nexus download, flag its .meta installed
@@ -72,7 +86,10 @@ pub(crate) fn cmd_install(args: &[String]) {
             println!();
             println!("  -> {}", r.dest.display());
             if !r.missing.is_empty() {
-                eidos_log::warn!("  note: {} file(s) the installer expected were not in the archive:", r.missing.len());
+                eidos_log::warn!(
+                    "  note: {} file(s) the installer expected were not in the archive:",
+                    r.missing.len()
+                );
                 for m in &r.missing {
                     eidos_log::info!("    - {m}");
                 }
@@ -82,7 +99,9 @@ pub(crate) fn cmd_install(args: &[String]) {
         Err(e) => {
             eidos_log::warn!("install failed: {e}");
             if matches!(e, eidos_install::InstallError::Exists(_)) {
-                eidos_log::info!("  (re-run with --replace to reinstall it, or --merge to install over it)");
+                eidos_log::info!(
+                    "  (re-run with --replace to reinstall it, or --merge to install over it)"
+                );
             }
             exit(1);
         }
@@ -92,7 +111,9 @@ pub(crate) fn cmd_install(args: &[String]) {
 /// `eidos import <game-id> <mo2-profile-dir>`: adopt an existing Mod Organizer 2
 /// profile's mod order, enabled states and load order.
 pub(crate) fn cmd_import(args: &[String]) -> ! {
-    let (Some(id), Some(dir)) = (args.first(), args.get(1)) else { usage() };
+    let (Some(id), Some(dir)) = (args.first(), args.get(1)) else {
+        usage()
+    };
     let target = resolve(id);
     let inst = target.inst;
     if !inst.exists() {
@@ -107,13 +128,19 @@ pub(crate) fn cmd_import(args: &[String]) -> ! {
                 inst.active_profile()
             );
             if r.kept_local > 0 {
-                println!("{} local mod(s) MO2 did not list were kept at the bottom.", r.kept_local);
+                println!(
+                    "{} local mod(s) MO2 did not list were kept at the bottom.",
+                    r.kept_local
+                );
             }
             if r.plugin_files > 0 {
                 println!("Load order imported ({} file(s)).", r.plugin_files);
             }
             if !r.missing.is_empty() {
-                println!("\n{} mod(s) MO2 listed are not installed here:", r.missing.len());
+                println!(
+                    "\n{} mod(s) MO2 listed are not installed here:",
+                    r.missing.len()
+                );
                 for m in r.missing.iter().take(40) {
                     println!("  - {m}");
                 }

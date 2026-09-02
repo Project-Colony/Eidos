@@ -23,7 +23,10 @@ pub(crate) fn cmd_play(args: &[String]) {
 
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
         exit(1);
     };
     // The wizard and `eidos init` refuse to CREATE an instance inside the
@@ -48,13 +51,23 @@ pub(crate) fn cmd_play(args: &[String]) {
     if command.is_empty() {
         let layers = inst.load_order();
         println!("Instance      : {}", inst.root.display());
-        println!("Mount target  : {}  (the game's Data dir)", game.data_path.display());
+        println!(
+            "Mount target  : {}  (the game's Data dir)",
+            game.data_path.display()
+        );
         println!("Mod layers ({}):", layers.len());
         for (i, l) in layers.iter().enumerate() {
-            println!("  {}. {}", i + 1, l.file_name().unwrap_or_default().to_string_lossy());
+            println!(
+                "  {}. {}",
+                i + 1,
+                l.file_name().unwrap_or_default().to_string_lossy()
+            );
         }
         if layers.is_empty() {
-            println!("  (none yet - drop mods into {})", inst.mods_dir().display());
+            println!(
+                "  (none yet - drop mods into {})",
+                inst.mods_dir().display()
+            );
         }
         println!("\nTo launch the game through Eidos, set this Steam launch option:");
         println!("    eidos play {id} -- %command%");
@@ -83,7 +96,15 @@ pub(crate) fn cmd_play(args: &[String]) {
     remember_use(&inst, &game_id);
     let mut command = command;
     swap_script_extender(&game_id, &mut command);
-    run_through_view(&game_id, &game, &inst, command, Vec::new(), None, ToolOpts::default());
+    run_through_view(
+        &game_id,
+        &game,
+        &inst,
+        command,
+        Vec::new(),
+        None,
+        ToolOpts::default(),
+    );
 }
 
 /// Warn when the resolved Proton belongs to the Flatpak Steam install.
@@ -124,13 +145,18 @@ pub(crate) fn swap_script_extender(id: &str, command: &mut [String]) {
         if a.contains(se.launcher) {
             let candidate = a.replace(se.launcher, se.loader);
             if std::path::Path::new(&candidate).is_file() {
-                eidos_log::info!("eidos play: running {} (script extender) instead of {}", se.loader, se.launcher);
+                eidos_log::info!(
+                    "eidos play: running {} (script extender) instead of {}",
+                    se.loader,
+                    se.launcher
+                );
                 *a = candidate;
             } else {
                 eidos_log::info!(
                     "eidos play: {} is not installed - launching the vanilla {} \
                      (script-extender mods will not load)",
-                    se.loader, se.launcher
+                    se.loader,
+                    se.launcher
                 );
             }
         }
@@ -157,10 +183,17 @@ pub(crate) fn swap_script_extender(id: &str, command: &mut [String]) {
 /// plain mod, and a better one twice over: a mod whose real content sits in a
 /// subdirectory is re-rooted from the subdirectory that gets mounted, and a DISABLED
 /// mod matches nothing, so it is not silently mapped to a path that will not exist.
-pub(crate) fn virtualize_under_data(path: &Path, layers: &[PathBuf], data: &Path) -> Option<PathBuf> {
+pub(crate) fn virtualize_under_data(
+    path: &Path,
+    layers: &[PathBuf],
+    data: &Path,
+) -> Option<PathBuf> {
     // Longest match: layers are whole mod roots, but nothing forbids one being
     // nested inside another, and the innermost is the one that provides the file.
-    let layer = layers.iter().filter(|l| path.starts_with(l)).max_by_key(|l| l.as_os_str().len())?;
+    let layer = layers
+        .iter()
+        .filter(|l| path.starts_with(l))
+        .max_by_key(|l| l.as_os_str().len())?;
     let tail = path.strip_prefix(layer).ok()?;
     (!tail.as_os_str().is_empty()).then(|| data.join(tail))
 }
@@ -255,8 +288,12 @@ pub(crate) fn run_through_view(
     // They can run together, but users often don't realise both are active - so we
     // note it, never block.
     {
-        let cs_roots: Vec<PathBuf> =
-            inst.modlist().into_iter().filter(|m| m.is_active()).map(|m| m.path).collect();
+        let cs_roots: Vec<PathBuf> = inst
+            .modlist()
+            .into_iter()
+            .filter(|m| m.is_active())
+            .map(|m| m.path)
+            .collect();
         if eidos_gamefeatures::enb_cs_conflict(&game.install_path, &cs_roots) {
             eidos_log::info!(
                 "eidos play: note - ENB (game root) and Community Shaders (a mod) are both active. \
@@ -291,7 +328,10 @@ pub(crate) fn run_through_view(
 
     let root_layers = inst.root_layers();
     if !root_layers.is_empty() {
-        eidos_log::info!("eidos: {} mod(s) provide root-level files", root_layers.len());
+        eidos_log::info!(
+            "eidos: {} mod(s) provide root-level files",
+            root_layers.len()
+        );
     }
 
     // The mount point has to exist before anything can be mounted over it, and for
@@ -313,7 +353,10 @@ pub(crate) fn run_through_view(
             );
             exit(1);
         }
-        eidos_log::info!("eidos: created {} (the game does not ship it)", game.data_path.display());
+        eidos_log::info!(
+            "eidos: created {} (the game does not ship it)",
+            game.data_path.display()
+        );
     }
 
     let spec = LaunchSpec {
@@ -325,7 +368,11 @@ pub(crate) fn run_through_view(
         base_bind: Some((game.data_path.clone(), inst.base_dir())),
         // The saves bind and the plugins bind ride the same mechanism: the
         // profile's dir over the prefix's, for the life of the run only.
-        binds: save_bind.clone().into_iter().chain(plugin_bind.clone()).collect(),
+        binds: save_bind
+            .clone()
+            .into_iter()
+            .chain(plugin_bind.clone())
+            .collect(),
         cwd,
         // MO2's Root Builder: a mod's `Root/` is projected onto the GAME INSTALL
         // ROOT rather than into Data/, which is how a script extender, ENB,
@@ -351,7 +398,9 @@ pub(crate) fn run_through_view(
     // worse answer than putting them where they were asked to go.
     if let (Some(name), Some(before)) = (opts.output_mod, &ow_before) {
         match inst.capture_overwrite_into_mod(name, before) {
-            Ok(0) => eidos_log::info!("eidos: '{name}' asked for the output but the run wrote nothing"),
+            Ok(0) => {
+                eidos_log::info!("eidos: '{name}' asked for the output but the run wrote nothing")
+            }
             Ok(n) => eidos_log::info!("eidos: captured {n} file(s) into mods/{name}"),
             Err(e) => eidos_log::warn!("eidos: could not capture the output into mods/{name}: {e}"),
         }
@@ -363,7 +412,10 @@ pub(crate) fn run_through_view(
     if let Some(prepared) = inis {
         if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
-                eidos_log::info!("eidos: captured {n} INI(s) back into profile '{}'", prof.name);
+                eidos_log::info!(
+                    "eidos: captured {n} INI(s) back into profile '{}'",
+                    prof.name
+                );
             }
         }
         // Undo the INI tweaks in the CAPTURED copy, so the profile keeps the values
@@ -424,7 +476,9 @@ pub(crate) fn run_through_view(
                 eidos_log::info!("eidos: synced {n} save file(s) into the prefix for Steam Cloud")
             }
             Ok(_) => {}
-            Err(e) => eidos_log::warn!("eidos: WARNING - could not sync saves for Steam Cloud: {e}"),
+            Err(e) => {
+                eidos_log::warn!("eidos: WARNING - could not sync saves for Steam Cloud: {e}")
+            }
         }
     }
 
@@ -433,7 +487,11 @@ pub(crate) fn run_through_view(
         // child was killed by a signal, so fall back to the shell convention
         // 128 + signal - otherwise a crashed (signal-killed) game/tool would make
         // eidos exit 0 and hide the failure from Steam or any wrapping script.
-        Ok(status) => exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1))),
+        Ok(status) => exit(
+            status
+                .code()
+                .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)),
+        ),
         Err(e) => {
             // Name what was being mounted. `No such file or directory (os error 2)`
             // on its own gives the user nothing to act on, and it is the message
@@ -460,7 +518,9 @@ pub(crate) fn shipped_shadow_stems(
 ) -> std::collections::BTreeSet<String> {
     let mut stems = std::collections::BTreeSet::new();
     for dir in dirs {
-        let Ok(rd) = std::fs::read_dir(dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
         for e in rd.flatten() {
             let name = e.file_name().to_string_lossy().to_ascii_lowercase();
             if let Some(stem) = name.strip_suffix(".dll") {
@@ -502,11 +562,26 @@ pub(crate) fn forced_dll_overrides(
     // d3dx9_42, so without the override the builtin wins and the preloader never
     // runs - silently, which is the whole problem with this class of mod.
     const SHIPPED_SHADOWS: &[&str] = &[
-        "d3d8", "d3d9", "d3d10", "d3d11", "d3d12", "dxgi", "dinput", "dinput8", "winmm",
-        "xinput1_3", "x3daudio1_7", "opengl32", "d3dx9_42",
+        "d3d8",
+        "d3d9",
+        "d3d10",
+        "d3d11",
+        "d3d12",
+        "dxgi",
+        "dinput",
+        "dinput8",
+        "winmm",
+        "xinput1_3",
+        "x3daudio1_7",
+        "opengl32",
+        "d3dx9_42",
     ];
-    let mut roots: Vec<PathBuf> =
-        inst.modlist().into_iter().filter(|m| m.is_active()).map(|m| m.path).collect();
+    let mut roots: Vec<PathBuf> = inst
+        .modlist()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.path)
+        .collect();
     roots.push(inst.overwrite_dir());
 
     // A wrapper DLL sits at the mod's top level when the mod is Data-relative, and
@@ -522,13 +597,18 @@ pub(crate) fn forced_dll_overrides(
     let mut stems = shipped_shadow_stems(&scan, SHIPPED_SHADOWS);
 
     // The prefix's windows dir, where bundled native DLLs get deployed.
-    let win = game.compatdata.as_ref().map(|cd| cd.join("pfx").join("drive_c").join("windows"));
+    let win = game
+        .compatdata
+        .as_ref()
+        .map(|cd| cd.join("pfx").join("drive_c").join("windows"));
 
     // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
         if let Some(win) = &win {
             match eidos_gamefeatures::ensure_d3dcompiler_47(win) {
-                Ok(true) => eidos_log::info!("eidos play: provisioned native d3dcompiler_47 into the prefix"),
+                Ok(true) => eidos_log::info!(
+                    "eidos play: provisioned native d3dcompiler_47 into the prefix"
+                ),
                 Ok(false) => {}
                 Err(e) => eidos_log::warn!("eidos play: could not provision d3dcompiler_47: {e}"),
             }
@@ -543,7 +623,9 @@ pub(crate) fn forced_dll_overrides(
         if eidos_gamefeatures::is_tier1_dll(verb) {
             if let Some(win) = &win {
                 match eidos_gamefeatures::ensure_native_dll(win, verb) {
-                    Ok(true) => eidos_log::info!("eidos tool: provisioned native {verb} into the prefix"),
+                    Ok(true) => {
+                        eidos_log::info!("eidos tool: provisioned native {verb} into the prefix")
+                    }
                     Ok(false) => {}
                     Err(e) => eidos_log::warn!("eidos tool: could not provision {verb}: {e}"),
                 }

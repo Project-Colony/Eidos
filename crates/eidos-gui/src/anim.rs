@@ -145,7 +145,11 @@ pub(crate) fn animating(app: &crate::App) -> bool {
 /// immediately - which is what "reduced motion" has to mean: not a quicker
 /// animation, none at all.
 pub(crate) fn at(app: &crate::App, phase: &Phase) -> f32 {
-    if app.motion { phase.eased() } else { 1.0 }
+    if app.motion {
+        phase.eased()
+    } else {
+        1.0
+    }
 }
 
 /// How selected a tab should be DRAWN, from 0.0 (unselected) to 1.0 (selected).
@@ -285,7 +289,10 @@ mod tests {
 
     #[test]
     fn a_blend_carries_alpha_too() {
-        let a = Color { a: 0.0, ..Color::WHITE };
+        let a = Color {
+            a: 0.0,
+            ..Color::WHITE
+        };
         let b = Color::WHITE;
         assert_eq!(mix(a, b, 0.0).a, 0.0);
         assert_eq!(mix(a, b, 1.0).a, 1.0);
@@ -299,7 +306,9 @@ mod tests {
     fn fading_in_from_no_background_does_not_go_through_black() {
         let to = iced::Background::Color(Color::from_rgb(0.9, 0.2, 0.2));
         let half = mix_bg(None, Some(to), 0.5).unwrap();
-        let iced::Background::Color(c) = half else { panic!("not a colour") };
+        let iced::Background::Color(c) = half else {
+            panic!("not a colour")
+        };
 
         assert!((c.a - 0.5).abs() < 1e-6, "alpha should be half way");
         // The hue is the destination's, not a blend with black.
@@ -353,7 +362,9 @@ mod tests {
     fn fading_out_to_no_background_is_the_mirror_image() {
         let from = iced::Background::Color(Color::from_rgb(0.9, 0.2, 0.2));
         let half = mix_bg(Some(from), None, 0.5).unwrap();
-        let iced::Background::Color(c) = half else { panic!("not a colour") };
+        let iced::Background::Color(c) = half else {
+            panic!("not a colour")
+        };
         assert!((c.a - 0.5).abs() < 1e-6);
         assert!((c.r - 0.9).abs() < 1e-6);
     }

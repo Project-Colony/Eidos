@@ -35,7 +35,9 @@ pub(crate) fn info_kv<'a>(k: &'a str, v: String) -> Element<'a, Message> {
 pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> {
     let meta = app.created.as_ref().map(|inst| inst.mod_meta(&m.name));
     let files = cached_entries(app, &m.path).len();
-    let mut col = Column::new().spacing(4).push(info_kv("Name", m.name.clone()));
+    let mut col = Column::new()
+        .spacing(4)
+        .push(info_kv("Name", m.name.clone()));
     if let Some(meta) = &meta {
         if let Some(v) = meta.version() {
             col = col.push(info_kv("Version", v));
@@ -43,7 +45,11 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
         if let Some(nv) = meta.newest_version() {
             col = col.push(info_kv("Newest", nv));
         }
-        if let Some(c) = app.meta_cache.get(&m.name).and_then(|r| r.category_name.clone()) {
+        if let Some(c) = app
+            .meta_cache
+            .get(&m.name)
+            .and_then(|r| r.category_name.clone())
+        {
             col = col.push(info_kv("Category", c));
         }
         if let Some(id) = meta.mod_id() {
@@ -55,15 +61,32 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
         // The uploader is shown only when it says something the Author line does
         // not: on most mods they are the same person, and a second identical row
         // is noise pretending to be information.
-        if let Some(u) = meta.uploader().filter(|u| Some(u) != meta.author().as_ref()) {
+        if let Some(u) = meta
+            .uploader()
+            .filter(|u| Some(u) != meta.author().as_ref())
+        {
             col = col.push(info_kv("Uploaded by", u));
         }
         if let Some(src) = meta.installation_file() {
             col = col.push(info_kv("Installed from", src));
         }
         col = col
-            .push(info_kv("Endorsed", if meta.endorsed() { "yes".into() } else { "no".into() }))
-            .push(info_kv("Tracked", if meta.tracked() { "yes".into() } else { "no".into() }));
+            .push(info_kv(
+                "Endorsed",
+                if meta.endorsed() {
+                    "yes".into()
+                } else {
+                    "no".into()
+                },
+            ))
+            .push(info_kv(
+                "Tracked",
+                if meta.tracked() {
+                    "yes".into()
+                } else {
+                    "no".into()
+                },
+            ));
     }
     // A page for mods that are not on Nexus. Without it every such mod is a dead
     // end in the interface: "Visit on Nexus" only appears when a Nexus id
@@ -86,11 +109,14 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                 .on_press(Message::ModUrlSave),
         );
 
-    col.push(info_kv("Enabled", if m.enabled { "yes".into() } else { "no".into() }))
-        .push(info_kv("Files", files.to_string()))
-        .push(info_kv("Folder", m.path.display().to_string()))
-        .push(url_row)
-        .into()
+    col.push(info_kv(
+        "Enabled",
+        if m.enabled { "yes".into() } else { "no".into() },
+    ))
+    .push(info_kv("Files", files.to_string()))
+    .push(info_kv("Folder", m.path.display().to_string()))
+    .push(url_row)
+    .into()
 }
 
 /// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
@@ -112,14 +138,21 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         if node.winner == origin && node.is_conflicted() {
             wins_n += 1;
             if wins.len() < SHOWN {
-                let losers: Vec<&str> =
-                    node.alternatives.iter().filter(|&&a| a != 0).map(|&a| cmap.name(a)).collect();
+                let losers: Vec<&str> = node
+                    .alternatives
+                    .iter()
+                    .filter(|&&a| a != 0)
+                    .map(|&a| cmap.name(a))
+                    .collect();
                 wins.push((node.display_path.clone(), losers.join(", ")));
             }
         } else if node.winner != origin && node.winner != 0 && node.alternatives.contains(&origin) {
             loses_n += 1;
             if loses.len() < SHOWN {
-                loses.push((node.display_path.clone(), cmap.name(node.winner).to_string()));
+                loses.push((
+                    node.display_path.clone(),
+                    cmap.name(node.winner).to_string(),
+                ));
             }
         }
     }
@@ -186,10 +219,14 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         let is_hidden = path_is_hidden(e);
         let label = if is_hidden { "Unhide" } else { "Hide" };
         // Renaming replaces the last component only, so the box holds the NAME.
-        let renaming =
-            app.tree_rename.as_ref().is_some_and(|(mn, r)| *mn == m.name && r == e);
-        let armed =
-            app.tree_delete_armed.as_ref().is_some_and(|(mn, r)| *mn == m.name && r == e);
+        let renaming = app
+            .tree_rename
+            .as_ref()
+            .is_some_and(|(mn, r)| *mn == m.name && r == e);
+        let armed = app
+            .tree_delete_armed
+            .as_ref()
+            .is_some_and(|(mn, r)| *mn == m.name && r == e);
         let name_cell: Element<'a, Message> = if renaming {
             text_input("new name", &app.tree_rename_text)
                 .on_input(Message::FiletreeRenameChanged)
@@ -201,7 +238,10 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         } else {
             text(e.clone()).size(11.0).width(Length::Fill).into()
         };
-        let mut row = Row::new().spacing(6).align_y(iced::Alignment::Center).push(name_cell);
+        let mut row = Row::new()
+            .spacing(6)
+            .align_y(iced::Alignment::Center)
+            .push(name_cell);
         if renaming {
             row = row
                 .push(
@@ -222,9 +262,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                     button(text("View").size(10.0))
                         .padding([1, 5])
                         .style(button::text)
-                        .on_press_maybe(
-                            resolve_in_mod(&m.path, e).map(Message::PreviewFile),
-                        ),
+                        .on_press_maybe(resolve_in_mod(&m.path, e).map(Message::PreviewFile)),
                 )
                 .push(
                     button(text("Open").size(10.0))
@@ -242,7 +280,11 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                     button(text(label).size(10.0))
                         .padding([1, 5])
                         .on_press(Message::ToggleFileHidden(i, e.clone()))
-                        .style(if is_hidden { button::primary } else { button::secondary }),
+                        .style(if is_hidden {
+                            button::primary
+                        } else {
+                            button::secondary
+                        }),
                 )
                 // Deleting a mod's own file is the one action here that cannot
                 // be undone by clicking again - hiding renames, and renaming
@@ -250,7 +292,11 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 .push(
                     button(text(if armed { "Delete?" } else { "Delete" }).size(10.0))
                         .padding([1, 5])
-                        .style(if armed { button::danger } else { button::secondary })
+                        .style(if armed {
+                            button::danger
+                        } else {
+                            button::secondary
+                        })
                         .on_press(if armed {
                             Message::ConfirmFiletreeDelete(m.name.clone(), e.clone())
                         } else {
@@ -312,7 +358,11 @@ pub(crate) fn resolve_in_mod(base: &Path, rel: &str) -> Option<PathBuf> {
         // in this tab for those mods rather than protecting anything - the
         // question is whether the path leaves the mod, and the mod's own root
         // cannot.
-        if n > 0 && out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+        if n > 0
+            && out
+                .symlink_metadata()
+                .is_ok_and(|m| m.file_type().is_symlink())
+        {
             return None;
         }
         out.push(part);
@@ -320,7 +370,10 @@ pub(crate) fn resolve_in_mod(base: &Path, rel: &str) -> Option<PathBuf> {
     // The LAST component too. Without this the walk checked every ancestor and
     // then handed back a path whose final element is a link - which a preview
     // reads through, and a delete unlinks (harmlessly) while a rename moves.
-    if out.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+    if out
+        .symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
+    {
         return None;
     }
     out.starts_with(base).then_some(out)
@@ -347,8 +400,11 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
             )
             .into();
     }
-    let enabled: Vec<String> =
-        app.created.as_ref().map(|inst| inst.mod_meta(&m.name).ini_tweaks().to_vec()).unwrap_or_default();
+    let enabled: Vec<String> = app
+        .created
+        .as_ref()
+        .map(|inst| inst.mod_meta(&m.name).ini_tweaks().to_vec())
+        .unwrap_or_default();
 
     let mut col = Column::new().spacing(3).push(
         text("Enabled fragments are merged into this profile's game INI at launch.").size(11.0),
@@ -357,7 +413,8 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
         let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
         let label = name.clone();
         col = col.push(
-            checkbox(on).label(label)
+            checkbox(on)
+                .label(label)
                 .on_toggle(move |_| Message::ToggleIniTweak(i, name.clone()))
                 .size(13.0)
                 .text_size(12.0),
@@ -386,7 +443,10 @@ pub(crate) fn info_notes<'a>(app: &App) -> Element<'a, Message> {
 /// Filetree / Notes tabs.
 pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(m) = app.mods.get(i) else {
-        return Space::new().width(Length::Shrink).height(Length::Shrink).into();
+        return Space::new()
+            .width(Length::Shrink)
+            .height(Length::Shrink)
+            .into();
     };
 
     let title = Row::new()
@@ -401,11 +461,31 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let tabs = Row::new()
         .spacing(4)
-        .push(info_tab_btn("General", InfoTab::General, info_mix(app, InfoTab::General)))
-        .push(info_tab_btn("Conflicts", InfoTab::Conflicts, info_mix(app, InfoTab::Conflicts)))
-        .push(info_tab_btn("Filetree", InfoTab::Filetree, info_mix(app, InfoTab::Filetree)))
-        .push(info_tab_btn("INI Tweaks", InfoTab::IniTweaks, info_mix(app, InfoTab::IniTweaks)))
-        .push(info_tab_btn("Notes", InfoTab::Notes, info_mix(app, InfoTab::Notes)));
+        .push(info_tab_btn(
+            "General",
+            InfoTab::General,
+            info_mix(app, InfoTab::General),
+        ))
+        .push(info_tab_btn(
+            "Conflicts",
+            InfoTab::Conflicts,
+            info_mix(app, InfoTab::Conflicts),
+        ))
+        .push(info_tab_btn(
+            "Filetree",
+            InfoTab::Filetree,
+            info_mix(app, InfoTab::Filetree),
+        ))
+        .push(info_tab_btn(
+            "INI Tweaks",
+            InfoTab::IniTweaks,
+            info_mix(app, InfoTab::IniTweaks),
+        ))
+        .push(info_tab_btn(
+            "Notes",
+            InfoTab::Notes,
+            info_mix(app, InfoTab::Notes),
+        ));
 
     let content = match app.info_tab {
         InfoTab::General => info_general(app, m),
@@ -465,7 +545,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(
             button(text("Conflicts only").size(11.0))
                 .padding([3, 8])
-                .style(if app.data_conflicts_only { button::primary } else { button::secondary })
+                .style(if app.data_conflicts_only {
+                    button::primary
+                } else {
+                    button::secondary
+                })
                 .on_press(Message::DataToggleConflictsOnly),
         )
         .push(tool_btn("Expand all", Message::DataExpandAll))
@@ -485,11 +569,13 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     let rows = data_tree_rows(app, DATA_TREE_ROWS);
     if rows.is_empty() {
         list = list.push(
-            text(if app.data_query.trim().is_empty() && !app.data_conflicts_only {
-                "(empty)"
-            } else {
-                "Nothing in the merged view matches."
-            })
+            text(
+                if app.data_query.trim().is_empty() && !app.data_conflicts_only {
+                    "(empty)"
+                } else {
+                    "Nothing in the merged view matches."
+                },
+            )
             .size(12.0),
         );
     }
@@ -498,7 +584,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // A folder gets a clickable disclosure triangle; a file gets a spacer of
         // the same width so names stay in one column.
         let lead: Element<'a, Message> = if r.row.is_dir {
-            let glyph = if app.data_expanded.contains(&r.rel) { "\u{25BE}" } else { "\u{25B8}" };
+            let glyph = if app.data_expanded.contains(&r.rel) {
+                "\u{25BE}"
+            } else {
+                "\u{25B8}"
+            };
             button(text(glyph).size(11.0))
                 .padding([0, 4])
                 .on_press(Message::DataToggleDir(r.rel.clone()))
@@ -512,7 +602,10 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // The colour is the one the mod list already uses for "this wins the
         // file", because that is exactly what the row is saying.
         let label: Element<'a, Message> = if r.row.conflicted {
-            text(format!("{} *", r.row.name)).size(12.0).color(conflict_wins_fg()).into()
+            text(format!("{} *", r.row.name))
+                .size(12.0)
+                .color(conflict_wins_fg())
+                .into()
         } else {
             text(r.row.name.clone()).size(12.0).into()
         };
@@ -526,7 +619,10 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // Hiding is only offered on rows a mod owns: the Overwrite is regenerated
         // by the game (it would just come back) and the game layer is the pristine
         // install, which Eidos never writes to.
-        let owner = app.mods.iter().position(|m| !m.is_separator() && m.name == r.row.source);
+        let owner = app
+            .mods
+            .iter()
+            .position(|m| !m.is_separator() && m.name == r.row.source);
         let mut action = Row::new().spacing(3).align_y(iced::Alignment::Center);
         // Reveal works on every row: the whole reason to look at this tree is to
         // find out WHICH copy of a file the game gets, and the next question is
@@ -558,7 +654,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
             .spacing(6)
             .align_y(iced::Alignment::Center)
             .push(container(name).width(Length::FillPortion(3)))
-            .push(text(r.row.source.clone()).size(12.0).width(Length::FillPortion(2)))
+            .push(
+                text(r.row.source.clone())
+                    .size(12.0)
+                    .width(Length::FillPortion(2)),
+            )
             .push(
                 text(r.row.size.map(format_size).unwrap_or_default())
                     .size(11.0)
@@ -575,8 +675,10 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     if truncated {
         list = list.push(
-            text(format!("Showing the first {DATA_TREE_ROWS} entries - collapse a folder to see more."))
-                .size(11.0),
+            text(format!(
+                "Showing the first {DATA_TREE_ROWS} entries - collapse a folder to see more."
+            ))
+            .size(11.0),
         );
     }
     Column::new()
@@ -591,11 +693,18 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
 /// "did this mod's copy land after that one's" - and short enough to sit in a
 /// column beside a name.
 pub(crate) fn format_when(t: std::time::SystemTime) -> String {
-    let secs = t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let secs = t
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     // The backups list already owns this arithmetic (Howard Hinnant's
     // civil_from_days); it renders `YYYY-MM-DD HH:MM` and the date is the half
     // a file column has room for.
-    eidos_instance::format_stamp(secs).split(' ').next().unwrap_or_default().to_string()
+    eidos_instance::format_stamp(secs)
+        .split(' ')
+        .next()
+        .unwrap_or_default()
+        .to_string()
 }
 
 pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
@@ -617,19 +726,38 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         // provides that path, instead of bundling everything into a new one.
         .push(
             button(
-                text(if app.confirm_sync { "Confirm send back?" } else { "Send back to mods" })
-                    .size(12.0),
+                text(if app.confirm_sync {
+                    "Confirm send back?"
+                } else {
+                    "Send back to mods"
+                })
+                .size(12.0),
             )
             .padding(5)
             .on_press(Message::OverwriteSyncToMods)
-            .style(if app.confirm_sync { button::danger } else { button::secondary }),
+            .style(if app.confirm_sync {
+                button::danger
+            } else {
+                button::secondary
+            }),
         )
         .push(tool_btn("Open folder", Message::OpenFolder(dir.clone())))
         .push(
-            button(text(if app.confirm_clear { "Confirm clear?" } else { "Clear" }).size(12.0))
-                .padding(5)
-                .on_press(Message::ClearOverwrite)
-                .style(if app.confirm_clear { button::danger } else { button::secondary }),
+            button(
+                text(if app.confirm_clear {
+                    "Confirm clear?"
+                } else {
+                    "Clear"
+                })
+                .size(12.0),
+            )
+            .padding(5)
+            .on_press(Message::ClearOverwrite)
+            .style(if app.confirm_clear {
+                button::danger
+            } else {
+                button::secondary
+            }),
         );
 
     // The inline name prompt, shown while "Create mod..." is armed. Typing an
@@ -678,8 +806,11 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     for r in rows {
         let lead: Element<'a, Message> = match r.files {
             Some(_) => {
-                let glyph =
-                    if app.overwrite_expanded.contains(&r.rel) { "\u{25BE}" } else { "\u{25B8}" };
+                let glyph = if app.overwrite_expanded.contains(&r.rel) {
+                    "\u{25BE}"
+                } else {
+                    "\u{25B8}"
+                };
                 button(text(glyph).size(11.0))
                     .padding([0, 4])
                     .on_press(Message::OverwriteToggleDir(r.rel.clone()))
@@ -703,8 +834,10 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     }
     if truncated {
         c = c.push(
-            text(format!("Showing the first {DATA_TREE_ROWS} rows - collapse a folder to see more."))
-                .size(11.0),
+            text(format!(
+                "Showing the first {DATA_TREE_ROWS} rows - collapse a folder to see more."
+            ))
+            .size(11.0),
         );
     }
 
@@ -764,8 +897,16 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .push(text("Save").size(13.0))
         .push(Space::new().width(Length::Fill))
-        .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
-        .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshSaves));
+        .push(
+            button(text("Open folder").size(11.0))
+                .padding(4)
+                .on_press(Message::OpenFolder(dir.clone())),
+        )
+        .push(
+            button(text("Refresh").size(11.0))
+                .padding(4)
+                .on_press(Message::RefreshSaves),
+        );
 
     let col_header = Row::new()
         .spacing(8)
@@ -777,16 +918,23 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut rows = Column::new().spacing(2);
     if app.saves.is_empty() {
         rows = rows.push(
-            text("(no saves yet) Saves your game writes for this profile appear here.")
-                .size(12.0),
+            text("(no saves yet) Saves your game writes for this profile appear here.").size(12.0),
         );
     }
     for (i, save) in app.saves.iter().take(SAVES_LIST_CAP).enumerate() {
         let armed = app.confirm_delete_save == Some(i);
         let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
             .padding(4)
-            .on_press(if armed { Message::ConfirmDeleteSave(i) } else { Message::DeleteSave(i) })
-            .style(if armed { button::danger } else { button::secondary });
+            .on_press(if armed {
+                Message::ConfirmDeleteSave(i)
+            } else {
+                Message::DeleteSave(i)
+            })
+            .style(if armed {
+                button::danger
+            } else {
+                button::secondary
+            });
         // The name is the click target for the details pane; the row's other
         // controls keep working (a Delete click must not also select).
         let name = button(text(save.filename.clone()).size(12.0))
@@ -798,17 +946,29 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         // "these ones", built over several clicks, and a modifier that silently
         // clears the set on a plain click is the wrong shape for that.
         let picked = app.selected_saves.contains(&i);
-        let tick = button(text(if picked { "[x]" } else { "[ ]" }).size(11.0).font(iced::Font::MONOSPACE))
-            .padding([0, 4])
-            .on_press(Message::SaveToggleSelect(i))
-            .style(button::text);
+        let tick = button(
+            text(if picked { "[x]" } else { "[ ]" })
+                .size(11.0)
+                .font(iced::Font::MONOSPACE),
+        )
+        .padding([0, 4])
+        .on_press(Message::SaveToggleSelect(i))
+        .style(button::text);
         let row = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
             .push(tick)
             .push(name)
-            .push(text(format_mtime(save.mtime)).size(11.0).width(Length::Fixed(130.0)))
-            .push(text(format_size(save.size)).size(11.0).width(Length::Fixed(80.0)))
+            .push(
+                text(format_mtime(save.mtime))
+                    .size(11.0)
+                    .width(Length::Fixed(130.0)),
+            )
+            .push(
+                text(format_size(save.size))
+                    .size(11.0)
+                    .width(Length::Fixed(80.0)),
+            )
             .push(container(del).width(Length::Fixed(80.0)));
         rows = rows.push(list_row(
             container(row).padding(3).into(),
@@ -854,7 +1014,11 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             )
             .padding([3, 8])
             .on_press(Message::SavesDeleteSelected)
-            .style(if app.confirm_saves_delete { button::danger } else { button::secondary }),
+            .style(if app.confirm_saves_delete {
+                button::danger
+            } else {
+                button::secondary
+            }),
         );
         bar.into()
     });
@@ -866,7 +1030,9 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     if let Some(bar) = batch {
         list = list.push(bar);
     }
-    let list = list.push(col_header).push(scrollable(rows).height(Length::Fill));
+    let list = list
+        .push(col_header)
+        .push(scrollable(rows).height(Length::Fill));
 
     match app.selected_save.and_then(|i| app.saves.get(i)) {
         Some(save) => Row::new()
@@ -884,15 +1050,22 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
 /// MO2 shows this before you load: a save carries the plugin list it was written
 /// with, and loading it without those plugins is how a playthrough loses its
 /// contents (or crashes on the way in).
-pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> Element<'a, Message> {
-    let mut col = Column::new().spacing(4).push(text(save.filename.clone()).size(13.0));
+pub(crate) fn save_details<'a>(
+    app: &App,
+    save: &eidos_instance::SaveEntry,
+) -> Element<'a, Message> {
+    let mut col = Column::new()
+        .spacing(4)
+        .push(text(save.filename.clone()).size(13.0));
 
     let info = match app.save_info.as_ref().filter(|(p, _)| *p == save.path) {
         Some((_, Ok(info))) => info,
         Some((_, Err(e))) => {
             return col
                 .push(text(format!("Cannot read this save: {e}")).size(11.0))
-                .push(text("The list below is unavailable; the file itself is untouched.").size(10.0))
+                .push(
+                    text("The list below is unavailable; the file itself is untouched.").size(10.0),
+                )
                 .into();
         }
         // Parsed on selection, so this only shows for the frame in between.
@@ -911,7 +1084,10 @@ pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> E
     }
 
     let mut facts: Vec<(&'static str, String)> = vec![
-        ("Character", format!("{} (level {})", info.player_name, info.level)),
+        (
+            "Character",
+            format!("{} (level {})", info.player_name, info.level),
+        ),
         ("Location", info.location.clone()),
         ("In-game date", info.game_date.clone()),
     ];
@@ -925,7 +1101,14 @@ pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> E
     if !info.game_version.is_empty() {
         facts.push(("Game build", info.game_version.clone()));
     }
-    facts.push(("Plugins", format!("{} + {} light", info.plugins.len(), info.light_plugins.len())));
+    facts.push((
+        "Plugins",
+        format!(
+            "{} + {} light",
+            info.plugins.len(),
+            info.light_plugins.len()
+        ),
+    ));
     for (k, v) in facts {
         col = col.push(info_kv(k, v));
     }
@@ -957,7 +1140,9 @@ pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> E
         } else {
             format!("  in: {}", m.providers.join(", "))
         };
-        col = col.push(text(format!("{} ({what})", m.name)).size(11.0)).push(text(who).size(10.0));
+        col = col
+            .push(text(format!("{} ({what})", m.name)).size(11.0))
+            .push(text(who).size(10.0));
     }
     // Only offer the fix when something on disk can actually supply the plugins;
     // otherwise the button would enable nothing and look broken.
@@ -965,7 +1150,10 @@ pub(crate) fn save_details<'a>(app: &App, save: &eidos_instance::SaveEntry) -> E
     if fixable {
         col = col
             .push(Space::new().height(Length::Fixed(4.0)))
-            .push(tool_btn("Enable the mods this save needs", Message::FixSaveMods));
+            .push(tool_btn(
+                "Enable the mods this save needs",
+                Message::FixSaveMods,
+            ));
     }
     if info.truncated {
         col = col.push(
@@ -1018,10 +1206,10 @@ pub(crate) fn download_state_color(state: DownloadState, theme: &Theme) -> Optio
 pub(crate) const DL_C_VERSION: f32 = 56.0; // "1.0.1"
 pub(crate) const DL_C_SIZE: f32 = 66.0; // "10.3 MiB"
 pub(crate) const DL_C_STATUS: f32 = 66.0; // "Installed"
-// Sized on the WIDEST pair the column can ever hold at once, which is not the
-// resting state: "Reinstall" beside Delete armed as "Confirm?". Sizing it on
-// "Install" + "Delete" would clip the two labels that only appear when something
-// is at stake.
+                                          // Sized on the WIDEST pair the column can ever hold at once, which is not the
+                                          // resting state: "Reinstall" beside Delete armed as "Confirm?". Sizing it on
+                                          // "Install" + "Delete" would clip the two labels that only appear when something
+                                          // is at stake.
 pub(crate) const DL_C_ACTIONS: f32 = 128.0;
 /// Fixed height for the action cell, so a row does not change height at the one
 /// moment it changes CONTENT: a finishing download swaps its progress bar for
@@ -1043,13 +1231,24 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .push(text("Downloads").size(13.0))
         .push(Space::new().width(Length::Fill))
-        .push(button(text("Open folder").size(11.0)).padding(4).on_press(Message::OpenFolder(dir.clone())))
-        .push(button(text("Refresh").size(11.0)).padding(4).on_press(Message::RefreshDownloads));
+        .push(
+            button(text("Open folder").size(11.0))
+                .padding(4)
+                .on_press(Message::OpenFolder(dir.clone())),
+        )
+        .push(
+            button(text("Refresh").size(11.0))
+                .padding(4)
+                .on_press(Message::RefreshDownloads),
+        );
 
     // MO2 treats this tab as an archive library rather than a transfer queue,
     // and a library needs to be searchable and orderable to be worth keeping.
-    let installed_here =
-        app.downloads.iter().filter(|r| r.state == DownloadState::Installed).count();
+    let installed_here = app
+        .downloads
+        .iter()
+        .filter(|r| r.state == DownloadState::Installed)
+        .count();
     let mut tools = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -1061,15 +1260,26 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .width(Length::Fill),
         )
         .push(
-            pick_list(DownloadSort::ALL.to_vec(), Some(app.dl_sort), Message::DownloadSortChanged)
-                .text_size(11.0)
-                .padding(4),
+            pick_list(
+                DownloadSort::ALL.to_vec(),
+                Some(app.dl_sort),
+                Message::DownloadSortChanged,
+            )
+            .text_size(11.0)
+            .padding(4),
         )
         .push(
-            button(text(if app.dl_show_hidden { "Hide hidden" } else { "Show hidden" }).size(11.0))
-                .padding(4)
-                .style(button::secondary)
-                .on_press(Message::ToggleShowHiddenDownloads),
+            button(
+                text(if app.dl_show_hidden {
+                    "Hide hidden"
+                } else {
+                    "Show hidden"
+                })
+                .size(11.0),
+            )
+            .padding(4)
+            .style(button::secondary)
+            .on_press(Message::ToggleShowHiddenDownloads),
         );
     // Offered only when it would do something, and it names the count rather
     // than saying "installed" - a bulk delete has to say how many.
@@ -1085,7 +1295,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .size(11.0),
             )
             .padding(4)
-            .style(if armed { button::danger } else { button::secondary })
+            .style(if armed {
+                button::danger
+            } else {
+                button::secondary
+            })
             .on_press(if armed {
                 Message::ConfirmPurgeInstalled
             } else {
@@ -1097,7 +1311,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let col_header = Row::new()
         .spacing(8)
         .push(text("Name").size(11.0).width(Length::Fill))
-        .push(text("Version").size(11.0).width(Length::Fixed(DL_C_VERSION)))
+        .push(
+            text("Version")
+                .size(11.0)
+                .width(Length::Fixed(DL_C_VERSION)),
+        )
         .push(text("Size").size(11.0).width(Length::Fixed(DL_C_SIZE)))
         .push(text("Status").size(11.0).width(Length::Fixed(DL_C_STATUS)))
         .push(Space::new().width(Length::Fixed(DL_C_ACTIONS)));
@@ -1147,13 +1365,13 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 }
             } else {
                 match (row.total, row.speed) {
-                // No total: an older sidecar, from before the size was recorded.
-                // Say how much has arrived rather than invent a percentage.
-                (0, _) => format_size(row.downloaded),
-                (_, Some(bps)) => format!("{}/s", format_size(bps as u64)),
-                // Between the first sighting and the next tick there is no rate
-                // yet. A "0 B/s" here would read as stopped, which it is not.
-                (_, None) => format!("{:.0}%", frac * 100.0),
+                    // No total: an older sidecar, from before the size was recorded.
+                    // Say how much has arrived rather than invent a percentage.
+                    (0, _) => format_size(row.downloaded),
+                    (_, Some(bps)) => format!("{}/s", format_size(bps as u64)),
+                    // Between the first sighting and the next tick there is no rate
+                    // yet. A "0 B/s" here would read as stopped, which it is not.
+                    (_, None) => format!("{:.0}%", frac * 100.0),
                 }
             };
             // FIXED width for the readout. The bar takes what is left, so a
@@ -1196,7 +1414,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                             } else {
                                 Message::DeleteDownload(row.name.clone())
                             })
-                            .style(if armed { button::danger } else { button::secondary }),
+                            .style(if armed {
+                                button::danger
+                            } else {
+                                button::secondary
+                            }),
                     )
                     .into()
             } else {
@@ -1223,7 +1445,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             let install = button(text(if installed { "Reinstall" } else { "Install" }).size(11.0))
                 .padding(4)
                 .on_press(Message::ModPicked(Some(row.path.clone())))
-                .style(if installed { button::secondary } else { button::primary });
+                .style(if installed {
+                    button::secondary
+                } else {
+                    button::primary
+                });
             let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
                 .padding(4)
                 .on_press(if armed {
@@ -1231,7 +1457,11 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     Message::DeleteDownload(row.name.clone())
                 })
-                .style(if armed { button::danger } else { button::secondary });
+                .style(if armed {
+                    button::danger
+                } else {
+                    button::secondary
+                });
             let mut actions = Row::new()
                 .spacing(4)
                 .align_y(iced::Alignment::Center)
@@ -1257,9 +1487,12 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             // The mod's page, straight from the row. The sidecar has known the id
             // since the download started; nothing offered it.
-            if let (Some(id), Some(domain)) =
-                (row.mod_id, selected_game(app).map(|g| g.def.nexus_game).filter(|d| !d.is_empty()))
-            {
+            if let (Some(id), Some(domain)) = (
+                row.mod_id,
+                selected_game(app)
+                    .map(|g| g.def.nexus_game)
+                    .filter(|d| !d.is_empty()),
+            ) {
                 actions = actions.push(
                     button(text("Nexus").size(11.0))
                         .padding(4)
@@ -1284,8 +1517,16 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             .spacing(8)
             .align_y(iced::Alignment::Center)
             .push(text(display).size(12.0).width(Length::Fill))
-            .push(text(row.version.clone()).size(11.0).width(Length::Fixed(DL_C_VERSION)))
-            .push(text(format_size(row.size)).size(11.0).width(Length::Fixed(DL_C_SIZE)))
+            .push(
+                text(row.version.clone())
+                    .size(11.0)
+                    .width(Length::Fixed(DL_C_VERSION)),
+            )
+            .push(
+                text(format_size(row.size))
+                    .size(11.0)
+                    .width(Length::Fixed(DL_C_SIZE)),
+            )
             .push({
                 let st = row.state;
                 let label = match (st, row.total) {
@@ -1310,7 +1551,9 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         let r: Element<'a, Message> = if arriving {
             container(r).padding(3).into()
         } else {
-            mouse_area(container(r).padding(3)).on_press(Message::DownloadDragStart(i)).into()
+            mouse_area(container(r).padding(3))
+                .on_press(Message::DownloadDragStart(i))
+                .into()
         };
         rows = rows.push(striped(r, i % 2 == 0));
     }
@@ -1386,7 +1629,11 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     // the mod list Eidos is working from does not match what is on disk, so the
     // conflict map, the load order and the layer stack are all built from a
     // partial picture. Saving is refused for as long as this is true.
-    if let Some(why) = app.created.as_ref().and_then(|i| i.modlist_checked().1.reason().map(str::to_string)) {
+    if let Some(why) = app
+        .created
+        .as_ref()
+        .and_then(|i| i.modlist_checked().1.reason().map(str::to_string))
+    {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
             title: "The mod list does not match the mods folder".to_string(),
@@ -1473,7 +1720,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 out.push(Diagnostic {
                     level: DiagLevel::Ok,
                     title: "No missing masters".to_string(),
-                    detail: format!("All {} plugins have their masters enabled.", list.plugins.len()),
+                    detail: format!(
+                        "All {} plugins have their masters enabled.",
+                        list.plugins.len()
+                    ),
                     actions: Vec::new(),
                 });
             } else {
@@ -1489,7 +1739,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 out.push(Diagnostic {
                     level: DiagLevel::Problem,
                     title: format!("{} plugin(s) are missing a master", missing.len()),
-                    detail: format!("{detail}. The game will crash on load - enable or install them."),
+                    detail: format!(
+                        "{detail}. The game will crash on load - enable or install them."
+                    ),
                     actions: Vec::new(),
                 });
             }
@@ -1586,7 +1838,10 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                      ignore this."
                 ),
                 actions: vec![
-                    ("Restore the pre-session order", Message::RestorePreSessionPlugins),
+                    (
+                        "Restore the pre-session order",
+                        Message::RestorePreSessionPlugins,
+                    ),
                     ("Keep the current set", Message::AcceptPluginState),
                 ],
             });
@@ -1626,13 +1881,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
         // that would put the game in Flatpak's sandbox, blind to the FUSE union in
         // our private namespace, and it would silently play vanilla.
         if let Some(cd) = game.compatdata.as_ref() {
-            let flatpak = eidos_games::proton_command(
-                &home(),
-                game.def.steam_app_id,
-                cd,
-                &game.install_path,
-            )
-            .is_some_and(|r| r.flatpak);
+            let flatpak =
+                eidos_games::proton_command(&home(), game.def.steam_app_id, cd, &game.install_path)
+                    .is_some_and(|r| r.flatpak);
             if flatpak {
                 out.push(Diagnostic {
                     level: DiagLevel::Problem,
@@ -1690,7 +1941,10 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
     }
     // The log is from the LAST run, which may predate the current load order, so
     // stamp it - an old log claiming success is the confusing case.
-    let when = fs::metadata(&path).and_then(|m| m.modified()).map(format_mtime).unwrap_or_default();
+    let when = fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .map(format_mtime)
+        .unwrap_or_default();
     let failed: Vec<&eidos_gamefeatures::SePluginLoad> =
         plugins.iter().filter(|p| !p.loaded).collect();
     if failed.is_empty() {
@@ -1701,10 +1955,17 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
             actions: Vec::new(),
         });
     }
-    let lines: Vec<String> =
-        failed.iter().take(10).map(|p| format!("{}: {}", p.dll, p.status)).collect();
+    let lines: Vec<String> = failed
+        .iter()
+        .take(10)
+        .map(|p| format!("{}: {}", p.dll, p.status))
+        .collect();
     let more = failed.len().saturating_sub(lines.len());
-    let tail = if more > 0 { format!("  (and {more} more)") } else { String::new() };
+    let tail = if more > 0 {
+        format!("  (and {more} more)")
+    } else {
+        String::new()
+    };
     Some(Diagnostic {
         level: DiagLevel::Problem,
         title: format!(
@@ -1712,7 +1973,10 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
             failed.len(),
             plugins.len()
         ),
-        detail: format!("{}{tail}  -  from the extender's own log, last written {when}.", lines.join("   ")),
+        detail: format!(
+            "{}{tail}  -  from the extender's own log, last written {when}.",
+            lines.join("   ")
+        ),
         actions: Vec::new(),
     })
 }
@@ -1735,7 +1999,12 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
 pub(crate) fn active_plugin_names(app: &App, game_id: &str) -> Option<Vec<String>> {
     let inst = app.created.as_ref()?;
     let names: Vec<String> = match app.plugins.as_ref() {
-        Some(l) => l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect(),
+        Some(l) => l
+            .plugins
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.name.clone())
+            .collect(),
         None => {
             let spec = GameSpec::for_id(game_id)?;
             let prof = inst.active();
@@ -1809,8 +2078,9 @@ pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> 
         archives
             .into_iter()
             .map(|(mod_name, archive)| {
-                let is_registered =
-                    registered.iter().any(|r| r.trim().eq_ignore_ascii_case(&archive));
+                let is_registered = registered
+                    .iter()
+                    .any(|r| r.trim().eq_ignore_ascii_case(&archive));
                 // An orphan is exactly "no active plugin names it and the INI does
                 // not register it", so anything NOT an orphan is loaded - and the
                 // plugin responsible is the one whose base name matches. Asked of
@@ -1829,19 +2099,28 @@ pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> 
                                 .map_or(p.as_str(), |(s, _)| s)
                                 .to_ascii_lowercase();
                             stem == base
-                                || stem.strip_prefix(base.as_str()).is_some_and(|r| r.starts_with(" - "))
+                                || stem
+                                    .strip_prefix(base.as_str())
+                                    .is_some_and(|r| r.starts_with(" - "))
                         })
                     })
                     .flatten()
                     .cloned();
-                ArchiveRow { mod_name, archive, by_plugin, registered: is_registered }
+                ArchiveRow {
+                    mod_name,
+                    archive,
+                    by_plugin,
+                    registered: is_registered,
+                }
             })
             .collect(),
     )
 }
 
 pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
-    let Some(inst) = app.created.as_ref() else { return Vec::new() };
+    let Some(inst) = app.created.as_ref() else {
+        return Vec::new();
+    };
     let mods: Vec<(String, PathBuf)> = app
         .mods
         .iter()
@@ -1863,9 +2142,16 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
     // instead - one small file, on a diagnostic that already walks every enabled
     // mod for archives - and if even that is unreadable, say nothing at all.
     let active: Vec<String> = match app.plugins.as_ref() {
-        Some(l) => l.plugins.iter().filter(|p| p.enabled).map(|p| p.name.clone()).collect(),
+        Some(l) => l
+            .plugins
+            .iter()
+            .filter(|p| p.enabled)
+            .map(|p| p.name.clone())
+            .collect(),
         None => {
-            let Some(spec) = GameSpec::for_id(game_id) else { return Vec::new() };
+            let Some(spec) = GameSpec::for_id(game_id) else {
+                return Vec::new();
+            };
             let prof = inst.active();
             let dir = if prof.has_plugin_state() {
                 prof.plugins_state_dir()
@@ -1889,16 +2175,23 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
     }
     // The profile's own INI copy is the one that gets deployed, so it is what the
     // next launch will actually register.
-    let registered =
-        eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
+    let registered = eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
 
     let orphans = eidos_gamefeatures::orphan_archives(&archives, &active, &registered);
     if orphans.is_empty() {
         return Vec::new();
     }
-    let listed: Vec<String> = orphans.iter().take(8).map(|(m, a)| format!("{a} ({m})")).collect();
+    let listed: Vec<String> = orphans
+        .iter()
+        .take(8)
+        .map(|(m, a)| format!("{a} ({m})"))
+        .collect();
     let more = orphans.len().saturating_sub(listed.len());
-    let tail = if more > 0 { format!(", and {more} more") } else { String::new() };
+    let tail = if more > 0 {
+        format!(", and {more} more")
+    } else {
+        String::new()
+    };
     vec![Diagnostic {
         level: DiagLevel::Advice,
         title: format!("{} archive(s) no active plugin loads", orphans.len()),
@@ -1914,7 +2207,11 @@ pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagno
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
 pub(crate) fn diagnostics_tab_label(app: &App) -> String {
-    let n = app.diag.iter().filter(|d| d.level == DiagLevel::Problem).count();
+    let n = app
+        .diag
+        .iter()
+        .filter(|d| d.level == DiagLevel::Problem)
+        .count();
     if n > 0 {
         format!("Diagnostics ({n})")
     } else {
@@ -1926,7 +2223,10 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     // The same cache the tab label reads, so the count on the tab and the cards
     // in the panel can never tell two different stories.
     let checks = app.diag.clone();
-    let problems = checks.iter().filter(|d| d.level == DiagLevel::Problem).count();
+    let problems = checks
+        .iter()
+        .filter(|d| d.level == DiagLevel::Problem)
+        .count();
     let summary = if problems == 0 {
         "No problems found.".to_string()
     } else {
@@ -1959,7 +2259,12 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
             }
             card = card.push(row);
         }
-        col = col.push(container(card).padding([4, 6]).width(Length::Fill).style(card_style));
+        col = col.push(
+            container(card)
+                .padding([4, 6])
+                .width(Length::Fill)
+                .style(card_style),
+        );
     }
     scrollable(col).height(Length::Fill).into()
 }
@@ -2121,17 +2426,29 @@ pub(crate) fn pinned_by(range: &MovableRange) -> String {
 /// wrote meanwhile, so the list is re-read instead: disk is the truth.
 pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
     plugin_state_changed(app);
-    let written = app.plugins.as_ref().map(|list| write_plugin_state(app, list, spec)).transpose();
+    let written = app
+        .plugins
+        .as_ref()
+        .map(|list| write_plugin_state(app, list, spec))
+        .transpose();
     if let Err(e) = written {
         app.status = Some(format!("Could not write the load order: {e}"));
         app.plugins = compute_plugins(app);
     }
 }
 
-pub(crate) fn write_plugin_state(app: &App, list: &PluginList, spec: &GameSpec) -> std::io::Result<()> {
+pub(crate) fn write_plugin_state(
+    app: &App,
+    list: &PluginList,
+    spec: &GameSpec,
+) -> std::io::Result<()> {
     // Cross-process lock: a running session owns these files (the plugins dir is
     // bind-mounted into it); a mid-game reorder must refuse, not corrupt.
-    let _lock = app.created.as_ref().map(|inst| inst.try_lock("the Eidos window")).transpose()?;
+    let _lock = app
+        .created
+        .as_ref()
+        .map(|inst| inst.try_lock("the Eidos window"))
+        .transpose()?;
     if let Some(inst) = app.created.as_ref() {
         let prof = inst.active();
         // A deliberate GUI edit is the user speaking: it must not trip the
@@ -2165,7 +2482,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 
     // Top row: the plugin count plus a "Sort with LOOT" action (MO2's Sort button),
     // shown only for games LOOT can sort.
-    let loot_ok = selected_game(app).map(|g| eidos_loot::is_supported(g.def.id)).unwrap_or(false);
+    let loot_ok = selected_game(app)
+        .map(|g| eidos_loot::is_supported(g.def.id))
+        .unwrap_or(false);
     let mut top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
@@ -2184,7 +2503,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             "Sort with LOOT"
         };
-        let mut b = button(text(label).size(11.0)).padding([3, 8]).style(button::secondary);
+        let mut b = button(text(label).size(11.0))
+            .padding([3, 8])
+            .style(button::secondary);
         if !busy {
             b = b.on_press(Message::SortPlugins);
         }
@@ -2216,7 +2537,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut head = Column::new().spacing(2).push(top);
     if !missing.is_empty() {
         head = head.push(
-            text(format!("! {} missing master(s) - the game would crash", missing.len())).size(12.0),
+            text(format!(
+                "! {} missing master(s) - the game would crash",
+                missing.len()
+            ))
+            .size(12.0),
         );
     }
 
@@ -2224,9 +2549,17 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // believing a slot is held when it is not, so it is said out loud.
     let violated = list.violated_locks();
     if !violated.is_empty() {
-        let names: Vec<&str> = violated.iter().map(|(n, _, _)| n.as_str()).take(3).collect();
+        let names: Vec<&str> = violated
+            .iter()
+            .map(|(n, _, _)| n.as_str())
+            .take(3)
+            .collect();
         let more = violated.len().saturating_sub(names.len());
-        let tail = if more > 0 { format!(" (+{more} more)") } else { String::new() };
+        let tail = if more > 0 {
+            format!(" (+{more} more)")
+        } else {
+            String::new()
+        };
         head = head.push(
             text(format!(
                 "{} pinned position(s) could not be kept - a plugin must load after its masters: {}{tail}",
@@ -2293,7 +2626,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             pinned_by(&d.range)
         } else {
             match (&d.range.after, &d.range.before) {
-                (Some(a), Some(b)) => format!("Can move between {a} and {b} - both are master ties."),
+                (Some(a), Some(b)) => {
+                    format!("Can move between {a} and {b} - both are master ties.")
+                }
                 (Some(a), None) => format!("Must stay after {a}, one of its masters."),
                 (None, Some(b)) => format!("Must stay before {b}, which lists it as a master."),
                 (None, None) => "Free to move anywhere in its section.".to_string(),
@@ -2313,7 +2648,11 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         };
         let is_primary = spec
             .as_ref()
-            .map(|s| s.primary_plugins.iter().any(|pp| pp.eq_ignore_ascii_case(&p.name)))
+            .map(|s| {
+                s.primary_plugins
+                    .iter()
+                    .any(|pp| pp.eq_ignore_ascii_case(&p.name))
+            })
             .unwrap_or(false);
         // Creation Club content is loaded by the engine from the .ccc file, so
         // it is as immovable and as un-togglable as a base-game master - and has
@@ -2328,7 +2667,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             // An .esl on a no-light engine: can never load (unchecked + greyed).
             checkbox(false).size(15).into()
         } else {
-            checkbox(p.enabled).on_toggle(move |_| Message::TogglePlugin(i)).size(15).into()
+            checkbox(p.enabled)
+                .on_toggle(move |_| Message::TogglePlugin(i))
+                .size(15)
+                .into()
         };
         // Manual reorder (MO2 lets the load order be moved by hand, not only
         // The pin (MO2's locked order). A primary master is already nailed to the
@@ -2379,8 +2721,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // The LOOT verdicts from the last sort - MO2's plugin flags: a compact
         // badge in its own column, the detail folded into the hover the row
         // already carries. Absent until a sort has run, exactly like MO2.
-        let bundle =
-            app.loot_meta.as_ref().and_then(|m| m.get(&p.name.to_ascii_lowercase()));
+        let bundle = app
+            .loot_meta
+            .as_ref()
+            .and_then(|m| m.get(&p.name.to_ascii_lowercase()));
         if let Some(b) = bundle {
             for msg in b.messages.iter().take(3) {
                 tip.push_str(&format!(
@@ -2423,7 +2767,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             container(text(tip).size(11.0))
                 .padding(6)
                 .style(|t: &Theme| container::Style {
-                    background: Some(Background::Color(t.extended_palette().background.weak.color)),
+                    background: Some(Background::Color(
+                        t.extended_palette().background.weak.color,
+                    )),
                     ..Default::default()
                 }),
             tooltip::Position::FollowCursor,
@@ -2501,10 +2847,17 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     // the mod list's: the strip takes no width when there is nothing to mark, so
     // there was never anything for a switch to save.
     let list_area = Stack::new().push(list_area).push(
-        Row::new().push(Space::new().width(Length::Fill)).push(scroll_marks(&marks)),
+        Row::new()
+            .push(Space::new().width(Length::Fill))
+            .push(scroll_marks(&marks)),
     );
 
-    Column::new().spacing(6).push(head).push(header).push(list_area).into()
+    Column::new()
+        .spacing(6)
+        .push(head)
+        .push(header)
+        .push(list_area)
+        .into()
 }
 
 /// Analyse file conflicts across the enabled mods (+ the game data) for the
@@ -2535,7 +2888,14 @@ pub(crate) fn compute_conflicts(app: &App) -> Option<ConflictMap> {
     if let Some(inst) = app.created.as_ref() {
         let ow = inst.overwrite_dir();
         if ow.is_dir() {
-            layers.insert(0, Layer { origin: u32::MAX, name: "Overwrite".to_string(), root: ow });
+            layers.insert(
+                0,
+                Layer {
+                    origin: u32::MAX,
+                    name: "Overwrite".to_string(),
+                    root: ow,
+                },
+            );
         }
     }
     layers.push(Layer {
@@ -2571,7 +2931,9 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         return Column::new()
             .spacing(4)
             .push(text("Conflicts").size(13.0))
-            .push(text("Open a game instance to analyse file conflicts across your mods.").size(12.0))
+            .push(
+                text("Open a game instance to analyse file conflicts across your mods.").size(12.0),
+            )
             .into();
     };
 
@@ -2637,10 +2999,16 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a, Message> {
     const SHOWN: usize = 40;
     let Some(focus) = app.selected_mod else {
-        return text("Select a mod to see which files it contests.").size(11.0).into();
+        return text("Select a mod to see which files it contests.")
+            .size(11.0)
+            .into();
     };
     let origin = (focus + 1) as u32;
-    let name = app.mods.get(focus).map(|m| m.display_name().to_string()).unwrap_or_default();
+    let name = app
+        .mods
+        .get(focus)
+        .map(|m| m.display_name().to_string())
+        .unwrap_or_default();
 
     let mut rows = Column::new().spacing(1);
     let mut n = 0usize;
@@ -2650,8 +3018,8 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
         // each pointer event allocate and free once per file in the instance -
         // several hundred thousand times for a real load order. Two comparisons
         // answer the same question.
-        let contested = node.is_conflicted()
-            && (node.winner == origin || node.alternatives.contains(&origin));
+        let contested =
+            node.is_conflicted() && (node.winner == origin || node.alternatives.contains(&origin));
         if !contested {
             continue;
         }
@@ -2668,12 +3036,20 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
         };
         let row = Row::new()
             .spacing(6)
-            .push(text(node.display_path.clone()).size(11.0).width(Length::Fill))
+            .push(
+                text(node.display_path.clone())
+                    .size(11.0)
+                    .width(Length::Fill),
+            )
             .push(
                 text(verdict)
                     .size(11.0)
                     .width(Length::Fixed(260.0))
-                    .color(if wins { conflict_wins_fg() } else { conflict_loses_fg() }),
+                    .color(if wins {
+                        conflict_wins_fg()
+                    } else {
+                        conflict_loses_fg()
+                    }),
             );
         rows = rows.push(striped(row.into(), n.is_multiple_of(2)));
     }
@@ -2706,40 +3082,82 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let run_options: Vec<String> = std::iter::once(RUN_GAME.to_string())
         .chain(listed.iter().map(|t| t.title.clone()))
         .collect();
-    let run_choice = app.tool_choice.clone().unwrap_or_else(|| RUN_GAME.to_string());
+    let run_choice = app
+        .tool_choice
+        .clone()
+        .unwrap_or_else(|| RUN_GAME.to_string());
 
     let top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(text("Run:").size(13.0))
-        .push(pick_list(run_options, Some(run_choice), Message::ToolPicked).text_size(13.0).padding(8))
+        .push(
+            pick_list(run_options, Some(run_choice), Message::ToolPicked)
+                .text_size(13.0)
+                .padding(8),
+        )
         .push(Space::new().width(Length::Fill))
         .push(
-            button(Row::new().spacing(6).push(icon(IC_RUN, 18.0)).push(text("Run").size(15.0)))
-                .padding(10)
-                .on_press(Message::Run)
-                .style(button::primary),
+            button(
+                Row::new()
+                    .spacing(6)
+                    .push(icon(IC_RUN, 18.0))
+                    .push(text("Run").size(15.0)),
+            )
+            .padding(10)
+            .on_press(Message::Run)
+            .style(button::primary),
         );
 
     // The tab in force, which is not always `app.tab`: see `effective_tab`.
     let tab = effective_tab(app);
-    let mut tabs = Row::new()
-        .spacing(4)
-        .push(tab_btn("Data".to_string(), Tab::Data, main_mix(app, Tab::Data)));
+    let mut tabs = Row::new().spacing(4).push(tab_btn(
+        "Data".to_string(),
+        Tab::Data,
+        main_mix(app, Tab::Data),
+    ));
     // Only for a game whose plugins Eidos actually manages. Stellar Blade is the
     // first game with no plugin system at all, and every other pane keys off the
     // same `GameSpec::for_id` - so without this the tab is there, opens, and
     // shows an empty list for a game that will never have one.
     if game_manages_plugins(app) {
-        tabs = tabs.push(tab_btn("Plugins".to_string(), Tab::Plugins, main_mix(app, Tab::Plugins)));
+        tabs = tabs.push(tab_btn(
+            "Plugins".to_string(),
+            Tab::Plugins,
+            main_mix(app, Tab::Plugins),
+        ));
     }
     let tabs = tabs
-        .push(tab_btn("Conflicts".to_string(), Tab::Conflicts, main_mix(app, Tab::Conflicts)))
-        .push(tab_btn("Overwrite".to_string(), Tab::Overwrite, main_mix(app, Tab::Overwrite)))
-        .push(tab_btn("Archives".to_string(), Tab::Archives, main_mix(app, Tab::Archives)))
-        .push(tab_btn("Saves".to_string(), Tab::Saves, main_mix(app, Tab::Saves)))
-        .push(tab_btn("Downloads".to_string(), Tab::Downloads, main_mix(app, Tab::Downloads)))
-        .push(tab_btn(diagnostics_tab_label(app), Tab::Diagnostics, main_mix(app, Tab::Diagnostics)));
+        .push(tab_btn(
+            "Conflicts".to_string(),
+            Tab::Conflicts,
+            main_mix(app, Tab::Conflicts),
+        ))
+        .push(tab_btn(
+            "Overwrite".to_string(),
+            Tab::Overwrite,
+            main_mix(app, Tab::Overwrite),
+        ))
+        .push(tab_btn(
+            "Archives".to_string(),
+            Tab::Archives,
+            main_mix(app, Tab::Archives),
+        ))
+        .push(tab_btn(
+            "Saves".to_string(),
+            Tab::Saves,
+            main_mix(app, Tab::Saves),
+        ))
+        .push(tab_btn(
+            "Downloads".to_string(),
+            Tab::Downloads,
+            main_mix(app, Tab::Downloads),
+        ))
+        .push(tab_btn(
+            diagnostics_tab_label(app),
+            Tab::Diagnostics,
+            main_mix(app, Tab::Diagnostics),
+        ));
 
     let content = match tab {
         Tab::Data => data_panel(app),
@@ -2754,7 +3172,12 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
 
     let inner = Column::new().spacing(8).push(top).push(tabs).push(content);
     let portion = 1000_u16.saturating_sub((app.split * 1000.0) as u16);
-    container(inner).width(Length::FillPortion(portion)).height(Length::Fill).padding(8).style(panel_style).into()
+    container(inner)
+        .width(Length::FillPortion(portion))
+        .height(Length::Fill)
+        .padding(8)
+        .style(panel_style)
+        .into()
 }
 
 pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
@@ -2784,7 +3207,11 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     // and the difference is not cosmetic, since a free account cannot fetch a
     // download link without the key/expires pair from a fresh nxm:// link.
     let account = match &app.nexus_account {
-        Some(a) => format!("Nexus: {} ({})", a.name, if a.is_premium { "Premium" } else { "free" }),
+        Some(a) => format!(
+            "Nexus: {} ({})",
+            a.name,
+            if a.is_premium { "Premium" } else { "free" }
+        ),
         None => "not logged in".to_string(),
     };
     // The left slot fades in when its message changes, so a status that
@@ -2811,7 +3238,11 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
         );
     }
     row = row.push(text(account).size(11.0));
-    container(row).width(Length::Fill).padding(4).style(bar_style).into()
+    container(row)
+        .width(Length::Fill)
+        .padding(4)
+        .style(bar_style)
+        .into()
 }
 
 pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
@@ -2844,7 +3275,10 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
                 } else {
                     crate::theme::divider()
                 })),
-                border: iced::Border { radius: 3.0.into(), ..Default::default() },
+                border: iced::Border {
+                    radius: 3.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             }),
     )
@@ -2867,7 +3301,11 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .into()
     };
 
-    let mut base = Column::new().spacing(4).padding(4).push(header).push(menu_bar());
+    let mut base = Column::new()
+        .spacing(4)
+        .padding(4)
+        .push(header)
+        .push(menu_bar());
     if app.ui_toolbar_visible {
         base = base.push(toolbar(app));
     }
@@ -2889,8 +3327,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // A full-window catcher behind it dismisses on a click outside the card.
     if let Some(i) = app.menu_mod {
         if i < app.mods.len() {
-            let catcher =
-                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseMenu);
+            let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_press(Message::CloseMenu);
             let at = app.menu_at.unwrap_or(app.cursor);
             let card = floating_at(mod_menu_card(app, i), at, app.window);
             layers = layers.push(catcher).push(card);
@@ -2900,8 +3338,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // The per-mod info dialog is a centered modal (MO2's modinfodialog).
     if let Some(i) = app.info_mod {
         if i < app.mods.len() {
-            let scrim =
-                mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseInfo);
+            let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_press(Message::CloseInfo);
             let dialog = container(mod_info_dialog(app, i)).center(Length::Fill);
             layers = layers.push(scrim).push(dialog);
         }
@@ -2911,15 +3349,17 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // Below the collision chooser in the stack: a collision raised BY the picker
     // has to be the thing you can click.
     if let Some(p) = &app.picker {
-        let scrim =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::PickerCancel);
-        layers = layers.push(scrim).push(container(install_picker_dialog(p)).center(Length::Fill));
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::PickerCancel);
+        layers = layers
+            .push(scrim)
+            .push(container(install_picker_dialog(p)).center(Length::Fill));
     }
 
     // The install-collision chooser is a centered modal (MO2's QueryOverwriteDialog).
     if let Some(c) = &app.collision {
-        let scrim =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CollisionCancel);
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CollisionCancel);
         let dialog = container(collision_dialog(c)).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
@@ -2942,7 +3382,12 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let card = container(filter_pane(app))
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(iced::Padding { top: 84.0, right: 0.0, bottom: 0.0, left: 320.0 })
+            .padding(iced::Padding {
+                top: 84.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 320.0,
+            })
             .align_x(iced::alignment::Horizontal::Left)
             .align_y(iced::alignment::Vertical::Top);
         layers = layers.push(catcher).push(card);
@@ -3010,7 +3455,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
 
     // The About box (Help menu).
     if app.about_open {
-        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseAbout);
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseAbout);
         let dialog = container(about_dialog()).center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
@@ -3025,7 +3471,11 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
                 .style(|t: &Theme| container::Style {
                     background: Some(Background::Color(t.extended_palette().primary.base.color)),
                     text_color: Some(t.extended_palette().primary.base.text),
-                    border: Border { width: 0.0, radius: 4.0.into(), ..Default::default() },
+                    border: Border {
+                        width: 0.0,
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
                     ..Default::default()
                 }),
         )
@@ -3071,12 +3521,17 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
 
     // The File dropdown floats just under the menu bar, at the File item.
     if app.file_menu_open {
-        let catcher =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseFileMenu);
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseFileMenu);
         let card = container(file_menu_card(app))
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(iced::Padding { top: 44.0, right: 0.0, bottom: 0.0, left: 4.0 })
+            .padding(iced::Padding {
+                top: 44.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 4.0,
+            })
             .align_x(iced::alignment::Horizontal::Left)
             .align_y(iced::alignment::Vertical::Top);
         layers = layers.push(catcher).push(card);
@@ -3084,12 +3539,17 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
 
     // The View dropdown floats just under the menu bar, near the View item.
     if app.view_menu_open {
-        let catcher =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseViewMenu);
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseViewMenu);
         let card = container(view_menu_card(app))
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(iced::Padding { top: 44.0, right: 0.0, bottom: 0.0, left: 44.0 })
+            .padding(iced::Padding {
+                top: 44.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 44.0,
+            })
             .align_x(iced::alignment::Horizontal::Left)
             .align_y(iced::alignment::Vertical::Top);
         layers = layers.push(catcher).push(card);
@@ -3098,8 +3558,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // The per-profile menu (rename / copy / delete), opened by right-clicking a
     // profile chip. A catcher behind it dismisses on an outside click.
     if let Some(name) = app.profile_menu.clone() {
-        let catcher =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::ProfileCloseMenu);
+        let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ProfileCloseMenu);
         let at = app.menu_at.unwrap_or(app.cursor);
         let card = floating_at(profile_menu_card(app, &name), at, app.window);
         layers = layers.push(catcher).push(card);
@@ -3108,8 +3568,8 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // The LOOT report (MO2's post-sort dialog): a centered modal listing general
     // messages + per-plugin missing masters / messages / dirty advice.
     if let Some(report) = &app.loot_report {
-        let scrim =
-            mouse_area(Space::new().width(Length::Fill).height(Length::Fill)).on_press(Message::CloseLootReport);
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseLootReport);
         // The card swallows its own presses. A `container` does not take mouse
         // events, so without this a click anywhere ON the report fell through to
         // the scrim behind it and dismissed the thing the user was reading.
@@ -3128,9 +3588,17 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         // scroll wheel are all inert while locked. `interaction` also tells the Stack
         // to mark lower layers unavailable for scroll.
         let scrim = mouse_area(
-            container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| container::Style {
-                background: Some(iced::Color { a: 0.55, ..iced::Color::BLACK }.into()),
-                ..Default::default()
+            container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| {
+                container::Style {
+                    background: Some(
+                        iced::Color {
+                            a: 0.55,
+                            ..iced::Color::BLACK
+                        }
+                        .into(),
+                    ),
+                    ..Default::default()
+                }
             }),
         )
         .on_press(Message::Noop)
@@ -3170,10 +3638,11 @@ pub(crate) fn separator_choices(app: &App, i: usize) -> Vec<usize> {
 pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
     // Same origin convention as the emblems: index + 1, with the game (0) and the
     // Overwrite pseudo-layer (u32::MAX) excluded because they are not rows.
-    let real = |set: &std::collections::BTreeSet<u32>| {
-        set.iter().any(|&o| o != 0 && o != u32::MAX)
-    };
-    let mc = app.conflicts.as_ref().and_then(|m| m.mods.get(&((i + 1) as u32)));
+    let real = |set: &std::collections::BTreeSet<u32>| set.iter().any(|&o| o != 0 && o != u32::MAX);
+    let mc = app
+        .conflicts
+        .as_ref()
+        .and_then(|m| m.mods.get(&((i + 1) as u32)));
     let mut col = Column::new().spacing(1);
 
     if let Some((row, text)) = app.send_priority.as_ref().filter(|(r, _)| *r == i) {
@@ -3191,8 +3660,8 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
         // An inline chooser of the separators, scrollable because a big load
         // order has plenty of them.
         // No spacing: the insertion strips below provide the separation, and they
-    // must be part of the flow so the layout is identical with and without a drag.
-    let mut list = Column::new();
+        // must be part of the flow so the layout is identical with and without a drag.
+        let mut list = Column::new();
         for idx in separator_choices(app, i) {
             // Owned, so the Element does not borrow from `app`.
             let label = app.mods[idx].display_name().to_string();
@@ -3206,14 +3675,26 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
     }
 
     if mc.is_some_and(|m| real(&m.overwrites)) {
-        col = col.push(menu_item("Send above first conflict", Message::SendToFirstConflict(i)));
+        col = col.push(menu_item(
+            "Send above first conflict",
+            Message::SendToFirstConflict(i),
+        ));
     }
     if mc.is_some_and(|m| real(&m.overwritten_by)) {
-        col = col.push(menu_item("Send below last conflict", Message::SendToLastConflict(i)));
+        col = col.push(menu_item(
+            "Send below last conflict",
+            Message::SendToLastConflict(i),
+        ));
     }
     col = col
-        .push(menu_item("Send to priority...", Message::SendToPriorityStart(i)))
-        .push(menu_item("Send to separator...", Message::SendToSeparatorStart(i)));
+        .push(menu_item(
+            "Send to priority...",
+            Message::SendToPriorityStart(i),
+        ))
+        .push(menu_item(
+            "Send to separator...",
+            Message::SendToSeparatorStart(i),
+        ));
     col.into()
 }
 
@@ -3222,7 +3703,11 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
 pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Message> {
     let title = Row::new()
         .spacing(6)
-        .push(text(format!("Profile: {name}")).size(13.0).width(Length::Fill))
+        .push(
+            text(format!("Profile: {name}"))
+                .size(13.0)
+                .width(Length::Fill),
+        )
         .push(
             button(text("x").size(13.0))
                 .padding([1, 6])
@@ -3242,7 +3727,12 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
                     .size(12.0),
             );
         }
-        _ => col = col.push(menu_item("Rename", Message::ProfileRenameStart(name.to_string()))),
+        _ => {
+            col = col.push(menu_item(
+                "Rename",
+                Message::ProfileRenameStart(name.to_string()),
+            ))
+        }
     }
 
     // Copy to a new profile: an inline editor when armed, else a menu item.
@@ -3256,7 +3746,12 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
                     .size(12.0),
             );
         }
-        _ => col = col.push(menu_item("Copy to new...", Message::ProfileCopyStart(name.to_string()))),
+        _ => {
+            col = col.push(menu_item(
+                "Copy to new...",
+                Message::ProfileCopyStart(name.to_string()),
+            ))
+        }
     }
 
     col = col.push(menu_sep());
@@ -3278,7 +3773,11 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     };
     col = col.push(delete);
 
-    container(col).max_width(240.0).padding(8).style(card_style).into()
+    container(col)
+        .max_width(240.0)
+        .padding(8)
+        .style(card_style)
+        .into()
 }
 
 /// Suggest a free profile name near `base` (`base`, `base 2`, `base 3`, ...) so the
@@ -3334,7 +3833,11 @@ pub(crate) fn run_picker_install(app: &mut App) {
         return;
     }
     let choice = match &p.mode {
-        PickerMode::Bain { subpackages, picked, .. } => {
+        PickerMode::Bain {
+            subpackages,
+            picked,
+            ..
+        } => {
             let chosen: Vec<String> = subpackages
                 .iter()
                 .zip(picked)
@@ -3410,19 +3913,25 @@ pub(crate) fn install_with_choice(
 /// `onInstallationEnd`). Best-effort: failing to remember a preference must not
 /// look like a failed install.
 pub(crate) fn remember_bain_options(app: &App, mod_name: &str, choice: &PickerChoice) {
-    let (PickerChoice::Bain(subs), Some(inst)) = (choice, app.created.as_ref()) else { return };
+    let (PickerChoice::Bain(subs), Some(inst)) = (choice, app.created.as_ref()) else {
+        return;
+    };
     let mut meta = inst.mod_meta(mod_name);
     meta.set_bain_options(subs);
     let _ = meta.write(&inst.meta_path(mod_name));
 }
 
 pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
-    let Some(c) = app.collision.take() else { return };
+    let Some(c) = app.collision.take() else {
+        return;
+    };
     // A FOMOD reinstall: the wizard (with the user's choices) is still open in
     // app.fomod - resolve through finish_fomod, never by re-extracting with
     // default selections.
     if c.fomod {
-        let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else { return };
+        let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
+            return;
+        };
         // A Rename onto another existing mod re-opens the prompt BEFORE the
         // session is consumed (its drop would delete the extracted tree).
         if let eidos_install::OverwritePolicy::Rename(new) = &policy {
@@ -3434,8 +3943,14 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         }
         let Some(w) = app.fomod.take() else { return };
         let archive = w.archive.clone();
-        match eidos_install::finish_fomod(w.session, &w.selection, &mods_dir, &w.game_id, &w.ctx, policy)
-        {
+        match eidos_install::finish_fomod(
+            w.session,
+            &w.selection,
+            &mods_dir,
+            &w.game_id,
+            &w.ctx,
+            policy,
+        ) {
             Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
             Err(e) => app.status = Some(format!("Install failed: {e}")),
         }
@@ -3446,10 +3961,18 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         return;
     };
     let mods_dir = inst.mods_dir();
-    let enabled_roots: Vec<std::path::PathBuf> =
-        app.mods.iter().filter(|m| m.is_active()).map(|m| m.path.clone()).collect();
-    let disabled_roots: Vec<std::path::PathBuf> =
-        app.mods.iter().filter(|m| !m.is_active() && !m.is_separator()).map(|m| m.path.clone()).collect();
+    let enabled_roots: Vec<std::path::PathBuf> = app
+        .mods
+        .iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.path.clone())
+        .collect();
+    let disabled_roots: Vec<std::path::PathBuf> = app
+        .mods
+        .iter()
+        .filter(|m| !m.is_active() && !m.is_separator())
+        .map(|m| m.path.clone())
+        .collect();
     let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
     let archive = c.archive.clone();
     // A collision raised by the manual / BAIN picker: replay the SAME picks. The
@@ -3457,13 +3980,7 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
     // plain installer here would quietly install something else.
     if let (Some(choice), Some(tree)) = (c.pick.as_ref(), c.tree.as_ref()) {
         match install_with_choice(
-            tree,
-            choice,
-            &c.archive,
-            &mods_dir,
-            &c.name,
-            &c.game_id,
-            policy,
+            tree, choice, &c.archive, &mods_dir, &c.name, &c.game_id, policy,
         ) {
             Ok(r) => {
                 remember_bain_options(app, &r.name, choice);
@@ -3481,21 +3998,10 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
     // fresh extraction if it is gone.
     let result = match c.tree.as_ref() {
         Some(tree) => eidos_install::install_extracted(
-            tree,
-            &c.archive,
-            &mods_dir,
-            &c.name,
-            &c.game_id,
-            policy,
-            &ctx,
+            tree, &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
         ),
         None => eidos_install::install_archive_with_policy(
-            &c.archive,
-            &mods_dir,
-            &c.name,
-            &c.game_id,
-            policy,
-            &ctx,
+            &c.archive, &mods_dir, &c.name, &c.game_id, policy, &ctx,
         ),
     };
     match result {
@@ -3571,9 +4077,11 @@ pub(crate) fn load_save_details(app: &mut App) {
     app.save_shot = Some((
         path.clone(),
         parsed.as_ref().ok().and_then(|info| {
-            eidos_gamefeatures::read_screenshot_with(&path, info).ok().map(|shot| {
-                iced::widget::image::Handle::from_rgba(shot.width, shot.height, shot.rgba)
-            })
+            eidos_gamefeatures::read_screenshot_with(&path, info)
+                .ok()
+                .map(|shot| {
+                    iced::widget::image::Handle::from_rgba(shot.width, shot.height, shot.rgba)
+                })
         }),
     ));
     app.save_missing = match (&parsed, app.plugins.as_ref()) {
@@ -3595,14 +4103,23 @@ pub(crate) fn load_save_details(app: &mut App) {
                 .mods
                 .iter()
                 .filter(|m| !m.is_separator())
-                .map(|m| eidos_gamefeatures::ModFolder { name: &m.name, path: &m.path })
+                .map(|m| eidos_gamefeatures::ModFolder {
+                    name: &m.name,
+                    path: &m.path,
+                })
                 .collect();
             if let Some(o) = overwrite.as_deref() {
-                mods.push(eidos_gamefeatures::ModFolder { name: "Overwrite", path: o });
+                mods.push(eidos_gamefeatures::ModFolder {
+                    name: "Overwrite",
+                    path: o,
+                });
             }
             let data = selected_game(app).map(|g| g.data_path.clone());
             if let Some(d) = data.as_deref() {
-                mods.push(eidos_gamefeatures::ModFolder { name: "(game data)", path: d });
+                mods.push(eidos_gamefeatures::ModFolder {
+                    name: "(game data)",
+                    path: d,
+                });
             }
             eidos_gamefeatures::missing_plugins(info, &known, &mods, data.as_deref())
         }
@@ -3680,7 +4197,10 @@ pub(crate) fn load_downloads(app: &mut App) {
                 let touched = std::fs::metadata(&meta_path)
                     .and_then(|m| m.modified())
                     .map_or(modified, |t| t.max(modified));
-                let quiet = touched.elapsed().map(|d| d > STALLED_AFTER).unwrap_or(false);
+                let quiet = touched
+                    .elapsed()
+                    .map(|d| d > STALLED_AFTER)
+                    .unwrap_or(false);
                 // Paused BEATS the mtime heuristic, in both directions. A user
                 // who paused a second ago has a fresh mtime and would otherwise
                 // still read as "Downloading" for the whole quiet window; and
@@ -3708,7 +4228,11 @@ pub(crate) fn load_downloads(app: &mut App) {
                 // Show the eventual size while it is arriving, so the number does
                 // not creep upward in the Size column while the bar already says
                 // how far along it is.
-                size: if partial && total != 0 { total } else { md.len() },
+                size: if partial && total != 0 {
+                    total
+                } else {
+                    md.len()
+                },
                 version: meta.version().unwrap_or_default(),
                 mod_name: meta.mod_name(),
                 mod_id: meta.mod_id(),
@@ -3735,7 +4259,9 @@ pub(crate) fn load_downloads(app: &mut App) {
         // sidecar's modName is searched as well.
         rows.retain(|r| {
             r.name.to_lowercase().contains(&q)
-                || r.mod_name.as_deref().is_some_and(|m| m.to_lowercase().contains(&q))
+                || r.mod_name
+                    .as_deref()
+                    .is_some_and(|m| m.to_lowercase().contains(&q))
         });
     }
     match app.dl_sort {
@@ -3744,14 +4270,16 @@ pub(crate) fn load_downloads(app: &mut App) {
         // one: sorting by the archive file name puts `SkyUI_5_2_SE-12604.7z`
         // under S while the row reads "SkyUI", and a list ordered by something
         // invisible reads as unordered.
-        DownloadSort::Name => rows
-            .sort_by_key(|r| r.mod_name.as_deref().unwrap_or(r.name.as_str()).to_lowercase()),
+        DownloadSort::Name => rows.sort_by_key(|r| {
+            r.mod_name
+                .as_deref()
+                .unwrap_or(r.name.as_str())
+                .to_lowercase()
+        }),
         DownloadSort::Size => rows.sort_by_key(|r| std::cmp::Reverse(r.size)),
         // Within a state, newest first - so the secondary order is the one the
         // list has always had rather than whatever read_dir happened to return.
-        DownloadSort::State => {
-            rows.sort_by_key(|r| (r.state as u8, std::cmp::Reverse(r.modified)))
-        }
+        DownloadSort::State => rows.sort_by_key(|r| (r.state as u8, std::cmp::Reverse(r.modified))),
     }
     rows.truncate(SAVES_LIST_CAP);
 
@@ -3760,7 +4288,10 @@ pub(crate) fn load_downloads(app: &mut App) {
     // zero, which would read as "stopped".
     let now = std::time::Instant::now();
     let mut samples = HashMap::new();
-    for r in rows.iter_mut().filter(|r| r.state == DownloadState::Downloading) {
+    for r in rows
+        .iter_mut()
+        .filter(|r| r.state == DownloadState::Downloading)
+    {
         if let Some((then, bytes)) = app.download_samples.get(&r.name) {
             let secs = now.duration_since(*then).as_secs_f64();
             // Guard both ends: a tick that arrives too close carries no signal,
@@ -3805,7 +4336,13 @@ pub(crate) fn copy_dir_contents(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// Shared post-install step: give the new mod the highest priority (wins conflicts
 /// by default, like MO2), reload the list, and invalidate the plugin + conflict
 /// caches. modlist() is lowest-priority-first, so highest = the END of the list.
-pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: bool, archive: Option<&Path>) {
+pub(crate) fn after_install(
+    app: &mut App,
+    name: &str,
+    dest: PathBuf,
+    fomod: bool,
+    archive: Option<&Path>,
+) {
     if let Some(inst) = &app.created {
         // Same lock as save_mods: the modlist must not be rewritten under a
         // running session. A refusal is not a lost install - the files are on
@@ -3880,14 +4417,17 @@ pub(crate) fn after_install(app: &mut App, name: &str, dest: PathBuf, fomod: boo
     }
     // A note the drop left for the installer to deliver - it could not say it
     // itself, because this line would have overwritten it.
-    let note = app.pending_note.take().map(|n| format!(" ({n})")).unwrap_or_default();
+    let note = app
+        .pending_note
+        .take()
+        .map(|n| format!(" ({n})"))
+        .unwrap_or_default();
     app.status = Some(if fomod {
         format!("Installed '{name}' via FOMOD{where_to}{note}.")
     } else {
         format!("Installed '{name}'{where_to}{note}.")
     });
 }
-
 
 /// The install-collision chooser card (MO2's QueryOverwriteDialog): Merge / Replace
 /// / Rename / Cancel for an already-existing `mods/<name>/`.
@@ -3940,7 +4480,11 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
                 .on_press(Message::CollisionCancel)
                 .style(button::text),
         );
-    container(card).max_width(460.0).padding(16).style(card_style).into()
+    container(card)
+        .max_width(460.0)
+        .padding(16)
+        .style(card_style)
+        .into()
 }
 
 /// How many tree rows the manual picker draws. An archive with more entries than
@@ -3961,14 +4505,16 @@ pub(crate) fn nested_archive_hint(rows: &[eidos_install::TreeRow]) -> Option<Str
         .iter()
         .filter(|r| !r.is_dir)
         .filter(|r| {
-            r.name
-                .rsplit_once('.')
-                .is_some_and(|(_, e)| matches!(e.to_ascii_lowercase().as_str(), "7z" | "zip" | "rar"))
+            r.name.rsplit_once('.').is_some_and(|(_, e)| {
+                matches!(e.to_ascii_lowercase().as_str(), "7z" | "zip" | "rar")
+            })
         })
         .count();
     match n {
         0 => None,
-        1 => Some("This archive contains another archive - the mod is probably inside it.".to_string()),
+        1 => Some(
+            "This archive contains another archive - the mod is probably inside it.".to_string(),
+        ),
         n => Some(format!(
             "This archive contains {n} archives - it is a set of variants, and the mod is inside \
              the one you want."
@@ -3994,7 +4540,11 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
     let (title, body): (String, Element<'a, Message>) = match &p.mode {
         // MO2 asks before assuming: an archive whose top level mixes sub-packages
         // with other folders is as likely to be a plain mod with extras.
-        PickerMode::Bain { asking: true, subpackages, .. } => (
+        PickerMode::Bain {
+            asking: true,
+            subpackages,
+            ..
+        } => (
             "May be a BAIN installer".to_string(),
             Column::new()
                 .spacing(10)
@@ -4024,13 +4574,18 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 )
                 .into(),
         ),
-        PickerMode::Bain { subpackages, picked, .. } => {
+        PickerMode::Bain {
+            subpackages,
+            picked,
+            ..
+        } => {
             // No spacing: the insertion strips below provide the separation, and they
-    // must be part of the flow so the layout is identical with and without a drag.
-    let mut list = Column::new();
+            // must be part of the flow so the layout is identical with and without a drag.
+            let mut list = Column::new();
             for (i, (name, &on)) in subpackages.iter().zip(picked).enumerate() {
                 list = list.push(
-                    checkbox(on).label(name.clone())
+                    checkbox(on)
+                        .label(name.clone())
                         .on_toggle(move |_| Message::PickerBainToggle(i))
                         .size(13.0)
                         .text_size(12.0),
@@ -4053,13 +4608,21 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             // construction, never a re-walk of the extraction inside view().
             let rules = eidos_install::LayoutRules::for_game(&p.game_id);
             let valid = p.archive_tree.root_looks_valid(root, rules);
-            let chosen = if root.is_empty() { "<archive root>" } else { root.as_str() };
+            let chosen = if root.is_empty() {
+                "<archive root>"
+            } else {
+                root.as_str()
+            };
 
             let mut list = Column::new().spacing(1).push(
                 button(text("<archive root>").size(12.0))
                     .padding([1, 4])
                     .on_press(Message::PickerSetRoot(String::new()))
-                    .style(if root.is_empty() { button::primary } else { button::text }),
+                    .style(if root.is_empty() {
+                        button::primary
+                    } else {
+                        button::text
+                    }),
             );
             for r in p.rows.iter().filter(|r| r.is_dir).take(PICKER_TREE_ROWS) {
                 let selected = *root == r.path;
@@ -4068,7 +4631,11 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                     button(text(label).size(12.0))
                         .padding([1, 4])
                         .on_press(Message::PickerSetRoot(r.path.clone()))
-                        .style(if selected { button::primary } else { button::text }),
+                        .style(if selected {
+                            button::primary
+                        } else {
+                            button::text
+                        }),
                 );
             }
             (
@@ -4117,7 +4684,11 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
         }
     };
 
-    let mut card = Column::new().spacing(10).push(text(title).size(15.0)).push(name_row).push(body);
+    let mut card = Column::new()
+        .spacing(10)
+        .push(text(title).size(15.0))
+        .push(name_row)
+        .push(body);
 
     // No Install button while the BAIN question is open: the answer decides which
     // installer would even run.
@@ -4139,9 +4710,12 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 ),
         );
     }
-    container(card).max_width(520.0).padding(16).style(card_style).into()
+    container(card)
+        .max_width(520.0)
+        .padding(16)
+        .style(card_style)
+        .into()
 }
-
 
 /// Whether this process is talking Wayland rather than X11.
 ///
@@ -4155,7 +4729,6 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
 pub(crate) fn on_wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some_and(|v| !v.is_empty())
 }
-
 
 /// The Archives tab: every BSA/BA2 the enabled mods ship, and whether the engine
 /// will actually load it.
@@ -4187,7 +4760,13 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text(format!("{} archive(s) across your enabled mods", rows.len())).size(13.0))
+        .push(
+            text(format!(
+                "{} archive(s) across your enabled mods",
+                rows.len()
+            ))
+            .size(13.0),
+        )
         .push(Space::new().width(Length::Fill))
         .push(
             text(if orphans == 0 {
@@ -4196,14 +4775,22 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                 format!("{orphans} will not load")
             })
             .size(11.0)
-            .color(if orphans == 0 { conflict_wins_fg() } else { conflict_loses_fg() }),
+            .color(if orphans == 0 {
+                conflict_wins_fg()
+            } else {
+                conflict_loses_fg()
+            }),
         );
 
     let col_header = Row::new()
         .spacing(8)
         .push(text("Archive").size(11.0).width(Length::FillPortion(3)))
         .push(text("From mod").size(11.0).width(Length::FillPortion(2)))
-        .push(text("Loaded because").size(11.0).width(Length::FillPortion(3)));
+        .push(
+            text("Loaded because")
+                .size(11.0)
+                .width(Length::FillPortion(3)),
+        );
 
     let mut list = Column::new();
     if rows.is_empty() {
@@ -4221,10 +4808,24 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         let row = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(r.archive.clone()).size(12.0).width(Length::FillPortion(3)))
-            .push(text(r.mod_name.clone()).size(11.0).width(Length::FillPortion(2)))
+            .push(
+                text(r.archive.clone())
+                    .size(12.0)
+                    .width(Length::FillPortion(3)),
+            )
+            .push(
+                text(r.mod_name.clone())
+                    .size(11.0)
+                    .width(Length::FillPortion(2)),
+            )
             .push(container(why).width(Length::FillPortion(3)));
-        list = list.push(list_row(container(row).padding(3).into(), i % 2 == 0, false, None, None));
+        list = list.push(list_row(
+            container(row).padding(3).into(),
+            i % 2 == 0,
+            false,
+            None,
+            None,
+        ));
     }
 
     Column::new()

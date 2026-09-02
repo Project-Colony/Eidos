@@ -21,7 +21,9 @@ fn collect(dir: &Path, base: &Path, out: &mut Vec<String>, cap: usize) {
     if out.len() >= cap {
         return;
     }
-    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
     for e in rd.flatten() {
         if out.len() >= cap {
             return;
@@ -48,7 +50,11 @@ fn main() {
         .map(PathBuf::from)
         .filter(|p| p.is_dir())
         .collect();
-    eprintln!("layers: {}   overwrite: {}", layers.len(), overwrite.display());
+    eprintln!(
+        "layers: {}   overwrite: {}",
+        layers.len(),
+        overwrite.display()
+    );
 
     // Sample real paths across layers proportionally to have mod paths AND game
     // paths in the workload, not just whichever layer enumerates first.
@@ -94,7 +100,11 @@ fn main() {
         }
         let elapsed = t.elapsed();
         let after = snap();
-        let d: Vec<u64> = after.iter().zip(before.iter()).map(|(a, b)| a - b).collect();
+        let d: Vec<u64> = after
+            .iter()
+            .zip(before.iter())
+            .map(|(a, b)| a - b)
+            .collect();
         println!(
             "{label:>9}: {n} resolves, {found} found, {ms} ms ({us:.1} µs/resolve)\n\
              {pad}  probes {p} (overwrite {owp}, walk {wp})  scans {s} (overwrite {ows}, walk {ws})\n\

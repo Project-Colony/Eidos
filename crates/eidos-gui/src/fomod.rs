@@ -28,7 +28,10 @@ pub(crate) fn step_valid(w: &FomodWizard) -> bool {
         return true;
     };
     for (gi, group) in step.groups.iter().enumerate() {
-        let count = sel.get(gi).map(|g| g.iter().filter(|&&x| x).count()).unwrap_or(0);
+        let count = sel
+            .get(gi)
+            .map(|g| g.iter().filter(|&&x| x).count())
+            .unwrap_or(0);
         let ok = match group.group_type {
             SelectExactlyOne => count == 1,
             SelectAtLeastOne => count >= 1,
@@ -186,7 +189,10 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     // Number by position among the steps that will actually be shown.
     let vis = eidos_fomod::visible_steps(config, &w.selection, &w.ctx);
     let total = vis.iter().filter(|v| **v).count().max(1);
-    let shown_no = (0..=w.step).filter(|&i| vis.get(i).copied().unwrap_or(false)).count().max(1);
+    let shown_no = (0..=w.step)
+        .filter(|&i| vis.get(i).copied().unwrap_or(false))
+        .count()
+        .max(1);
 
     // What the preview is about: the hovered option, else the first selected one,
     // else the first option of the step.
@@ -198,14 +204,22 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         let sel = w.selection.get(w.step)?;
         s.groups.iter().enumerate().find_map(|(gi, g)| {
             (0..g.plugins.len())
-                .find(|&pi| sel.get(gi).and_then(|gg| gg.get(pi)).copied().unwrap_or(false))
+                .find(|&pi| {
+                    sel.get(gi)
+                        .and_then(|gg| gg.get(pi))
+                        .copied()
+                        .unwrap_or(false)
+                })
                 .map(|pi| (gi, pi))
         })
     });
     let current = current.or_else(|| step.and_then(|s| (!s.groups.is_empty()).then_some((0, 0))));
 
     // ---- header: which mod, which step ----
-    let bold = iced::Font { weight: iced::font::Weight::Bold, ..iced::Font::DEFAULT };
+    let bold = iced::Font {
+        weight: iced::font::Weight::Bold,
+        ..iced::Font::DEFAULT
+    };
     // The name takes Length::Fill and the chip stays Shrink. iced's flex measures
     // the Shrink children first and hands what is left to the Fill ones, so the
     // chip is always laid out at its full size; with the name left as Shrink it was
@@ -213,7 +227,12 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let mut title = Row::new()
         .spacing(10)
         .align_y(iced::Alignment::Center)
-        .push(text(config.module_name.clone()).size(17.0).font(bold).width(Length::Fill));
+        .push(
+            text(config.module_name.clone())
+                .size(17.0)
+                .font(bold)
+                .width(Length::Fill),
+        );
     if let Some(s) = step {
         title = title.push(text(s.name.clone()).size(12.0).color(fomod_ink_faint()));
     }
@@ -221,14 +240,19 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // The step counter as a chip, so it reads as status rather than as one
         // more sentence competing with the mod's name.
         container(
-            text(format!("Step {shown_no} of {total}")).size(11.0).color(fomod_on_accent()),
+            text(format!("Step {shown_no} of {total}"))
+                .size(11.0)
+                .color(fomod_on_accent()),
         )
-            .padding([3, 9])
-            .style(|t: &Theme| container::Style {
-                background: Some(Background::Color(t.palette().primary)),
-                border: Border { radius: 9.0.into(), ..Default::default() },
+        .padding([3, 9])
+        .style(|t: &Theme| container::Style {
+            background: Some(Background::Color(t.palette().primary)),
+            border: Border {
+                radius: 9.0.into(),
                 ..Default::default()
-            }),
+            },
+            ..Default::default()
+        }),
     );
 
     // ---- left: the options, compact ----
@@ -272,8 +296,11 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     .and_then(|g| g.get(pi))
                     .copied()
                     .unwrap_or(false);
-                let ptype =
-                    types.get(gi).and_then(|g| g.get(pi)).copied().unwrap_or(PluginType::Optional);
+                let ptype = types
+                    .get(gi)
+                    .and_then(|g| g.get(pi))
+                    .copied()
+                    .unwrap_or(PluginType::Optional);
                 let usable = ptype != PluginType::NotUsable;
                 // Two ways an option can be present but not yours to change, and
                 // neither may offer a click that does nothing or, worse, one that
@@ -292,9 +319,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                 //     row over. The engine says the choice is forced; the view
                 //     has to say it too.
                 let group_forced = radio
-                    && types.get(gi).is_some_and(|g| {
-                        g.iter().any(|t| matches!(t, PluginType::Required))
-                    });
+                    && types
+                        .get(gi)
+                        .is_some_and(|g| g.iter().any(|t| matches!(t, PluginType::Required)));
                 let locked = matches!(ptype, PluginType::Required)
                     || matches!(group.group_type, GroupType::SelectAll)
                     || group_forced;
@@ -315,7 +342,12 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     .spacing(8)
                     .align_y(iced::Alignment::Center)
                     .push(fomod_marker(on, usable, radio))
-                    .push(text(plugin.name.clone()).size(12.5).color(label).width(Length::Fill))
+                    .push(
+                        text(plugin.name.clone())
+                            .size(12.5)
+                            .color(label)
+                            .width(Length::Fill),
+                    )
                     // 10px, not 9.5, and in the darker ink: this string carries the
                     // author's own guidance and was being rendered at 2.7:1.
                     .push(text(tag).size(10.0).color(if on {
@@ -323,17 +355,18 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     } else {
                         fomod_ink_soft()
                     }));
-                let mut b = button(row)
-                    .padding([7, 9])
-                    .width(Length::Fill)
-                    .style(move |t: &Theme, s: button::Status| {
+                let mut b = button(row).padding([7, 9]).width(Length::Fill).style(
+                    move |t: &Theme, s: button::Status| {
                         // A locked row must not light up on hover: the highlight is
                         // a promise that a click will do something.
                         let hovered = matches!(s, button::Status::Hovered) && !locked;
                         let bg = if on {
                             t.palette().primary
                         } else if !usable {
-                            Color { a: 0.35, ..fomod_row_bg() }
+                            Color {
+                                a: 0.35,
+                                ..fomod_row_bg()
+                            }
                         } else if hovered {
                             fomod_row_hover()
                         } else {
@@ -343,13 +376,18 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                             background: Some(Background::Color(bg)),
                             text_color: label,
                             border: Border {
-                                color: if on { t.palette().primary } else { fomod_rule_color() },
+                                color: if on {
+                                    t.palette().primary
+                                } else {
+                                    fomod_rule_color()
+                                },
                                 width: 1.0,
                                 radius: 5.0.into(),
                             },
                             ..Default::default()
                         }
-                    });
+                    },
+                );
                 if usable && !locked {
                     b = b.on_press(Message::FomodToggle(gi, pi));
                 }
@@ -369,7 +407,12 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let art = shown
         .and_then(|p| p.image.as_ref())
         .and_then(|p| w.session.resolve(p))
-        .or_else(|| config.module_image.as_ref().and_then(|p| w.session.resolve(p)));
+        .or_else(|| {
+            config
+                .module_image
+                .as_ref()
+                .and_then(|p| w.session.resolve(p))
+        });
     let preview: Element<'_, Message> = match art {
         // `contain` keeps the aspect ratio inside the fixed box, so a portrait
         // body shot and a letterbox eyebrow sheet both sit still.
@@ -380,10 +423,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
             .into(),
         // INK_SOFT, not FAINT: this sits on the preview fill, which is darker than
         // the page, so the faint ink fell to 2.4:1 and the box just read as blank.
-        None => container(text("No preview for this option.").size(12.0).color(fomod_ink_soft()))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .into(),
+        None => container(
+            text("No preview for this option.")
+                .size(12.0)
+                .color(fomod_ink_soft()),
+        )
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
+        .into(),
     };
     let mut right = Column::new().spacing(10).push(
         container(preview)
@@ -404,12 +451,18 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // Name on its own line, description under it. A Row would have kept the
         // name from ever wrapping with the paragraph, and FOMOD descriptions are
         // paragraphs - CBBE's run to several lines.
-        let mut d = Column::new()
-            .spacing(4)
-            .push(text(p.name.clone()).size(13.0).font(bold).width(Length::Fill));
+        let mut d = Column::new().spacing(4).push(
+            text(p.name.clone())
+                .size(13.0)
+                .font(bold)
+                .width(Length::Fill),
+        );
         if !p.description.is_empty() {
             d = d.push(
-                text(p.description.clone()).size(12.0).color(fomod_ink_soft()).width(Length::Fill),
+                text(p.description.clone())
+                    .size(12.0)
+                    .color(fomod_ink_soft())
+                    .width(Length::Fill),
             );
         }
         // Scrollable, because the preview box above it is a hard 420px and the pane
@@ -429,7 +482,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let mut nav = Row::new().spacing(8).align_y(iced::Alignment::Center);
     if !valid {
         nav = nav.push(
-            text("Select the required option(s) to continue.").size(11.0).color(fomod_ink_faint()),
+            text("Select the required option(s) to continue.")
+                .size(11.0)
+                .color(fomod_ink_faint()),
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
@@ -437,8 +492,11 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     if has_prev {
         nav = nav.push(fomod_btn("Back", Some(Message::FomodBack), false));
     }
-    let (label, msg) =
-        if has_next { ("Next", Message::FomodNext) } else { ("Install", Message::FomodInstall) };
+    let (label, msg) = if has_next {
+        ("Next", Message::FomodNext)
+    } else {
+        ("Install", Message::FomodInstall)
+    };
     // The one button that carries the flow gets the burgundy. When the step is
     // unsatisfied it keeps its place and its size and simply stops responding,
     // rather than vanishing and shifting the whole row.
@@ -460,7 +518,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                 }))
                 .height(Length::Fill),
             )
-                .width(Length::Fixed(FOMOD_OPTIONS_W)),
+            .width(Length::Fixed(FOMOD_OPTIONS_W)),
         )
         .push(fomod_rule(true))
         .push(container(right).width(Length::Fill));
@@ -483,11 +541,19 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
 /// ticking an option can reveal or hide a later step, which flips "Next" to
 /// "Install" and back. The row is right-aligned behind a Fill spacer, so an 8px
 /// change in that one label slid Cancel and Back sideways under the pointer.
-pub(crate) fn fomod_btn<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> Element<'a, Message> {
+pub(crate) fn fomod_btn<'a>(
+    label: &'a str,
+    msg: Option<Message>,
+    primary: bool,
+) -> Element<'a, Message> {
     let live = msg.is_some();
     let mut b = button(text(label).size(12.5).width(Length::Fill).center())
         .padding([7, 16])
-        .width(if primary { Length::Fixed(104.0) } else { Length::Shrink })
+        .width(if primary {
+            Length::Fixed(104.0)
+        } else {
+            Length::Shrink
+        })
         .style(move |t: &Theme, s: button::Status| {
             let hovered = matches!(s, button::Status::Hovered);
             let p = t.palette().primary;
@@ -506,7 +572,11 @@ pub(crate) fn fomod_btn<'a>(label: &'a str, msg: Option<Message>, primary: bool)
                 background: Some(Background::Color(bg)),
                 text_color: fg,
                 border: Border {
-                    color: if primary && live { Color { a: 0.0, ..p } } else { fomod_rule_color() },
+                    color: if primary && live {
+                        Color { a: 0.0, ..p }
+                    } else {
+                        fomod_rule_color()
+                    },
                     width: 1.0,
                     radius: 5.0.into(),
                 },

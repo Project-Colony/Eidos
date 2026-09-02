@@ -2,7 +2,6 @@
 
 use std::process::exit;
 
-
 use crate::*;
 
 /// `eidos export <game-id> [-o <file>] [--active]`: export the active profile's mod
@@ -15,10 +14,17 @@ pub(crate) fn cmd_export(args: &[String]) {
         exit(2);
     };
     let active_only = args.iter().any(|a| a == "--active");
-    let out_path = args.iter().position(|a| a == "-o").and_then(|i| args.get(i + 1)).cloned();
+    let out_path = args
+        .iter()
+        .position(|a| a == "-o")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
     let target = resolve(id);
     let Some(game) = find_game(&target.game_id) else {
-        eidos_log::info!("Game '{}' is not detected. Run `eidos games`.", target.game_id);
+        eidos_log::info!(
+            "Game '{}' is not detected. Run `eidos games`.",
+            target.game_id
+        );
         exit(1);
     };
     let inst = target.inst;
@@ -28,7 +34,11 @@ pub(crate) fn cmd_export(args: &[String]) {
     let (csv, count) = eidos_instance::mod_list_csv(
         &inst,
         &inst.modlist(),
-        if active_only { eidos_instance::ExportScope::Active } else { eidos_instance::ExportScope::All },
+        if active_only {
+            eidos_instance::ExportScope::Active
+        } else {
+            eidos_instance::ExportScope::All
+        },
         eidos_instance::Column::ALL,
         domain,
     );

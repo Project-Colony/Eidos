@@ -36,13 +36,19 @@ fn a_session_writes_a_header_then_redacted_levelled_lines_and_rotates() {
     let path = eidos_log::init_with(cfg).expect("a session log should open under a temp dir");
     assert!(path.starts_with(&dir));
     let name = path.file_name().unwrap().to_string_lossy().into_owned();
-    assert!(name.starts_with("sse-test."), "{name} should be bucketed by instance");
+    assert!(
+        name.starts_with("sse-test."),
+        "{name} should be bucketed by instance"
+    );
     assert!(name.ends_with(".log"), "{name} should be a .log");
 
     // Rotation ran while opening: the current file plus one older survivor.
     let left = fs::read_dir(&dir).unwrap().count();
     assert_eq!(left, 2, "keep = 2 should have pruned the stale sessions");
-    assert!(old[4].exists(), "the newest stale session should be the survivor");
+    assert!(
+        old[4].exists(),
+        "the newest stale session should be the survivor"
+    );
     assert!(old[..4].iter().all(|p| !p.exists()));
 
     eidos_log::info!("deployed {} mods", 3);
@@ -54,13 +60,19 @@ fn a_session_writes_a_header_then_redacted_levelled_lines_and_rotates() {
     assert_eq!(eidos_log::path().as_deref(), Some(path.as_path()));
 
     let text = fs::read_to_string(&path).unwrap();
-    assert!(text.starts_with("==== eidos session log ===="), "missing header:\n{text}");
+    assert!(
+        text.starts_with("==== eidos session log ===="),
+        "missing header:\n{text}"
+    );
     assert!(text.contains("instance : sse-test"));
     assert!(text.contains("version  : eidos 1.2.3"));
     assert!(text.contains(&format!("pid      : {}", std::process::id())));
     assert!(text.contains("INFO  deployed 3 mods"), "{text}");
     assert!(text.contains("WARN  no Proton prefix"), "{text}");
-    assert!(text.contains("ERROR mount failed: operation not permitted"), "{text}");
+    assert!(
+        text.contains("ERROR mount failed: operation not permitted"),
+        "{text}"
+    );
     assert!(text.contains("DEBUG resolved 812 layers"), "{text}");
 
     // Every record carries a full local timestamp, so a single pasted line is
@@ -70,15 +82,25 @@ fn a_session_writes_a_header_then_redacted_levelled_lines_and_rotates() {
         .find(|l| l.contains("INFO  deployed"))
         .expect("the info record");
     let stamp = &record[..23];
-    assert_eq!(stamp.len(), 23, "expected `YYYY-MM-DD HH:MM:SS.mmm`, got {record}");
-    assert!(stamp.chars().filter(|c| *c == '-').count() == 2 && stamp.contains(':'), "{record}");
+    assert_eq!(
+        stamp.len(),
+        23,
+        "expected `YYYY-MM-DD HH:MM:SS.mmm`, got {record}"
+    );
+    assert!(
+        stamp.chars().filter(|c| *c == '-').count() == 2 && stamp.contains(':'),
+        "{record}"
+    );
 
     // The header echoes argv, which under a normal `cargo test` is the test
     // binary inside the user's home: nothing that identifies them may survive.
     if let Ok(home) = std::env::var("HOME") {
         let home = home.trim_end_matches('/').to_string();
         if home.len() >= 2 && home.starts_with('/') {
-            assert!(!text.contains(&home), "the home path leaked into the log:\n{text}");
+            assert!(
+                !text.contains(&home),
+                "the home path leaked into the log:\n{text}"
+            );
             eidos_log::info!("archive at {}/Downloads/mod.7z", home);
             let text = fs::read_to_string(&path).unwrap();
             assert!(text.contains("archive at ~/Downloads/mod.7z"), "{text}");

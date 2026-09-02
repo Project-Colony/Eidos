@@ -101,7 +101,9 @@ impl Registry {
             if line.is_empty() || line.starts_with('[') || line.starts_with('#') {
                 continue;
             }
-            let Some((k, v)) = eidos_ini::key_value(line) else { continue };
+            let Some((k, v)) = eidos_ini::key_value(line) else {
+                continue;
+            };
             let v = v.trim();
             match k {
                 "portable" if !v.is_empty() => {
@@ -227,17 +229,27 @@ mod tests {
         reg.remember_portable(Path::new("/a"));
         reg.remember_portable(Path::new("/b"));
         reg.remember_portable(Path::new("/a"));
-        assert_eq!(reg.portables, vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+        assert_eq!(
+            reg.portables,
+            vec![PathBuf::from("/a"), PathBuf::from("/b")]
+        );
     }
 
     #[test]
     fn forget_also_clears_a_last_that_pointed_there() {
         let mut reg = Registry::default();
         reg.set_last(InstanceRef::Portable("/a".into()));
-        assert_eq!(reg.portables, vec![PathBuf::from("/a")], "set_last must remember too");
+        assert_eq!(
+            reg.portables,
+            vec![PathBuf::from("/a")],
+            "set_last must remember too"
+        );
         reg.forget_portable(Path::new("/a"));
         assert!(reg.portables.is_empty());
-        assert_eq!(reg.last, None, "a forgotten root must not linger as the default");
+        assert_eq!(
+            reg.last, None,
+            "a forgotten root must not linger as the default"
+        );
     }
 
     #[test]
@@ -245,7 +257,10 @@ mod tests {
         let mut reg = Registry::default();
         reg.set_last(InstanceRef::Portable("/mnt/we:ird/Eidos".into()));
         let back = Registry::parse(&reg.to_ini());
-        assert_eq!(back.last, Some(InstanceRef::Portable("/mnt/we:ird/Eidos".into())));
+        assert_eq!(
+            back.last,
+            Some(InstanceRef::Portable("/mnt/we:ird/Eidos".into()))
+        );
     }
 
     #[test]
@@ -274,8 +289,11 @@ mod tests {
         reg.remember_portable(&other);
         reg.set_last(InstanceRef::Portable(b.clone()));
 
-        let roots: Vec<PathBuf> =
-            reg.candidates_for("skyrimse").into_iter().map(|i| i.root).collect();
+        let roots: Vec<PathBuf> = reg
+            .candidates_for("skyrimse")
+            .into_iter()
+            .map(|i| i.root)
+            .collect();
         assert_eq!(roots[0], b, "the last-used instance leads");
         assert_eq!(roots[1], a, "then the MRU portables of the same game");
         assert_eq!(
@@ -283,7 +301,10 @@ mod tests {
             Some(&Instance::global("skyrimse").root),
             "the global path closes the list as the fallback"
         );
-        assert!(!roots.contains(&other), "another game's portable is never a candidate");
+        assert!(
+            !roots.contains(&other),
+            "another game's portable is never a candidate"
+        );
         for r in [a, b, other] {
             let _ = fs::remove_dir_all(&r);
         }

@@ -48,7 +48,11 @@ fn main() {
     let overwrite = root.join("overwrite");
     fs::create_dir_all(overwrite.join("textures/actors/character")).unwrap();
     for j in 0..OVERWRITE_FILES {
-        fs::write(overwrite.join(format!("textures/actors/character/o{j:04}.dds")), b"x").unwrap();
+        fs::write(
+            overwrite.join(format!("textures/actors/character/o{j:04}.dds")),
+            b"x",
+        )
+        .unwrap();
     }
 
     // The cost this trades against: one walk of every layer, at mount time.
@@ -59,11 +63,17 @@ fn main() {
     let stack = eidos_core::LayerStack::new(layers, overwrite);
     let build_ms = built.elapsed();
     let s = stack.resolve_stats();
-    let (p0, c0) = (s.probes.load(Ordering::Relaxed), s.scans.load(Ordering::Relaxed));
+    let (p0, c0) = (
+        s.probes.load(Ordering::Relaxed),
+        s.scans.load(Ordering::Relaxed),
+    );
 
     let started = std::time::Instant::now();
     for _ in 0..RESOLVES {
-        assert!(stack.resolve_read(rel).is_some(), "the file is in the last layer");
+        assert!(
+            stack.resolve_read(rel).is_some(),
+            "the file is in the last layer"
+        );
     }
     let elapsed = started.elapsed();
 
@@ -72,9 +82,18 @@ fn main() {
     let indexed = LAYERS * FILES_PER_DIR;
     println!("index built over {indexed} entries in {build_ms:?}");
     println!("{RESOLVES} resolves of one path, {LAYERS} layers, depth 6:");
-    println!("  probes {probes:>7}  ({} per resolve)", probes / u64::from(RESOLVES));
-    println!("  scans  {scans:>7}  ({} per resolve)", scans / u64::from(RESOLVES));
-    println!("  time   {elapsed:>9.2?}  ({:?} per resolve)", elapsed / RESOLVES);
+    println!(
+        "  probes {probes:>7}  ({} per resolve)",
+        probes / u64::from(RESOLVES)
+    );
+    println!(
+        "  scans  {scans:>7}  ({} per resolve)",
+        scans / u64::from(RESOLVES)
+    );
+    println!(
+        "  time   {elapsed:>9.2?}  ({:?} per resolve)",
+        elapsed / RESOLVES
+    );
 
     let _ = fs::remove_dir_all(&root);
 }

@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use eidos_games::DetectedGame;
 use eidos_instance::{Instance, ModEntry};
 
-
 /// The plugin-discovery sources in ASCENDING priority (later wins same-name
 /// shadowing), as fed to [`eidos_plugins::PluginList::discover`]: the game's own
 /// Data (lowest), then each enabled mod from lowest to highest priority, then the
@@ -22,7 +21,11 @@ pub(crate) fn plugin_sources(
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game_data.to_path_buf())];
     // `modlist()` is already in ascending-priority (MO2 display) order, so feed the
     // mods through as-is: lowest priority first, highest last.
-    sources.extend(enabled_lowest_first.iter().map(|m| (m.name.clone(), m.path.clone())));
+    sources.extend(
+        enabled_lowest_first
+            .iter()
+            .map(|m| (m.name.clone(), m.path.clone())),
+    );
     sources.push(("overwrite".to_string(), overwrite.to_path_buf()));
     sources
 }
@@ -56,7 +59,10 @@ pub(crate) fn prepare_plugins(
     // bound dir never shows the game less than the dir it wrote.
     match prof.seed_plugin_state(&prefix_dir, &spec) {
         Ok(n) if n > 0 => {
-            eidos_log::info!("eidos play: adopted {n} plugin-state file(s) into profile '{}'", prof.name)
+            eidos_log::info!(
+                "eidos play: adopted {n} plugin-state file(s) into profile '{}'",
+                prof.name
+            )
         }
         Ok(_) => {}
         Err(e) => {
@@ -80,13 +86,17 @@ pub(crate) fn prepare_plugins(
     // Judge the state the LAST session left, BEFORE this launch rewrites
     // anything - the snapshot-keeping decision below depends on it, and taking
     // the measurement after our own write poisoned it in both directions.
-    let session_damage = eidos_plugins::GameSpec::for_id(id)
-        .and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
+    let session_damage =
+        eidos_plugins::GameSpec::for_id(id).and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
 
     // Sources in ascending plugin priority: the game's own Data (lowest), each
     // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
     // into Overwrite are discovered and win same-name shadowing.
-    let enabled: Vec<ModEntry> = inst.modlist().into_iter().filter(|m| m.is_active()).collect();
+    let enabled: Vec<ModEntry> = inst
+        .modlist()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .collect();
     let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
 
     let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
@@ -182,7 +192,10 @@ pub(crate) fn prepare_inis(
 
     match prof.seed_inis(&docs, ini_files) {
         Ok(n) if n > 0 => {
-            eidos_log::info!("eidos play: seeded {n} INI(s) into profile '{}' from the prefix", prof.name)
+            eidos_log::info!(
+                "eidos play: seeded {n} INI(s) into profile '{}' from the prefix",
+                prof.name
+            )
         }
         Ok(_) => {}
         Err(e) => eidos_log::warn!("eidos play: WARNING - could not seed profile INIs: {e}"),
@@ -240,7 +253,9 @@ pub(crate) fn prepare_inis(
                         tweaked.push((f.to_string(), rec));
                     }
                     Ok(_) => {}
-                    Err(e) => eidos_log::warn!("eidos play: WARNING - could not apply INI tweaks to {f}: {e}"),
+                    Err(e) => eidos_log::warn!(
+                        "eidos play: WARNING - could not apply INI tweaks to {f}: {e}"
+                    ),
                 }
             }
         }
@@ -271,7 +286,8 @@ pub(crate) fn prepare_inis(
                     .collect::<Vec<_>>()
             })
             .collect();
-        let _ = eidos_gamefeatures::register_morrowind_archives(&docs.join("Morrowind.ini"), &mod_bsas);
+        let _ =
+            eidos_gamefeatures::register_morrowind_archives(&docs.join("Morrowind.ini"), &mod_bsas);
     } else if let Some(ini) = eidos_gamefeatures::ini_file_for(id) {
         if let Err(e) = eidos_gamefeatures::enable_file_selection(&docs, ini) {
             eidos_log::warn!("eidos play: could not enable launcher file selection: {e}");
@@ -279,7 +295,11 @@ pub(crate) fn prepare_inis(
     }
     // No capture cycle when the deploy failed: the prefix INIs are not this
     // profile's state and must not overwrite it after the run.
-    deploy_ok.then_some(PreparedInis { docs, ini_files, tweaked })
+    deploy_ok.then_some(PreparedInis {
+        docs,
+        ini_files,
+        tweaked,
+    })
 }
 
 /// One-way sync of the profile's save files into the REAL prefix Saves dir,
@@ -313,14 +333,15 @@ pub(crate) fn sync_saves_for_cloud(
             let path = e.path();
             // The shared predicate: hard-coding .ess/.skse here killed the cloud
             // backup for the Fallout and Starfield families.
-            if !eidos_instance::is_save_data(&e.file_name().to_string_lossy()) || !path.is_file()
-            {
+            if !eidos_instance::is_save_data(&e.file_name().to_string_lossy()) || !path.is_file() {
                 return None;
             }
             // An unreadable mtime sorts oldest rather than being skipped: an
             // extra copy is cheap, a hole in the backup is not.
-            let mtime =
-                e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
+            let mtime = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
             Some((path, mtime))
         })
         .collect();
@@ -331,15 +352,16 @@ pub(crate) fn sync_saves_for_cloud(
     // can tell its own copies from saves some session wrote there directly.
     // Lives on the profile side: the prefix belongs to the game and to Steam.
     let manifest_path = prof_saves.join(".cloud-sync-manifest");
-    let mut manifest: std::collections::HashSet<String> =
-        std::fs::read_to_string(&manifest_path)
-            .map(|t| t.lines().map(String::from).collect())
-            .unwrap_or_default();
+    let mut manifest: std::collections::HashSet<String> = std::fs::read_to_string(&manifest_path)
+        .map(|t| t.lines().map(String::from).collect())
+        .unwrap_or_default();
     let mut new_entries: Vec<String> = Vec::new();
 
     let mut n = 0;
     for (src, src_mtime) in files {
-        let Some(name) = src.file_name() else { continue };
+        let Some(name) = src.file_name() else {
+            continue;
+        };
         let dst = prefix_saves.join(name);
         match std::fs::metadata(&dst).and_then(|m| m.modified()) {
             Err(_) => {} // missing: plain copy below
@@ -401,7 +423,9 @@ pub(crate) fn preserve_diverged_save(
     dst_mtime: std::time::SystemTime,
     prof_saves: &std::path::Path,
 ) {
-    let (Ok(meta), Some(name)) = (std::fs::metadata(dst), dst.file_name()) else { return };
+    let (Ok(meta), Some(name)) = (std::fs::metadata(dst), dst.file_name()) else {
+        return;
+    };
     // "Known" comes in two shapes: an exact (size, mtime) twin anywhere in the
     // profile, or the profile's SAME-NAME file with the same size - the latter
     // because the original seeding used a copy that did not preserve mtimes, so
@@ -414,10 +438,14 @@ pub(crate) fn preserve_diverged_save(
         // few MB and this runs once per divergence, not per session.
         && std::fs::read(dst).ok() == std::fs::read(prof_saves.join(name)).ok();
     let known = same_name_same_size
-        || std::fs::read_dir(prof_saves).into_iter().flatten().flatten().any(|e| {
-            e.metadata()
-                .is_ok_and(|m| m.len() == meta.len() && m.modified().ok() == Some(dst_mtime))
-        });
+        || std::fs::read_dir(prof_saves)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|e| {
+                e.metadata()
+                    .is_ok_and(|m| m.len() == meta.len() && m.modified().ok() == Some(dst_mtime))
+            });
     if known {
         return;
     }
@@ -459,7 +487,10 @@ pub(crate) fn prepare_saves(
     let prefix_saves = docs.join("Saves");
     if let Ok(n) = prof.seed_saves(&prefix_saves) {
         if n > 0 {
-            eidos_log::info!("eidos play: adopted {n} existing save(s) into profile '{}'", prof.name);
+            eidos_log::info!(
+                "eidos play: adopted {n} existing save(s) into profile '{}'",
+                prof.name
+            );
         }
     }
     Some((prof.saves_dir(), prefix_saves))

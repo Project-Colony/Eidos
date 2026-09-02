@@ -8,29 +8,25 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
-use crate::{
-    ArchiveEntry, MAX_TREE_DEPTH,
-    ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES,
-};
+use crate::{ArchiveEntry, ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES, MAX_TREE_DEPTH};
 
 mod extract;
+mod fomod;
 mod fsops;
 mod meta;
-mod simple;
-mod root;
 mod picker;
-mod fomod;
+mod root;
+mod simple;
 #[cfg(test)]
 mod tests;
 
 pub use extract::*;
+pub use fomod::*;
 use fsops::*;
 pub use meta::*;
-pub use simple::*;
-use root::*;
 pub use picker::*;
-pub use fomod::*;
+use root::*;
+pub use simple::*;
 
 #[derive(Debug)]
 pub enum InstallError {
@@ -61,10 +57,16 @@ impl fmt::Display for InstallError {
             InstallError::No7z => write!(f, "no 7-Zip binary found (install p7zip: 7z/7zz/7za)"),
             InstallError::Extract(e) => write!(f, "extraction failed: {e}"),
             InstallError::NotSimple => {
-                write!(f, "not a simple archive (no recognised Data layout); manual install needed")
+                write!(
+                    f,
+                    "not a simple archive (no recognised Data layout); manual install needed"
+                )
             }
             InstallError::NeedsFomod => {
-                write!(f, "this is a FOMOD scripted installer - not yet supported (Tier 2)")
+                write!(
+                    f,
+                    "this is a FOMOD scripted installer - not yet supported (Tier 2)"
+                )
             }
             InstallError::Fomod(e) => write!(f, "FOMOD parse error: {e}"),
             InstallError::UnmetDependency(d) => {
@@ -113,14 +115,23 @@ impl ArchiveTree {
     /// 30k-entry archive is 30k syscalls); only an actual symlink pays the extra
     /// stat to learn what it points at.
     pub fn from_dir(root: &Path) -> io::Result<ArchiveTree> {
-        fn walk(base: &Path, dir: &Path, out: &mut Vec<ArchiveEntry>, depth: usize) -> io::Result<()> {
+        fn walk(
+            base: &Path,
+            dir: &Path,
+            out: &mut Vec<ArchiveEntry>,
+            depth: usize,
+        ) -> io::Result<()> {
             if depth > MAX_TREE_DEPTH {
                 return Ok(());
             }
             for e in fs::read_dir(dir)?.flatten() {
                 let p = e.path();
                 let Ok(t) = e.file_type() else { continue };
-                let is_dir = if t.is_symlink() { p.is_dir() } else { t.is_dir() };
+                let is_dir = if t.is_symlink() {
+                    p.is_dir()
+                } else {
+                    t.is_dir()
+                };
                 if let Ok(rel) = p.strip_prefix(base) {
                     out.push(ArchiveEntry {
                         path: rel.to_string_lossy().replace('\\', "/"),
@@ -213,7 +224,11 @@ pub fn open_archive(
     }
     let (subpackages, invalid) = layout.bain_subpackages(rules);
     if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
-        return Ok(Opened::Bain { tree, subpackages, invalid });
+        return Ok(Opened::Bain {
+            tree,
+            subpackages,
+            invalid,
+        });
     }
     // A Root Builder archive needs no question asked - the split is structural -
     // so it takes the Simple path, which `install_extracted` then lays out. Left to

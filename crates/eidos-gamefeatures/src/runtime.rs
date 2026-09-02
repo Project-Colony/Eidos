@@ -163,7 +163,10 @@ pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, Runti
     let got = sha256_file(&archive)?;
     if !got.eq_ignore_ascii_case(r.sha256) {
         let _ = fs::remove_dir_all(&staging);
-        return Err(RuntimeError::Hash { expected: r.sha256.to_string(), got });
+        return Err(RuntimeError::Hash {
+            expected: r.sha256.to_string(),
+            got,
+        });
     }
 
     progress("unpacking");
@@ -207,9 +210,15 @@ fn download(url: &str, dest: &Path) -> Result<(), RuntimeError> {
         .timeout_connect(Some(std::time::Duration::from_secs(20)))
         .build()
         .into();
-    let mut resp = agent.get(url).call().map_err(|e| RuntimeError::Network(e.to_string()))?;
+    let mut resp = agent
+        .get(url)
+        .call()
+        .map_err(|e| RuntimeError::Network(e.to_string()))?;
     if !resp.status().is_success() {
-        return Err(RuntimeError::Network(format!("HTTP {}", resp.status().as_u16())));
+        return Err(RuntimeError::Network(format!(
+            "HTTP {}",
+            resp.status().as_u16()
+        )));
     }
     let mut file = fs::File::create(dest)?;
     io::copy(&mut resp.body_mut().as_reader(), &mut file)?;
@@ -361,8 +370,14 @@ mod tests {
         // enough to span several blocks (where the padding arithmetic goes wrong
         // if it is going to).
         let cases: &[(&[u8], &str)] = &[
-            (b"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
-            (b"abc", "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            (
+                b"",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ),
+            (
+                b"abc",
+                "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+            ),
             (
                 b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
                 "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1",
@@ -371,7 +386,12 @@ mod tests {
         for (input, want) in cases {
             let mut h = Sha256::new();
             h.update(input);
-            assert_eq!(h.finish(), *want, "input {:?}", String::from_utf8_lossy(input));
+            assert_eq!(
+                h.finish(),
+                *want,
+                "input {:?}",
+                String::from_utf8_lossy(input)
+            );
         }
         // A million 'a', the classic long vector: catches a length counter that
         // overflows or a block boundary handled one byte out.
@@ -379,7 +399,10 @@ mod tests {
         for _ in 0..1000 {
             h.update(&[b'a'; 1000]);
         }
-        assert_eq!(h.finish(), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+        assert_eq!(
+            h.finish(),
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0"
+        );
     }
 
     #[test]
@@ -402,11 +425,18 @@ mod tests {
     #[test]
     fn the_pinned_runtime_is_coherent() {
         let r = runtime("dotnet10").expect("dotnet10 is known");
-        assert!(r.url.contains(r.version), "url and version disagree: {}", r.url);
+        assert!(
+            r.url.contains(r.version),
+            "url and version disagree: {}",
+            r.url
+        );
         assert_eq!(r.sha256.len(), 64, "a sha256 is 64 hex characters");
         assert!(r.sha256.chars().all(|c| c.is_ascii_hexdigit()));
         assert!(runtime("dotnet9").is_none(), "only what we actually pin");
-        assert!(is_runtime_verb("DOTNET10"), "verbs match case-insensitively");
+        assert!(
+            is_runtime_verb("DOTNET10"),
+            "verbs match case-insensitively"
+        );
     }
 
     #[test]
@@ -427,6 +457,9 @@ mod tests {
         if !dir.join("dotnet.exe").is_file() {
             assert!(env_for(&verbs).is_empty());
         }
-        assert!(env_for(&["vcrun2022".to_string()]).is_empty(), "not ours to answer for");
+        assert!(
+            env_for(&["vcrun2022".to_string()]).is_empty(),
+            "not ours to answer for"
+        );
     }
 }

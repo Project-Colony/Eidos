@@ -6,10 +6,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use fuser::{
-    BackingId, FileType,
-};
-
+use fuser::{BackingId, FileType};
 
 pub(crate) const ROOT_INO: u64 = 1;
 
@@ -43,7 +40,9 @@ impl Cache {
 
     /// Whether this particular cache is switched off.
     pub(crate) fn is_off(self) -> bool {
-        let Ok(v) = std::env::var("EIDOS_FUSE_NO_CACHE") else { return false };
+        let Ok(v) = std::env::var("EIDOS_FUSE_NO_CACHE") else {
+            return false;
+        };
         let v = v.trim();
         if v.is_empty() || v == "0" {
             return false;
@@ -52,7 +51,8 @@ impl Cache {
         if !v.contains(',') && !["attr", "neg", "keep", "dir"].contains(&v) {
             return true;
         }
-        v.split(',').any(|part| part.trim().eq_ignore_ascii_case(self.name()))
+        v.split(',')
+            .any(|part| part.trim().eq_ignore_ascii_case(self.name()))
     }
 }
 
@@ -229,7 +229,8 @@ impl Inodes {
             // Keep the display path in step, preserving the child's own casing.
             if let Some(old_display) = self.by_ino.get(&child_ino).cloned() {
                 if old_display.len() >= from.len() {
-                    self.by_ino.insert(child_ino, format!("{to}{}", &old_display[from.len()..]));
+                    self.by_ino
+                        .insert(child_ino, format!("{to}{}", &old_display[from.len()..]));
                 }
             }
         }

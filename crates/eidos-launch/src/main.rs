@@ -32,7 +32,9 @@ fn main() {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--layer" => layers.push(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
-            "--overwrite" => overwrite = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
+            "--overwrite" => {
+                overwrite = Some(PathBuf::from(args.next().unwrap_or_else(|| usage())))
+            }
             "--mount" => mountpoint = Some(PathBuf::from(args.next().unwrap_or_else(|| usage()))),
             "--" => {
                 command = args.by_ref().collect();
@@ -43,7 +45,8 @@ fn main() {
         }
     }
 
-    let (Some(mountpoint), false, false) = (mountpoint, layers.is_empty(), command.is_empty()) else {
+    let (Some(mountpoint), false, false) = (mountpoint, layers.is_empty(), command.is_empty())
+    else {
         usage();
     };
 
@@ -71,7 +74,11 @@ fn main() {
         // killed by a signal, so fall back to the shell convention 128 + signal -
         // otherwise a signal-killed (crashed) command would exit 0 and hide the
         // failure, matching what the `eidos` front end already does.
-        Ok(status) => exit(status.code().unwrap_or_else(|| 128 + status.signal().unwrap_or(1))),
+        Ok(status) => exit(
+            status
+                .code()
+                .unwrap_or_else(|| 128 + status.signal().unwrap_or(1)),
+        ),
         Err(e) => {
             eprintln!("eidos-launch: {e}");
             exit(1)

@@ -16,8 +16,12 @@ struct TempDir(PathBuf);
 impl TempDir {
     fn new(tag: &str) -> TempDir {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let d = std::env::temp_dir()
-            .join(format!("eidos-install-test-{}-{}-{}", tag, std::process::id(), n));
+        let d = std::env::temp_dir().join(format!(
+            "eidos-install-test-{}-{}-{}",
+            tag,
+            std::process::id(),
+            n
+        ));
         fs::create_dir_all(&d).unwrap();
         TempDir(d)
     }
@@ -55,9 +59,13 @@ fn write_at(root: &Path, rel: &str, content: &[u8]) {
 /// Force a file's mtime so the "oldest wins" rule is testable deterministically
 /// (writing content stamps mtime to ~now, so set it afterwards). std-only.
 fn set_mtime(root: &Path, rel: &str, secs: u64) {
-    let f = fs::OpenOptions::new().write(true).open(root.join(rel)).unwrap();
+    let f = fs::OpenOptions::new()
+        .write(true)
+        .open(root.join(rel))
+        .unwrap();
     let t = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs);
-    f.set_times(std::fs::FileTimes::new().set_modified(t)).unwrap();
+    f.set_times(std::fs::FileTimes::new().set_modified(t))
+        .unwrap();
 }
 
 /// Sorted recursive listing of `root` (dirs end `/`, symlinks end `@`), for
@@ -107,8 +115,14 @@ fn replace_with_bad_archive_keeps_the_old_mod() {
     assert!(r.is_err(), "a garbage archive must not install");
     // Whatever the failure (No7z on a bare system, extraction failure with 7z
     // present), the old mod must still be fully intact.
-    assert_eq!(fs::read(mods.join("MyMod/textures/a.dds")).unwrap(), b"precious");
-    assert_eq!(fs::read(mods.join("MyMod/meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
+    assert_eq!(
+        fs::read(mods.join("MyMod/textures/a.dds")).unwrap(),
+        b"precious"
+    );
+    assert_eq!(
+        fs::read(mods.join("MyMod/meta.ini")).unwrap(),
+        b"[General]\nendorsed=1\n"
+    );
 }
 
 #[test]
@@ -157,7 +171,10 @@ fn case_collision_file_same_dir() {
     write_at(t.path(), "Meshes/armor.nif", b"b");
     normalize_case_collisions(t.path()).unwrap();
     // One canonical lower-case dir, one file.
-    assert_eq!(rel_paths(t.path()), vec!["meshes/".to_string(), "meshes/armor.nif".to_string()]);
+    assert_eq!(
+        rel_paths(t.path()),
+        vec!["meshes/".to_string(), "meshes/armor.nif".to_string()]
+    );
 }
 
 #[test]
@@ -179,7 +196,11 @@ fn case_collision_dir_merge() {
     normalize_case_collisions(t.path()).unwrap();
     assert_eq!(
         rel_paths(t.path()),
-        vec!["meshes/".to_string(), "meshes/a.nif".to_string(), "meshes/b.nif".to_string()]
+        vec![
+            "meshes/".to_string(),
+            "meshes/a.nif".to_string(),
+            "meshes/b.nif".to_string()
+        ]
     );
 }
 
@@ -206,7 +227,10 @@ fn case_collision_file_vs_dir() {
     fs::write(t.path().join("textures"), b"file").unwrap();
     write_at(t.path(), "Textures/inside.txt", b"in");
     normalize_case_collisions(t.path()).unwrap();
-    assert!(t.path().join("textures").is_file(), "file wins the canonical name");
+    assert!(
+        t.path().join("textures").is_file(),
+        "file wins the canonical name"
+    );
     assert!(
         t.path().join("textures_dir/inside.txt").is_file(),
         "dir is moved aside, contents preserved"
@@ -224,7 +248,10 @@ fn case_collision_file_vs_dir_aside_name_taken() {
     write_at(t.path(), "Textures/inside.txt", b"in");
     fs::write(t.path().join("textures_dir"), b"unrelated").unwrap();
     normalize_case_collisions(t.path()).unwrap();
-    assert!(t.path().join("textures").is_file(), "file wins the canonical name");
+    assert!(
+        t.path().join("textures").is_file(),
+        "file wins the canonical name"
+    );
     assert_eq!(
         fs::read(t.path().join("textures_dir")).unwrap(),
         b"unrelated",
@@ -246,8 +273,14 @@ fn case_collision_symlink_preserved() {
     // The symlink (opaque) wins the canonical name and is NOT dereferenced.
     let meta = fs::symlink_metadata(t.path().join("current")).unwrap();
     assert!(meta.file_type().is_symlink(), "symlink preserved as-is");
-    assert_eq!(fs::read_link(t.path().join("current")).unwrap().to_str(), Some("some_target"));
-    assert!(t.path().join("current_dir/f.txt").is_file(), "colliding dir moved aside");
+    assert_eq!(
+        fs::read_link(t.path().join("current")).unwrap().to_str(),
+        Some("some_target")
+    );
+    assert!(
+        t.path().join("current_dir/f.txt").is_file(),
+        "colliding dir moved aside"
+    );
 }
 
 #[test]
@@ -258,7 +291,9 @@ fn case_collision_non_utf8_skipped() {
     write_at(t.path(), "Foo/a.txt", b"a");
     write_at(t.path(), "foo/b.txt", b"b");
     // A non-UTF8 sibling that must be left untouched (no panic).
-    let bad = t.path().join(std::ffi::OsStr::from_bytes(b"weird\xff\xfename"));
+    let bad = t
+        .path()
+        .join(std::ffi::OsStr::from_bytes(b"weird\xff\xfename"));
     fs::write(&bad, b"keep").unwrap();
     normalize_case_collisions(t.path()).unwrap();
     assert!(t.path().join("foo/a.txt").is_file() && t.path().join("foo/b.txt").is_file());
@@ -285,7 +320,10 @@ fn case_collision_empty_dir_preserved() {
     fs::create_dir_all(t.path().join("meshes/empty_subdir")).unwrap();
     normalize_case_collisions(t.path()).unwrap();
     assert!(t.path().join("meshes/file.nif").is_file());
-    assert!(t.path().join("meshes/empty_subdir").is_dir(), "empty dir survives the merge");
+    assert!(
+        t.path().join("meshes/empty_subdir").is_dir(),
+        "empty dir survives the merge"
+    );
 }
 
 #[test]
@@ -315,7 +353,11 @@ fn case_collision_no_change_without_collision() {
     write_at(t.path(), "Meshes/Sub/Armor.nif", b"b");
     let before = rel_paths(t.path());
     normalize_case_collisions(t.path()).unwrap();
-    assert_eq!(before, rel_paths(t.path()), "non-colliding names are never touched");
+    assert_eq!(
+        before,
+        rel_paths(t.path()),
+        "non-colliding names are never touched"
+    );
 }
 
 // MO2 parity (copyLeaf): a file with an empty destination lands at
@@ -346,7 +388,10 @@ fn trailing_slash_destination_uses_source_filename() {
     apply_plan(root.path(), &plan, dest.path()).expect("apply_plan");
 
     let landed = dest.path().join("subdir").join("real.esp");
-    assert!(landed.is_file(), "file should land at <dest>/subdir/real.esp");
+    assert!(
+        landed.is_file(),
+        "file should land at <dest>/subdir/real.esp"
+    );
     assert_eq!(fs::read(&landed).unwrap(), b"data");
 }
 
@@ -377,12 +422,21 @@ fn apply_plan_refuses_path_traversal_destination() {
 
     let plan = vec![file_item("evil.esp", "../eidos-traversal-victim")];
     let r = apply_plan(root.path(), &plan, dest.path());
-    assert!(matches!(r, Err(InstallError::Fomod(_))), "traversal must be refused");
-    assert!(!outside.exists(), "nothing must be written outside the mod folder");
+    assert!(
+        matches!(r, Err(InstallError::Fomod(_))),
+        "traversal must be refused"
+    );
+    assert!(
+        !outside.exists(),
+        "nothing must be written outside the mod folder"
+    );
 
     // An absolute destination is refused too.
     let plan2 = vec![file_item("evil.esp", "/tmp/eidos-traversal-abs")];
-    assert!(matches!(apply_plan(root.path(), &plan2, dest.path()), Err(InstallError::Fomod(_))));
+    assert!(matches!(
+        apply_plan(root.path(), &plan2, dest.path()),
+        Err(InstallError::Fomod(_))
+    ));
 }
 
 #[test]
@@ -431,8 +485,14 @@ fn fomod_context_marks_present_plugins_active() {
     let ctx = fomod_context(game.path(), &[modd.path().to_path_buf()], &[]);
     // A present plugin reads Active (so fileDependency state="Active" holds); an
     // absent one is left out, which eval treats as Missing.
-    assert_eq!(ctx.file_states.get("skyrim.esm").map(String::as_str), Some("Active"));
-    assert_eq!(ctx.file_states.get("skyui.esp").map(String::as_str), Some("Active"));
+    assert_eq!(
+        ctx.file_states.get("skyrim.esm").map(String::as_str),
+        Some("Active")
+    );
+    assert_eq!(
+        ctx.file_states.get("skyui.esp").map(String::as_str),
+        Some("Active")
+    );
     assert_eq!(ctx.file_states.get("absent.esp"), None);
 }
 
@@ -451,9 +511,18 @@ fn fomod_context_distinguishes_inactive_from_missing() {
         &[en.path().to_path_buf()],
         &[dis.path().to_path_buf()],
     );
-    assert_eq!(ctx.file_states.get("active.esp").map(String::as_str), Some("Active"));
-    assert_eq!(ctx.file_states.get("disabled.esp").map(String::as_str), Some("Inactive"));
-    assert_eq!(ctx.file_states.get("shared.esp").map(String::as_str), Some("Active"));
+    assert_eq!(
+        ctx.file_states.get("active.esp").map(String::as_str),
+        Some("Active")
+    );
+    assert_eq!(
+        ctx.file_states.get("disabled.esp").map(String::as_str),
+        Some("Inactive")
+    );
+    assert_eq!(
+        ctx.file_states.get("shared.esp").map(String::as_str),
+        Some("Active")
+    );
     assert_eq!(ctx.file_states.get("absent.esp"), None); // -> Missing
 }
 
@@ -461,11 +530,19 @@ fn fomod_context_distinguishes_inactive_from_missing() {
 fn reapply_user_meta_restores_endorsement_and_category() {
     let dir = TempDir::new("meta");
     let old_path = dir.path().join("old.ini");
-    fs::write(&old_path, "[General]\nendorsed=1\ncategory=\"42,\"\ntracked=1\n").unwrap();
+    fs::write(
+        &old_path,
+        "[General]\nendorsed=1\ncategory=\"42,\"\ntracked=1\n",
+    )
+    .unwrap();
     let old = ModMeta::read(&old_path);
 
     let new_path = dir.path().join("new.ini");
-    fs::write(&new_path, "[General]\nendorsed=0\ncategory=\"-1,\"\ntracked=0\n").unwrap();
+    fs::write(
+        &new_path,
+        "[General]\nendorsed=0\ncategory=\"-1,\"\ntracked=0\n",
+    )
+    .unwrap();
     reapply_user_meta(&old, &new_path);
 
     let s = fs::read_to_string(&new_path).unwrap();
@@ -490,7 +567,10 @@ fn reapply_user_meta_restores_endorsement_and_category() {
     assert_eq!(back.notes().as_deref(), Some("needs the AE patch"));
     assert_eq!(back.color(), Some([0x2e, 0x5e, 0x8b]));
     assert_eq!(back.url().as_deref(), Some("https://github.com/me/mod"));
-    assert!(back.ignore_update(), "re-arming it every reinstall is exactly backwards");
+    assert!(
+        back.ignore_update(),
+        "re-arming it every reinstall is exactly backwards"
+    );
     // And the new archive's own facts are NOT clobbered.
     assert_eq!(back.version().as_deref(), Some("2"));
 
@@ -534,7 +614,10 @@ fn a_freshly_installed_mod_already_knows_who_made_it() {
     let m = ModMeta::read(&dest.path().join("meta.ini"));
     assert_eq!(m.author().as_deref(), Some("Arthmoor"));
     assert_eq!(m.uploader().as_deref(), Some("Arthmoor"));
-    assert_eq!(m.uploader_url().as_deref(), Some("https://www.nexusmods.com/users/1234"));
+    assert_eq!(
+        m.uploader_url().as_deref(),
+        Some("https://www.nexusmods.com/users/1234")
+    );
 }
 
 #[test]
@@ -542,7 +625,10 @@ fn apply_plan_reports_missing_sources() {
     let root = TempDir::new("root");
     let dest = TempDir::new("dest");
     fs::write(root.path().join("present.esp"), b"x").unwrap();
-    let plan = vec![file_item("present.esp", "present.esp"), file_item("absent.esp", "absent.esp")];
+    let plan = vec![
+        file_item("present.esp", "present.esp"),
+        file_item("absent.esp", "absent.esp"),
+    ];
     let missing = apply_plan(root.path(), &plan, dest.path()).unwrap();
     // The source the archive didn't contain is reported, the present one installed.
     assert_eq!(missing, vec!["absent.esp".to_string()]);
@@ -570,7 +656,9 @@ fn mod_name_for_prefers_sidecar_then_sanitizes() {
 /// post-extraction state without paying for a real 7-Zip run. Dropping it removes
 /// the directory, exactly as a real extraction's would.
 fn extracted(dir: &Path) -> ExtractedTree {
-    ExtractedTree { tmp: dir.to_path_buf() }
+    ExtractedTree {
+        tmp: dir.to_path_buf(),
+    }
 }
 
 /// A `mods/` dir plus an extraction temp inside it (where a real install puts it).
@@ -601,16 +689,30 @@ fn bain_merges_chosen_subpackages_later_wins() {
     let (_t, mods, tmp, archive) = bain_pack("bainmerge");
     let tree = extracted(&tmp);
     let picks = vec!["00 Core".to_string(), "01 Optional".to_string()];
-    let r = install_bain(&tree, &picks, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail)
-        .expect("bain install");
+    let r = install_bain(
+        &tree,
+        &picks,
+        &archive,
+        &mods,
+        "Pack",
+        "skyrimse",
+        OverwritePolicy::Fail,
+    )
+    .expect("bain install");
 
     // Both chosen sub-packages are merged; the unticked one is not installed.
     assert!(r.dest.join("MyMod.esp").is_file());
     assert!(r.dest.join("textures/extra.dds").is_file());
     assert!(!r.dest.join("meshes").exists());
     // The BAIN contract: a later sub-package overwrites an earlier one's file.
-    assert_eq!(fs::read(r.dest.join("textures/shared.dds")).unwrap(), b"OPTIONAL");
-    assert!(r.dest.join("meta.ini").is_file(), "a BAIN install writes meta.ini like any other");
+    assert_eq!(
+        fs::read(r.dest.join("textures/shared.dds")).unwrap(),
+        b"OPTIONAL"
+    );
+    assert!(
+        r.dest.join("meta.ini").is_file(),
+        "a BAIN install writes meta.ini like any other"
+    );
     assert!(!r.fomod);
 }
 
@@ -621,9 +723,20 @@ fn bain_merge_order_is_the_callers_not_the_archives() {
     let (_t, mods, tmp, archive) = bain_pack("bainorder");
     let tree = extracted(&tmp);
     let picks = vec!["01 Optional".to_string(), "00 Core".to_string()];
-    let r = install_bain(&tree, &picks, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail)
-        .expect("bain install (reversed)");
-    assert_eq!(fs::read(r.dest.join("textures/shared.dds")).unwrap(), b"CORE");
+    let r = install_bain(
+        &tree,
+        &picks,
+        &archive,
+        &mods,
+        "Pack",
+        "skyrimse",
+        OverwritePolicy::Fail,
+    )
+    .expect("bain install (reversed)");
+    assert_eq!(
+        fs::read(r.dest.join("textures/shared.dds")).unwrap(),
+        b"CORE"
+    );
 }
 
 #[test]
@@ -657,13 +770,24 @@ fn bain_refuses_a_stale_or_malformed_selection() {
     let tree = extracted(&tmp);
 
     for bad in [
-        vec![],                                  // nothing ticked
-        vec!["99 Nope".to_string()],             // not in the archive
-        vec!["../outside".to_string()],          // traversal
-        vec!["00 Core/textures".to_string()],    // not a top-level sub-package
+        vec![],                               // nothing ticked
+        vec!["99 Nope".to_string()],          // not in the archive
+        vec!["../outside".to_string()],       // traversal
+        vec!["00 Core/textures".to_string()], // not a top-level sub-package
     ] {
-        let r = install_bain(&tree, &bad, &archive, &mods, "Pack", "skyrimse", OverwritePolicy::Fail);
-        assert!(matches!(r, Err(InstallError::BadSelection(_))), "must refuse {bad:?}");
+        let r = install_bain(
+            &tree,
+            &bad,
+            &archive,
+            &mods,
+            "Pack",
+            "skyrimse",
+            OverwritePolicy::Fail,
+        );
+        assert!(
+            matches!(r, Err(InstallError::BadSelection(_))),
+            "must refuse {bad:?}"
+        );
     }
     // A refused selection must not leave a half-made mod folder behind.
     assert!(!mods.join("Pack").exists());
@@ -692,8 +816,14 @@ fn bain_replace_keeps_the_old_mod_when_the_selection_is_stale() {
         OverwritePolicy::Replace,
     );
     assert!(matches!(r, Err(InstallError::BadSelection(_))));
-    assert_eq!(fs::read(mods.join("Pack/textures/a.dds")).unwrap(), b"precious");
-    assert_eq!(fs::read(mods.join("Pack/meta.ini")).unwrap(), b"[General]\nendorsed=1\n");
+    assert_eq!(
+        fs::read(mods.join("Pack/textures/a.dds")).unwrap(),
+        b"precious"
+    );
+    assert_eq!(
+        fs::read(mods.join("Pack/meta.ini")).unwrap(),
+        b"[General]\nendorsed=1\n"
+    );
 }
 
 #[test]
@@ -703,7 +833,11 @@ fn failed_bain_install_cleans_up_its_fresh_destination() {
     // an installed mod.
     let (t, mods, tmp) = bain_layout("bainclean");
     write_at(&tmp, "00 Core/MyMod.esp", b"x");
-    write_at(&tmp, "01 Extras/meta.ini/oops.txt", b"a directory where a file goes");
+    write_at(
+        &tmp,
+        "01 Extras/meta.ini/oops.txt",
+        b"a directory where a file goes",
+    );
     write_at(&tmp, "01 Extras/meshes/a.nif", b"y");
     let archive = t.path().join("Pack.7z");
     fs::write(&archive, b"x").unwrap();
@@ -719,7 +853,10 @@ fn failed_bain_install_cleans_up_its_fresh_destination() {
         OverwritePolicy::Fail,
     );
     assert!(r.is_err(), "writing meta.ini over a directory must fail");
-    assert!(!mods.join("Pack").exists(), "the fresh destination must be cleaned up");
+    assert!(
+        !mods.join("Pack").exists(),
+        "the fresh destination must be cleaned up"
+    );
 }
 
 #[test]
@@ -754,7 +891,11 @@ fn a_root_builder_archive_installs_both_halves() {
     // The Data folder itself is not nested inside the mod, and docs are dropped.
     assert!(!r.dest.join("data").exists());
     assert!(!r.dest.join("Root/data").exists());
-    assert!(!r.dest.join("Root").join("SSE Engine Fixes - Install Instructions.txt").exists());
+    assert!(!r
+        .dest
+        .join("Root")
+        .join("SSE Engine Fixes - Install Instructions.txt")
+        .exists());
     assert_eq!(r.stripped, "data/");
     assert!(r.dest.join("meta.ini").is_file());
 }
@@ -793,7 +934,10 @@ fn an_unresolvable_data_half_is_refused_before_the_wipe() {
     );
 
     assert!(r.is_err(), "an unresolvable layout must not install");
-    assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    assert!(
+        dest.join("PRECIOUS.esp").is_file(),
+        "the existing mod must be untouched"
+    );
 }
 
 /// Same invariant, the empty case: an archive that resolves to nothing must not
@@ -821,7 +965,10 @@ fn an_archive_with_nothing_to_install_is_refused_before_the_wipe() {
     );
 
     assert!(r.is_err(), "an empty archive must not report success");
-    assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    assert!(
+        dest.join("PRECIOUS.esp").is_file(),
+        "the existing mod must be untouched"
+    );
 }
 
 /// Two sources claiming the same name in `Root/`: a loose `notes` file beside the
@@ -852,7 +999,10 @@ fn two_sources_claiming_one_root_name_are_refused() {
     );
 
     assert!(r.is_err(), "an ambiguous Root/ layout must not install");
-    assert!(dest.join("PRECIOUS.esp").is_file(), "the existing mod must be untouched");
+    assert!(
+        dest.join("PRECIOUS.esp").is_file(),
+        "the existing mod must be untouched"
+    );
 }
 
 /// `Root/Data/` is a legitimate Root Builder layout - Root Builder maps `Root/`
@@ -870,9 +1020,16 @@ fn root_data_joins_the_data_half_instead_of_being_shadowed() {
     fs::write(&archive, b"x").unwrap();
 
     let ctx = eidos_fomod::Context::default();
-    let r =
-        install_extracted(&extracted(&tmp), &archive, &mods, "SKSE", "skyrimse", OverwritePolicy::Fail, &ctx)
-            .expect("root/data install");
+    let r = install_extracted(
+        &extracted(&tmp),
+        &archive,
+        &mods,
+        "SKSE",
+        "skyrimse",
+        OverwritePolicy::Fail,
+        &ctx,
+    )
+    .expect("root/data install");
 
     // Served by the Data union, where the game and the plugin list can see it.
     assert!(r.dest.join("foo.esp").is_file());
@@ -913,7 +1070,10 @@ fn a_file_named_root_in_the_data_half_does_not_abort_the_install() {
 
     assert!(r.dest.join("meshes/a.nif").is_file());
     assert!(r.dest.join("Root/d3dx9_42.dll").is_file());
-    assert!(r.dest.join("meta.ini").is_file(), "a completed install always has its meta");
+    assert!(
+        r.dest.join("meta.ini").is_file(),
+        "a completed install always has its meta"
+    );
 }
 
 /// Same shape one level down: a directory from the archive's `Root/` landing on
@@ -931,9 +1091,17 @@ fn a_ue4ss_mod_lands_in_all_three_places_it_shipped_for() {
     // Only the first is Data-relative. The other two have to travel through
     // Root/ at their own paths, or they land somewhere nothing reads.
     let (t, mods, tmp) = bain_layout("ue4ss");
-    write_at(&tmp, "SB/Content/Paks/~mods/CNS/Cosmetics/Outfits.dekcns.json", b"{}");
+    write_at(
+        &tmp,
+        "SB/Content/Paks/~mods/CNS/Cosmetics/Outfits.dekcns.json",
+        b"{}",
+    );
     write_at(&tmp, "SB/Content/Paks/LogicMods/DekCNS_P.pak", b"pak");
-    write_at(&tmp, "SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt", b"1");
+    write_at(
+        &tmp,
+        "SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt",
+        b"1",
+    );
 
     let archive = t.path().join("CustomNanosuitSystem-1496.zip");
     fs::write(&archive, b"x").unwrap();
@@ -953,15 +1121,29 @@ fn a_ue4ss_mod_lands_in_all_three_places_it_shipped_for() {
     // its pak and adds nothing, which is what a real install did.
     assert!(r.dest.join("CNS/Cosmetics/Outfits.dekcns.json").is_file());
     // The other two keep their archive paths under Root/.
-    assert!(r.dest.join("Root/SB/Content/Paks/LogicMods/DekCNS_P.pak").is_file());
+    assert!(r
+        .dest
+        .join("Root/SB/Content/Paks/LogicMods/DekCNS_P.pak")
+        .is_file());
     assert!(
-        r.dest.join("Root/SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt").is_file(),
+        r.dest
+            .join("Root/SB/Binaries/Win64/ue4ss/Mods/DekCNS/enabled.txt")
+            .is_file(),
         "the ue4ss tree keeps the path the loader expects"
     );
     // And nothing was flattened or duplicated on the way.
-    assert!(!r.dest.join("Root/Binaries").exists(), "the game directory is not flattened");
-    assert!(!r.dest.join("Root/LogicMods").exists(), "nor is the paks directory");
-    assert!(!r.dest.join("~mods").exists(), "the deploy root is not nested inside itself");
+    assert!(
+        !r.dest.join("Root/Binaries").exists(),
+        "the game directory is not flattened"
+    );
+    assert!(
+        !r.dest.join("Root/LogicMods").exists(),
+        "nor is the paks directory"
+    );
+    assert!(
+        !r.dest.join("~mods").exists(),
+        "the deploy root is not nested inside itself"
+    );
 }
 
 #[test]
@@ -1076,9 +1258,16 @@ fn an_installed_root_mod_is_what_the_launcher_projects() {
     let tree = extracted(&tmp);
 
     let ctx = eidos_fomod::Context::default();
-    let r =
-        install_extracted(&tree, &archive, &mods, "Mod", "skyrimse", OverwritePolicy::Fail, &ctx)
-            .expect("root builder install");
+    let r = install_extracted(
+        &tree,
+        &archive,
+        &mods,
+        "Mod",
+        "skyrimse",
+        OverwritePolicy::Fail,
+        &ctx,
+    )
+    .expect("root builder install");
 
     assert!(r.dest.join("MyMod.esp").is_file());
     // One level, not two: `Root/Root/` would put the DLL a directory away from
@@ -1099,9 +1288,16 @@ fn manual_installs_from_the_chosen_root() {
     fs::write(&archive, b"x").unwrap();
     let tree = extracted(&tmp);
 
-    let r =
-        install_manual(&tree, "Package/Data", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
-            .expect("manual install");
+    let r = install_manual(
+        &tree,
+        "Package/Data",
+        &archive,
+        &mods,
+        "Odd",
+        "skyrimse",
+        OverwritePolicy::Fail,
+    )
+    .expect("manual install");
     // Everything under the chosen root becomes the mod; everything beside it is
     // dropped, exactly like the wrapper strip on the simple path.
     assert!(r.dest.join("meshes/a.nif").is_file());
@@ -1119,9 +1315,16 @@ fn manual_root_is_matched_case_insensitively() {
     let archive = t.path().join("Odd.7z");
     fs::write(&archive, b"x").unwrap();
     let tree = extracted(&tmp);
-    let r =
-        install_manual(&tree, "package/data", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
-            .expect("manual install");
+    let r = install_manual(
+        &tree,
+        "package/data",
+        &archive,
+        &mods,
+        "Odd",
+        "skyrimse",
+        OverwritePolicy::Fail,
+    )
+    .expect("manual install");
     assert!(r.dest.join("MyMod.esp").is_file());
 }
 
@@ -1133,8 +1336,16 @@ fn manual_empty_root_installs_the_archive_as_is() {
     let archive = t.path().join("Odd.7z");
     fs::write(&archive, b"x").unwrap();
     let tree = extracted(&tmp);
-    let r = install_manual(&tree, "", &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail)
-        .expect("manual install at root");
+    let r = install_manual(
+        &tree,
+        "",
+        &archive,
+        &mods,
+        "Odd",
+        "skyrimse",
+        OverwritePolicy::Fail,
+    )
+    .expect("manual install at root");
     assert!(r.dest.join("Package/Data/MyMod.esp").is_file());
     assert_eq!(r.stripped, "");
 }
@@ -1147,9 +1358,19 @@ fn manual_refuses_a_root_outside_the_archive() {
     fs::write(&archive, b"x").unwrap();
     let tree = extracted(&tmp);
     for bad in ["../..", "Package/../../mods", "/etc", "nope"] {
-        let r =
-            install_manual(&tree, bad, &archive, &mods, "Odd", "skyrimse", OverwritePolicy::Fail);
-        assert!(matches!(r, Err(InstallError::BadSelection(_))), "must refuse root '{bad}'");
+        let r = install_manual(
+            &tree,
+            bad,
+            &archive,
+            &mods,
+            "Odd",
+            "skyrimse",
+            OverwritePolicy::Fail,
+        );
+        assert!(
+            matches!(r, Err(InstallError::BadSelection(_))),
+            "must refuse root '{bad}'"
+        );
     }
     assert!(!mods.join("Odd").exists());
 }
@@ -1190,9 +1411,16 @@ fn overlay_never_writes_through_a_planted_symlink() {
     let dest = t.path().join("dest");
     overlay_dir(&t.path().join("a"), &dest).unwrap();
     overlay_dir(&t.path().join("b"), &dest).unwrap();
-    assert_eq!(fs::read(&outside).unwrap(), b"untouched", "must not write through the link");
+    assert_eq!(
+        fs::read(&outside).unwrap(),
+        b"untouched",
+        "must not write through the link"
+    );
     assert_eq!(fs::read(dest.join("victim")).unwrap(), b"payload");
-    assert!(!fs::symlink_metadata(dest.join("victim")).unwrap().file_type().is_symlink());
+    assert!(!fs::symlink_metadata(dest.join("victim"))
+        .unwrap()
+        .file_type()
+        .is_symlink());
 }
 
 #[test]
@@ -1207,7 +1435,10 @@ fn overlay_preserves_a_dangling_symlink() {
     overlay_dir(&t.path().join("a"), &dest).unwrap();
     let meta = fs::symlink_metadata(dest.join("link")).unwrap();
     assert!(meta.file_type().is_symlink());
-    assert_eq!(fs::read_link(dest.join("link")).unwrap().to_str(), Some("nowhere"));
+    assert_eq!(
+        fs::read_link(dest.join("link")).unwrap().to_str(),
+        Some("nowhere")
+    );
 }
 
 #[test]
@@ -1220,7 +1451,11 @@ fn from_dir_feeds_bain_detection_with_real_names() {
     write_at(&tmp, "--03 Disabled/meshes/a.nif", b"z");
     write_at(&tmp, "Docs/readme.txt", b"d");
     let layout = ArchiveTree::from_dir(&tmp).unwrap();
-    assert_eq!(layout.simple_archive_base(rules()), None, "not a simple archive");
+    assert_eq!(
+        layout.simple_archive_base(rules()),
+        None,
+        "not a simple archive"
+    );
     let (subs, invalid) = layout.bain_subpackages(rules());
     assert_eq!(subs, vec!["00 Core", "01 Optional Textures"]);
     assert_eq!(invalid, 0);
@@ -1244,14 +1479,16 @@ fn a_symlink_loop_in_an_archive_does_not_blow_the_stack() {
 
     let tree = ArchiveTree::from_dir(&dir).expect("walk must return, not recurse forever");
     let all = tree.flatten();
-    assert!(all.iter().any(|e| e.path.ends_with("a.esp")), "real files still described");
+    assert!(
+        all.iter().any(|e| e.path.ends_with("a.esp")),
+        "real files still described"
+    );
     // The loop is BOUNDED, not banned: symlinked directories are followed - an
     // archive may legitimately ship `Data` as a symlink, and a first version of
     // this guard that refused to descend reclassified such archives as Manual -
     // so the defence is the depth cap, and the proof is that this returned.
     let _ = std::fs::remove_dir_all(&dir);
 }
-
 
 #[test]
 fn an_archive_shipping_data_as_a_symlink_still_classifies_by_its_contents() {

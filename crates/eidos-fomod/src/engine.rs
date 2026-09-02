@@ -29,13 +29,19 @@ pub fn eval(cond: &Condition, flags: &HashMap<String, String>, ctx: &Context) ->
             flags.get(flag).map(String::as_str).unwrap_or("") == value.as_str()
         }
         Condition::File { file, state } => {
-            let actual =
-                ctx.file_states.get(&file.to_lowercase()).map(String::as_str).unwrap_or("Missing");
+            let actual = ctx
+                .file_states
+                .get(&file.to_lowercase())
+                .map(String::as_str)
+                .unwrap_or("Missing");
             actual.eq_ignore_ascii_case(state)
         }
         Condition::Version { kind, version } => {
             if kind == "Game" {
-                ctx.game_version.as_deref().map(|v| version_ge(v, version)).unwrap_or(true)
+                ctx.game_version
+                    .as_deref()
+                    .map(|v| version_ge(v, version))
+                    .unwrap_or(true)
             } else {
                 // We don't track FOMM/FOSE versions; don't block on them.
                 true
@@ -87,7 +93,11 @@ fn describe_condition(c: &Condition) -> String {
 
 /// A plugin's effective type: the first conditional pattern that holds, else the
 /// default (MO2's `getPluginDependencyType`).
-pub fn effective_type(plugin: &Plugin, flags: &HashMap<String, String>, ctx: &Context) -> PluginType {
+pub fn effective_type(
+    plugin: &Plugin,
+    flags: &HashMap<String, String>,
+    ctx: &Context,
+) -> PluginType {
     for pat in &plugin.type_descriptor.patterns {
         if eval(&pat.condition, flags, ctx) {
             return pat.plugin_type;
@@ -98,8 +108,16 @@ pub fn effective_type(plugin: &Plugin, flags: &HashMap<String, String>, ctx: &Co
 
 /// The indices selected by default in a group, honouring its type and the plugins'
 /// effective types (Required always on, Recommended preselected, NotUsable never).
-fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: &Context) -> Vec<usize> {
-    let types: Vec<PluginType> = group.plugins.iter().map(|p| effective_type(p, flags, ctx)).collect();
+fn default_group_selection(
+    group: &Group,
+    flags: &HashMap<String, String>,
+    ctx: &Context,
+) -> Vec<usize> {
+    let types: Vec<PluginType> = group
+        .plugins
+        .iter()
+        .map(|p| effective_type(p, flags, ctx))
+        .collect();
     let pos = |t: PluginType| types.iter().position(|x| *x == t);
     let first_usable = || types.iter().position(|x| *x != PluginType::NotUsable);
     let preselected = || -> Vec<usize> {
@@ -108,9 +126,9 @@ fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: 
             .collect()
     };
     match group.group_type {
-        GroupType::SelectAll => {
-            (0..types.len()).filter(|&i| types[i] != PluginType::NotUsable).collect()
-        }
+        GroupType::SelectAll => (0..types.len())
+            .filter(|&i| types[i] != PluginType::NotUsable)
+            .collect(),
         // MO2's forced-selection fallback order: Required, then Recommended, then
         // the first Optional, then the first CouldBeUsable, and only then any
         // remaining usable option - so a CouldBeUsable never wins ahead of an
@@ -122,9 +140,10 @@ fn default_group_selection(group: &Group, flags: &HashMap<String, String>, ctx: 
             .or_else(first_usable)
             .into_iter()
             .collect(),
-        GroupType::SelectAtMostOne => {
-            pos(PluginType::Required).or_else(|| pos(PluginType::Recommended)).into_iter().collect()
-        }
+        GroupType::SelectAtMostOne => pos(PluginType::Required)
+            .or_else(|| pos(PluginType::Recommended))
+            .into_iter()
+            .collect(),
         GroupType::SelectAtLeastOne => {
             let rec = preselected();
             if rec.is_empty() {
@@ -150,7 +169,11 @@ pub fn default_selection(config: &ModuleConfig, ctx: &Context) -> Selection {
     let mut flags = ctx.flags.clone();
     let mut sel = Vec::with_capacity(config.steps.len());
     for step in &config.steps {
-        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        let visible = step
+            .visible
+            .as_ref()
+            .map(|v| eval(v, &flags, ctx))
+            .unwrap_or(true);
         let mut step_sel = Vec::with_capacity(step.groups.len());
         for group in &step.groups {
             let mut g = vec![false; group.plugins.len()];
@@ -178,7 +201,11 @@ pub fn build_plan(config: &ModuleConfig, selection: &Selection, ctx: &Context) -
     let mut files = config.required_files.clone();
 
     for (si, step) in config.steps.iter().enumerate() {
-        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        let visible = step
+            .visible
+            .as_ref()
+            .map(|v| eval(v, &flags, ctx))
+            .unwrap_or(true);
         if !visible {
             continue;
         }
@@ -217,7 +244,11 @@ pub fn build_plan(config: &ModuleConfig, selection: &Selection, ctx: &Context) -
         }
     }
 
-    files.sort_by(|a, b| a.priority.cmp(&b.priority).then(a.sequence.cmp(&b.sequence)));
+    files.sort_by(|a, b| {
+        a.priority
+            .cmp(&b.priority)
+            .then(a.sequence.cmp(&b.sequence))
+    });
     files
 }
 
@@ -242,10 +273,19 @@ pub fn step_types(
             return step
                 .groups
                 .iter()
-                .map(|g| g.plugins.iter().map(|p| effective_type(p, &flags, ctx)).collect())
+                .map(|g| {
+                    g.plugins
+                        .iter()
+                        .map(|p| effective_type(p, &flags, ctx))
+                        .collect()
+                })
                 .collect();
         }
-        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        let visible = step
+            .visible
+            .as_ref()
+            .map(|v| eval(v, &flags, ctx))
+            .unwrap_or(true);
         if visible {
             for (gi, group) in step.groups.iter().enumerate() {
                 for (pi, plugin) in group.plugins.iter().enumerate() {
@@ -274,7 +314,11 @@ pub fn visible_steps(config: &ModuleConfig, selection: &Selection, ctx: &Context
     let mut flags = ctx.flags.clone();
     let mut out = Vec::with_capacity(config.steps.len());
     for (si, step) in config.steps.iter().enumerate() {
-        let visible = step.visible.as_ref().map(|v| eval(v, &flags, ctx)).unwrap_or(true);
+        let visible = step
+            .visible
+            .as_ref()
+            .map(|v| eval(v, &flags, ctx))
+            .unwrap_or(true);
         out.push(visible);
         if visible {
             for (gi, group) in step.groups.iter().enumerate() {
@@ -300,7 +344,10 @@ pub fn visible_steps(config: &ModuleConfig, selection: &Selection, ctx: &Context
 /// `actual >= required` on dotted numeric versions (missing parts count as 0).
 fn version_ge(actual: &str, required: &str) -> bool {
     let pa: Vec<u64> = actual.split('.').map(|p| p.parse().unwrap_or(0)).collect();
-    let pr: Vec<u64> = required.split('.').map(|p| p.parse().unwrap_or(0)).collect();
+    let pr: Vec<u64> = required
+        .split('.')
+        .map(|p| p.parse().unwrap_or(0))
+        .collect();
     for i in 0..pa.len().max(pr.len()) {
         let a = pa.get(i).copied().unwrap_or(0);
         let r = pr.get(i).copied().unwrap_or(0);
@@ -371,8 +418,14 @@ mod tests {
         let mc = ModuleConfig::parse(ORD).unwrap();
         let plan = build_default_plan(&mc, &Context::default());
         let dests: Vec<&str> = plan.iter().map(|f| f.destination.as_str()).collect();
-        assert!(dests.contains(&"opt.esp"), "the Optional must be the default pick");
-        assert!(!dests.contains(&"maybe.esp"), "the CouldBeUsable must not win ahead of it");
+        assert!(
+            dests.contains(&"opt.esp"),
+            "the Optional must be the default pick"
+        );
+        assert!(
+            !dests.contains(&"maybe.esp"),
+            "the CouldBeUsable must not win ahead of it"
+        );
     }
 
     #[test]
@@ -403,7 +456,10 @@ mod tests {
         let mc = ModuleConfig::parse(XML).unwrap();
         let sel = default_selection(&mc, &Context::default());
         let types = step_types(&mc, &sel, &Context::default(), 0);
-        assert_eq!(types, vec![vec![PluginType::Recommended, PluginType::Optional]]);
+        assert_eq!(
+            types,
+            vec![vec![PluginType::Recommended, PluginType::Optional]]
+        );
     }
 
     #[test]
@@ -418,12 +474,32 @@ mod tests {
         let mut flags = HashMap::new();
         flags.insert("a".to_string(), "on".to_string());
         let ctx = Context::default();
-        let on = Condition::Flag { flag: "a".into(), value: "on".into() };
-        let off = Condition::Flag { flag: "b".into(), value: "on".into() };
+        let on = Condition::Flag {
+            flag: "a".into(),
+            value: "on".into(),
+        };
+        let off = Condition::Flag {
+            flag: "b".into(),
+            value: "on".into(),
+        };
         assert!(eval(&on, &flags, &ctx));
         assert!(!eval(&off, &flags, &ctx));
-        assert!(eval(&Condition::Sub { op: Operator::Or, conditions: vec![on.clone(), off.clone()] }, &flags, &ctx));
-        assert!(!eval(&Condition::Sub { op: Operator::And, conditions: vec![on, off] }, &flags, &ctx));
+        assert!(eval(
+            &Condition::Sub {
+                op: Operator::Or,
+                conditions: vec![on.clone(), off.clone()]
+            },
+            &flags,
+            &ctx
+        ));
+        assert!(!eval(
+            &Condition::Sub {
+                op: Operator::And,
+                conditions: vec![on, off]
+            },
+            &flags,
+            &ctx
+        ));
     }
 
     #[test]
@@ -460,10 +536,22 @@ mod tests {
         let mc = ModuleConfig::parse(X).unwrap();
         let plan = build_default_plan(&mc, &Context::default());
         let d: Vec<&str> = plan.iter().map(|f| f.destination.as_str()).collect();
-        assert!(!d.contains(&"normal.esp"), "a plain file of an unselected option is skipped");
-        assert!(d.contains(&"u_if.esp"), "installIfUsable on a usable (Optional) option installs");
-        assert!(!d.contains(&"b_if.esp"), "installIfUsable on a NotUsable option does NOT install");
-        assert!(d.contains(&"b_always.esp"), "alwaysInstall installs even on a NotUsable option");
+        assert!(
+            !d.contains(&"normal.esp"),
+            "a plain file of an unselected option is skipped"
+        );
+        assert!(
+            d.contains(&"u_if.esp"),
+            "installIfUsable on a usable (Optional) option installs"
+        );
+        assert!(
+            !d.contains(&"b_if.esp"),
+            "installIfUsable on a NotUsable option does NOT install"
+        );
+        assert!(
+            d.contains(&"b_always.esp"),
+            "alwaysInstall installs even on a NotUsable option"
+        );
     }
 
     #[test]
@@ -480,10 +568,14 @@ mod tests {
         let empty = Context::default();
         assert!(!module_dependencies_met(&mc, &empty));
         let msg = unmet_module_dependencies(&mc, &empty).expect("should report unmet");
-        assert!(msg.contains("Required.esm"), "message names the requirement: {msg}");
+        assert!(
+            msg.contains("Required.esm"),
+            "message names the requirement: {msg}"
+        );
         // Met: mark the master Active.
         let mut ctx = Context::default();
-        ctx.file_states.insert("required.esm".into(), "Active".into());
+        ctx.file_states
+            .insert("required.esm".into(), "Active".into());
         assert!(module_dependencies_met(&mc, &ctx));
         assert!(unmet_module_dependencies(&mc, &ctx).is_none());
     }
@@ -499,14 +591,20 @@ mod tests {
                 default_type: PluginType::Optional,
                 patterns: vec![DependencyPattern {
                     plugin_type: PluginType::NotUsable,
-                    condition: Condition::Flag { flag: "v".into(), value: "on".into() },
+                    condition: Condition::Flag {
+                        flag: "v".into(),
+                        value: "on".into(),
+                    },
                 }],
             },
             condition_flags: Vec::new(),
             files: Vec::new(),
         };
         let ctx = Context::default();
-        assert_eq!(effective_type(&p, &HashMap::new(), &ctx), PluginType::Optional);
+        assert_eq!(
+            effective_type(&p, &HashMap::new(), &ctx),
+            PluginType::Optional
+        );
         let mut flags = HashMap::new();
         flags.insert("v".to_string(), "on".to_string());
         assert_eq!(effective_type(&p, &flags, &ctx), PluginType::NotUsable);

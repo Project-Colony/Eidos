@@ -50,9 +50,19 @@ fn a_wrapper_dll_is_found_in_a_mods_root_folder() {
     ];
     let stems = shipped_shadow_stems(&dirs, &shadows);
 
-    assert!(stems.contains("d3dx9_42"), "the Root/ preloader must be found");
-    assert!(stems.contains("d3d11"), "a top-level wrapper is still found");
-    assert_eq!(stems.len(), 2, "nothing else, and nothing from a nested dir");
+    assert!(
+        stems.contains("d3dx9_42"),
+        "the Root/ preloader must be found"
+    );
+    assert!(
+        stems.contains("d3d11"),
+        "a top-level wrapper is still found"
+    );
+    assert_eq!(
+        stems.len(),
+        2,
+        "nothing else, and nothing from a nested dir"
+    );
 }
 
 /// The Steam Cloud sync must be idempotent (fs::copy stamps the destination
@@ -71,7 +81,10 @@ fn cloud_sync_is_idempotent_and_rescues_diverged_saves() {
     // session wrote it), OLDER than the profile's own quicksave.
     fs::write(prefix.join("quicksave.ess"), b"orphan session").unwrap();
     let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
-    let f = fs::File::options().write(true).open(prefix.join("quicksave.ess")).unwrap();
+    let f = fs::File::options()
+        .write(true)
+        .open(prefix.join("quicksave.ess"))
+        .unwrap();
     f.set_modified(old).unwrap();
     drop(f);
 
@@ -81,7 +94,10 @@ fn cloud_sync_is_idempotent_and_rescues_diverged_saves() {
 
     let n = sync_saves_for_cloud(&prof, &prefix).unwrap();
     assert_eq!(n, 2, ".ess + .skse synced, junk ignored");
-    assert_eq!(fs::read(prefix.join("quicksave.ess")).unwrap(), b"current playthrough");
+    assert_eq!(
+        fs::read(prefix.join("quicksave.ess")).unwrap(),
+        b"current playthrough"
+    );
     assert!(!prefix.join("steam_autocloud.vdf").exists());
 
     // The orphan was rescued into the profile before the overwrite.
@@ -91,18 +107,32 @@ fn cloud_sync_is_idempotent_and_rescues_diverged_saves() {
         .filter_map(|e| e.file_name().into_string().ok())
         .filter(|n| n.starts_with("orphan-") && n.ends_with("quicksave.ess"))
         .collect();
-    assert_eq!(rescued.len(), 1, "the only copy of the orphan session must survive");
+    assert_eq!(
+        rescued.len(),
+        1,
+        "the only copy of the orphan session must survive"
+    );
 
     // Second run: nothing to do. (The rescued orphan syncs up once, at most.)
     let again = sync_saves_for_cloud(&prof, &prefix).unwrap();
-    assert!(again <= 1, "the sync must converge, not recopy everything ({again})");
-    assert_eq!(sync_saves_for_cloud(&prof, &prefix).unwrap(), 0, "and then be a no-op");
+    assert!(
+        again <= 1,
+        "the sync must converge, not recopy everything ({again})"
+    );
+    assert_eq!(
+        sync_saves_for_cloud(&prof, &prefix).unwrap(),
+        0,
+        "and then be a no-op"
+    );
 
     // A save the profile ADOPTED at seeding shares name + size with the
     // prefix original but not its mtime (the seed copy did not preserve
     // mtimes). It must NOT be "rescued" into a duplicate.
     fs::write(prefix.join("Save 12 - Old.ess"), b"identical bytes").unwrap();
-    let f = fs::File::options().write(true).open(prefix.join("Save 12 - Old.ess")).unwrap();
+    let f = fs::File::options()
+        .write(true)
+        .open(prefix.join("Save 12 - Old.ess"))
+        .unwrap();
     f.set_modified(old).unwrap();
     drop(f);
     fs::write(prof.join("Save 12 - Old.ess"), b"identical bytes").unwrap();
@@ -112,14 +142,21 @@ fn cloud_sync_is_idempotent_and_rescues_diverged_saves() {
         .flatten()
         .filter(|e| e.file_name().to_string_lossy().contains("Save 12"))
         .count();
-    assert_eq!(orphans, 1, "the adopted twin must not spawn an orphan duplicate");
+    assert_eq!(
+        orphans, 1,
+        "the adopted twin must not spawn an orphan duplicate"
+    );
 
     // Quicksave rotation: the game rewrites quicksave.ess in the profile,
     // and the sync overwrites the prefix copy IT WROTE last session. Without
     // the provenance manifest that copy looked like an unknown diverged save
     // and one orphan-* file was minted per session, forever.
     std::thread::sleep(std::time::Duration::from_millis(20));
-    fs::write(prof.join("quicksave.ess"), b"rotated - a newer, longer playthrough").unwrap();
+    fs::write(
+        prof.join("quicksave.ess"),
+        b"rotated - a newer, longer playthrough",
+    )
+    .unwrap();
     sync_saves_for_cloud(&prof, &prefix).unwrap();
     let orphan_count = fs::read_dir(&prof)
         .unwrap()
@@ -158,7 +195,9 @@ fn overwrite_is_the_highest_priority_plugin_source() {
     let enabled = vec![ModEntry {
         name: "AwesomeMod".to_string(),
         enabled: true,
-        path: mod_dir.clone(), unmanaged: false }];
+        path: mod_dir.clone(),
+        unmanaged: false,
+    }];
 
     let sources = plugin_sources(&game_data, &enabled, &overwrite);
     // Overwrite must be the final, highest-priority source.
@@ -201,14 +240,18 @@ fn signal_death_maps_to_128_plus_signal_not_zero() {
     // A child killed by SIGSEGV (11): code() is None, signal() is 11.
     let killed = ExitStatus::from_raw(11);
     assert_eq!(killed.code(), None, "signal death has no exit code on Unix");
-    let mapped = killed.code().unwrap_or_else(|| 128 + killed.signal().unwrap_or(1));
+    let mapped = killed
+        .code()
+        .unwrap_or_else(|| 128 + killed.signal().unwrap_or(1));
     assert_eq!(mapped, 139, "SIGSEGV must map to 139, never 0");
     assert_ne!(mapped, 0);
 
     // A normal exit(3) is unaffected: code() is Some(3).
     let normal = ExitStatus::from_raw(3 << 8);
     assert_eq!(
-        normal.code().unwrap_or_else(|| 128 + normal.signal().unwrap_or(1)),
+        normal
+            .code()
+            .unwrap_or_else(|| 128 + normal.signal().unwrap_or(1)),
         3
     );
 }
@@ -226,7 +269,9 @@ fn a_tool_inside_a_mod_runs_from_the_merged_view() {
             &layers,
             &data,
         ),
-        Some(PathBuf::from("/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"))
+        Some(PathBuf::from(
+            "/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"
+        ))
     );
 }
 
@@ -260,7 +305,9 @@ fn the_layer_root_is_what_gets_stripped_not_the_mod_name() {
             &layers,
             &data,
         ),
-        Some(PathBuf::from("/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"))
+        Some(PathBuf::from(
+            "/games/skyrim/Data/CalienteTools/BodySlide/BodySlide.exe"
+        ))
     );
 }
 

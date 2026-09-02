@@ -36,7 +36,10 @@ pub enum Condition {
     /// `<gameDependency>` / `<fommDependency>` / `<foseDependency>`.
     Version { kind: String, version: String },
     /// `<dependencies operator="And|Or">` - a composite of nested conditions.
-    Sub { op: Operator, conditions: Vec<Condition> },
+    Sub {
+        op: Operator,
+        conditions: Vec<Condition>,
+    },
 }
 
 /// A `<file>` or `<folder>` install instruction.

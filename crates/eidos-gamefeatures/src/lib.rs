@@ -27,7 +27,9 @@ pub use native_dll::{
 };
 
 mod prefix_registry;
-pub use prefix_registry::{ensure_registry, registry_blob, registry_status, RegistryOutcome, RegistryStatus};
+pub use prefix_registry::{
+    ensure_registry, registry_blob, registry_status, RegistryOutcome, RegistryStatus,
+};
 
 mod se_log;
 pub use se_log::{parse_se_log, se_log_path, SePluginLoad};
@@ -46,9 +48,8 @@ pub use runtime::{
 
 mod savegame;
 pub use savegame::{
-    missing_plugins, parse_save, read_screenshot, read_screenshot_with, KnownPlugin,
-    MissingPlugin, ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError,
-    SavePluginState, Screenshot,
+    missing_plugins, parse_save, read_screenshot, read_screenshot_with, KnownPlugin, MissingPlugin,
+    ModFolder, SaveCompression, SaveEngine, SaveInfo, SaveParseError, SavePluginState, Screenshot,
 };
 
 /// The game INI that holds the `[Archive]` section: the first of the per-profile
@@ -122,15 +123,21 @@ struct PreSse {
 
 fn pre_sse_invalidation(game_id: &str) -> Option<PreSse> {
     match game_id {
-        "oblivion" => {
-            Some(PreSse { bsa_name: "Oblivion - Invalidation.bsa", bsa_version: 0x67, archive_key: "SArchiveList" })
-        }
-        "fallout3" | "falloutnv" => {
-            Some(PreSse { bsa_name: "Fallout - Invalidation.bsa", bsa_version: 0x68, archive_key: "SArchiveList" })
-        }
-        "skyrim" => {
-            Some(PreSse { bsa_name: "Skyrim - Invalidation.bsa", bsa_version: 0x68, archive_key: "sResourceArchiveList" })
-        }
+        "oblivion" => Some(PreSse {
+            bsa_name: "Oblivion - Invalidation.bsa",
+            bsa_version: 0x67,
+            archive_key: "SArchiveList",
+        }),
+        "fallout3" | "falloutnv" => Some(PreSse {
+            bsa_name: "Fallout - Invalidation.bsa",
+            bsa_version: 0x68,
+            archive_key: "SArchiveList",
+        }),
+        "skyrim" => Some(PreSse {
+            bsa_name: "Skyrim - Invalidation.bsa",
+            bsa_version: 0x68,
+            archive_key: "sResourceArchiveList",
+        }),
         _ => None,
     }
 }
@@ -145,7 +152,8 @@ const INI_VALUE_MAX: usize = 255;
 /// Only the Creation-engine key is split in two; the older `SArchiveList`
 /// (Oblivion/FO3/FNV) has no continuation, so an overflow there cannot be helped.
 fn continuation_key(key: &str) -> Option<&'static str> {
-    key.eq_ignore_ascii_case("sResourceArchiveList").then_some("sResourceArchiveList2")
+    key.eq_ignore_ascii_case("sResourceArchiveList")
+        .then_some("sResourceArchiveList2")
 }
 
 /// Prepend `bsa` to a comma-joined `[Archive]` list key (e.g. `SArchiveList`),
@@ -153,7 +161,9 @@ fn continuation_key(key: &str) -> Option<&'static str> {
 fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
     let (existing, _) = read_ini_text(ini)?;
     let listed = |v: Option<&str>| {
-        v.unwrap_or_default().split(',').any(|a| a.trim().eq_ignore_ascii_case(bsa))
+        v.unwrap_or_default()
+            .split(',')
+            .any(|a| a.trim().eq_ignore_ascii_case(bsa))
     };
     let current = eidos_ini::get_key(&existing, "Archive", key).unwrap_or_default();
     let cont = continuation_key(key);
@@ -176,7 +186,11 @@ fn prepend_archive(ini: &Path, key: &str, bsa: &str) -> io::Result<()> {
         let (head, tail) = split_archive_value(&value);
         if !tail.is_empty() {
             let rest = cont_value.unwrap_or_default().trim();
-            let merged = if rest.is_empty() { tail.to_string() } else { format!("{tail}, {rest}") };
+            let merged = if rest.is_empty() {
+                tail.to_string()
+            } else {
+                format!("{tail}, {rest}")
+            };
             set_ini_key(ini, "Archive", key, head)?;
             return set_ini_key(ini, "Archive", c, &merged);
         }
@@ -294,7 +308,9 @@ pub fn is_archive_name(name: &str) -> bool {
 pub fn mod_archives(mods: &[(String, PathBuf)]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for (name, dir) in mods {
-        let Ok(entries) = fs::read_dir(dir) else { continue };
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
         let mut found: Vec<String> = entries
             .flatten()
             // A directory named `*.bsa` is not an archive. `file_type` is a cheap
@@ -333,7 +349,10 @@ pub fn orphan_archives(
     archives
         .iter()
         .filter(|(_, archive)| {
-            if ini_archives.iter().any(|r| r.trim().eq_ignore_ascii_case(archive)) {
+            if ini_archives
+                .iter()
+                .any(|r| r.trim().eq_ignore_ascii_case(archive))
+            {
                 return false;
             }
             let lower = archive.to_ascii_lowercase();
@@ -345,7 +364,10 @@ pub fn orphan_archives(
             // (`- Textures`, `- Main`, `- Voices_en0`), so demanding equality or the
             // `" - "` separator is both stricter and closer to what the game loads.
             !bases.iter().any(|b| {
-                stem == b || stem.strip_prefix(b.as_str()).is_some_and(|r| r.starts_with(" - "))
+                stem == b
+                    || stem
+                        .strip_prefix(b.as_str())
+                        .is_some_and(|r| r.starts_with(" - "))
             })
         })
         .cloned()
@@ -366,9 +388,21 @@ fn base_name(file: &str) -> &str {
 /// numbered `[Archives]` block. Order is preserved and duplicates collapse.
 pub fn registered_archives(ini_text: &str) -> Vec<String> {
     let mut out = read_numbered_archives(ini_text);
-    for key in ["SArchiveList", "sResourceArchiveList", "sResourceArchiveList2"] {
-        let Some(value) = eidos_ini::get_key(ini_text, "Archive", key) else { continue };
-        out.extend(value.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned));
+    for key in [
+        "SArchiveList",
+        "sResourceArchiveList",
+        "sResourceArchiveList2",
+    ] {
+        let Some(value) = eidos_ini::get_key(ini_text, "Archive", key) else {
+            continue;
+        };
+        out.extend(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned),
+        );
     }
     let mut seen: Vec<String> = Vec::with_capacity(out.len());
     out.retain(|a| {
@@ -389,7 +423,9 @@ pub fn registered_archives(ini_text: &str) -> Vec<String> {
 pub fn registered_archives_in(ini_dir: &Path, game_id: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for file in ini_files_for(game_id) {
-        let Ok((text, _)) = read_ini_text(&ini_dir.join(file)) else { continue };
+        let Ok((text, _)) = read_ini_text(&ini_dir.join(file)) else {
+            continue;
+        };
         for a in registered_archives(&text) {
             if !out.iter().any(|e| e.eq_ignore_ascii_case(&a)) {
                 out.push(a);
@@ -451,18 +487,30 @@ fn gen_hash(file_name: &str) -> u64 {
         .bytes()
         .map(|b| {
             let c = b.to_ascii_lowercase();
-            if c == b'\\' { b'/' } else { c }
+            if c == b'\\' {
+                b'/'
+            } else {
+                c
+            }
         })
         .collect();
-    let ext_pos = lower.iter().rposition(|&b| b == b'.').unwrap_or(lower.len());
+    let ext_pos = lower
+        .iter()
+        .rposition(|&b| b == b'.')
+        .unwrap_or(lower.len());
     let length = ext_pos;
     let ext = &lower[ext_pos..];
 
     let mut hash: u64 = 0;
     if length > 0 {
         let last_before = lower[ext_pos - 1] as u64;
-        let two_before = if length > 2 { lower[ext_pos - 2] as u64 } else { 0 };
-        hash = last_before | (two_before << 8) | ((length as u64) << 16) | ((lower[0] as u64) << 24);
+        let two_before = if length > 2 {
+            lower[ext_pos - 2] as u64
+        } else {
+            0
+        };
+        hash =
+            last_before | (two_before << 8) | ((length as u64) << 16) | ((lower[0] as u64) << 24);
     }
     if !ext.is_empty() {
         match &ext[1..] {
@@ -473,7 +521,11 @@ fn gen_hash(file_name: &str) -> u64 {
             _ => {}
         }
         let part1_end = ext_pos.saturating_sub(2);
-        let part1: &[u8] = if part1_end > 1 { &lower[1..part1_end] } else { &[] };
+        let part1: &[u8] = if part1_end > 1 {
+            &lower[1..part1_end]
+        } else {
+            &[]
+        };
         let temp = (gen_hash_int(part1) as u64).wrapping_add(gen_hash_int(ext) as u64);
         hash |= (temp & 0xFFFF_FFFF) << 32;
     }
@@ -484,7 +536,12 @@ fn gen_hash(file_name: &str) -> u64 {
 /// launcher/engine does not grey out (or reset) the plugin selection - it enforces
 /// this for every Gamebryo/Creation game. Written into the `[Archive]` INI.
 pub fn enable_file_selection(ini_dir: &Path, ini_file: &str) -> io::Result<()> {
-    set_ini_key(&ini_dir.join(ini_file), "Launcher", "bEnableFileSelection", "1")
+    set_ini_key(
+        &ini_dir.join(ini_file),
+        "Launcher",
+        "bEnableFileSelection",
+        "1",
+    )
 }
 
 /// Read an INI file as text, returning `(text, was Latin-1)`. A missing file reads
@@ -518,8 +575,10 @@ pub fn set_ini_key(path: &Path, section: &str, key: &str, value: &str) -> io::Re
     if latin1 {
         // Chars above U+00FF cannot occur: the decoded input round-trips and the
         // inserted section/key/value text is ASCII. Guard anyway.
-        let bytes: Vec<u8> =
-            out.chars().map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' }).collect();
+        let bytes: Vec<u8> = out
+            .chars()
+            .map(|c| if (c as u32) <= 0xFF { c as u8 } else { b'?' })
+            .collect();
         write_atomic(path, &bytes)
     } else {
         write_atomic(path, out.as_bytes())
@@ -534,8 +593,11 @@ mod tests {
 
     static N: AtomicU32 = AtomicU32::new(0);
     fn tmp() -> PathBuf {
-        std::env::temp_dir()
-            .join(format!("eidos-gf-{}-{}.ini", std::process::id(), N.fetch_add(1, Ordering::Relaxed)))
+        std::env::temp_dir().join(format!(
+            "eidos-gf-{}-{}.ini",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ))
     }
 
     #[test]
@@ -548,8 +610,12 @@ mod tests {
         set_ini_key(&p, "Launcher", "bEnableFileSelection", "1").unwrap();
         let after = fs::read(&p).unwrap();
         let after_str: String = after.iter().map(|&b| b as char).collect();
-        assert!(after.windows(original.len() - 1).any(|w| w == &original[..original.len() - 1]),
-            "original bytes (incl. 0xE9) must be preserved: {after_str:?}");
+        assert!(
+            after
+                .windows(original.len() - 1)
+                .any(|w| w == &original[..original.len() - 1]),
+            "original bytes (incl. 0xE9) must be preserved: {after_str:?}"
+        );
         assert!(after_str.contains("[Launcher]") && after_str.contains("bEnableFileSelection=1"));
         let _ = fs::remove_file(&p);
     }
@@ -594,8 +660,11 @@ mod tests {
     }
 
     fn tmp_dir() -> PathBuf {
-        let d = std::env::temp_dir()
-            .join(format!("eidos-gfd-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let d = std::env::temp_dir().join(format!(
+            "eidos-gfd-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -626,8 +695,13 @@ mod tests {
         let dir = tmp_dir();
         let ini = dir.join("Morrowind.ini");
         // The existing (vanilla) numbered list.
-        fs::write(&ini, "[Archives]\r\nArchive 0=Morrowind.bsa\r\nArchive 1=Tribunal.bsa\r\n").unwrap();
-        register_morrowind_archives(&ini, &["ModX.bsa".to_string(), "Morrowind.bsa".to_string()]).unwrap();
+        fs::write(
+            &ini,
+            "[Archives]\r\nArchive 0=Morrowind.bsa\r\nArchive 1=Tribunal.bsa\r\n",
+        )
+        .unwrap();
+        register_morrowind_archives(&ini, &["ModX.bsa".to_string(), "Morrowind.bsa".to_string()])
+            .unwrap();
         let s = fs::read_to_string(&ini).unwrap();
         assert!(s.contains("Archive 0=Morrowind.bsa"));
         assert!(s.contains("Archive 1=Tribunal.bsa"));
@@ -652,7 +726,9 @@ mod tests {
     // --- the orphan-archive diagnostic -------------------------------------
 
     fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
-        v.iter().map(|(m, a)| ((*m).to_string(), (*a).to_string())).collect()
+        v.iter()
+            .map(|(m, a)| ((*m).to_string(), (*a).to_string()))
+            .collect()
     }
 
     fn names(v: &[&str]) -> Vec<String> {
@@ -668,7 +744,10 @@ mod tests {
             ("C", "Unrelated.bsa"),
         ]);
         let orphans = orphan_archives(&archives, &names(&["MyMod.esp"]), &[]);
-        assert_eq!(orphans, pairs(&[("B", "MyMod2 - Textures.bsa"), ("C", "Unrelated.bsa")]));
+        assert_eq!(
+            orphans,
+            pairs(&[("B", "MyMod2 - Textures.bsa"), ("C", "Unrelated.bsa")])
+        );
 
         // Enabling MyMod2.esp rescues its archive and nothing else.
         let orphans = orphan_archives(&archives, &names(&["MyMod.esp", "MyMod2.esp"]), &[]);
@@ -680,7 +759,10 @@ mod tests {
         let archives = pairs(&[("A", "MyMod - Textures.bsa")]);
         // The caller passes ACTIVE plugins only: MyMod.esp exists but is unchecked,
         // so its archive is dead weight and must be reported.
-        assert_eq!(orphan_archives(&archives, &names(&["Skyrim.esm"]), &[]), archives);
+        assert_eq!(
+            orphan_archives(&archives, &names(&["Skyrim.esm"]), &[]),
+            archives
+        );
         // Same file with the plugin enabled: silent.
         assert!(orphan_archives(&archives, &names(&["Skyrim.esm", "MyMod.esp"]), &[]).is_empty());
     }
@@ -690,7 +772,10 @@ mod tests {
         let archives = pairs(&[("A", "Standalone.bsa"), ("A", "Other.bsa")]);
         // Registered in the INI (case-insensitively): it loads without any plugin.
         let ini = names(&["standalone.bsa"]);
-        assert_eq!(orphan_archives(&archives, &[], &ini), pairs(&[("A", "Other.bsa")]));
+        assert_eq!(
+            orphan_archives(&archives, &[], &ini),
+            pairs(&[("A", "Other.bsa")])
+        );
     }
 
     #[test]
@@ -702,7 +787,10 @@ mod tests {
             ("B", "Ghost.bsa"),
         ]);
         let orphans = orphan_archives(&archives, &names(&["MyMod.esp"]), &[]);
-        assert_eq!(orphans, pairs(&[("B", "Ghost - Main.ba2"), ("B", "Ghost.bsa")]));
+        assert_eq!(
+            orphans,
+            pairs(&[("B", "Ghost - Main.ba2"), ("B", "Ghost.bsa")])
+        );
     }
 
     #[test]
@@ -718,7 +806,10 @@ mod tests {
         // A plugin that is only an extension, an archive with no stem, empty lists:
         // nothing here may panic or match by accident.
         let archives = pairs(&[("A", ".bsa"), ("A", "x.bsa"), ("A", "noext")]);
-        assert_eq!(orphan_archives(&archives, &names(&[".esp", ""]), &[]).len(), 3);
+        assert_eq!(
+            orphan_archives(&archives, &names(&[".esp", ""]), &[]).len(),
+            3
+        );
         assert!(orphan_archives(&[], &names(&["A.esp"]), &[]).is_empty());
     }
 
@@ -734,13 +825,19 @@ mod tests {
         fs::write(a.join("textures/Deep.bsa"), b"").unwrap(); // not in the Data root
         fs::write(b.join("B.bsa"), b"").unwrap();
 
-        let mods =
-            vec![("ModA".to_string(), a.clone()), ("ModB".to_string(), b.clone()),
-                 ("Gone".to_string(), a.join("does-not-exist"))];
+        let mods = vec![
+            ("ModA".to_string(), a.clone()),
+            ("ModB".to_string(), b.clone()),
+            ("Gone".to_string(), a.join("does-not-exist")),
+        ];
         // Mod order preserved, archives sorted inside a mod, a missing folder skipped.
         assert_eq!(
             mod_archives(&mods),
-            pairs(&[("ModA", "Alpha.ba2"), ("ModA", "Zeta.bsa"), ("ModB", "B.bsa")])
+            pairs(&[
+                ("ModA", "Alpha.ba2"),
+                ("ModA", "Zeta.bsa"),
+                ("ModB", "B.bsa")
+            ])
         );
         let _ = fs::remove_dir_all(&a);
         let _ = fs::remove_dir_all(&b);
@@ -754,7 +851,11 @@ mod tests {
                     sResourceArchiveList2= Skyrim - Voices.bsa ,\r\n";
         assert_eq!(
             registered_archives(text),
-            names(&["Skyrim - Misc.bsa", "Skyrim - Shaders.bsa", "Skyrim - Voices.bsa"])
+            names(&[
+                "Skyrim - Misc.bsa",
+                "Skyrim - Shaders.bsa",
+                "Skyrim - Voices.bsa"
+            ])
         );
         // Oblivion/FO3/FNV key, and Morrowind's numbered block, both understood.
         let old = registered_archives("[Archive]\nSArchiveList=Oblivion - Meshes.bsa\n");
@@ -764,7 +865,8 @@ mod tests {
             names(&["Morrowind.bsa", "Tribunal.bsa"])
         );
         // Duplicates across keys collapse; a truncated file yields nothing.
-        let dup = registered_archives("[Archive]\nSArchiveList=a.bsa\nsResourceArchiveList=A.BSA\n");
+        let dup =
+            registered_archives("[Archive]\nSArchiveList=a.bsa\nsResourceArchiveList=A.BSA\n");
         assert_eq!(dup, names(&["a.bsa"]));
         assert!(registered_archives("[Archive").is_empty());
     }
@@ -774,8 +876,16 @@ mod tests {
         let dir = tmp_dir();
         // Skyrim SE reads Skyrim.ini and SkyrimCustom.ini; a mod may be listed in
         // either, and the missing SkyrimPrefs.ini must not abort the union.
-        fs::write(dir.join("Skyrim.ini"), "[Archive]\r\nsResourceArchiveList=Skyrim - Misc.bsa\r\n").unwrap();
-        fs::write(dir.join("SkyrimCustom.ini"), "[Archive]\r\nsResourceArchiveList=Standalone.bsa\r\n").unwrap();
+        fs::write(
+            dir.join("Skyrim.ini"),
+            "[Archive]\r\nsResourceArchiveList=Skyrim - Misc.bsa\r\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("SkyrimCustom.ini"),
+            "[Archive]\r\nsResourceArchiveList=Standalone.bsa\r\n",
+        )
+        .unwrap();
         let got = registered_archives_in(&dir, "skyrimse");
         assert_eq!(got, names(&["Skyrim - Misc.bsa", "Standalone.bsa"]));
         assert!(registered_archives_in(&dir, "nope").is_empty());
@@ -799,7 +909,11 @@ mod tests {
         let docs = tmp_dir();
         let data = tmp_dir();
         // The deployed INI already lists the vanilla archives.
-        fs::write(docs.join("Oblivion.ini"), "[Archive]\r\nSArchiveList=Oblivion - Meshes.bsa\r\n").unwrap();
+        fs::write(
+            docs.join("Oblivion.ini"),
+            "[Archive]\r\nSArchiveList=Oblivion - Meshes.bsa\r\n",
+        )
+        .unwrap();
         enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
 
         // The dummy BSA is written into the overwrite (Data) layer, not the game dir.
@@ -809,7 +923,7 @@ mod tests {
         assert!(ini.contains("Oblivion - Invalidation.bsa")); // registered at the front
         assert!(ini.contains("Oblivion - Meshes.bsa")); // vanilla list kept
         assert!(ini.contains("SInvalidationFile=")); // legacy mechanism disabled
-        // Idempotent: a second run doesn't double-register.
+                                                     // Idempotent: a second run doesn't double-register.
         enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
         let ini2 = fs::read_to_string(docs.join("Oblivion.ini")).unwrap();
         assert_eq!(ini2.matches("Oblivion - Invalidation.bsa").count(), 1);
@@ -827,7 +941,11 @@ mod tests {
         let original = b"[Archive]\r\nSArchiveList=Oblivion - Voices Fran\xE7ais.bsa\r\n".to_vec();
         fs::write(docs.join("Oblivion.ini"), &original).unwrap();
         enable_bsa_invalidation(&docs, &data, "oblivion").unwrap();
-        let after: String = fs::read(docs.join("Oblivion.ini")).unwrap().iter().map(|&b| b as char).collect();
+        let after: String = fs::read(docs.join("Oblivion.ini"))
+            .unwrap()
+            .iter()
+            .map(|&b| b as char)
+            .collect();
         assert!(after.contains("Oblivion - Invalidation.bsa, Oblivion - Voices Fran\u{e7}ais.bsa"));
         let _ = fs::remove_dir_all(&docs);
         let _ = fs::remove_dir_all(&data);
@@ -839,9 +957,14 @@ mod tests {
         let data = tmp_dir();
         // A list already near the engine's 255-char INI value cut, plus the List2
         // continuation Skyrim LE ships. Prepending the dummy pushes past the cut.
-        let vanilla: Vec<String> = (0..11).map(|i| format!("Skyrim - Filler{i:02}.bsa")).collect();
+        let vanilla: Vec<String> = (0..11)
+            .map(|i| format!("Skyrim - Filler{i:02}.bsa"))
+            .collect();
         let joined = vanilla.join(", ");
-        assert!((200..=INI_VALUE_MAX).contains(&joined.len()), "fixture must start under the cut");
+        assert!(
+            (200..=INI_VALUE_MAX).contains(&joined.len()),
+            "fixture must start under the cut"
+        );
         fs::write(
             docs.join("Skyrim.ini"),
             format!("[Archive]\r\nsResourceArchiveList={joined}\r\nsResourceArchiveList2=Skyrim - Voices.bsa\r\n"),
@@ -850,18 +973,32 @@ mod tests {
         enable_bsa_invalidation(&docs, &data, "skyrim").unwrap();
 
         let text = fs::read_to_string(docs.join("Skyrim.ini")).unwrap();
-        let read = |k: &str| eidos_ini::get_key(&text, "Archive", k).unwrap().trim().to_string();
+        let read = |k: &str| {
+            eidos_ini::get_key(&text, "Archive", k)
+                .unwrap()
+                .trim()
+                .to_string()
+        };
         let (l1, l2) = (read("sResourceArchiveList"), read("sResourceArchiveList2"));
-        assert!(l1.len() <= INI_VALUE_MAX, "head must survive the engine's truncation: {}", l1.len());
-        assert!(l1.len() > INI_VALUE_MAX - 30, "head must not be split earlier than it has to");
+        assert!(
+            l1.len() <= INI_VALUE_MAX,
+            "head must survive the engine's truncation: {}",
+            l1.len()
+        );
+        assert!(
+            l1.len() > INI_VALUE_MAX - 30,
+            "head must not be split earlier than it has to"
+        );
         assert!(!l1.ends_with(','));
         // Nothing lost, and the order across the two keys is unchanged (the engine
         // reads List then List2), so archive precedence is preserved.
         let mut expected = vec!["Skyrim - Invalidation.bsa".to_string()];
         expected.extend(vanilla.iter().cloned());
         expected.push("Skyrim - Voices.bsa".to_string());
-        let got: Vec<String> =
-            format!("{l1}, {l2}").split(',').map(|s| s.trim().to_string()).collect();
+        let got: Vec<String> = format!("{l1}, {l2}")
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
         assert_eq!(got, expected);
 
         // Idempotent even though the dummy now sits in a different key than it would
@@ -905,7 +1042,10 @@ mod tests {
         );
         assert!(ini_files_for("nope").is_empty());
         // The [Archive] INI is the first of the per-profile set.
-        assert_eq!(ini_files_for("fallout4").first().copied(), ini_file_for("fallout4"));
+        assert_eq!(
+            ini_files_for("fallout4").first().copied(),
+            ini_file_for("fallout4")
+        );
     }
 
     #[test]
@@ -918,7 +1058,10 @@ mod tests {
         // empty active list must never reach this function.
         let archives = vec![
             ("SkyUI".to_string(), "SkyUI_SE.bsa".to_string()),
-            ("USSEP FR".to_string(), "unofficial skyrim special edition patch.bsa".to_string()),
+            (
+                "USSEP FR".to_string(),
+                "unofficial skyrim special edition patch.bsa".to_string(),
+            ),
             (
                 "USSEP FR".to_string(),
                 "unofficial skyrim special edition patch - textures.bsa".to_string(),
@@ -943,5 +1086,4 @@ mod tests {
         let shouty = vec!["Unofficial Skyrim Special Edition Patch.ESP".to_string()];
         assert_eq!(orphan_archives(&archives[1..], &shouty, &[]).len(), 0);
     }
-
 }

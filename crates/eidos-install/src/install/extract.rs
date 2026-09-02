@@ -12,16 +12,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-
-
-
 use super::*;
 
 pub(crate) static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 /// The first usable 7-Zip binary on `PATH`.
 pub(crate) fn find_7z() -> Option<&'static str> {
-    ["7z", "7zz", "7za"].into_iter().find(|b| Command::new(b).output().is_ok())
+    ["7z", "7zz", "7za"]
+        .into_iter()
+        .find(|b| Command::new(b).output().is_ok())
 }
 
 pub(crate) fn extract_all(bin: &str, archive: &Path, dest: &Path) -> Result<(), InstallError> {
@@ -33,7 +32,9 @@ pub(crate) fn extract_all(bin: &str, archive: &Path, dest: &Path) -> Result<(), 
         .output()
         .map_err(|e| InstallError::Extract(e.to_string()))?;
     if !out.status.success() {
-        return Err(InstallError::Extract(String::from_utf8_lossy(&out.stderr).trim().to_string()));
+        return Err(InstallError::Extract(
+            String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        ));
     }
     Ok(())
 }
@@ -117,7 +118,9 @@ fn unflatten_backslash_paths(root: &Path) -> io::Result<usize> {
     for e in flat {
         // `to_str` again, for the same reason as the guard: a destination built
         // from a lossy string would rename the file it is meant to move.
-        let Some(raw) = e.file_name().to_str().map(str::to_owned) else { continue };
+        let Some(raw) = e.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
         let Some(rel) = safe_relative(&raw) else {
             // Refused rather than repaired. Splitting on backslashes is exactly
             // what turns `..\..\etc\passwd` from one harmlessly-named file
@@ -206,8 +209,11 @@ mod backslash_tests {
     use super::*;
 
     fn tmp(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir()
-            .join(format!("eidos-bs-{}-{tag}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
+        let d = std::env::temp_dir().join(format!(
+            "eidos-bs-{}-{tag}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -226,7 +232,10 @@ mod backslash_tests {
             fs::write(d.join(f), b"x").unwrap();
         }
         // The empty directory placeholders the archive also carried.
-        for dir in [r"OpenCBP_FO4-3.5.240\Data\", r"OpenCBP_FO4-3.5.240\Data\F4SE\"] {
+        for dir in [
+            r"OpenCBP_FO4-3.5.240\Data\",
+            r"OpenCBP_FO4-3.5.240\Data\F4SE\",
+        ] {
             fs::create_dir(d.join(dir)).unwrap();
         }
 
@@ -234,13 +243,21 @@ mod backslash_tests {
         assert_eq!(n, 6);
 
         // The two things every later step looks for and could not see before.
-        assert!(d.join("OpenCBP_FO4-3.5.240/Data/F4SE/Plugins/CBP.dll").is_file());
+        assert!(d
+            .join("OpenCBP_FO4-3.5.240/Data/F4SE/Plugins/CBP.dll")
+            .is_file());
         assert!(d.join("OpenCBP_FO4-3.5.240/FOMOD/info.xml").is_file());
-        assert!(d.join("OpenCBP_FO4-3.5.240/Data/Scripts/OCBP_API.pex").is_file());
+        assert!(d
+            .join("OpenCBP_FO4-3.5.240/Data/Scripts/OCBP_API.pex")
+            .is_file());
         assert!(d.join("OpenCBP_FO4-3.5.240/OCBP_LICENSE").is_file());
         // And nothing backslash-named survives at the top.
         assert!(
-            !fs::read_dir(&d).unwrap().any(|e| e.unwrap().file_name().to_string_lossy().contains('\\')),
+            !fs::read_dir(&d).unwrap().any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains('\\')),
             "a flattened name was left behind"
         );
         let _ = fs::remove_dir_all(&d);
@@ -265,8 +282,15 @@ mod backslash_tests {
 
         // Two undecodable names against one ordinary directory: under a lossy
         // reading this is 2 "flat" vs 1 plain and the pass would fire.
-        assert_eq!(unflatten_backslash_paths(&d).unwrap(), 0, "an unreadable name is not a path");
-        assert!(d.join(esp).is_file(), "the plugin must still be at the mod root, byte for byte");
+        assert_eq!(
+            unflatten_backslash_paths(&d).unwrap(),
+            0,
+            "an unreadable name is not a path"
+        );
+        assert!(
+            d.join(esp).is_file(),
+            "the plugin must still be at the mod root, byte for byte"
+        );
         assert_eq!(fs::read(d.join(esp)).unwrap(), b"plugin");
         assert!(d.join(txt).is_file());
         let _ = fs::remove_dir_all(&d);
@@ -285,8 +309,14 @@ mod backslash_tests {
         fs::write(d.join(r"Mod\readme.txt"), b"x").unwrap();
 
         let n = unflatten_backslash_paths(&d).unwrap();
-        assert!(d.join(r"Mod\Data").join("real.esp").is_file(), "real content must not be stranded");
-        assert!(!d.join("Mod/Data").is_dir(), "no empty mirror may be created beside it");
+        assert!(
+            d.join(r"Mod\Data").join("real.esp").is_file(),
+            "real content must not be stranded"
+        );
+        assert!(
+            !d.join("Mod/Data").is_dir(),
+            "no empty mirror may be created beside it"
+        );
         assert_eq!(n, 1, "only the plain file is rebuilt");
         let _ = fs::remove_dir_all(&d);
     }
@@ -314,8 +344,15 @@ mod backslash_tests {
         fs::write(d.join("Data/a.esp"), b"x").unwrap();
         fs::write(d.join(r"weird\name.txt"), b"x").unwrap();
 
-        assert_eq!(unflatten_backslash_paths(&d).unwrap(), 0, "must not fire on a minority");
-        assert!(d.join(r"weird\name.txt").is_file(), "the odd name must survive untouched");
+        assert_eq!(
+            unflatten_backslash_paths(&d).unwrap(),
+            0,
+            "must not fire on a minority"
+        );
+        assert!(
+            d.join(r"weird\name.txt").is_file(),
+            "the odd name must survive untouched"
+        );
         let _ = fs::remove_dir_all(&d);
     }
 
@@ -330,16 +367,31 @@ mod backslash_tests {
         let n = unflatten_backslash_paths(&d).unwrap();
         assert_eq!(n, 1, "only the safe entry may be rebuilt");
         assert!(d.join("Mod/Data/ok.esp").is_file());
-        assert!(d.join(r"..\..\escaped.txt").is_file(), "left in place, not moved");
-        assert!(!d.parent().unwrap().parent().unwrap().join("escaped.txt").exists());
+        assert!(
+            d.join(r"..\..\escaped.txt").is_file(),
+            "left in place, not moved"
+        );
+        assert!(!d
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("escaped.txt")
+            .exists());
         let _ = fs::remove_dir_all(&d);
     }
 
     #[test]
     fn safe_relative_accepts_ordinary_names_and_refuses_the_rest() {
-        assert_eq!(safe_relative(r"Mod\Data\a.esp"), Some(PathBuf::from("Mod/Data/a.esp")));
+        assert_eq!(
+            safe_relative(r"Mod\Data\a.esp"),
+            Some(PathBuf::from("Mod/Data/a.esp"))
+        );
         // Doubled separators and a trailing one are noise, not structure.
-        assert_eq!(safe_relative(r"Mod\\Data\"), Some(PathBuf::from("Mod/Data")));
+        assert_eq!(
+            safe_relative(r"Mod\\Data\"),
+            Some(PathBuf::from("Mod/Data"))
+        );
         assert_eq!(safe_relative(r"..\x"), None);
         assert_eq!(safe_relative(r"Mod\..\..\x"), None);
         // A forward slash inside a component means the name was never purely

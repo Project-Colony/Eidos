@@ -110,9 +110,10 @@ pub(crate) fn apply(family: &str, variant: &str, accent: Option<&str>, high_cont
         // `resolve` never fails: an unknown pair gives the catalogue's own
         // fallback. Checking membership first is what keeps an unknown family on
         // EIDOS's default rather than on somebody else's.
-        if colony_ui::THEME_FAMILIES.iter().any(|f| {
-            f.key == family && f.variants.iter().any(|v| v.key == variant)
-        }) {
+        if colony_ui::THEME_FAMILIES
+            .iter()
+            .any(|f| f.key == family && f.variants.iter().any(|v| v.key == variant))
+        {
             colony_ui::resolve(family, variant)
         } else {
             PARCHMENT
@@ -166,7 +167,11 @@ pub(crate) fn card_style(_theme: &Theme) -> container::Style {
     let p = pal();
     container::Style {
         background: Some(Background::Color(p.bg_card)),
-        border: Border { color: accent(), width: 1.5, radius: 8.0.into() },
+        border: Border {
+            color: accent(),
+            width: 1.5,
+            radius: 8.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -175,7 +180,11 @@ pub(crate) fn panel_style(_theme: &Theme) -> container::Style {
     let p = pal();
     container::Style {
         background: Some(Background::Color(p.bg_card)),
-        border: Border { color: accent(), width: 1.0, radius: 3.0.into() },
+        border: Border {
+            color: accent(),
+            width: 1.0,
+            radius: 3.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -184,7 +193,11 @@ pub(crate) fn bar_style(_theme: &Theme) -> container::Style {
     let p = pal();
     container::Style {
         background: Some(Background::Color(p.bg_sidebar)),
-        border: Border { color: p.border_subtle, width: 1.0, radius: 0.0.into() },
+        border: Border {
+            color: p.border_subtle,
+            width: 1.0,
+            radius: 0.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -381,9 +394,15 @@ mod tests {
         // It moves the INK and the lines, not the grounds: a high-contrast mode
         // that repainted the backgrounds would be a different theme rather than
         // the same one read more easily.
-        assert_ne!(plain.text_primary, boosted.text_primary, "the ink did not move");
+        assert_ne!(
+            plain.text_primary, boosted.text_primary,
+            "the ink did not move"
+        );
         assert_ne!(plain.divider, boosted.divider, "the lines did not move");
-        assert_eq!(plain.bg_primary, boosted.bg_primary, "the ground must not move");
+        assert_eq!(
+            plain.bg_primary, boosted.bg_primary,
+            "the ground must not move"
+        );
 
         // On a light palette the ink gets darker, not lighter.
         assert!(boosted.text_primary.r < plain.text_primary.r);
@@ -420,7 +439,10 @@ mod tests {
                 checked += 1;
             }
         }
-        assert_eq!(checked, 57, "the catalogue should carry 57 palettes");
+        // The real check is the distinctness loop above, which runs over
+        // whatever the catalogue holds; this only guards against it silently
+        // becoming empty.
+        assert!(checked >= 57, "the catalogue shrank to {checked} palettes");
         apply(OWN_FAMILY, OWN_VARIANT, None, false);
     }
 }

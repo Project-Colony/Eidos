@@ -11,10 +11,22 @@ use crate::model::*;
 /// UTF-16BE byte-order mark (FOMODs are commonly UTF-16).
 pub fn decode_xml(bytes: &[u8]) -> String {
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        let u: Vec<u16> = rest.as_chunks::<2>().0.iter().copied().map(u16::from_le_bytes).collect();
+        let u: Vec<u16> = rest
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .copied()
+            .map(u16::from_le_bytes)
+            .collect();
         String::from_utf16_lossy(&u)
     } else if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        let u: Vec<u16> = rest.as_chunks::<2>().0.iter().copied().map(u16::from_be_bytes).collect();
+        let u: Vec<u16> = rest
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .copied()
+            .map(u16::from_be_bytes)
+            .collect();
         String::from_utf16_lossy(&u)
     } else if let Some(rest) = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
         String::from_utf8_lossy(rest).into_owned()
@@ -40,11 +52,14 @@ fn norm_path(s: &str) -> String {
 }
 
 fn find_child<'a, 'i>(node: Node<'a, 'i>, tag: &str) -> Option<Node<'a, 'i>> {
-    node.children().find(|c| c.is_element() && c.tag_name().name() == tag)
+    node.children()
+        .find(|c| c.is_element() && c.tag_name().name() == tag)
 }
 
 fn elements<'a, 'i>(node: Node<'a, 'i>, tag: &str) -> Vec<Node<'a, 'i>> {
-    node.children().filter(|c| c.is_element() && c.tag_name().name() == tag).collect()
+    node.children()
+        .filter(|c| c.is_element() && c.tag_name().name() == tag)
+        .collect()
 }
 
 /// Apply a FOMOD `order` attribute to a parsed list: `Explicit` keeps document
@@ -80,7 +95,10 @@ impl ModuleConfig {
         let doc = Document::parse(strip_decl(xml)).map_err(|e| e.to_string())?;
         let root = doc.root_element();
         if root.tag_name().name() != "config" {
-            return Err(format!("unexpected root <{}>, expected <config>", root.tag_name().name()));
+            return Err(format!(
+                "unexpected root <{}>, expected <config>",
+                root.tag_name().name()
+            ));
         }
         let mut mc = ModuleConfig::default();
         let mut seq = 0u32;
@@ -91,13 +109,17 @@ impl ModuleConfig {
                 "moduleDependencies" => mc.module_dependencies = Some(parse_composite(c)),
                 "requiredInstallFiles" => mc.required_files = parse_file_list(c, &mut seq),
                 "installSteps" => {
-                    let mut steps: Vec<InstallStep> =
-                        elements(c, "installStep").into_iter().map(|s| parse_step(s, &mut seq)).collect();
+                    let mut steps: Vec<InstallStep> = elements(c, "installStep")
+                        .into_iter()
+                        .map(|s| parse_step(s, &mut seq))
+                        .collect();
                     // FOMOD `order` (default Ascending) sorts the steps by name.
                     apply_order(&mut steps, c.attribute("order"), |s| s.name.clone());
                     mc.steps.extend(steps);
                 }
-                "conditionalFileInstalls" => mc.conditional_installs = parse_conditional_installs(c, &mut seq),
+                "conditionalFileInstalls" => {
+                    mc.conditional_installs = parse_conditional_installs(c, &mut seq)
+                }
                 _ => {}
             }
         }
@@ -115,11 +137,17 @@ fn parse_file_list(node: Node, seq: &mut u32) -> Vec<FileItem> {
         .filter(|c| !c.attribute("source").unwrap_or("").trim().is_empty())
         .map(|c| {
             let source = norm_path(c.attribute("source").unwrap_or(""));
-            let destination = c.attribute("destination").map(norm_path).unwrap_or_else(|| source.clone());
+            let destination = c
+                .attribute("destination")
+                .map(norm_path)
+                .unwrap_or_else(|| source.clone());
             let item = FileItem {
                 source,
                 destination,
-                priority: c.attribute("priority").and_then(|p| p.parse().ok()).unwrap_or(0),
+                priority: c
+                    .attribute("priority")
+                    .and_then(|p| p.parse().ok())
+                    .unwrap_or(0),
                 is_folder: c.tag_name().name() == "folder",
                 always_install: c.attribute("alwaysInstall") == Some("true"),
                 install_if_usable: c.attribute("installIfUsable") == Some("true"),
@@ -140,7 +168,11 @@ fn parse_step(node: Node, seq: &mut u32) -> InstallStep {
             groups.push(parse_group(gr, seq));
         }
     }
-    InstallStep { name, visible, groups }
+    InstallStep {
+        name,
+        visible,
+        groups,
+    }
 }
 
 fn parse_group(node: Node, seq: &mut u32) -> Group {
@@ -156,27 +188,53 @@ fn parse_group(node: Node, seq: &mut u32) -> Group {
         // unaffected.
         apply_order(&mut plugins, p.attribute("order"), |pl| pl.name.clone());
     }
-    Group { name, group_type, plugins }
+    Group {
+        name,
+        group_type,
+        plugins,
+    }
 }
 
 fn parse_plugin(node: Node, seq: &mut u32) -> Plugin {
     let name = node.attribute("name").unwrap_or("").to_string();
-    let description =
-        find_child(node, "description").and_then(|d| d.text()).unwrap_or("").trim().to_string();
-    let image = find_child(node, "image").and_then(|i| i.attribute("path")).map(norm_path);
+    let description = find_child(node, "description")
+        .and_then(|d| d.text())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let image = find_child(node, "image")
+        .and_then(|i| i.attribute("path"))
+        .map(norm_path);
     let condition_flags = find_child(node, "conditionFlags")
         .map(|cf| {
             elements(cf, "flag")
                 .into_iter()
-                .map(|f| (f.attribute("name").unwrap_or("").to_string(), f.text().unwrap_or("").trim().to_string()))
+                .map(|f| {
+                    (
+                        f.attribute("name").unwrap_or("").to_string(),
+                        f.text().unwrap_or("").trim().to_string(),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default();
-    let files = find_child(node, "files").map(|fs| parse_file_list(fs, seq)).unwrap_or_default();
-    let type_descriptor = find_child(node, "typeDescriptor").map(parse_type_descriptor).unwrap_or(
-        TypeDescriptor { default_type: PluginType::Optional, patterns: Vec::new() },
-    );
-    Plugin { name, description, image, type_descriptor, condition_flags, files }
+    let files = find_child(node, "files")
+        .map(|fs| parse_file_list(fs, seq))
+        .unwrap_or_default();
+    let type_descriptor = find_child(node, "typeDescriptor")
+        .map(parse_type_descriptor)
+        .unwrap_or(TypeDescriptor {
+            default_type: PluginType::Optional,
+            patterns: Vec::new(),
+        });
+    Plugin {
+        name,
+        description,
+        image,
+        type_descriptor,
+        condition_flags,
+        files,
+    }
 }
 
 fn parse_type_descriptor(node: Node) -> TypeDescriptor {
@@ -198,13 +256,25 @@ fn parse_type_descriptor(node: Node) -> TypeDescriptor {
                     .unwrap_or(PluginType::Optional);
                 let condition = find_child(p, "dependencies")
                     .map(parse_composite)
-                    .unwrap_or(Condition::Sub { op: Operator::And, conditions: Vec::new() });
-                patterns.push(DependencyPattern { plugin_type, condition });
+                    .unwrap_or(Condition::Sub {
+                        op: Operator::And,
+                        conditions: Vec::new(),
+                    });
+                patterns.push(DependencyPattern {
+                    plugin_type,
+                    condition,
+                });
             }
         }
-        return TypeDescriptor { default_type, patterns };
+        return TypeDescriptor {
+            default_type,
+            patterns,
+        };
     }
-    TypeDescriptor { default_type: PluginType::Optional, patterns: Vec::new() }
+    TypeDescriptor {
+        default_type: PluginType::Optional,
+        patterns: Vec::new(),
+    }
 }
 
 fn parse_conditional_installs(node: Node, seq: &mut u32) -> Vec<ConditionalInstall> {
@@ -213,8 +283,13 @@ fn parse_conditional_installs(node: Node, seq: &mut u32) -> Vec<ConditionalInsta
         for p in elements(patterns, "pattern") {
             let condition = find_child(p, "dependencies")
                 .map(parse_composite)
-                .unwrap_or(Condition::Sub { op: Operator::And, conditions: Vec::new() });
-            let files = find_child(p, "files").map(|fs| parse_file_list(fs, seq)).unwrap_or_default();
+                .unwrap_or(Condition::Sub {
+                    op: Operator::And,
+                    conditions: Vec::new(),
+                });
+            let files = find_child(p, "files")
+                .map(|fs| parse_file_list(fs, seq))
+                .unwrap_or_default();
             out.push(ConditionalInstall { condition, files });
         }
     }
@@ -400,21 +475,33 @@ mod tests {
         let std = &g.plugins[0];
         assert_eq!(std.name, "Standard");
         assert_eq!(std.type_descriptor.default_type, PluginType::Recommended);
-        assert_eq!(std.condition_flags, vec![("variant".to_string(), "standard".to_string())]);
+        assert_eq!(
+            std.condition_flags,
+            vec![("variant".to_string(), "standard".to_string())]
+        );
         assert_eq!(std.files[0].destination, "main.esp");
 
         // The "Lite" plugin becomes NotUsable when SomeMaster.esm is active AND variant=standard.
         let lite = &g.plugins[1];
         assert_eq!(lite.type_descriptor.default_type, PluginType::Optional);
         assert_eq!(lite.type_descriptor.patterns.len(), 1);
-        assert_eq!(lite.type_descriptor.patterns[0].plugin_type, PluginType::NotUsable);
+        assert_eq!(
+            lite.type_descriptor.patterns[0].plugin_type,
+            PluginType::NotUsable
+        );
         assert_eq!(
             lite.type_descriptor.patterns[0].condition,
             Condition::Sub {
                 op: Operator::And,
                 conditions: vec![
-                    Condition::File { file: "SomeMaster.esm".to_string(), state: "Active".to_string() },
-                    Condition::Flag { flag: "variant".to_string(), value: "standard".to_string() },
+                    Condition::File {
+                        file: "SomeMaster.esm".to_string(),
+                        state: "Active".to_string()
+                    },
+                    Condition::Flag {
+                        flag: "variant".to_string(),
+                        value: "standard".to_string()
+                    },
                 ],
             }
         );
@@ -449,13 +536,21 @@ mod tests {
 </config>"#;
         // No `order` on <plugins> -> MO2 sorts alphabetically.
         let mc = ModuleConfig::parse(XML).unwrap();
-        let names: Vec<&str> = mc.steps[0].groups[0].plugins.iter().map(|p| p.name.as_str()).collect();
+        let names: Vec<&str> = mc.steps[0].groups[0]
+            .plugins
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names, vec!["Apple", "Zebra"]);
 
         // Explicit keeps document order.
         let explicit = XML.replace("<plugins>", r#"<plugins order="Explicit">"#);
         let mc2 = ModuleConfig::parse(&explicit).unwrap();
-        let names2: Vec<&str> = mc2.steps[0].groups[0].plugins.iter().map(|p| p.name.as_str()).collect();
+        let names2: Vec<&str> = mc2.steps[0].groups[0]
+            .plugins
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
         assert_eq!(names2, vec!["Zebra", "Apple"]);
     }
 
@@ -493,7 +588,6 @@ mod tests {
         assert_eq!(mc.required_files[0].source, "Core/real.esp");
     }
 }
-
 
 #[cfg(test)]
 mod hostile_depth {

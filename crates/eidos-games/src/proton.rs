@@ -113,7 +113,10 @@ fn compat_tool_name(steam_root: &Path, app_id: u32) -> Option<String> {
 /// (matched loosely: `proton_experimental` -> "Proton - Experimental").
 fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<PathBuf> {
     // 1. compatibilitytools.d/<name>/proton (GE-Proton10-34 etc.)
-    let custom = steam_root.join("compatibilitytools.d").join(name).join("proton");
+    let custom = steam_root
+        .join("compatibilitytools.d")
+        .join(name)
+        .join("proton");
     if custom.is_file() {
         return Some(custom);
     }
@@ -126,7 +129,10 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
                 continue;
             }
             if let Ok(text) = fs::read_to_string(&vdf) {
-                if text.lines().filter_map(|l| quoted_pair(l.trim())).any(|(_, v)| v == name)
+                if text
+                    .lines()
+                    .filter_map(|l| quoted_pair(l.trim()))
+                    .any(|(_, v)| v == name)
                     || text.contains(&format!("\"{name}\""))
                 {
                     return Some(proton);
@@ -142,7 +148,9 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
         .filter(|c| c.is_ascii_alphanumeric())
         .collect();
     for lib in steam_libraries(home) {
-        let Ok(rd) = fs::read_dir(lib.join("steamapps/common")) else { continue };
+        let Ok(rd) = fs::read_dir(lib.join("steamapps/common")) else {
+            continue;
+        };
         for e in rd.flatten() {
             let dir_name = e.file_name().to_string_lossy().into_owned();
             let hay: String = dir_name
@@ -151,7 +159,9 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
                 .filter(|c| c.is_ascii_alphanumeric())
                 .collect();
             let proton = e.path().join("proton");
-            if proton.is_file() && (hay == needle || (needle.starts_with("proton") && hay.starts_with(&needle))) {
+            if proton.is_file()
+                && (hay == needle || (needle.starts_with("proton") && hay.starts_with(&needle)))
+            {
                 return Some(proton);
             }
         }
@@ -217,8 +227,14 @@ pub fn proton_command(
 
     let app = app_id.to_string();
     let mut env = vec![
-        ("STEAM_COMPAT_DATA_PATH".to_string(), compatdata.to_string_lossy().into_owned()),
-        ("STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(), root.to_string_lossy().into_owned()),
+        (
+            "STEAM_COMPAT_DATA_PATH".to_string(),
+            compatdata.to_string_lossy().into_owned(),
+        ),
+        (
+            "STEAM_COMPAT_CLIENT_INSTALL_PATH".to_string(),
+            root.to_string_lossy().into_owned(),
+        ),
         // Steam sets all three for compat launches; tools using steam_api (e.g. a
         // script extender launching the game) and GE-Proton's protonfixes need the
         // app id in the environment, which MO2 sets on every spawn.
@@ -227,13 +243,23 @@ pub fn proton_command(
         ("STEAM_COMPAT_APP_ID".to_string(), app),
         // The game's install dir: Proton's drive setup (re)creates the prefix's
         // `s:` gamedrive from this instead of deleting it.
-        ("STEAM_COMPAT_INSTALL_PATH".to_string(), install_path.to_string_lossy().into_owned()),
+        (
+            "STEAM_COMPAT_INSTALL_PATH".to_string(),
+            install_path.to_string_lossy().into_owned(),
+        ),
     ];
     if let Some(lib) = library_path(install_path).or_else(|| library_path(compatdata)) {
-        env.push(("STEAM_COMPAT_LIBRARY_PATHS".to_string(), lib.to_string_lossy().into_owned()));
+        env.push((
+            "STEAM_COMPAT_LIBRARY_PATHS".to_string(),
+            lib.to_string_lossy().into_owned(),
+        ));
     }
     let flatpak = is_flatpak_steam(&proton) || is_flatpak_steam(&root);
-    Some(ProtonRun { proton, env, flatpak })
+    Some(ProtonRun {
+        proton,
+        env,
+        flatpak,
+    })
 }
 
 /// Resolve a Proton from the prefix's `config_info`, which Proton itself writes.
@@ -246,7 +272,11 @@ pub fn proton_command(
 /// path; [`proton_from_config_info`] returns the binary directly.
 fn config_info_name(compatdata: &Path) -> Option<String> {
     let text = fs::read_to_string(compatdata.join("config_info")).ok()?;
-    text.lines().next().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
+    text.lines()
+        .next()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// The `proton` binary named by a prefix's `config_info` path lines, if it exists.
@@ -257,7 +287,12 @@ fn proton_from_config_info(compatdata: &Path) -> Option<PathBuf> {
         // .../GE-Proton10-34/files/lib/... -> .../GE-Proton10-34/proton
         let tool_dir = p
             .ancestors()
-            .find(|a| matches!(a.file_name().and_then(|n| n.to_str()), Some("files") | Some("dist")))
+            .find(|a| {
+                matches!(
+                    a.file_name().and_then(|n| n.to_str()),
+                    Some("files") | Some("dist")
+                )
+            })
             .and_then(Path::parent);
         if let Some(dir) = tool_dir {
             let proton = dir.join("proton");
@@ -295,22 +330,33 @@ mod tests {
         // its output outside the mount, where Eidos never sees it.
         let want = PathBuf::from("/mnt/Jeux/SteamLibrary");
         assert_eq!(
-            library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4")),
+            library_path(Path::new(
+                "/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4"
+            )),
             Some(want.clone())
         );
         assert_eq!(
-            library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/compatdata/377160")),
+            library_path(Path::new(
+                "/mnt/Jeux/SteamLibrary/steamapps/compatdata/377160"
+            )),
             Some(want.clone())
         );
         // The property that actually matters, stated as the heuristic itself.
         assert_eq!(
-            library_path(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4"))
-                .map(|l| l.join("steamapps/common/Fallout 4")),
-            Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4")),
+            library_path(Path::new(
+                "/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4"
+            ))
+            .map(|l| l.join("steamapps/common/Fallout 4")),
+            Some(PathBuf::from(
+                "/mnt/Jeux/SteamLibrary/steamapps/common/Fallout 4"
+            )),
             "S:\\steamapps\\common\\<game> must resolve to the real install"
         );
         // Nothing to say about a path that is not inside a library at all.
-        assert_eq!(library_path(Path::new("/mnt/Jeux/Eidos-Fallout4/mods")), None);
+        assert_eq!(
+            library_path(Path::new("/mnt/Jeux/Eidos-Fallout4/mods")),
+            None
+        );
     }
 
     use super::*;
@@ -379,10 +425,19 @@ mod tests {
     fn maps_app_to_tool_with_default_fallback() {
         let root = tmp_root();
         fake_steam(&root);
-        assert_eq!(compat_tool_name(&root, 489830).as_deref(), Some("GE-Proton10-34"));
-        assert_eq!(compat_tool_name(&root, 22380).as_deref(), Some("proton_experimental"));
+        assert_eq!(
+            compat_tool_name(&root, 489830).as_deref(),
+            Some("GE-Proton10-34")
+        );
+        assert_eq!(
+            compat_tool_name(&root, 22380).as_deref(),
+            Some("proton_experimental")
+        );
         // Unmapped app -> the "0" global default.
-        assert_eq!(compat_tool_name(&root, 999999).as_deref(), Some("GE-Proton10-34"));
+        assert_eq!(
+            compat_tool_name(&root, 999999).as_deref(),
+            Some("GE-Proton10-34")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -421,17 +476,29 @@ mod tests {
         let run = proton_command(&home, 489830, &compat, &install).unwrap();
         assert!(run.proton.ends_with("GE-Proton10-34/proton"));
         let env: std::collections::HashMap<_, _> = run.env.iter().cloned().collect();
-        assert_eq!(env.get("STEAM_COMPAT_DATA_PATH").map(String::as_str), Some(compat.to_str().unwrap()));
+        assert_eq!(
+            env.get("STEAM_COMPAT_DATA_PATH").map(String::as_str),
+            Some(compat.to_str().unwrap())
+        );
         assert!(env.contains_key("STEAM_COMPAT_CLIENT_INSTALL_PATH"));
         // MO2 sets the Steam app id on every spawn; Proton keys per-app fixes on it.
         assert_eq!(env.get("SteamAppId").map(String::as_str), Some("489830"));
         // The install dir lets Proton's drive setup repair s: instead of deleting it.
-        assert_eq!(env.get("STEAM_COMPAT_INSTALL_PATH").map(String::as_str), Some(install.to_str().unwrap()));
+        assert_eq!(
+            env.get("STEAM_COMPAT_INSTALL_PATH").map(String::as_str),
+            Some(install.to_str().unwrap())
+        );
         // The library ROOT, so that `S:\steamapps\common\<game>` - the way a
         // Windows program looks for a Steam game - resolves to the real install.
-        assert_eq!(env.get("STEAM_COMPAT_LIBRARY_PATHS").map(String::as_str), Some(steam.to_str().unwrap()));
+        assert_eq!(
+            env.get("STEAM_COMPAT_LIBRARY_PATHS").map(String::as_str),
+            Some(steam.to_str().unwrap())
+        );
 
-        let argv = run.command(Path::new("C:/Tools/xEdit/SSEEdit.exe"), &["-quickautoclean".to_string()]);
+        let argv = run.command(
+            Path::new("C:/Tools/xEdit/SSEEdit.exe"),
+            &["-quickautoclean".to_string()],
+        );
         // Steam's main-app verb, not the bare `run` (which deletes the s: drive).
         assert_eq!(argv[1], "waitforexitandrun");
         assert!(argv[2].ends_with("SSEEdit.exe"));
@@ -453,7 +520,9 @@ mod tests {
         assert!(!is_flatpak_steam(Path::new(
             "/home/u/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
         )));
-        assert!(!is_flatpak_steam(Path::new("/mnt/Jeux/SteamLibrary/steamapps/common/Proton 9.0")));
+        assert!(!is_flatpak_steam(Path::new(
+            "/mnt/Jeux/SteamLibrary/steamapps/common/Proton 9.0"
+        )));
     }
 
     #[test]
@@ -473,9 +542,15 @@ mod tests {
         .unwrap();
 
         // Line 1 is the (mismatching) declared name...
-        assert_eq!(config_info_name(&compat).as_deref(), Some("CachyOS-11.0-100"));
+        assert_eq!(
+            config_info_name(&compat).as_deref(),
+            Some("CachyOS-11.0-100")
+        );
         // ...but the path lines still find the real binary.
-        assert_eq!(proton_from_config_info(&compat).as_deref(), Some(tool.join("proton").as_path()));
+        assert_eq!(
+            proton_from_config_info(&compat).as_deref(),
+            Some(tool.join("proton").as_path())
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -157,7 +157,10 @@ pub(crate) fn from_payload(
 
     let coll = rev.get("collection");
     let str_at = |v: Option<&serde_json::Value>, k: &str| -> String {
-        v.and_then(|v| v.get(k)).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+        v.and_then(|v| v.get(k))
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string()
     };
 
     let mut mods = Vec::new();
@@ -165,7 +168,9 @@ pub(crate) fn from_payload(
         for m in list {
             let file = m.get("file");
             let inner = file.and_then(|f| f.get("mod"));
-            let Some(mod_id) = inner.and_then(|x| x.get("modId")).and_then(serde_json::Value::as_u64)
+            let Some(mod_id) = inner
+                .and_then(|x| x.get("modId"))
+                .and_then(serde_json::Value::as_u64)
             else {
                 // A member whose mod was deleted comes back with a null `file`.
                 // Skipped rather than shown as a zero: a row that cannot be acted
@@ -173,11 +178,17 @@ pub(crate) fn from_payload(
                 // count is reported separately from the API anyway.
                 continue;
             };
-            let Some(file_id) = m.get("fileId").and_then(serde_json::Value::as_u64) else { continue };
+            let Some(file_id) = m.get("fileId").and_then(serde_json::Value::as_u64) else {
+                continue;
+            };
             mods.push(CollectionMod {
                 // Redacted with the rest: a withheld collection must not leak
                 // its members' names, which is the whole point of the gate.
-                name: if redact { String::new() } else { str_at(inner, "name") },
+                name: if redact {
+                    String::new()
+                } else {
+                    str_at(inner, "name")
+                },
                 mod_id,
                 file_id,
                 domain: str_at(inner.and_then(|i| i.get("game")), "domainName"),
@@ -185,14 +196,25 @@ pub(crate) fn from_payload(
                 // is what tells the user their installed copy is behind.
                 version: {
                     let v = str_at(Some(m), "version");
-                    if v.is_empty() { str_at(file, "version") } else { v }
+                    if v.is_empty() {
+                        str_at(file, "version")
+                    } else {
+                        v
+                    }
                 },
-                file_title: if redact { String::new() } else { str_at(file, "name") },
+                file_title: if redact {
+                    String::new()
+                } else {
+                    str_at(file, "name")
+                },
                 size_in_bytes: file
                     .and_then(|f| f.get("sizeInBytes"))
                     .and_then(serde_json::Value::as_u64)
                     .unwrap_or(0),
-                optional: m.get("optional").and_then(serde_json::Value::as_bool).unwrap_or(false),
+                optional: m
+                    .get("optional")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
             });
         }
     }
@@ -200,23 +222,45 @@ pub(crate) fn from_payload(
     Ok(CollectionRevision {
         slug: {
             let s = str_at(coll, "slug");
-            if s.is_empty() { fallback_slug.to_string() } else { s }
+            if s.is_empty() {
+                fallback_slug.to_string()
+            } else {
+                s
+            }
         },
         revision_number: rev
             .get("revisionNumber")
             .and_then(serde_json::Value::as_u64)
             .unwrap_or(0) as u32,
-        name: if redact { String::new() } else { str_at(coll, "name") },
-        summary: if redact { String::new() } else { str_at(coll, "summary") },
+        name: if redact {
+            String::new()
+        } else {
+            str_at(coll, "name")
+        },
+        summary: if redact {
+            String::new()
+        } else {
+            str_at(coll, "summary")
+        },
         author: if redact {
             String::new()
         } else {
             str_at(coll.and_then(|c| c.get("user")), "name")
         },
         game_domain: str_at(coll.and_then(|c| c.get("game")), "domainName"),
-        mod_count: rev.get("modCount").and_then(serde_json::Value::as_u64).unwrap_or(0) as u32,
-        total_size: rev.get("totalSize").and_then(serde_json::Value::as_u64).unwrap_or(0),
-        instructions: if redact { String::new() } else { str_at(Some(rev), "installationInfo") },
+        mod_count: rev
+            .get("modCount")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0) as u32,
+        total_size: rev
+            .get("totalSize")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0),
+        instructions: if redact {
+            String::new()
+        } else {
+            str_at(Some(rev), "installationInfo")
+        },
         mods,
         hidden,
     })
@@ -279,7 +323,10 @@ mod tests {
         // The whole point: the revision carries ONE rating for the collection,
         // so withholding only its title while listing every mod inside it by
         // name would defeat the gate through the door it was built for.
-        assert!(r.mods.iter().all(|m| m.name.is_empty() && m.file_title.is_empty()));
+        assert!(r
+            .mods
+            .iter()
+            .all(|m| m.name.is_empty() && m.file_title.is_empty()));
         // Ids and versions survive - they describe nothing on their own, and
         // they are what lets the list still say "you already have this one".
         assert_eq!(r.mods[0].mod_id, 37471);
@@ -298,12 +345,19 @@ mod tests {
         unknown["data"]["collectionRevision"]["adultContent"] = serde_json::Value::Null;
         // Fail closed, exactly as the v1 gate does: every way this can be wrong
         // has to end with too little on screen, never too much.
-        for policy in [AdultPolicy::Allowed, AdultPolicy::Denied, AdultPolicy::Unknown] {
+        for policy in [
+            AdultPolicy::Allowed,
+            AdultPolicy::Denied,
+            AdultPolicy::Unknown,
+        ] {
             let r = from_payload(&unknown, "rqhcxy", policy).unwrap();
             assert_eq!(r.hidden, Some(HiddenReason::RatingUnknown), "{policy:?}");
         }
         // And an unknown ACCOUNT preference hides an adult collection too.
-        assert_eq!(gate(Some(true), AdultPolicy::Unknown), Some(HiddenReason::AdultUnknown));
+        assert_eq!(
+            gate(Some(true), AdultPolicy::Unknown),
+            Some(HiddenReason::AdultUnknown)
+        );
     }
 
     #[test]
@@ -329,7 +383,10 @@ mod tests {
         assert_eq!(b["variables"]["domainName"], "skyrimspecialedition");
         assert_eq!(b["variables"]["viewAdultContent"], false);
 
-        let c2 = NxmCollection { revision: Some(3), ..c };
+        let c2 = NxmCollection {
+            revision: Some(3),
+            ..c
+        };
         assert_eq!(query_body(&c2, true)["variables"]["revision"], 3);
     }
 }

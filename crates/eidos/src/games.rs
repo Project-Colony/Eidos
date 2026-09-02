@@ -5,7 +5,6 @@ use std::process::exit;
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::{Instance, InstanceKind};
 
-
 pub(crate) fn find_game(id: &str) -> Option<DetectedGame> {
     detect(&home()).into_iter().find(|g| g.def.id == id)
 }
@@ -13,12 +12,17 @@ pub(crate) fn find_game(id: &str) -> Option<DetectedGame> {
 pub(crate) fn cmd_games() {
     let games = detect(&home());
     if games.is_empty() {
-        println!("No supported games detected. Make sure Steam is installed and the game is downloaded.");
+        println!(
+            "No supported games detected. Make sure Steam is installed and the game is downloaded."
+        );
         return;
     }
     println!("Supported games installed:");
     for g in &games {
-        println!("  {:<10} {}  (Steam: {})", g.def.id, g.def.name, g.steam_name);
+        println!(
+            "  {:<10} {}  (Steam: {})",
+            g.def.id, g.def.name, g.steam_name
+        );
         println!("             data: {}", g.data_path.display());
     }
     println!("\nNext: `eidos init <id>` to create a modding instance.");
@@ -38,8 +42,9 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
             // those trees (updates/uninstalls rewrite or delete them) and
             // Eidos mounts over the game root, so an instance there would sit
             // inside its own mount target.
-            if let Some(g) =
-                detect(&home()).into_iter().find(|g| Instance::root_inside_game(&root, &g.install_path))
+            if let Some(g) = detect(&home())
+                .into_iter()
+                .find(|g| Instance::root_inside_game(&root, &g.install_path))
             {
                 eidos_log::warn!(
                     "'{}' is inside {}'s own folder - an instance cannot live there.\n\
@@ -83,7 +88,15 @@ pub(crate) fn cmd_init(id: &str, folder: Option<&str>) {
          profiles/<name>/modlist.txt: one +Name/-Name per line, top = highest\n\
          priority, wins file conflicts - MO2's format).\n",
     );
-    println!("Created {} instance for {} ({id}).", if kind == InstanceKind::Portable { "portable" } else { "global" }, game.def.name);
+    println!(
+        "Created {} instance for {} ({id}).",
+        if kind == InstanceKind::Portable {
+            "portable"
+        } else {
+            "global"
+        },
+        game.def.name
+    );
     println!("  instance : {}", inst.root.display());
     println!("  game data: {}", game.data_path.display());
     println!("  add mods : {}", inst.mods_dir().display());

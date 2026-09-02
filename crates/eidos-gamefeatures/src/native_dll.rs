@@ -175,7 +175,9 @@ fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
     if depth > 8 {
         return false;
     }
-    let Ok(rd) = fs::read_dir(dir) else { return false };
+    let Ok(rd) = fs::read_dir(dir) else {
+        return false;
+    };
     for e in rd.flatten() {
         let Ok(ft) = e.file_type() else { continue };
         if ft.is_dir() {
@@ -193,7 +195,10 @@ fn walk_imports(dir: &Path, needle: &str, depth: u32) -> bool {
         if !name.ends_with(".dll") {
             continue;
         }
-        if fs::metadata(&path).map(|m| m.len() > MAX_SCAN_DLL_BYTES).unwrap_or(true) {
+        if fs::metadata(&path)
+            .map(|m| m.len() > MAX_SCAN_DLL_BYTES)
+            .unwrap_or(true)
+        {
             continue;
         }
         if let Ok(imports) = imported_dlls(&path) {
@@ -230,7 +235,9 @@ const COMMUNITY_SHADERS_REL: [&str; 3] = ["SKSE", "Plugins", "CommunityShaders.d
 /// case-insensitively. A bare `d3d11.dll` is deliberately NOT treated as ENB: it is
 /// also how ReShade and other wrappers ship, and would mislabel them.
 pub fn enb_in_game_root(install_path: &Path) -> bool {
-    let Ok(rd) = fs::read_dir(install_path) else { return false };
+    let Ok(rd) = fs::read_dir(install_path) else {
+        return false;
+    };
     rd.flatten().any(|e| {
         let name = e.file_name().to_string_lossy().to_ascii_lowercase();
         match name.as_str() {
@@ -245,7 +252,9 @@ pub fn enb_in_game_root(install_path: &Path) -> bool {
 /// Shaders SKSE plugin at `SKSE/Plugins/CommunityShaders.dll`, each path segment
 /// matched case-insensitively (Windows-authored mods vary the casing of `SKSE`).
 pub fn community_shaders_in_roots(roots: &[PathBuf]) -> bool {
-    roots.iter().any(|r| ci_resolve(r, &COMMUNITY_SHADERS_REL).is_some())
+    roots
+        .iter()
+        .any(|r| ci_resolve(r, &COMMUNITY_SHADERS_REL).is_some())
 }
 
 /// The Wave-3d coexistence advisory: an ENB in the game root AND Community Shaders
@@ -319,8 +328,9 @@ fn deploy_native(target: &Path, bytes: &[u8]) -> io::Result<bool> {
                 // path as an existing backup - a directory/symlink/other there must
                 // not let us delete the user's original without preserving it.
                 let bak = backup_path(target);
-                let have_backup =
-                    fs::symlink_metadata(&bak).map(|m| m.file_type().is_file()).unwrap_or(false);
+                let have_backup = fs::symlink_metadata(&bak)
+                    .map(|m| m.file_type().is_file())
+                    .unwrap_or(false);
                 if have_backup {
                     fs::remove_file(target)?;
                 } else {
@@ -359,8 +369,11 @@ mod tests {
     static N: AtomicU32 = AtomicU32::new(0);
 
     fn tmp_dir() -> PathBuf {
-        let d = std::env::temp_dir()
-            .join(format!("eidos-nd-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let d = std::env::temp_dir().join(format!(
+            "eidos-nd-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -457,8 +470,14 @@ mod tests {
     fn ensure_native_dll_deploys_a_d3dx_verb() {
         let (win, s32, sw64) = win64_prefix();
         assert!(ensure_native_dll(&win, "d3dx9_43").unwrap());
-        assert_eq!(fs::read(s32.join("d3dx9_43.dll")).unwrap(), blob("d3dx9_43", true));
-        assert_eq!(fs::read(sw64.join("d3dx9_43.dll")).unwrap(), blob("d3dx9_43", false));
+        assert_eq!(
+            fs::read(s32.join("d3dx9_43.dll")).unwrap(),
+            blob("d3dx9_43", true)
+        );
+        assert_eq!(
+            fs::read(sw64.join("d3dx9_43.dll")).unwrap(),
+            blob("d3dx9_43", false)
+        );
         // An unknown verb is a clean no-op, not an error.
         assert!(!ensure_native_dll(&win, "vcrun2022").unwrap());
         let _ = fs::remove_dir_all(&win);
@@ -479,7 +498,10 @@ mod tests {
         // notably does NOT import kernel32.dll directly).
         assert!(set.contains("rpcrt4.dll"), "{set:?}");
         assert!(set.contains("api-ms-win-core-file-l1-1-0.dll"), "{set:?}");
-        assert!(set.len() >= 30, "the real import table has 33 entries: {set:?}");
+        assert!(
+            set.len() >= 30,
+            "the real import table has 33 entries: {set:?}"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -519,10 +541,19 @@ mod tests {
 
         // The bundled DLL imports a known set; pick any real import as the needle so
         // the test does not hard-code a specific Windows DLL name.
-        let any_import =
-            imported_dlls(&nested.join("foo.dll")).unwrap().into_iter().next().unwrap();
-        assert!(scan_imports_for(&[dir.clone()], &any_import), "recursive scan must find it");
-        assert!(!scan_imports_for(&[dir.clone()], "nothing_imports_this_zzz.dll"));
+        let any_import = imported_dlls(&nested.join("foo.dll"))
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(
+            scan_imports_for(&[dir.clone()], &any_import),
+            "recursive scan must find it"
+        );
+        assert!(!scan_imports_for(
+            &[dir.clone()],
+            "nothing_imports_this_zzz.dll"
+        ));
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -548,10 +579,19 @@ mod tests {
         let (win, s32, sw64) = win64_prefix();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap(), "first run writes");
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", true));
-        assert_eq!(fs::read(sw64.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", false));
+        assert_eq!(
+            fs::read(s32.join("d3dcompiler_47.dll")).unwrap(),
+            blob("d3dcompiler_47", true)
+        );
+        assert_eq!(
+            fs::read(sw64.join("d3dcompiler_47.dll")).unwrap(),
+            blob("d3dcompiler_47", false)
+        );
 
-        assert!(!ensure_d3dcompiler_47(&win).unwrap(), "second run is a no-op");
+        assert!(
+            !ensure_d3dcompiler_47(&win).unwrap(),
+            "second run is a no-op"
+        );
         let _ = fs::remove_dir_all(&win);
     }
 
@@ -563,7 +603,10 @@ mod tests {
         fs::create_dir_all(&s32).unwrap();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap());
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", false));
+        assert_eq!(
+            fs::read(s32.join("d3dcompiler_47.dll")).unwrap(),
+            blob("d3dcompiler_47", false)
+        );
         assert!(!win.join("syswow64").exists(), "must not create a syswow64");
         let _ = fs::remove_dir_all(&win);
     }
@@ -583,9 +626,15 @@ mod tests {
         // The targets are now real files = our native, and the symlink was not
         // written through into the shared builtin.
         let placed = s32.join("d3dcompiler_47.dll");
-        assert!(!fs::symlink_metadata(&placed).unwrap().file_type().is_symlink());
+        assert!(!fs::symlink_metadata(&placed)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         assert_eq!(fs::read(&placed).unwrap(), blob("d3dcompiler_47", true));
-        assert_eq!(fs::read(&builtin).unwrap(), b"PRETEND WINE BUILTIN - MUST NOT BE OVERWRITTEN");
+        assert_eq!(
+            fs::read(&builtin).unwrap(),
+            b"PRETEND WINE BUILTIN - MUST NOT BE OVERWRITTEN"
+        );
         let _ = fs::remove_dir_all(&win);
     }
 
@@ -595,8 +644,14 @@ mod tests {
         fs::write(s32.join("d3dcompiler_47.dll"), b"old builtin copy").unwrap();
 
         assert!(ensure_d3dcompiler_47(&win).unwrap());
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll")).unwrap(), blob("d3dcompiler_47", true));
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(), b"old builtin copy");
+        assert_eq!(
+            fs::read(s32.join("d3dcompiler_47.dll")).unwrap(),
+            blob("d3dcompiler_47", true)
+        );
+        assert_eq!(
+            fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(),
+            b"old builtin copy"
+        );
         let _ = fs::remove_dir_all(&win);
     }
 
@@ -613,8 +668,10 @@ mod tests {
         assert_eq!(fs::read(&target).unwrap(), blob("d3dcompiler_47", true));
         // The original was preserved (the stray dir was cleared and replaced by the
         // real backup), never silently lost.
-        assert_eq!(fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(), b"USER ORIGINAL");
+        assert_eq!(
+            fs::read(s32.join("d3dcompiler_47.dll.eidos-bak")).unwrap(),
+            b"USER ORIGINAL"
+        );
         let _ = fs::remove_dir_all(&win);
     }
 }
-

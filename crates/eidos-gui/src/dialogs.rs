@@ -54,7 +54,10 @@ fn adult_content_state() -> Option<bool> {
 /// picker a size and a half larger than the page around it. The DATA is shared,
 /// the drawing is this program's.
 fn theme_picker<'a>(app: &App) -> Element<'a, Message> {
-    let chosen = (app.prefs.theme_family.as_str(), app.prefs.theme_variant.as_str());
+    let chosen = (
+        app.prefs.theme_family.as_str(),
+        app.prefs.theme_variant.as_str(),
+    );
 
     // Eidos's own, on its own row, because it is not in the catalogue and must
     // still be reachable - a picker you cannot come back through is a trap.
@@ -62,18 +65,16 @@ fn theme_picker<'a>(app: &App) -> Element<'a, Message> {
         Column::new()
             .spacing(4)
             .push(text(theme::OWN_LABEL).size(12.0))
-            .push(
-                Row::new().spacing(6).push(theme_card(
-                    theme::OWN_VARIANT_LABEL,
-                    theme::PARCHMENT.bg_primary,
-                    theme::PARCHMENT.accent_blue,
-                    chosen == (theme::OWN_FAMILY, theme::OWN_VARIANT),
-                    Message::ThemeChanged(
-                        theme::OWN_FAMILY.to_string(),
-                        theme::OWN_VARIANT.to_string(),
-                    ),
-                )),
-            ),
+            .push(Row::new().spacing(6).push(theme_card(
+                theme::OWN_VARIANT_LABEL,
+                theme::PARCHMENT.bg_primary,
+                theme::PARCHMENT.accent_blue,
+                chosen == (theme::OWN_FAMILY, theme::OWN_VARIANT),
+                Message::ThemeChanged(
+                    theme::OWN_FAMILY.to_string(),
+                    theme::OWN_VARIANT.to_string(),
+                ),
+            ))),
     );
 
     // And the catalogue, straight from `THEME_FAMILIES`. Adding a family
@@ -118,17 +119,28 @@ fn theme_card<'a>(
         container(Space::new().width(Length::Fill).height(Length::Fixed(3.0))).style(
             move |_t: &Theme| container::Style {
                 background: Some(Background::Color(accent_of)),
-                border: Border { radius: 2.0.into(), ..Default::default() },
+                border: Border {
+                    radius: 2.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ),
     )
     .width(Length::Fill)
     .height(Length::Fixed(24.0))
-    .padding(iced::Padding { top: 16.0, right: 5.0, bottom: 3.0, left: 5.0 })
+    .padding(iced::Padding {
+        top: 16.0,
+        right: 5.0,
+        bottom: 3.0,
+        left: 5.0,
+    })
     .style(move |_t: &Theme| container::Style {
         background: Some(Background::Color(bg)),
-        border: Border { radius: 4.0.into(), ..Default::default() },
+        border: Border {
+            radius: 4.0.into(),
+            ..Default::default()
+        },
         ..Default::default()
     });
 
@@ -173,24 +185,28 @@ fn accent_picker<'a>(app: &App) -> Element<'a, Message> {
         let active = chosen == Some(a.key);
         let dot = colony_ui::hex(a.color);
         row = row.push(
-            button(Space::new().width(Length::Fixed(20.0)).height(Length::Fixed(20.0)))
-                .padding(0)
-                .on_press(Message::AccentChanged(Some(a.key.to_string())))
-                .style(move |_t: &Theme, status: button::Status| button::Style {
-                    background: Some(Background::Color(dot)),
-                    border: Border {
-                        color: if active {
-                            pal().text_primary
-                        } else if matches!(status, button::Status::Hovered) {
-                            pal().text_dimmer
-                        } else {
-                            Color::TRANSPARENT
-                        },
-                        width: if active { 2.0 } else { 0.0 },
-                        radius: 10.0.into(),
+            button(
+                Space::new()
+                    .width(Length::Fixed(20.0))
+                    .height(Length::Fixed(20.0)),
+            )
+            .padding(0)
+            .on_press(Message::AccentChanged(Some(a.key.to_string())))
+            .style(move |_t: &Theme, status: button::Status| button::Style {
+                background: Some(Background::Color(dot)),
+                border: Border {
+                    color: if active {
+                        pal().text_primary
+                    } else if matches!(status, button::Status::Hovered) {
+                        pal().text_dimmer
+                    } else {
+                        Color::TRANSPARENT
                     },
-                    ..Default::default()
-                }),
+                    width: if active { 2.0 } else { 0.0 },
+                    radius: 10.0.into(),
+                },
+                ..Default::default()
+            }),
         );
     }
 
@@ -199,7 +215,11 @@ fn accent_picker<'a>(app: &App) -> Element<'a, Message> {
     let clear = button(text("Theme's own").size(11.0))
         .padding([3, 8])
         .on_press(Message::AccentChanged(None))
-        .style(if chosen.is_none() { button::secondary } else { button::text });
+        .style(if chosen.is_none() {
+            button::secondary
+        } else {
+            button::text
+        });
 
     Column::new()
         .spacing(6)
@@ -246,7 +266,11 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
                 .padding([8, 14])
                 .width(Length::Fill)
                 .on_press(Message::SettingsTabSelected(tab))
-                .style(if active { button::primary } else { button::text }),
+                .style(if active {
+                    button::primary
+                } else {
+                    button::text
+                }),
         );
     }
 
@@ -619,19 +643,19 @@ pub(crate) fn preferences_page<'a>(app: &App) -> Element<'a, Message> {
     let titled = Column::new()
         .spacing(2)
         .push(text(app.settings_tab.label()).size(16.0))
-        .push(text(app.settings_tab.description()).size(11.0).color(text_muted()))
+        .push(
+            text(app.settings_tab.description())
+                .size(11.0)
+                .color(text_muted()),
+        )
         .push(Space::new().height(Length::Fixed(8.0)))
         .push(body);
 
-    let panes = Row::new()
-        .spacing(14)
-        .height(Length::Fill)
-        .push(rail)
-        .push(
-            container(scrollable(titled))
-                .width(Length::Fill)
-                .height(Length::Fill),
-        );
+    let panes = Row::new().spacing(14).height(Length::Fill).push(rail).push(
+        container(scrollable(titled))
+            .width(Length::Fill)
+            .height(Length::Fill),
+    );
 
     // A PAGE, not a card floating on a scrim. The convention names a modal, a
     // separate window and a popover as the three things this must not be, and
@@ -744,7 +768,10 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .into()
 }
 
-pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogState) -> Element<'a, Message> {
+pub(crate) fn executables_dialog<'a>(
+    app: &App,
+    state: &'a ExecutablesDialogState,
+) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
         .push(text("Executables").size(16.0).width(Length::Fill))
@@ -765,15 +792,27 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogStat
             list = list.push(text("Defaults (read-only)").size(10.0));
         }
         let selected = state.selected == Some(i);
-        let label = if t.title.trim().is_empty() { "(unnamed)" } else { t.title.trim() };
+        let label = if t.title.trim().is_empty() {
+            "(unnamed)"
+        } else {
+            t.title.trim()
+        };
         let is_default = i >= state.user_len;
-        let display = if is_default { format!("{label}  (default)") } else { label.to_string() };
+        let display = if is_default {
+            format!("{label}  (default)")
+        } else {
+            label.to_string()
+        };
         list = list.push(
             button(text(display).size(12.0))
                 .width(Length::Fill)
                 .padding([3, 6])
                 .on_press(Message::SelectExecutableTool(i))
-                .style(if selected { button::primary } else { button::text }),
+                .style(if selected {
+                    button::primary
+                } else {
+                    button::text
+                }),
         );
     }
     if state.merged.is_empty() {
@@ -789,8 +828,16 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogStat
         .spacing(4)
         .push(tool_btn("Add", Message::AddExecutableTool))
         .push(del_button(state))
-        .push(move_button("Up", Message::MoveExecutableUp, can_move_up(state)))
-        .push(move_button("Down", Message::MoveExecutableDown, can_move_down(state)));
+        .push(move_button(
+            "Up",
+            Message::MoveExecutableUp,
+            can_move_up(state),
+        ))
+        .push(move_button(
+            "Down",
+            Message::MoveExecutableDown,
+            can_move_down(state),
+        ));
 
     let left = Column::new().spacing(6).push(list_pane).push(list_actions);
 
@@ -822,7 +869,11 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogStat
                     .padding(6)
                     .height(Length::Fixed(72.0)),
             )
-            .push(exe_field("Prereqs (comma-separated)", &state.prereqs, Message::ToolPrereqsChanged))
+            .push(exe_field(
+                "Prereqs (comma-separated)",
+                &state.prereqs,
+                Message::ToolPrereqsChanged,
+            ))
             .push(prereq_status_rows(app, &state.prereqs))
             .push(output_mod_field(state))
             .push(exe_field(
@@ -863,8 +914,16 @@ pub(crate) fn executables_dialog<'a>(app: &App, state: &'a ExecutablesDialogStat
                 .style(button::primary),
         );
 
-    let card = Column::new().spacing(12).push(header).push(panes).push(footer);
-    container(card).max_width(720.0).padding(16).style(card_style).into()
+    let card = Column::new()
+        .spacing(12)
+        .push(header)
+        .push(panes)
+        .push(footer);
+    container(card)
+        .max_width(720.0)
+        .padding(16)
+        .style(card_style)
+        .into()
 }
 
 /// A labelled single-line field for the Executables editor.
@@ -876,7 +935,13 @@ pub(crate) fn exe_field<'a>(
     Column::new()
         .spacing(2)
         .push(text(label).size(11.0))
-        .push(text_input("", value).on_input(on_input).padding(6).size(12.0).width(Length::Fill))
+        .push(
+            text_input("", value)
+                .on_input(on_input)
+                .padding(6)
+                .size(12.0)
+                .width(Length::Fill),
+        )
         .into()
 }
 
@@ -890,14 +955,31 @@ pub(crate) fn exe_field_browse<'a>(
 ) -> Element<'a, Message> {
     let row = Row::new()
         .spacing(4)
-        .push(text_input("", value).on_input(on_input).padding(6).size(12.0).width(Length::Fill))
-        .push(button(text("Browse...").size(11.0)).padding([5, 8]).on_press(browse).style(button::secondary));
-    Column::new().spacing(2).push(text(label).size(11.0)).push(row).into()
+        .push(
+            text_input("", value)
+                .on_input(on_input)
+                .padding(6)
+                .size(12.0)
+                .width(Length::Fill),
+        )
+        .push(
+            button(text("Browse...").size(11.0))
+                .padding([5, 8])
+                .on_press(browse)
+                .style(button::secondary),
+        );
+    Column::new()
+        .spacing(2)
+        .push(text(label).size(11.0))
+        .push(row)
+        .into()
 }
 
 /// The Delete button: active only when a user tool is selected.
 pub(crate) fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
-    let mut b = button(text("Delete").size(12.0)).padding(6).style(button::danger);
+    let mut b = button(text("Delete").size(12.0))
+        .padding(6)
+        .style(button::danger);
     if state.selected_is_user() {
         b = b.on_press(Message::DeleteExecutableTool);
     }
@@ -906,7 +988,9 @@ pub(crate) fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Mess
 
 /// A reorder button, greyed when the move is not possible.
 pub(crate) fn move_button<'a>(label: &'a str, msg: Message, enabled: bool) -> Element<'a, Message> {
-    let mut b = button(text(label).size(12.0)).padding(6).style(button::secondary);
+    let mut b = button(text(label).size(12.0))
+        .padding(6)
+        .style(button::secondary);
     if enabled {
         b = b.on_press(msg);
     }
@@ -945,7 +1029,11 @@ pub(crate) fn about_dialog<'a>() -> Element<'a, Message> {
                 .on_press(Message::CloseAbout)
                 .style(button::primary),
         );
-    container(card).max_width(440.0).padding(16).style(card_style).into()
+    container(card)
+        .max_width(440.0)
+        .padding(16)
+        .style(card_style)
+        .into()
 }
 
 /// Whether the user opted into FUSE passthrough. Read from this process's own
@@ -1031,7 +1119,11 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
                 .size(10.0)
                 .color(text_muted()),
         );
-    container(card).max_width(470.0).padding(20).style(card_style).into()
+    container(card)
+        .max_width(470.0)
+        .padding(20)
+        .style(card_style)
+        .into()
 }
 
 /// Split a CommonMark string into plain runs and `[label](url)` links, in order.
@@ -1083,7 +1175,10 @@ pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, M
     };
     let parts = split_markdown_links(&m.text);
     if parts.iter().all(|(_, url)| url.is_none()) {
-        return text(format!("{prefix}{}", m.text)).size(11.0).color(color).into();
+        return text(format!("{prefix}{}", m.text))
+            .size(11.0)
+            .color(color)
+            .into();
     }
     let mut row = Row::new().spacing(0).align_y(iced::Alignment::Center);
     if !prefix.is_empty() {
@@ -1119,7 +1214,10 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
             parts.push(format!("{} warning(s)", report.warning_count()));
         }
         if report.missing_master_count() > 0 {
-            parts.push(format!("{} with missing masters", report.missing_master_count()));
+            parts.push(format!(
+                "{} with missing masters",
+                report.missing_master_count()
+            ));
         }
         if report.dirty_count() > 0 {
             parts.push(format!("{} need cleaning", report.dirty_count()));
@@ -1134,7 +1232,9 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
     let mut body = Column::new().spacing(12);
 
     if !report.general.is_empty() {
-        let mut sec = Column::new().spacing(3).push(text("General messages").size(14.0));
+        let mut sec = Column::new()
+            .spacing(3)
+            .push(text("General messages").size(14.0));
         for m in &report.general {
             sec = sec.push(loot_message_row(m));
         }
@@ -1142,7 +1242,9 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
     }
 
     for p in &report.plugins {
-        let mut sec = Column::new().spacing(2).push(text(p.name.clone()).size(13.0));
+        let mut sec = Column::new()
+            .spacing(2)
+            .push(text(p.name.clone()).size(13.0));
         if !p.missing_masters.is_empty() {
             sec = sec.push(
                 text(format!("Missing masters: {}", p.missing_masters.join(", ")))
@@ -1154,7 +1256,11 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
             sec = sec.push(loot_message_row(m));
         }
         for d in &p.dirty {
-            let util = if d.cleaning_utility.is_empty() { "?" } else { d.cleaning_utility.as_str() };
+            let util = if d.cleaning_utility.is_empty() {
+                "?"
+            } else {
+                d.cleaning_utility.as_str()
+            };
             sec = sec.push(
                 text(format!(
                     "Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)",
@@ -1193,7 +1299,11 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                         .style(button::secondary),
                 ),
         );
-    container(card).max_width(580.0).padding(16).style(card_style).into()
+    container(card)
+        .max_width(580.0)
+        .padding(16)
+        .style(card_style)
+        .into()
 }
 
 /// The report as plain text, for the clipboard.
@@ -1215,13 +1325,20 @@ pub(crate) fn loot_report_text(report: &eidos_loot::LootReport) -> String {
     for p in &report.plugins {
         out.push_str(&format!("\n{}\n", p.name));
         if !p.missing_masters.is_empty() {
-            out.push_str(&format!("  Missing masters: {}\n", p.missing_masters.join(", ")));
+            out.push_str(&format!(
+                "  Missing masters: {}\n",
+                p.missing_masters.join(", ")
+            ));
         }
         for m in &p.messages {
             out.push_str(&format!("  [{}] {}\n", loot_severity_label(m.kind), m.text));
         }
         for d in &p.dirty {
-            let util = if d.cleaning_utility.is_empty() { "?" } else { d.cleaning_utility.as_str() };
+            let util = if d.cleaning_utility.is_empty() {
+                "?"
+            } else {
+                d.cleaning_utility.as_str()
+            };
             out.push_str(&format!(
                 "  Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)\n",
                 d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
@@ -1256,10 +1373,19 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(text(title).size(18.0).width(Length::Fill))
-        .push(button(text(if state.editing { "Done editing" } else { "Edit list..." }).size(12.0))
+        .push(
+            button(
+                text(if state.editing {
+                    "Done editing"
+                } else {
+                    "Edit list..."
+                })
+                .size(12.0),
+            )
             .padding([4, 10])
             .style(button::secondary)
-            .on_press(Message::ToggleCategoryEditor))
+            .on_press(Message::ToggleCategoryEditor),
+        )
         .push(
             button(text("Close").size(12.0))
                 .padding([4, 12])
@@ -1267,7 +1393,11 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
                 .on_press(Message::CloseCategoriesDialog),
         );
 
-    let body = if state.editing { catalog_editor(state) } else { category_picker(state) };
+    let body = if state.editing {
+        catalog_editor(state)
+    } else {
+        category_picker(state)
+    };
 
     let mut foot = Row::new().spacing(8).align_y(iced::Alignment::Center);
     // What Apply will actually write, spelled out - the pending pick is invisible
@@ -1295,12 +1425,18 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
     let mut card = Column::new().spacing(12).push(header).push(body).push(foot);
     if state.names.len() > 1 {
         card = card.push(
-            text("Applying sets the same categories on every selected mod, replacing what they had.")
-                .size(11.0),
+            text(
+                "Applying sets the same categories on every selected mod, replacing what they had.",
+            )
+            .size(11.0),
         );
     }
 
-    container(card).width(Length::Fixed(620.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(620.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The assign side: a filtered tree of checkboxes, with the primary marked.
@@ -1326,7 +1462,11 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 button(text(format!("{mark} {name}")).size(12.0))
                     .padding([2, 6])
                     .width(Length::Fill)
-                    .style(if checked { button::secondary } else { button::text })
+                    .style(if checked {
+                        button::secondary
+                    } else {
+                        button::text
+                    })
                     .on_press(Message::ToggleCategory(id)),
             );
         // Primary is what the mod list column shows, so it needs to be both
@@ -1355,7 +1495,10 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
     let nexus = Row::new()
         .spacing(6)
         .push(tool_btn("Fetch from Nexus", Message::FetchNexusCategories))
-        .push(tool_btn("Use Nexus category", Message::AssignCategoriesFromNexus));
+        .push(tool_btn(
+            "Use Nexus category",
+            Message::AssignCategoriesFromNexus,
+        ));
 
     Column::new()
         .spacing(8)
@@ -1425,15 +1568,21 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
     }
 
     // Adding: name + a parent picked from the same tree.
-    let parents: Vec<CategoryChoice> = std::iter::once(CategoryChoice { id: 0, label: "(top level)".to_string() })
-        .chain(
-            state
-                .catalog
-                .tree()
-                .into_iter()
-                .map(|(id, name, depth)| CategoryChoice { id, label: format!("{}{name}", "  ".repeat(depth)) }),
-        )
-        .collect();
+    let parents: Vec<CategoryChoice> = std::iter::once(CategoryChoice {
+        id: 0,
+        label: "(top level)".to_string(),
+    })
+    .chain(
+        state
+            .catalog
+            .tree()
+            .into_iter()
+            .map(|(id, name, depth)| CategoryChoice {
+                id,
+                label: format!("{}{name}", "  ".repeat(depth)),
+            }),
+    )
+    .collect();
     let selected = parents.iter().find(|c| c.id == state.new_parent).cloned();
     let add = Row::new()
         .spacing(6)
@@ -1446,9 +1595,11 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 .size(12.0),
         )
         .push(
-            pick_list(parents, selected, |c: CategoryChoice| Message::NewCategoryParentChanged(c.id))
-                .text_size(12.0)
-                .padding(4),
+            pick_list(parents, selected, |c: CategoryChoice| {
+                Message::NewCategoryParentChanged(c.id)
+            })
+            .text_size(12.0)
+            .padding(4),
         )
         .push(
             button(text("Add").size(12.0))
@@ -1484,7 +1635,6 @@ impl std::fmt::Display for CategoryChoice {
     }
 }
 
-
 /// MO2's "Create files in mod instead of overwrite", as a picker over the
 /// instance's own mods rather than MO2's editable combo box.
 ///
@@ -1503,14 +1653,29 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
         .push(
             button(text(if pinned { "Unpin" } else { "Pin to top" }).size(11.0))
                 .padding([4, 10])
-                .style(if pinned { button::primary } else { button::secondary })
+                .style(if pinned {
+                    button::primary
+                } else {
+                    button::secondary
+                })
                 .on_press(Message::ExecTogglePinned),
         )
         .push(
-            button(text(if hidden { "Show in picker" } else { "Hide from picker" }).size(11.0))
-                .padding([4, 10])
-                .style(if hidden { button::primary } else { button::secondary })
-                .on_press(Message::ExecToggleHidden),
+            button(
+                text(if hidden {
+                    "Show in picker"
+                } else {
+                    "Hide from picker"
+                })
+                .size(11.0),
+            )
+            .padding([4, 10])
+            .style(if hidden {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .on_press(Message::ExecToggleHidden),
         )
         .push(
             button(text("Desktop shortcut").size(11.0))
@@ -1557,10 +1722,7 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
 /// inside the Proton prefix, under a path nobody navigates to by hand. This edits
 /// the PROFILE's copy, which is the durable one - the prefix copy is overwritten
 /// from it at every launch.
-pub(crate) fn ini_editor_dialog<'a>(
-    app: &App,
-    state: &'a IniEditorState,
-) -> Element<'a, Message> {
+pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Element<'a, Message> {
     let profile = app
         .created
         .as_ref()
@@ -1574,7 +1736,11 @@ pub(crate) fn ini_editor_dialog<'a>(
         tabs = tabs.push(
             button(text(f.clone()).size(12.0))
                 .padding([3, 10])
-                .style(if on { button::primary } else { button::secondary })
+                .style(if on {
+                    button::primary
+                } else {
+                    button::secondary
+                })
                 .on_press(Message::IniEditorPick(f.clone())),
         );
     }
@@ -1582,7 +1748,11 @@ pub(crate) fn ini_editor_dialog<'a>(
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text(format!("INI editor - profile '{profile}'")).size(18.0).width(Length::Fill))
+        .push(
+            text(format!("INI editor - profile '{profile}'"))
+                .size(18.0)
+                .width(Length::Fill),
+        )
         .push(
             button(text("Close").size(12.0))
                 .padding([4, 12])
@@ -1619,18 +1789,30 @@ pub(crate) fn ini_editor_dialog<'a>(
 
     let mut actions = Row::new().spacing(8).align_y(iced::Alignment::Center);
     actions = actions
-        .push(text(if state.dirty { "Unsaved changes" } else { "" }).size(11.0).width(Length::Fill))
+        .push(
+            text(if state.dirty { "Unsaved changes" } else { "" })
+                .size(11.0)
+                .width(Length::Fill),
+        )
         .push(tool_btn("Open externally", Message::IniEditorOpenExternal));
     if state.dirty {
         actions = actions.push(tool_btn("Revert", Message::IniEditorRevert));
     }
     let save = button(text("Save").size(12.0))
         .padding([4, 14])
-        .style(if state.dirty { button::primary } else { button::secondary });
+        .style(if state.dirty {
+            button::primary
+        } else {
+            button::secondary
+        });
     // Greyed rather than merely refused when the file could not be read: the
     // handler stops it too, but a button that looks live and does nothing is its
     // own bug report.
-    actions = actions.push(if state.unreadable { save } else { save.on_press(Message::IniEditorSave) });
+    actions = actions.push(if state.unreadable {
+        save
+    } else {
+        save.on_press(Message::IniEditorSave)
+    });
 
     let card = Column::new()
         .spacing(10)
@@ -1640,7 +1822,11 @@ pub(crate) fn ini_editor_dialog<'a>(
         .push(text(note).size(10.0))
         .push(actions);
 
-    container(card).width(Length::Fixed(760.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(760.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The log pane (MO2's dockable log view).
@@ -1669,26 +1855,41 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
         levels = levels.push(
             button(text(lvl.as_str()).size(11.0))
                 .padding([2, 8])
-                .style(if state.level == lvl { button::primary } else { button::secondary })
+                .style(if state.level == lvl {
+                    button::primary
+                } else {
+                    button::secondary
+                })
                 .on_press(Message::LogLevel(lvl)),
         );
     }
     levels = levels.push(
-        text(format!("{} of {} record(s)", state.lines.len(), state.total))
-            .size(10.0)
-            .width(Length::Fill),
+        text(format!(
+            "{} of {} record(s)",
+            state.lines.len(),
+            state.total
+        ))
+        .size(10.0)
+        .width(Length::Fill),
     );
 
     // Which session. Newest first, and only a handful are kept, so they all fit.
     let mut sessions = Row::new().spacing(4).align_y(iced::Alignment::Center);
     for f in state.files.iter().take(8) {
-        let label = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let label = f
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         // The instance and the time; the pid is noise on a button.
         let short: String = label.split('.').take(2).collect::<Vec<_>>().join(" ");
         sessions = sessions.push(
             button(text(short).size(10.0))
                 .padding([2, 6])
-                .style(if *f == state.current { button::primary } else { button::text })
+                .style(if *f == state.current {
+                    button::primary
+                } else {
+                    button::text
+                })
                 .on_press(Message::LogPick(f.clone())),
         );
     }
@@ -1713,7 +1914,9 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
             Level::Warn => Some(pal().warning),
             _ => None,
         };
-        let mut line = text(format!("{:<5} {msg}", lvl.as_str())).size(11.0).font(iced::Font::MONOSPACE);
+        let mut line = text(format!("{:<5} {msg}", lvl.as_str()))
+            .size(11.0)
+            .font(iced::Font::MONOSPACE);
         if let Some(c) = colour {
             line = line.color(c);
         }
@@ -1725,9 +1928,17 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
         .push(header)
         .push(sessions)
         .push(levels)
-        .push(scrollable(body).height(Length::Fixed(420.0)).width(Length::Fill));
+        .push(
+            scrollable(body)
+                .height(Length::Fixed(420.0))
+                .width(Length::Fill),
+        );
 
-    container(card).width(Length::Fixed(820.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(820.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The Extensions list: what is installed, whether it can run, and how to add one.
@@ -1737,7 +1948,10 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
 pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
     use eidos_addons::AddonKind;
 
-    let game_id = app.games.get(app.selected.unwrap_or(0)).map(|g| g.def.id.to_string());
+    let game_id = app
+        .games
+        .get(app.selected.unwrap_or(0))
+        .map(|g| g.def.id.to_string());
 
     let header = Row::new()
         .align_y(iced::Alignment::Center)
@@ -1761,9 +1975,13 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
             Column::new()
                 .spacing(2)
                 .push(
-                    text(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())
-                        .size(13.0)
-                        .color(conflict_loses_fg()),
+                    text(
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                    )
+                    .size(13.0)
+                    .color(conflict_loses_fg()),
                 )
                 .push(text(format!("refused: {why}")).size(11.0)),
         );
@@ -1831,7 +2049,11 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
     let card = Column::new()
         .spacing(10)
         .push(header)
-        .push(scrollable(rows).height(Length::Fixed(360.0)).width(Length::Fill))
+        .push(
+            scrollable(rows)
+                .height(Length::Fixed(360.0))
+                .width(Length::Fill),
+        )
         .push(
             text(
                 "An extension is a manifest and a program Eidos runs - nothing is loaded into \
@@ -1841,7 +2063,11 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
             .size(10.0),
         );
 
-    container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(680.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The Export dialog (MO2's Export to csv): which rows, which columns.
@@ -1863,7 +2089,11 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     // How many rows each scope would actually write, said up front - the whole
     // reason to offer a scope is that the numbers differ.
     let total = app.mods.iter().filter(|m| !m.is_separator()).count();
-    let active = app.mods.iter().filter(|m| !m.is_separator() && m.enabled).count();
+    let active = app
+        .mods
+        .iter()
+        .filter(|m| !m.is_separator() && m.enabled)
+        .count();
     let scope = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
@@ -1871,7 +2101,11 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
         .push(
             button(text(format!("All ({total})")).size(12.0))
                 .padding([3, 10])
-                .style(if state.scope == ExportScope::All { button::primary } else { button::secondary })
+                .style(if state.scope == ExportScope::All {
+                    button::primary
+                } else {
+                    button::secondary
+                })
                 .on_press(Message::ExportScopeChanged(ExportScope::All)),
         )
         .push(
@@ -1897,7 +2131,11 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
                 button(
                     Row::new()
                         .spacing(6)
-                        .push(text(if *on { "[x]" } else { "[ ]" }).size(11.0).font(iced::Font::MONOSPACE))
+                        .push(
+                            text(if *on { "[x]" } else { "[ ]" })
+                                .size(11.0)
+                                .font(iced::Font::MONOSPACE),
+                        )
                         .push(text(label).size(12.0)),
                 )
                 .width(Length::Fill)
@@ -1908,7 +2146,11 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
         },
     );
     if state.picked().is_empty() {
-        cols = cols.push(text("Tick at least one column.").size(11.0).color(conflict_loses_fg()));
+        cols = cols.push(
+            text("Tick at least one column.")
+                .size(11.0)
+                .color(conflict_loses_fg()),
+        );
     }
 
     let run = button(text("Export...").size(12.0))
@@ -1934,7 +2176,11 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
         .push(scrollable(cols).height(Length::Fixed(300.0)))
         .push(footer);
 
-    container(card).width(Length::Fixed(560.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(560.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The instance manager (MO2's Manage Instances).
@@ -2015,7 +2261,11 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             title = title.push(
                 button(text(if armed { "Confirm?" } else { "Forget" }).size(11.0))
                     .padding([3, 8])
-                    .style(if armed { button::danger } else { button::secondary })
+                    .style(if armed {
+                        button::danger
+                    } else {
+                        button::secondary
+                    })
                     .on_press(Message::InstanceForget(i)),
             );
         }
@@ -2041,7 +2291,11 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             .size(10.0),
         );
 
-    container(card).width(Length::Fixed(680.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(680.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }
 
 /// The collection browser.
@@ -2054,7 +2308,11 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 /// people. What it can do exactly, it does exactly.
 /// The preview pane: one file, shown as far as it can be.
 pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
-    let name = p.path().file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = p
+        .path()
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
@@ -2072,12 +2330,14 @@ pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
                 .on_press(Message::ClosePreview),
         );
     let body: Element<'a, Message> = match p {
-        Preview::Image { handle, .. } => container(
-            iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
-        )
-        .center(Length::Fill)
-        .into(),
-        Preview::Text { body, truncated, .. } => {
+        Preview::Image { handle, .. } => {
+            container(iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain))
+                .center(Length::Fill)
+                .into()
+        }
+        Preview::Text {
+            body, truncated, ..
+        } => {
             let mut col = Column::new().spacing(4).push(
                 // Monospaced, because everything that reaches here - an INI, a
                 // log, a Papyrus source - is written in columns.
@@ -2094,9 +2354,9 @@ pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
             }
             scrollable(col).height(Length::Fill).into()
         }
-        Preview::Unsupported { why, .. } => {
-            container(text(why.clone()).size(12.0)).center(Length::Fill).into()
-        }
+        Preview::Unsupported { why, .. } => container(text(why.clone()).size(12.0))
+            .center(Length::Fill)
+            .into(),
     };
     container(Column::new().spacing(10).push(header).push(body))
         .width(Length::Fixed(760.0))
@@ -2122,11 +2382,14 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         .spacing(6)
         .align_y(iced::Alignment::Center)
         .push(
-            text_input("nxm://<game>/collections/<slug>/revisions/latest", &state.link)
-                .on_input(Message::CollectionLinkChanged)
-                .on_submit(Message::CollectionFetch)
-                .padding(5)
-                .size(12.0),
+            text_input(
+                "nxm://<game>/collections/<slug>/revisions/latest",
+                &state.link,
+            )
+            .on_input(Message::CollectionLinkChanged)
+            .on_submit(Message::CollectionFetch)
+            .padding(5)
+            .size(12.0),
         )
         .push(
             button(text(if state.loading { "..." } else { "Look up" }).size(12.0))
@@ -2146,12 +2409,28 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             // The gate answered. Say which rule, not "no".
             let why = rev.hidden.map(|h| h.message()).unwrap_or("");
             card = card.push(text(why.to_string()).size(12.0));
-            return container(card).width(Length::Fixed(720.0)).padding(18).style(card_style).into();
+            return container(card)
+                .width(Length::Fixed(720.0))
+                .padding(18)
+                .style(card_style)
+                .into();
         }
 
-        let installed = state.states.iter().filter(|s| **s == MemberState::Installed).count();
-        let downloaded = state.states.iter().filter(|s| **s == MemberState::Downloaded).count();
-        let missing = state.states.iter().filter(|s| **s == MemberState::Missing).count();
+        let installed = state
+            .states
+            .iter()
+            .filter(|s| **s == MemberState::Installed)
+            .count();
+        let downloaded = state
+            .states
+            .iter()
+            .filter(|s| **s == MemberState::Downloaded)
+            .count();
+        let missing = state
+            .states
+            .iter()
+            .filter(|s| **s == MemberState::Missing)
+            .count();
 
         let mut title = Column::new()
             .spacing(2)
@@ -2164,11 +2443,16 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         }
         card = card.push(title);
 
-        let mut summary = Row::new().spacing(10).align_y(iced::Alignment::Center).push(
-            text(format!("{installed} installed  ·  {downloaded} downloaded  ·  {missing} missing"))
+        let mut summary = Row::new()
+            .spacing(10)
+            .align_y(iced::Alignment::Center)
+            .push(
+                text(format!(
+                    "{installed} installed  ·  {downloaded} downloaded  ·  {missing} missing"
+                ))
                 .size(12.0)
                 .width(Length::Fill),
-        );
+            );
         if missing > 0 {
             let label = if state.confirm_fetch {
                 "Click again to start them".to_string()
@@ -2178,7 +2462,11 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             summary = summary.push(
                 button(text(label).size(11.0))
                     .padding([3, 10])
-                    .style(if state.confirm_fetch { button::danger } else { button::secondary })
+                    .style(if state.confirm_fetch {
+                        button::danger
+                    } else {
+                        button::secondary
+                    })
                     .on_press(Message::CollectionFetchMissing),
             );
         }
@@ -2206,7 +2494,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 MemberState::Downloaded => ("downloaded", None),
                 MemberState::Missing => ("missing", Some(conflict_loses_fg())),
             };
-            let mut status = text(label.to_string()).size(11.0).width(Length::Fixed(84.0));
+            let mut status = text(label.to_string())
+                .size(11.0)
+                .width(Length::Fixed(84.0));
             if let Some(c) = colour {
                 status = status.color(c);
             }
@@ -2219,7 +2509,11 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
                 .push(text(name).size(12.0).width(Length::Fill))
-                .push(text(m.version.clone()).size(11.0).width(Length::Fixed(70.0)))
+                .push(
+                    text(m.version.clone())
+                        .size(11.0)
+                        .width(Length::Fixed(70.0)),
+                )
                 .push(status)
                 .push(
                     button(text("Open").size(10.0))
@@ -2255,5 +2549,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         .size(10.0),
     );
 
-    container(card).width(Length::Fixed(720.0)).padding(18).style(card_style).into()
+    container(card)
+        .width(Length::Fixed(720.0))
+        .padding(18)
+        .style(card_style)
+        .into()
 }

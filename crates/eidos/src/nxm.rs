@@ -31,7 +31,11 @@ fn pick_instance<'a>(candidates: &[&'a DetectedGame]) -> (&'a DetectedGame, Inst
         }
     }
     for g in candidates {
-        if let Some(inst) = reg.candidates_for(g.def.id).into_iter().find(|i| i.exists()) {
+        if let Some(inst) = reg
+            .candidates_for(g.def.id)
+            .into_iter()
+            .find(|i| i.exists())
+        {
             return (g, inst);
         }
     }
@@ -110,7 +114,8 @@ pub(crate) fn cmd_nxm(args: &[String]) {
                     println!(
                         "Collection {} (revision {}) for {} - opening it in Eidos.",
                         c.slug,
-                        c.revision.map_or_else(|| "latest".to_string(), |r| r.to_string()),
+                        c.revision
+                            .map_or_else(|| "latest".to_string(), |r| r.to_string()),
                         game.def.name
                     );
                     show_collection_in_gui(url, &inst);
@@ -215,10 +220,14 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             // new download a unique `<i>_<name>` (MO2's getDownloadFileName).
             let existing = downloads.join(&name);
             if existing.is_file() {
-                let meta = std::fs::read_to_string(format!("{}.meta", existing.display())).unwrap_or_default();
+                let meta = std::fs::read_to_string(format!("{}.meta", existing.display()))
+                    .unwrap_or_default();
                 if meta.contains(&format!("fileID={}", nxm.file_id)) {
                     println!("Already downloaded: {}", existing.display());
-                    println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", existing.display());
+                    println!(
+                        "Install it:  eidos install \"{inst_arg}\" \"{}\"",
+                        existing.display()
+                    );
                     return;
                 }
             }
@@ -261,7 +270,6 @@ pub(crate) fn cmd_nxm(args: &[String]) {
     }
 }
 
-
 /// Run the transfer, announcing this process in the sidecar for the lifetime of
 /// the download so the window can pause or cancel it.
 ///
@@ -280,8 +288,15 @@ fn run_transfer(nexus: &eidos_nexus::Nexus, link: &str, dest: &std::path::Path, 
     match outcome {
         Ok(bytes) => {
             let _ = eidos_nexus::set_download_meta_key(dest, "paused", "false");
-            println!("Downloaded {} ({:.1} MiB)", dest.display(), bytes as f64 / (1024.0 * 1024.0));
-            println!("Install it:  eidos install \"{inst_arg}\" \"{}\"", dest.display());
+            println!(
+                "Downloaded {} ({:.1} MiB)",
+                dest.display(),
+                bytes as f64 / (1024.0 * 1024.0)
+            );
+            println!(
+                "Install it:  eidos install \"{inst_arg}\" \"{}\"",
+                dest.display()
+            );
         }
         Err(e) => {
             eidos_log::warn!("download failed: {e}");
@@ -303,7 +318,10 @@ fn run_transfer(nexus: &eidos_nexus::Nexus, link: &str, dest: &std::path::Path, 
 fn resume(archive: &std::path::Path) {
     let meta = eidos_nexus::meta_path_for(archive);
     if !meta.is_file() {
-        eidos_log::info!("no .meta beside {} - nothing to resume from", archive.display());
+        eidos_log::info!(
+            "no .meta beside {} - nothing to resume from",
+            archive.display()
+        );
         exit(1);
     }
     if let Some(pid) = eidos_nexus::live_download_pid(archive) {
@@ -361,7 +379,6 @@ fn resume(archive: &std::path::Path) {
     println!("Resuming {} ...", archive.display());
     run_transfer(&nexus, &link, archive, "<instance>");
 }
-
 
 /// Hand a collection link to the window, pinned to `inst`.
 ///

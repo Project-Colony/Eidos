@@ -132,14 +132,22 @@ macro_rules! xedit {
     ($name:literal) => {
         &[
             (concat!($name, ".exe"), $name),
-            (concat!($name, "QuickAutoClean.exe"), concat!($name, " QuickAutoClean")),
+            (
+                concat!($name, "QuickAutoClean.exe"),
+                concat!($name, " QuickAutoClean"),
+            ),
         ]
     };
 }
 
 /// Shared across the three Skyrim SE-engine games (SE, VR, Enderal SE).
-const SKYRIM_SE_MASTERS: &[&str] =
-    &["Skyrim.esm", "Update.esm", "Dawnguard.esm", "HearthFires.esm", "Dragonborn.esm"];
+const SKYRIM_SE_MASTERS: &[&str] = &[
+    "Skyrim.esm",
+    "Update.esm",
+    "Dawnguard.esm",
+    "HearthFires.esm",
+    "Dragonborn.esm",
+];
 
 /// Every game Eidos knows about. Add a game by adding one row.
 pub static GAMES: &[GameDef] = &[
@@ -463,11 +471,15 @@ fn user_games_dir() -> PathBuf {
 /// Parse every `*.toml` game definition in `dir`, ignoring invalid ones with a
 /// warning. Public for tooling and tests.
 pub fn load_games_from(dir: &Path) -> Vec<GameDef> {
-    let Ok(rd) = fs::read_dir(dir) else { return Vec::new() };
+    let Ok(rd) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     for e in rd.flatten() {
         let p = e.path();
-        if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("toml")) {
+        if p.extension()
+            .is_some_and(|x| x.eq_ignore_ascii_case("toml"))
+        {
             match fs::read_to_string(&p).ok().and_then(|t| parse_game(&t)) {
                 Some(g) => out.push(g),
                 None => eprintln!("eidos: ignoring invalid game definition {}", p.display()),
@@ -479,7 +491,9 @@ pub fn load_games_from(dir: &Path) -> Vec<GameDef> {
 
 /// Parse one TOML game definition into a (leaked, `'static`) [`GameDef`].
 pub fn parse_game(toml: &str) -> Option<GameDef> {
-    toml::from_str::<RawGameDef>(toml).ok().map(RawGameDef::into_gamedef)
+    toml::from_str::<RawGameDef>(toml)
+        .ok()
+        .map(RawGameDef::into_gamedef)
 }
 
 /// The owned, deserializable shape of a TOML game definition. The Bethesda-specific
@@ -538,7 +552,9 @@ fn default_load_order() -> String {
 impl RawGameDef {
     fn into_gamedef(self) -> GameDef {
         // Resolved before `self.id` is consumed below.
-        let inherited_tools = GameDef::for_id(&self.id).map(|g| g.known_tools).unwrap_or(&[]);
+        let inherited_tools = GameDef::for_id(&self.id)
+            .map(|g| g.known_tools)
+            .unwrap_or(&[]);
         GameDef {
             id: leak(self.id),
             name: leak(self.name),
@@ -609,12 +625,20 @@ fn leak(s: String) -> &'static str {
 }
 
 fn leak_vec(v: Vec<String>) -> &'static [&'static str] {
-    Box::leak(v.into_iter().map(leak).collect::<Vec<_>>().into_boxed_slice())
+    Box::leak(
+        v.into_iter()
+            .map(leak)
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    )
 }
 
 fn leak_tools(v: Vec<RawKnownTool>) -> &'static [(&'static str, &'static str)] {
     Box::leak(
-        v.into_iter().map(|t| (leak(t.exe), leak(t.title))).collect::<Vec<_>>().into_boxed_slice(),
+        v.into_iter()
+            .map(|t| (leak(t.exe), leak(t.title)))
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
     )
 }
 
@@ -638,7 +662,10 @@ mod tests {
         // shadow each other at every lookup.
         for (i, g) in GAMES.iter().enumerate() {
             assert!(
-                GAMES.iter().skip(i + 1).all(|o| !o.id.eq_ignore_ascii_case(g.id)),
+                GAMES
+                    .iter()
+                    .skip(i + 1)
+                    .all(|o| !o.id.eq_ignore_ascii_case(g.id)),
                 "duplicate id {}",
                 g.id
             );
@@ -648,8 +675,14 @@ mod tests {
     #[test]
     fn archive_ini_is_first() {
         // ini_files[0] is the [Archive]-carrying INI for every game that has INIs.
-        assert_eq!(GameDef::for_id("skyrimse").unwrap().ini_files.first(), Some(&"Skyrim.ini"));
-        assert_eq!(GameDef::for_id("fallout4").unwrap().ini_files.first(), Some(&"Fallout4.ini"));
+        assert_eq!(
+            GameDef::for_id("skyrimse").unwrap().ini_files.first(),
+            Some(&"Skyrim.ini")
+        );
+        assert_eq!(
+            GameDef::for_id("fallout4").unwrap().ini_files.first(),
+            Some(&"Fallout4.ini")
+        );
     }
 
     #[test]
@@ -660,7 +693,10 @@ mod tests {
         let custom = |id: &str, file: &str| {
             let inis = GameDef::for_id(id).unwrap().ini_files;
             assert!(inis.contains(&file), "{id} ini_files missing {file}");
-            assert_ne!(inis[0], file, "{file} must not be the [Archive] INI for {id}");
+            assert_ne!(
+                inis[0], file,
+                "{file} must not be the [Archive] INI for {id}"
+            );
         };
         // skyrimse keeps Skyrim.ini first and gains SkyrimCustom.ini.
         let se = GameDef::for_id("skyrimse").unwrap().ini_files;
@@ -678,7 +714,11 @@ mod tests {
         for g in GAMES {
             // Morrowind's INI lives in the install dir, not My Games (special-cased).
             if !g.ini_files.is_empty() && g.id != "morrowind" {
-                assert!(!g.documents_dir.is_empty(), "{} has INIs but no documents_dir", g.id);
+                assert!(
+                    !g.documents_dir.is_empty(),
+                    "{} has INIs but no documents_dir",
+                    g.id
+                );
             }
         }
     }
@@ -770,7 +810,10 @@ mod tests {
         .expect("an override must parse");
         let built_in = GameDef::for_id("fallout4").unwrap();
         assert_eq!(g.known_tools, built_in.known_tools);
-        assert!(!g.known_tools.is_empty(), "fallout4 ships with FO4Edit declared");
+        assert!(
+            !g.known_tools.is_empty(),
+            "fallout4 ships with FO4Edit declared"
+        );
     }
 
     #[test]
@@ -791,8 +834,11 @@ mod tests {
     fn load_games_from_reads_only_toml() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static N: AtomicUsize = AtomicUsize::new(0);
-        let dir = std::env::temp_dir()
-            .join(format!("eidos-games-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let dir = std::env::temp_dir().join(format!(
+            "eidos-games-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("stardew.toml"),
@@ -836,7 +882,11 @@ mod tests {
         // the condition has to name the two mechanisms it is actually about.
         for g in GAMES {
             if matches!(g.load_order, LoadOrder::Asterisk | LoadOrder::PlainList) {
-                assert!(!g.primary_plugins.is_empty(), "{} has no primary plugins", g.id);
+                assert!(
+                    !g.primary_plugins.is_empty(),
+                    "{} has no primary plugins",
+                    g.id
+                );
             }
         }
     }
@@ -846,11 +896,21 @@ mod tests {
     #[test]
     fn a_game_without_a_load_order_declares_no_plugin_machinery() {
         for g in GAMES.iter().filter(|g| g.load_order == LoadOrder::None) {
-            assert!(g.primary_plugins.is_empty(), "{} has masters but no load order", g.id);
-            assert!(g.ini_files.is_empty(), "{} has per-profile INIs but no load order", g.id);
+            assert!(
+                g.primary_plugins.is_empty(),
+                "{} has masters but no load order",
+                g.id
+            );
+            assert!(
+                g.ini_files.is_empty(),
+                "{} has per-profile INIs but no load order",
+                g.id
+            );
         }
         // And the one that exists is the one we expect, so this cannot pass vacuously.
-        assert!(GAMES.iter().any(|g| g.id == "stellarblade" && g.load_order == LoadOrder::None));
+        assert!(GAMES
+            .iter()
+            .any(|g| g.id == "stellarblade" && g.load_order == LoadOrder::None));
     }
 
     #[test]
@@ -862,21 +922,58 @@ mod tests {
             assert!(!g.nexus_game.is_empty(), "{} missing nexus_game", g.id);
         }
         let se = GameDef::for_id("skyrimse").unwrap();
-        assert_eq!((se.short_name, se.nexus_game), ("SkyrimSE", "skyrimspecialedition"));
-        assert_eq!(GameDef::for_id("skyrimvr").unwrap().nexus_game, "skyrimspecialedition");
+        assert_eq!(
+            (se.short_name, se.nexus_game),
+            ("SkyrimSE", "skyrimspecialedition")
+        );
+        assert_eq!(
+            GameDef::for_id("skyrimvr").unwrap().nexus_game,
+            "skyrimspecialedition"
+        );
         assert_eq!(GameDef::for_id("falloutnv").unwrap().nexus_game, "newvegas");
     }
 
     #[test]
     fn script_extender_swap_is_populated() {
-        let se = GameDef::for_id("skyrimse").unwrap().script_extender.unwrap();
+        let se = GameDef::for_id("skyrimse")
+            .unwrap()
+            .script_extender
+            .unwrap();
         assert_eq!(se.launcher, "SkyrimSELauncher.exe");
         assert_eq!(se.loader, "skse64_loader.exe");
         // Games whose launcher we do not know stay None rather than guessing.
         // Every script-extended game now declares its loader (VR + Enderal + SFSE).
-        assert_eq!(GameDef::for_id("starfield").unwrap().script_extender.unwrap().loader, "sfse_loader.exe");
-        assert_eq!(GameDef::for_id("skyrimvr").unwrap().script_extender.unwrap().loader, "sksevr_loader.exe");
-        assert_eq!(GameDef::for_id("fallout4vr").unwrap().script_extender.unwrap().loader, "f4sevr_loader.exe");
-        assert_eq!(GameDef::for_id("enderalse").unwrap().script_extender.unwrap().loader, "skse64_loader.exe");
+        assert_eq!(
+            GameDef::for_id("starfield")
+                .unwrap()
+                .script_extender
+                .unwrap()
+                .loader,
+            "sfse_loader.exe"
+        );
+        assert_eq!(
+            GameDef::for_id("skyrimvr")
+                .unwrap()
+                .script_extender
+                .unwrap()
+                .loader,
+            "sksevr_loader.exe"
+        );
+        assert_eq!(
+            GameDef::for_id("fallout4vr")
+                .unwrap()
+                .script_extender
+                .unwrap()
+                .loader,
+            "f4sevr_loader.exe"
+        );
+        assert_eq!(
+            GameDef::for_id("enderalse")
+                .unwrap()
+                .script_extender
+                .unwrap()
+                .loader,
+            "skse64_loader.exe"
+        );
     }
 }

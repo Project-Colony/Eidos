@@ -10,7 +10,6 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-
 mod backup;
 mod inis;
 mod modlist;
@@ -59,7 +58,6 @@ impl Profile {
     fn modlist_path(&self) -> PathBuf {
         self.dir().join("modlist.txt")
     }
-
 }
 
 /// Copy `src` to `dst` atomically: write a sibling `.tmp`, then rename over. A

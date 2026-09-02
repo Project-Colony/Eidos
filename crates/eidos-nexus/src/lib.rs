@@ -80,13 +80,19 @@ impl NxmUrl {
         {
             return Err(format!("unrecognized nxm link shape: {url}"));
         }
-        let mod_id: u64 = segs[2].parse().map_err(|_| format!("bad mod id in {url}"))?;
-        let file_id: u64 = segs[4].parse().map_err(|_| format!("bad file id in {url}"))?;
+        let mod_id: u64 = segs[2]
+            .parse()
+            .map_err(|_| format!("bad mod id in {url}"))?;
+        let file_id: u64 = segs[4]
+            .parse()
+            .map_err(|_| format!("bad file id in {url}"))?;
 
         let (mut key, mut expires, mut user_id) = (None, None, None);
         if let Some(q) = query {
             for pair in q.split('&') {
-                let Some((k, v)) = pair.split_once('=') else { continue };
+                let Some((k, v)) = pair.split_once('=') else {
+                    continue;
+                };
                 match k {
                     "key" if !v.is_empty() => key = Some(v.to_string()),
                     "expires" => expires = v.parse().ok(),
@@ -95,7 +101,14 @@ impl NxmUrl {
                 }
             }
         }
-        Ok(NxmUrl { game: segs[0].to_ascii_lowercase(), mod_id, file_id, key, expires, user_id })
+        Ok(NxmUrl {
+            game: segs[0].to_ascii_lowercase(),
+            mod_id,
+            file_id,
+            key,
+            expires,
+            user_id,
+        })
     }
 }
 
@@ -166,7 +179,11 @@ impl NxmLink {
         let revision = if segs[4].eq_ignore_ascii_case("latest") {
             None
         } else {
-            Some(segs[4].parse::<u32>().map_err(|_| format!("bad revision in {url}"))?)
+            Some(
+                segs[4]
+                    .parse::<u32>()
+                    .map_err(|_| format!("bad revision in {url}"))?,
+            )
         };
         Ok(NxmLink::Collection(NxmCollection {
             game: segs[0].to_ascii_lowercase(),
@@ -354,17 +371,40 @@ impl RemoteMod {
             // it is the whole point of the update check - withholding it would
             // break update detection for a mod the user already has installed.
             version: s(v, "version"),
-            summary: if redact { String::new() } else { s(v, "summary") },
+            summary: if redact {
+                String::new()
+            } else {
+                s(v, "summary")
+            },
             // Descriptive metadata from the mod page, so it goes behind the same
             // gate as the name and the summary. A withheld mod must not leak who
             // made it any more than what it is called.
-            author: if redact { String::new() } else { s(v, "author") },
-            uploader: if redact { String::new() } else { s(v, "uploaded_by") },
-            uploader_url: if redact { String::new() } else { s(v, "uploaded_users_profile_url") },
-            category_id: if redact { None } else { v.get("category_id").and_then(|x| x.as_u64()) },
+            author: if redact {
+                String::new()
+            } else {
+                s(v, "author")
+            },
+            uploader: if redact {
+                String::new()
+            } else {
+                s(v, "uploaded_by")
+            },
+            uploader_url: if redact {
+                String::new()
+            } else {
+                s(v, "uploaded_users_profile_url")
+            },
+            category_id: if redact {
+                None
+            } else {
+                v.get("category_id").and_then(|x| x.as_u64())
+            },
             available,
             adult,
-            gate: ModGate { adult: adult.unwrap_or(true), hidden },
+            gate: ModGate {
+                adult: adult.unwrap_or(true),
+                hidden,
+            },
         }
     }
 
@@ -479,7 +519,11 @@ fn choose_credential(
         }
         // Renewing needs BOTH a refresh token and a registered client_id. Without
         // the client_id there is no request we are allowed to make.
-        let renewable = can_refresh && creds.refresh_token.as_deref().is_some_and(|r| !r.is_empty());
+        let renewable = can_refresh
+            && creds
+                .refresh_token
+                .as_deref()
+                .is_some_and(|r| !r.is_empty());
         if renewable {
             return CredentialChoice::Refresh;
         }
@@ -530,8 +574,9 @@ pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) ->
         if want.is_empty() {
             continue;
         }
-        if let Some((_, uri)) =
-            mirrors.iter().find(|(name, _)| name.to_ascii_lowercase().contains(&want))
+        if let Some((_, uri)) = mirrors
+            .iter()
+            .find(|(name, _)| name.to_ascii_lowercase().contains(&want))
         {
             return Some(uri.clone());
         }
@@ -552,7 +597,10 @@ pub const OFFLINE_MESSAGE: &str =
     "Offline mode is on - Eidos is not contacting Nexus. Turn it off in Settings.";
 
 fn s(v: &serde_json::Value, k: &str) -> String {
-    v.get(k).and_then(|x| x.as_str()).unwrap_or_default().to_string()
+    v.get(k)
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Nexus's adult rating for a mod payload, or `None` when the payload says
@@ -734,7 +782,9 @@ impl Nexus {
                     // The refresh token is spent or revoked, and there is
                     // nothing to fall back to: signing in again is the only
                     // route, which is what the message has to say.
-                    Err(e) => Err(format!("Nexus sign-in expired and could not be renewed: {e}")),
+                    Err(e) => Err(format!(
+                        "Nexus sign-in expired and could not be renewed: {e}"
+                    )),
                 }
             }
             CredentialChoice::None => {
@@ -757,7 +807,10 @@ impl Nexus {
     /// check below would wave the next request straight through.
     fn capture_limits(&self, resp: &ureq::http::Response<ureq::Body>) {
         let parse = |h: &str| {
-            resp.headers().get(h).and_then(|v| v.to_str().ok()).and_then(|x| x.trim().parse::<i64>().ok())
+            resp.headers()
+                .get(h)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|x| x.trim().parse::<i64>().ok())
         };
         let now = oauth::now_unix();
         let mut lim = self.limits.get();
@@ -823,7 +876,9 @@ impl Nexus {
         }
 
         if lim.blocked_until.is_some() {
-            return Some(format!("{RATE_LIMITED} - too many requests too quickly; retrying shortly"));
+            return Some(format!(
+                "{RATE_LIMITED} - too many requests too quickly; retrying shortly"
+            ));
         }
         if lim.hourly_remaining.is_some_and(|n| n <= 0) {
             return Some(format!(
@@ -902,7 +957,11 @@ impl Nexus {
     /// endorsement endpoints (MO2's endorseMod posts `version=<installed>`). The
     /// reply body is ignored - only success/failure matters. Captures the X-RL-*
     /// budget on success and on a Status error, exactly like [`get`].
-    fn send_with_version(&self, req: ureq::RequestBuilder<ureq::typestate::WithBody>, version: &str) -> Result<(), String> {
+    fn send_with_version(
+        &self,
+        req: ureq::RequestBuilder<ureq::typestate::WithBody>,
+        version: &str,
+    ) -> Result<(), String> {
         if let Some(stop) = self.preflight(oauth::now_unix()) {
             return Err(stop);
         }
@@ -940,7 +999,13 @@ impl Nexus {
     /// Endorse when `endorse` is true, abstain when false - the toggling action the
     /// GUI binds to its Endorse button (it reads the mod's current `endorsed()`
     /// state to pick the direction). Returns the resulting endorsed state on success.
-    pub fn set_endorsed(&self, game: &str, mod_id: u64, version: &str, endorse: bool) -> Result<bool, String> {
+    pub fn set_endorsed(
+        &self,
+        game: &str,
+        mod_id: u64,
+        version: &str,
+        endorse: bool,
+    ) -> Result<bool, String> {
         if endorse {
             self.endorse(game, mod_id, version)?;
         } else {
@@ -965,7 +1030,11 @@ impl Nexus {
     pub fn account(&self) -> Result<Account, String> {
         let Credential::Bearer(token) = &self.credential;
         let c = oauth::claims(token)?;
-        Ok(Account { name: c.username, user_id: c.user_id, is_premium: c.is_premium })
+        Ok(Account {
+            name: c.username,
+            user_id: c.user_id,
+            is_premium: c.is_premium,
+        })
     }
 
     /// Mod metadata: `games/{game}/mods/{id}` (the update check reads `version`).
@@ -1002,7 +1071,11 @@ impl Nexus {
             let Some(id) = c.get("category_id").and_then(serde_json::Value::as_i64) else {
                 continue;
             };
-            let name = c.get("name").and_then(serde_json::Value::as_str).unwrap_or("").trim();
+            let name = c
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .trim();
             if name.is_empty() {
                 continue;
             }
@@ -1012,7 +1085,9 @@ impl Nexus {
             out.push((id as i32, name.to_string(), parent.map(|p| p as i32)));
         }
         if out.is_empty() {
-            return Err(format!("Nexus returned an empty category list for '{game}'"));
+            return Err(format!(
+                "Nexus returned an empty category list for '{game}'"
+            ));
         }
         Ok(out)
     }
@@ -1037,7 +1112,9 @@ impl Nexus {
             .and_then(|a| a.first())
             .ok_or("Nexus knows no file with that checksum")?;
         let m = first.get("mod").ok_or("the reply carried no mod")?;
-        let f = first.get("file_details").ok_or("the reply carried no file")?;
+        let f = first
+            .get("file_details")
+            .ok_or("the reply carried no file")?;
         let remote = RemoteMod::from_payload(m, self.adult);
         // A withheld mod is withheld here too: the gate exists so metadata for a
         // hidden or adult-gated mod cannot arrive through a side door.
@@ -1074,7 +1151,13 @@ impl Nexus {
     /// description cannot be fetched for a mod whose metadata is withheld: the
     /// caller has to have looked the mod up first, and this refuses if that lookup
     /// closed the gate.
-    pub fn file_info(&self, gate: &ModGate, game: &str, mod_id: u64, file_id: u64) -> Result<RemoteFile, String> {
+    pub fn file_info(
+        &self,
+        gate: &ModGate,
+        game: &str,
+        mod_id: u64,
+        file_id: u64,
+    ) -> Result<RemoteFile, String> {
         if let Some(why) = gate.reason() {
             return Err(why.message().to_string());
         }
@@ -1092,7 +1175,11 @@ impl Nexus {
                 // Older payloads carry only the rounded kilobyte figure. It is
                 // approximate, which is fine for a progress bar and wrong for
                 // anything that compares sizes - so nothing else uses it.
-                .or_else(|| v.get("size_in_kb").and_then(|x| x.as_u64()).map(|kb| kb * 1024))
+                .or_else(|| {
+                    v.get("size_in_kb")
+                        .and_then(|x| x.as_u64())
+                        .map(|kb| kb * 1024)
+                })
                 .unwrap_or(0),
         })
     }
@@ -1102,7 +1189,11 @@ impl Nexus {
     pub fn updated_mod_ids(&self, game: &str, period: &str) -> Result<Vec<u64>, String> {
         let v = self.get(&format!("games/{game}/mods/updated?period={period}"))?;
         Ok(v.as_array()
-            .map(|a| a.iter().filter_map(|m| m.get("mod_id").and_then(|x| x.as_u64())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|m| m.get("mod_id").and_then(|x| x.as_u64()))
+                    .collect()
+            })
             .unwrap_or_default())
     }
 
@@ -1148,9 +1239,11 @@ impl Nexus {
             })
             .unwrap_or_default();
         if mirrors.is_empty() {
-            return Err("no download mirror returned (free accounts need a fresh nxm:// link \
+            return Err(
+                "no download mirror returned (free accounts need a fresh nxm:// link \
                         from the site's Mod Manager Download button)"
-                .to_string());
+                    .to_string(),
+            );
         }
         Ok(mirrors)
     }
@@ -1324,7 +1417,11 @@ pub struct UpdateCheckResult {
 /// on iced's executor, exactly like the plugin-sort task. The `Instance` is
 /// `Clone`, so the closure can own a clone and complete harmlessly even if the
 /// user switches instances mid-check.
-pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game: &str) -> Result<UpdateCheckResult, String> {
+pub fn check_updates(
+    nexus: &Nexus,
+    inst: &eidos_instance::Instance,
+    nexus_game: &str,
+) -> Result<UpdateCheckResult, String> {
     // One "updated this month" query, then only fetch the intersection - stays
     // inside the API rate limits (MO2's approach).
     let updated = match nexus.updated_mod_ids(nexus_game, "1m") {
@@ -1333,7 +1430,10 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
         // shows "the budget is spent" rather than an error toast, and nothing
         // about the mod list is wrong - it just could not be refreshed.
         Err(e) if is_rate_limited(&e) => {
-            return Ok(UpdateCheckResult { rate_limited: true, ..Default::default() })
+            return Ok(UpdateCheckResult {
+                rate_limited: true,
+                ..Default::default()
+            })
         }
         Err(e) => return Err(e),
     };
@@ -1347,14 +1447,19 @@ pub fn check_updates(nexus: &Nexus, inst: &eidos_instance::Instance, nexus_game:
     let mut result = UpdateCheckResult::default();
     for m in inst.modlist() {
         let mut meta = inst.mod_meta(&m.name);
-        let Some(mod_id) = meta.mod_id() else { continue };
+        let Some(mod_id) = meta.mod_id() else {
+            continue;
+        };
         result.checked += 1;
 
         // The `updated?period=1m` list is only trustworthy for mods checked within
         // that window. A mod never checked - or checked over a month ago - gets an
         // individual query regardless of the intersection, else an update published
         // more than a month ago is missed forever (the common first-run case).
-        let stale = meta.last_nexus_update().map(|t| now.saturating_sub(t) > MONTH).unwrap_or(true);
+        let stale = meta
+            .last_nexus_update()
+            .map(|t| now.saturating_sub(t) > MONTH)
+            .unwrap_or(true);
         if !stale && !updated.contains(&mod_id) {
             continue;
         }
@@ -1603,7 +1708,9 @@ pub fn live_download_pid(archive: &Path) -> Option<u32> {
 /// the file, so the length on disk is already a truthful resume point, and the
 /// default action ends a process blocked in `read()` immediately.
 pub fn stop_download(archive: &Path) -> bool {
-    let Some(pid) = live_download_pid(archive) else { return false };
+    let Some(pid) = live_download_pid(archive) else {
+        return false;
+    };
     // SAFETY: `pid` came from /proc a moment ago and was confirmed to be an
     // `eidos` process, which is the check that makes pid reuse survivable.
     unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
@@ -1628,10 +1735,14 @@ pub fn stop_download(archive: &Path) -> bool {
 /// entry to vanish never succeeded: `downloadPid` was never cleared, and the
 /// download could not be resumed again for the life of the session.
 fn process_is_alive(pid: u32) -> bool {
-    let Ok(status) = fs::read_to_string(format!("/proc/{pid}/stat")) else { return false };
+    let Ok(status) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
     // `comm` is parenthesised and may itself contain spaces and brackets, so the
     // state character is read after the LAST ')', not by splitting on spaces.
-    let Some(after) = status.rsplit_once(')') else { return false };
+    let Some(after) = status.rsplit_once(')') else {
+        return false;
+    };
     !matches!(after.1.split_whitespace().next(), Some("Z") | Some("X"))
 }
 
@@ -1697,7 +1808,10 @@ pub fn write_download_meta(
     out.push_str(&format!("fileID={}\n", nxm.file_id));
     out.push_str(&format!("url=\"{url}\"\n"));
     out.push_str(&format!("name={}\n", file.name));
-    out.push_str(&format!("description={}\n", file.description.replace('\n', " ")));
+    out.push_str(&format!(
+        "description={}\n",
+        file.description.replace('\n', " ")
+    ));
     out.push_str(&format!("modName={}\n", remote_mod.name));
     out.push_str(&format!("version={}\n", file.version));
     out.push_str("newestVersion=\n");
@@ -1749,7 +1863,11 @@ pub fn md5_file(path: &Path) -> io::Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hasher.finalize().iter().map(|b| format!("{b:02x}")).collect())
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Write a `.meta` for an archive identified by [`Nexus::md5_search`].
@@ -1778,7 +1896,11 @@ pub fn write_recovered_meta(
     out.push_str(&format!("modName={}\n", found.remote.name));
     out.push_str(&format!(
         "version={}\n",
-        if found.file_version.is_empty() { &found.remote.version } else { &found.file_version }
+        if found.file_version.is_empty() {
+            &found.remote.version
+        } else {
+            &found.file_version
+        }
     ));
     out.push_str(&format!("newestVersion={}\n", found.remote.version));
     out.push_str(&format!("fileName={name}\n"));
@@ -1820,7 +1942,10 @@ mod tests {
         // existed: Nexus's own first choice.
         assert_eq!(pick_mirror(&mirrors, &[]).unwrap(), "https://cdn/a");
         // A ranked name wins, wherever Nexus put it.
-        assert_eq!(pick_mirror(&mirrors, &["paris".into()]).unwrap(), "https://par/c");
+        assert_eq!(
+            pick_mirror(&mirrors, &["paris".into()]).unwrap(),
+            "https://par/c"
+        );
         // Ranking is in order, and a name that is not on offer today is skipped
         // rather than fatal.
         assert_eq!(
@@ -1830,7 +1955,10 @@ mod tests {
         // And when NOTHING ranked is on offer, the download still happens.
         // Refusing because a favourite node is busy would be a worse program
         // than one with no preference at all.
-        assert_eq!(pick_mirror(&mirrors, &["Tokyo".into()]).unwrap(), "https://cdn/a");
+        assert_eq!(
+            pick_mirror(&mirrors, &["Tokyo".into()]).unwrap(),
+            "https://cdn/a"
+        );
         // Nothing offered is the only case with no answer.
         assert_eq!(pick_mirror(&[], &["Paris".into()]), None);
     }
@@ -1845,7 +1973,10 @@ mod tests {
         assert_eq!(pick_mirror(&a, &["nexus".into()]).unwrap(), "https://a");
         assert_eq!(pick_mirror(&b, &["nexus".into()]).unwrap(), "https://b");
         // Blank entries in the list are skipped, not matched against everything.
-        assert_eq!(pick_mirror(&a, &["".into(), "  ".into()]).unwrap(), "https://a");
+        assert_eq!(
+            pick_mirror(&a, &["".into(), "  ".into()]).unwrap(),
+            "https://a"
+        );
     }
 
     #[test]
@@ -1881,7 +2012,10 @@ mod tests {
         assert!(!g.gate.visible());
         assert_eq!(g.author, "");
         assert_eq!(g.uploader, "");
-        assert_eq!(g.uploader_url, "", "a withheld mod must not leak its uploader's profile");
+        assert_eq!(
+            g.uploader_url, "",
+            "a withheld mod must not leak its uploader's profile"
+        );
         // The version still comes through - the update check depends on it.
         assert_eq!(g.version, "1.0");
     }
@@ -1899,8 +2033,8 @@ mod tests {
 
     /// A throwaway downloads dir holding one archive + its sidecar.
     fn dl_fixture(body: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("eidos-dl-{}-{}", std::process::id(), body.len()));
+        let dir =
+            std::env::temp_dir().join(format!("eidos-dl-{}-{}", std::process::id(), body.len()));
         let _ = fs::create_dir_all(&dir);
         let archive = dir.join("Mod-1-0.7z");
         fs::write(&archive, b"partial").unwrap();
@@ -1914,17 +2048,30 @@ mod tests {
         set_download_meta_key(&a, "paused", "true").unwrap();
         let text = fs::read_to_string(meta_path_for(&a)).unwrap();
         assert!(text.contains("paused=true"));
-        assert!(text.contains("gameName=SkyrimSE"), "the other keys survive: {text}");
+        assert!(
+            text.contains("gameName=SkyrimSE"),
+            "the other keys survive: {text}"
+        );
         assert!(text.contains("modID=7"));
-        assert_eq!(text.matches("paused=").count(), 1, "set, not appended a second time");
+        assert_eq!(
+            text.matches("paused=").count(),
+            1,
+            "set, not appended a second time"
+        );
         assert_eq!(download_meta_key(&a, "paused").as_deref(), Some("true"));
 
         // A key that was not there is added rather than dropped on the floor.
         set_download_meta_key(&a, DOWNLOAD_PID_KEY, "4242").unwrap();
-        assert_eq!(download_meta_key(&a, DOWNLOAD_PID_KEY).as_deref(), Some("4242"));
+        assert_eq!(
+            download_meta_key(&a, DOWNLOAD_PID_KEY).as_deref(),
+            Some("4242")
+        );
         // And a quoted value reads back unquoted, as the url line is written.
         set_download_meta_key(&a, "url", "\"https://x/y?expires=1\"").unwrap();
-        assert_eq!(download_meta_key(&a, "url").as_deref(), Some("https://x/y?expires=1"));
+        assert_eq!(
+            download_meta_key(&a, "url").as_deref(),
+            Some("https://x/y?expires=1")
+        );
         let _ = fs::remove_dir_all(a.parent().unwrap());
     }
 
@@ -1937,7 +2084,11 @@ mod tests {
         // comm check refuses it. That check is the whole point - pids are
         // reused, and signalling a stale one kills whatever inherited it.
         set_download_meta_key(&a, DOWNLOAD_PID_KEY, &std::process::id().to_string()).unwrap();
-        assert_eq!(live_download_pid(&a), None, "a live NON-eidos pid is refused");
+        assert_eq!(
+            live_download_pid(&a),
+            None,
+            "a live NON-eidos pid is refused"
+        );
 
         // A pid that cannot exist.
         set_download_meta_key(&a, DOWNLOAD_PID_KEY, "4294967294").unwrap();
@@ -2052,9 +2203,18 @@ mod tests {
         let body = fs::read_to_string(&meta).unwrap();
         assert!(body.contains("modID=123"), "{body}");
         assert!(body.contains("fileID=456"), "{body}");
-        assert!(body.contains("version=1.0"), "the FILE version, not the mod's: {body}");
-        assert!(body.contains("newestVersion=1.1"), "so the update check has a target: {body}");
-        assert!(body.contains("name=Main file"), "the display name, not the archive: {body}");
+        assert!(
+            body.contains("version=1.0"),
+            "the FILE version, not the mod's: {body}"
+        );
+        assert!(
+            body.contains("newestVersion=1.1"),
+            "so the update check has a target: {body}"
+        );
+        assert!(
+            body.contains("name=Main file"),
+            "the display name, not the archive: {body}"
+        );
         assert!(body.contains("fileName=Cool Mod-123-1-0.zip"), "{body}");
         assert!(body.contains("totalSize=7"), "{body}");
         let _ = fs::remove_dir_all(&dir);
@@ -2063,7 +2223,10 @@ mod tests {
     /// A gate for a mod that may be shown, for fixtures whose subject is not the
     /// gate itself.
     fn shown_gate() -> ModGate {
-        ModGate { adult: false, hidden: None }
+        ModGate {
+            adult: false,
+            hidden: None,
+        }
     }
 
     /// A mod payload as the v1 API returns it, with the adult flag under our
@@ -2109,7 +2272,11 @@ mod tests {
 
     #[test]
     fn a_non_adult_mod_is_untouched_by_the_gate() {
-        for policy in [AdultPolicy::Allowed, AdultPolicy::Denied, AdultPolicy::Unknown] {
+        for policy in [
+            AdultPolicy::Allowed,
+            AdultPolicy::Denied,
+            AdultPolicy::Unknown,
+        ] {
             let m = gated(&mod_payload(Some(false)), policy);
             assert_eq!(m.hidden(), None, "{policy:?}");
             assert_eq!(m.name, "Ivy the Companion");
@@ -2203,7 +2370,9 @@ mod tests {
             size_in_bytes: 1,
         };
         let hidden = gated(&mod_payload(Some(true)), AdultPolicy::Denied);
-        assert!(write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &hidden).is_err());
+        assert!(
+            write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &hidden).is_err()
+        );
         assert!(!archive.with_extension("7z.meta").exists());
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2279,7 +2448,11 @@ mod tests {
     #[test]
     fn an_account_with_no_budget_headers_at_all_is_never_blocked() {
         // Whatever the account tier, absent headers mean "no budget stated".
-        let n = client_with(RateLimits { hourly_remaining: None, daily_remaining: None, ..Default::default() });
+        let n = client_with(RateLimits {
+            hourly_remaining: None,
+            daily_remaining: None,
+            ..Default::default()
+        });
         assert!(n.preflight(NOON).is_none());
         assert!(!n.would_block());
     }
@@ -2329,9 +2502,15 @@ mod tests {
         // A 429 while the counters still show budget is the burst guard in front
         // of the API, not the quota. Standing down until the next hour for that
         // would idle the client for up to an hour over a one-second burst.
-        let n = client_with(RateLimits { hourly_remaining: Some(90), ..Default::default() });
+        let n = client_with(RateLimits {
+            hourly_remaining: Some(90),
+            ..Default::default()
+        });
         n.note_rejection(429);
-        let until = n.rate_limits().blocked_until.expect("burst back-off recorded");
+        let until = n
+            .rate_limits()
+            .blocked_until
+            .expect("burst back-off recorded");
         assert!(until <= oauth::now_unix() + BURST_BACKOFF);
         assert!(n.would_block());
         // And it is a back-off, not an invented zero: the counters still say what
@@ -2417,7 +2596,8 @@ mod tests {
         // two other third-party clients reject it - wrongly: the API expresses
         // it as `revision: null`, not as a number.
         let NxmLink::Collection(c) =
-            NxmLink::parse("nxm://skyrimspecialedition/collections/qdurkx/revisions/latest").unwrap()
+            NxmLink::parse("nxm://skyrimspecialedition/collections/qdurkx/revisions/latest")
+                .unwrap()
         else {
             panic!("expected a collection")
         };
@@ -2487,7 +2667,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("eidos-nexus-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let archive = dir.join("Dynamic String Distributor-107676-1-3-1-1765658342.7z");
-        let nxm = NxmUrl::parse("nxm://skyrimspecialedition/mods/107676/files/697660?key=k&expires=1&user_id=2").unwrap();
+        let nxm = NxmUrl::parse(
+            "nxm://skyrimspecialedition/mods/107676/files/697660?key=k&expires=1&user_id=2",
+        )
+        .unwrap();
         let file = RemoteFile {
             name: "Dynamic String Distributor".into(),
             file_name: "Dynamic String Distributor-107676-1-3-1-1765658342.7z".into(),
@@ -2509,7 +2692,9 @@ mod tests {
             adult: Some(false),
             gate: shown_gate(),
         };
-        let meta = write_download_meta(&archive, "SkyrimSE", &nxm, "https://cdn/x.7z", &file, &rmod).unwrap();
+        let meta =
+            write_download_meta(&archive, "SkyrimSE", &nxm, "https://cdn/x.7z", &file, &rmod)
+                .unwrap();
         let text = fs::read_to_string(&meta).unwrap();
         // The exact MO2 downloadmanager key set (sans the Qt blobs).
         for needle in [
@@ -2554,9 +2739,15 @@ mod tests {
         let n = file_name_from_uri("https://cdn/files/%2e%2e%2fevil.7z?md5=x").unwrap();
         assert!(!n.contains('/') && !n.contains('\\'), "got {n}");
         assert_ne!(n, "..");
-        assert_eq!(sanitize_file_name("a:b*c?.7z").as_deref(), Some("a_b_c_.7z"));
+        assert_eq!(
+            sanitize_file_name("a:b*c?.7z").as_deref(),
+            Some("a_b_c_.7z")
+        );
         assert_eq!(sanitize_file_name(".."), None);
-        assert_eq!(sanitize_file_name("trailing.  ").as_deref(), Some("trailing"));
+        assert_eq!(
+            sanitize_file_name("trailing.  ").as_deref(),
+            Some("trailing")
+        );
         assert_eq!(sanitize_file_name("   "), None);
     }
 
@@ -2585,7 +2776,10 @@ mod tests {
 
     #[test]
     fn status_err_maps_the_mo2_codes() {
-        assert_eq!(Nexus::status_err(401), "Nexus rejected the sign-in (401) - sign in again");
+        assert_eq!(
+            Nexus::status_err(401),
+            "Nexus rejected the sign-in (401) - sign in again"
+        );
         assert!(Nexus::status_err(429).contains("429"));
         assert!(Nexus::status_err(429).contains("rate limited"));
         assert_eq!(Nexus::status_err(503), "Nexus API error (HTTP 503)");
@@ -2609,13 +2803,17 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let archive = dir.join("M.7z");
         let meta = PathBuf::from(format!("{}.meta", archive.display()));
-        fs::write(&meta, "[General]\nmodID=1\ninstalled=false\nuninstalled=false\nremoved=false\n").unwrap();
+        fs::write(
+            &meta,
+            "[General]\nmodID=1\ninstalled=false\nuninstalled=false\nremoved=false\n",
+        )
+        .unwrap();
         mark_installed(&archive).unwrap();
         let t = fs::read_to_string(&meta).unwrap();
         assert!(t.contains("installed=true"));
         assert!(t.contains("uninstalled=false"));
         assert!(t.contains("modID=1")); // other keys preserved
-        // No sidecar = silent no-op, not an error.
+                                        // No sidecar = silent no-op, not an error.
         mark_installed(&dir.join("absent.7z")).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2639,7 +2837,6 @@ mod tests {
             "Dynamic Armor Physics-186346-1-0-1.zip"
         );
     }
-
 
     #[test]
     fn the_sidecar_records_the_total_so_progress_can_be_a_percentage() {
@@ -2668,18 +2865,22 @@ mod tests {
             adult: Some(false),
             gate: shown_gate(),
         };
-        let path = write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &m).unwrap();
+        let path =
+            write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file, &m).unwrap();
         let body = fs::read_to_string(&path).unwrap();
         assert!(body.contains("totalSize=12345"), "{body}");
 
         // A size we do not know must be ABSENT, not written as zero: the reader
         // treats 0 as "unknown" either way, but a zero on disk looks like a fact.
-        let file0 = RemoteFile { size_in_bytes: 0, ..file };
-        let p0 = write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file0, &m).unwrap();
+        let file0 = RemoteFile {
+            size_in_bytes: 0,
+            ..file
+        };
+        let p0 =
+            write_download_meta(&archive, "SkyrimSE", &nxm, "https://x/y", &file0, &m).unwrap();
         assert!(!fs::read_to_string(&p0).unwrap().contains("totalSize"));
         let _ = fs::remove_dir_all(&dir);
     }
-
 
     // ---- which credential a session actually uses -------------------------
     //
@@ -2703,16 +2904,25 @@ mod tests {
 
     #[test]
     fn a_fresh_session_is_used_as_is() {
-        assert_eq!(choose_credential(&signed_in(10_000), 1_000, true), CredentialChoice::Bearer);
+        assert_eq!(
+            choose_credential(&signed_in(10_000), 1_000, true),
+            CredentialChoice::Bearer
+        );
     }
 
     #[test]
     fn a_session_expiring_within_the_skew_is_renewed_early() {
         // Expires in 60s, inside the 300s skew: renew now rather than fail
         // halfway through a download the user cannot retry cleanly.
-        assert_eq!(choose_credential(&signed_in(1_060), 1_000, true), CredentialChoice::Refresh);
+        assert_eq!(
+            choose_credential(&signed_in(1_060), 1_000, true),
+            CredentialChoice::Refresh
+        );
         // Comfortably outside it, so leave it alone.
-        assert_eq!(choose_credential(&signed_in(1_400), 1_000, true), CredentialChoice::Bearer);
+        assert_eq!(
+            choose_credential(&signed_in(1_400), 1_000, true),
+            CredentialChoice::Bearer
+        );
     }
 
     #[test]
@@ -2720,7 +2930,10 @@ mod tests {
         // No client_id registered, so no refresh is possible. There is nothing
         // else to try: this used to fall back to a personal API key, which is
         // exactly what Nexus requires a distributed client not to do.
-        assert_eq!(choose_credential(&signed_in(500), 1_000, false), CredentialChoice::None);
+        assert_eq!(
+            choose_credential(&signed_in(500), 1_000, false),
+            CredentialChoice::None
+        );
 
         // Same when the refresh token itself is gone.
         let mut c = signed_in(500);
@@ -2730,7 +2943,10 @@ mod tests {
 
     #[test]
     fn nothing_stored_is_reported_not_guessed() {
-        assert_eq!(choose_credential(&NexusCreds::default(), 1_000, true), CredentialChoice::None);
+        assert_eq!(
+            choose_credential(&NexusCreds::default(), 1_000, true),
+            CredentialChoice::None
+        );
     }
 
     #[test]

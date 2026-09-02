@@ -10,10 +10,7 @@ use std::path::{Path, PathBuf};
 
 use eidos_instance::ModMeta;
 
-use crate::{
-    fix_directory_name, guess_mod_name_and_id,
-};
-
+use crate::{fix_directory_name, guess_mod_name_and_id};
 
 use super::*;
 
@@ -43,7 +40,9 @@ pub fn fomod_context(
                             file_states.insert(n, "Active".to_string());
                         }
                         _ => {
-                            file_states.entry(n).or_insert_with(|| "Inactive".to_string());
+                            file_states
+                                .entry(n)
+                                .or_insert_with(|| "Inactive".to_string());
                         }
                     }
                 }
@@ -58,7 +57,10 @@ pub fn fomod_context(
     for root in enabled_mod_roots {
         scan(root, "Active");
     }
-    eidos_fomod::Context { file_states, ..Default::default() }
+    eidos_fomod::Context {
+        file_states,
+        ..Default::default()
+    }
 }
 
 /// Find the directory that contains a `fomod/ModuleConfig.xml` (case-insensitive),
@@ -71,14 +73,19 @@ pub(crate) fn find_fomod_root(tmp: &Path) -> Option<PathBuf> {
         let entries: Vec<_> = fs::read_dir(dir).ok()?.flatten().collect();
         for e in &entries {
             if e.path().is_dir()
-                && e.file_name().to_string_lossy().eq_ignore_ascii_case("fomod")
+                && e.file_name()
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case("fomod")
                 && find_ci(&e.path(), "moduleconfig.xml").is_some()
             {
                 return Some(dir.to_path_buf());
             }
         }
         for e in &entries {
-            let is_fomod = e.file_name().to_string_lossy().eq_ignore_ascii_case("fomod");
+            let is_fomod = e
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case("fomod");
             if e.path().is_dir() && !is_fomod {
                 if let Some(found) = walk(&e.path(), depth + 1) {
                     return Some(found);
@@ -92,8 +99,8 @@ pub(crate) fn find_fomod_root(tmp: &Path) -> Option<PathBuf> {
 
 /// Parse the `fomod/ModuleConfig.xml` under `root`.
 pub(crate) fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, InstallError> {
-    let fomod_dir =
-        find_ci(root, "fomod").ok_or_else(|| InstallError::Fomod("fomod/ not found".to_string()))?;
+    let fomod_dir = find_ci(root, "fomod")
+        .ok_or_else(|| InstallError::Fomod("fomod/ not found".to_string()))?;
     let xml_path = find_ci(&fomod_dir, "moduleconfig.xml")
         .ok_or_else(|| InstallError::Fomod("ModuleConfig.xml not found".to_string()))?;
     let bytes = fs::read(&xml_path)?;
@@ -110,12 +117,19 @@ pub(crate) fn parse_fomod_at(root: &Path) -> Result<eidos_fomod::ModuleConfig, I
 /// path-traversal attempt (or corruption) that must be refused.
 pub(crate) fn escapes_root(rel: &str) -> bool {
     use std::path::Component;
-    Path::new(rel)
-        .components()
-        .any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_)))
+    Path::new(rel).components().any(|c| {
+        matches!(
+            c,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    })
 }
 
-pub(crate) fn apply_plan(root: &Path, plan: &[eidos_fomod::FileItem], dest: &Path) -> Result<Vec<String>, InstallError> {
+pub(crate) fn apply_plan(
+    root: &Path,
+    plan: &[eidos_fomod::FileItem],
+    dest: &Path,
+) -> Result<Vec<String>, InstallError> {
     let mut missing = Vec::new();
     for item in plan {
         let Some(src) = resolve_ci(root, &item.source) else {
@@ -244,7 +258,13 @@ pub fn finish_fomod(
     if let Some(old) = preserved {
         reapply_user_meta(&old, &dest.join("meta.ini"));
     }
-    Ok(InstallReport { name, stripped: String::new(), fomod: true, missing, dest })
+    Ok(InstallReport {
+        name,
+        stripped: String::new(),
+        fomod: true,
+        missing,
+        dest,
+    })
 }
 
 // ---- case-collision normalisation -------------------------------------------

@@ -47,7 +47,9 @@ impl Manifest {
             if line.is_empty() || line.starts_with('[') || line.starts_with('#') {
                 continue;
             }
-            let Some((k, v)) = eidos_ini::key_value(line) else { continue };
+            let Some((k, v)) = eidos_ini::key_value(line) else {
+                continue;
+            };
             let v = v.trim();
             match k {
                 "schema_version" => schema_version = v.parse().unwrap_or(SCHEMA_VERSION),
@@ -63,7 +65,12 @@ impl Manifest {
                 _ => {}
             }
         }
-        Some(Manifest { schema_version, game_id: game_id?, kind, selected_profile })
+        Some(Manifest {
+            schema_version,
+            game_id: game_id?,
+            kind,
+            selected_profile,
+        })
     }
 
     pub fn write(&self, path: &Path) -> io::Result<()> {
@@ -102,7 +109,9 @@ mod tests {
     #[test]
     fn round_trips_global() {
         let p = tmp();
-        Manifest::new("skyrimse", InstanceKind::Global).write(&p).unwrap();
+        Manifest::new("skyrimse", InstanceKind::Global)
+            .write(&p)
+            .unwrap();
         let m = Manifest::read(&p).unwrap();
         assert_eq!(m.schema_version, SCHEMA_VERSION);
         assert_eq!(m.game_id, "skyrimse");

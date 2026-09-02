@@ -163,7 +163,10 @@ impl Config {
             stderr: true,
             version: None,
         };
-        if let Some(l) = std::env::var("EIDOS_LOG").ok().and_then(|v| Level::parse(&v)) {
+        if let Some(l) = std::env::var("EIDOS_LOG")
+            .ok()
+            .and_then(|v| Level::parse(&v))
+        {
             cfg.file_level = l;
             cfg.stderr_level = l;
         }
@@ -248,7 +251,9 @@ pub fn path() -> Option<PathBuf> {
 /// still fixed-width, so sorting the whole name by its timestamp is enough
 /// without stat()ing anything.
 pub fn sessions() -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(log_dir()) else { return Vec::new() };
+    let Ok(entries) = fs::read_dir(log_dir()) else {
+        return Vec::new();
+    };
     let mut out: Vec<PathBuf> = entries
         .flatten()
         .map(|e| e.path())
@@ -654,8 +659,12 @@ fn rotate(dir: &Path, s: &Sweep) -> usize {
     let mut sessions: Vec<(PathBuf, String, u32)> = Vec::new();
     for e in entries.flatten() {
         let p = e.path();
-        let Some(name) = p.file_name().and_then(|n| n.to_str()) else { continue };
-        let Some((st, pid)) = session_parts(name) else { continue };
+        let Some(name) = p.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let Some((st, pid)) = session_parts(name) else {
+            continue;
+        };
         let st = st.to_string();
         sessions.push((p, st, pid));
     }
@@ -674,7 +683,9 @@ fn rotate(dir: &Path, s: &Sweep) -> usize {
     let mut mine: Vec<&(PathBuf, String, u32)> = sessions
         .iter()
         .filter(|(p, _, _)| {
-            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(s.prefix))
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(s.prefix))
         })
         .collect();
     mine.sort_by(|a, b| b.0.file_name().cmp(&a.0.file_name()));
@@ -699,7 +710,10 @@ fn rotate(dir: &Path, s: &Sweep) -> usize {
             // rule instead, which does not care what time it is.
             .filter(|(_, st, _)| st.as_str() < cutoff)
             .collect();
-        aged.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.file_name().cmp(&b.0.file_name())));
+        aged.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| a.0.file_name().cmp(&b.0.file_name()))
+        });
         let mut surviving = sessions.len() - doomed.len();
         for (p, _, _) in aged {
             if surviving <= keep {
@@ -724,9 +738,38 @@ fn rotate(dir: &Path, s: &Sweep) -> usize {
 /// that is redacted regardless of what the account is called. Only the
 /// bare-word pass is skipped for these.
 const AMBIGUOUS_USERNAMES: &[&str] = &[
-    "steam", "proton", "wine", "game", "games", "mod", "mods", "data", "home", "user", "users",
-    "root", "log", "logs", "bin", "lib", "usr", "var", "tmp", "share", "local", "state", "default",
-    "eidos", "profile", "profiles", "save", "saves", "plugin", "plugins", "overwrite", "instance",
+    "steam",
+    "proton",
+    "wine",
+    "game",
+    "games",
+    "mod",
+    "mods",
+    "data",
+    "home",
+    "user",
+    "users",
+    "root",
+    "log",
+    "logs",
+    "bin",
+    "lib",
+    "usr",
+    "var",
+    "tmp",
+    "share",
+    "local",
+    "state",
+    "default",
+    "eidos",
+    "profile",
+    "profiles",
+    "save",
+    "saves",
+    "plugin",
+    "plugins",
+    "overwrite",
+    "instance",
 ];
 
 /// The shortest username the bare-word pass will touch. Two-letter logins exist
@@ -760,7 +803,11 @@ impl Redactor {
             .filter(|u| u.len() >= MIN_BARE_USERNAME)
             .filter(|u| !AMBIGUOUS_USERNAMES.contains(&u.to_ascii_lowercase().as_str()))
             .map(str::to_string);
-        Redactor { home, home_win, user }
+        Redactor {
+            home,
+            home_win,
+            user,
+        }
     }
 
     /// Read `HOME` and `USER` from the environment, falling back to the last
@@ -847,7 +894,10 @@ fn replace_bounded(text: &str, needle: &str, with: &str) -> Option<String> {
     while let Some(rel) = text[from..].find(needle) {
         let start = from + rel;
         let end = start + needle.len();
-        let prev_ok = text[..start].chars().next_back().is_none_or(|c| !is_name_char(c));
+        let prev_ok = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_name_char(c));
         let next_ok = text[end..].chars().next().is_none_or(|c| !is_name_char(c));
         if prev_ok && next_ok {
             let buf = out.get_or_insert_with(String::new);
@@ -936,7 +986,14 @@ pub fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400);
     let (y, m, d) = civil_from_days(days);
-    (y, m, d, (sod / 3600) as u32, ((sod % 3600) / 60) as u32, (sod % 60) as u32)
+    (
+        y,
+        m,
+        d,
+        (sod / 3600) as u32,
+        ((sod % 3600) / 60) as u32,
+        (sod % 60) as u32,
+    )
 }
 
 /// Days since 1970-01-01 to a civil `(year, month, day)`.
@@ -950,8 +1007,12 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
     let mp = (5 * doy + 2) / 153; // month shifted so March is 0
     let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
-    let m: u32 = if mp < 10 { (mp + 3) as u32 } else { (mp - 9) as u32 }; // [1, 12]
-    // Undo the March-first shift: January and February belong to the next year.
+    let m: u32 = if mp < 10 {
+        (mp + 3) as u32
+    } else {
+        (mp - 9) as u32
+    }; // [1, 12]
+       // Undo the March-first shift: January and February belong to the next year.
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
@@ -1053,7 +1114,8 @@ mod tests {
     #[test]
     fn redacts_the_username_as_a_bare_word() {
         assert_eq!(
-            r().apply("prefix owned by alice, not by the current user").as_ref(),
+            r().apply("prefix owned by alice, not by the current user")
+                .as_ref(),
             "prefix owned by <user>, not by the current user"
         );
         // Left over by the home pass because the path is not really the home dir.
@@ -1079,7 +1141,10 @@ mod tests {
     fn redacts_wine_style_paths() {
         // What Proton prints once a Linux path has been mapped into the prefix.
         let s = r#"could not load Z:\home\alice\.steam\root\x.dll"#;
-        assert_eq!(r().apply(s).as_ref(), r#"could not load Z:~\.steam\root\x.dll"#);
+        assert_eq!(
+            r().apply(s).as_ref(),
+            r#"could not load Z:~\.steam\root\x.dll"#
+        );
     }
 
     #[test]
@@ -1114,7 +1179,10 @@ mod tests {
         assert_eq!(empty.apply("/home/alice/x").as_ref(), "/home/alice/x");
         // Too short to disambiguate from ordinary text.
         let short = Redactor::new(None, Some("al"));
-        assert_eq!(short.apply("al opened the archive").as_ref(), "al opened the archive");
+        assert_eq!(
+            short.apply("al opened the archive").as_ref(),
+            "al opened the archive"
+        );
     }
 
     #[test]
@@ -1149,7 +1217,14 @@ mod tests {
         current: &'a Path,
         older_than: Option<&'a str>,
     ) -> Sweep<'a> {
-        Sweep { prefix, keep, current, older_than, now: "99999999-999999", live: &|_| false }
+        Sweep {
+            prefix,
+            keep,
+            current,
+            older_than,
+            now: "99999999-999999",
+            live: &|_| false,
+        }
     }
 
     fn seed(dir: &Path, slug: &str, n: usize) -> Vec<PathBuf> {
@@ -1209,7 +1284,10 @@ mod tests {
         // Oldest first, so the orphans go before any of the live bucket.
         assert!(!orphans[0].exists() && !orphans[1].exists());
         assert!(orphans[2].exists(), "the floor stopped the sweep here");
-        assert!(live.iter().all(|p| p.exists()), "and never at a live bucket's expense");
+        assert!(
+            live.iter().all(|p| p.exists()),
+            "and never at a live bucket's expense"
+        );
     }
 
     #[test]
@@ -1228,9 +1306,12 @@ mod tests {
             p
         };
         // `gui` sorts BEFORE `nxm---`, and is the newer of the two by 20 days.
-        let gui: Vec<PathBuf> = (0..6).map(|i| mk("gui", base + 20 * day + i, 100 + i as u32)).collect();
-        let orphans: Vec<PathBuf> =
-            (0..8).map(|i| mk(&format!("nxm---mods-{i}"), base + i, 200 + i as u32)).collect();
+        let gui: Vec<PathBuf> = (0..6)
+            .map(|i| mk("gui", base + 20 * day + i, 100 + i as u32))
+            .collect();
+        let orphans: Vec<PathBuf> = (0..8)
+            .map(|i| mk(&format!("nxm---mods-{i}"), base + i, 200 + i as u32))
+            .collect();
         let current = mk("gui", base + 400 * day, 999);
 
         let cutoff = stamp(base + 300 * day);
@@ -1241,7 +1322,10 @@ mod tests {
         // The five that went are the five OLDEST - orphans - not the five that
         // happen to sort first.
         assert!(orphans[..5].iter().all(|p| !p.exists()), "the oldest went");
-        assert!(gui.iter().all(|p| p.exists()), "the user's own logs survived");
+        assert!(
+            gui.iter().all(|p| p.exists()),
+            "the user's own logs survived"
+        );
     }
 
     #[test]
@@ -1262,12 +1346,18 @@ mod tests {
 
         assert_eq!(removed, 1, "eleven SESSION logs, a floor of ten");
         assert_eq!(
-            names(t.path()).iter().filter(|n| n.starts_with("skyrimse.")).count(),
+            names(t.path())
+                .iter()
+                .filter(|n| n.starts_with("skyrimse."))
+                .count(),
             10,
             "the promised ten survived, not six"
         );
         for foreign in ["resume.log", "crash-0.log", "crash-1.log", "notes.log"] {
-            assert!(t.path().join(foreign).exists(), "{foreign} is not ours to delete");
+            assert!(
+                t.path().join(foreign).exists(),
+                "{foreign} is not ours to delete"
+            );
         }
     }
 
@@ -1280,7 +1370,9 @@ mod tests {
         // next process that starts.
         let t = TempDir::new();
         let running = seed(t.path(), "nxm", 6);
-        let current = t.path().join(session_file_name("nxm", 1_700_000_000 + 999, 4242));
+        let current = t
+            .path()
+            .join(session_file_name("nxm", 1_700_000_000 + 999, 4242));
         fs::write(&current, b"x").unwrap();
 
         // Pretend every seeded pid is a live Eidos process, which is what five
@@ -1317,8 +1409,9 @@ mod tests {
         // Written "later" than the run doing the sweeping, which is what a
         // backward step looks like from here.
         let recent = seed(t.path(), "skyrimse", 3);
-        let current =
-            t.path().join(session_file_name("skyrimse", 1_700_000_000 - 86_400, 4242));
+        let current = t
+            .path()
+            .join(session_file_name("skyrimse", 1_700_000_000 - 86_400, 4242));
         fs::write(&current, b"x").unwrap();
 
         let now = stamp(1_700_000_000 - 86_400);
@@ -1334,7 +1427,10 @@ mod tests {
             },
         );
 
-        assert_eq!(removed, 0, "not one line of a session that is merely newer than this one");
+        assert_eq!(
+            removed, 0,
+            "not one line of a session that is merely newer than this one"
+        );
         assert!(recent.iter().all(|p| p.exists()));
     }
 
@@ -1371,7 +1467,10 @@ mod tests {
         let fresh = seed(t.path(), "skyrimse", 4);
         let (_f, path) = open_session(t.path(), "skyrimse", 10, u64::MAX).unwrap();
 
-        assert!(fresh.iter().all(|p| p.exists()), "four fresh logs, nothing to sweep");
+        assert!(
+            fresh.iter().all(|p| p.exists()),
+            "four fresh logs, nothing to sweep"
+        );
         assert!(path.exists());
     }
 
@@ -1384,8 +1483,14 @@ mod tests {
         let current = &old[3];
         let cutoff = stamp(1_700_000_000 + 365 * 86_400);
 
-        assert_eq!(rotate(t.path(), &sweep("skyrimse.", 10, current, Some(&cutoff))), 0);
-        assert!(old.iter().all(|p| p.exists()), "all four are older than the cutoff");
+        assert_eq!(
+            rotate(t.path(), &sweep("skyrimse.", 10, current, Some(&cutoff))),
+            0
+        );
+        assert!(
+            old.iter().all(|p| p.exists()),
+            "all four are older than the cutoff"
+        );
     }
 
     #[test]
@@ -1394,7 +1499,12 @@ mod tests {
         let mine = seed(t.path(), "skyrimse", 2);
         // Not session logs, or not shaped like one. The sweep deletes only what
         // it can positively date, so these are left alone rather than guessed at.
-        for odd in ["notes.log", "skyrimse.log", "a.b.c.d.log", "sse.20231114-.1000.log"] {
+        for odd in [
+            "notes.log",
+            "skyrimse.log",
+            "a.b.c.d.log",
+            "sse.20231114-.1000.log",
+        ] {
             fs::write(t.path().join(odd), b"x").unwrap();
         }
         let cutoff = stamp(1_700_000_000 + 365 * 86_400);
@@ -1405,10 +1515,25 @@ mod tests {
         assert!(t.path().join("a.b.c.d.log").exists());
         assert!(t.path().join("sse.20231114-.1000.log").exists());
 
-        assert_eq!(session_parts("sse.20231114-215544.1000.log"), Some(("20231114-215544", 1000)));
-        assert_eq!(session_parts("sse.20231114-215544.pid.log"), None, "pid must be a number");
-        assert_eq!(session_parts("sse.2023111-215544.1000.log"), None, "date is eight digits");
-        assert_eq!(session_parts("sse.20231114-21554.1000.log"), None, "time is six");
+        assert_eq!(
+            session_parts("sse.20231114-215544.1000.log"),
+            Some(("20231114-215544", 1000))
+        );
+        assert_eq!(
+            session_parts("sse.20231114-215544.pid.log"),
+            None,
+            "pid must be a number"
+        );
+        assert_eq!(
+            session_parts("sse.2023111-215544.1000.log"),
+            None,
+            "date is eight digits"
+        );
+        assert_eq!(
+            session_parts("sse.20231114-21554.1000.log"),
+            None,
+            "time is six"
+        );
     }
 
     #[test]
@@ -1421,7 +1546,10 @@ mod tests {
 
         rotate(t.path(), &sweep("sse.", 2, current, None));
 
-        assert!(current.exists(), "the live session log must survive rotation");
+        assert!(
+            current.exists(),
+            "the live session log must survive rotation"
+        );
         assert!(files[4].exists());
         assert!(files[3].exists());
         assert!(!files[2].exists());
@@ -1438,7 +1566,10 @@ mod tests {
         rotate(t.path(), &sweep("skyrim.", 1, mine.last().unwrap(), None));
 
         assert_eq!(mine.iter().filter(|p| p.exists()).count(), 1);
-        assert!(other.iter().all(|p| p.exists()), "another instance was rotated away");
+        assert!(
+            other.iter().all(|p| p.exists()),
+            "another instance was rotated away"
+        );
         assert!(t.path().join("skyrim.notes.txt").exists());
     }
 
@@ -1510,7 +1641,10 @@ mod tests {
     #[test]
     fn civil_conversion_matches_known_instants() {
         assert_eq!(format_civil(0, None), "1970-01-01 00:00:00");
-        assert_eq!(format_civil(1_700_000_000, Some(7)), "2023-11-14 22:13:20.007");
+        assert_eq!(
+            format_civil(1_700_000_000, Some(7)),
+            "2023-11-14 22:13:20.007"
+        );
         // Leap day, and the last second before one.
         assert_eq!(format_civil(1_709_164_800, None), "2024-02-29 00:00:00");
         assert_eq!(format_civil(1_709_164_799, None), "2024-02-28 23:59:59");
@@ -1527,7 +1661,9 @@ mod tests {
 
     #[test]
     fn level_thresholds_and_parsing() {
-        assert!(Level::Error > Level::Warn && Level::Warn > Level::Info && Level::Info > Level::Debug);
+        assert!(
+            Level::Error > Level::Warn && Level::Warn > Level::Info && Level::Info > Level::Debug
+        );
         assert_eq!(Level::parse("WARNING"), Some(Level::Warn));
         assert_eq!(Level::parse(" debug "), Some(Level::Debug));
         assert_eq!(Level::parse("shout"), None);

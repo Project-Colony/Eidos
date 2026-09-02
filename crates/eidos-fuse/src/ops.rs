@@ -7,17 +7,17 @@ use std::ffi::OsStr;
 use std::fs::{self, File, Metadata, OpenOptions, Permissions};
 use std::os::fd::AsFd;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::SystemTime;
 
 use fuser::{
-    BsdFileFlags, Errno, FileHandle,
-    Filesystem, FopenFlags, Generation, INodeNo, InitFlags, KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData, ReplyDirectory,
-    ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr, Request, TimeOrNow,
-    WriteFlags,
+    BsdFileFlags, Errno, FileHandle, Filesystem, FopenFlags, Generation, INodeNo, InitFlags,
+    KernelConfig, LockOwner, OpenFlags, RenameFlags, ReplyAttr, ReplyCreate, ReplyData,
+    ReplyDirectory, ReplyEmpty, ReplyEntry, ReplyOpen, ReplyStatfs, ReplyWrite, ReplyXattr,
+    Request, TimeOrNow, WriteFlags,
 };
 
 use crate::*;
@@ -62,7 +62,9 @@ impl Filesystem for Eidos {
         // `EIDOS_FUSE_OPENDIR=1` keeps the handles, for bisecting a directory
         // bug against the old path.
         let forced_off = std::env::var("EIDOS_FUSE_OPENDIR").is_ok_and(|v| v != "0");
-        let cap = config.capabilities().contains(InitFlags::FUSE_NO_OPENDIR_SUPPORT);
+        let cap = config
+            .capabilities()
+            .contains(InitFlags::FUSE_NO_OPENDIR_SUPPORT);
         self.no_opendir.store(cap && !forced_off, Ordering::Relaxed);
 
         // FUSE_WRITEBACK_CACHE is deliberately NOT enabled. It makes writable
@@ -228,9 +230,11 @@ impl Filesystem for Eidos {
         // does not return an errno, it kills a daemon thread out from under the
         // game. The entry both inserts and hands back the reference.
         let flags = file_open_flags();
-        let of = files
-            .entry(fh)
-            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        let of = files.entry(fh).or_insert(OpenFile {
+            _real: real,
+            file: Arc::new(file),
+            _backing: backing,
+        });
         match of._backing.as_ref() {
             Some(b) => reply.opened_passthrough(FileHandle(fh), flags, b),
             None => reply.opened(FileHandle(fh), flags),
@@ -316,7 +320,11 @@ impl Filesystem for Eidos {
                 return;
             }
         };
-        match self.stack.resolve_read(&vpath).and_then(|r| fs::symlink_metadata(r).ok()) {
+        match self
+            .stack
+            .resolve_read(&vpath)
+            .and_then(|r| fs::symlink_metadata(r).ok())
+        {
             Some(meta) => reply.attr(&TTL, &self.attr(ino.0, &meta)),
             None => reply.error(Errno::ENOENT),
         }
@@ -332,7 +340,11 @@ impl Filesystem for Eidos {
         };
         // Return the raw link target; the kernel resolves it within the mount,
         // so a relative symlink shipped by a mod points back into the merged view.
-        match self.stack.resolve_read(&vpath).and_then(|r| fs::read_link(r).ok()) {
+        match self
+            .stack
+            .resolve_read(&vpath)
+            .and_then(|r| fs::read_link(r).ok())
+        {
             Some(target) => reply.data(target.as_os_str().as_bytes()),
             None => reply.error(Errno::ENOENT),
         }
@@ -358,7 +370,11 @@ impl Filesystem for Eidos {
         let _t = TimedRead::start(&self.stats, ino.0, size, req.pid());
         // Fast path: pread the cached fd from `open` (no re-resolve, no re-open,
         // offset-explicit so concurrent reads on one handle do not race).
-        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
+        let cached = self
+            .open_files
+            .lock_recover()
+            .get(&fh.0)
+            .map(|o| o.file.clone());
         if let Some(file) = cached {
             match read_full_at(&file, offset, size as usize) {
                 Ok(buf) => reply.data(&buf),
@@ -430,7 +446,14 @@ impl Filesystem for Eidos {
         };
         self.stats.note_dir(&vpath);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        self.open_dirs.lock_recover().insert(fh, OpenDir { ino: ino.0, vpath, entries: None });
+        self.open_dirs.lock_recover().insert(
+            fh,
+            OpenDir {
+                ino: ino.0,
+                vpath,
+                entries: None,
+            },
+        );
         // CACHE_DIR lets the kernel keep the directory listing and serve repeat
         // enumerations itself. The Creation Engine's loose-file indexer and Wine's
         // directory probing re-walk the same directories relentlessly, and each
@@ -467,7 +490,8 @@ impl Filesystem for Eidos {
         // block every other handle in the daemon.
         let known = {
             let dirs = self.open_dirs.lock_recover();
-            dirs.get(&fh.0).map(|d| (d.ino, d.vpath.clone(), d.entries.is_some()))
+            dirs.get(&fh.0)
+                .map(|d| (d.ino, d.vpath.clone(), d.entries.is_some()))
         };
         if let Some((d_ino, d_vpath, ready)) = known {
             if !ready {
@@ -593,14 +617,19 @@ impl Filesystem for Eidos {
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing =
-            if passthrough_enabled() { reply.open_backing(file.as_fd()).ok() } else { None };
+        let backing = if passthrough_enabled() {
+            reply.open_backing(file.as_fd()).ok()
+        } else {
+            None
+        };
         let mut files = self.open_files.lock_recover();
         // Same shape as open(): entry instead of insert-then-unwrap, because an
         // unwrap in a handler is a panic site and a panic takes the daemon down.
-        let of = files
-            .entry(fh)
-            .or_insert(OpenFile { _real: real, file: Arc::new(file), _backing: backing });
+        let of = files.entry(fh).or_insert(OpenFile {
+            _real: real,
+            file: Arc::new(file),
+            _backing: backing,
+        });
         match of._backing.as_ref() {
             Some(b) => reply.created_passthrough(
                 &TTL,
@@ -610,7 +639,13 @@ impl Filesystem for Eidos {
                 FopenFlags::empty(),
                 b,
             ),
-            None => reply.created(&TTL, &attr, Generation(0), FileHandle(fh), FopenFlags::empty()),
+            None => reply.created(
+                &TTL,
+                &attr,
+                Generation(0),
+                FileHandle(fh),
+                FopenFlags::empty(),
+            ),
         }
     }
 
@@ -629,7 +664,11 @@ impl Filesystem for Eidos {
         Stats::bump(&self.stats.write);
         let _t = Timed::start(&self.stats.ns_write);
         // Fast path: pwrite the cached (copied-up) fd from `open`/`create`.
-        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
+        let cached = self
+            .open_files
+            .lock_recover()
+            .get(&fh.0)
+            .map(|o| o.file.clone());
         if let Some(file) = cached {
             match write_all_at(&file, data, offset) {
                 Ok(()) => reply.written(data.len() as u32),
@@ -771,19 +810,41 @@ impl Filesystem for Eidos {
                 return;
             }
         }
-        match self.stack.resolve_read(&vpath).and_then(|r| fs::symlink_metadata(r).ok()) {
+        match self
+            .stack
+            .resolve_read(&vpath)
+            .and_then(|r| fs::symlink_metadata(r).ok())
+        {
             Some(meta) => reply.attr(&TTL, &self.attr(ino.0, &meta)),
             None => reply.error(Errno::ENOENT),
         }
     }
 
-    fn flush(&self, _req: &Request, _ino: INodeNo, _fh: FileHandle, _lock: LockOwner, reply: ReplyEmpty) {
+    fn flush(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        _fh: FileHandle,
+        _lock: LockOwner,
+        reply: ReplyEmpty,
+    ) {
         reply.ok();
     }
 
-    fn fsync(&self, _req: &Request, _ino: INodeNo, fh: FileHandle, _datasync: bool, reply: ReplyEmpty) {
+    fn fsync(
+        &self,
+        _req: &Request,
+        _ino: INodeNo,
+        fh: FileHandle,
+        _datasync: bool,
+        reply: ReplyEmpty,
+    ) {
         // Make saves durable: flush the backing fd if this handle has one.
-        let cached = self.open_files.lock_recover().get(&fh.0).map(|o| o.file.clone());
+        let cached = self
+            .open_files
+            .lock_recover()
+            .get(&fh.0)
+            .map(|o| o.file.clone());
         match cached {
             Some(file) => match file.sync_all() {
                 Ok(()) => reply.ok(),
@@ -847,7 +908,8 @@ impl Filesystem for Eidos {
         flags: RenameFlags,
         reply: ReplyEmpty,
     ) {
-        let (Some(from), Some(to)) = (self.child(parent, name), self.child(newparent, newname)) else {
+        let (Some(from), Some(to)) = (self.child(parent, name), self.child(newparent, newname))
+        else {
             reply.error(Errno::ENOENT);
             return;
         };
