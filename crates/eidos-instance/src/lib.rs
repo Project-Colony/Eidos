@@ -292,12 +292,34 @@ impl Instance {
             .write(true)
             .open(&path)?;
         // SAFETY: flock on an owned, open fd; no memory preconditions.
-        let rc = unsafe {
+        let flock = |f: &fs::File| unsafe {
             libc::flock(
-                std::os::fd::AsRawFd::as_raw_fd(&file),
+                std::os::fd::AsRawFd::as_raw_fd(f),
                 libc::LOCK_EX | libc::LOCK_NB,
             )
         };
+        // A refusal here is ambiguous, and the table above is what disambiguates
+        // it. `flock` belongs to the open file DESCRIPTION, which `fork` makes
+        // the child share: for the few microseconds between a fork and its exec,
+        // a child holds every lock its parent held, even ones the parent has
+        // since dropped. Eidos forks constantly - `find_7z` alone tries three
+        // binaries, and every tool and launch is a spawn - so a lock taken while
+        // one of those is in flight is refused, and the lockfile then names US as
+        // the holder: "in use by the Eidos window", to the Eidos window.
+        //
+        // The table said nobody in this process holds it, so either that window
+        // is open (it closes in microseconds) or another process really does
+        // (it will not). Retrying briefly tells them apart; without it the user
+        // gets a refusal that contradicts itself and is gone by the time they
+        // click again.
+        let mut rc = flock(&file);
+        for _ in 0..20 {
+            if rc == 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+            rc = flock(&file);
+        }
         if rc != 0 {
             let err = std::io::Error::last_os_error();
             let who = fs::read_to_string(&path).unwrap_or_default();
