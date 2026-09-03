@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/Project-Colony/Eidos/compare/v1.14.0...v1.14.1) (2026-09-03)
+
+
+### Performance
+
+* **build:** one codegen unit, for a 22% smaller binary ([#50](https://github.com/Project-Colony/Eidos/issues/50)) ([ebe43a1](https://github.com/Project-Colony/Eidos/commit/ebe43a15df30f2f74bebf291c165d7c0234596ff))
+
 ## [1.14.0](https://github.com/Project-Colony/Eidos/compare/v1.13.0...v1.14.0) (2026-09-03)
 
 
