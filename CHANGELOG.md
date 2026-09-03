@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.2](https://github.com/Project-Colony/Eidos/compare/v1.14.1...v1.14.2) (2026-09-03)
+
+
+### Fixes
+
+* **gamefeatures:** report the plugin that actually failed ([#53](https://github.com/Project-Colony/Eidos/issues/53)) ([332681e](https://github.com/Project-Colony/Eidos/commit/332681e4a06668eab3e417de5d995373b38833e1))
+* three causes of a flaky test suite, none of them the tests ([#52](https://github.com/Project-Colony/Eidos/issues/52)) ([729cf6a](https://github.com/Project-Colony/Eidos/commit/729cf6ab7317ce29615d6e83206f70d49961864e))
+
 ## [1.14.1](https://github.com/Project-Colony/Eidos/compare/v1.14.0...v1.14.1) (2026-09-03)
 
 
