@@ -294,6 +294,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         download_drag: None,
         install_at: None,
         install_gap: None,
+        install_job: None,
         confirm_set_all: None,
         file_menu_open: false,
         plugin_send_priority: None,

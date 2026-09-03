@@ -138,6 +138,15 @@ pub(crate) fn animating(app: &crate::App) -> bool {
     app.motion && (app.tab_anim.running() || app.info_anim.running() || app.status_anim.running())
 }
 
+/// Whether the window must keep receiving frames.
+///
+/// Wider than [`animating`]: an extraction running on a worker thread has no
+/// animation, but its progress dialog has to repaint and its completion has to
+/// be noticed, and neither happens in a window that subscribed to nothing.
+pub(crate) fn needs_frames(app: &crate::App) -> bool {
+    animating(app) || app.install_job.is_some()
+}
+
 /// How far a phase should be DRAWN, honouring the motion preference.
 ///
 /// Every view-side reader goes through here rather than calling `eased`

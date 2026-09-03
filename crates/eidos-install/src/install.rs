@@ -204,7 +204,22 @@ pub fn open_archive(
     name: &str,
     game_id: &str,
 ) -> Result<Opened, InstallError> {
-    let tree = extract_to_temp(archive, mods_dir)?;
+    open_archive_with(archive, mods_dir, name, game_id, |_| {})
+}
+
+/// [`open_archive`], with 7-Zip's live percentage fed to `on_progress`.
+///
+/// Extraction dwarfs everything else this function does, so its percentage IS
+/// the operation's percentage: a front end can drive a progress bar from this
+/// callback alone and treat the classification after 100% as "finishing".
+pub fn open_archive_with(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    on_progress: impl FnMut(u8),
+) -> Result<Opened, InstallError> {
+    let tree = extract_to_temp_with(archive, mods_dir, on_progress)?;
     if let Some(root) = find_fomod_root(&tree.tmp) {
         let config = parse_fomod_at(&root)?;
         return Ok(Opened::Fomod(Box::new(FomodSession {

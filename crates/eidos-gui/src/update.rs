@@ -32,6 +32,197 @@ fn repaint(app: &mut App) {
     }
 }
 
+/// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
+///
+/// Everything here used to happen inline in `update()`. The work is identical;
+/// what changed is that the window is free to repaint and answer the compositor
+/// while it runs.
+fn spawn_open(
+    archive: std::path::PathBuf,
+    mods_dir: std::path::PathBuf,
+    name: String,
+    game_id: String,
+) -> crate::InstallJob {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::{Arc, Mutex};
+    let percent = Arc::new(AtomicU8::new(0));
+    let outcome = Arc::new(Mutex::new(None));
+    let done = Arc::new(AtomicBool::new(false));
+    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let (a, m, n, g) = (archive.clone(), mods_dir.clone(), name.clone(), game_id.clone());
+    std::thread::spawn(move || {
+        let r = eidos_install::open_archive_with(&a, &m, &n, &g, |pct| {
+            p.store(pct, Ordering::SeqCst);
+        });
+        if let Ok(mut slot) = o.lock() {
+            *slot = Some(r);
+        }
+        // Last, and after the outcome is stored: the poller reads `done` first.
+        d.store(true, Ordering::SeqCst);
+    });
+    crate::InstallJob {
+        name,
+        archive,
+        mods_dir,
+        game_id,
+        percent,
+        outcome,
+        done,
+    }
+}
+
+/// Act on what the archive turned out to be. Unchanged from when this ran
+/// inline; only its inputs are now carried by the job rather than by locals.
+fn finish_open(
+    app: &mut App,
+    result: Result<eidos_install::Opened, eidos_install::InstallError>,
+    path: std::path::PathBuf,
+    name: String,
+    mods_dir: std::path::PathBuf,
+    gid: String,
+) {
+    match result {
+
+                Ok(eidos_install::Opened::Fomod(session)) => {
+                    let enabled_roots: Vec<std::path::PathBuf> = app
+                        .mods
+                        .iter()
+                        .filter(|m| m.is_active())
+                        .map(|m| m.path.clone())
+                        .collect();
+                    let disabled_roots: Vec<std::path::PathBuf> = app
+                        .mods
+                        .iter()
+                        .filter(|m| !m.is_active() && !m.is_separator())
+                        .map(|m| m.path.clone())
+                        .collect();
+                    let ctx = match selected_game(app) {
+                        Some(g) => eidos_install::fomod_context(
+                            &g.data_path,
+                            &enabled_roots,
+                            &disabled_roots,
+                        ),
+                        None => eidos_fomod::Context::default(),
+                    };
+                    let session = *session;
+                    // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
+                    // showing the wizard - tell the user what is missing and stop.
+                    if let Some(req) = session.unmet_dependencies(&ctx) {
+                        app.status = Some(format!("Cannot install: this mod requires {req}."));
+                    } else {
+                        let selection = eidos_fomod::default_selection(&session.config, &ctx);
+                        // Open on the first step that is actually shown. Next/Back
+                        // already skip invisible steps and build_plan ignores them,
+                        // but nothing seeked at open: a FOMOD whose first step is
+                        // conditional rendered that page fully interactive, and
+                        // every choice made on it was thrown away at install time.
+                        let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
+                            .iter()
+                            .position(|v| *v)
+                            .unwrap_or(0);
+                        app.fomod = Some(FomodWizard {
+                            session,
+                            step: first,
+                            selection,
+                            game_id: gid,
+                            archive: path,
+                            ctx,
+                            hover: None,
+                        });
+                        app.status =
+                            Some("FOMOD installer: choose your options, then Install.".to_string());
+                    }
+                }
+                Ok(eidos_install::Opened::Simple(tree)) => {
+                    let ctx = eidos_fomod::Context::default();
+                    match eidos_install::install_extracted(
+                        &tree,
+                        &path,
+                        &mods_dir,
+                        &name,
+                        &gid,
+                        eidos_install::OverwritePolicy::Fail,
+                        &ctx,
+                    ) {
+                        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
+                        Err(eidos_install::InstallError::Exists(_)) => {
+                            // MO2's QueryOverwriteDialog: let the user Merge/Replace/
+                            // Rename. The extracted tree rides along so resolving it
+                            // needs no re-extract.
+                            let rename_to = suggest_free_name(&mods_dir, &name);
+                            app.collision = Some(CollisionPrompt {
+                                archive: path,
+                                name: name.clone(),
+                                game_id: gid,
+                                rename_to,
+                                fomod: false,
+                                tree: Some(tree),
+                                pick: None,
+                            });
+                            app.status =
+                                Some(format!("'{name}' already exists - choose how to install."));
+                        }
+                        Err(e) => app.status = Some(format!("Install failed: {e}")),
+                    }
+                }
+                // Wrye Bash complex package: let the user tick sub-packages. MO2
+                // pre-ticks the `00`-prefixed ones plus whatever the last install
+                // of this mod used, which its meta.ini remembers.
+                Ok(eidos_install::Opened::Bain {
+                    tree,
+                    subpackages,
+                    invalid,
+                }) => {
+                    let previous = app
+                        .created
+                        .as_ref()
+                        .map(|i| i.mod_meta(&name).bain_options().to_vec())
+                        .unwrap_or_default();
+                    let picked = eidos_install::bain_default_selection(&subpackages, &previous);
+                    app.status = Some(if invalid > 0 {
+                        format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
+                    } else {
+                        format!("BAIN installer: choose the sub-packages to install for '{name}'.")
+                    });
+                    let archive_tree = parsed_tree(&tree);
+                    app.picker = Some(InstallPicker {
+                        rows: archive_tree.flatten(),
+                        archive_tree,
+                        archive: path,
+                        name,
+                        game_id: gid,
+                        tree,
+                        // `invalid` folders are MO2's cue to ASK rather than assume.
+                        mode: PickerMode::Bain {
+                            subpackages,
+                            picked,
+                            asking: invalid > 0,
+                        },
+                    });
+                }
+                // No heuristic recognised the layout. Rather than refuse the
+                // archive, show its tree and let the user point at the data root.
+                Ok(eidos_install::Opened::Manual(tree)) => {
+                    app.status = Some(format!(
+                        "'{name}': pick the folder that holds the game data."
+                    ));
+                    let archive_tree = parsed_tree(&tree);
+                    app.picker = Some(InstallPicker {
+                        rows: archive_tree.flatten(),
+                        archive_tree,
+                        archive: path,
+                        name,
+                        game_id: gid,
+                        tree,
+                        mode: PickerMode::Manual {
+                            root: String::new(),
+                        },
+                    });
+                }
+                Err(e) => app.status = Some(format!("Install failed: {e}")),
+    }
+}
+
 pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
     // popped the last item must not re-arm itself off its own empty queue.
@@ -58,6 +249,8 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
         && app.fomod.is_none()
         && app.picker.is_none()
         && app.collision.is_none()
+        // Re-armed by the poll that finishes the job, not while it runs.
+        && app.install_job.is_none()
     {
         return Task::batch([task, Task::done(Message::DrainDrops)]);
     }
@@ -97,6 +290,8 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // shorten a confirmation's life, it would end it before the finger
         // came back down.
         | Message::AnimationTick
+        // Reached from that same tick, at the same rate, for the same reason.
+        | Message::InstallPoll
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
         // still is not the user deciding anything.
@@ -591,145 +786,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let name = eidos_install::mod_name_for(&path);
             // One extraction, then classify: a plain archive installs straight from
             // the extracted tree instead of being unpacked a second time.
-            match eidos_install::open_archive(&path, &mods_dir, &name, &gid) {
-                Ok(eidos_install::Opened::Fomod(session)) => {
-                    let enabled_roots: Vec<std::path::PathBuf> = app
-                        .mods
-                        .iter()
-                        .filter(|m| m.is_active())
-                        .map(|m| m.path.clone())
-                        .collect();
-                    let disabled_roots: Vec<std::path::PathBuf> = app
-                        .mods
-                        .iter()
-                        .filter(|m| !m.is_active() && !m.is_separator())
-                        .map(|m| m.path.clone())
-                        .collect();
-                    let ctx = match selected_game(app) {
-                        Some(g) => eidos_install::fomod_context(
-                            &g.data_path,
-                            &enabled_roots,
-                            &disabled_roots,
-                        ),
-                        None => eidos_fomod::Context::default(),
-                    };
-                    let session = *session;
-                    // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
-                    // showing the wizard - tell the user what is missing and stop.
-                    if let Some(req) = session.unmet_dependencies(&ctx) {
-                        app.status = Some(format!("Cannot install: this mod requires {req}."));
-                    } else {
-                        let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                        // Open on the first step that is actually shown. Next/Back
-                        // already skip invisible steps and build_plan ignores them,
-                        // but nothing seeked at open: a FOMOD whose first step is
-                        // conditional rendered that page fully interactive, and
-                        // every choice made on it was thrown away at install time.
-                        let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
-                            .iter()
-                            .position(|v| *v)
-                            .unwrap_or(0);
-                        app.fomod = Some(FomodWizard {
-                            session,
-                            step: first,
-                            selection,
-                            game_id: gid,
-                            archive: path,
-                            ctx,
-                            hover: None,
-                        });
-                        app.status =
-                            Some("FOMOD installer: choose your options, then Install.".to_string());
-                    }
-                }
-                Ok(eidos_install::Opened::Simple(tree)) => {
-                    let ctx = eidos_fomod::Context::default();
-                    match eidos_install::install_extracted(
-                        &tree,
-                        &path,
-                        &mods_dir,
-                        &name,
-                        &gid,
-                        eidos_install::OverwritePolicy::Fail,
-                        &ctx,
-                    ) {
-                        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
-                        Err(eidos_install::InstallError::Exists(_)) => {
-                            // MO2's QueryOverwriteDialog: let the user Merge/Replace/
-                            // Rename. The extracted tree rides along so resolving it
-                            // needs no re-extract.
-                            let rename_to = suggest_free_name(&mods_dir, &name);
-                            app.collision = Some(CollisionPrompt {
-                                archive: path,
-                                name: name.clone(),
-                                game_id: gid,
-                                rename_to,
-                                fomod: false,
-                                tree: Some(tree),
-                                pick: None,
-                            });
-                            app.status =
-                                Some(format!("'{name}' already exists - choose how to install."));
-                        }
-                        Err(e) => app.status = Some(format!("Install failed: {e}")),
-                    }
-                }
-                // Wrye Bash complex package: let the user tick sub-packages. MO2
-                // pre-ticks the `00`-prefixed ones plus whatever the last install
-                // of this mod used, which its meta.ini remembers.
-                Ok(eidos_install::Opened::Bain {
-                    tree,
-                    subpackages,
-                    invalid,
-                }) => {
-                    let previous = app
-                        .created
-                        .as_ref()
-                        .map(|i| i.mod_meta(&name).bain_options().to_vec())
-                        .unwrap_or_default();
-                    let picked = eidos_install::bain_default_selection(&subpackages, &previous);
-                    app.status = Some(if invalid > 0 {
-                        format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
-                    } else {
-                        format!("BAIN installer: choose the sub-packages to install for '{name}'.")
-                    });
-                    let archive_tree = parsed_tree(&tree);
-                    app.picker = Some(InstallPicker {
-                        rows: archive_tree.flatten(),
-                        archive_tree,
-                        archive: path,
-                        name,
-                        game_id: gid,
-                        tree,
-                        // `invalid` folders are MO2's cue to ASK rather than assume.
-                        mode: PickerMode::Bain {
-                            subpackages,
-                            picked,
-                            asking: invalid > 0,
-                        },
-                    });
-                }
-                // No heuristic recognised the layout. Rather than refuse the
-                // archive, show its tree and let the user point at the data root.
-                Ok(eidos_install::Opened::Manual(tree)) => {
-                    app.status = Some(format!(
-                        "'{name}': pick the folder that holds the game data."
-                    ));
-                    let archive_tree = parsed_tree(&tree);
-                    app.picker = Some(InstallPicker {
-                        rows: archive_tree.flatten(),
-                        archive_tree,
-                        archive: path,
-                        name,
-                        game_id: gid,
-                        tree,
-                        mode: PickerMode::Manual {
-                            root: String::new(),
-                        },
-                    });
-                }
-                Err(e) => app.status = Some(format!("Install failed: {e}")),
-            }
+            // Off the window's thread. `update()` must return so iced can keep
+            // answering the compositor; the result is collected by `InstallPoll`.
+            app.install_job = Some(spawn_open(path, mods_dir, name, gid));
         }
         Message::PickerBainToggle(i) => {
             if let Some(PickerMode::Bain { picked, .. }) = app.picker.as_mut().map(|p| &mut p.mode)
@@ -6164,7 +6223,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::DrainDrops => {
             // A modal is open: the current install is still being answered. The
             // queue is drained again from `after_install` and from every cancel.
-            if app.fomod.is_some() || app.picker.is_some() || app.collision.is_some() {
+            if app.fomod.is_some()
+                || app.picker.is_some()
+                || app.collision.is_some()
+                // An extraction is already running. Starting a second one would
+                // race it for `mods/<name>/` and put two 7-Zips on the same disk.
+                || app.install_job.is_some()
+            {
                 return Task::none();
             }
             let Some(path) = app.dropped.first().cloned() else {
@@ -6547,7 +6612,30 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // Nothing to store. Every animated value is a function of the instant
         // its phase began, so a frame's whole job is to have arrived: reaching
         // `update` is what makes iced call `view` again.
-        Message::AnimationTick => {}
+        Message::AnimationTick => {
+            // The same 60 Hz tick drives the extraction dialog.
+            if app.install_job.is_some() {
+                return update_inner(app, Message::InstallPoll);
+            }
+        }
+        Message::InstallPoll => {
+            let Some(job) = app.install_job.as_ref() else {
+                return Task::none();
+            };
+            if !job.done.load(std::sync::atomic::Ordering::SeqCst) {
+                return Task::none();
+            }
+            let job = app.install_job.take().expect("just checked");
+            let result = job.outcome.lock().ok().and_then(|mut o| o.take());
+            // A poisoned mutex means the worker panicked mid-extract. Say so
+            // rather than silently doing nothing: the user is watching a dialog.
+            match result {
+                Some(r) => finish_open(app, r, job.archive, job.name, job.mods_dir, job.game_id),
+                None => {
+                    app.status = Some(format!("Install failed: the worker opening '{}' stopped without a result.", job.name))
+                }
+            }
+        }
         Message::WindowResized(s) => {
             app.window = s;
             // "Remember the window size" is a real setting now: it was stored,
