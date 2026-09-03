@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/Project-Colony/Eidos/compare/v1.13.0...v1.14.0) (2026-09-03)
+
+
+### Features
+
+* **install:** extract on a worker thread, with a progress dialog ([#48](https://github.com/Project-Colony/Eidos/issues/48)) ([4c2c7b0](https://github.com/Project-Colony/Eidos/commit/4c2c7b066c7076a551d22bdba14352b01b021dc9))
+
 ## [1.13.0](https://github.com/Project-Colony/Eidos/compare/v1.12.0...v1.13.0) (2026-09-02)
 
 
