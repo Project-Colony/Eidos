@@ -147,19 +147,38 @@ fn info_group(rest: &str) -> Option<(usize, usize)> {
             && after[..8].bytes().all(|b| b.is_ascii_hexdigit())
             && after.as_bytes()[8] == b' ';
         if looks_right {
-            if let Some(rel) = after.find(')') {
-                return Some((open, open + 1 + rel));
+            // NOT the first ')': a plugin's own name may contain one, and one
+            // real one does - "Save & Load Accelerator for SKSE Cosaves
+            // (S.L.A.C.K.)". Stopping there strands the version digits at the
+            // head of the status ("01040020) loaded correctly"), which matches
+            // no known status, so a plugin that loaded was reported as failed.
+            //
+            // The group always ENDS with the 8-hex version, so take the first
+            // ')' whose contents do.
+            for (rel, _) in after.match_indices(')') {
+                let ends_with_version = after[..rel]
+                    .rsplit(' ')
+                    .next()
+                    .is_some_and(|f| f.len() == 8 && f.bytes().all(|b| b.is_ascii_hexdigit()));
+                if ends_with_version {
+                    return Some((open, open + 1 + rel));
+                }
             }
         }
     }
     None
 }
 
-/// Only these two statuses mean the plugin is live. "no version data" is an old
-/// plugin that declared nothing, which the extender loads anyway.
+/// Only `loaded correctly` means the plugin is live.
+///
+/// `no version data` used to be counted here as "an old plugin the extender
+/// loads anyway". It does not: in SKSE 2.3.1 (`PluginManager.cpp:403`) that line
+/// comes from `LogPluginLoadError`, in the branch where the `SKSEPlugin_Version`
+/// export was absent, and `m_plugins.push_back` happens only in the other one.
+/// The plugin is refused. Counting it as live hid a dead plugin behind a green
+/// report - which is the one thing this panel exists to prevent.
 fn is_success(status: &str) -> bool {
-    let s = status.trim().to_ascii_lowercase();
-    s.starts_with("loaded correctly") || s.starts_with("no version data")
+    status.trim().to_ascii_lowercase().starts_with("loaded correctly")
 }
 
 /// Drop the trailing `(handle N)` the extender appends on success - a load-order
@@ -232,7 +251,42 @@ mod tests {
             .filter(|p| p.loaded)
             .map(|p| p.dll.as_str())
             .collect();
-        assert_eq!(loaded, ["po3_Tweaks.dll", "EngineFixes.dll", "old.dll"]);
+        assert_eq!(loaded, ["po3_Tweaks.dll", "EngineFixes.dll"]);
+    }
+
+    /// Real line, from a real run: the plugin's own NAME ends in "(S.L.A.C.K.)",
+    /// so the first ')' after the info group opens is the one inside the name.
+    /// Stopping there leaves the version digits stranded at the head of the
+    /// status - "01040020) loaded correctly" - which matches no success prefix,
+    /// so a plugin that loaded perfectly was reported as the one that failed.
+    #[test]
+    fn a_parenthesis_in_the_plugin_name_does_not_derail_the_parse() {
+        let got = parse_se_log(
+            "plugin S:\\Data\\SKSE\\Plugins\\slack.dll (00000001 Save & Load Accelerator for SKSE Cosaves (S.L.A.C.K.) 01040020) loaded correctly (handle 1)\n",
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].dll, "slack.dll");
+        assert_eq!(got[0].name, "Save & Load Accelerator for SKSE Cosaves (S.L.A.C.K.)");
+        assert_eq!(got[0].status, "loaded correctly");
+        assert!(got[0].loaded, "it loaded - the parser must not invent a failure");
+    }
+
+    /// `no version data` is an ERROR line, not a quiet success. In SKSE 2.3.1
+    /// (`PluginManager.cpp:403`) it is emitted by `LogPluginLoadError` from the
+    /// branch where the version export was absent, and `m_plugins.push_back`
+    /// happens only in the other one - so the plugin is never loaded at all.
+    /// Counting it as live hid a genuinely dead plugin behind a green report.
+    #[test]
+    fn a_plugin_with_no_version_data_did_not_load() {
+        let got = parse_se_log(
+            "plugin S:\\Data\\SKSE\\Plugins\\samrim.dll (00000000  00000000) no version data 0 (handle 0)\n",
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].dll, "samrim.dll");
+        assert!(
+            !got[0].loaded,
+            "the extender refused it: no SKSEPlugin_Version export"
+        );
     }
 
     #[test]
@@ -269,9 +323,9 @@ mod tests {
             bad.status,
             "disabled, unsupported version independence method"
         );
-        // No version data is a SUCCESS: the extender loads such a plugin anyway.
+        // No version data is a REFUSAL - see `is_success`.
         let old = got.iter().find(|p| p.dll == "old.dll").unwrap();
-        assert!(old.loaded);
+        assert!(!old.loaded);
         assert_eq!(old.version, None);
     }
 

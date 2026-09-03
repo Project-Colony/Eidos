@@ -7816,6 +7816,40 @@ mod tests {
         assert!(s.contains("Cannot open the file as archive"), "{s}");
     }
 
+    /// S.L.A.C.K. prefixes its DLL with punctuation so it sorts first - SKSE
+    /// loads plugins alphabetically and it has to hook cosaves before anything
+    /// else. That is deliberate and must not be renamed, but it has no place in
+    /// a report: the author also declares a readable name, and that is the one a
+    /// person recognises in their mod list.
+    #[test]
+    fn a_refused_plugin_is_named_by_its_author_not_by_its_filename() {
+        let p = eidos_gamefeatures::SePluginLoad {
+            name: "Save & Load Accelerator for SKSE Cosaves (S.L.A.C.K.)".to_string(),
+            dll: "!!!!!!!##$Save&LoadAcceleratorForSKSECosaves.dll".to_string(),
+            version: None,
+            status: "disabled, incompatible with current runtime version".to_string(),
+            loaded: false,
+        };
+        let line = failed_plugin_line(&p);
+        assert!(line.starts_with("Save & Load Accelerator"), "{line}");
+        assert!(!line.contains("!!!"), "the sort-first trick is not a name: {line}");
+        assert!(line.contains("incompatible"), "and it still says what happened");
+    }
+
+    /// A plugin that declared nothing has no name to fall back on but its file,
+    /// and saying THAT is better than saying nothing.
+    #[test]
+    fn a_plugin_that_declared_no_name_is_still_identified() {
+        let p = eidos_gamefeatures::SePluginLoad {
+            name: "samrim.dll".to_string(),
+            dll: "samrim.dll".to_string(),
+            version: None,
+            status: "no version data".to_string(),
+            loaded: false,
+        };
+        assert!(failed_plugin_line(&p).starts_with("samrim.dll"));
+    }
+
     /// A multi-file drop is walked one archive at a time. Without this the queue
     /// would spawn a worker per file at once: several 7-Zip processes competing
     /// for the disk, and their extractions racing to create `mods/<name>/`.
