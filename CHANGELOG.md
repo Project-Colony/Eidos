@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.3](https://github.com/Project-Colony/Eidos/compare/v1.14.2...v1.14.3) (2026-09-03)
+
+
+### Fixes
+
+* **build:** put the workspace versions back in Cargo.lock ([#55](https://github.com/Project-Colony/Eidos/issues/55)) ([fc44728](https://github.com/Project-Colony/Eidos/commit/fc44728cea3ab950a2767f40b81268dfa5ed3c58))
+
 ## [1.14.2](https://github.com/Project-Colony/Eidos/compare/v1.14.1...v1.14.2) (2026-09-03)
 
 
