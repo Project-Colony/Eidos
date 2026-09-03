@@ -15,7 +15,6 @@
 //! **A literal hex outside this file is a bug.** It will be right on one palette
 //! and wrong on the other fifty-seven.
 
-use std::sync::RwLock;
 
 use colony_ui::{hex, ThemePalette};
 use iced::widget::container;
@@ -93,10 +92,72 @@ pub(crate) const PARCHMENT: ThemePalette = ThemePalette {
 /// A global for the same reason `colony-ui` uses one: a style closure inside
 /// `iced` cannot reach `App`, and threading a palette through some seventy of
 /// them is how one of the seventy ends up different.
-static ACTIVE: RwLock<ThemePalette> = RwLock::new(PARCHMENT);
-/// The user's accent override, or `None` for the palette's own.
-static ACCENT: RwLock<Option<Color>> = RwLock::new(None);
-static CONTRAST: RwLock<bool> = RwLock::new(false);
+/// One value process-wide.
+#[cfg(not(test))]
+mod store {
+    use super::{ThemePalette, PARCHMENT};
+    use iced::Color;
+    use std::sync::RwLock;
+
+    static ACTIVE: RwLock<ThemePalette> = RwLock::new(PARCHMENT);
+    /// The user's accent override, or `None` for the palette's own.
+    static ACCENT: RwLock<Option<Color>> = RwLock::new(None);
+    static CONTRAST: RwLock<bool> = RwLock::new(false);
+
+    pub(super) fn set(palette: ThemePalette, accent: Option<Color>, high_contrast: bool) {
+        *ACTIVE.write().unwrap() = palette;
+        *ACCENT.write().unwrap() = accent;
+        *CONTRAST.write().unwrap() = high_contrast;
+    }
+    pub(super) fn active() -> ThemePalette {
+        *ACTIVE.read().unwrap()
+    }
+    pub(super) fn accent() -> Option<Color> {
+        *ACCENT.read().unwrap()
+    }
+    pub(super) fn contrast() -> bool {
+        *CONTRAST.read().unwrap()
+    }
+}
+
+/// One value per THREAD, under test only.
+///
+/// The harness runs tests in parallel threads inside a single process, so a
+/// process-wide palette means any test that picks a theme repaints every other
+/// test that is mid-assertion. It did: roughly one run in three failed, on a
+/// different theme test each time, and the message was always about the colour
+/// being wrong rather than about interference - which is what made it read as
+/// several unrelated flaky tests instead of one shared cell.
+///
+/// Per-thread is not a weaker guarantee here, it is the accurate one: the
+/// program has exactly one thread that draws, and the tests have one each.
+#[cfg(test)]
+mod store {
+    use super::{ThemePalette, PARCHMENT};
+    use iced::Color;
+    use std::cell::Cell;
+
+    thread_local! {
+        static ACTIVE: Cell<ThemePalette> = const { Cell::new(PARCHMENT) };
+        static ACCENT: Cell<Option<Color>> = const { Cell::new(None) };
+        static CONTRAST: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn set(palette: ThemePalette, accent: Option<Color>, high_contrast: bool) {
+        ACTIVE.with(|c| c.set(palette));
+        ACCENT.with(|c| c.set(accent));
+        CONTRAST.with(|c| c.set(high_contrast));
+    }
+    pub(super) fn active() -> ThemePalette {
+        ACTIVE.with(Cell::get)
+    }
+    pub(super) fn accent() -> Option<Color> {
+        ACCENT.with(Cell::get)
+    }
+    pub(super) fn contrast() -> bool {
+        CONTRAST.with(Cell::get)
+    }
+}
 
 /// Point the window at a theme.
 ///
@@ -119,20 +180,21 @@ pub(crate) fn apply(family: &str, variant: &str, accent: Option<&str>, high_cont
             PARCHMENT
         }
     };
-    *ACTIVE.write().unwrap() = resolved;
-    *ACCENT.write().unwrap() = accent.and_then(colony_ui::accent_key_to_color);
-    *CONTRAST.write().unwrap() = high_contrast;
+    store::set(
+        resolved,
+        accent.and_then(colony_ui::accent_key_to_color),
+        high_contrast,
+    );
 
     // The shared catalogue's own globals, kept in step so anything drawn from
     // `colony_ui` agrees with what this file draws.
-    *ACTIVE.write().unwrap() = resolved;
     colony_ui::set_high_contrast(high_contrast);
 }
 
 /// The palette to draw with, high contrast already applied.
 pub(crate) fn pal() -> ThemePalette {
-    let base = *ACTIVE.read().unwrap();
-    if *CONTRAST.read().unwrap() {
+    let base = store::active();
+    if store::contrast() {
         // Derived rather than shipped: no theme carries a high-contrast twin, so
         // the boost works on the parchment and on all 57 alike.
         base.with_high_contrast()
@@ -143,7 +205,7 @@ pub(crate) fn pal() -> ThemePalette {
 
 /// The accent: the user's override if they picked one, else the palette's own.
 pub(crate) fn accent() -> Color {
-    ACCENT.read().unwrap().unwrap_or_else(|| pal().accent_blue)
+    store::accent().unwrap_or_else(|| pal().accent_blue)
 }
 
 pub(crate) fn palette() -> iced::theme::Palette {
@@ -444,5 +506,31 @@ mod tests {
         // becoming empty.
         assert!(checked >= 57, "the catalogue shrank to {checked} palettes");
         apply(OWN_FAMILY, OWN_VARIANT, None, false);
+    }
+
+    /// The harness runs tests in parallel threads inside ONE process. With the
+    /// palette in a process-wide global, any test that picked a theme repainted
+    /// every other test mid-assertion: roughly one run in three failed, on a
+    /// different theme test each time, which reads as "the boost never took
+    /// effect" rather than as interference.
+    #[test]
+    fn two_threads_picking_themes_do_not_repaint_each_other() {
+        use std::sync::{Arc, Barrier};
+        // Both threads apply, THEN both read: with shared state the second
+        // write lands before the first read and one of them sees the other's.
+        let gate = Arc::new(Barrier::new(2));
+        let mine = gate.clone();
+        let other = std::thread::spawn(move || {
+            apply("catppuccin", "frappe", None, false);
+            mine.wait();
+            pal()
+        });
+        apply(OWN_FAMILY, OWN_VARIANT, None, false);
+        gate.wait();
+        let here = pal();
+        let there = other.join().unwrap();
+
+        assert_eq!(here, PARCHMENT, "this thread kept the theme it picked");
+        assert_ne!(there, PARCHMENT, "and the other kept its own");
     }
 }
