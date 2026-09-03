@@ -11,3 +11,23 @@ version = "1.14.0" # x-release-please-version
 license = "GPL-3.0-or-later"
 repository = "https://github.com/Project-Colony/Eidos"
 edition = "2021"
+
+[profile.release]
+# One codegen unit instead of the default 16. Measured on a real 182-layer
+# instance: the binary loses 22% (eidos-gui 40.6 -> 31.8 MB, eidos 29.3 -> 26.8)
+# for 12% more build time, and NOTHING measurable in speed - path resolution
+# stayed at 2.8 µs and a forced directory walk at ~610 ms either way, because
+# both are bound by syscalls rather than by generated code.
+#
+# The size is where it pays: at 16 units LLVM cannot see across them, so the
+# same monomorphised code lands in several and ships several times over. Thin
+# LTO on top of this was measured and returned the size to within 0.1 MB of
+# this line alone, so it is not here; fat LTO reaches 27.8 MB but costs 2.5x
+# the build (187 s against 74).
+#
+# `panic = "abort"` is deliberately absent and should stay absent: there are
+# ~15 worker threads in production paths (archive extraction, the game-exit
+# watcher, downloads) and no `catch_unwind`. Aborting would turn a panic in any
+# one of them into the whole window dying, where today the poll reports it and
+# the window survives.
+codegen-units = 1
