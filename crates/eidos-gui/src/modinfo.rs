@@ -1916,6 +1916,19 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
 /// identical from outside: a plugin refused for an incompatible runtime version
 /// and one the manager failed to expose both end with the feature simply absent
 /// in game.
+/// How one refused plugin reads in the report.
+///
+/// By the name its author declared, not by its file. A plugin may spell its DLL
+/// however it likes to control WHERE it loads - the extender goes alphabetically,
+/// and one real plugin prefixes itself `!!!!!!!##$` to hook cosaves before
+/// anything else. That is a load-order device and it works; it is not a name,
+/// and a report that shows it asks the reader to recognise a mod by its sorting
+/// trick. The declared name already falls back to the file name when a plugin
+/// declared none, so nothing is ever unidentified.
+pub(crate) fn failed_plugin_line(p: &eidos_gamefeatures::SePluginLoad) -> String {
+    format!("{}: {}", p.name, p.status)
+}
+
 pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
     let spec = GameSpec::for_id(game.def.id)?;
     let prefix = game.compatdata.as_ref()?.join("pfx");
@@ -1958,7 +1971,7 @@ pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnost
     let lines: Vec<String> = failed
         .iter()
         .take(10)
-        .map(|p| format!("{}: {}", p.dll, p.status))
+        .map(|p| failed_plugin_line(p))
         .collect();
     let more = failed.len().saturating_sub(lines.len());
     let tail = if more > 0 {
