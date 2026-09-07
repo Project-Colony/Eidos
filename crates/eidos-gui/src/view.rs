@@ -548,6 +548,13 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
             Message::ShowExportDialog,
         ))
         .push(menu_sep())
+        // The File menu rather than the toolbar: the toolbar's left group is
+        // already eight buttons on a row that does not wrap at the 480 px
+        // minimum width, and both of these can be HIDDEN with the toolbar,
+        // while the File menu cannot.
+        .push(menu_item("Pack this instance...", Message::ShowPackDialog))
+        .push(menu_item("Unpack a backup...", Message::ShowUnpackDialog))
+        .push(menu_sep())
         .push(entry("Eidos logs", Some(eidos_log::log_dir()), true))
         .push(entry(
             "Extensions",

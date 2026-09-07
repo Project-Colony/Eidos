@@ -9,7 +9,7 @@ use std::process::exit;
 use std::time::Instant;
 
 use eidos_instance::Instance;
-use eidos_transfer::{human_bytes, Options, Transfer, EXTENSION, LEVELS};
+use eidos_transfer::{human_bytes, human_secs, Options, Transfer, EXTENSION, LEVELS};
 
 use crate::*;
 
@@ -48,15 +48,6 @@ fn progress_line() -> impl FnMut(u8) {
 fn end_progress() {
     if std::io::stdout().is_terminal() {
         println!();
-    }
-}
-
-/// `1h04m` / `17m04s` / `9s` - a duration as somebody waiting for it would say it.
-fn human_secs(secs: u64) -> String {
-    match (secs / 3600, (secs % 3600) / 60, secs % 60) {
-        (0, 0, s) => format!("{s}s"),
-        (0, m, s) => format!("{m}m{s:02}s"),
-        (h, m, _) => format!("{h}h{m:02}m"),
     }
 }
 
@@ -127,18 +118,6 @@ fn parse_pack_args(args: &[String]) -> Result<PackArgs, String> {
     Ok(out)
 }
 
-/// `<game-id>-<date>.eidos`, for when the destination given is a folder.
-fn default_name(game_id: &str) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // `2026-09-07 15:04` -> `2026-09-07-1504`: the same stamp the rest of Eidos
-    // shows, in a shape a filesystem and a shell are both happy with.
-    let stamp = eidos_instance::format_stamp(now).replace(' ', "-").replace(':', "");
-    format!("{game_id}-{stamp}.{EXTENSION}")
-}
-
 /// Where the backup actually goes: a folder means "in here, named for me", and a
 /// name with no extension at all gets ours.
 fn resolve_destination(given: &str, game_id: &str) -> PathBuf {
@@ -149,7 +128,7 @@ fn resolve_destination(given: &str, game_id: &str) -> PathBuf {
     // backup is written as `~/backups/.eidos` - a hidden file, inside a folder
     // the user thought they were naming.
     if p.is_dir() || given.ends_with('/') {
-        return p.join(default_name(game_id));
+        return p.join(eidos_transfer::default_file_name(game_id));
     }
     match p.extension() {
         Some(_) => p,
@@ -612,11 +591,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_wait_is_reported_the_way_somebody_waiting_would_say_it() {
-        assert_eq!(human_secs(9), "9s");
-        assert_eq!(human_secs(64), "1m04s");
-        assert_eq!(human_secs(1024), "17m04s");
-        assert_eq!(human_secs(3864), "1h04m");
-    }
 }

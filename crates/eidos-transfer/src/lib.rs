@@ -155,6 +155,37 @@ pub fn free_bytes(dir: &Path) -> Option<u64> {
     Some((st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
 }
 
+/// What to call a backup nobody has named: `skyrimse-2026-09-07-1340.eidos`.
+///
+/// Here rather than in the front end because there are two front ends, and a
+/// window and a terminal that disagree about what today's backup is called is a
+/// small thing that makes a person distrust both. The stamp is the one the rest
+/// of Eidos shows (UTC, like every other stamp it writes), reshaped into
+/// something a filesystem and a shell are equally happy with.
+pub fn default_file_name(game_id: &str) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let stamp = eidos_instance::format_stamp(now)
+        .replace(' ', "-")
+        .replace(':', "");
+    format!("{game_id}-{stamp}.{EXTENSION}")
+}
+
+/// A wait as the person waiting would say it: `1h04m`, `17m04s`, `9s`.
+///
+/// Beside [`human_bytes`] and for the same reason: a pack reports how long it
+/// took in two places, and the window and the terminal disagreeing about it is
+/// a small thing that makes a person doubt both.
+pub fn human_secs(secs: u64) -> String {
+    match (secs / 3600, (secs % 3600) / 60, secs % 60) {
+        (0, 0, s) => format!("{s}s"),
+        (0, m, s) => format!("{m}m{s:02}s"),
+        (h, m, _) => format!("{h}h{m:02}m"),
+    }
+}
+
 /// A byte count as a person reads it: `72.2 GB`, `888 MB`, `908 B`.
 pub fn human_bytes(n: u64) -> String {
     const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
@@ -193,6 +224,23 @@ pub fn existing_ancestor(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_backup_names_its_game_and_when_it_was_made() {
+        let n = default_file_name("skyrimse");
+        assert!(n.starts_with("skyrimse-"), "{n}");
+        assert!(n.ends_with(".eidos"), "{n}");
+        // Nothing a shell or a filesystem has to be told about.
+        assert!(!n.contains(' ') && !n.contains(':') && !n.contains('/'), "{n}");
+    }
+
+    #[test]
+    fn a_wait_is_reported_the_way_somebody_waiting_would_say_it() {
+        assert_eq!(human_secs(9), "9s");
+        assert_eq!(human_secs(64), "1m04s");
+        assert_eq!(human_secs(1024), "17m04s");
+        assert_eq!(human_secs(3864), "1h04m");
+    }
 
     #[test]
     fn bytes_read_the_way_a_person_says_them() {

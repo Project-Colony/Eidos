@@ -2555,3 +2555,412 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         .style(card_style)
         .into()
 }
+
+/// Roughly what share of an instance a `-mx` level leaves.
+///
+/// Measured for level 1 - 43.0% of 1199 MB of real Skyrim `.dds`/`.nif` on a
+/// 16-thread machine - which is the one that matters, being the default. Level 0
+/// is exact: it stores. The rest are interpolated towards the ~38% a `-mx9` run
+/// of the same corpus reached, and the dialog says "roughly" because that is
+/// what they are: textures and meshes are already-compressed formats, so a mod
+/// list heavy in loose scripts or ESPs will do better than any of these.
+fn estimated_share(level: u8) -> f64 {
+    match level {
+        0 => 1.00,
+        1 => 0.43,
+        3 => 0.41,
+        5 => 0.40,
+        7 => 0.385,
+        _ => 0.38,
+    }
+}
+
+/// The Pack dialog: a whole instance into one file, and the preview of what
+/// that means before twenty minutes are spent on it.
+pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a, Message> {
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Pack this instance").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::ClosePackDialog),
+        );
+
+    let root = app
+        .created
+        .as_ref()
+        .map(|i| i.root.display().to_string())
+        .unwrap_or_default();
+    let blurb = text(format!(
+        "Everything in {root} goes into one file: every mod, the load order, all \
+         profiles, the Overwrite with your saves in it, and the archives they were \
+         installed from. Move that file to the other machine and unpack it there."
+    ))
+    .size(11.0)
+    .color(text_muted());
+
+    let dest = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("File").size(11.0).width(Length::Fixed(46.0)))
+        .push(
+            text_input("/home/you/skyrimse.eidos", &state.dest)
+                .on_input(Message::PackDestChanged)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(
+            button(text("Browse").size(11.0))
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::PackBrowse),
+        );
+
+    // The numbers, without downloads/ when the box is unticked. Subtracted
+    // rather than re-walked: this is a checkbox, and walking 57 000 files under
+    // the user's finger is not what a checkbox should feel like.
+    let (files, bytes) = if state.downloads {
+        (state.plan.files, state.plan.bytes)
+    } else {
+        (
+            state.plan.files.saturating_sub(state.plan.downloads_files),
+            state.plan.bytes.saturating_sub(state.plan.downloads_bytes),
+        )
+    };
+    let downloads = checkbox(state.downloads)
+        .label(format!(
+            "Include downloads/ ({})",
+            eidos_transfer::human_bytes(state.plan.downloads_bytes)
+        ))
+        .on_toggle(|_| Message::PackToggleDownloads)
+        .size(13.0)
+        .text_size(12.0);
+
+    let mut levels = Row::new()
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
+        .push(text("Compression").size(11.0).width(Length::Fixed(76.0)));
+    for n in eidos_transfer::LEVELS {
+        levels = levels.push(
+            button(text(n.to_string()).size(11.0))
+                .padding([3, 9])
+                .style(if state.level == n {
+                    button::primary
+                } else {
+                    button::secondary
+                })
+                .on_press(Message::PackLevelChanged(n)),
+        );
+    }
+    levels = levels.push(
+        text(if state.level == eidos_transfer::DEFAULT_LEVEL {
+            "  smaller costs far more time than it saves".to_string()
+        } else if state.level == 0 {
+            "  stored, not compressed".to_string()
+        } else {
+            "  slower".to_string()
+        })
+        .size(10.0)
+        .color(text_muted()),
+    );
+
+    let expect = (bytes as f64 * estimated_share(state.level)) as u64;
+    let preview = Column::new()
+        .spacing(3)
+        .push(
+            text(format!(
+                "{files} file(s), {} folder(s) ({} empty), {}",
+                state.plan.dirs,
+                state.plan.empty_dirs,
+                eidos_transfer::human_bytes(bytes)
+            ))
+            .size(12.0),
+        )
+        .push(
+            text(format!(
+                "expect roughly {}",
+                eidos_transfer::human_bytes(expect)
+            ))
+            .size(11.0)
+            .color(text_muted()),
+        );
+
+    let mut notes = Column::new().spacing(3).push(
+        text(
+            "Left out: the Proton prefix (rebuilt in a minute over there), the game \
+             itself, tools that live outside the instance, and this machine's own logs \
+             and caches. The file lists every one of them with its reason.",
+        )
+        .size(10.0)
+        .color(text_muted()),
+    );
+    if !state.plan.tools_outside.is_empty() {
+        notes = notes.push(
+            text(format!(
+                "{} tool(s) are named in the backup but not carried: {}.",
+                state.plan.tools_outside.len(),
+                state
+                    .plan
+                    .tools_outside
+                    .iter()
+                    .map(|t| t.title.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+            .size(10.0)
+            .color(text_muted()),
+        );
+    }
+    let path = std::path::Path::new(state.dest.trim());
+    let ready = !state.dest.trim().is_empty();
+    if ready && path.is_file() {
+        notes = notes.push(
+            text("That file already exists and will be replaced.")
+                .size(10.0)
+                .color(pal().warning),
+        );
+    }
+
+    let run = button(text("Pack").size(12.0))
+        .padding([4, 16])
+        .style(button::primary);
+    let footer = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text("The instance is locked while this runs, and it takes a while.")
+                .size(10.0)
+                .color(text_muted())
+                .width(Length::Fill),
+        )
+        .push(if ready { run.on_press(Message::PackRun) } else { run });
+
+    let card = Column::new()
+        .spacing(11)
+        .push(header)
+        .push(blurb)
+        .push(dest)
+        .push(downloads)
+        .push(levels)
+        .push(preview)
+        .push(notes)
+        .push(footer);
+    container(card)
+        .width(Length::Fixed(600.0))
+        .padding(18)
+        .style(card_style)
+        .into()
+}
+
+/// The Unpack dialog. Reachable with no instance open, which is the point.
+pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Message> {
+    let header = Row::new()
+        .align_y(iced::Alignment::Center)
+        .spacing(8)
+        .push(text("Unpack a backup").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Close").size(12.0))
+                .padding([4, 12])
+                .style(button::secondary)
+                .on_press(Message::CloseUnpackDialog),
+        );
+
+    let archive = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Backup").size(11.0).width(Length::Fixed(52.0)))
+        .push(
+            text_input("/home/you/skyrimse.eidos", &state.archive)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(
+            button(text("Choose...").size(11.0))
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::UnpackBrowseArchive),
+        );
+
+    // What the file says about itself, once it has been read. This is the whole
+    // reason the dialog reads the manifest at the moment the file is chosen:
+    // "is this the right backup" is a question only the file can answer.
+    let mut about = Column::new().spacing(2);
+    if let Some(e) = &state.error {
+        about = about.push(text(e.clone()).size(11.0).color(pal().warning));
+    }
+    if let Some(m) = &state.manifest {
+        about = about
+            .push(
+                text(format!(
+                    "{} instance, made {} by Eidos {}",
+                    m.game_id, m.created, m.eidos_version
+                ))
+                .size(11.0),
+            )
+            .push(
+                text(format!(
+                    "{} file(s), {} unpacked, profile(s): {}",
+                    m.files,
+                    eidos_transfer::human_bytes(m.bytes),
+                    m.profiles.join(", ")
+                ))
+                .size(11.0)
+                .color(text_muted()),
+            )
+            .push(
+                text(format!("was at {}", m.source_root))
+                    .size(10.0)
+                    .color(text_muted()),
+            );
+        if !m.downloads {
+            about = about.push(
+                text("downloads/ was left out of this backup")
+                    .size(10.0)
+                    .color(text_muted()),
+            );
+        }
+        let missing: Vec<&str> = m
+            .tools_outside
+            .iter()
+            .filter(|t| !std::path::Path::new(&t.exe).exists())
+            .map(|t| t.title.as_str())
+            .collect();
+        if !missing.is_empty() {
+            about = about.push(
+                text(format!(
+                    "Tools it uses that are not on this machine: {}.",
+                    missing.join(", ")
+                ))
+                .size(10.0)
+                .color(pal().warning),
+            );
+        }
+    }
+
+    let dest = Row::new()
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .push(text("Folder").size(11.0).width(Length::Fixed(52.0)))
+        .push(
+            text_input("/mnt/games/EidosSkyrim", &state.dest)
+                .on_input(Message::UnpackDestChanged)
+                .padding(5)
+                .size(12.0),
+        )
+        .push(
+            button(text("Choose...").size(11.0))
+                .padding([4, 10])
+                .style(button::secondary)
+                .on_press(Message::UnpackBrowseDest),
+        );
+
+    let force = checkbox(state.force)
+        .label("Unpack into a folder that is not empty".to_string())
+        .on_toggle(|_| Message::UnpackToggleForce)
+        .size(13.0)
+        .text_size(12.0);
+
+    let ready = state.manifest.is_some() && !state.dest.trim().is_empty();
+    let run = button(text("Unpack").size(12.0))
+        .padding([4, 16])
+        .style(button::primary);
+    let footer = Row::new()
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .push(
+            text(
+                "The Proton prefix is rebuilt afterwards; the game itself comes from \
+                 Steam.",
+            )
+            .size(10.0)
+            .color(text_muted())
+            .width(Length::Fill),
+        )
+        .push(if ready {
+            run.on_press(Message::UnpackRun)
+        } else {
+            run
+        });
+
+    let card = Column::new()
+        .spacing(11)
+        .push(header)
+        .push(archive)
+        .push(about)
+        .push(dest)
+        .push(force)
+        .push(footer);
+    container(card)
+        .width(Length::Fixed(600.0))
+        .padding(18)
+        .style(card_style)
+        .into()
+}
+
+/// A pack or unpack in flight, and afterwards what it said.
+///
+/// One card for both states on purpose. The bar becomes the report, in the place
+/// the user is already looking - and the report has somewhere to live at all,
+/// which the status bar could not give it: an unpack happens on the welcome
+/// screen, where there is no status bar to write to.
+pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Message> {
+    let mut card = Column::new()
+        .spacing(10)
+        .push(text(job.title.clone()).size(15.0));
+    match &job.finished {
+        None => {
+            let pct = job.percent.load(std::sync::atomic::Ordering::SeqCst).min(100);
+            card = card
+                .push(
+                    iced::widget::progress_bar(0.0..=100.0, pct as f32)
+                        .length(Length::Fill)
+                        .girth(Length::Fixed(10.0)),
+                )
+                .push(
+                    text(if pct >= 100 {
+                        "Finishing up...".to_string()
+                    } else {
+                        format!("{pct}%")
+                    })
+                    .size(12.0),
+                )
+                .push(
+                    text(
+                        "This takes a while on a big instance. The window stays \
+                         responsive, and nothing else may touch the instance until it \
+                         is done.",
+                    )
+                    .size(10.0)
+                    .color(text_muted()),
+                );
+        }
+        Some(result) => {
+            let (body, colour) = match result {
+                Ok(summary) => (summary.clone(), None),
+                Err(why) => (why.clone(), Some(pal().warning)),
+            };
+            let mut line = text(body).size(12.0);
+            if let Some(c) = colour {
+                line = line.color(c);
+            }
+            card = card
+                .push(scrollable(line).height(Length::Fixed(180.0)))
+                .push(
+                    Row::new().push(Space::new().width(Length::Fill)).push(
+                        button(text("Close").size(12.0))
+                            .padding([4, 16])
+                            .style(button::primary)
+                            .on_press(Message::CloseTransferResult),
+                    ),
+                );
+        }
+    }
+    container(card)
+        .width(Length::Fixed(560.0))
+        .padding(16)
+        .style(card_style)
+        .into()
+}

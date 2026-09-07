@@ -3368,6 +3368,18 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .push(container(install_progress_dialog(job)).center(Length::Fill));
     }
 
+    // A pack or unpack, and afterwards its report. Above the extraction dialog
+    // because it is the longer job of the two and the one that must not be
+    // covered; no scrim catcher either, for the same reason as the extraction
+    // and one more - while it is FINISHED, a stray click would throw away the
+    // report before it had been read.
+    if let Some(job) = &app.transfer_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(card);
+    }
+
     // The manual / BAIN picker (MO2's InstallDialog and BainComplexInstallerDialog).
     // Below the collision chooser in the stack: a collision raised BY the picker
     // has to be the thing you can click.
@@ -3531,6 +3543,25 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseInstanceManager);
         let dialog = container(instances_dialog(app)).center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
+    // Pack and unpack. Their cards swallow their own presses: both carry a
+    // block of computed text somebody will click on while reading it, and a
+    // `container` does not take mouse events, so without this that click falls
+    // through to the scrim and dismisses what they were reading.
+    if let Some(state) = &app.pack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ClosePackDialog);
+        let dialog = container(mouse_area(pack_dialog(app, state)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+    if let Some(state) = &app.unpack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseUnpackDialog);
+        let dialog = container(mouse_area(unpack_dialog(state)).on_press(Message::Noop))
+            .center(Length::Fill);
         layers = layers.push(scrim).push(dialog);
     }
 

@@ -174,9 +174,11 @@ README carries only the short version; this is the receipts.
       instance root and only those (`exe`/`workdir`/`arg<N>` in `tools.ini`,
       `installationFile` in each `meta.ini`) and corrects central-vs-portable.
       The Proton prefix, the game and third-party tools stay out and are NAMED in
-      `eidos-backup.ini` with every other exclusion and its reason. Not yet in
-      the GUI: a live progress bar for a twenty-minute job is infrastructure the
-      window does not have
+      `eidos-backup.ini` with every other exclusion and its reason. In the
+      window too, in the File menu and - for unpacking - on the welcome screen,
+      because the machine that needs a restore is the one with no instances on
+      it yet. Both run on a worker thread against the 60 Hz poll the extraction
+      dialog already used, and the progress bar becomes the report
 - [x] Overwrite-to-mod - turn what the game and the tools wrote into a first-class
       mod in one step, which is the other half of the generate-then-play loop
 - [x] VFS correctness pass against Fluorine's implementation - copy-up no longer

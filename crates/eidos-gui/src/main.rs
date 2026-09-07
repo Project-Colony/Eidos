@@ -2443,6 +2443,24 @@ fn view(app: &App) -> Element<'_, Message> {
         let dialog = container(collection_dialog(state)).center(Length::Fill);
         return Stack::new().push(base).push(scrim).push(dialog).into();
     }
+    // And unpacking, for the same reason and more sharply. A backup is restored
+    // onto a machine that has no instance yet - that is the whole point of the
+    // file - so the welcome screen is where this happens. Drawn only by
+    // `main_screen`, it would be a button that silently does nothing on exactly
+    // the machine it exists for.
+    if let Some(job) = &app.transfer_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
+            .center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(card).into();
+    }
+    if let Some(state) = &app.unpack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseUnpackDialog);
+        let dialog = container(mouse_area(unpack_dialog(state)).on_press(Message::Noop))
+            .center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(dialog).into();
+    }
     base
 }
 
@@ -2674,6 +2692,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         // list it happened to hidden behind the pane.
         && app.preview.is_none()
         && app.collection.is_none()
+        // Pack and unpack, and the job itself - which runs for twenty minutes
+        // behind a modal, long enough that Ctrl+R launching the game and Delete
+        // arming a mod removal on a row nobody can see are not hypotheses.
+        && app.pack.is_none()
+        && app.unpack.is_none()
+        && app.transfer_job.is_none()
+        // And the extraction, which was never in this list. Tolerable while it
+        // was thirty seconds; it is the same defect as the rest, and it is one
+        // clause.
+        && app.install_job.is_none()
     {
         subs.push(shortcuts);
     }
@@ -7180,6 +7208,10 @@ mod tests {
             // treating it as an action would not shorten a confirmation's life,
             // it would end it between the two clicks every time.
             Message::AnimationTick,
+            // Reached from that same tick and at the same rate, for a job that
+            // runs for twenty minutes - long enough that a confirmation
+            // disarmed sixty times a second reads as a broken window.
+            Message::TransferPoll,
             Message::PointerAt(iced::Point::ORIGIN),
             Message::ModifiersChanged(iced::keyboard::Modifiers::default()),
         ] {
@@ -7926,6 +7958,110 @@ mod tests {
         assert!(!anim::needs_frames(&app), "idle asks for nothing");
         app.install_job = Some(fake_job(None));
         assert!(anim::needs_frames(&app));
+    }
+
+    /// A pack or unpack with no worker behind it. `outcome` decides whether it
+    /// reads as finished, so the whole state machine can be driven without
+    /// 7-Zip, which CI does not have.
+    fn fake_transfer(
+        kind: TransferKind,
+        outcome: Option<Result<String, String>>,
+    ) -> TransferJob {
+        use std::sync::atomic::{AtomicBool, AtomicU8};
+        use std::sync::{Arc, Mutex};
+        let done = outcome.is_some();
+        TransferJob {
+            kind,
+            title: "Packing Eidos-Skyrim".into(),
+            target: PathBuf::from("/tmp/eidos-gui-test-nowhere/skyrimse.eidos"),
+            percent: Arc::new(AtomicU8::new(0)),
+            outcome: Arc::new(Mutex::new(outcome)),
+            done: Arc::new(AtomicBool::new(done)),
+            finished: None,
+        }
+    }
+
+    /// The same gate as the extraction, and the same silent failure without it:
+    /// no frames means no repaint and no poll, so the job finishes on its thread
+    /// and the window never finds out.
+    #[test]
+    fn the_window_keeps_receiving_frames_while_an_instance_is_packed() {
+        let mut app = nav_app(&[]);
+        assert!(!anim::needs_frames(&app), "idle asks for nothing");
+        app.transfer_job = Some(fake_transfer(TransferKind::Pack, None));
+        assert!(anim::needs_frames(&app));
+        // And stops when there is only a report left to read: sixty frames a
+        // second to redraw a sentence is what this gate exists to avoid.
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        app.transfer_job.as_mut().unwrap().finished = Some(Ok("done".into()));
+        assert!(!anim::needs_frames(&app), "a finished job wants nothing");
+    }
+
+    /// The report has to SURVIVE the poll. Clearing the job the way the install
+    /// does would take the only thing the welcome screen can show - there is no
+    /// status bar there to fall back on.
+    #[test]
+    fn a_finished_transfer_keeps_its_report_until_it_is_closed() {
+        let mut app = nav_app(&[]);
+        app.transfer_job = Some(fake_transfer(
+            TransferKind::Pack,
+            Some(Err("Cannot pack now: in use by the Eidos window.".into())),
+        ));
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        let job = app.transfer_job.as_ref().expect("the card stays up");
+        let msg = match job.finished.as_ref().expect("collected") {
+            Ok(s) | Err(s) => s.clone(),
+        };
+        assert!(msg.contains("in use by the Eidos window"), "{msg}");
+        // A second poll must not collect again - it arrives sixty times a second.
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        assert!(app.transfer_job.as_ref().unwrap().finished.is_some());
+        let _ = update_inner(&mut app, Message::CloseTransferResult);
+        assert!(app.transfer_job.is_none());
+    }
+
+    /// A worker that panicked leaves `outcome` empty behind a `done` flag. The
+    /// user is watching a dialog, so it must say something rather than sit there.
+    #[test]
+    fn a_transfer_whose_worker_vanished_still_reports() {
+        let mut app = nav_app(&[]);
+        let mut job = fake_transfer(TransferKind::Pack, None);
+        job.done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        app.transfer_job = Some(job);
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        let job = app.transfer_job.as_ref().unwrap();
+        assert!(matches!(job.finished, Some(Err(_))), "must not hang");
+    }
+
+    /// Unpacking is the one action that has to work with NO instance open: a
+    /// fresh machine has none, which is why somebody is holding a .eidos file.
+    #[test]
+    fn the_unpack_dialog_opens_with_no_instance_and_the_pack_dialog_does_not() {
+        let mut app = nav_app(&[]);
+        assert!(app.created.is_none());
+        let _ = update_inner(&mut app, Message::ShowUnpackDialog);
+        assert!(app.unpack.is_some(), "the whole point of the feature");
+        let _ = update_inner(&mut app, Message::CloseUnpackDialog);
+        assert!(app.unpack.is_none());
+        // Pack acts ON an instance, so it says so instead of opening onto one.
+        let _ = update_inner(&mut app, Message::ShowPackDialog);
+        assert!(app.pack.is_none());
+        assert!(app.status.unwrap_or_default().contains("instance"));
+    }
+
+    /// Two 7-Zips on one disk racing each other is slower than either alone, and
+    /// a pack reading an instance a drop is installing into is worse than slow.
+    #[test]
+    fn nothing_else_starts_while_a_transfer_runs() {
+        let mut app = nav_app(&[]);
+        app.transfer_job = Some(fake_transfer(TransferKind::Pack, None));
+        let _ = update_inner(&mut app, Message::ShowUnpackDialog);
+        assert!(app.unpack.is_none(), "one at a time");
+        assert!(app.status.clone().unwrap_or_default().contains("already"));
+        app.dropped = vec![PathBuf::from("/tmp/a.7z")];
+        let _ = update_inner(&mut app, Message::DrainDrops);
+        assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
+        assert!(app.install_job.is_none());
     }
 
     /// Polling before the worker is done must leave the job alone - taking the

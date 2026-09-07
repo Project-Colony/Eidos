@@ -104,6 +104,10 @@ pub struct Plan {
     /// How much of `bytes` is `downloads/`, so a user weighing `--no-downloads`
     /// can see the number rather than guess it.
     pub downloads_bytes: u64,
+    /// And how many files, so a window offering the option as a checkbox can
+    /// answer "and without them?" by subtracting rather than by walking 57 000
+    /// files again while the user's finger is still on the mouse.
+    pub downloads_files: u64,
     pub left: Vec<Left>,
     /// Entries whose name contains `*` or `?`. 7-Zip treats those as wildcards
     /// in a list file unless told otherwise; see the `-spd` handling in the pack.
@@ -179,6 +183,7 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
         empty_dirs: 0,
         bytes: 0,
         downloads_bytes: 0,
+        downloads_files: 0,
         left: Vec::new(),
         wildcards: Vec::new(),
         tools_outside: Vec::new(),
@@ -295,6 +300,9 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
             // will refuse far more clearly than a guess here would.
             out.files += 1;
             contributes = true;
+            if child.starts_with(&downloads_prefix) {
+                out.downloads_files += 1;
+            }
             if let Ok(md) = entry.metadata() {
                 out.bytes += md.len();
                 if child.starts_with(&downloads_prefix) {
@@ -645,6 +653,7 @@ mod tests {
 
         let with = plan(&inst, &Options::default());
         assert_eq!(with.downloads_bytes, 4096);
+        assert_eq!(with.downloads_files, 1);
         assert!(
             with.bytes >= 4096 + 16 && with.bytes > with.downloads_bytes,
             "the mods count towards the total too: {}",
