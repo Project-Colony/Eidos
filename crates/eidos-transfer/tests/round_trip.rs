@@ -296,3 +296,44 @@ fn packing_an_instance_into_itself_is_refused_before_anything_is_written() {
     assert!(!inside.exists());
     let _ = fs::remove_dir_all(&base);
 }
+
+#[test]
+fn a_file_that_vanishes_under_the_pack_costs_that_file_and_not_the_backup() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    // The real race: an instance is read in a second and packed over twenty
+    // minutes, so something CAN disappear in between. 7-Zip exits 1, having
+    // written a complete archive of everything else. Failing on that threw away
+    // the whole backup for one file.
+    let base = tmp("vanish");
+    let src = base.join("source");
+    fs::create_dir_all(&src).unwrap();
+    build_instance(&src);
+    let inst = Instance::portable(src.clone());
+    let opt = Options::default();
+    let p = plan(&inst, &opt);
+    fs::remove_file(src.join("mods/스크린아처메뉴/x.esp")).unwrap();
+
+    let archive = base.join("b.eidos");
+    let t = Transfer::new(opt).unwrap();
+    let report = t.pack(&inst, &p, &archive, &mut |_| {}).expect("pack");
+    assert!(archive.is_file(), "the archive is real and worth keeping");
+    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    assert!(
+        report.warnings[0].contains("missing some files"),
+        "{:?}",
+        report.warnings
+    );
+
+    // And everything that did not vanish came through.
+    let dest = base.join("dest");
+    t.unpack(&archive, &dest, &mut |_| {}).unwrap();
+    assert!(dest.join("mods/Weapons * Armour/textures/w.dds").is_file());
+    assert!(!dest.join("mods/스크린아처메뉴/x.esp").exists());
+    // The folder the vanished file lived in is still there: it held nothing else
+    // to pack, so the walk listed the directory itself.
+    assert!(dest.join("mods/스크린아처메뉴/empty-one").is_dir());
+    let _ = fs::remove_dir_all(&base);
+}

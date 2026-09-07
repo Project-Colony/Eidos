@@ -152,15 +152,13 @@ pub fn close_the_gap(success: bool, last: Option<u8>, on_progress: &mut impl FnM
 
 /// Run 7-Zip with `args`, feeding its progress to `on_progress`.
 ///
-/// The one place in the workspace that spawns 7-Zip. It exists so that no
-/// caller has to remember the two things that make the difference between a
-/// working invocation and a hang:
+/// The one place in the workspace that spawns 7-Zip, so no caller has to
+/// remember the two things that make the difference between a working
+/// invocation and a hang (see `spawn_and_pump`).
 ///
-/// * stdout is piped and READ AS IT ARRIVES. The blocking version used
-///   `Command::output()`, which holds everything until the child exits, so a
-///   GUI driving it on its event thread froze for the whole archive.
-/// * stderr is piped and drained on a SIDE THREAD. An error-chatty 7-Zip that
-///   fills its stderr pipe blocks forever while we are busy reading stdout.
+/// Any non-zero exit is a failure here. The one operation for which that is too
+/// strict - adding files, where 7-Zip exits 1 having written a complete archive
+/// of everything it could read - has [`run_in_tolerating_warnings`].
 ///
 /// `args` must include the progress switches the caller wants (`-bsp1` puts
 /// progress on stdout, `-bso0` silences the listing so progress is all that
@@ -195,6 +193,90 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
+    let (status, stderr, last) = spawn_and_pump(bin, args, cwd, on_progress)?;
+    if !status.success() {
+        return Err(SevenZipError::Failed(refusal(&status, &stderr)));
+    }
+    close_the_gap(true, last, on_progress);
+    Ok(())
+}
+
+/// [`run_in`], for the one operation where 7-Zip's WARNING exit is not a
+/// failure: adding files.
+///
+/// 7-Zip exits 1 when it could not read something it was asked to add, having
+/// written a complete archive of everything else - measured, not assumed: a list
+/// naming one file that had been deleted gave exit 1, a `Scan WARNINGS: 1` on
+/// stderr, and an archive containing every other entry. Treating that as failure
+/// meant one file vanishing under a twenty-minute pack of a live instance threw
+/// the whole archive away.
+///
+/// So it succeeds, and hands back what 7-Zip said, because "some of your files
+/// are not in this backup" is exactly the sentence a caller must be able to
+/// print. Anything above 1 is still a failure: 2 is fatal, 7 is a command line
+/// 7-Zip would not accept, 8 is out of memory, 255 is the user stopping it.
+///
+/// EXTRACTION deliberately does not get this treatment. A warning there means
+/// entries did not arrive, and a restore that quietly comes back incomplete is
+/// worse than one that stops and says so.
+pub fn run_in_tolerating_warnings<I, S>(
+    bin: &str,
+    args: I,
+    cwd: Option<&Path>,
+    on_progress: &mut impl FnMut(u8),
+) -> Result<Option<String>, SevenZipError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let (status, stderr, last) = spawn_and_pump(bin, args, cwd, on_progress)?;
+    match status.code() {
+        Some(0) => {
+            close_the_gap(true, last, on_progress);
+            Ok(None)
+        }
+        Some(1) => {
+            close_the_gap(true, last, on_progress);
+            Ok(Some(match stderr.trim() {
+                "" => "7-Zip reported a warning but said nothing about it".to_string(),
+                s => s.to_string(),
+            }))
+        }
+        _ => Err(SevenZipError::Failed(refusal(&status, &stderr))),
+    }
+}
+
+/// What to tell the caller about a 7-Zip that exited badly.
+///
+/// 7-Zip is not always chatty on failure, and an empty stderr with a bad exit
+/// code has to say SOMETHING or the caller reports a blank reason.
+fn refusal(status: &std::process::ExitStatus, stderr: &str) -> String {
+    match stderr.trim() {
+        "" => format!("exited with {status}"),
+        s => s.to_string(),
+    }
+}
+
+/// Spawn 7-Zip, feed its progress out, and collect what it said and how it went.
+///
+/// The two things that make the difference between a working invocation and a
+/// hang live here, once:
+///
+/// * stdout is piped and READ AS IT ARRIVES. The blocking version used
+///   `Command::output()`, which holds everything until the child exits, so a
+///   GUI driving it on its event thread froze for the whole archive.
+/// * stderr is piped and drained on a SIDE THREAD. An error-chatty 7-Zip that
+///   fills its stderr pipe blocks forever while we are busy reading stdout.
+fn spawn_and_pump<I, S>(
+    bin: &str,
+    args: I,
+    cwd: Option<&Path>,
+    on_progress: &mut impl FnMut(u8),
+) -> Result<(std::process::ExitStatus, String, Option<u8>), SevenZipError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
     use std::io::Read;
     use std::process::Stdio;
     let mut cmd = Command::new(bin);
@@ -220,18 +302,7 @@ where
         .wait()
         .map_err(|e| SevenZipError::Failed(e.to_string()))?;
     let stderr = drain.join().unwrap_or_default();
-    if !status.success() {
-        // 7-Zip is not always chatty on failure; an empty stderr with a bad exit
-        // code has to say SOMETHING or the caller reports a blank reason.
-        let why = if stderr.trim().is_empty() {
-            format!("exited with {status}")
-        } else {
-            stderr.trim().to_string()
-        };
-        return Err(SevenZipError::Failed(why));
-    }
-    close_the_gap(true, last, on_progress);
-    Ok(())
+    Ok((status, stderr, last))
 }
 
 /// Every entry PATH inside `archive`, in the order 7-Zip lists them.

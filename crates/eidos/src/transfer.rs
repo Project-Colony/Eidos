@@ -414,6 +414,22 @@ pub(crate) fn cmd_unpack(args: &[String]) {
         }
     };
 
+    // If the folder is already there, somebody may have it open - and with
+    // --force this would write over a live instance. Nothing can hold a folder
+    // that does not exist yet, and taking the lock would CREATE it, so ask only
+    // when there is something to ask about.
+    let _lock = if dest.is_dir() {
+        match Instance::portable(dest.clone()).try_lock("eidos unpack") {
+            Ok(l) => Some(l),
+            Err(e) => {
+                eidos_log::warn!("Cannot unpack there: {e}.");
+                exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
     let started = Instant::now();
     let mut on_progress = progress_line();
     match transfer.unpack(&archive, &dest, &mut on_progress) {

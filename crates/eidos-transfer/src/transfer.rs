@@ -171,6 +171,9 @@ impl Transfer {
     /// with relative names is what produces an archive whose entries are
     /// instance-relative. `-ms=off` makes it non-solid: one file can be pulled
     /// out of a 70 GB backup without decompressing everything before it.
+    /// Returns whatever 7-Zip warned about, which for an add means files it
+    /// could not read - so the caller can say which ones are not in the backup
+    /// instead of throwing away an otherwise complete archive.
     fn add(
         &self,
         archive: &Path,
@@ -178,7 +181,7 @@ impl Transfer {
         list: &Path,
         spd: bool,
         on_progress: &mut impl FnMut(u8),
-    ) -> Result<(), TransferError> {
+    ) -> Result<Option<String>, TransferError> {
         let mut args: Vec<OsString> = vec![
             "a".into(),
             "-t7z".into(),
@@ -204,8 +207,12 @@ impl Transfer {
         let mut at = OsString::from("@");
         at.push(list.as_os_str());
         args.push(at);
-        eidos_sevenzip::run_in(self.bin, args, Some(cwd), on_progress)?;
-        Ok(())
+        Ok(eidos_sevenzip::run_in_tolerating_warnings(
+            self.bin,
+            args,
+            Some(cwd),
+            on_progress,
+        )?)
     }
 
     /// The checks a pack would make, without making one.
@@ -344,7 +351,10 @@ impl Transfer {
         // The first pass decides whether this 7-Zip understands `-spd`, while
         // failing costs nothing.
         let mut literal_names = true;
-        if let Err(first) = self.add(&part, &stage, &staged_list, literal_names, &mut |_| {}) {
+        if let Err(first) = self
+            .add(&part, &stage, &staged_list, literal_names, &mut |_| {})
+            .map(|_| ())
+        {
             let TransferError::Archive(ref why) = first else {
                 let _ = fs::remove_file(&part);
                 return Err(first);
@@ -368,9 +378,19 @@ impl Transfer {
         }
 
         if !plan.entries.is_empty() {
-            if let Err(e) = self.add(&part, &inst.root, &bulk_list, literal_names, on_progress) {
-                let _ = fs::remove_file(&part);
-                return Err(e);
+            match self.add(&part, &inst.root, &bulk_list, literal_names, on_progress) {
+                Ok(None) => {}
+                // 7-Zip could not read something and packed everything else. The
+                // archive is real and worth keeping; what it is missing is worth
+                // saying loudly.
+                Ok(Some(said)) => warnings.push(format!(
+                    "7-Zip could not read everything, so the backup is missing some \
+                     files. It said:\n{said}"
+                )),
+                Err(e) => {
+                    let _ = fs::remove_file(&part);
+                    return Err(e);
+                }
             }
         }
 
@@ -473,8 +493,15 @@ impl Transfer {
                     dest.display()
                 )));
             }
+            // The lock file is not content. A caller that took the destination's
+            // lock before asking - which is how `eidos unpack` stops a --force
+            // from fighting an open GUI - would otherwise be told the folder it
+            // just locked is not empty.
             let occupied = fs::read_dir(dest)
-                .map(|mut d| d.next().is_some())
+                .map(|d| {
+                    d.flatten()
+                        .any(|e| e.file_name().to_string_lossy() != ".eidos.lock")
+                })
                 .unwrap_or(false);
             if occupied && !self.opt.force {
                 return Err(TransferError::Refused(format!(
