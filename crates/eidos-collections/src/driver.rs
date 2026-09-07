@@ -88,7 +88,13 @@ impl RealHooks<'_> {
     /// later member wins a file against an earlier one until `apply_ordering`
     /// says otherwise, and that pass is then permuting real entries instead of
     /// finding nothing to permute.
-    fn register(&self, name: &str, mods_dir: &Path) {
+    ///
+    /// Also the point where a rename becomes a fact worth reporting: one that
+    /// led to a failed install is not something to put in front of the user.
+    fn register(&mut self, name: &str, mods_dir: &Path, member: &str, renamed_to: &Option<String>) {
+        if let Some(f) = renamed_to {
+            self.renamed.push((member.to_string(), f.clone()));
+        }
         let mut ml = self.inst.modlist();
         ml.retain(|m| m.name != name);
         ml.push(eidos_instance::ModEntry {
@@ -236,11 +242,16 @@ impl Hooks for RealHooks<'_> {
         let ctx = eidos_install::fomod_context(&self.game.data_path, &enabled, &disabled);
         let mut name = safe(&m.name);
         let key = crate::state::key_for(m, &self.collection_domain);
+        // Reported only if the install then succeeds: a rename that led nowhere
+        // is not something to put in front of the user.
+        let mut renamed_to: Option<String> = None;
         if mods_dir.join(&name).is_dir() && !self.known_members.contains(&key) {
-            let free = free_name(&mods_dir, &name);
-            self.renamed.push((m.name.clone(), free.clone()));
-            name = free;
+            name = free_name(&mods_dir, &name);
+            renamed_to = Some(name.clone());
         }
+        // Whatever it lands as, this collection owns it from here: a retry must
+        // replace its own folder rather than step aside from it.
+        self.known_members.insert(key);
 
         match eidos_install::open_archive_with(archive, &mods_dir, &name, &self.game_id, |_| {}) {
             Ok(eidos_install::Opened::Fomod(session)) => {
@@ -256,7 +267,7 @@ impl Hooks for RealHooks<'_> {
                     eidos_install::OverwritePolicy::Replace,
                 ) {
                     Ok(rep) => {
-                        self.register(&rep.name, &mods_dir);
+                        self.register(&rep.name, &mods_dir, &m.name, &renamed_to);
                         self.installed_now.push(mods_dir.join(&rep.name));
                         if unmatched.is_empty() {
                             Installed::Ok(rep.name)
@@ -276,7 +287,7 @@ impl Hooks for RealHooks<'_> {
                 &ctx,
             ) {
                 Ok(rep) => {
-                    self.register(&rep.name, &mods_dir);
+                    self.register(&rep.name, &mods_dir, &m.name, &renamed_to);
                     self.installed_now.push(mods_dir.join(&rep.name));
                     Installed::Ok(rep.name)
                 }
@@ -293,7 +304,7 @@ impl Hooks for RealHooks<'_> {
 
 /// A folder name under `mods/` that nothing is using yet.
 fn free_name(mods_dir: &Path, wanted: &str) -> String {
-    for n in 2..100 {
+    for n in 2..1000 {
         let candidate = format!("{wanted} ({n})");
         if !mods_dir.join(&candidate).exists() {
             return candidate;
@@ -451,6 +462,7 @@ pub fn apply_plugin_states(
     list.locked = prof.read_locked_order();
     list.refresh(&spec);
 
+    let before: Vec<bool> = list.plugins.iter().map(|p| p.enabled).collect();
     let mut missing: Vec<String> = Vec::new();
     for p in &c.plugins {
         if p.name.trim().is_empty() {
@@ -459,6 +471,19 @@ pub fn apply_plugin_states(
         if !list.set_enabled(&p.name, p.enabled) {
             missing.push(p.name.clone());
         }
+    }
+    // Under an opt-out model most of a collection's list is already what it
+    // asks for, and rewriting the load order to say nothing new is a write into
+    // the user's profile for no reason.
+    if list.plugins.iter().map(|p| p.enabled).eq(before) {
+        for name in missing {
+            report.loot_notes.push(Note {
+                subject: name,
+                detail: "the collection expects this plugin and the instance does not have it"
+                    .into(),
+            });
+        }
+        return;
     }
     list.refresh(&spec);
     if let Err(e) = list.write_load_order(&state_dir, &spec) {
