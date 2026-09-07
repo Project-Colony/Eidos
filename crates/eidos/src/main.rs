@@ -13,6 +13,7 @@
 
 use std::process::exit;
 
+mod collection;
 mod export;
 mod games;
 mod install;
@@ -27,6 +28,7 @@ mod tests;
 mod tools;
 mod transfer;
 
+use collection::*;
 use export::*;
 use games::*;
 use install::*;
@@ -242,6 +244,7 @@ fn usage() -> ! {
          \x20 eidos play <instance>             show what would be mounted\n\
          \x20 eidos play <instance> -- <cmd...> run <cmd> with mods mounted over the game\n\
          \x20 eidos install <instance> <archive> install a downloaded mod archive (.7z/.zip/.rar)\n\
+         \x20 eidos collection <instance> <link>  install a Nexus collection (--dry-run to look first)\n\
          \x20 eidos pack <instance> <file.eidos> write the whole instance into one file\n\
          \x20 eidos unpack <file.eidos> [folder] put a packed instance back (--info to look first)\n\
          \x20 eidos tool <instance> [...]       manage + run tools (xEdit/FNIS/...) through the view\n\
@@ -310,6 +313,7 @@ fn main() {
         },
         Some("play") => cmd_play(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
+        Some("collection") => cmd_collection(&args[1..]),
         Some("pack") => cmd_pack(&args[1..]),
         Some("unpack") => cmd_unpack(&args[1..]),
         Some("tool") => cmd_tool(&args[1..]),
