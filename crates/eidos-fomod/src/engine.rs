@@ -108,7 +108,7 @@ pub fn effective_type(
 
 /// The indices selected by default in a group, honouring its type and the plugins'
 /// effective types (Required always on, Recommended preselected, NotUsable never).
-fn default_group_selection(
+pub(crate) fn default_group_selection(
     group: &Group,
     flags: &HashMap<String, String>,
     ctx: &Context,

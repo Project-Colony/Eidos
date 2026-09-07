@@ -265,6 +265,17 @@ pub struct Merged {
     /// when a plugin names a group nothing defines, and the failure surfaces as
     /// no load order rather than as a bad one.
     pub dangling_groups: Vec<String>,
+    /// `after` entries dropped from a collection's own group definitions,
+    /// as `"<group> -> <name>"`.
+    ///
+    /// The same survival rule, one level up: libloot builds the group graph
+    /// before it sorts anything, and a group whose `after` names nothing makes
+    /// EVERY later sort of that instance fail - including the ones the user runs
+    /// for reasons of their own, long after the collection is forgotten.
+    pub dangling_after: Vec<String>,
+    /// Groups the collection defined that already existed, and whose `after`
+    /// list was folded into the existing one rather than added again.
+    pub groups_extended: Vec<String>,
 }
 
 /// Merge a collection's plugin rules into the instance's userlist.
@@ -311,21 +322,79 @@ pub fn merge_user_rules(
         .map(|g| g.name().to_string())
         .collect();
     let mut user_groups = db.user_groups().to_vec();
+    // Every name that will exist once this merge is written: what LOOT already
+    // knows, plus what the collection is about to define. An `after` may point
+    // at any of them, including a sibling defined in the same batch.
+    let mut known: std::collections::HashSet<String> = existing.clone();
     for g in groups {
-        if g.name.is_empty() || existing.contains(&g.name) {
+        if !g.name.is_empty() {
+            known.insert(g.name.clone());
+        }
+    }
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for g in groups {
+        if g.name.is_empty() {
             continue;
         }
-        user_groups.push(
-            libloot::metadata::Group::new(g.name.clone())
-                .with_after_groups(g.after.iter().filter(|a| !a.is_empty()).cloned().collect()),
-        );
+        // A userlist group may be named twice in one file only by mistake, and
+        // libloot's reader REFUSES a userlist with a duplicate entry - so the
+        // next load of the file this function is about to write would fail.
+        if !seen.insert(g.name.clone()) {
+            continue;
+        }
+        // An `after` naming nothing is the same disaster as a plugin naming
+        // nothing, one level up, and it is not otherwise checked anywhere.
+        let after: Vec<String> = g
+            .after
+            .iter()
+            .filter(|a| !a.is_empty())
+            .filter(|a| {
+                if known.contains(*a) {
+                    true
+                } else {
+                    out.dangling_after.push(format!("{} -> {a}", g.name));
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        // In LOOT a userlist group sharing a masterlist group's name does not
+        // replace it, it EXTENDS it: the two `after` lists are unioned. Dropping
+        // the collection's entry, which is what "the name is taken" used to do,
+        // silently discards the author's placement.
+        if let Some(slot) = user_groups.iter_mut().find(|u| u.name() == g.name) {
+            let mut merged: Vec<String> =
+                slot.after_groups().iter().map(|a| a.to_string()).collect();
+            let mut grew = false;
+            for a in &after {
+                if !merged.iter().any(|m| m.eq_ignore_ascii_case(a)) {
+                    merged.push(a.clone());
+                    grew = true;
+                }
+            }
+            if grew {
+                *slot = libloot::metadata::Group::new(g.name.clone()).with_after_groups(merged);
+                out.groups_extended.push(g.name.clone());
+            }
+            continue;
+        }
+        if existing.contains(&g.name) {
+            // A masterlist group. A userlist entry of the same name extends it,
+            // so it is worth adding - but only if it says something.
+            if after.is_empty() {
+                continue;
+            }
+            user_groups.push(
+                libloot::metadata::Group::new(g.name.clone()).with_after_groups(after),
+            );
+            out.groups_extended.push(g.name.clone());
+            continue;
+        }
+        user_groups.push(libloot::metadata::Group::new(g.name.clone()).with_after_groups(after));
         out.groups_added += 1;
     }
-    let known: std::collections::HashSet<String> = existing
-        .into_iter()
-        .chain(user_groups.iter().map(|g| g.name().to_string()))
-        .collect();
-    if out.groups_added > 0 {
+    if out.groups_added > 0 || !out.groups_extended.is_empty() {
         db.set_user_groups(user_groups);
     }
 
@@ -358,9 +427,18 @@ pub fn merge_user_rules(
         }
 
         if let Some(group) = rule.group.as_ref().filter(|g| !g.is_empty()) {
-            if meta.group().is_some() {
-                // The user already decided. Theirs stands.
+            if meta.group().is_some_and(|g| g != group.as_str()) {
+                // The user already decided something ELSE. Theirs stands.
+                //
+                // Equal is not a conflict: this function runs at the end of
+                // every collection run, and re-running is the documented way to
+                // finish an interrupted install, so the second pass always meets
+                // its own output. Reporting that as the user's decision would
+                // put a line in the report on every re-run and hide the real
+                // ones.
                 out.kept_user_group.push(rule.plugin.clone());
+            } else if meta.group().is_some() {
+                // Already exactly what the collection asks for.
             } else if known.contains(group) {
                 meta.set_group(group.clone());
                 changed = true;
@@ -377,7 +455,7 @@ pub fn merge_user_rules(
         }
     }
 
-    if out.rules_added > 0 || out.groups_added > 0 {
+    if out.rules_added > 0 || out.groups_added > 0 || !out.groups_extended.is_empty() {
         if let Some(dir) = userlist.parent() {
             std::fs::create_dir_all(dir).map_err(|e| LootError::Loot(e.to_string()))?;
         }

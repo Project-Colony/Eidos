@@ -103,10 +103,7 @@ pub(crate) fn cmd_collection(args: &[String]) {
 
     // The archive. Everything that makes this a recipe rather than a list is
     // inside it, and no API call returns any of it.
-    let dir = inst
-        .root
-        .join("collections")
-        .join(format!("{}-{}", rev.slug, rev.revision_number));
+    let dir = eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = match driver::fetch_manifest(&nexus, &rev, &dir) {
         Ok(m) => m,
         Err(e) => {
@@ -127,23 +124,35 @@ pub(crate) fn cmd_collection(args: &[String]) {
     }
 
     let state_path = InstallState::path(&inst.root, &rev.slug, rev.revision_number);
-    let mut state = std::fs::read_to_string(&state_path)
-        .ok()
-        .and_then(|t| InstallState::from_json(&t))
-        .unwrap_or(InstallState {
+    let mut state = match InstallState::load(&state_path) {
+        Ok(Some(s)) => s,
+        Ok(None) => InstallState {
             slug: rev.slug.clone(),
             revision: rev.revision_number,
             game_domain: rev.game_domain.clone(),
             ..InstallState::default()
-        });
+        },
+        // Not a first run. Starting over means downloading everything again and
+        // wipe-reinstalling every member, so it is the user's call, not a
+        // default.
+        Err(e) => {
+            eidos_log::warn!("eidos collection: {e}");
+            exit(1);
+        }
+    };
     if no_optional {
         for m in c.mods.iter().filter(|m| m.optional) {
-            let key = eidos_collections::state::member_key(
-                m.source.file_id,
-                m.source.mod_id,
-                &m.name,
-            );
-            state.set_by_user(&key, Status::Skipped);
+            let key = eidos_collections::state::key_for(m, &c.info.domain_name);
+            // Only what is not already on disk. A skip is the user's word and
+            // nothing automatic can undo it, so writing it over a member that is
+            // installed would drop that mod out of the deployment order for
+            // good, with no way back.
+            if !matches!(
+                state.status(&key),
+                Status::Installed(_) | Status::Approximate(_, _)
+            ) {
+                state.set_by_user(&key, Status::Skipped);
+            }
         }
     }
 
@@ -178,17 +187,35 @@ pub(crate) fn cmd_collection(args: &[String]) {
         game: &game,
         game_id: target.game_id.clone(),
         say: &mut say,
+        collection_domain: c.info.domain_name.clone(),
+        known_members: state.members.keys().cloned().collect(),
+        renamed: Vec::new(),
+        installed_now: Vec::new(),
     };
+    let mut said_save_failed = false;
     let mut save = |s: &InstallState| {
-        if let Some(d) = state_path.parent() {
-            let _ = std::fs::create_dir_all(d);
+        if let Err(e) = s.save(&state_path) {
+            // Once. A failing disk would otherwise print this twice per member.
+            if !said_save_failed {
+                said_save_failed = true;
+                eidos_log::warn!(
+                    "Could not record what has been installed ({e}). If this run is \
+                     interrupted it will start over."
+                );
+            }
         }
-        let _ = std::fs::write(&state_path, s.to_json());
     };
     let mut report = eidos_collections::install::run(c, &mut state, &mut hooks, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
+    for (member, folder) in std::mem::take(&mut hooks.renamed) {
+        report.renamed.push(eidos_collections::report::Note {
+            subject: member,
+            detail: format!("installed as \"{folder}\", because a mod of yours already had that name"),
+        });
+    }
 
     driver::apply_ordering(&inst, c, &state, &mut report);
+    driver::apply_plugin_states(&inst, &game, c, &mut report);
     driver::apply_plugin_rules(&inst, &game, c, &mut report);
     driver::apply_ini_tweaks(&inst, &dir, c, &mut report);
 
@@ -207,7 +234,7 @@ fn preview(c: &Collection, state: &InstallState) {
     println!("\nWould install, in this order:");
     for (n, &i) in order.iter().enumerate() {
         let m = &c.mods[i];
-        let key = eidos_collections::state::member_key(m.source.file_id, m.source.mod_id, &m.name);
+        let key = eidos_collections::state::key_for(m, &c.info.domain_name);
         let st = state.status(&key);
         println!(
             "  {:>3}. [phase {}] {}{}{}",

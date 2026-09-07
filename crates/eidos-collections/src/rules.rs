@@ -10,7 +10,7 @@
 //! priority, the last entry wins. So a rule "A before B" puts A EARLIER in the
 //! list than B, and B wins the files they share.
 
-use crate::manifest::{Collection, ModReference, RuleType};
+use crate::manifest::{Collection, ModReference, Resolved, RuleType};
 
 /// One constraint over member indices: `earlier` sits before `later`, so `later`
 /// wins the files they share.
@@ -36,6 +36,7 @@ fn describe(r: &ModReference) -> String {
         &r.logical_file_name,
         &r.file_expression,
         &r.file_md5,
+        &r.tag,
     ] {
         if !candidate.is_empty() {
             return candidate.clone();
@@ -61,13 +62,23 @@ pub fn edges(c: &Collection) -> (Vec<Edge>, Vec<Unresolved>) {
             _ => continue,
         };
         let name = |k: &str| format!("{} {k} {}", describe(&rule.source), describe(&rule.reference));
-        let (Some(a), Some(b)) = (c.resolve(&rule.source), c.resolve(&rule.reference)) else {
+        let word = if ordering == RuleType::Before {
+            "before"
+        } else {
+            "after"
+        };
+        let ends = (c.resolve_ref(&rule.source), c.resolve_ref(&rule.reference));
+        if matches!(ends.0, Resolved::Ambiguous) || matches!(ends.1, Resolved::Ambiguous) {
             lost.push(Unresolved {
-                rule: name(if ordering == RuleType::Before {
-                    "before"
-                } else {
-                    "after"
-                }),
+                rule: name(word),
+                why: "more than one member carries the marker it names, so there is no \
+                      telling which one it means",
+            });
+            continue;
+        }
+        let (Resolved::One(a), Resolved::One(b)) = ends else {
+            lost.push(Unresolved {
+                rule: name(word),
                 why: "neither end of it names a mod this collection contains",
             });
             continue;
@@ -168,11 +179,24 @@ pub fn merge(list: &[String], members: &[(usize, String)], sequence: &[usize]) -
     // The members that are actually in the list, in the order the rules asked
     // for. A member the rules ordered but that is not installed is skipped here
     // rather than inserted: this function reorders, it never adds.
+    // Two members can install into the SAME folder - a collection that ships
+    // two files of one mod does exactly that - and a folder can only occupy one
+    // slot, so the second mention has to be dropped. Keeping it would write the
+    // same name into two slots and silently lose whatever was in the other one.
+    let mut seen: Vec<&String> = Vec::new();
     let ordered: Vec<&String> = sequence
         .iter()
         .filter_map(|i| members.iter().find(|(mi, _)| mi == i))
         .map(|(_, n)| n)
         .filter(|n| list.contains(n))
+        .filter(|n| {
+            if seen.contains(n) {
+                false
+            } else {
+                seen.push(n);
+                true
+            }
+        })
         .collect();
     let mut out = list.to_vec();
     for (slot, name) in slots.iter().zip(ordered) {
@@ -339,5 +363,23 @@ mod tests {
         let list: Vec<String> = ["A", "mine"].iter().map(|s| s.to_string()).collect();
         let members = [(0usize, "A".to_string()), (1usize, "Never Installed".into())];
         assert_eq!(merge(&list, &members, &[1, 0]), list);
+    }
+
+    #[test]
+    fn two_members_that_installed_into_one_folder_do_not_eat_a_third_mod() {
+        // A collection with two files of the same mod resolves both to the same
+        // folder. Placed twice, the same name lands in two slots and whatever
+        // was in the second one is gone - and the list is still the right
+        // LENGTH, so a count check would wave it through.
+        let list: Vec<String> = ["Shared Folder", "Other Mod"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let members = [
+            (0usize, "Shared Folder".to_string()),
+            (1usize, "Shared Folder".to_string()),
+            (2usize, "Other Mod".to_string()),
+        ];
+        assert_eq!(merge(&list, &members, &[0, 1, 2]), list);
     }
 }

@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use crate::engine::{effective_type, eval, Context, Selection};
+use crate::engine::{default_group_selection, effective_type, eval, Context, Selection};
 use crate::model::{GroupType, ModuleConfig, PluginType};
 
 /// One option the author selected.
@@ -104,6 +104,8 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
     // that gained or lost a step between the author's version and this one must
     // not shift every later answer by one.
     let mut used = vec![false; recorded.len()];
+    // Whether this collection recorded any answer at all for this member.
+    let answered_something = recorded.iter().any(|s| !s.groups.is_empty());
 
     for step in &config.steps {
         let visible = step
@@ -130,6 +132,7 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
                 used[i] = true;
                 r
             });
+        let mut used_groups = vec![false; rec_step.map(|s| s.groups.len()).unwrap_or(0)];
 
         for group in &step.groups {
             let names: Vec<String> = group.plugins.iter().map(|p| p.name.clone()).collect();
@@ -140,11 +143,28 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
                 .collect();
             let mut on = vec![false; group.plugins.len()];
 
+            // Same rule as steps: matched by name, but each recorded group is
+            // consumed once. Two groups sharing a name in one step would
+            // otherwise both replay the first recording, and the second one's
+            // answers would vanish without a word.
             let rec_group = rec_step.and_then(|s| {
                 s.groups
                     .iter()
-                    .find(|g| g.name.trim().eq_ignore_ascii_case(group.name.trim()))
+                    .enumerate()
+                    .find(|(i, g)| {
+                        !used_groups[*i] && g.name.trim().eq_ignore_ascii_case(group.name.trim())
+                    })
+                    .map(|(i, g)| {
+                        used_groups[i] = true;
+                        g
+                    })
             });
+
+            // What this installer would do if nobody answered. It is the floor
+            // the replay falls back to, never an empty group: a mod whose whole
+            // content sits behind one resolution group would otherwise install
+            // as nothing at all, and be remembered as installed.
+            let fallback = || default_group_selection(group, &flags, ctx);
 
             match rec_group {
                 Some(g) => {
@@ -164,38 +184,75 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
                         }
                     }
                 }
-                None if !group.plugins.is_empty() => unmatched.push(format!(
-                    "no recorded answer for \"{}\" in \"{}\"",
-                    group.name, step.name
-                )),
-                None => {}
+                None => {
+                    for i in fallback() {
+                        on[i] = true;
+                    }
+                    // A collection that recorded NOTHING for this mod - the
+                    // common case, and what `choices: null` means - did not
+                    // diverge from anything by taking the defaults. A collection
+                    // that recorded other groups and not this one did: the
+                    // installer has gained a question since it was built.
+                    if answered_something && !group.plugins.is_empty() {
+                        unmatched.push(format!(
+                            "no recorded answer for \"{}\" in \"{}\"",
+                            group.name, step.name
+                        ));
+                    }
+                }
             }
 
-            // A group whose rules the replay cannot satisfy is not quietly
-            // bent into shape: the mismatch is what the caller needs to hear.
             // Required options are forced on regardless, because the installer
-            // itself does not offer them as a choice.
-            for (i, t) in types.iter().enumerate() {
-                if *t == PluginType::Required {
+            // itself does not offer them as a choice. A `SelectAll` group is not
+            // a question either - every usable option is taken whatever the
+            // recording says - so it is settled the same way the engine settles
+            // it rather than left to the recording's completeness.
+            if group.group_type == GroupType::SelectAll {
+                on = vec![false; group.plugins.len()];
+                for i in fallback() {
+                    on[i] = true;
+                }
+            } else {
+                for (i, t) in types.iter().enumerate() {
+                    if *t == PluginType::Required {
+                        on[i] = true;
+                    }
+                }
+            }
+
+            // Only options this installer would actually let somebody pick can
+            // satisfy a group's own rule; counting the rest turns a faithful
+            // replay into a reported divergence.
+            let usable = types.iter().filter(|t| **t != PluginType::NotUsable).count();
+            let picked = on.iter().filter(|x| **x).count();
+            let complaint = if group.plugins.is_empty() {
+                // Nothing to answer, so no rule to break.
+                None
+            } else {
+                match group.group_type {
+                    GroupType::SelectExactlyOne if picked != 1 => {
+                        Some(format!("\"{}\" needs exactly one answer", group.name))
+                    }
+                    GroupType::SelectAtMostOne if picked > 1 => {
+                        Some(format!("\"{}\" accepts at most one answer", group.name))
+                    }
+                    GroupType::SelectAtLeastOne if picked == 0 => {
+                        Some(format!("\"{}\" needs at least one answer", group.name))
+                    }
+                    GroupType::SelectAll if picked != usable => {
+                        Some(format!("\"{}\" takes all of its options", group.name))
+                    }
+                    _ => None,
+                }
+            };
+            if complaint.is_some() && picked == 0 {
+                // Under-answered because the recording no longer fits: still
+                // report it, but install what the installer itself would, so the
+                // member is a mod rather than an empty folder.
+                for i in fallback() {
                     on[i] = true;
                 }
             }
-            let picked = on.iter().filter(|x| **x).count();
-            let complaint = match group.group_type {
-                GroupType::SelectExactlyOne if picked != 1 => {
-                    Some(format!("\"{}\" needs exactly one answer", group.name))
-                }
-                GroupType::SelectAtMostOne if picked > 1 => {
-                    Some(format!("\"{}\" accepts at most one answer", group.name))
-                }
-                GroupType::SelectAtLeastOne if picked == 0 => {
-                    Some(format!("\"{}\" needs at least one answer", group.name))
-                }
-                GroupType::SelectAll if picked != names.len() => {
-                    Some(format!("\"{}\" takes all of its options", group.name))
-                }
-                _ => None,
-            };
             if let Some(c) = complaint {
                 unmatched.push(c);
             }
@@ -505,7 +562,182 @@ mod tests {
         assert_eq!(r.selection[0][0].len(), 1);
         assert_eq!(r.selection[0][1].len(), 2);
         assert_eq!(r.selection[1][0].len(), 1);
-        // And with no answers at all, every group says so.
-        assert_eq!(r.unmatched.len(), 3, "{:?}", r.unmatched);
+        // A collection that recorded nothing did not diverge from anything: the
+        // installer's own defaults are what its author saw too.
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+
+    #[test]
+    fn a_member_with_no_recorded_answers_installs_the_defaults_not_an_empty_mod() {
+        // `choices: null` is the common case - every member of the repo's real
+        // collection fixture has it - and taking it to mean "select nothing"
+        // installs a texture pack with no textures, then remembers it as done.
+        let config = ModuleConfig {
+            steps: vec![step(
+                "Resolution",
+                None,
+                vec![group(
+                    "Size",
+                    GroupType::SelectExactlyOne,
+                    vec![
+                        plugin("2K", PluginType::Recommended, &[]),
+                        plugin("4K", PluginType::Optional, &[]),
+                    ],
+                )],
+            )],
+            ..ModuleConfig::default()
+        };
+        let r = replay(&config, &ctx(), &[]);
+        assert_eq!(r.selection[0][0], vec![true, false], "the recommended one");
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+        assert_eq!(r.selection, crate::default_selection(&config, &ctx()));
+    }
+
+    #[test]
+    fn a_recorded_answer_that_no_longer_exists_still_leaves_a_usable_mod() {
+        let config = ModuleConfig {
+            steps: vec![step(
+                "Resolution",
+                None,
+                vec![group(
+                    "Size",
+                    GroupType::SelectExactlyOne,
+                    vec![
+                        plugin("2K", PluginType::Recommended, &[]),
+                        plugin("4K", PluginType::Optional, &[]),
+                    ],
+                )],
+            )],
+            ..ModuleConfig::default()
+        };
+        let rec = vec![RecordedStep {
+            name: "Resolution".into(),
+            groups: vec![RecordedGroup {
+                name: "Size".into(),
+                selected: vec![RecordedOption {
+                    name: "8K".into(),
+                    idx: 2,
+                }],
+            }],
+        }];
+        let r = replay(&config, &ctx(), &rec);
+        // Reported, because the files will not be the author's...
+        assert_eq!(r.unmatched.len(), 2, "{:?}", r.unmatched);
+        // ...and still installed, because an empty group is not an improvement.
+        assert_eq!(r.selection[0][0], vec![true, false]);
+    }
+
+    #[test]
+    fn a_select_all_group_takes_everything_usable_whatever_was_recorded() {
+        let config = ModuleConfig {
+            steps: vec![step(
+                "Core",
+                None,
+                vec![group(
+                    "Files",
+                    GroupType::SelectAll,
+                    vec![
+                        plugin("Meshes", PluginType::Optional, &[]),
+                        plugin("Textures", PluginType::Optional, &[]),
+                    ],
+                )],
+            )],
+            ..ModuleConfig::default()
+        };
+        // The recording names one of them; the installer offers no way to
+        // decline the other, so both go in and nothing is reported.
+        let rec = vec![RecordedStep {
+            name: "Core".into(),
+            groups: vec![RecordedGroup {
+                name: "Files".into(),
+                selected: vec![RecordedOption {
+                    name: "Meshes".into(),
+                    idx: 0,
+                }],
+            }],
+        }];
+        let r = replay(&config, &ctx(), &rec);
+        assert_eq!(r.selection[0][0], vec![true, true]);
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+
+    #[test]
+    fn two_groups_sharing_a_name_get_their_own_recorded_answers() {
+        // A plain find() binds both to the first recording, and the second
+        // group's answer disappears with nothing said - the one shape where a
+        // wrong install reports itself as an exact one.
+        let mk = |a: &str, b: &str| {
+            group(
+                "Patches",
+                GroupType::SelectExactlyOne,
+                vec![
+                    plugin(a, PluginType::Optional, &[]),
+                    plugin(b, PluginType::Optional, &[]),
+                ],
+            )
+        };
+        let config = ModuleConfig {
+            steps: vec![step("Patches", None, vec![mk("a1", "a2"), mk("b1", "b2")])],
+            ..ModuleConfig::default()
+        };
+        let rec = vec![RecordedStep {
+            name: "Patches".into(),
+            groups: vec![
+                RecordedGroup {
+                    name: "Patches".into(),
+                    selected: vec![RecordedOption {
+                        name: "a1".into(),
+                        idx: 0,
+                    }],
+                },
+                RecordedGroup {
+                    name: "Patches".into(),
+                    selected: vec![RecordedOption {
+                        name: "b2".into(),
+                        idx: 1,
+                    }],
+                },
+            ],
+        }];
+        let r = replay(&config, &ctx(), &rec);
+        assert_eq!(r.selection[0][0], vec![true, false]);
+        assert_eq!(r.selection[0][1], vec![false, true], "not the first answer");
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+
+    #[test]
+    fn a_not_usable_option_does_not_make_a_select_all_group_look_incomplete() {
+        let config = ModuleConfig {
+            steps: vec![step(
+                "Core",
+                None,
+                vec![group(
+                    "Files",
+                    GroupType::SelectAll,
+                    vec![
+                        plugin("Meshes", PluginType::Required, &[]),
+                        plugin("DLC Patch", PluginType::NotUsable, &[]),
+                    ],
+                )],
+            )],
+            ..ModuleConfig::default()
+        };
+        let r = replay(&config, &ctx(), &[]);
+        assert_eq!(r.selection[0][0], vec![true, false]);
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+
+    #[test]
+    fn a_group_with_no_options_asks_nothing_and_complains_about_nothing() {
+        let config = ModuleConfig {
+            steps: vec![step(
+                "One",
+                None,
+                vec![group("Empty", GroupType::SelectExactlyOne, vec![])],
+            )],
+            ..ModuleConfig::default()
+        };
+        let r = replay(&config, &ctx(), &[]);
+        assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
     }
 }

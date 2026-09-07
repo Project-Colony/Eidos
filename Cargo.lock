@@ -1029,6 +1029,8 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 name = "eidos"
 version = "1.15.0"
 dependencies = [
+ "eidos-collections",
+ "eidos-fomod",
  "eidos-gamefeatures",
  "eidos-games",
  "eidos-install",
@@ -1039,6 +1041,7 @@ dependencies = [
  "eidos-nexus",
  "eidos-paths",
  "eidos-plugins",
+ "eidos-sevenzip",
  "eidos-transfer",
 ]
 
@@ -1049,6 +1052,22 @@ dependencies = [
  "eidos-paths",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "eidos-collections"
+version = "1.15.0"
+dependencies = [
+ "eidos-fomod",
+ "eidos-games",
+ "eidos-install",
+ "eidos-instance",
+ "eidos-loot",
+ "eidos-nexus",
+ "eidos-plugins",
+ "eidos-sevenzip",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1113,9 +1132,11 @@ version = "1.15.0"
 dependencies = [
  "colony-ui",
  "eidos-addons",
+ "eidos-collections",
  "eidos-conflicts",
  "eidos-core",
  "eidos-fomod",
+ "eidos-gamedef",
  "eidos-gamefeatures",
  "eidos-games",
  "eidos-install",

@@ -228,25 +228,25 @@ fn collection_on_worker(
     let _lock = inst
         .try_lock("the Eidos window (installing a collection)")
         .map_err(|e| format!("Cannot install now: {e}."))?;
-    let dir = inst
-        .root
-        .join("collections")
-        .join(format!("{}-{}", rev.slug, rev.revision_number));
+    let dir =
+        eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
     let read = eidos_collections::read(&manifest)?;
     let c = &read.collection;
 
     let state_path =
         eidos_collections::state::InstallState::path(&inst.root, &rev.slug, rev.revision_number);
-    let mut state = std::fs::read_to_string(&state_path)
-        .ok()
-        .and_then(|t| eidos_collections::state::InstallState::from_json(&t))
-        .unwrap_or(eidos_collections::state::InstallState {
+    // An unreadable state file is NOT a first run: starting over would download
+    // everything again and wipe-reinstall every member, so it stops here.
+    let mut state = match eidos_collections::state::InstallState::load(&state_path)? {
+        Some(s) => s,
+        None => eidos_collections::state::InstallState {
             slug: rev.slug.clone(),
             revision: rev.revision_number,
             game_domain: rev.game_domain.clone(),
             ..Default::default()
-        });
+        },
+    };
 
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
@@ -256,6 +256,10 @@ fn collection_on_worker(
         game,
         game_id: game_id.to_string(),
         say: &mut say,
+        collection_domain: c.info.domain_name.clone(),
+        known_members: state.members.keys().cloned().collect(),
+        renamed: Vec::new(),
+        installed_now: Vec::new(),
     };
     // The bar counts members reached, which is the only honest measure here: a
     // collection that is half skipped still moves, and 7-Zip's own percentage
@@ -268,14 +272,20 @@ fn collection_on_worker(
         percent,
     };
     let mut save = |s: &eidos_collections::state::InstallState| {
-        if let Some(d) = state_path.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        let _ = std::fs::write(&state_path, s.to_json());
+        let _ = s.save(&state_path);
     };
     let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
+    for (member, folder) in std::mem::take(&mut hooks.renamed) {
+        report.renamed.push(eidos_collections::report::Note {
+            subject: member,
+            detail: format!(
+                "installed as \"{folder}\", because a mod of yours already had that name"
+            ),
+        });
+    }
     eidos_collections::driver::apply_ordering(inst, c, &state, &mut report);
+    eidos_collections::driver::apply_plugin_states(inst, game, c, &mut report);
     eidos_collections::driver::apply_plugin_rules(inst, game, c, &mut report);
     eidos_collections::driver::apply_ini_tweaks(inst, &dir, c, &mut report);
     percent.store(100, Ordering::SeqCst);
@@ -7413,6 +7423,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         summary.push_str(&note);
                     }
                 }
+            }
+            if kind == crate::TransferKind::Collection {
+                // The worker added folders to `mods/` and rewrote `modlist.txt`
+                // from its own thread, so the window is holding the list as it
+                // was BEFORE the install. Saving that stale list - which the
+                // next tick of a checkbox does - writes the members straight
+                // back out of the profile, and the rule-derived order with them.
+                reload_mods(app);
+                refresh_after_tree_change(app);
+                refresh_meta_cache(app);
             }
             // Set LAST: `open_unpacked` calls `open_instance`, which resets a
             // great deal of the window, and the card has to survive it.

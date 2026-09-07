@@ -19,21 +19,141 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+/// Anything that is present but the wrong shape becomes the default.
+///
+/// `#[serde(default)]` only ever covers an ABSENT key. The writer here is
+/// TypeScript, where an explicit `null` is the ordinary spelling of "this was
+/// never computed", and Nexus quotes its integers about half the time - so
+/// strict field types turn one such value anywhere in a 200-member manifest
+/// into a refusal of the whole collection, which is precisely the failure the
+/// module header says this parser does not have.
+fn lenient<'de, D, T>(d: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + serde::de::DeserializeOwned,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(v).unwrap_or_default())
+}
+
+/// A string that tolerates `null`, and a number written as one.
+fn lenient_str<'de, D>(d: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::String(s) => s,
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    })
+}
+
+/// A whole number however it was written: bare, quoted, or with a `.0` on it.
+fn loose_u64(v: &serde_json::Value) -> Option<u64> {
+    match v {
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .or_else(|| n.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64)),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            t.parse::<u64>()
+                .ok()
+                .or_else(|| t.parse::<f64>().ok().filter(|f| *f >= 0.0).map(|f| f as u64))
+        }
+        _ => None,
+    }
+}
+
+fn lenient_id<'de, D>(d: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(loose_u64(&serde_json::Value::deserialize(d)?))
+}
+
+fn lenient_u32<'de, D>(d: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(loose_u64(&serde_json::Value::deserialize(d)?).unwrap_or(0) as u32)
+}
+
+fn lenient_usize<'de, D>(d: D) -> Result<usize, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(loose_u64(&serde_json::Value::deserialize(d)?).unwrap_or(0) as usize)
+}
+
+fn lenient_bool<'de, D>(d: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(as_bool(&serde_json::Value::deserialize(d)?).unwrap_or(false))
+}
+
+/// `enabled` defaults to true when absent, so a wrong shape must too.
+fn lenient_bool_true<'de, D>(d: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(as_bool(&serde_json::Value::deserialize(d)?).unwrap_or(true))
+}
+
+fn as_bool(v: &serde_json::Value) -> Option<bool> {
+    match v {
+        serde_json::Value::Bool(b) => Some(*b),
+        serde_json::Value::Number(n) => n.as_i64().map(|i| i != 0),
+        serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "yes" | "1" => Some(true),
+            "false" | "no" | "0" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// A source type, case-insensitively, with anything else kept as unknown rather
+/// than refused.
+fn lenient_source_type<'de, D>(d: D) -> Result<SourceType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    let s = v.as_str().unwrap_or_default().trim().to_ascii_lowercase();
+    Ok(serde_json::from_value(serde_json::Value::String(s)).unwrap_or(SourceType::Unknown))
+}
+
+fn lenient_rule_type<'de, D>(d: D) -> Result<RuleType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let v = serde_json::Value::deserialize(d)?;
+    let s = v.as_str().unwrap_or_default().trim().to_ascii_lowercase();
+    Ok(serde_json::from_value(serde_json::Value::String(s)).unwrap_or(RuleType::Unknown))
+}
 
 /// A whole `collection.json`.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Collection {
+    #[serde(deserialize_with = "lenient")]
     pub info: Info,
+    #[serde(deserialize_with = "lenient")]
     pub mods: Vec<Mod>,
+    #[serde(deserialize_with = "lenient")]
     pub mod_rules: Vec<ModRule>,
     /// Bethesda games only: which plugins the collection expects ENABLED.
     ///
     /// Deliberately not a load order. Vortex writes a position here and its own
     /// reader never applies one; ordering is expressed as LOOT rules instead.
+    #[serde(deserialize_with = "lenient")]
     pub plugins: Vec<Plugin>,
     /// Bethesda games only: LOOT userlist entries, to be MERGED into the user's.
+    #[serde(deserialize_with = "lenient")]
     pub plugin_rules: PluginRules,
     /// Tools the collection expects to exist. NAMED, never created.
     ///
@@ -42,6 +162,7 @@ pub struct Collection {
     /// that the user must already have these installed. Under Eidos this is the
     /// DynDOLOD situation: the honest thing is to tell the user which tools the
     /// collection assumes, not to invent tool entries pointing at nothing.
+    #[serde(deserialize_with = "lenient")]
     pub tools: Vec<Tool>,
 }
 
@@ -49,7 +170,9 @@ pub struct Collection {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Tool {
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub exe: String,
 }
 
@@ -57,15 +180,22 @@ pub struct Tool {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Info {
+    #[serde(deserialize_with = "lenient_str")]
     pub author: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub author_url: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub description: String,
     /// The author's own notes, Markdown, shown before anything is installed.
+    #[serde(deserialize_with = "lenient_str")]
     pub install_instructions: String,
     /// The Nexus domain of the COLLECTION. Each member carries its own, and they
     /// can differ - a Skyrim SE collection may pull an asset from the LE page.
+    #[serde(deserialize_with = "lenient_str")]
     pub domain_name: String,
+    #[serde(deserialize_with = "lenient")]
     pub game_versions: Vec<String>,
 }
 
@@ -88,30 +218,46 @@ pub enum SourceType {
     Manual,
     /// The file travels INSIDE the collection archive, under `bundled/`.
     Bundle,
+    /// A type this build has never seen.
+    ///
+    /// The format grows and announces nothing, so an unrecognised type has to be
+    /// ONE unusable member, reported as such - not a refusal of the other 199.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Source {
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "lenient_source_type")]
     pub kind: SourceType,
+    #[serde(deserialize_with = "lenient_str")]
     pub url: String,
     /// Shown to the user for `browse` and `manual`.
+    #[serde(deserialize_with = "lenient_str")]
     pub instructions: String,
+    #[serde(deserialize_with = "lenient_id")]
     pub mod_id: Option<u64>,
+    #[serde(deserialize_with = "lenient_id")]
     pub file_id: Option<u64>,
+    #[serde(deserialize_with = "lenient_str")]
     pub update_policy: String,
+    #[serde(deserialize_with = "lenient_bool")]
     pub adult_content: bool,
+    #[serde(deserialize_with = "lenient_str")]
     pub md5: String,
     /// NOTE the spelling: a SOURCE says `logicalFilename`, a rule REFERENCE says
     /// `logicalFileName`. They mean the same thing and differ by one capital,
     /// which is exactly the kind of difference that silently matches nothing.
-    #[serde(alias = "logicalFileName")]
+    #[serde(alias = "logicalFileName", deserialize_with = "lenient_str")]
     pub logical_filename: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub file_expression: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub tag: String,
     /// Nexus's own OpenAPI calls this kilobytes and every writer in Vortex puts
     /// raw bytes in it. Kept as given; nothing here does arithmetic on it.
+    #[serde(deserialize_with = "lenient_id")]
     pub file_size: Option<u64>,
 }
 
@@ -121,33 +267,47 @@ pub struct Source {
 pub struct Mod {
     /// The author's display name for it. Load-bearing: a mod rule with no other
     /// marker falls back to this exact string.
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub version: String,
+    #[serde(deserialize_with = "lenient_bool")]
     pub optional: bool,
     /// This member's own Nexus domain, not the collection's.
+    #[serde(deserialize_with = "lenient_str")]
     pub domain_name: String,
+    #[serde(deserialize_with = "lenient")]
     pub source: Source,
     /// Install order. Ascending; every mod in a phase completes before the next
     /// begins. Absent means 0.
+    #[serde(deserialize_with = "lenient_u32")]
     pub phase: u32,
     /// The answers the author gave to this mod's scripted installer.
+    #[serde(deserialize_with = "lenient")]
     pub choices: Option<Choices>,
     /// `path -> CRC32 of the patched file`, with the patch bytes shipped at
     /// `patches/<name>/<path>.diff`.
+    #[serde(deserialize_with = "lenient")]
     pub patches: BTreeMap<String, String>,
     /// Paths this mod provides whatever the deployment order says.
+    #[serde(deserialize_with = "lenient")]
     pub file_overrides: Vec<String>,
     /// A per-file list, used when the author pinned exact contents.
+    #[serde(deserialize_with = "lenient")]
     pub hashes: Vec<FileHash>,
     /// The author's note for this member.
+    #[serde(deserialize_with = "lenient_str")]
     pub instructions: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub author: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct FileHash {
+    #[serde(deserialize_with = "lenient_str")]
     pub path: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub md5: String,
 }
 
@@ -157,35 +317,42 @@ pub struct FileHash {
 pub struct Choices {
     /// `"fomod"` in practice. Kept so a future installer kind is visible rather
     /// than silently replayed as if it were a FOMOD.
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "lenient_str")]
     pub kind: String,
     /// `null` is a legal value here and means "no answers recorded".
+    #[serde(deserialize_with = "lenient")]
     pub options: Option<Vec<ChoiceStep>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ChoiceStep {
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
+    #[serde(deserialize_with = "lenient")]
     pub groups: Vec<ChoiceGroup>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ChoiceGroup {
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
     /// The options the author SELECTED in this group. An option absent from the
     /// list was not selected.
+    #[serde(deserialize_with = "lenient")]
     pub choices: Vec<ChoiceOption>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ChoiceOption {
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
     /// The option's position in its group when the author recorded it. A
     /// tiebreak, never the primary key: positions move between mod versions and
     /// names usually do not.
+    #[serde(deserialize_with = "lenient_usize")]
     pub idx: usize,
 }
 
@@ -198,12 +365,22 @@ pub struct ChoiceOption {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ModReference {
+    #[serde(deserialize_with = "lenient_str")]
     pub file_expression: String,
-    #[serde(rename = "fileMD5")]
+    #[serde(rename = "fileMD5", deserialize_with = "lenient_str")]
     pub file_md5: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub logical_file_name: String,
+    /// The author's own identity marker for a member, and the only one that does
+    /// not move when the mod is updated. A `browse`, `manual` or `direct` member
+    /// has no md5 and no logical file name, so this is often the only exact
+    /// marker a rule about it can carry.
+    #[serde(deserialize_with = "lenient_str")]
+    pub tag: String,
+    #[serde(deserialize_with = "lenient_str")]
     pub version_match: String,
     /// Only ever a display aid.
+    #[serde(deserialize_with = "lenient_str")]
     pub description: String,
 }
 
@@ -219,22 +396,28 @@ pub enum RuleType {
     Conflicts,
     Recommends,
     Provides,
+    /// A kind this build has never seen. Ordered by nothing, fatal to nothing.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ModRule {
+    #[serde(deserialize_with = "lenient")]
     pub source: ModReference,
-    #[serde(rename = "type")]
+    #[serde(rename = "type", deserialize_with = "lenient_rule_type")]
     pub kind: RuleType,
+    #[serde(deserialize_with = "lenient")]
     pub reference: ModReference,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Plugin {
+    #[serde(deserialize_with = "lenient_str")]
     pub name: String,
-    #[serde(default = "yes")]
+    #[serde(default = "yes", deserialize_with = "lenient_bool_true")]
     pub enabled: bool,
 }
 
@@ -250,7 +433,9 @@ fn yes() -> bool {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct PluginRules {
+    #[serde(deserialize_with = "lenient")]
     pub plugins: Vec<serde_json::Value>,
+    #[serde(deserialize_with = "lenient")]
     pub groups: Vec<serde_json::Value>,
 }
 
@@ -266,6 +451,53 @@ const KNOWN_SECTIONS: &[&str] = &[
     // appears in real published collections, so leaving it out of this list
     // would put "tools" in the not-understood line of every single report.
     "tools",
+];
+
+/// The keys this crate understands inside one member.
+const KNOWN_MOD_KEYS: &[&str] = &[
+    "name",
+    "version",
+    "optional",
+    "domainName",
+    "source",
+    "phase",
+    "choices",
+    "patches",
+    "fileOverrides",
+    "hashes",
+    "instructions",
+    "author",
+    // Display metadata every real manifest carries. Nothing is installed from
+    // it, and listing it here keeps it out of every single report.
+    "details",
+];
+
+/// The keys this crate understands inside one member's `source`.
+const KNOWN_SOURCE_KEYS: &[&str] = &[
+    "type",
+    "url",
+    "instructions",
+    "modId",
+    "fileId",
+    "updatePolicy",
+    "adultContent",
+    "md5",
+    "logicalFilename",
+    "logicalFileName",
+    "fileExpression",
+    "tag",
+    "fileSize",
+];
+
+/// The keys this crate understands inside `info`.
+const KNOWN_INFO_KEYS: &[&str] = &[
+    "author",
+    "authorUrl",
+    "name",
+    "description",
+    "installInstructions",
+    "domainName",
+    "gameVersions",
 ];
 
 /// What reading a manifest produced, INCLUDING what it did not understand.
@@ -291,7 +523,32 @@ pub fn read(text: &str) -> Result<Read, String> {
         .filter(|k| !KNOWN_SECTIONS.contains(&k.as_str()))
         .cloned()
         .collect();
+    // The format grows BELOW the top level too - phase, choices, patches and
+    // fileOverrides are all member keys it grew - so stopping at the six
+    // sections would let exactly the additions that change behaviour pass in
+    // silence.
+    let member_keys = |v: &serde_json::Value, known: &[&str], prefix: &str, out: &mut Vec<String>| {
+        if let Some(o) = v.as_object() {
+            for k in o.keys() {
+                if !known.contains(&k.as_str()) {
+                    out.push(format!("{prefix}{k}"));
+                }
+            }
+        }
+    };
+    if let Some(mods) = obj.get("mods").and_then(|m| m.as_array()) {
+        for m in mods {
+            member_keys(m, KNOWN_MOD_KEYS, "mods[].", &mut unknown_sections);
+            if let Some(src) = m.get("source") {
+                member_keys(src, KNOWN_SOURCE_KEYS, "mods[].source.", &mut unknown_sections);
+            }
+        }
+    }
+    if let Some(info) = obj.get("info") {
+        member_keys(info, KNOWN_INFO_KEYS, "info.", &mut unknown_sections);
+    }
     unknown_sections.sort();
+    unknown_sections.dedup();
     let collection: Collection = serde_json::from_value(raw)
         .map_err(|e| format!("collection.json is not shaped like a collection: {e}"))?;
     if collection.mods.is_empty() {
@@ -301,6 +558,16 @@ pub fn read(text: &str) -> Result<Read, String> {
         collection,
         unknown_sections,
     })
+}
+
+/// What matching a rule endpoint against the members produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resolved {
+    One(usize),
+    /// Nothing carried that marker.
+    None,
+    /// More than one member did, so there is no answer to give.
+    Ambiguous,
 }
 
 impl Collection {
@@ -316,26 +583,65 @@ impl Collection {
     /// about a mod that is not one of its members, and inventing a match for it
     /// would reorder somebody's mod list on the strength of a guess.
     pub fn resolve(&self, r: &ModReference) -> Option<usize> {
-        let eq = |a: &str, b: &str| !a.is_empty() && a.eq_ignore_ascii_case(b);
-        self.mods
-            .iter()
-            .position(|m| eq(&r.file_md5, &m.source.md5))
-            .or_else(|| {
-                self.mods
-                    .iter()
-                    .position(|m| eq(&r.logical_file_name, &m.source.logical_filename))
-            })
-            .or_else(|| {
-                self.mods
-                    .iter()
-                    .position(|m| eq(&r.file_expression, &m.source.file_expression))
-            })
-            .or_else(|| {
-                self.mods
-                    .iter()
-                    .position(|m| eq(&r.file_expression, &m.name))
-            })
-            .or_else(|| self.mods.iter().position(|m| eq(&r.description, &m.name)))
+        match self.resolve_ref(r) {
+            Resolved::One(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    /// [`Collection::resolve`], with the reason a miss was a miss.
+    pub fn resolve_ref(&self, r: &ModReference) -> Resolved {
+        let eq = |a: &str, b: &str| {
+            let a = a.trim();
+            !a.is_empty() && a.eq_ignore_ascii_case(b.trim())
+        };
+        let only = |f: &dyn Fn(&Mod) -> bool| -> Option<Resolved> {
+            let hits: Vec<usize> = self
+                .mods
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| f(m))
+                .map(|(i, _)| i)
+                .collect();
+            match hits.len() {
+                0 => None,
+                1 => Some(Resolved::One(hits[0])),
+                // Two members can legitimately share a marker - the same archive
+                // listed twice so its installer can be answered two ways - and
+                // picking the first would reorder somebody's mod list on a coin
+                // toss, silently. Say so instead.
+                _ => Some(Resolved::Ambiguous),
+            }
+        };
+        // Most specific first. `tag` is LAST of the identity markers, not first:
+        // Vortex writes it only alongside the others, and its own authoring code
+        // warns that two curators' shortids can collide - so it is the widest
+        // net here, useful only for the endpoint that carries nothing else.
+        for m in [
+            &|m: &Mod| eq(&r.file_md5, &m.source.md5),
+            &|m: &Mod| eq(&r.logical_file_name, &m.source.logical_filename),
+            &|m: &Mod| eq(&r.file_expression, &m.source.file_expression),
+            &|m: &Mod| eq(&r.file_expression, &m.name),
+            &|m: &Mod| eq(&r.tag, &m.source.tag),
+        ] as [&dyn Fn(&Mod) -> bool; 5]
+        {
+            if let Some(v) = only(m) {
+                return v;
+            }
+        }
+        // `description` is a display aid, not an identity. It may stand in only
+        // when the reference carries no identity marker at all: a marker that
+        // matched nothing is evidence AGAINST a match, not silence.
+        if r.tag.trim().is_empty()
+            && r.file_md5.trim().is_empty()
+            && r.logical_file_name.trim().is_empty()
+            && r.file_expression.trim().is_empty()
+        {
+            if let Some(v) = only(&|m: &Mod| eq(&r.description, &m.name)) {
+                return v;
+            }
+        }
+        Resolved::None
     }
 
     /// Every distinct install phase, ascending.
@@ -496,5 +802,123 @@ mod tests {
         // case; reading a missing flag as false would silently disable plugins.
         let r = read(r#"{"mods":[{"name":"m"}],"plugins":[{"name":"A.esp"}]}"#).unwrap();
         assert!(r.collection.plugins[0].enabled);
+    }
+
+    #[test]
+    fn a_source_type_this_build_has_never_seen_costs_one_member_not_the_collection() {
+        let text = r#"{"mods":[
+          {"name":"Fine","source":{"type":"nexus","modId":1,"fileId":2}},
+          {"name":"New","source":{"type":"archive"}},
+          {"name":"Shouty","source":{"type":"Nexus","modId":3,"fileId":4}}
+        ]}"#;
+        let r = read(text).unwrap();
+        assert_eq!(r.collection.mods[1].source.kind, SourceType::Unknown);
+        // And case is not vocabulary: every other matcher here is
+        // case-insensitive, so this one is too.
+        assert_eq!(r.collection.mods[2].source.kind, SourceType::Nexus);
+    }
+
+    #[test]
+    fn one_null_or_one_quoted_number_does_not_refuse_the_manifest() {
+        // The writer is TypeScript, where `null` is how "never computed" is
+        // spelled, and Nexus quotes its integers about half the time.
+        let text = r#"{
+          "info": {"name":"C","description":null,"gameVersions":null},
+          "mods":[{"name":"A","version":null,"optional":null,"phase":null,
+                   "instructions":null,"hashes":null,"fileOverrides":null,
+                   "patches":null,"choices":null,
+                   "source":{"type":"nexus","modId":"37471","fileId":3609261.0,
+                             "md5":null,"fileSize":"1234","adultContent":null}}],
+          "modRules":null, "plugins":null, "pluginRules":null
+        }"#;
+        let r = read(text).expect("a manifest Vortex would install");
+        let m = &r.collection.mods[0];
+        assert_eq!(m.source.mod_id, Some(37471));
+        assert_eq!(m.source.file_id, Some(3609261));
+        assert_eq!(m.source.file_size, Some(1234));
+        assert_eq!(m.phase, 0);
+        assert!(!m.optional);
+    }
+
+    #[test]
+    fn a_rule_kind_this_build_has_never_seen_is_not_fatal_either() {
+        let text = r#"{"mods":[{"name":"A"}],
+          "modRules":[{"type":"supersedes","source":{},"reference":{}}]}"#;
+        let r = read(text).unwrap();
+        assert_eq!(r.collection.mod_rules[0].kind, RuleType::Unknown);
+    }
+
+    #[test]
+    fn a_rule_can_name_its_ends_by_tag() {
+        let text = r#"{"mods":[
+          {"name":"One","source":{"type":"browse","tag":"aaa"}},
+          {"name":"Two","source":{"type":"browse","tag":"bbb"}}
+        ],"modRules":[{"type":"before",
+          "source":{"tag":"aaa"},"reference":{"tag":"bbb"}}]}"#;
+        let c = read(text).unwrap().collection;
+        assert_eq!(c.resolve(&c.mod_rules[0].source), Some(0));
+        assert_eq!(c.resolve(&c.mod_rules[0].reference), Some(1));
+    }
+
+    #[test]
+    fn a_marker_two_members_share_resolves_to_neither() {
+        let text = r#"{"mods":[
+          {"name":"Twice A","source":{"type":"nexus","modId":1,"fileId":2,"md5":"same"}},
+          {"name":"Twice B","source":{"type":"nexus","modId":1,"fileId":2,"md5":"same"}}
+        ]}"#;
+        let c = read(text).unwrap().collection;
+        let r = ModReference {
+            file_md5: "same".into(),
+            ..ModReference::default()
+        };
+        assert_eq!(c.resolve_ref(&r), Resolved::Ambiguous);
+        assert_eq!(c.resolve(&r), None);
+    }
+
+    #[test]
+    fn a_reference_with_a_real_marker_that_missed_does_not_fall_back_to_free_text() {
+        let text = r#"{"mods":[{"name":"Some Mod","source":{"type":"nexus","md5":"aaaa"}}]}"#;
+        let c = read(text).unwrap().collection;
+        let r = ModReference {
+            file_md5: "bbbb".into(),
+            description: "Some Mod".into(),
+            ..ModReference::default()
+        };
+        assert_eq!(c.resolve(&r), None, "an md5 that missed is evidence");
+        // With no identity marker at all, the display name may still stand in.
+        let only_text = ModReference {
+            description: "Some Mod".into(),
+            ..ModReference::default()
+        };
+        assert_eq!(c.resolve(&only_text), Some(0));
+    }
+
+    #[test]
+    fn a_padded_name_still_finds_its_member() {
+        let text = r#"{"mods":[{"name":"Some Mod ","source":{"type":"nexus"}}]}"#;
+        let c = read(text).unwrap().collection;
+        let r = ModReference {
+            file_expression: " some mod".into(),
+            ..ModReference::default()
+        };
+        assert_eq!(c.resolve(&r), Some(0));
+    }
+
+    #[test]
+    fn an_unknown_key_inside_a_member_is_reported_like_a_top_level_one() {
+        let text = r#"{"mods":[
+          {"name":"A","source":{"type":"nexus","somethingNew":1},"anotherThing":2},
+          {"name":"B","source":{"type":"nexus"},"anotherThing":3}
+        ],"info":{"name":"C","aNewInfoKey":1}}"#;
+        let r = read(text).unwrap();
+        assert_eq!(
+            r.unknown_sections,
+            vec![
+                "info.aNewInfoKey".to_string(),
+                "mods[].anotherThing".to_string(),
+                "mods[].source.somethingNew".to_string(),
+            ],
+            "deduplicated, so one new key is one line however many members have it"
+        );
     }
 }

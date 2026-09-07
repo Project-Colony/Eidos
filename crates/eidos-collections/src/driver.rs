@@ -50,9 +50,56 @@ pub struct RealHooks<'a> {
     /// Where per-member progress goes. The terminal prints it; the window
     /// stores it for its dialog.
     pub say: &'a mut dyn FnMut(String),
+    /// The collection's own Nexus domain, for members that name none.
+    pub collection_domain: String,
+    /// The member keys the state already has a record for.
+    ///
+    /// A member this collection has attempted before may replace its own folder;
+    /// a member it has never attempted must not, because a folder of that name
+    /// belongs to somebody else. `Replace` is documented as wipe-and-reinstall,
+    /// collections are largely made of the popular mods a user already has, and
+    /// the member's name IS the Nexus mod name their folder is called after - so
+    /// the collision is the ordinary case, not the exotic one.
+    pub known_members: std::collections::HashSet<String>,
+    /// Members installed under a name that was free, and what it was.
+    pub renamed: Vec<(String, String)>,
+    /// The mod folders this run has installed, in order.
+    ///
+    /// A collection installs a mod and then, two members later, a patch whose
+    /// FOMOD asks whether that mod is present. The mod list cannot answer: a
+    /// folder appended to it arrives disabled, and nothing in this pass enables
+    /// it. Left alone, every such question reads "no" and the patch installs its
+    /// files for a game that does not have the mod - or refuses the author's own
+    /// recorded answer. So the members installed so far are handed to the
+    /// installer as active, which is what they are.
+    pub installed_now: Vec<PathBuf>,
 }
 
 impl RealHooks<'_> {
+    /// Put a freshly installed member in the profile, enabled, at the top.
+    ///
+    /// Without this the folder exists and nothing loads it: an unlisted folder
+    /// is discovered as DISABLED, `load_order` filters the inactive out, and the
+    /// union mount gets none of the collection - while the report says it is
+    /// installed the way its author built it. `eidos install` has always done
+    /// this half; the collection path did not.
+    ///
+    /// Appended last, which is the highest priority, in install order - so a
+    /// later member wins a file against an earlier one until `apply_ordering`
+    /// says otherwise, and that pass is then permuting real entries instead of
+    /// finding nothing to permute.
+    fn register(&self, name: &str, mods_dir: &Path) {
+        let mut ml = self.inst.modlist();
+        ml.retain(|m| m.name != name);
+        ml.push(eidos_instance::ModEntry {
+            name: name.to_string(),
+            enabled: true,
+            path: mods_dir.join(name),
+            unmanaged: false,
+        });
+        let _ = self.inst.save_modlist(&ml);
+    }
+
     /// The archive already in `downloads/` for this member, if it is whole.
     fn already_here(&self, m: &Mod) -> Option<PathBuf> {
         let want = m.source.file_id?;
@@ -92,10 +139,11 @@ impl Hooks for RealHooks<'_> {
                 // page Eidos may not describe is one whose files it does not
                 // fetch either. It costs one API call per member and there is no
                 // cheaper way to obtain a gate honestly.
-                let gate = match self.nexus.mod_info(domain, mod_id) {
-                    Ok(remote) => remote.gate,
+                let remote = match self.nexus.mod_info(domain, mod_id) {
+                    Ok(remote) => remote,
                     Err(e) => return Obtained::Failed(e),
                 };
+                let gate = remote.gate;
                 let nxm = eidos_nexus::NxmUrl {
                     game: domain.to_string(),
                     mod_id,
@@ -111,7 +159,23 @@ impl Hooks for RealHooks<'_> {
                             .downloads_dir()
                             .join(format!("{}-{mod_id}-{file_id}.archive", safe(&m.name)));
                         match self.nexus.download(&url, &dest) {
-                            Ok(_) => Obtained::Ready(dest),
+                            Ok(_) => {
+                                // The `.meta` sidecar. Without it this archive is
+                                // invisible to `already_here`, so an interrupted
+                                // collection re-downloads everything it had - and
+                                // the rest of Eidos shows the row as Untracked.
+                                // Written AFTER the download so a free account,
+                                // which never gets this far, never pays for the
+                                // extra request.
+                                if let Ok(file) =
+                                    self.nexus.file_info(&gate, domain, mod_id, file_id)
+                                {
+                                    let _ = eidos_nexus::write_download_meta(
+                                        &dest, domain, &nxm, &url, &file, &remote,
+                                    );
+                                }
+                                Obtained::Ready(dest)
+                            }
                             Err(e) => Obtained::Failed(e),
                         }
                     }
@@ -153,18 +217,30 @@ impl Hooks for RealHooks<'_> {
     fn install(&mut self, m: &Mod, archive: &Path) -> Installed {
         let mods_dir = self.inst.mods_dir();
         let ml = self.inst.modlist();
-        let enabled: Vec<PathBuf> = ml
+        let mut enabled: Vec<PathBuf> = ml
             .iter()
             .filter(|x| x.is_active())
             .map(|x| x.path.clone())
             .collect();
+        for p in &self.installed_now {
+            if !enabled.contains(p) {
+                enabled.push(p.clone());
+            }
+        }
         let disabled: Vec<PathBuf> = ml
             .iter()
             .filter(|x| !x.is_active() && !x.is_separator())
+            .filter(|x| !self.installed_now.contains(&x.path))
             .map(|x| x.path.clone())
             .collect();
         let ctx = eidos_install::fomod_context(&self.game.data_path, &enabled, &disabled);
-        let name = safe(&m.name);
+        let mut name = safe(&m.name);
+        let key = crate::state::key_for(m, &self.collection_domain);
+        if mods_dir.join(&name).is_dir() && !self.known_members.contains(&key) {
+            let free = free_name(&mods_dir, &name);
+            self.renamed.push((m.name.clone(), free.clone()));
+            name = free;
+        }
 
         match eidos_install::open_archive_with(archive, &mods_dir, &name, &self.game_id, |_| {}) {
             Ok(eidos_install::Opened::Fomod(session)) => {
@@ -179,8 +255,15 @@ impl Hooks for RealHooks<'_> {
                     &ctx,
                     eidos_install::OverwritePolicy::Replace,
                 ) {
-                    Ok(rep) if unmatched.is_empty() => Installed::Ok(rep.name),
-                    Ok(rep) => Installed::Approximate(rep.name, unmatched),
+                    Ok(rep) => {
+                        self.register(&rep.name, &mods_dir);
+                        self.installed_now.push(mods_dir.join(&rep.name));
+                        if unmatched.is_empty() {
+                            Installed::Ok(rep.name)
+                        } else {
+                            Installed::Approximate(rep.name, unmatched)
+                        }
+                    }
                     Err(e) => Installed::Failed(e.to_string()),
                 }
             }
@@ -192,7 +275,11 @@ impl Hooks for RealHooks<'_> {
                 eidos_install::OverwritePolicy::Replace,
                 &ctx,
             ) {
-                Ok(rep) => Installed::Ok(rep.name),
+                Ok(rep) => {
+                    self.register(&rep.name, &mods_dir);
+                    self.installed_now.push(mods_dir.join(&rep.name));
+                    Installed::Ok(rep.name)
+                }
                 Err(e) => Installed::Failed(e.to_string()),
             },
             Err(e) => Installed::Failed(e.to_string()),
@@ -202,6 +289,17 @@ impl Hooks for RealHooks<'_> {
     fn progress(&mut self, done: usize, total: usize, member: &str) {
         (self.say)(format!("[{done}/{total}] {member}"));
     }
+}
+
+/// A folder name under `mods/` that nothing is using yet.
+fn free_name(mods_dir: &Path, wanted: &str) -> String {
+    for n in 2..100 {
+        let candidate = format!("{wanted} ({n})");
+        if !mods_dir.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    format!("{wanted} (collection)")
 }
 
 pub fn safe(name: &str) -> String {
@@ -281,12 +379,106 @@ pub fn apply_ordering(
         .iter()
         .filter_map(|n| list.iter().find(|m| &m.name == n).cloned())
         .collect();
-    if reordered.len() == list.len() {
+    // Only ever a permutation. Counting the entries is not enough: a name that
+    // landed in two slots keeps the count and loses a mod.
+    let mut before: Vec<&String> = names.iter().collect();
+    let mut after: Vec<&String> = merged.iter().collect();
+    before.sort();
+    after.sort();
+    if reordered.len() == list.len() && before == after {
         let _ = inst.save_modlist(&reordered);
     }
 }
 
-/// Enable the plugins the collection expects, and merge its LOOT rules.
+/// Turn on the plugins the collection expects, and turn off the ones it does
+/// not.
+///
+/// `collection.plugins` is a list of ACTIVATION, not a load order - Vortex
+/// writes a position into it and its own reader ignores that too; ordering is
+/// expressed as LOOT rules, which [`apply_plugin_rules`] merges. Under an
+/// opt-out plugin model most entries are already what they ask for; the one that
+/// matters is `"enabled": false`, an ESP the author deliberately unchecked,
+/// which would otherwise load.
+pub fn apply_plugin_states(
+    inst: &Instance,
+    game: &eidos_games::DetectedGame,
+    c: &Collection,
+    report: &mut Report,
+) {
+    if c.plugins.is_empty() {
+        return;
+    }
+    let Some(spec) = eidos_plugins::GameSpec::for_id(game.def.id) else {
+        return;
+    };
+    let Some(compatdata) = game.compatdata.as_ref() else {
+        report.loot_notes.push(Note {
+            subject: "plugins".into(),
+            detail: format!(
+                "no Proton prefix yet, so the {} plugin(s) the collection names were not \
+                 switched on",
+                c.plugins.len()
+            ),
+        });
+        return;
+    };
+    let local_dir = eidos_plugins::plugins_txt_dir(&compatdata.join("pfx"), &spec);
+    let _ = inst.ensure_profiles();
+    let prof = inst.active();
+    if prof.seed_plugin_state(&local_dir, &spec).is_err() {
+        report.loot_notes.push(Note {
+            subject: "plugins".into(),
+            detail: "the profile's plugin state could not be read, so the collection's \
+                     activations were not applied"
+                .into(),
+        });
+        return;
+    }
+    let state_dir = prof.plugins_state_dir();
+
+    // The same discovery a launch does: the game's own Data lowest, each enabled
+    // mod in list order, Overwrite last.
+    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
+    sources.extend(
+        inst.modlist()
+            .into_iter()
+            .filter(|m| m.is_active())
+            .map(|m| (m.name.clone(), m.path.clone())),
+    );
+    sources.push(("overwrite".to_string(), inst.overwrite_dir()));
+    let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
+    list.apply_prefix_state(&state_dir, &spec);
+    list.locked = prof.read_locked_order();
+    list.refresh(&spec);
+
+    let mut missing: Vec<String> = Vec::new();
+    for p in &c.plugins {
+        if p.name.trim().is_empty() {
+            continue;
+        }
+        if !list.set_enabled(&p.name, p.enabled) {
+            missing.push(p.name.clone());
+        }
+    }
+    list.refresh(&spec);
+    if let Err(e) = list.write_load_order(&state_dir, &spec) {
+        report.loot_notes.push(Note {
+            subject: "plugins".into(),
+            detail: format!("the collection's plugin activations could not be written: {e}"),
+        });
+        return;
+    }
+    // Shadow for tools that read the prefix; never fatal.
+    let _ = list.write_load_order(&local_dir, &spec);
+    for name in missing {
+        report.loot_notes.push(Note {
+            subject: name,
+            detail: "the collection expects this plugin and the instance does not have it".into(),
+        });
+    }
+}
+
+/// Merge the collection's LOOT rules into the instance's userlist.
 pub fn apply_plugin_rules(
     inst: &Instance,
     game: &eidos_games::DetectedGame,
@@ -388,6 +580,14 @@ pub fn apply_plugin_rules(
                 report.loot_notes.push(Note {
                     subject: d,
                     detail: "no such LOOT group exists, so the assignment was dropped".into(),
+                });
+            }
+            for d in m.dangling_after {
+                report.loot_notes.push(Note {
+                    subject: d,
+                    detail: "the collection's group would load after a group nothing defines, \
+                             which stops LOOT sorting entirely, so that part was dropped"
+                        .into(),
                 });
             }
             if m.rules_added > 0 {

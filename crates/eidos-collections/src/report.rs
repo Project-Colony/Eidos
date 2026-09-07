@@ -42,6 +42,16 @@ pub struct Report {
     pub tools_expected: Vec<Note>,
     /// Top-level manifest sections this build does not understand.
     pub unknown_sections: Vec<String>,
+    /// Members installed under a different folder name because a mod that is
+    /// not this collection's already had that one.
+    pub renamed: Vec<Note>,
+    /// Parts of a member this build parses and does not yet apply: binary
+    /// patches, file overrides.
+    ///
+    /// Kept separate from `approximate` because the member itself installed
+    /// fine - but the collection asked for something more, and a report that
+    /// leaves it out is claiming an install it did not perform.
+    pub deferred: Vec<Note>,
 }
 
 impl Report {
@@ -56,6 +66,12 @@ impl Report {
             && self.rules_lost.is_empty()
             && self.rule_cycles.is_empty()
             && self.loot_notes.is_empty()
+            // A section this build has never seen is a part of the recipe that
+            // was not followed, and it is the whole reason the parser records
+            // them. Printing "not applied" and "as its author built it" in one
+            // report makes the word worthless.
+            && self.unknown_sections.is_empty()
+            && self.deferred.is_empty()
     }
 
     /// Whether anything at all is still to do.
@@ -106,7 +122,18 @@ impl Report {
                 out.push_str(&format!("  {m}\n"));
             }
         }
+        section(
+            &mut out,
+            "Installed under a different name, because a mod of yours already had it:",
+            &self.renamed,
+        );
         section(&mut out, "Load order:", &self.loot_notes);
+        section(
+            &mut out,
+            "Installed, but this version of Eidos does not apply everything the \
+             collection asked for:",
+            &self.deferred,
+        );
         section(
             &mut out,
             "Tools this collection expects you to already have:",
@@ -119,7 +146,11 @@ impl Report {
                 self.unknown_sections.join(", ")
             ));
         }
-        if self.is_faithful() {
+        // Skipped members are the USER's decision, so they do not make an
+        // install unfaithful - `--no-optional` would otherwise brand every later
+        // resumed run of that collection. They do make this sentence false,
+        // though, so it is not printed beside a list of what is missing.
+        if self.is_faithful() && self.skipped.is_empty() {
             out.push_str("\nThe collection is installed as its author built it.\n");
         }
         out
@@ -213,5 +244,31 @@ mod tests {
             ..Report::default()
         };
         assert!(finished_but_wrong.is_complete() && !finished_but_wrong.is_faithful());
+    }
+    #[test]
+    fn a_report_never_says_both_not_applied_and_as_its_author_built_it() {
+        for r in [
+            Report {
+                unknown_sections: vec!["somethingNew".into()],
+                ..Report::default()
+            },
+            Report {
+                deferred: vec![note("A Patch", "2 binary patch(es)")],
+                ..Report::default()
+            },
+        ] {
+            let t = r.render();
+            assert!(!r.is_faithful(), "{t}");
+            assert!(!t.contains("as its author built it"), "{t}");
+        }
+        // A member the USER skipped is their decision, not a defect: it must not
+        // brand every later resumed run of that collection unfaithful. It does
+        // make the closing sentence false, so that sentence is not printed.
+        let skipped = Report {
+            skipped: vec![note("D", "you said no")],
+            ..Report::default()
+        };
+        assert!(skipped.is_faithful());
+        assert!(!skipped.render().contains("as its author built it"));
     }
 }

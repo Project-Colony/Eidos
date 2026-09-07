@@ -40,6 +40,45 @@ use std::time::Duration;
 
 pub const API_BASE: &str = "https://api.nexusmods.com/v1";
 
+/// The API host, and the only place a request may carry the account's token.
+const API_HOST: &str = "api.nexusmods.com";
+
+/// Turn a payload-supplied link into a Nexus API URL, or refuse it.
+///
+/// A relative path is prefixed. An absolute URL is accepted only when it is
+/// `https` on the API host - anything else would send the OAuth bearer token to
+/// a host the payload picked.
+fn api_url(link: &str) -> Option<String> {
+    let link = link.trim();
+    if link.is_empty() {
+        return None;
+    }
+    if !link.contains("://") {
+        // `//host/path` is protocol-relative: some parsers read the authority
+        // out of it, so it is not a path however this one would prefix it.
+        if link.starts_with("//") {
+            return None;
+        }
+        return Some(format!(
+            "https://{API_HOST}{}{link}",
+            if link.starts_with('/') { "" } else { "/" }
+        ));
+    }
+    let rest = link.strip_prefix("https://")?;
+    // Everything up to the first `/`, `?` or `#` is the authority. Userinfo
+    // (`user@host`) would otherwise let `https://api.nexusmods.com@evil/` pass.
+    let authority = rest
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if authority.contains('@') {
+        return None;
+    }
+    let host = authority.split(':').next().unwrap_or_default();
+    (host == API_HOST).then(|| link.to_string())
+}
+
 pub mod collections;
 pub mod oauth;
 
@@ -1386,11 +1425,16 @@ impl Nexus {
                     .to_string(),
             );
         }
-        let url = if download_link.starts_with("http") {
-            download_link.to_string()
-        } else {
-            format!("https://api.nexusmods.com{download_link}")
-        };
+        // `downloadLink` is a string out of the GraphQL reply, so it is remote
+        // data choosing the destination of a request that carries the account's
+        // OAuth token. Every other authenticated call in this crate is built
+        // from `API_BASE` and can only ever address Nexus; this one has to check
+        // for itself before the credential goes on it.
+        let url = api_url(download_link).ok_or_else(|| {
+            format!(
+                "this collection's download link does not point at the Nexus API ({download_link})"
+            )
+        })?;
         let Credential::Bearer(token) = &self.credential;
         let mut resp = self
             .agent
@@ -3085,5 +3129,30 @@ mod tests {
             Nexus::with_credential(Credential::Bearer("t".into())).credential_kind(),
             "oauth"
         );
+    }
+    #[test]
+    fn a_download_link_out_of_a_payload_cannot_redirect_the_account_token() {
+        // The one authenticated request in this crate whose URL comes from a
+        // server payload rather than from API_BASE.
+        for good in [
+            "/v1/collections/download/12",
+            "v1/collections/download/12",
+            "https://api.nexusmods.com/v1/collections/download/12",
+            "https://API.NexusMods.com/v1/collections/download/12",
+        ] {
+            assert!(api_url(good).is_some(), "{good}");
+        }
+        for bad in [
+            "",
+            "  ",
+            "http://api.nexusmods.com/v1/x",
+            "https://evil.example/v1/x",
+            "https://api.nexusmods.com.evil.example/v1/x",
+            "https://api.nexusmods.com@evil.example/v1/x",
+            "ftp://api.nexusmods.com/v1/x",
+            "//evil.example/v1/x",
+        ] {
+            assert!(api_url(bad).is_none(), "{bad}");
+        }
     }
 }

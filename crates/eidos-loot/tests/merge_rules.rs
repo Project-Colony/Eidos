@@ -146,11 +146,102 @@ fn the_users_own_group_choice_survives_the_collection() {
     let rules = [UserRule {
         plugin: "A.esp".into(),
         after: vec![],
-        group: Some("Early Loaders".into()),
+        group: Some("Late Loaders".into()),
     }];
     let m = merge_user_rules(&b.view(), &rules, &[]).expect("merge");
     assert_eq!(m.kept_user_group, vec!["A.esp".to_string()]);
     assert_eq!(m.rules_added, 0, "nothing of the user's was overwritten");
+    let _ = fs::remove_dir_all(&b.root);
+}
+
+#[test]
+fn asking_for_the_group_that_is_already_set_is_not_a_disagreement() {
+    // Re-running is the documented way to finish an interrupted collection, and
+    // this function runs at the end of every run - so the second pass always
+    // meets its own output. Calling that "the user decided otherwise" would put
+    // a line in every re-run's report and bury the real ones.
+    let b = bench("samegroup");
+    fs::write(
+        &b.userlist,
+        "plugins:\n  - name: 'A.esp'\n    group: 'Early Loaders'\n",
+    )
+    .unwrap();
+    let rules = [UserRule {
+        plugin: "A.esp".into(),
+        after: vec![],
+        group: Some("Early Loaders".into()),
+    }];
+    let m = merge_user_rules(&b.view(), &rules, &[]).expect("merge");
+    assert!(m.kept_user_group.is_empty(), "{:?}", m.kept_user_group);
+    let _ = fs::remove_dir_all(&b.root);
+}
+
+#[test]
+fn a_collection_group_whose_after_names_nothing_is_not_written() {
+    // libloot builds the group graph before it sorts ANYTHING, so one undefined
+    // name in an `after` list makes every later sort of this instance fail -
+    // including the ones the user runs long after the collection is forgotten.
+    let b = bench("danglingafter");
+    let groups = [GroupDef {
+        name: "Collection Late".into(),
+        after: vec!["default".into(), "A Group Nobody Defines".into()],
+    }];
+    let m = merge_user_rules(&b.view(), &[], &groups).expect("merge");
+    assert_eq!(m.groups_added, 1);
+    assert_eq!(m.dangling_after.len(), 1, "{:?}", m.dangling_after);
+    assert!(m.dangling_after[0].contains("A Group Nobody Defines"));
+    let written = fs::read_to_string(&b.userlist).unwrap();
+    assert!(
+        !written.contains("A Group Nobody Defines"),
+        "it must not reach the file: {written}"
+    );
+    // And the file libloot has to read back is one libloot accepts.
+    let m2 = merge_user_rules(&b.view(), &[], &groups).expect("the userlist reloads");
+    assert_eq!(m2.groups_added, 0, "the second run adds nothing");
+    let _ = fs::remove_dir_all(&b.root);
+}
+
+#[test]
+fn one_group_named_twice_does_not_produce_a_userlist_libloot_refuses() {
+    let b = bench("dupgroup");
+    let groups = [
+        GroupDef {
+            name: "Collection Late".into(),
+            after: vec!["default".into()],
+        },
+        GroupDef {
+            name: "Collection Late".into(),
+            after: vec!["default".into()],
+        },
+    ];
+    let m = merge_user_rules(&b.view(), &[], &groups).expect("merge");
+    assert_eq!(m.groups_added, 1, "one group, not two");
+    // The proof is that libloot can load what was written.
+    merge_user_rules(&b.view(), &[], &[]).expect("the userlist reloads");
+    let _ = fs::remove_dir_all(&b.root);
+}
+
+#[test]
+fn a_collection_extending_an_existing_group_is_applied_not_dropped() {
+    // In LOOT a userlist group sharing a name with an existing one does not
+    // replace it, it adds to its `after` list. Dropping the collection's entry
+    // silently discards the author's placement.
+    let b = bench("extend");
+    fs::write(
+        &b.userlist,
+        "groups:\n  - name: 'Collection Late'\n    after:\n      - default\n",
+    )
+    .unwrap();
+    let groups = [GroupDef {
+        name: "Collection Late".into(),
+        after: vec!["Early Loaders".into()],
+    }];
+    // "Early Loaders" is a real masterlist group in this bench's masterlist.
+    let m = merge_user_rules(&b.view(), &[], &groups).expect("merge");
+    assert_eq!(m.groups_extended, vec!["Collection Late".to_string()]);
+    let written = fs::read_to_string(&b.userlist).unwrap();
+    assert!(written.contains("Early Loaders"), "{written}");
+    assert!(written.contains("default"), "the old entry survives: {written}");
     let _ = fs::remove_dir_all(&b.root);
 }
 
