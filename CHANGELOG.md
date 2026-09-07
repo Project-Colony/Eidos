@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/Project-Colony/Eidos/compare/v1.15.0...v1.16.0) (2026-09-07)
+
+
+### Features
+
+* **collections:** install a Nexus collection the way its author built it ([554ccd4](https://github.com/Project-Colony/Eidos/commit/554ccd4f8b55e618d9012c4c022b4e335335f988))
+
 ## [1.15.0](https://github.com/Project-Colony/Eidos/compare/v1.14.3...v1.15.0) (2026-09-07)
 
 
