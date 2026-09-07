@@ -1,0 +1,13 @@
+[package]
+name = "eidos-collections"
+version.workspace = true
+description = "Nexus collections: read a collection's manifest and install it the way its author built it"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+# `collection.json` is JSON, and a tolerant derive is exactly what a format with
+# no version field and no closed set of keys needs.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

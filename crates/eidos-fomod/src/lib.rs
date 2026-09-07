@@ -12,6 +12,7 @@
 mod engine;
 mod model;
 mod parse;
+mod replay;
 
 pub use engine::{
     build_default_plan, build_plan, default_selection, effective_type, eval,
@@ -20,3 +21,4 @@ pub use engine::{
 };
 pub use model::*;
 pub use parse::decode_xml;
+pub use replay::{replay, RecordedGroup, RecordedOption, RecordedStep, Replay};
