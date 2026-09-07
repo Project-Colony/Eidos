@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
 
 # Utiliser Eidos
 
@@ -19,6 +19,8 @@ eidos import skyrimse <mo2-profile>  # adopter l'ordre et l'état des plugins d'
 eidos sort skyrimse               # trier l'ordre de chargement des plugins avec LOOT
 eidos play skyrimse               # afficher ce qui serait monté
 eidos play skyrimse -- <command>  # exécuter <command> avec les mods montés sur le jeu
+eidos pack skyrimse backup.eidos  # toute l'instance dans un seul fichier, pour la déplacer ailleurs
+eidos unpack backup.eidos <folder>   # la remettre en place sur l'autre machine
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` et `eidos export`
@@ -48,9 +50,10 @@ avez créées ou ouvertes sont mémorisées (la plus récemment utilisée en pre
 dans `~/.config/Colony/Eidos/instances.ini` ; l'écran d'accueil de la GUI les
 liste pour les ouvrir en un clic, le lancement Steam retombe sur celle à laquelle
 vous avez joué en dernier, et le gestionnaire `nxm://` télécharge dedans. Deux
-réserves à connaître : déplacer un dossier portable conserve tout, sauf les
-entrées d'outils que vous avez enregistrées avec des chemins absolus vers
-l'ancien emplacement (à ré-ajouter), et le cache de runtimes partagé
+réserves à connaître : déplacer un dossier portable à la main conserve tout, sauf
+les entrées d'outils que vous avez enregistrées avec des chemins absolus vers
+l'ancien emplacement (`eidos pack` / `eidos unpack`, plus bas, les corrigent pour
+vous ; un simple `mv` ne le fait pas), et le cache de runtimes partagé
 (`~/.local/share/Colony/Eidos/runtimes/`) reste délibérément global à la
 machine - un hôte .NET de 78 Mo n'est pas par instance.
 
@@ -104,6 +107,93 @@ utilisateur ; le déploiement des mods est identique dans les deux cas.
 Pourquoi l'ancien conseil `setcap` a disparu - et pourquoi le passthrough FUSE
 est livré désactivé - est expliqué dans
 [troubleshooting.fr.md](troubleshooting.md#pourquoi-le-passthrough-est-désactivé-par-défaut).
+
+## Déplacer une instance vers une autre machine
+
+`eidos pack` écrit une instance entière - chaque mod, l'ordre de chargement, tous
+les profils, l'Overwrite avec vos sauvegardes dedans, et les archives depuis
+lesquelles tout a été installé - dans un seul fichier. `eidos unpack` la remet en
+place :
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # ou donnez un dossier : nommé d'après le jeu et la date
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # sur l'autre machine
+```
+
+`eidos pack --dry-run` liste exactement ce qui y entrerait, ce qui n'y entrerait
+pas et pourquoi, et la place qu'il lui faut, sans rien écrire. `eidos unpack
+--info` fait la même chose pour un fichier que vous avez déjà.
+
+Un fichier `.eidos` est une archive 7-Zip sous un nom à elle, ce qui est un choix
+plutôt qu'un déguisement : 7-Zip est déjà nécessaire pour installer un mod tout
+court, cela n'ajoute donc aucune dépendance, et si vous perdez un jour Eidos
+votre sauvegarde s'ouvre toujours dans n'importe quel archiveur que vous avez.
+Elle est **non solide**, si bien qu'un fichier peut être extrait d'une sauvegarde
+de 70 Go sans décompresser tout ce qui le précède, et elle est compressée en
+LZMA2 avec `-mx1` - environ 43 % de l'original sur une liste chargée en textures,
+en une fraction du temps que `-mx9` passe à gagner quelques points de plus. Les
+textures et les meshes sont déjà des formats compressés ; il ne reste presque
+rien à trouver pour un dictionnaire plus grand. `--level` (0, 1, 3, 5, 7, 9)
+passe outre si vous n'êtes pas d'accord sur votre propre contenu, et
+`--no-downloads` laisse `downloads/` de côté.
+
+L'empaquetage prend le verrou de l'instance, il ne peut donc pas tourner pendant
+que le jeu ou un autre Eidos écrit dans cette instance - la sauvegarde est un
+instantané, pas un flou. Elle est écrite sous un nom en `.part` et renommée à la
+fin, si bien qu'un empaquetage interrompu laisse quelque chose de manifestement
+inachevé plutôt qu'un fichier `.eidos` qui a l'air complet et ne l'est pas.
+
+### Ce qui n'y est pas, et pourquoi
+
+| Laissé de côté | Pourquoi |
+| --- | --- |
+| Le préfixe Proton | Il a la forme de la machine (mappages de lecteurs, une vue `Z:` de *ce* système de fichiers) et Eidos le reconstruit en une minute avec `eidos prereqs <instance> --install`. L'emporter doublerait à peu près l'archive pour livrer quelque chose que l'autre machine doit de toute façon régénérer. |
+| Le jeu | Une instance modifie un jeu qu'elle ne contient pas. Installez-le depuis Steam là-bas. |
+| Les outils hors de l'instance | xEdit, DynDOLOD et consorts sont des binaires tiers avec leurs propres installeurs. Ils sont **nommés** dans l'archive, si bien que le dépaquetage vous dit exactement lesquels manquent sur la nouvelle machine. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Des traces de la machine qui a fait la sauvegarde. `prereqs.done` en particulier prétendrait que les bibliothèques runtime sont déjà installées dans un préfixe qui n'est pas là. |
+| `loot/` | Un cache de masterlist qu'Eidos re-télécharge à la demande. |
+| `.base/`, `.base-root/` | Des points de montage vides où les fichiers du jeu lui-même sont mis de côté pendant une session. |
+| Les fichiers à moitié écrits | Un téléchargement en pause (`*.unfinished`), une écriture atomique en cours (`*.eidos-tmp*`). |
+| Les liens symboliques | 7-Zip en suivrait un et copierait ce qu'il désigne, ce qui, pour un lien absolu, veut dire tirer une arborescence étrangère dans votre sauvegarde. Ils sont signalés à la place. |
+
+Chacun d'eux figure dans `eidos-backup.ini` à la racine de l'archive, avec sa
+raison - si bien que la réponse à « qu'est-ce qui n'est pas là-dedans ? » est
+`cat`, pas une supposition. Le même fichier note où l'instance vivait, quel
+profil était actif, quelle taille elle fait une fois dépaquetée, et de quels
+outils la nouvelle machine aura besoin.
+
+Les enregistrements de téléchargement (`downloads/*.meta`) y entrent avec leur
+ligne `url=` **vidée**. Cette URL est un lien Nexus signé : il cesse de
+fonctionner en quelques heures, et il porte le `user_id` du compte qui a
+téléchargé le fichier. Une sauvegarde est faite pour être remise à quelqu'un
+d'autre, elle ne transporte donc pas cela. Tout ce qui rend le téléchargement
+retrouvable - l'identifiant du mod, celui du fichier, la version - reste.
+
+### Ce que le dépaquetage répare
+
+Une simple copie du dossier laisserait chaque bouton d'outil pointer sur un
+chemin de l'ancienne machine. `eidos unpack` réécrit les valeurs qui nomment
+l'ancienne racine de l'instance et seulement celles-là : `exe`, `workdir` et les
+clés `arg` numérotées dans `tools.ini`, et `installationFile` dans le `meta.ini`
+de chaque mod. Un outil qui n'a jamais été à l'intérieur de l'instance
+(`/opt/xedit/SSEEdit.exe`) est laissé exactement tel quel et listé comme quelque
+chose à réinstaller - deviner où est passé le xEdit de quelqu'un d'autre, c'est
+de l'invention, pas de la réparation. Il corrige aussi le fait que l'instance se
+dise centrale ou portable, si bien que les commandes suivantes la cherchent là où
+elle est désormais.
+
+Le dépaquetage refuse un dossier qui n'est pas vide (passez `--force` si vous
+voulez vraiment écraser), un disque trop petit pour le chiffre annoncé par le
+manifeste lui-même, une archive faite par un Eidos plus récent que le vôtre, et
+toute archive contenant une entrée qui serait écrite *hors* du dossier que vous
+avez choisi.
+
+Ensuite :
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # reconstruire le préfixe Proton
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

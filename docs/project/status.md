@@ -160,6 +160,23 @@ README carries only the short version; this is the receipts.
       `plugins.txt`/`loadorder.txt` verbatim (the formats are already identical).
       Mods MO2 listed that are not installed here are reported rather than dropped,
       and local mods MO2 never knew about are kept at the bottom
+- [x] Whole-instance transfer (`eidos pack` / `eidos unpack`, `eidos-transfer`) -
+      an entire instance in ONE `.eidos` file: mods, load order, every profile,
+      the Overwrite with its saves, and the archives it was all installed from.
+      A 7-Zip archive under a name of its own, non-solid so one file can be
+      pulled out of a 70 GB backup, LZMA2 `-mx1` (43.0% of 1199 MB of measured
+      real dds/nif content, where `-mx9` spends ten times the time to reach ~38%).
+      The parts a `cp -r` gets wrong are the point: empty directories, which a
+      file-only list drops (64 of them in a real 57 000-file instance); names
+      7-Zip would read as patterns; symlinks it would FOLLOW into a foreign tree;
+      and the signed `downloads/*.meta` URL that expires in hours and carries the
+      downloader's `user_id`. Unpacking repairs the values naming the old
+      instance root and only those (`exe`/`workdir`/`arg<N>` in `tools.ini`,
+      `installationFile` in each `meta.ini`) and corrects central-vs-portable.
+      The Proton prefix, the game and third-party tools stay out and are NAMED in
+      `eidos-backup.ini` with every other exclusion and its reason. Not yet in
+      the GUI: a live progress bar for a twenty-minute job is infrastructure the
+      window does not have
 - [x] Overwrite-to-mod - turn what the game and the tools wrote into a first-class
       mod in one step, which is the other half of the generate-then-play loop
 - [x] VFS correctness pass against Fluorine's implementation - copy-up no longer

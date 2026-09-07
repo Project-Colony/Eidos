@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,8 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
+eidos unpack backup.eidos <folder>   # zet ze terug op de andere machine
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` en `eidos export` maken
@@ -45,9 +47,10 @@ je gemaakt of geopend hebt worden onthouden (meest recent gebruikte eerst) in
 `~/.config/Colony/Eidos/instances.ini`; het welkomscherm van de GUI toont ze om
 met één klik te openen, de Steam-start landt op de laatst gespeelde, en de
 `nxm://`-handler downloadt erin. Twee kanttekeningen zijn het weten waard: een
-draagbare map verplaatsen behoudt alles behalve tool-vermeldingen die je met
-absolute paden naar de oude locatie geregistreerd hebt (die opnieuw toevoegen),
-en de gedeelde runtime-cache (`~/.local/share/Colony/Eidos/runtimes/`) blijft
+draagbare map met de hand verplaatsen behoudt alles behalve tool-vermeldingen die
+je met absolute paden naar de oude locatie geregistreerd hebt (`eidos pack` /
+`eidos unpack`, hieronder, repareren die voor je; een gewone `mv` niet), en de
+gedeelde runtime-cache (`~/.local/share/Colony/Eidos/runtimes/`) blijft
 bewust machinebreed - een .NET-host van 78 MB hoort niet per instantie.
 
 Eidos bewaart zijn eigen bestanden onder `Colony/Eidos`, de indeling die elk
@@ -97,6 +100,90 @@ identiek uitgerold.
 Waarom het oude `setcap`-advies weg is - en waarom FUSE-passthrough uit
 geleverd wordt - wordt uitgelegd in
 [troubleshooting.nl.md](troubleshooting.md#waarom-passthrough-standaard-uit-staat).
+
+## Een instantie naar een andere machine verhuizen
+
+`eidos pack` schrijft een hele instantie - elke mod, de laadvolgorde, alle
+profielen, de Overwrite met je saves erin, en de archieven waaruit alles
+geïnstalleerd is - weg naar één enkel bestand. `eidos unpack` zet ze terug:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # of geef een map op: genoemd naar het spel en de datum
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # op de andere machine
+```
+
+`eidos pack --dry-run` somt precies op wat erin zou gaan, wat niet en waarom, en
+hoeveel ruimte het nodig heeft, zonder iets te schrijven. `eidos unpack --info`
+doet hetzelfde voor een bestand dat je al hebt.
+
+Een `.eidos`-bestand is een 7-Zip-archief onder een eigen naam, en dat is een
+keuze, geen vermomming: 7-Zip is toch al nodig om überhaupt een mod te
+installeren, dus dit voegt geen afhankelijkheid toe, en raak je Eidos ooit kwijt,
+dan opent je back-up nog steeds in elk archiefprogramma dat je hebt. Het is
+**niet-solide**, dus één bestand kan uit een back-up van 70 GB gehaald worden
+zonder alles wat ervoor staat uit te pakken, en het wordt gecomprimeerd met LZMA2
+op `-mx1` - ongeveer 43% van het origineel bij een textuurzware lijst, in een
+fractie van de tijd die `-mx9` besteedt om een paar punten meer te winnen.
+Texturen en meshes zijn al gecomprimeerde formaten; er blijft heel weinig over
+voor een groter woordenboek om te vinden. `--level` (0, 1, 3, 5, 7, 9) overstemt
+dat als je het voor je eigen inhoud oneens bent, en `--no-downloads` laat
+`downloads/` weg.
+
+Packen neemt het slot van de instantie, dus het kan niet draaien terwijl het spel
+of een andere Eidos naar die instantie schrijft - de back-up is een momentopname,
+geen veeg. Ze wordt onder een `.part`-naam geschreven en op het eind hernoemd,
+zodat een onderbroken pack iets zichtbaar onafs achterlaat in plaats van een
+`.eidos`-bestand dat compleet lijkt en het niet is.
+
+### Wat er niet in zit, en waarom
+
+| Weggelaten | Waarom |
+| --- | --- |
+| Het Proton-prefix | Het is naar de machine gevormd (schijftoewijzingen, een `Z:`-kijk op *dit* bestandssysteem) en Eidos bouwt het in een minuut opnieuw op met `eidos prereqs <instance> --install`. Het meenemen zou het archief ruwweg verdubbelen om iets te versturen dat de andere machine toch opnieuw moet aanmaken. |
+| Het spel | Een instantie modt een spel dat ze niet bevat. Installeer het daarginds vanaf Steam. |
+| Tools buiten de instantie | xEdit, DynDOLOD en consorten zijn programma's van derden met hun eigen installatieprogramma's. Ze worden in het archief wel **benoemd**, dus bij het uitpakken hoor je precies welke er op de nieuwe machine ontbreken. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Verslagen van de machine die de back-up gemaakt heeft. `prereqs.done` zou in het bijzonder beweren dat de runtime-bibliotheken al geïnstalleerd zijn in een prefix dat er niet is. |
+| `loot/` | Een cache van de masterlist die Eidos op verzoek opnieuw ophaalt. |
+| `.base/`, `.base-root/` | Lege koppelpunten waar de eigen bestanden van het spel tijdens een sessie gestald worden. |
+| Halfgeschreven bestanden | Een gepauzeerde download (`*.unfinished`), een atomaire schrijfactie onderweg (`*.eidos-tmp*`). |
+| Symbolische links | 7-Zip zou er een volgen en kopiëren waar hij naar wijst, wat bij een absolute link betekent dat er een vreemde boom je back-up in getrokken wordt. Ze worden in plaats daarvan gemeld. |
+
+Elk van deze belandt in `eidos-backup.ini` in de wortel van het archief, met de
+reden erbij - dus het antwoord op "wat zit hier niet in" is `cat`, geen gok.
+Datzelfde bestand noteert waar de instantie vroeger stond, welk profiel actief
+was, hoe groot ze uitgepakt wordt, en welke tools de nieuwe machine nodig zal
+hebben.
+
+Downloadverslagen (`downloads/*.meta`) gaan mee met hun `url=`-regel
+**leeggemaakt**. Die URL is een ondertekende Nexus-link: hij houdt binnen enkele
+uren op te werken, en hij draagt het `user_id` van het account dat het bestand
+gedownload heeft. Een back-up is gemaakt om aan iemand anders gegeven te worden,
+dus draagt ze dat niet mee. Alles wat de download terugvindbaar maakt - het
+mod-id, het bestands-id, de versie - blijft.
+
+### Wat uitpakken repareert
+
+Een gewone kopie van de map zou elke toolknop laten wijzen naar een pad op de
+oude machine. `eidos unpack` herschrijft de waarden die de oude instantiewortel
+benoemen en alleen die: `exe`, `workdir` en de genummerde `arg`-sleutels in
+`tools.ini`, en `installationFile` in de `meta.ini` van elke mod. Een tool die
+nooit binnen de instantie zat (`/opt/xedit/SSEEdit.exe`) blijft precies zoals hij
+was en wordt vermeld als iets om opnieuw te installeren - gokken waar de xEdit
+van iemand anders gebleven is, is verzinnen, geen repareren. Het corrigeert ook
+of de instantie zichzelf centraal of draagbaar noemt, zodat latere opdrachten
+haar zoeken waar ze nu staat.
+
+Uitpakken weigert een map die niet leeg is (geef `--force` mee als je er echt
+overheen wilt), een schijf die te klein is voor het cijfer van het manifest zelf,
+een archief gemaakt door een nieuwere Eidos dan de jouwe, en elk archief met een
+item dat *buiten* de door jou gekozen map geschreven zou worden.
+
+Daarna:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # het Proton-prefix opnieuw opbouwen
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 
