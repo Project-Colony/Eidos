@@ -2571,8 +2571,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
              author gave each mod's installer, the deployment order and its LOOT rules - and \
              applies them. What it cannot do for you is fetch the member mods on a free Nexus \
              account: those need the site's own download button, and the report names each one \
-             with its page. Binary patches and bundled members are not applied yet, and the \
-             report says so rather than passing over it. Open takes you to the exact file the \
+             with its page - fetch them and install again, and it picks them up. Binary \
+             patches, file overrides and bundled members are not applied yet, and the report \
+             says so rather than passing over it. Open takes you to the exact file the \
              collection pins.",
         )
         .size(10.0),

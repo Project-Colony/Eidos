@@ -549,10 +549,26 @@ pub fn read(text: &str) -> Result<Read, String> {
     }
     unknown_sections.sort();
     unknown_sections.dedup();
+    // Kept before the value is consumed, so an empty result can say WHY.
+    let mods_shape = match obj.get("mods") {
+        None | Some(serde_json::Value::Null) => "absent",
+        Some(serde_json::Value::Array(a)) if a.is_empty() => "empty",
+        Some(serde_json::Value::Array(_)) => "a list",
+        Some(_) => "not a list",
+    };
     let collection: Collection = serde_json::from_value(raw)
         .map_err(|e| format!("collection.json is not shaped like a collection: {e}"))?;
     if collection.mods.is_empty() {
-        return Err("collection.json lists no mods".to_string());
+        // Told apart, because they are different problems: a manifest with no
+        // members is a strange collection, and one whose `mods` could not be
+        // read at all is a broken file.
+        return Err(match mods_shape {
+            "not a list" => {
+                "collection.json has a \"mods\" that is not a list of members".to_string()
+            }
+            "a list" => "collection.json lists members this build could not read at all".to_string(),
+            _ => "collection.json lists no mods".to_string(),
+        });
     }
     Ok(Read {
         collection,
