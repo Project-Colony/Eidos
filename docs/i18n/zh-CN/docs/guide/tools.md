@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# 工具:xEdit、BodySlide、DynDOLOD、FNIS
+# 工具:xEdit、BodySlide、DynDOLOD, PGPatcher、FNIS
 
 通过 Eidos 运行的工具看到的是**合并视图**,就在游戏自己的 Proton 前缀里面。
 它读到的正是游戏会读到的东西 - 每一个启用的模组,按优先级排列 - 而它写出的
@@ -17,6 +17,8 @@ LOOT 一直在警告的 dirty edits 所对应的按钮。Eidos 按文件名在�
 - **本实例的 `mods/`**,MO2 用户就是把工具装在那里;
 - 你在设置里指定的**工具文件夹**(Tools -> Tools folder),用于实例之间共享的
   那个目录 - 诸如 `/mnt/Games/Tools`。
+
+`PGPatcher.exe` 在 Creation Engine 系列游戏中以同样的方式被找到，并且带着一个缺了就无法工作的参数 - 见[下文](#为什么-pgpatcher-需要---ignore-mo2vfscheck)。
 
 这份列表按游戏区分,所以 Skyrim 实例永远不会被塞上 Fallout 的编辑器。搜索到
 第四层就停,因为一个模组池有几十万个文件,而这在每次构建工具列表时都要跑一遍;
@@ -109,6 +111,10 @@ Tools -> Executables -> (your tool) -> Capture output into: FNIS Output
 Executables 对话框中的 `Prereqs` 字段是可以编辑的 - 检测出来的是默认值,
 不是规矩。
 
+标题同样决定**参数**，只为那一个需要谁也猜不到的参数的工具：标题中含
+`pgpatcher`（或它的旧名 `parallaxgen`）就会得到 `--ignore-mo2vfscheck`。原因，
+以及它为何不是可选项，见[下文](#为什么-pgpatcher-需要---ignore-mo2vfscheck)。
+
 ### 三种前置
 
 **第一类 - 自带的 DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dx11_43`)。Eidos
@@ -154,6 +160,39 @@ Eidos 用系统的 `winetricks`,配上 Proton 自己的 `wine` 和游戏前缀�
 这样就绕开了 Steam 的 pressure-vessel 容器,以及 protontricks 与 Proton-GE
 不匹配的问题。声明了某个未安装的第二类 verb 的工具照样会启动,只是带一条
 点名该 verb 和修复命令的警告 - 用户可能从别处已经有了。
+
+### 为什么 PGPatcher 需要 `--ignore-mo2vfscheck`
+
+PGPatcher 会重写网格和插件，让你装的贴图模组——原版、视差、complex material、
+PBR——在每个表面上都用对的着色器。它拒绝在模组管理器之外运行，这是对的：对一个
+未经管理的游戏目录打补丁是破坏性的。
+
+问题出在它「怎么」检查：它去找 **usvfs**，也就是 MO2 在 Windows 下注入游戏的
+DLL 挂钩层。Eidos 没有，也永远不会有——合并视图是一个 FUSE 挂载，Wine 走进去时
+根本不知道它存在——所以检查什么也找不到，工具在做任何事之前就立刻退出：
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+而且它点名的还是用户根本没在运行的程序。作者本人对两份 Linux 报告
+（[#716][pg716] 与 [#725][pg725]，都来自 Fluorine，即 MO2 的 Linux 分支，出于
+同样的原因基于 FUSE）给出的答案，就是一个跳过该检查的开关。
+
+因此 Eidos 会替你预填。在模组池中被找到的 PGPatcher 出现时参数已经设好；在
+Executables 对话框的标题里输入 `PGPatcher`，Arguments 栏也会以同样方式被填上。
+你输入的内容永远优先：预填只会填你留空的栏位，和上面的前置条件规则一致。
+
+清单在 `default_args`（`crates/eidos-instance/src/tools.rs`），紧挨着
+`default_prereqs`。它只有一条，但一条就足以让它成为一个函数：开关谁也猜不到，
+而它所避免的失败点的还是别的程序的名字。
+
+运行时它什么都不需要，这对 .NET 工具来说少见：它自带运行时（`dotnetlib/`，附有
+声明 `includedFrameworks` 的 `runtimeconfig.json`），并把 Microsoft CRT 的 DLL
+放在可执行文件旁边。Prereqs 留空即可。
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## 前缀里的游戏路径
 

@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Strumenti: xEdit, BodySlide, DynDOLOD, FNIS
+# Strumenti: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Uno strumento eseguito attraverso Eidos vede **la vista unita**, dentro il
 prefisso Proton del gioco stesso. Legge ciò che leggerà il gioco - ogni mod
@@ -19,6 +19,8 @@ LOOT continua ad avvertire. Eidos li cerca, per nome di file, in:
 - **la `mods/` di questa istanza**, dove gli utenti MO2 installano gli strumenti;
 - la **cartella degli strumenti** che imposti in Settings (Tools -> Tools
   folder), per la directory condivisa tra istanze - `/mnt/Games/Tools` e simili.
+
+`PGPatcher.exe` viene trovato allo stesso modo sui giochi Creation Engine, e arriva con un argomento senza il quale non puo funzionare - vedi [piu sotto](#perche-pgpatcher-ha-bisogno-di---ignore-mo2vfscheck).
 
 L'elenco è per gioco, quindi a un'istanza di Skyrim non viene mai proposto
 l'editor di Fallout. La ricerca si ferma a quattro livelli di profondità, perché
@@ -127,6 +129,12 @@ L'elenco è in `default_prereqs` (`crates/eidos-instance/src/tools.rs`), e il
 campo `Prereqs` nella finestra Executables è modificabile - il rilevamento è un
 valore predefinito, non una regola.
 
+Il titolo decide gli **argomenti** allo stesso modo, per l'unico strumento che
+ne richiede uno che nessuno potrebbe indovinare: un titolo che contiene
+`pgpatcher` (o `parallaxgen`, il suo vecchio nome) riceve
+`--ignore-mo2vfscheck`. Perche, e perche non e opzionale,
+[piu sotto](#perche-pgpatcher-ha-bisogno-di---ignore-mo2vfscheck).
+
 ### Tre tipi di prerequisito
 
 **Livello 1 - DLL incluse** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos le
@@ -179,6 +187,45 @@ del gioco, il che aggira il contenitore pressure-vessel di Steam e la discordanz
 protontricks + Proton-GE. Uno strumento che dichiara un verbo di Livello 2 non
 installato parte comunque, con un avviso che nomina il verbo e il comando per
 rimediare - l'utente potrebbe averlo da altrove.
+
+### Perche PGPatcher ha bisogno di `--ignore-mo2vfscheck`
+
+PGPatcher riscrive mesh e plugin perche i mod di texture che hai - vanilla,
+parallax, complex material, PBR - usino lo shader giusto su ogni superficie. Si
+rifiuta di girare fuori da un gestore di mod, e fa bene: applicare patch a una
+cartella di gioco nuda sarebbe distruttivo.
+
+Il problema e COME lo verifica: cerca **usvfs**, lo strato di hooking delle DLL
+che MO2 inietta nel gioco su Windows. Eidos non ne ha uno e non lo avra mai - la
+vista unita e un mount FUSE in cui Wine entra senza sapere che esiste - quindi
+il controllo non trova nulla e lo strumento esce subito con
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+nominando un programma che l'utente non sta eseguendo, prima di qualsiasi
+lavoro. La risposta del suo stesso autore alle due segnalazioni Linux
+([#716][pg716] e [#725][pg725], entrambe da Fluorine, il port Linux di MO2, che
+usa FUSE per la stessa ragione) e un flag che salta il controllo.
+
+Eidos lo imposta percio da solo. Un PGPatcher trovato in un pool di mod arriva
+con l'argomento gia messo, e digitare `PGPatcher` come titolo nella finestra
+Executables riempie il campo Arguments allo stesso modo. Quello che digiti vince
+sempre: il precaricamento riempie solo un campo lasciato vuoto, esattamente come
+i prerequisiti sopra.
+
+L'elenco e in `default_args` (`crates/eidos-instance/src/tools.rs`), accanto a
+`default_prereqs`. Ha una voce, e una basta a giustificare una funzione: nessuno
+puo indovinare un flag, e l'errore che evita nomina il programma sbagliato.
+
+A runtime non chiede nulla, cosa rara per uno strumento .NET: si porta il
+proprio (`dotnetlib/`, con un `runtimeconfig.json` che dichiara
+`includedFrameworks`) e consegna le DLL del CRT Microsoft accanto
+all'eseguibile. Lascia Prereqs vuoto.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Il percorso del gioco nel prefisso
 

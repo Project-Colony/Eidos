@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders、DLSS 与帧生成
 
@@ -57,6 +57,29 @@ FG + Display Tweaks + DXVK 这个组合有已知的黑屏故障。按顺序修:
 1. `SSEDisplayTweaks.ini`:`DisableBufferResizing=true`
 2. 若仍不行,在游戏可执行文件旁放一个 `dxvk.conf`(模组的 `Root/` 目录就能放到那里),
    内容为 `dxvk.enableGraphicsPipelineLibrary = False`
+
+## 混用贴图模组：PGPatcher
+
+Community Shaders 能渲染视差、complex material 和 PBR，但只在网格已为此设置好的
+地方。过去这意味着先装一堆预打补丁的网格，再装一个模组，在贴图缺失的地方把效果
+重新关掉：覆盖范围受限于你手头恰好有的网格，还要在运行时花 CPU 去撤销一个本就
+不该做出的决定。
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) 把它反了
+过来。你随意安装任何着色器类型的贴图，它会重写网格和插件，让每个表面都用上对的
+那一种——包括插件里的备用贴图记录，那是旧方法覆盖不到的。这是「显示出来的贴图包」
+与「只是被加载的贴图包」之间的差别，而且在混合配置下最为明显——任何真实的加载
+顺序都是混合的。
+
+在 Linux 上运行前有两点：
+
+- 它需要参数 **`--ignore-mo2vfscheck`**，否则会立刻退出并抱怨 MO2。Eidos 会提供
+  ——这个开关是什么、检查为何在这里失败，见[工具](tools.md#为什么-pgpatcher-需要---ignore-mo2vfscheck)；
+- 它会修改网格，所以要在所有贴图模组装完之**后**、在需要看到最终网格的 DynDOLOD
+  之**前**运行。之后再改贴图，就得按这个顺序把两者都重跑一遍。
+
+它的输出和其他工具一样进入 Overwrite，一次点击就能变成模组。给那个模组高优先级：
+它本来就是要赢的。
 
 ## 事后怎么读这些数字
 

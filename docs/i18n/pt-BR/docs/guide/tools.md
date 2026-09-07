@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Ferramentas: xEdit, BodySlide, DynDOLOD, FNIS
+# Ferramentas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Uma ferramenta rodada através do Eidos enxerga **a visão combinada**, dentro do
 próprio prefixo Proton do jogo. Ela lê o que o jogo vai ler - todo mod ativado,
@@ -21,6 +21,8 @@ nome do arquivo, em:
 - a **pasta de ferramentas** que você define em Settings (Tools -> Tools
   folder), para o diretório compartilhado entre instâncias - `/mnt/Games/Tools`
   e afins.
+
+`PGPatcher.exe` e encontrado da mesma forma nos jogos Creation Engine, e chega com um argumento sem o qual nao consegue funcionar - veja [abaixo](#por-que-o-pgpatcher-precisa-de---ignore-mo2vfscheck).
 
 A lista é por jogo, então a uma instância de Skyrim nunca é oferecido o editor
 do Fallout. A busca para quatro níveis abaixo, porque um conjunto de mods tem
@@ -128,6 +130,11 @@ A lista está em `default_prereqs` (`crates/eidos-instance/src/tools.rs`), e o
 campo `Prereqs` no diálogo de Executables é editável - a detecção é um padrão,
 não uma regra.
 
+O titulo decide os **argumentos** da mesma forma, para a unica ferramenta que
+precisa de um que ninguem adivinharia: um titulo contendo `pgpatcher` (ou
+`parallaxgen`, seu nome antigo) recebe `--ignore-mo2vfscheck`. Por que, e por
+que nao e opcional, [abaixo](#por-que-o-pgpatcher-precisa-de---ignore-mo2vfscheck).
+
 ### Três tipos de pré-requisito
 
 **Tier 1 - DLLs embutidas** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). O Eidos
@@ -181,6 +188,44 @@ prefixo do jogo, o que contorna o contêiner pressure-vessel do Steam e o
 descasamento entre protontricks e Proton-GE. Uma ferramenta que declara um verbo
 Tier-2 não instalado ainda assim inicia, com um aviso nomeando o verbo e o
 comando para consertar - o usuário pode tê-lo de outro lugar.
+
+### Por que o PGPatcher precisa de `--ignore-mo2vfscheck`
+
+O PGPatcher reescreve meshes e plugins para que os mods de textura que voce tem
+- vanilla, parallax, complex material, PBR - usem o shader certo em cada
+superficie. Ele se recusa a rodar fora de um gerenciador de mods, e com razao:
+aplicar patches numa pasta de jogo nua seria destrutivo.
+
+O problema e COMO ele verifica: procura o **usvfs**, a camada de hooking de DLL
+que o MO2 injeta no jogo no Windows. O Eidos nao tem uma e nunca tera - a visao
+unificada e uma montagem FUSE na qual o Wine entra sem saber que ela existe -
+entao a verificacao nao acha nada e a ferramenta sai imediatamente com
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+nomeando um programa que a pessoa nao esta executando, antes de qualquer
+trabalho. A resposta do proprio autor aos dois relatos de Linux ([#716][pg716] e
+[#725][pg725], ambos do Fluorine, o port do MO2 para Linux, que usa FUSE pelo
+mesmo motivo) e uma flag que pula a verificacao.
+
+Por isso o Eidos ja a preenche. Um PGPatcher encontrado num pool de mods chega
+com o argumento posto, e digitar `PGPatcher` como titulo na janela Executables
+preenche o campo Arguments do mesmo jeito. O que voce digita sempre vence: o
+preenchimento so toca um campo deixado vazio, igual aos pre-requisitos acima.
+
+A lista esta em `default_args` (`crates/eidos-instance/src/tools.rs`), ao lado
+de `default_prereqs`. Tem uma entrada, e uma basta para justificar uma funcao:
+ninguem adivinha uma flag, e a falha que ela evita nomeia o programa errado.
+
+Em execucao nao exige nada, o que e raro para uma ferramenta .NET: ela traz o
+proprio (`dotnetlib/`, com um `runtimeconfig.json` declarando
+`includedFrameworks`) e entrega as DLLs do CRT da Microsoft ao lado do
+executavel. Deixe Prereqs vazio.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## O caminho do jogo no prefixo
 

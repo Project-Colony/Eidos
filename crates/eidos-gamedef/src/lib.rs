@@ -136,6 +136,12 @@ macro_rules! xedit {
                 concat!($name, "QuickAutoClean.exe"),
                 concat!($name, " QuickAutoClean"),
             ),
+            // PGPatcher patches meshes and plugins so every texture mod uses the
+            // right shader (parallax / complex material / PBR) whatever it ships.
+            // Listed for the Creation-Engine games because it is the tool that
+            // makes a mixed texture setup work at all, and because it needs an
+            // argument nobody can guess - see `eidos_instance::default_args`.
+            ("PGPatcher.exe", "PGPatcher"),
         ]
     };
 }

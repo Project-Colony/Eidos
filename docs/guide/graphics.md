@@ -67,6 +67,34 @@ Fix, in order:
    `Root/` directory places one there) with
    `dxvk.enableGraphicsPipelineLibrary = False`
 
+## Mixed texture mods: PGPatcher
+
+Community Shaders can render parallax, complex material and PBR, but only where
+a mesh is set up for it. Historically that meant installing pre-patched meshes
+and then a mod to switch the effect back off wherever the textures were missing:
+coverage limited to the meshes you happened to have, and CPU spent at runtime
+undoing a decision that should never have been made.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) inverts
+it. You install whatever textures you like, of any shader type, and it rewrites
+the meshes and plugins so each surface uses the right one - including the
+alternate-texture records in plugins, which the old method left uncovered. It is
+the difference between a texture pack that renders and one that merely loads,
+and it matters most on a mixed setup, which is what any real load order is.
+
+Two things to know before running it on Linux:
+
+- it needs the **`--ignore-mo2vfscheck`** argument or it exits at once,
+  complaining about MO2. Eidos supplies it - see
+  [Tools](tools.md#why-pgpatcher-needs---ignore-mo2vfscheck) for what the flag
+  is and why the check fails here;
+- it edits meshes, so it runs **after** every texture mod is installed and
+  **before** DynDOLOD, which has to see the final meshes. Changing your textures
+  later means running both again, in that order.
+
+Its output goes to the Overwrite like any other tool's, where one click turns it
+into a mod. Give that mod a high priority: it is meant to win.
+
 ## Reading the numbers afterwards
 
 Generated frames are presentation-side only: the engine still simulates at the

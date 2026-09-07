@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders、DLSS 與影格生成
 
@@ -57,6 +57,29 @@ FG + Display Tweaks + DXVK 這個組合有已知的黑畫面故障。按順序�
 1. `SSEDisplayTweaks.ini`:`DisableBufferResizing=true`
 2. 若仍不行,在遊戲執行檔旁放一個 `dxvk.conf`(模組的 `Root/` 目錄就能放到那裡),
    內容為 `dxvk.enableGraphicsPipelineLibrary = False`
+
+## 混用貼圖模組：PGPatcher
+
+Community Shaders 能算出視差、complex material 與 PBR，但只在網格已為此設定好的
+地方。過去這意味著先裝一堆預先打好補丁的網格，再裝一個模組，在貼圖缺失的地方把
+效果重新關掉：覆蓋範圍受限於你手頭恰好有的網格，還要在執行時花 CPU 去撤銷一個
+本就不該做出的決定。
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) 把它反了
+過來。你隨意安裝任何著色器型別的貼圖，它會重寫網格與插件，讓每個表面都用上對的
+那一種——包括插件裡的備用貼圖記錄，那是舊方法覆蓋不到的。這是「顯示得出來的貼圖
+包」與「只是被載入的貼圖包」之間的差別，而且在混合配置下最為明顯——任何真實的
+載入順序都是混合的。
+
+在 Linux 上執行前有兩點：
+
+- 它需要參數 **`--ignore-mo2vfscheck`**，否則會立刻結束並抱怨 MO2。Eidos 會提供
+  ——這個旗標是什麼、檢查為何在這裡失敗，見[工具](tools.md#為什麼-pgpatcher-需要---ignore-mo2vfscheck)；
+- 它會修改網格，所以要在所有貼圖模組裝完**之後**、在需要看到最終網格的 DynDOLOD
+  **之前**執行。之後再改貼圖，就得按這個順序把兩者都重跑一遍。
+
+它的輸出和其他工具一樣進入 Overwrite，一次點擊就能變成模組。給那個模組高優先
+權：它本來就是要贏的。
 
 ## 事後怎麼讀這些數字
 

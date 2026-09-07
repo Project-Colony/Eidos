@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS e geração de quadros
 
@@ -67,6 +67,35 @@ Conserto, nesta ordem:
 2. Se não bastar, um `dxvk.conf` ao lado do executável do jogo (o diretório `Root/`
    de um mod coloca um lá) com
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Mods de textura misturados: PGPatcher
+
+O Community Shaders sabe renderizar parallax, complex material e PBR, mas so
+onde uma mesh esta preparada para isso. Historicamente isso significava instalar
+meshes pre-patchadas e depois um mod para desligar o efeito onde faltassem
+texturas: cobertura limitada as meshes que voce tinha, e CPU gasta em tempo de
+execucao desfazendo uma decisao que nunca deveria ter sido tomada.
+
+O [PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946)
+inverte isso. Voce instala as texturas que quiser, de qualquer tipo de shader, e
+ele reescreve meshes e plugins para que cada superficie use o certo - inclusive
+os registros de textura alternativa nos plugins, que o metodo antigo deixava de
+fora. E a diferenca entre um pacote de texturas que aparece e um que apenas
+carrega, e importa mais numa instalacao misturada, que e o que qualquer ordem de
+carregamento real e.
+
+Duas coisas antes de rodar no Linux:
+
+- ele precisa do argumento **`--ignore-mo2vfscheck`** ou sai na hora
+  reclamando do MO2. O Eidos fornece - veja
+  [Ferramentas](tools.md#por-que-o-pgpatcher-precisa-de---ignore-mo2vfscheck) para o que e a flag e por que a verificacao
+  falha aqui;
+- ele edita meshes, entao roda **depois** de instalar todos os mods de textura e
+  **antes** do DynDOLOD, que precisa ver as meshes finais. Mudar suas texturas
+  depois significa rodar os dois de novo, nessa ordem.
+
+A saida vai para o Overwrite como a de qualquer ferramenta, onde um clique a
+transforma num mod. De a esse mod prioridade alta: ele foi feito para vencer.
 
 ## Lendo os números depois
 
