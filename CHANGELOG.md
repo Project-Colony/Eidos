@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.0](https://github.com/Project-Colony/Eidos/compare/v1.14.3...v1.15.0) (2026-09-07)
+
+
+### Features
+
+* **tools:** seed the argument a known tool cannot run without ([#62](https://github.com/Project-Colony/Eidos/issues/62)) ([76f64d9](https://github.com/Project-Colony/Eidos/commit/76f64d9d947082ed3e8f1f2e4bee021f9bf8e680))
+* **transfer:** pack a whole instance into one .eidos file, and put it back ([#59](https://github.com/Project-Colony/Eidos/issues/59)) ([3b1429a](https://github.com/Project-Colony/Eidos/commit/3b1429a39d4f7d055e85f4ef6464eb7b35241be0))
+
+
+### Fixes
+
+* **gui:** stop flagging Steam's own S: drive and a launcher path that resolves ([#57](https://github.com/Project-Colony/Eidos/issues/57)) ([7aa51e5](https://github.com/Project-Colony/Eidos/commit/7aa51e563151129a3fd2748fafa2d6f718fa4693))
+* **nexus:** follow Nexus's key rotation instead of carrying one in the binary ([#60](https://github.com/Project-Colony/Eidos/issues/60)) ([3944577](https://github.com/Project-Colony/Eidos/commit/39445779984b35e30179e8b2a7c8931987167140))
+
 ## [1.14.3](https://github.com/Project-Colony/Eidos/compare/v1.14.2...v1.14.3) (2026-09-03)
 
 
