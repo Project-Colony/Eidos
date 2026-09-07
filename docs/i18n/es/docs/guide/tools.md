@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Herramientas: xEdit, BodySlide, DynDOLOD, FNIS
+# Herramientas: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Una herramienta ejecutada a través de Eidos ve **la vista combinada**, dentro del
 propio prefijo Proton del juego. Lee lo que leerá el juego - cada mod activado, en
@@ -22,6 +22,8 @@ en:
   herramientas;
 - la **carpeta de herramientas** que fijas en Settings (Tools -> Tools folder),
   para el directorio compartido entre instancias - `/mnt/Games/Tools` y similares.
+
+`PGPatcher.exe` se encuentra de la misma manera en los juegos Creation Engine, y llega con un argumento sin el cual no puede funcionar - vea [mas abajo](#por-que-pgpatcher-necesita---ignore-mo2vfscheck).
 
 La lista es por juego, así que a una instancia de Skyrim nunca se le ofrece el
 editor de Fallout. La búsqueda se detiene cuatro niveles abajo, porque un conjunto
@@ -129,6 +131,12 @@ La lista está en `default_prereqs` (`crates/eidos-instance/src/tools.rs`), y el
 campo `Prereqs` del diálogo de Executables es editable - la detección es un valor
 por defecto, no una regla.
 
+El titulo decide los **argumentos** de la misma manera, para la unica
+herramienta que necesita uno que nadie podria adivinar: un titulo que contenga
+`pgpatcher` (o `parallaxgen`, su nombre anterior) recibe
+`--ignore-mo2vfscheck`. Por que, y por que no es opcional,
+[mas abajo](#por-que-pgpatcher-necesita---ignore-mo2vfscheck).
+
 ### Tres clases de prerrequisito
 
 **Nivel 1 - DLL empaquetadas** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -181,6 +189,46 @@ prefijo del juego, lo que esquiva el contenedor pressure-vessel de Steam y el
 desajuste protontricks + Proton-GE. Una herramienta que declara un verbo de
 Nivel 2 no instalado se lanza igualmente, con un aviso que nombra el verbo y la
 orden para arreglarlo - el usuario puede tenerlo de otra parte.
+
+### Por que PGPatcher necesita `--ignore-mo2vfscheck`
+
+PGPatcher reescribe mallas y plugins para que los mods de texturas que tenga -
+vanilla, parallax, complex material, PBR - usen el shader correcto en cada
+superficie. Se niega a ejecutarse fuera de un gestor de mods, con razon:
+parchear una carpeta de juego desnuda seria destructivo.
+
+El problema es COMO lo comprueba: busca **usvfs**, la capa de enganche de DLL
+que MO2 inyecta en el juego bajo Windows. Eidos no tiene ninguna y nunca la
+tendra - la vista fusionada es un montaje FUSE en el que Wine entra sin saber
+que existe - asi que la comprobacion no encuentra nada y la herramienta sale de
+inmediato con
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+nombrando un programa que la usuaria no esta ejecutando, antes de hacer ningun
+trabajo. La respuesta de su propio autor a los dos informes de Linux
+([#716][pg716] y [#725][pg725], ambos de Fluorine, el port a Linux de MO2, que
+usa FUSE por la misma razon) es una opcion que salta la comprobacion.
+
+Por eso Eidos la aporta. Un PGPatcher encontrado en un pool de mods llega con el
+argumento ya puesto, y escribir `PGPatcher` como titulo en el dialogo
+Executables rellena el campo Arguments igual. Lo que usted escriba siempre gana:
+el rellenado solo toca un campo que dejo vacio, igual que los prerrequisitos de
+arriba.
+
+La lista esta en `default_args` (`crates/eidos-instance/src/tools.rs`), junto a
+`default_prereqs`. Tiene una entrada, y una basta para justificar una funcion:
+nadie puede adivinar una opcion, y el fallo que evita nombra al programa
+equivocado.
+
+Su ejecucion no exige nada, algo raro en una herramienta .NET: incluye el suyo
+(`dotnetlib/`, con un `runtimeconfig.json` que declara `includedFrameworks`) y
+entrega las DLL del CRT de Microsoft junto a su ejecutable. Deje Prereqs vacio.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## La ruta del juego en el prefijo
 

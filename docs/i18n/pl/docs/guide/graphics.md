@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS i generowanie klatek
 
@@ -69,6 +69,36 @@ kolejności:
 2. Jeśli to nie wystarczy, `dxvk.conf` obok pliku wykonywalnego gry (katalog
    `Root/` moda umieszcza go tam) z
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Mieszane mody tekstur: PGPatcher
+
+Community Shaders potrafi renderowac parallax, complex material i PBR, ale tylko
+tam, gdzie siatka jest do tego przygotowana. Kiedys oznaczalo to instalowanie
+wczesniej zalatanych siatek, a potem moda wylaczajacego efekt wszedzie tam,
+gdzie brakowalo tekstur: pokrycie ograniczone do posiadanych siatek i czas
+procesora tracony w trakcie gry na cofanie decyzji, ktorej nigdy nie nalezalo
+podjac.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) odwraca
+to. Instalujesz dowolne tekstury, dowolnego typu shadera, a on przepisuje siatki
+i wtyczki tak, by kazda powierzchnia uzywala wlasciwego - lacznie z rekordami
+alternatywnych tekstur we wtyczkach, ktorych stara metoda nie obejmowala. To
+roznica miedzy paczka tekstur, ktora widac, a taka, ktora tylko sie wczytuje, i
+liczy sie najbardziej przy mieszanej instalacji, czyli przy kazdej prawdziwej
+kolejnosci wczytywania.
+
+Dwie rzeczy przed uruchomieniem na Linuksie:
+
+- potrzebuje argumentu **`--ignore-mo2vfscheck`**, inaczej natychmiast konczy
+  prace, narzekajac na MO2. Eidos go dostarcza - zobacz
+  [Narzedzia](tools.md#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck), czym jest ta flaga i dlaczego sprawdzenie tu
+  zawodzi;
+- modyfikuje siatki, wiec dziala **po** zainstalowaniu wszystkich modow tekstur
+  i **przed** DynDOLOD, ktory musi zobaczyc koncowe siatki. Pozniejsza zmiana
+  tekstur oznacza ponowne uruchomienie obu, w tej kolejnosci.
+
+Wynik trafia do Overwrite jak u kazdego narzedzia, gdzie jedno klikniecie robi z
+niego moda. Nadaj temu modowi wysoki priorytet: ma wygrywac.
 
 ## Odczytywanie liczb potem
 

@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Outils : xEdit, BodySlide, DynDOLOD, FNIS
+# Outils : xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Un outil lancé à travers Eidos voit **la vue fusionnée**, à l'intérieur du
 préfixe Proton du jeu lui-même. Il lit ce que le jeu lira - tous les mods
@@ -23,6 +23,8 @@ dans :
 - le **tools folder** que vous avez défini dans Settings (Tools -> Tools
   folder), pour le répertoire partagé entre instances - `/mnt/Games/Tools` et
   consorts.
+
+`PGPatcher.exe` est trouvé de la même manière sur les jeux Creation Engine, et il arrive avec un argument sans lequel il ne peut pas fonctionner - voir [plus bas](#pourquoi-pgpatcher-a-besoin-de---ignore-mo2vfscheck).
 
 La liste est par jeu, donc une instance Skyrim ne se verra jamais proposer
 l'éditeur de Fallout. La recherche s'arrête à quatre niveaux de profondeur, parce
@@ -132,6 +134,11 @@ La liste est dans `default_prereqs` (`crates/eidos-instance/src/tools.rs`), et l
 champ `Prereqs` de la boîte de dialogue Executables est modifiable - la détection
 est un défaut, pas une règle.
 
+Le titre décide des **arguments** de la même manière, pour le seul outil qui en
+exige un que personne ne pourrait deviner : un titre contenant `pgpatcher` (ou
+`parallaxgen`, son ancien nom) reçoit `--ignore-mo2vfscheck`. Pourquoi, et
+pourquoi ce n'est pas optionnel, [plus bas](#pourquoi-pgpatcher-a-besoin-de---ignore-mo2vfscheck).
+
 ### Trois sortes de prérequis
 
 **Palier 1 - DLL fournies** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -186,6 +193,46 @@ le préfixe du jeu, ce qui contourne le conteneur pressure-vessel de Steam et le
 décalage protontricks + Proton-GE. Un outil qui déclare un verbe de palier 2 non
 installé se lance quand même, avec un avertissement nommant le verbe et la
 commande pour y remédier - l'utilisateur l'a peut-être obtenu par ailleurs.
+
+### Pourquoi PGPatcher a besoin de `--ignore-mo2vfscheck`
+
+PGPatcher réécrit les meshes et les plugins pour que les mods de textures que
+vous avez - vanilla, parallax, complex material, PBR - utilisent le bon shader
+sur chaque surface. Il refuse de tourner hors d'un gestionnaire de mods, à
+raison : patcher un dossier de jeu nu serait destructeur.
+
+Le problème est la MANIÈRE dont il le vérifie : il cherche **usvfs**, la couche
+d'accrochage de DLL que MO2 injecte dans le jeu sous Windows. Eidos n'en a pas
+et n'en aura jamais - la vue fusionnée est un montage FUSE que Wine traverse
+sans savoir qu'il existe - donc la vérification ne trouve rien et l'outil quitte
+immédiatement avec
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+en nommant un programme que l'utilisateur ne fait pas tourner, avant le moindre
+travail. La réponse de son propre auteur aux deux rapports Linux ([#716][pg716]
+et [#725][pg725], tous deux venus de Fluorine, le portage Linux de MO2, en FUSE
+pour la même raison) est un drapeau qui saute la vérification.
+
+Eidos l'ensemence donc. Un PGPatcher trouvé dans un dossier de mods arrive avec
+l'argument déjà mis, et taper `PGPatcher` comme titre dans le dialogue
+Executables remplit le champ Arguments de la même façon. Ce que vous tapez gagne
+toujours : l'ensemencement ne remplit qu'un champ laissé vide, exactement comme
+les prérequis ci-dessus.
+
+La liste est dans `default_args` (`crates/eidos-instance/src/tools.rs`), à côté
+de `default_prereqs`. Elle a une entrée, et une seule suffit à justifier une
+fonction : personne ne peut deviner un drapeau, et l'échec qu'il évite nomme le
+mauvais programme.
+
+Son exécution n'exige rien, fait rare pour un outil .NET : il embarque le sien
+(`dotnetlib/`, avec un `runtimeconfig.json` déclarant `includedFrameworks`) et
+livre les DLL du CRT Microsoft à côté de son exécutable. Laissez Prereqs vide.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Le chemin du jeu dans le préfixe
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS e generazione di fotogrammi
 
@@ -70,6 +70,34 @@ Rimedio, in ordine:
 2. Se non basta, un `dxvk.conf` accanto all'eseguibile del gioco (la cartella
    `Root/` di una mod ne colloca uno lì) con
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Mod di texture misti: PGPatcher
+
+Community Shaders sa rendere parallax, complex material e PBR, ma solo dove una
+mesh e predisposta. Storicamente questo voleva dire installare mesh gia
+patchate e poi un mod per rispegnere l'effetto dove le texture mancavano:
+copertura limitata alle mesh che si avevano, e CPU spesa a runtime per disfare
+una decisione che non andava presa.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946)
+capovolge la cosa. Installi le texture che vuoi, di qualunque tipo di shader, e
+lui riscrive mesh e plugin perche ogni superficie usi quello giusto - compresi i
+record di texture alternative nei plugin, che il vecchio metodo lasciava
+scoperti. E la differenza tra un pacchetto di texture che si vede e uno che si
+limita a caricarsi, e conta soprattutto su un'installazione mista, cioe su
+qualunque ordine di caricamento reale.
+
+Due cose da sapere prima di lanciarlo su Linux:
+
+- gli serve l'argomento **`--ignore-mo2vfscheck`** o esce subito lamentandosi di
+  MO2. Eidos lo fornisce - vedi [Strumenti](tools.md#perche-pgpatcher-ha-bisogno-di---ignore-mo2vfscheck) per cosa sia il
+  flag e perche il controllo qui fallisca;
+- modifica mesh, quindi gira **dopo** l'installazione di tutti i mod di texture
+  e **prima** di DynDOLOD, che deve vedere le mesh finali. Cambiare le texture
+  in seguito significa rilanciare entrambi, in quest'ordine.
+
+Il suo output finisce nell'Overwrite come quello di ogni strumento, dove un clic
+lo trasforma in un mod. Dai a quel mod una priorita alta: e fatto per vincere.
 
 ## Leggere i numeri dopo
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS ve kare üretimi
 
@@ -66,6 +66,35 @@ FG + Display Tweaks + DXVK bileşiminin bilinen bir siyah ekran arızası var. S
 2. Yetmezse, oyunun çalıştırılabilir dosyasının yanına bir `dxvk.conf` (bir modun
    `Root/` dizini oraya bir tane koyar) ve içine
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Karisik doku modlari: PGPatcher
+
+Community Shaders parallax, complex material ve PBR'yi isleyebilir, ama yalnizca
+bir mesh bunun icin hazirlanmissa. Eskiden bu, onceden yamalanmis mesh'ler
+kurmak ve ardindan dokularin eksik oldugu her yerde etkiyi yeniden kapatan bir
+mod kurmak demekti: kapsam elinizdeki mesh'lerle sinirli kalir ve calisma
+zamaninda, hic verilmemesi gereken bir kararı geri almak icin islemci zamani
+harcanirdi.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) bunu
+tersine cevirir. Istediginiz dokulari, herhangi bir shader turunde kurarsiniz;
+o da her yuzeyin dogrusunu kullanmasi icin mesh'leri ve eklentileri yeniden
+yazar - eski yontemin kapsamadigi, eklentilerdeki alternatif doku kayitlari
+dahil. Bu, gorunen bir doku paketi ile yalnizca yuklenen bir paket arasindaki
+farktir ve en cok karisik bir kurulumda onem tasir, ki her gercek yukleme sirasi
+zaten oyledir.
+
+Linux'ta calistirmadan once iki sey:
+
+- **`--ignore-mo2vfscheck`** argumani gerekir, yoksa MO2'den yakinarak aninda
+  cikar. Eidos bunu saglar - bayragin ne oldugu ve denetimin burada neden
+  basarisiz oldugu icin [Araclar](tools.md#pgpatcher-neden---ignore-mo2vfscheck-ister) sayfasina bakin;
+- mesh'leri degistirir, bu yuzden tum doku modlari kurulduktan **sonra** ve
+  nihai mesh'leri gormesi gereken DynDOLOD'dan **once** calisir. Dokularinizi
+  sonradan degistirmek, ikisini de bu sirayla yeniden calistirmak demektir.
+
+Ciktisi her arac gibi Overwrite'a gider; orada tek tikla bir moda donusur. O
+moda yuksek oncelik verin: kazanmak icin yapilmistir.
 
 ## Sayıları sonradan okumak
 

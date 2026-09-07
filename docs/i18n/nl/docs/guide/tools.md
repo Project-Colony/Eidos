@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Tools: xEdit, BodySlide, DynDOLOD, FNIS
+# Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Een tool die via Eidos draait ziet **de samengevoegde weergave**, binnen het
 Proton-prefix van het spel zelf. Hij leest wat het spel zal lezen - elke
@@ -19,6 +19,8 @@ voor waarschuwt. Eidos zoekt ernaar, op bestandsnaam, in:
 - **de `mods/` van deze instantie**, waar MO2-gebruikers hun tools installeren;
 - de **tools folder** die je in Settings instelt (Tools -> Tools folder), voor de
   map die tussen instanties gedeeld wordt - `/mnt/Games/Tools` en dergelijke.
+
+`PGPatcher.exe` wordt op dezelfde manier gevonden bij de Creation Engine-spellen, en komt met een argument waarzonder het niet kan werken - zie [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft).
 
 De lijst geldt per spel, dus aan een Skyrim-instantie wordt nooit de editor van
 Fallout aangeboden. Het zoeken stopt vier niveaus diep, omdat een modvoorraad
@@ -124,6 +126,11 @@ De lijst staat in `default_prereqs` (`crates/eidos-instance/src/tools.rs`), en h
 veld `Prereqs` in het Executables-venster is bewerkbaar - de detectie is een
 standaard, geen regel.
 
+De titel bepaalt de **argumenten** op dezelfde manier, voor het ene gereedschap
+dat er een nodig heeft die niemand kan raden: een titel met `pgpatcher` (of
+`parallaxgen`, de oude naam) krijgt `--ignore-mo2vfscheck`. Waarom, en waarom
+het niet optioneel is, staat [hieronder](#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft).
+
 ### Drie soorten vereiste
 
 **Tier 1 - meegeleverde DLL's** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -178,6 +185,47 @@ tussen protontricks en Proton-GE omzeilt. Een tool die een niet-geïnstalleerde
 Tier-2-verb opgeeft start toch, met een waarschuwing die de verb noemt en de
 opdracht om het te verhelpen - de gebruiker heeft hem misschien ergens anders
 vandaan.
+
+### Waarom PGPatcher `--ignore-mo2vfscheck` nodig heeft
+
+PGPatcher herschrijft meshes en plugins zodat de texture-mods die je hebt -
+vanilla, parallax, complex material, PBR - op elk oppervlak de juiste shader
+gebruiken. Het weigert terecht buiten een mod-manager te draaien: een kale
+spelmap patchen zou destructief zijn.
+
+Het probleem is HOE het dat controleert: het zoekt naar **usvfs**, de
+DLL-hooking-laag die MO2 onder Windows in het spel injecteert. Eidos heeft die
+niet en krijgt die nooit - de samengevoegde weergave is een FUSE-mount waar Wine
+in loopt zonder te weten dat hij bestaat - dus de controle vindt niets en het
+gereedschap stopt meteen met
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+en noemt daarbij een programma dat de gebruiker niet draait, nog voor enig werk.
+Het antwoord van de auteur zelf op de twee Linux-meldingen ([#716][pg716] en
+[#725][pg725], beide van Fluorine, MO2's Linux-fork, die om dezelfde reden FUSE
+gebruikt) is een vlag die de controle overslaat.
+
+Eidos vult die daarom vast in. Een PGPatcher die in een mod-pool gevonden wordt
+komt met het argument al gezet, en `PGPatcher` als titel typen in het
+Executables-venster vult het veld Arguments net zo. Wat jij typt wint altijd: er
+wordt alleen een veld ingevuld dat je leeg liet, precies zoals bij de vereisten
+hierboven.
+
+De lijst staat in `default_args` (`crates/eidos-instance/src/tools.rs`), naast
+`default_prereqs`. Hij heeft een regel, en een is genoeg voor een eigen functie:
+een vlag kan niemand raden, en de fout die hij voorkomt noemt het verkeerde
+programma.
+
+Bij het draaien vraagt het niets, ongebruikelijk voor een .NET-gereedschap: het
+brengt zijn eigen mee (`dotnetlib/`, met een `runtimeconfig.json` die
+`includedFrameworks` verklaart) en levert de Microsoft-CRT-DLL's naast het
+uitvoerbare bestand. Laat Prereqs leeg.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Het spelpad in het prefix
 

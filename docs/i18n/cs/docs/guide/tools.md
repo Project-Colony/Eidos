@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Nástroje: xEdit, BodySlide, DynDOLOD, FNIS
+# Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Nástroj spuštěný skrz Eidos vidí **sloučený pohled**, uvnitř vlastního Proton
 prefixu hry. Čte to, co bude číst hra - každý zapnutý mód, v pořadí priority - a
@@ -19,6 +19,8 @@ edits, na které LOOT pořád upozorňuje. Eidos je hledá podle názvu souboru 
 - **`mods/` této instance**, kam si nástroje instalují uživatelé MO2;
 - **tools folder**, který nastavíte v Settings (Tools -> Tools folder), pro
   adresář sdílený mezi instancemi - `/mnt/Games/Tools` a podobně.
+
+`PGPatcher.exe` se stejnym zpusobem najde u her na Creation Engine a prichazi s argumentem, bez ktereho nemuze pracovat - viz [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
 
 Seznam je zvlášť pro každou hru, takže instanci Skyrimu se nikdy nenabídne
 editor Falloutu. Hledání se zastaví čtyři úrovně hluboko, protože pool módů jsou
@@ -119,6 +121,11 @@ Seznam je v `default_prereqs` (`crates/eidos-instance/src/tools.rs`) a pole
 `Prereqs` v dialogu Executables je editovatelné - detekce je výchozí nastavení,
 ne pravidlo.
 
+Nazev rozhoduje o **argumentech** stejne, u jedineho nastroje, ktery nejaky
+potrebuje a nikdo by jej neuhodl: nazev obsahujici `pgpatcher` (nebo
+`parallaxgen`, jeho drivejsi jmeno) dostane `--ignore-mo2vfscheck`. Proc a proc
+neni volitelny, [nize](#proc-pgpatcher-potrebuje---ignore-mo2vfscheck).
+
 ### Tři druhy prerekvizit
 
 **Úroveň 1 - přibalené DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -170,6 +177,44 @@ hry, čímž obchází kontejner pressure-vessel Steamu a nesoulad protontricks 
 Proton-GE. Nástroj, který deklaruje nenainstalovaný verb úrovně 2, se přesto
 spustí, s varováním, které jmenuje verb i příkaz na nápravu - uživatel ho může
 mít odjinud.
+
+### Proc PGPatcher potrebuje `--ignore-mo2vfscheck`
+
+PGPatcher prepisuje site a pluginy tak, aby vase modifikace textur - vanilla,
+parallax, complex material, PBR - pouzivaly na kazdem povrchu spravny shader.
+Pravem odmita bezet mimo spravce modu: zaplatovat holou slozku hry by bylo
+zhoubne.
+
+Potiz je v tom, JAK to overuje: hleda **usvfs**, vrstvu zachytavani DLL, kterou
+MO2 ve Windows vstrikuje do hry. Eidos zadnou nema a nikdy mit nebude - slouceny
+pohled je pripojeni FUSE, do ktereho Wine vstupuje, aniz by o nem vedel - takze
+kontrola nic nenajde a nastroj okamzite skonci s
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+a jmenuje program, ktery uzivatel vubec nespousti, jeste pred jakoukoli praci.
+Odpovedi samotneho autora na dve linuxova hlaseni ([#716][pg716] a [#725][pg725],
+obe z Fluorine, linuxoveho forku MO2, ktery ze stejneho duvodu stoji na FUSE) je
+prepinac, ktery kontrolu preskoci.
+
+Eidos jej proto predvyplni. PGPatcher nalezeny ve fondu modu prichazi s uz
+nastavenym argumentem a napsani `PGPatcher` do nazvu v dialogu Executables
+vyplni pole Arguments stejne. To, co napisete, vzdy vyhrava: predvyplni se jen
+pole, ktere jste nechali prazdne, presne jako u pozadavku vyse.
+
+Seznam je v `default_args` (`crates/eidos-instance/src/tools.rs`), vedle
+`default_prereqs`. Ma jednu polozku a jedna staci na vlastni funkci: prepinac
+nikdo neuhodne a chyba, ktere predchazi, jmenuje spatny program.
+
+Za behu nevyzaduje nic, coz je u nastroje .NET neobvykle: nese si vlastni
+prostredi (`dotnetlib/`, s `runtimeconfig.json` deklarujicim
+`includedFrameworks`) a dodava knihovny CRT od Microsoftu vedle spustitelneho
+souboru. Nechte Prereqs prazdne.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Cesta ke hře v prefixu
 

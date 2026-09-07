@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# 도구: xEdit, BodySlide, DynDOLOD, FNIS
+# 도구: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에서 **병합된 뷰**를
 봅니다. 게임이 읽게 될 것 - 활성화된 모든 모드를 우선순위 순서대로 - 을 그대로
@@ -19,6 +19,8 @@ Eidos를 통해 실행된 도구는 게임 자신의 Proton 프리픽스 안에�
 - **이 인스턴스의 `mods/`** - MO2 사용자가 도구를 설치하는 곳입니다;
 - 설정에서 지정한 **tools folder** (Tools -> Tools folder), 인스턴스끼리 공유하는
   디렉터리용 - `/mnt/Games/Tools` 같은 것.
+
+`PGPatcher.exe`도 Creation Engine 게임에서 같은 방식으로 발견되며, 없으면 동작할 수 없는 인자와 함께 등록됩니다 - [아래](#pgpatcher에---ignore-mo2vfscheck가-필요한-이유) 참조.
 
 목록은 게임별이라, Skyrim 인스턴스에 Fallout의 에디터가 제시되는 일은 없습니다.
 검색은 네 단계 아래에서 멈추는데, 모드 풀은 수십만 개의 파일이고 이 작업은 도구
@@ -118,6 +120,11 @@ Eidos가 그 도구에 어떤 런타임 사전 요구 사항을 마련할지 결
 Executables 대화상자의 `Prereqs` 항목은 편집할 수 있습니다 - 감지는 기본값이지
 규칙이 아닙니다.
 
+제목은 **인자**도 같은 방식으로 결정합니다. 누구도 짐작할 수 없는 인자가
+필요한 유일한 도구를 위해서입니다. `pgpatcher`(또는 옛 이름 `parallaxgen`)를
+포함한 제목에는 `--ignore-mo2vfscheck`가 주어집니다. 그 이유와, 그것이 선택
+사항이 아닌 이유는 [아래](#pgpatcher에---ignore-mo2vfscheck가-필요한-이유)에 있습니다.
+
 ### 사전 요구 사항의 세 종류
 
 **Tier 1 - 번들 DLL** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos가 함께
@@ -168,6 +175,43 @@ Eidos는 시스템 `winetricks`를 Proton 자신의 `wine`과 게임 프리픽�
 불일치를 비껴갑니다. 설치되지 않은 Tier-2 verb를 선언한 도구도 그대로 실행되며,
 그 verb의 이름과 고치는 명령을 담은 경고가 함께 나옵니다 - 사용자가 다른 데서
 이미 가지고 있을 수도 있으니까요.
+
+### PGPatcher에 `--ignore-mo2vfscheck`가 필요한 이유
+
+PGPatcher는 보유한 텍스처 모드가 vanilla, parallax, complex material, PBR 중
+무엇이든 각 표면에서 올바른 셰이더를 쓰도록 메시와 플러그인을 다시 씁니다. 모드
+관리자 밖에서는 실행을 거부하는데, 이는 타당합니다. 맨 게임 폴더에 패치를 가하는
+것은 파괴적이기 때문입니다.
+
+문제는 그 확인 '방식'입니다. Windows에서 MO2가 게임에 주입하는 DLL 후킹 계층인
+**usvfs**를 찾습니다. Eidos에는 그런 것이 없고 앞으로도 없습니다. 병합된 뷰는
+Wine이 존재를 모른 채 들어가는 FUSE 마운트이기 때문입니다. 따라서 확인은 아무것도
+찾지 못하고, 도구는 어떤 작업도 하기 전에 다음 메시지와 함께 즉시 종료됩니다.
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+게다가 사용자가 실행하지도 않은 프로그램의 이름을 대면서요. 두 건의 Linux 보고
+([#716][pg716], [#725][pg725], 둘 다 같은 이유로 FUSE를 쓰는 MO2의 Linux 포크
+Fluorine에서 온 것)에 대한 제작자 본인의 답이 이 확인을 건너뛰는 플래그입니다.
+
+그래서 Eidos가 미리 넣어 둡니다. 모드 풀에서 발견된 PGPatcher는 인자가 이미
+설정된 채로 나타나고, Executables 대화상자의 제목에 `PGPatcher`를 입력해도
+Arguments 칸이 같은 방식으로 채워집니다. 입력한 내용이 언제나 우선합니다.
+채워지는 것은 비워 둔 칸뿐이며, 위의 선행 요구 사항과 같은 규칙입니다.
+
+목록은 `default_args`(`crates/eidos-instance/src/tools.rs`)에 있으며
+`default_prereqs` 옆입니다. 항목은 하나지만 하나로도 함수를 둘 이유가 됩니다.
+플래그는 누구도 짐작할 수 없고, 그것이 막아 주는 실패는 엉뚱한 프로그램의 이름을
+대기 때문입니다.
+
+실행에 필요한 것은 없습니다. .NET 도구로는 드물게 자체 런타임을 포함하고
+(`dotnetlib/`, `includedFrameworks`를 선언하는 `runtimeconfig.json` 포함),
+Microsoft CRT DLL을 실행 파일 옆에 함께 제공합니다. Prereqs는 비워 두세요.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## 프리픽스 안의 게임 경로
 

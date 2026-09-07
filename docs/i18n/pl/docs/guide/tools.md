@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Narzędzia: xEdit, BodySlide, DynDOLOD, FNIS
+# Narzędzia: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Narzędzie uruchomione przez Eidos widzi **scalony widok**, wewnątrz własnego
 prefiksu Proton gry. Czyta to, co przeczyta gra - każdy włączony mod, w
@@ -19,6 +19,8 @@ edycji, przed którymi LOOT wciąż ostrzega. Eidos szuka ich, po nazwie pliku, 
 - **`mods/` tej instancji**, czyli tam, gdzie użytkownicy MO2 instalują narzędzia;
 - **folderze narzędzi** ustawionym w Ustawieniach (Tools -> Tools folder), dla
   katalogu współdzielonego między instancjami - `/mnt/Games/Tools` i podobnych.
+
+`PGPatcher.exe` jest znajdowany tak samo w grach na Creation Engine i przychodzi z argumentem, bez ktorego nie zadziala - zobacz [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck).
 
 Lista jest osobna dla każdej gry, więc instancja Skyrima nigdy nie dostanie
 edytora Fallouta. Szukanie zatrzymuje się cztery poziomy w głąb, bo pula modów to
@@ -125,6 +127,11 @@ Lista jest w `default_prereqs` (`crates/eidos-instance/src/tools.rs`), a pole
 `Prereqs` w oknie Executables jest edytowalne - wykrywanie to wartość domyślna, a
 nie reguła.
 
+Tytul decyduje o **argumentach** tak samo, dla jedynego narzedzia, ktore
+potrzebuje takiego, jakiego nikt by nie zgadl: tytul zawierajacy `pgpatcher`
+(albo `parallaxgen`, dawna nazwe) dostaje `--ignore-mo2vfscheck`. Dlaczego i
+dlaczego nie jest opcjonalny - [ponizej](#dlaczego-pgpatcher-potrzebuje---ignore-mo2vfscheck).
+
 ### Trzy rodzaje zależności
 
 **Poziom 1 - dołączone DLL-e** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -178,6 +185,45 @@ prefiksowi gry, co omija kontener pressure-vessel Steama oraz niezgodność
 protontricks + Proton-GE. Narzędzie deklarujące niezainstalowany czasownik
 Poziomu 2 i tak się uruchamia, z ostrzeżeniem wymieniającym czasownik i polecenie
 naprawcze - użytkownik może go mieć skądinąd.
+
+### Dlaczego PGPatcher potrzebuje `--ignore-mo2vfscheck`
+
+PGPatcher przepisuje siatki i wtyczki tak, aby posiadane mody tekstur -
+vanilla, parallax, complex material, PBR - uzywaly wlasciwego shadera na kazdej
+powierzchni. Slusznie odmawia pracy poza menedzerem modow: latanie golego
+katalogu gry byloby destrukcyjne.
+
+Problem tkwi w SPOSOBIE sprawdzania: szuka **usvfs**, warstwy przechwytywania
+DLL, ktora MO2 wstrzykuje do gry w Windows. Eidos jej nie ma i nigdy miec nie
+bedzie - scalony widok to montowanie FUSE, w ktore Wine wchodzi, nie wiedzac, ze
+istnieje - wiec sprawdzenie nic nie znajduje i narzedzie natychmiast konczy sie
+komunikatem
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+wymieniajac program, ktorego uzytkownik wcale nie uruchomil, jeszcze przed
+jakakolwiek praca. Odpowiedzia samego autora na dwa zgloszenia z Linuksa
+([#716][pg716] i [#725][pg725], oba z Fluorine, linuksowego forka MO2, ktory z
+tego samego powodu opiera sie na FUSE) jest flaga pomijajaca sprawdzenie.
+
+Dlatego Eidos ja ustawia. PGPatcher znaleziony w puli modow przychodzi z juz
+ustawionym argumentem, a wpisanie `PGPatcher` jako tytulu w oknie Executables
+wypelnia pole Arguments tak samo. To, co wpiszesz, zawsze wygrywa: uzupelniane
+jest wylacznie pole pozostawione puste, dokladnie jak przy wymaganiach powyzej.
+
+Lista znajduje sie w `default_args` (`crates/eidos-instance/src/tools.rs`), obok
+`default_prereqs`. Ma jeden wpis i jeden wystarczy, by uzasadnic funkcje: flagi
+nikt nie zgadnie, a blad, ktoremu zapobiega, wymienia niewlasciwy program.
+
+Do dzialania nie wymaga niczego, co rzadkie u narzedzia .NET: niesie wlasne
+srodowisko (`dotnetlib/`, z `runtimeconfig.json` deklarujacym
+`includedFrameworks`) i dostarcza biblioteki CRT Microsoftu obok pliku
+wykonywalnego. Zostaw Prereqs puste.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Ścieżka gry w prefiksie
 
