@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,8 @@ eidos import skyrimse <mo2-profile>  # 接管已有 MO2 配置档的顺序与插
 eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
+eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
+eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 ```
 
 `eidos tool`、`eidos prereqs`、`eidos nexus`、`eidos nxm` 与 `eidos export` 补齐了
@@ -40,8 +42,9 @@ eidos play /mnt/games/EidosSkyrim -- %command%
 启动选项里很方便。你创建过或打开过的便携实例会被记住(最近使用的在前),记在
 `~/.config/Colony/Eidos/instances.ini` 里;GUI 的欢迎界面把它们列出来供一键打开,
 Steam 启动会落在你上次玩的那一个上,`nxm://` 处理器也下载进它里面。有两点值得知道:
-移动便携文件夹后一切照旧,只有你用指向旧位置的绝对路径注册的工具条目除外(那些要重新
-添加);而共享的 runtime 缓存(`~/.local/share/Colony/Eidos/runtimes/`)是有意保持
+手工移动便携文件夹后一切照旧,只有你用指向旧位置的绝对路径注册的工具条目除外(下面的
+`eidos pack` / `eidos unpack` 会替你把那些路径修好,单纯一条 `mv` 不会);而共享的
+runtime 缓存(`~/.local/share/Colony/Eidos/runtimes/`)是有意保持
 全机器共用的 - 一个 78 MB 的 .NET host 不该每个实例来一份。
 
 Eidos 把自己的文件放在 `Colony/Eidos` 下,这是 Colony 家族每个程序都用的布局:
@@ -80,6 +83,93 @@ Eidos 取的是普通的 mount 命名空间而不是 user 命名空间;两种方
 旧的 `setcap` 建议为什么被移除 - 以及 FUSE passthrough 为什么出厂就是关的 - 在
 [troubleshooting.zh-CN.md](troubleshooting.md#为什么-passthrough-默认关闭)
 里有解释。
+
+## 把一个实例搬到另一台机器
+
+`eidos pack` 把一整个实例 - 每一个模组、加载顺序、全部配置档、装着你存档的 Overwrite,
+以及一切东西当初是从哪些压缩包装进来的 - 写进单独一个文件。`eidos unpack` 把它放回去:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # 或者给一个文件夹:文件名按游戏和日期来取
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # 在另一台机器上
+```
+
+`eidos pack --dry-run` 会准确列出什么会进去、什么不会以及为什么,还有它需要多少空间,
+而不写出任何东西。`eidos unpack --info` 对你手上已有的文件做同样的事。
+
+如果 7-Zip 有什么东西读不出来,压缩包照样会写出来并改成正式名字 - 它还是值得留着的 -
+但 `eidos pack` 会以 **1** 退出,并说清楚缺的是什么。一份不完整的备份不算成功,而这是
+一条人们会摆在 `&&` 前面的命令。
+
+一个 `.eidos` 文件就是一个换了自己名字的 7-Zip 压缩包,这是一种选择而不是伪装:装模组
+本来就少不了 7-Zip,所以这不多添任何依赖;而且哪天你手上没有 Eidos 了,你的备份照样能
+用任何一个解压工具打开。它是**非固实**的,所以可以从一个 70 GB 的备份里单独取出一个
+文件,而不必把排在它前面的东西统统解压一遍;它用 LZMA2 以 `-mx1` 压缩 - 在一份贴图很多
+的模组列表上大约是原始体积的 43%,而 `-mx9` 为了多省那么几个百分点要花的时间是它的好
+几倍。贴图和 mesh 本来就是已经压缩过的格式;留给更大的字典去找的东西非常少。如果你对
+自己的内容有不同看法,`--level`(0、1、3、5、7、9)可以改掉这个默认值,而
+`--no-downloads` 会把 `downloads/` 排除在外。
+
+打包会取走实例锁,所以游戏或者另一个 Eidos 正在往那个实例里写的时候它跑不起来 - 备份
+是一张快照,不是一团糊。它先以 `.part` 结尾的名字写出,最后才改名,所以一次被打断的
+打包留下的是一个明显没写完的东西,而不是一个看着完整、其实不是的 `.eidos` 文件。
+
+### 里面没有什么,以及为什么
+
+| 排除在外的 | 为什么 |
+| --- | --- |
+| Proton 前缀 | 它是照着这台机器的形状长的(盘符映射、对*本机*文件系统的一个 `Z:` 视图),而 Eidos 用 `eidos prereqs <instance> --install` 一分钟就能重建它。带上它会让压缩包差不多翻一倍,只为了运送一个另一台机器反正得重新生成一遍的东西。 |
+| 游戏本体 | 一个实例给一款它并不包含的游戏装模组。到那边从 Steam 装就是了。 |
+| 实例之外的工具 | xEdit、DynDOLOD 之类是有自己安装程序的第三方二进制。压缩包里记着它们的**名字**,所以解包时会明确告诉你新机器上缺的是哪几个。 |
+| `logs/`、`.eidos.lock`、`prereqs.done`、`prereqs.log` | 这些是做备份那台机器的记录。尤其是 `prereqs.done`,它会声称运行时库已经装在一个根本不存在的前缀里。 |
+| `loot/`,`userlist.yaml` 除外 | 一份 masterlist 缓存,Eidos 需要时会重新取回来。你自己的 LOOT 规则不是缓存 - 没人会去重新取它们 - 所以那一个文件跟着一起走。 |
+| `.base/`、`.base-root/` | 空的挂载点,一次会话期间游戏自己的文件寄放在那里。 |
+| 写了一半的文件 | 一个暂停中的下载(`*.unfinished`),一次进行中的原子写入(`*.eidos-tmp*`)。 |
+| 符号链接 | 7-Zip 会跟着它走,把它指向的东西复制进来;对一条绝对链接来说,这意味着把一棵外部的目录树拽进你的备份里。它们改为被报告出来。 |
+
+这里的每一条,都会连同它的理由写进压缩包根目录的 `eidos-backup.ini` - 所以"这里面
+没有什么"的答案是 `cat`,不是猜。同一个文件还记下实例原本住在哪里、当时哪个配置档是
+活动的、解包之后有多大,以及新机器会需要哪些工具。
+
+下载记录(`downloads/*.meta`)会进去,但它们的 `url=` 那一行被**清空**了。那个 URL 是
+一条签名过的 Nexus 链接:它几小时之内就失效,而且带着下载该文件那个账号的 `user_id`。
+备份是做来递给别人的,所以它不带这个。让这次下载还能被重新找到的一切 - 模组 id、文件
+id、版本号 - 都留着。
+
+### 在窗口里
+
+两个都在 **File** 菜单里:*Pack this instance...* 和 *Unpack a backup...*。解包在欢迎
+界面上也有一份,就在实例列表下方,因为最需要它的那台机器,正是一个实例都还没有的
+那台。
+
+Pack 对话框会先预览再动手:有多少个文件、多大、其中 `downloads/` 占了多少、压缩包大致
+会有多大,以及哪些工具只记了名字而没有带上。Unpack 对话框在你选中文件的那一刻就读取
+备份的清单,所以它能告诉你里面装的是哪款游戏、什么时候做的、原本住在哪里,以及它的
+哪些工具在这里缺着 - 都在你给它一个文件夹之前。
+
+两个都跑在一条工作线程上,带一个进度条,所以它们干活的时候窗口照样有反应,而进度条在
+完成时就变成那份报告。打包会在整个过程中一直持有实例锁:实例被读取期间,别的东西一律
+不许碰它 - 备份之所以是一张快照而不是一团糊,靠的就是这个。
+
+### 解包会修好什么
+
+单纯复制一份文件夹,会让每一个工具按钮都指着旧机器上的路径。`eidos unpack` 只重写那些
+写着旧实例根目录的值,也仅限这些:`tools.ini` 里的 `exe`、`workdir` 和带编号的 `arg`
+键,以及每个模组 `meta.ini` 里的 `installationFile`。一个从来就不在实例内部的工具
+(`/opt/xedit/SSEEdit.exe`)会被原样留着,并被列为需要重新安装的东西 - 猜别人的 xEdit
+装到哪儿去了是编造,不是修复。它还会订正实例自称是集中式还是便携式,好让后面的命令到
+它现在所在的地方去找它。
+
+解包会拒绝这些:非空的文件夹(如果你就是要覆盖,加上 `--force`)、装不下清单自报体积
+的磁盘、由比你更新的 Eidos 做出来的压缩包,以及任何含有会被写到你所选文件夹*之外*的
+条目的压缩包。
+
+之后:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # 重建 Proton 前缀
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

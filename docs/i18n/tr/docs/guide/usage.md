@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,8 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
+eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` ve `eidos export`
@@ -45,9 +47,10 @@ Oluşturduğunuz ya da açtığınız taşınabilir örnekler
 `~/.config/Colony/Eidos/instances.ini` içinde hatırlanır (en son kullanılan
 başta); GUI'nin karşılama ekranı onları tek tıkla açmak üzere listeler, Steam
 başlatması en son oynadığınızın üzerine iner ve `nxm://` işleyicisi onun içine
-indirir. Bilmeye değer iki uyarı: taşınabilir bir klasörü taşımak, eski konuma
-mutlak yollarla kaydettiğiniz araç girdileri dışında her şeyi korur (onları
-yeniden ekleyin) ve paylaşılan çalışma zamanı önbelleği
+indirir. Bilmeye değer iki uyarı: taşınabilir bir klasörü elle taşımak, eski
+konuma mutlak yollarla kaydettiğiniz araç girdileri dışında her şeyi korur
+(aşağıdaki `eidos pack` / `eidos unpack` bunları sizin için düzeltir; düz bir
+`mv` düzeltmez) ve paylaşılan çalışma zamanı önbelleği
 (`~/.local/share/Colony/Eidos/runtimes/`) bilerek makine genelinde kalır - 78
 MB'lık bir .NET host'u örnek başına olmaz.
 
@@ -96,6 +99,113 @@ yerine düz bir bağlama ad alanı alır; modlar iki durumda da aynı biçimde y
 Eski `setcap` önerisinin neden ortadan kalktığı - ve FUSE passthrough'un neden
 kapalı geldiği - [troubleshooting.tr.md](troubleshooting.md#passthrough-neden-öntanımlı-olarak-kapalı)
 içinde anlatılıyor.
+
+## Bir örneği başka bir makineye taşımak
+
+`eidos pack`, bütün bir örneği - her modu, yükleme sırasını, bütün profilleri,
+içindeki kayıtlarınızla birlikte Overwrite'ı ve her şeyin kurulduğu arşivleri -
+tek bir dosyaya yazar. `eidos unpack` onu geri koyar:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # ya da bir klasör verin: oyunun ve tarihin adını alır
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # öteki makinede
+```
+
+`eidos pack --dry-run`, hiçbir şey yazmadan neyin gireceğini, neyin girmeyeceğini
+ve nedenini, bir de ne kadar yer gerektiğini tam olarak listeler.
+`eidos unpack --info`, elinizde zaten olan bir dosya için aynısını yapar.
+
+7-Zip bir şeyi okuyamadıysa arşiv yine de yazılır ve adlandırılır - elde
+olması iyidir - ama `eidos pack` **1** ile çıkar ve neyin eksik olduğunu
+söyler. Eksik bir yedek bir başarı değildir ve bu, insanların `&&` işaretinin
+önüne koyduğu bir komuttur.
+
+Bir `.eidos` dosyası, kendine ait bir ad altındaki bir 7-Zip arşividir; bu bir
+kılık değil, bir tercihtir: bir modu kurabilmek için zaten 7-Zip gerekiyor, yani
+bu hiçbir bağımlılık eklemez ve Eidos'u bir gün yitirseniz de yedeğiniz
+elinizdeki herhangi bir arşivleyicide yine açılır. **Non-solid**'dir, yani 70
+GB'lık bir yedekten tek bir dosya, önündeki her şeyi açmadan çekilip
+çıkarılabilir; ve LZMA2 ile `-mx1` düzeyinde sıkıştırılır - doku ağırlıklı bir
+listede özgün boyutun yaklaşık %43'ü, hem de `-mx9`'un birkaç puan daha kazanmak
+için harcadığı sürenin küçük bir bölümünde. Dokular ve mesh'ler zaten
+sıkıştırılmış biçimlerdir; daha büyük bir sözlüğün bulabileceği pek bir şey
+kalmaz. Kendi içeriğinizde başka düşünüyorsanız `--level` (0, 1, 3, 5, 7, 9)
+bunu geçersiz kılar, `--no-downloads` ise `downloads/` dizinini dışarıda bırakır.
+
+Paketleme örnek kilidini alır, yani oyun ya da başka bir Eidos o örneğe yazarken
+çalışamaz - yedek bir anlık görüntüdür, hareket halinde alınmış bulanık bir kare
+değil. Bir `.part` adı altında yazılır ve sonunda yeniden adlandırılır, böylece
+yarıda kesilen bir paketleme, tam görünen ama olmayan bir `.eidos` dosyası
+yerine açıkça yarım kalmış bir şey bırakır.
+
+### İçinde ne yok ve neden
+
+| Dışarıda kalan | Neden |
+| --- | --- |
+| Proton öneki | Makineye göre biçimlenmiştir (sürücü eşlemeleri, *bu* dosya sisteminin bir `Z:` görünümü) ve Eidos onu `eidos prereqs <instance> --install` ile bir dakikada yeniden kurar. Onu taşımak, öteki makinenin nasılsa yeniden üretmesi gereken bir şeyi göndermek uğruna arşivi kabaca ikiye katlardı. |
+| Oyun | Bir örnek, içinde barındırmadığı bir oyunu modlar. Onu orada Steam'den kurun. |
+| Örneğin dışındaki araçlar | xEdit, DynDOLOD ve arkadaşları, kendi kurucuları olan üçüncü taraf ikili dosyalarıdır. Arşivde **adları geçer**, böylece açma işlemi yeni makinede hangilerinin eksik olduğunu tam olarak söyler. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Yedeği alan makinenin kayıtları. Özellikle `prereqs.done`, çalışma zamanı kitaplıklarının orada olmayan bir önekte zaten kurulu olduğunu iddia ederdi. |
+| `loot/`, `userlist.yaml` dışında | Eidos'un gerektiğinde yeniden getirdiği bir masterlist önbelleği. Kendi LOOT kurallarınız bir önbellek değildir - onları kimse yeniden getirmez - bu yüzden o tek dosya birlikte gelir. |
+| `.base/`, `.base-root/` | Oyunun kendi dosyalarının bir oturum boyunca saklandığı boş bağlama noktaları. |
+| Yarım yazılmış dosyalar | Duraklatılmış bir indirme (`*.unfinished`), yolda olan atomik bir yazma (`*.eidos-tmp*`). |
+| Sembolik bağlar | 7-Zip birini izler ve neyi gösteriyorsa onu kopyalardı; mutlak bir bağ için bu, yedeğinizin içine yabancı bir ağaç çekmek demektir. Onun yerine bildirilirler. |
+
+Bunların her biri, nedeniyle birlikte arşivin kökündeki `eidos-backup.ini`
+dosyasına girer - yani "burada ne yok" sorusunun yanıtı bir tahmin değil,
+`cat`'tir. Aynı dosya, örneğin eskiden nerede olduğunu, hangi profilin etkin
+olduğunu, açıldığında ne kadar yer tuttuğunu ve yeni makinenin hangi araçlara
+gereksinim duyacağını kaydeder.
+
+İndirme kayıtları (`downloads/*.meta`), `url=` satırları **boşaltılmış** olarak
+girer. O URL imzalı bir Nexus bağlantısıdır: saatler içinde çalışmayı bırakır ve
+dosyayı indiren hesabın `user_id`'sini taşır. Bir yedek başkasının eline
+verilmek üzere alınır, bu yüzden onu taşımaz. İndirmeyi yeniden bulunabilir
+kılan her şey - mod kimliği, dosya kimliği, sürüm - kalır.
+
+### Pencerede
+
+İkisi de **File** menüsündedir: *Pack this instance...* ve
+*Unpack a backup...*. Açma işlemi ayrıca karşılama ekranında, örneklerin
+listesinin altında da bulunur; çünkü ona en çok gereksinim duyan makine, henüz
+hiç örneği olmayandır.
+
+Pack iletişim kutusu, işe girişmeden önce önizler: kaç dosya, ne kadar büyük,
+bunun ne kadarı `downloads/`, arşivin kabaca ne tutacağı ve hangi araçların adı
+geçtiği halde taşınmadığı. Unpack iletişim kutusu, dosyayı seçtiğiniz anda
+yedeğin manifest'ini okur; böylece daha ona bir klasör vermeden hangi oyunu
+barındırdığını, ne zaman alındığını, eskiden nerede olduğunu ve araçlarından
+hangilerinin burada eksik olduğunu size söyleyebilir.
+
+İkisi de bir ilerleme çubuğuyla birlikte bir çalışan iş parçacığında koşar,
+böylece onlar çalışırken pencere yanıt vermeyi sürdürür ve bitirdiklerinde
+çubuk raporun kendisi olur. Paketleme, örnek kilidini bütün koşu boyunca
+tutar: örnek okunurken başka hiçbir şey ona dokunamaz, yedeği hareket halinde
+alınmış bulanık bir kare değil de bir anlık görüntü yapan da budur.
+
+### Açma işleminin onardıkları
+
+Klasörün düz bir kopyası, her araç düğmesini eski makinedeki bir yolu gösterir
+halde bırakırdı. `eidos unpack`, eski örnek kökünü adlandıran değerleri ve
+yalnızca onları yeniden yazar: `tools.ini` içindeki `exe`, `workdir` ve numaralı
+`arg` anahtarları ile her modun `meta.ini` dosyasındaki `installationFile`.
+Hiçbir zaman örneğin içinde olmamış bir araç (`/opt/xedit/SSEEdit.exe`) tam
+olarak olduğu gibi bırakılır ve yeniden kurulacaklar arasında listelenir -
+başkasının xEdit'inin nereye gittiğini tahmin etmek onarım değil, uydurmadır.
+Ayrıca örneğin kendini merkezî mi taşınabilir mi saydığını da düzeltir, böylece
+sonraki komutlar onu artık bulunduğu yerde arar.
+
+Açma işlemi şunları reddeder: boş olmayan bir klasör (üzerine yazmak
+istiyorsanız `--force` verin), manifest'in kendi rakamı için fazla küçük bir
+disk, sizinkinden yeni bir Eidos'un yaptığı bir arşiv ve seçtiğiniz klasörün
+*dışına* yazılacak bir girdi barındıran her arşiv.
+
+Sonrasında:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # Proton önekini yeniden kur
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

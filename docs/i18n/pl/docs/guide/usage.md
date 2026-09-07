@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Używanie Eidos
 
@@ -18,6 +18,8 @@ eidos import skyrimse <mo2-profile>  # przejąć kolejność i stan wtyczek istn
 eidos sort skyrimse               # posortować kolejność wczytywania wtyczek LOOT-em
 eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
+eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
+eidos unpack backup.eidos <folder>   # odtworzyć ją na drugiej maszynie
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` i `eidos export`
@@ -45,9 +47,10 @@ Instancje przenośne, które utworzyłeś lub otworzyłeś, są zapamiętywane (
 używane pierwsze) w `~/.config/Colony/Eidos/instances.ini`; ekran powitalny GUI
 wypisuje je do otwarcia jednym kliknięciem, uruchomienie ze Steama trafia na tę,
 w którą grałeś ostatnio, a program obsługujący `nxm://` pobiera do niej. Dwa
-zastrzeżenia warte poznania: przeniesienie folderu przenośnego zachowuje
+zastrzeżenia warte poznania: przeniesienie folderu przenośnego ręcznie zachowuje
 wszystko poza wpisami narzędzi zarejestrowanymi ścieżkami bezwzględnymi do
-starej lokalizacji (te trzeba dodać ponownie), a współdzielony cache środowisk
+starej lokalizacji (`eidos pack` / `eidos unpack`, niżej, naprawiają je za
+ciebie; zwykłe `mv` nie), a współdzielony cache środowisk
 uruchomieniowych (`~/.local/share/Colony/Eidos/runtimes/`) celowo pozostaje
 globalny dla maszyny - host .NET ważący 78 MB nie jest per instancja.
 
@@ -97,6 +100,113 @@ obu przypadkach.
 Dlaczego dawna rada z `setcap` zniknęła - i dlaczego passthrough FUSE jest
 dostarczany wyłączony - wyjaśnia
 [troubleshooting.pl.md](troubleshooting.md#dlaczego-passthrough-jest-domyślnie-wyłączony).
+
+## Przeniesienie instancji na inną maszynę
+
+`eidos pack` zapisuje całą instancję - każdy mod, kolejność wczytywania,
+wszystkie profile, Overwrite z twoimi zapisami w środku i archiwa, z których
+wszystko zostało zainstalowane - do jednego pliku. `eidos unpack` wstawia ją z
+powrotem:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # albo podaj folder: nazwa od gry i daty
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # na drugiej maszynie
+```
+
+`eidos pack --dry-run` wypisuje dokładnie, co weszłoby do środka, co nie i
+dlaczego, oraz ile miejsca to zajmie, niczego nie zapisując. `eidos unpack
+--info` robi to samo dla pliku, który już masz.
+
+Jeśli 7-Zip czegoś nie zdołał odczytać, archiwum i tak zostaje zapisane i
+nazwane - warto je mieć - ale `eidos pack` kończy się kodem **1** i mówi, czego
+brakuje. Niekompletna kopia nie jest sukcesem, a to polecenie ludzie stawiają
+przed `&&`.
+
+Plik `.eidos` to archiwum 7-Zip pod własną nazwą, co jest wyborem, a nie
+przebraniem: 7-Zip i tak jest wymagany, żeby w ogóle zainstalować mod, więc nie
+dokłada to żadnej zależności, a jeśli kiedyś stracisz Eidos, twoja kopia nadal
+otworzy się w dowolnym archiwizatorze, jaki masz. Archiwum jest **niesolidne**,
+więc jeden plik da się wyciągnąć z kopii ważącej 70 GB bez rozpakowywania
+wszystkiego, co stoi przed nim, a kompresja to LZMA2 na `-mx1` - około 43%
+oryginału na liście obciążonej teksturami, w ułamku czasu, jaki `-mx9` spędza,
+by zyskać kilka punktów więcej. Tekstury i siatki to formaty już skompresowane;
+zostaje bardzo niewiele do znalezienia dla większego słownika. `--level`
+(0, 1, 3, 5, 7, 9) nadpisuje to, jeśli nie zgadzasz się co do własnej
+zawartości, a `--no-downloads` zostawia `downloads/` poza kopią.
+
+Pakowanie bierze blokadę instancji, więc nie może działać, gdy gra albo inny
+Eidos pisze do tej instancji - kopia jest migawką, nie rozmazem. Zapisuje się
+pod nazwą z `.part` i na końcu jest przemianowywana, więc przerwane pakowanie
+zostawia coś oczywiście niedokończonego, a nie plik `.eidos`, który wygląda na
+kompletny i taki nie jest.
+
+### Czego w niej nie ma i dlaczego
+
+| Pominięte | Dlaczego |
+| --- | --- |
+| Prefiks Protona | Ma kształt tej maszyny (mapowania dysków, widok `Z:` na *ten* system plików), a Eidos odbudowuje go w minutę przez `eidos prereqs <instance> --install`. Niesienie go mniej więcej podwoiłoby archiwum, żeby dostarczyć coś, co druga maszyna i tak musi wygenerować od nowa. |
+| Gra | Instancja moduje grę, której nie zawiera. Zainstaluj ją tam ze Steama. |
+| Narzędzia spoza instancji | xEdit, DynDOLOD i spółka to pliki wykonywalne obcych producentów, z własnymi instalatorami. W archiwum są **wymienione z nazwy**, więc rozpakowanie mówi ci dokładnie, których brakuje na nowej maszynie. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Zapisy maszyny, która zrobiła kopię. Zwłaszcza `prereqs.done` twierdziłby, że biblioteki środowiska uruchomieniowego są już zainstalowane w prefiksie, którego nie ma. |
+| `loot/`, poza `userlist.yaml` | Cache masterlisty, którą Eidos pobiera na nowo na żądanie. Twoje własne reguły LOOT nie są cache'em - nikt ich nie pobiera na nowo - więc ten jeden plik jedzie razem z resztą. |
+| `.base/`, `.base-root/` | Puste punkty montowania, w których na czas sesji odkładane są własne pliki gry. |
+| Pliki zapisane w połowie | Wstrzymane pobieranie (`*.unfinished`), atomowy zapis w locie (`*.eidos-tmp*`). |
+| Dowiązania symboliczne | 7-Zip poszedłby za takim i skopiował to, na co ono wskazuje, co przy dowiązaniu bezwzględnym znaczy wciągnięcie obcego drzewa do twojej kopii. Zamiast tego są zgłaszane. |
+
+Każda z tych rzeczy trafia do `eidos-backup.ini` w katalogu głównym archiwum,
+wraz ze swoim powodem - więc odpowiedzią na pytanie „czego tu nie ma" jest
+`cat`, a nie zgadywanie. Ten sam plik zapisuje, gdzie instancja leżała
+wcześniej, który profil był aktywny, ile zajmuje po rozpakowaniu i jakich
+narzędzi będzie potrzebowała nowa maszyna.
+
+Rekordy pobrań (`downloads/*.meta`) wchodzą z **opróżnionym** wierszem `url=`.
+Ten URL to podpisany odnośnik Nexusa: przestaje działać w ciągu godzin i niesie
+`user_id` konta, które pobrało plik. Kopia powstaje po to, by dało się ją komuś
+przekazać, więc tego nie niesie. Wszystko, co pozwala odnaleźć pobranie na nowo
+- identyfikator moda, identyfikator pliku, wersja - zostaje.
+
+### W oknie
+
+Oba są w menu **File**: *Pack this instance...* oraz *Unpack a backup...*.
+Rozpakowanie jest też na ekranie powitalnym, pod listą instancji, bo maszyna,
+która potrzebuje go najbardziej, to ta, która nie ma jeszcze żadnej instancji.
+
+Okno pakowania pokazuje podgląd, zanim się do czegokolwiek zobowiąże: ile
+plików, jak dużych, ile z tego to `downloads/`, na ile mniej więcej wyjdzie
+archiwum i które narzędzia są wymienione z nazwy, ale nie niesione. Okno
+rozpakowania czyta manifest kopii w chwili, gdy wybierasz plik, więc potrafi
+powiedzieć, którą grę ona zawiera, kiedy powstała, gdzie leżała wcześniej i
+których jej narzędzi tutaj brakuje - zanim wskażesz mu folder.
+
+Oba działają na wątku roboczym z paskiem postępu, więc okno dalej odpowiada,
+kiedy pracują, a pasek na koniec staje się raportem. Pakowanie trzyma blokadę
+instancji przez cały czas: nic innego nie może dotknąć instancji, gdy jest
+czytana, i to właśnie czyni kopię migawką, a nie rozmazem.
+
+### Co naprawia rozpakowanie
+
+Zwykłe skopiowanie folderu zostawiłoby każdy przycisk narzędzia wskazujący na
+ścieżkę na starej maszynie. `eidos unpack` przepisuje te wartości, które nazywają
+stary katalog główny instancji, i tylko te: `exe`, `workdir` oraz numerowane
+klucze `arg` w `tools.ini`, a także `installationFile` w `meta.ini` każdego moda.
+Narzędzie, które nigdy nie było wewnątrz instancji
+(`/opt/xedit/SSEEdit.exe`), zostaje dokładnie takie, jakie było, i trafia na
+listę rzeczy do ponownego zainstalowania - zgadywanie, gdzie się podział cudzy
+xEdit, to wymyślanie, a nie naprawa. Poprawia też to, czy instancja nazywa siebie
+centralną, czy przenośną, żeby późniejsze polecenia szukały jej tam, gdzie teraz
+jest.
+
+Rozpakowanie odmawia folderu, który nie jest pusty (podaj `--force`, jeśli
+chcesz nadpisać), dysku za małego wobec liczby z samego manifestu, archiwum
+zrobionego przez nowszy Eidos niż twój oraz każdego archiwum z wpisem, który
+zostałby zapisany *poza* wybranym przez ciebie folderem.
+
+Potem:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # odbudować prefiks Protona
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

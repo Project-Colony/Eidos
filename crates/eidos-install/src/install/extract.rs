@@ -9,142 +9,35 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::*;
 
 pub(crate) static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// The first usable 7-Zip binary on `PATH`.
-pub(crate) fn find_7z() -> Option<&'static str> {
-    ["7z", "7zz", "7za"]
-        .into_iter()
-        .find(|b| Command::new(b).output().is_ok())
-}
-
-/// Split off every complete chunk of 7-Zip `-bsp1` progress output in `buf`,
-/// returning the percentages found in order.
-///
-/// 7-Zip repaints its progress line in place: chunks are separated by
-/// backspaces or carriage returns, never reliably by newlines. A chunk is a
-/// percentage only when it STARTS with one (`" 99% 27"` carries a file count,
-/// and a printed filename may itself contain `%`). The text after the last
-/// separator may be an unfinished repaint - a read can split ` 47%` into ` 4`
-/// and `7%` - so it stays in `buf` for the next call.
-pub(crate) fn drain_percents(buf: &mut String) -> Vec<u8> {
-    const SEPS: [char; 3] = ['\u{8}', '\r', '\n'];
-    let Some(cut) = buf.rfind(SEPS) else {
-        return Vec::new();
-    };
-    let complete = buf[..cut].to_string();
-    *buf = buf[cut + 1..].to_string();
-    complete
-        .split(SEPS)
-        .filter_map(|chunk| {
-            let t = chunk.trim_start();
-            let digits: &str = &t[..t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len()];
-            if digits.is_empty() || !t[digits.len()..].starts_with('%') {
-                return None;
-            }
-            digits.parse::<u8>().ok().filter(|p| *p <= 100)
-        })
-        .collect()
-}
-
-/// Drain a 7-Zip progress stream, calling `on_progress` on each NEW percentage,
-/// and report the last one seen.
-///
-/// Split out from the spawn so the reading can be tested against an in-memory
-/// stream. Testing it through a throwaway shell script exec'd as a stand-in
-/// 7-Zip is racy by construction: the harness runs tests in parallel threads,
-/// and a `fork` in one thread inherits the write descriptor another thread still
-/// holds on the script it has just written, so the `exec` fails with `ETXTBSY`.
-/// That is a property of write-then-exec in a threaded process, not of anything
-/// here, and it failed about one run in ten.
-fn pump_progress(
-    mut out: impl std::io::Read,
-    on_progress: &mut impl FnMut(u8),
-) -> io::Result<Option<u8>> {
-    let mut buf = [0u8; 4096];
-    let mut tail = String::new();
-    let mut last = None;
-    loop {
-        let n = out.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        tail.push_str(&String::from_utf8_lossy(&buf[..n]));
-        for p in drain_percents(&mut tail) {
-            // The same value repaints constantly; the caller redraws per call.
-            if last != Some(p) {
-                last = Some(p);
-                on_progress(p);
-            }
-        }
-    }
-    Ok(last)
-}
-
 /// Extract every entry of `archive` into `dest`, reporting 7-Zip's own progress.
 ///
-/// The blocking path used `Command::output()`, which holds everything until the
-/// child exits - the caller learned nothing until the end, and a GUI driving it
-/// on its event thread froze for the whole archive. This one pipes stdout
-/// (`-bsp1` puts the progress there; `-bso0` silences the listing so progress
-/// is ALL that arrives) and feeds each new percentage to `on_progress` as it is
-/// read. stderr is drained on a side thread: an error-chatty 7-Zip must never
-/// fill its pipe and deadlock against us reading stdout.
+/// A thin adapter over [`eidos_sevenzip`]: the process plumbing (piped stdout
+/// read as it arrives, stderr drained on a side thread, the synthetic 100 that
+/// closes 7-Zip's 99% gap) lives there, and this maps its two errors onto the
+/// installer's own wording. The seam moved out because the workspace already
+/// held two divergent copies of it and instance packing was about to add a
+/// third.
 pub(crate) fn extract_all_with(
     bin: &str,
     archive: &Path,
     dest: &Path,
-    mut on_progress: impl FnMut(u8),
+    on_progress: impl FnMut(u8),
 ) -> Result<(), InstallError> {
-    use std::io::Read;
-    use std::process::Stdio;
-    let mut child = Command::new(bin)
-        .arg("x")
-        .arg("-y")
-        .arg(format!("-o{}", dest.display()))
-        .arg("-bsp1")
-        .arg("-bso0")
-        .arg(archive)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| InstallError::Extract(e.to_string()))?;
-    let mut err = child.stderr.take().expect("stderr was piped");
-    let drain = std::thread::spawn(move || {
-        let mut s = String::new();
-        let _ = err.read_to_string(&mut s);
-        s
-    });
-    let out = child.stdout.take().expect("stdout was piped");
-    let last =
-        pump_progress(out, &mut on_progress).map_err(|e| InstallError::Extract(e.to_string()))?;
-    let status = child
-        .wait()
-        .map_err(|e| InstallError::Extract(e.to_string()))?;
-    let stderr = drain.join().unwrap_or_default();
-    if !status.success() {
-        return Err(InstallError::Extract(stderr.trim().to_string()));
-    }
-    close_the_gap(true, last, &mut on_progress);
-    Ok(())
+    eidos_sevenzip::extract_all_with(bin, archive, dest, on_progress).map_err(sevenzip_err)
 }
 
-/// 7-Zip's last repaint is ` 99%`, never 100 - measured on a real 149 MB mod
-/// archive. Close the gap so the caller can treat 100 as "the archive is read"
-/// and say so, rather than leaving a bar stopped just short through the passes
-/// that follow (data-root search, NTFS case-collision healing).
-///
-/// Only on success: a bar that fills up and is then followed by an error reads
-/// as "it worked, then something else broke".
-fn close_the_gap(success: bool, last: Option<u8>, on_progress: &mut impl FnMut(u8)) {
-    if success && last != Some(100) {
-        on_progress(100);
+/// One place turns a 7-Zip failure into an install failure, so the two error
+/// vocabularies meet exactly once.
+pub(crate) fn sevenzip_err(e: eidos_sevenzip::SevenZipError) -> InstallError {
+    match e {
+        eidos_sevenzip::SevenZipError::NotFound => InstallError::No7z,
+        eidos_sevenzip::SevenZipError::Failed(why) => InstallError::Extract(why),
     }
 }
 
@@ -300,7 +193,7 @@ pub fn extract_to_temp_with(
     mods_dir: &Path,
     on_progress: impl FnMut(u8),
 ) -> Result<ExtractedTree, InstallError> {
-    let bin = find_7z().ok_or(InstallError::No7z)?;
+    let bin = eidos_sevenzip::find_7z().ok_or(InstallError::No7z)?;
     let tmp = mods_dir.join(format!(
         ".eidos-install-{}-{}",
         std::process::id(),
@@ -519,132 +412,30 @@ mod backslash_tests {
     }
 }
 
+// The 7-Zip progress tests moved with their subject to `eidos-sevenzip`.
+// What stayed here is what is about the INSTALLER: the backslash-path repair
+// above, and the error mapping proved below.
+
 #[cfg(test)]
-mod progress_tests {
+mod sevenzip_seam_tests {
     use super::*;
 
-    /// Captured from a real `7z x -bsp1 -bso0 | cat -v` on this machine: the
-    /// stream repaints in place with backspaces, never newlines, and mixes in
-    /// a `0M Scan` phase and runs of padding spaces.
     #[test]
-    fn percents_are_pulled_from_backspace_separated_repaints() {
-        let mut b = String::from(
-            "  0M Scan\u{8}\u{8}\u{8}         \u{8}\u{8}  0%\u{8}\u{8}\u{8}\u{8} 12%\u{8}\u{8}\u{8}\u{8} 99% 27\u{8}\u{8}\u{8}",
-        );
-        assert_eq!(drain_percents(&mut b), vec![0, 12, 99]);
-    }
-
-    /// A pipe read can end in the middle of a number; misreading " 4" as 4%
-    /// would make the bar jump backwards.
-    #[test]
-    fn a_number_split_across_two_reads_is_not_misread() {
-        let mut b = String::from(" 4");
-        assert_eq!(drain_percents(&mut b), Vec::<u8>::new());
-        b.push_str("7%\u{8}\u{8}\u{8}");
-        assert_eq!(drain_percents(&mut b), vec![47]);
-    }
-
-    /// 7-Zip prints " NN% count - filename", and filenames may contain '%'.
-    /// Only a percentage at the START of a repaint chunk counts.
-    #[test]
-    fn a_filename_containing_a_percent_sign_is_not_a_percentage() {
-        let mut b = String::from(" 12% 3 - tex%40weird.dds\r");
-        assert_eq!(drain_percents(&mut b), vec![12]);
-        let mut c = String::from("3 - plain.dds\n");
-        assert_eq!(drain_percents(&mut c), Vec::<u8>::new());
-    }
-
-    /// Feed a recorded stream through the reader. No process, no exec: see
-    /// `pump_progress` for why a stand-in binary cannot be used here.
-    fn pump(stream: &str) -> Vec<u8> {
-        let mut seen = Vec::new();
-        let last = pump_progress(std::io::Cursor::new(stream.as_bytes()), &mut |p| seen.push(p))
-            .expect("an in-memory stream cannot fail");
-        assert_eq!(
-            last,
-            seen.last().copied(),
-            "the reported last IS the last sent"
-        );
-        seen
-    }
-
-    #[test]
-    fn extraction_progress_reaches_the_caller_as_it_happens() {
-        assert_eq!(pump(" 12%\u{8}\u{8}\u{8}\u{8} 47%\r100%\n"), vec![12, 47, 100]);
-    }
-
-    /// The same percentage repainted twice must not fire the callback twice -
-    /// the GUI repaints on every call it gets.
-    #[test]
-    fn a_repeated_percentage_is_reported_once() {
-        assert_eq!(
-            pump(" 30%\u{8}\u{8}\u{8}\u{8} 30%\u{8}\u{8}\u{8}\u{8} 31%\n"),
-            vec![30, 31]
-        );
-    }
-
-    /// A pipe splits wherever it likes, including mid-number, so a stream
-    /// delivered a byte at a time must read exactly like one delivered whole.
-    #[test]
-    fn a_stream_split_across_reads_is_read_the_same_as_a_whole_one() {
-        struct Dribble(std::vec::IntoIter<u8>);
-        impl std::io::Read for Dribble {
-            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-                match self.0.next() {
-                    Some(b) => {
-                        buf[0] = b;
-                        Ok(1)
-                    }
-                    None => Ok(0),
-                }
-            }
+    fn a_seven_zip_failure_becomes_an_install_failure_with_its_reason() {
+        // The two error vocabularies meet in exactly one place; if that
+        // mapping ever drops the reason, a user gets a dialog with no cause.
+        let mapped = sevenzip_err(eidos_sevenzip::SevenZipError::Failed("bad archive".into()));
+        match mapped {
+            InstallError::Extract(why) => assert_eq!(why, "bad archive"),
+            other => panic!("expected Extract, got {other:?}"),
         }
-        let whole = " 12%\u{8}\u{8}\u{8}\u{8} 47%\r 99%\n";
-        let mut seen = Vec::new();
-        pump_progress(
-            Dribble(whole.as_bytes().to_vec().into_iter()),
-            &mut |p| seen.push(p),
-        )
-        .unwrap();
-        assert_eq!(seen, pump(whole));
     }
 
     #[test]
-    fn a_successful_extraction_ends_at_one_hundred() {
-        let mut seen = Vec::new();
-        close_the_gap(true, Some(99), &mut |p| seen.push(p));
-        assert_eq!(seen, vec![100], "the caller is told the read is over");
-    }
-
-    #[test]
-    fn a_stream_that_already_reached_a_hundred_is_not_told_twice() {
-        let mut seen = Vec::new();
-        close_the_gap(true, Some(100), &mut |p| seen.push(p));
-        assert!(seen.is_empty());
-    }
-
-    /// A failure must NOT end at 100: the bar filling up and then an error
-    /// appearing reads as "it worked, then something else broke".
-    #[test]
-    fn a_failed_extraction_does_not_end_at_one_hundred() {
-        let mut seen = Vec::new();
-        close_the_gap(false, Some(40), &mut |p| seen.push(p));
-        assert!(seen.is_empty());
-    }
-
-    /// A 7-Zip that is not there at all is an install failure carrying the OS's
-    /// words, not a panic. The non-zero-exit path is the same two lines and was
-    /// exercised for real: pointed at a missing archive, it returned 7-Zip's own
-    /// "ERROR: errno=2".
-    #[test]
-    fn a_missing_seven_zip_is_reported_as_an_install_failure() {
-        let err = extract_all_with(
-            "/nonexistent/definitely-not-7z",
-            Path::new("/dev/null"),
-            Path::new("/tmp"),
-            |_| {},
-        )
-        .unwrap_err();
-        assert!(matches!(err, InstallError::Extract(_)), "{err:?}");
+    fn a_missing_binary_keeps_its_own_variant_and_its_advice() {
+        // No7z has its own wording ("install p7zip") and must not be
+        // flattened into a generic extraction failure.
+        let mapped = sevenzip_err(eidos_sevenzip::SevenZipError::NotFound);
+        assert!(matches!(mapped, InstallError::No7z), "{mapped:?}");
     }
 }

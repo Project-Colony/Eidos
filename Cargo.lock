@@ -1039,6 +1039,7 @@ dependencies = [
  "eidos-nexus",
  "eidos-paths",
  "eidos-plugins",
+ "eidos-transfer",
 ]
 
 [[package]]
@@ -1093,6 +1094,7 @@ dependencies = [
  "eidos-gamedef",
  "eidos-ini",
  "eidos-paths",
+ "eidos-sevenzip",
  "flate2",
  "object",
  "ureq",
@@ -1124,6 +1126,7 @@ dependencies = [
  "eidos-nexus",
  "eidos-paths",
  "eidos-plugins",
+ "eidos-transfer",
  "iced",
  "libc",
  "rfd",
@@ -1141,6 +1144,7 @@ dependencies = [
  "eidos-gamedef",
  "eidos-instance",
  "eidos-log",
+ "eidos-sevenzip",
 ]
 
 [[package]]
@@ -1205,6 +1209,20 @@ dependencies = [
  "eidos-gamedef",
  "encoding_rs",
  "esplugin",
+]
+
+[[package]]
+name = "eidos-sevenzip"
+version = "1.14.3"
+
+[[package]]
+name = "eidos-transfer"
+version = "1.14.3"
+dependencies = [
+ "eidos-ini",
+ "eidos-instance",
+ "eidos-sevenzip",
+ "libc",
 ]
 
 [[package]]

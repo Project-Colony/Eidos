@@ -10,6 +10,9 @@ edition.workspace = true
 eidos-paths = { path = "../eidos-paths" }
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
+# The one 7-Zip probe. This crate used to carry a third copy of it, drifted from
+# the other two in candidate set, order and probe mechanism.
+eidos-sevenzip = { path = "../eidos-sevenzip" }
 # PE import-table parsing, to detect mods that import d3dcompiler_47.dll.
 object = { version = "0.40", default-features = false, features = ["read_core", "pe", "coff", "std"] }
 # Inflate for the zlib-compressed save payload (savegame.rs). Already in the

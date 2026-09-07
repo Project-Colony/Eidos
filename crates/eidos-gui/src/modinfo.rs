@@ -3318,7 +3318,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         .spacing(4)
         .padding(4)
         .push(header)
-        .push(menu_bar());
+        .push(menu_bar(app));
     if app.ui_toolbar_visible {
         base = base.push(toolbar(app));
     }
@@ -3368,6 +3368,18 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .push(container(install_progress_dialog(job)).center(Length::Fill));
     }
 
+    // A pack or unpack, and afterwards its report. Above the extraction dialog
+    // because it is the longer job of the two and the one that must not be
+    // covered; no scrim catcher either, for the same reason as the extraction
+    // and one more - while it is FINISHED, a stray click would throw away the
+    // report before it had been read.
+    if let Some(job) = &app.transfer_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(card);
+    }
+
     // The manual / BAIN picker (MO2's InstallDialog and BainComplexInstallerDialog).
     // Below the collision chooser in the stack: a collision raised BY the picker
     // has to be the thing you can click.
@@ -3401,18 +3413,15 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
             .on_press(Message::ToggleFilterPane)
             .on_right_press(Message::ToggleFilterPane);
         // Hangs under the Filters button rather than floating at the cursor:
-        // it is a panel belonging to a control, not a context menu.
-        let card = container(filter_pane(app))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(iced::Padding {
-                top: 84.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 320.0,
-            })
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top);
+        // it is a panel belonging to a control, not a context menu. Its old
+        // hardcoded corner was wrong twice over - the button sits behind a
+        // Length::Fill search box inside a resizable pane, so its x moves with
+        // the window width AND with the split divider.
+        let card = dropdown_under(
+            filter_pane(app),
+            app.filters_at.unwrap_or(FALLBACK_MENU_ANCHOR),
+            app.window,
+        );
         layers = layers.push(catcher).push(card);
     }
 
@@ -3534,6 +3543,25 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         layers = layers.push(scrim).push(dialog);
     }
 
+    // Pack and unpack. Their cards swallow their own presses: both carry a
+    // block of computed text somebody will click on while reading it, and a
+    // `container` does not take mouse events, so without this that click falls
+    // through to the scrim and dismisses what they were reading.
+    if let Some(state) = &app.pack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ClosePackDialog);
+        let dialog = container(mouse_area(pack_dialog(app, state)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+    if let Some(state) = &app.unpack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseUnpackDialog);
+        let dialog = container(mouse_area(unpack_dialog(state)).on_press(Message::Noop))
+            .center(Length::Fill);
+        layers = layers.push(scrim).push(dialog);
+    }
+
     // The Export dialog (MO2's Export to csv).
     if let Some(state) = &app.export {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
@@ -3546,17 +3574,11 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if app.file_menu_open {
         let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseFileMenu);
-        let card = container(file_menu_card(app))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(iced::Padding {
-                top: 44.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 4.0,
-            })
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top);
+        let card = dropdown_under(
+            file_menu_card(app),
+            app.file_menu_at.unwrap_or(FALLBACK_MENU_ANCHOR),
+            app.window,
+        );
         layers = layers.push(catcher).push(card);
     }
 
@@ -3564,17 +3586,11 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     if app.view_menu_open {
         let catcher = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseViewMenu);
-        let card = container(view_menu_card(app))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .padding(iced::Padding {
-                top: 44.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: 44.0,
-            })
-            .align_x(iced::alignment::Horizontal::Left)
-            .align_y(iced::alignment::Vertical::Top);
+        let card = dropdown_under(
+            view_menu_card(app),
+            app.view_menu_at.unwrap_or(FALLBACK_MENU_ANCHOR),
+            app.window,
+        );
         layers = layers.push(catcher).push(card);
     }
 
@@ -3796,11 +3812,8 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     };
     col = col.push(delete);
 
-    container(col)
-        .max_width(240.0)
-        .padding(8)
-        .style(card_style)
-        .into()
+    // The same shared frame as the other five, for the same reason.
+    menu_frame(col.into())
 }
 
 /// Suggest a free profile name near `base` (`base`, `base 2`, `base 3`, ...) so the

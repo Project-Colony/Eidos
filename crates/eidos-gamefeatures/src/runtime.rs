@@ -147,7 +147,12 @@ pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, Runti
     if is_installed(r) {
         return Ok(false);
     }
-    let seven = find_7z().ok_or(RuntimeError::No7z)?;
+    // The SHARED probe. This crate had a third copy of it, whose doc comment
+    // claimed the same candidate set as the installer's and did not have it: a
+    // different order, a `which` probe instead of running the binary, and `7zr`
+    // - which reads only .7z, so a machine carrying nothing else would have been
+    // told it had 7-Zip and then failed on every .zip a mod ships as.
+    let seven = eidos_sevenzip::find_7z().ok_or(RuntimeError::No7z)?;
 
     let dir = runtime_dir(r);
     fs::create_dir_all(dir.parent().unwrap_or(&dir))?;
@@ -172,7 +177,7 @@ pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, Runti
     progress("unpacking");
     let out = staging.join("tree");
     fs::create_dir_all(&out)?;
-    let status = Command::new(&seven)
+    let status = Command::new(seven)
         .arg("x")
         .arg("-y")
         .arg(format!("-o{}", out.display()))
@@ -238,22 +243,6 @@ fn sha256_file(path: &Path) -> Result<String, RuntimeError> {
         hasher.update(&buf[..n]);
     }
     Ok(hasher.finish())
-}
-
-/// The 7z binary, under any of the names distributions ship it as. Same set
-/// `eidos-install` accepts, because an archive is an archive.
-fn find_7z() -> Option<PathBuf> {
-    for name in ["7zz", "7z", "7za", "7zr"] {
-        if let Ok(out) = Command::new("which").arg(name).output() {
-            if out.status.success() {
-                let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !p.is_empty() {
-                    return Some(PathBuf::from(p));
-                }
-            }
-        }
-    }
-    None
 }
 
 /// A minimal SHA-256. In-crate rather than a dependency: this crate has no hash

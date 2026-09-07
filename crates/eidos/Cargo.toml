@@ -22,4 +22,6 @@ eidos-plugins = { path = "../eidos-plugins" }
 eidos-loot = { path = "../eidos-loot" }
 eidos-install = { path = "../eidos-install" }
 eidos-gamefeatures = { path = "../eidos-gamefeatures" }
+# `eidos pack` / `eidos unpack`: a whole instance in one file.
+eidos-transfer = { path = "../eidos-transfer" }
 eidos-nexus = { path = "../eidos-nexus" }

@@ -861,8 +861,50 @@ enum Message {
     /// Open / dismiss the File dropdown, which lists every folder that matters.
     OpenFileMenu,
     CloseFileMenu,
+    /// Where iced laid the File / View / Filters button out. The menu opens ON
+    /// this rather than before it, so it is never drawn in the wrong place and
+    /// then corrected a frame later.
+    FileMenuAt(Option<iced::Rectangle>),
+    ViewMenuAt(Option<iced::Rectangle>),
+    FiltersAt(Option<iced::Rectangle>),
     /// Open a URL in the user's browser (LOOT advice links in the report).
     OpenUrl(String),
+    // ---- move an instance to another machine (eidos pack / eidos unpack) ----
+    /// Open the Pack dialog, which previews what would go into the file.
+    ShowPackDialog,
+    ClosePackDialog,
+    /// The destination typed into the dialog.
+    PackDestChanged(String),
+    /// Include `downloads/` (the archives the mods were installed from).
+    PackToggleDownloads,
+    /// One of 7-Zip's compression levels.
+    PackLevelChanged(u8),
+    /// Open a native save dialog for the destination.
+    PackBrowse,
+    /// Where it will be written (`None` = cancelled).
+    PackDestPicked(Option<PathBuf>),
+    /// Start packing on a worker thread.
+    PackRun,
+    /// Open the Unpack dialog. Reachable with NO instance open: restoring a
+    /// backup onto a fresh machine is the whole point of the file.
+    ShowUnpackDialog,
+    CloseUnpackDialog,
+    /// Choose the `.eidos` file, and what reading its manifest said.
+    UnpackBrowseArchive,
+    UnpackArchivePicked(Option<PathBuf>),
+    /// Choose the folder it goes into.
+    UnpackBrowseDest,
+    UnpackDestPicked(Option<PathBuf>),
+    UnpackDestChanged(String),
+    /// Unpack into a folder that is not empty.
+    UnpackToggleForce,
+    /// Start unpacking on a worker thread.
+    UnpackRun,
+    /// The 60 Hz look at a running pack or unpack. Reached from `AnimationTick`,
+    /// like `InstallPoll`, because iced's timer needs a non-capturing closure.
+    TransferPoll,
+    /// Dismiss the card showing what a finished pack or unpack did.
+    CloseTransferResult,
     // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
     /// Move the plugin at this index one slot earlier / later in the load order.
     Noop,
@@ -1751,8 +1793,26 @@ struct App {
     confirm_set_all: Option<bool>,
     /// Whether the File dropdown (the folder list) is showing.
     file_menu_open: bool,
+    /// Where the File / View / Filters buttons actually are, measured by iced
+    /// rather than guessed at: a dropdown hangs from the rectangle of the thing
+    /// that opened it. `None` until the first measurement comes back, and after
+    /// that the last known place - which is right, because none of the three
+    /// buttons moves while its menu is open.
+    file_menu_at: Option<iced::Rectangle>,
+    view_menu_at: Option<iced::Rectangle>,
+    filters_at: Option<iced::Rectangle>,
     /// The open Export dialog: which rows, and which columns are ticked.
     export: Option<ExportDialogState>,
+    /// The open Pack dialog (the instance being written to one file).
+    pack: Option<PackDialogState>,
+    /// The open Unpack dialog. Deliberately NOT gated on an open instance.
+    unpack: Option<UnpackDialogState>,
+    /// The pack or unpack on a worker thread, and afterwards what it said.
+    ///
+    /// ONE field for both directions rather than two: they are both minutes of
+    /// 7-Zip on the same disk, running them at once would only make each slower,
+    /// and a single slot makes that impossible rather than merely discouraged.
+    transfer_job: Option<TransferJob>,
     /// The open collection view, if any.
     collection: Option<CollectionState>,
     /// Whether the instance manager is showing.
@@ -2192,7 +2252,97 @@ const _: fn() = || {
     fn assert_send<T: Send>() {}
     assert_send::<eidos_install::Opened>();
     assert_send::<eidos_install::InstallError>();
+    // A pack hands back sentences, not library types (see `TransferJob`), but
+    // the worker owns an Instance and a Plan while it runs.
+    assert_send::<eidos_instance::Instance>();
+    assert_send::<eidos_transfer::Plan>();
+    assert_send::<eidos_transfer::Transfer>();
 };
+
+/// The Pack dialog: where the file goes, what goes in it, and the preview of
+/// what that means - which is `eidos pack --dry-run`, drawn.
+struct PackDialogState {
+    /// The destination, as typed or as the picker returned it.
+    dest: String,
+    /// Include `downloads/`.
+    downloads: bool,
+    /// 7-Zip's `-mx` level.
+    level: u8,
+    /// What the walk found, so the dialog can say how many files and how big
+    /// BEFORE the user commits twenty minutes to it. Recomputed when an option
+    /// changes, because `downloads` moves the numbers.
+    plan: eidos_transfer::Plan,
+}
+
+/// The Unpack dialog: which backup, where it goes, and what its manifest says.
+struct UnpackDialogState {
+    /// The `.eidos` file.
+    archive: String,
+    /// Where the instance will be put back.
+    dest: String,
+    /// What the archive says about itself, once it has been read. `None` before
+    /// a file is chosen; the error is kept separately so a file that is not a
+    /// backup can say so in the dialog rather than through a status bar the
+    /// welcome screen does not draw.
+    manifest: Option<eidos_transfer::BackupManifest>,
+    error: Option<String>,
+    /// Unpack into a folder that is not empty.
+    force: bool,
+}
+
+/// Which way a transfer is going, for what the poll does when it finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransferKind {
+    Pack,
+    Unpack,
+}
+
+/// A pack or an unpack running on a worker thread.
+///
+/// The same three-Arc shape as [`InstallJob`], for the same reason: twenty
+/// minutes of 7-Zip inside `update()` would be twenty minutes of a window the
+/// compositor declares dead. Two differences earned by this job being longer
+/// and rarer than an extraction.
+///
+/// The outcome is a `Result<String, String>` rather than the library's own
+/// types. `Message` derives Clone and the GUI has no business making
+/// `PackReport` and `TransferError` satisfy the message plumbing's bounds, so
+/// the worker turns its answer into the sentences the card will show. What the
+/// GUI still needs afterwards - where the file or the instance landed - is
+/// `target`, which it knew before the thread started.
+///
+/// And the job OUTLIVES its own completion: `finished` holds what the poll took
+/// out of `outcome`, so the same card that showed a progress bar shows the
+/// result until the user closes it. An extraction can report through the status
+/// bar because it is thirty seconds and its result is the mod appearing; a pack
+/// has a path, a size, a ratio and possibly a list of files it could not read,
+/// and the welcome screen - where an unpack happens - draws no status bar at all.
+struct TransferJob {
+    kind: TransferKind,
+    /// What the card says is happening.
+    title: String,
+    /// The archive being written, or the folder being restored into.
+    target: PathBuf,
+    /// 7-Zip's percentage, already clamped to its own maximum by the worker.
+    ///
+    /// The raw value is NOT monotonic and a pack makes two passes into one
+    /// archive, so the bar would climb, reset and climb again. `fetch_max` in
+    /// the worker is the whole fix, and it belongs there rather than in the
+    /// view: a bar that walks backwards for minutes reads as a broken program,
+    /// and the view is asked to draw sixty times a second.
+    percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// What the worker said, once the poll has taken it. `None` while running.
+    finished: Option<Result<String, String>>,
+}
+
+impl TransferJob {
+    /// Whether this job is still working - the condition for wanting frames.
+    fn running(&self) -> bool {
+        self.finished.is_none()
+    }
+}
 
 struct RunningState {
     /// What is running (the tool title or the game name), for the overlay text.
@@ -2305,6 +2455,24 @@ fn view(app: &App) -> Element<'_, Message> {
         let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
             .on_press(Message::CloseCollection);
         let dialog = container(collection_dialog(state)).center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(dialog).into();
+    }
+    // And unpacking, for the same reason and more sharply. A backup is restored
+    // onto a machine that has no instance yet - that is the whole point of the
+    // file - so the welcome screen is where this happens. Drawn only by
+    // `main_screen`, it would be a button that silently does nothing on exactly
+    // the machine it exists for.
+    if let Some(job) = &app.transfer_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
+            .center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(card).into();
+    }
+    if let Some(state) = &app.unpack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseUnpackDialog);
+        let dialog = container(mouse_area(unpack_dialog(state)).on_press(Message::Noop))
+            .center(Length::Fill);
         return Stack::new().push(base).push(scrim).push(dialog).into();
     }
     base
@@ -2538,6 +2706,16 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         // list it happened to hidden behind the pane.
         && app.preview.is_none()
         && app.collection.is_none()
+        // Pack and unpack, and the job itself - which runs for twenty minutes
+        // behind a modal, long enough that Ctrl+R launching the game and Delete
+        // arming a mod removal on a row nobody can see are not hypotheses.
+        && app.pack.is_none()
+        && app.unpack.is_none()
+        && app.transfer_job.is_none()
+        // And the extraction, which was never in this list. Tolerable while it
+        // was thirty seconds; it is the same defect as the rest, and it is one
+        // clause.
+        && app.install_job.is_none()
     {
         subs.push(shortcuts);
     }
@@ -7044,6 +7222,10 @@ mod tests {
             // treating it as an action would not shorten a confirmation's life,
             // it would end it between the two clicks every time.
             Message::AnimationTick,
+            // Reached from that same tick and at the same rate, for a job that
+            // runs for twenty minutes - long enough that a confirmation
+            // disarmed sixty times a second reads as a broken window.
+            Message::TransferPoll,
             Message::PointerAt(iced::Point::ORIGIN),
             Message::ModifiersChanged(iced::keyboard::Modifiers::default()),
         ] {
@@ -7608,19 +7790,94 @@ mod tests {
         );
     }
 
+    /// A menu-bar dropdown opens in TWO steps: the click asks iced where the
+    /// button is, and the answer opens the menu at that rectangle. Driven here
+    /// the way the runtime drives it, because the Task the click returns does
+    /// not run in a test.
+    fn open_bar_menu(app: &mut App, click: Message, at: Message) {
+        let _ = update_inner(app, click);
+        let _ = update_inner(app, at);
+    }
+
     #[test]
     fn only_one_menu_bar_dropdown_is_open_at_a_time() {
         // Two cards at the same corner would overlap, and the one underneath
         // would eat clicks aimed at the one on top.
         let mut app = nav_app(&[]);
-        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        let some = |x: f32| {
+            Some(iced::Rectangle {
+                x,
+                y: 38.0,
+                width: 36.0,
+                height: 30.9,
+            })
+        };
+        open_bar_menu(
+            &mut app,
+            Message::OpenFileMenu,
+            Message::FileMenuAt(some(5.0)),
+        );
         assert!(app.file_menu_open && !app.view_menu_open);
-        let _ = update_inner(&mut app, Message::OpenViewMenu);
+        open_bar_menu(
+            &mut app,
+            Message::OpenViewMenu,
+            Message::ViewMenuAt(some(41.0)),
+        );
         assert!(app.view_menu_open && !app.file_menu_open);
-        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        open_bar_menu(
+            &mut app,
+            Message::OpenFileMenu,
+            Message::FileMenuAt(some(5.0)),
+        );
         assert!(app.file_menu_open && !app.view_menu_open);
         let _ = update_inner(&mut app, Message::CloseFileMenu);
         assert!(!app.file_menu_open);
+    }
+
+    /// The measurement is what a dropdown hangs from, and it must be REMEMBERED:
+    /// the answer that arrives is the button's real rectangle, and a menu drawn
+    /// from a stale or absent one is the defect this whole mechanism replaced.
+    #[test]
+    fn a_dropdown_remembers_where_its_button_was_measured() {
+        let mut app = nav_app(&[]);
+        assert_eq!(app.file_menu_at, None, "nothing measured yet");
+        let real = iced::Rectangle {
+            x: 5.0,
+            y: 38.0,
+            width: 36.4,
+            height: 30.9,
+        };
+        let _ = update_inner(&mut app, Message::FileMenuAt(Some(real)));
+        assert_eq!(app.file_menu_at, Some(real));
+        assert!(app.file_menu_open, "the answer is what opens it");
+
+        // A measurement that comes back empty must not erase the last good one -
+        // the menu would then fall back to a guess it had already improved on.
+        let _ = update_inner(&mut app, Message::CloseFileMenu);
+        let _ = update_inner(&mut app, Message::FileMenuAt(None));
+        assert_eq!(app.file_menu_at, Some(real), "kept, not cleared");
+        assert!(app.file_menu_open, "and it still opens");
+    }
+
+    /// The filter pane is the third surface with the same defect, and it toggles
+    /// rather than opening - so closing must NOT go looking for a rectangle.
+    #[test]
+    fn the_filter_pane_measures_on_the_way_open_and_not_on_the_way_shut() {
+        let mut app = nav_app(&[]);
+        let _ = update_inner(&mut app, Message::ToggleFilterPane);
+        assert!(!app.filters_open, "the click only asks where the button is");
+        let _ = update_inner(
+            &mut app,
+            Message::FiltersAt(Some(iced::Rectangle {
+                x: 411.0,
+                y: 72.9,
+                width: 56.0,
+                height: 26.0,
+            })),
+        );
+        assert!(app.filters_open);
+        let _ = update_inner(&mut app, Message::ToggleFilterPane);
+        assert!(!app.filters_open, "shut, with no second round trip");
     }
 
     #[test]
@@ -7790,6 +8047,110 @@ mod tests {
         assert!(!anim::needs_frames(&app), "idle asks for nothing");
         app.install_job = Some(fake_job(None));
         assert!(anim::needs_frames(&app));
+    }
+
+    /// A pack or unpack with no worker behind it. `outcome` decides whether it
+    /// reads as finished, so the whole state machine can be driven without
+    /// 7-Zip, which CI does not have.
+    fn fake_transfer(
+        kind: TransferKind,
+        outcome: Option<Result<String, String>>,
+    ) -> TransferJob {
+        use std::sync::atomic::{AtomicBool, AtomicU8};
+        use std::sync::{Arc, Mutex};
+        let done = outcome.is_some();
+        TransferJob {
+            kind,
+            title: "Packing Eidos-Skyrim".into(),
+            target: PathBuf::from("/tmp/eidos-gui-test-nowhere/skyrimse.eidos"),
+            percent: Arc::new(AtomicU8::new(0)),
+            outcome: Arc::new(Mutex::new(outcome)),
+            done: Arc::new(AtomicBool::new(done)),
+            finished: None,
+        }
+    }
+
+    /// The same gate as the extraction, and the same silent failure without it:
+    /// no frames means no repaint and no poll, so the job finishes on its thread
+    /// and the window never finds out.
+    #[test]
+    fn the_window_keeps_receiving_frames_while_an_instance_is_packed() {
+        let mut app = nav_app(&[]);
+        assert!(!anim::needs_frames(&app), "idle asks for nothing");
+        app.transfer_job = Some(fake_transfer(TransferKind::Pack, None));
+        assert!(anim::needs_frames(&app));
+        // And stops when there is only a report left to read: sixty frames a
+        // second to redraw a sentence is what this gate exists to avoid.
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        app.transfer_job.as_mut().unwrap().finished = Some(Ok("done".into()));
+        assert!(!anim::needs_frames(&app), "a finished job wants nothing");
+    }
+
+    /// The report has to SURVIVE the poll. Clearing the job the way the install
+    /// does would take the only thing the welcome screen can show - there is no
+    /// status bar there to fall back on.
+    #[test]
+    fn a_finished_transfer_keeps_its_report_until_it_is_closed() {
+        let mut app = nav_app(&[]);
+        app.transfer_job = Some(fake_transfer(
+            TransferKind::Pack,
+            Some(Err("Cannot pack now: in use by the Eidos window.".into())),
+        ));
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        let job = app.transfer_job.as_ref().expect("the card stays up");
+        let msg = match job.finished.as_ref().expect("collected") {
+            Ok(s) | Err(s) => s.clone(),
+        };
+        assert!(msg.contains("in use by the Eidos window"), "{msg}");
+        // A second poll must not collect again - it arrives sixty times a second.
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        assert!(app.transfer_job.as_ref().unwrap().finished.is_some());
+        let _ = update_inner(&mut app, Message::CloseTransferResult);
+        assert!(app.transfer_job.is_none());
+    }
+
+    /// A worker that panicked leaves `outcome` empty behind a `done` flag. The
+    /// user is watching a dialog, so it must say something rather than sit there.
+    #[test]
+    fn a_transfer_whose_worker_vanished_still_reports() {
+        let mut app = nav_app(&[]);
+        let mut job = fake_transfer(TransferKind::Pack, None);
+        job.done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        app.transfer_job = Some(job);
+        let _ = update_inner(&mut app, Message::TransferPoll);
+        let job = app.transfer_job.as_ref().unwrap();
+        assert!(matches!(job.finished, Some(Err(_))), "must not hang");
+    }
+
+    /// Unpacking is the one action that has to work with NO instance open: a
+    /// fresh machine has none, which is why somebody is holding a .eidos file.
+    #[test]
+    fn the_unpack_dialog_opens_with_no_instance_and_the_pack_dialog_does_not() {
+        let mut app = nav_app(&[]);
+        assert!(app.created.is_none());
+        let _ = update_inner(&mut app, Message::ShowUnpackDialog);
+        assert!(app.unpack.is_some(), "the whole point of the feature");
+        let _ = update_inner(&mut app, Message::CloseUnpackDialog);
+        assert!(app.unpack.is_none());
+        // Pack acts ON an instance, so it says so instead of opening onto one.
+        let _ = update_inner(&mut app, Message::ShowPackDialog);
+        assert!(app.pack.is_none());
+        assert!(app.status.unwrap_or_default().contains("instance"));
+    }
+
+    /// Two 7-Zips on one disk racing each other is slower than either alone, and
+    /// a pack reading an instance a drop is installing into is worse than slow.
+    #[test]
+    fn nothing_else_starts_while_a_transfer_runs() {
+        let mut app = nav_app(&[]);
+        app.transfer_job = Some(fake_transfer(TransferKind::Pack, None));
+        let _ = update_inner(&mut app, Message::ShowUnpackDialog);
+        assert!(app.unpack.is_none(), "one at a time");
+        assert!(app.status.clone().unwrap_or_default().contains("already"));
+        app.dropped = vec![PathBuf::from("/tmp/a.7z")];
+        let _ = update_inner(&mut app, Message::DrainDrops);
+        assert_eq!(app.dropped.len(), 1, "the drop waits its turn");
+        assert!(app.install_job.is_none());
     }
 
     /// Polling before the worker is done must leave the job alone - taking the

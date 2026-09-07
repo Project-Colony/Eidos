@@ -70,6 +70,19 @@ pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
             .push(text("Or open an existing instance:").size(13.0))
             .push(scrollable(list).height(Length::Fixed(160.0)));
     }
+    // OUTSIDE the `known` block above, deliberately: a machine that has just
+    // been set up has no instances at all, and that is precisely the machine
+    // somebody arrives at holding a .eidos file.
+    content = content
+        .push(Space::new().height(Length::Fixed(6.0)))
+        .push(text("Or restore one you packed on another machine:").size(13.0))
+        .push(
+            button(text("Unpack a backup...").size(13.0))
+                .width(Length::Fill)
+                .padding(8)
+                .on_press(Message::ShowUnpackDialog)
+                .style(button::secondary),
+        );
     frame(
         "Step 1 of 5",
         "Welcome",

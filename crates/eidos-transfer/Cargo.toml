@@ -1,0 +1,22 @@
+[package]
+name = "eidos-transfer"
+version.workspace = true
+description = "Pack a whole Eidos instance into one .eidos file, and put it back on another machine"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+
+[dependencies]
+# The instance layout this packs, and the tools.ini / profiles it reads to
+# describe it. Reading the layout from here rather than re-deriving the folder
+# names is what keeps a backup honest the day the layout gains a folder.
+eidos-instance = { path = "../eidos-instance" }
+# The one 7-Zip seam: find the binary, drive it, read its progress. Packing adds
+# no archiver of its own precisely because this exists.
+eidos-sevenzip = { path = "../eidos-sevenzip" }
+# `key=value` primitives for the backup manifest and for the relocation pass
+# that rewrites the handful of keys holding an absolute instance path.
+eidos-ini = { path = "../eidos-ini" }
+# statvfs(2), so a 70 GB pack refuses on a disk with 4 GB free BEFORE spending
+# twenty minutes finding out.
+libc = "0.2"

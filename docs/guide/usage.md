@@ -16,6 +16,8 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
+eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` and `eidos export` round
@@ -43,8 +45,9 @@ Portable instances you have created or opened are remembered (most recently
 used first) in `~/.config/Colony/Eidos/instances.ini`; the GUI's welcome screen lists
 them to open with one click, the Steam launch lands on the one you last played,
 and the `nxm://` handler downloads into it. Two caveats worth knowing: moving a
-portable folder keeps everything except tool entries you registered with
-absolute paths into the old location (re-add those), and the shared runtime
+portable folder by hand keeps everything except tool entries you registered with
+absolute paths into the old location (`eidos pack` / `eidos unpack`, below, fix
+those for you; a plain `mv` does not), and the shared runtime
 cache (`~/.local/share/Colony/Eidos/runtimes/`) deliberately stays machine-global -
 a 78 MB .NET host is not per-instance.
 
@@ -90,6 +93,108 @@ instead of a user namespace; mods deploy identically either way.
 
 Why the old `setcap` advice is gone - and why FUSE passthrough ships off - is
 explained in [troubleshooting.md](troubleshooting.md#why-passthrough-is-off-by-default).
+
+## Moving an instance to another machine
+
+`eidos pack` writes an entire instance - every mod, the load order, all
+profiles, the Overwrite with your saves in it, and the archives everything was
+installed from - into a single file. `eidos unpack` puts it back:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # or give a folder: named for the game and the date
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
+```
+
+`eidos pack --dry-run` lists exactly what would go in, what would not and why,
+and how much room it needs, without writing anything. `eidos unpack --info` does
+the same for a file you already have.
+
+If 7-Zip could not read something, the archive is still written and named - it
+is worth having - but `eidos pack` exits **1** and says what is missing. An
+incomplete backup is not a success, and this is a command people put in front of
+`&&`.
+
+A `.eidos` file is a 7-Zip archive under a name of its own, which is a choice
+rather than a disguise: 7-Zip is already required to install a mod at all, so
+this adds no dependency, and if you ever lose Eidos your backup still opens in
+any archiver you have. It is **non-solid**, so one file can be pulled out of a
+70 GB backup without decompressing everything in front of it, and it is
+compressed with LZMA2 at `-mx1` - about 43% of the original on a texture-heavy
+list, in a fraction of the time `-mx9` spends to save a few points more.
+Textures and meshes are already-compressed formats; there is very little left
+for a bigger dictionary to find. `--level` (0, 1, 3, 5, 7, 9) overrides that if
+you disagree on your own content, and `--no-downloads` leaves `downloads/` out.
+
+Packing takes the instance lock, so it cannot run while the game or another
+Eidos is writing to that instance - the backup is a snapshot, not a smear. It is
+written under a `.part` name and renamed at the end, so an interrupted pack
+leaves something obviously unfinished rather than a `.eidos` file that looks
+complete and is not.
+
+### What is not in it, and why
+
+| Left out | Why |
+| --- | --- |
+| The Proton prefix | It is machine-shaped (drive mappings, a `Z:` view of *this* filesystem) and Eidos rebuilds it in a minute with `eidos prereqs <instance> --install`. Carrying it would roughly double the archive to ship something the other machine has to regenerate anyway. |
+| The game | An instance mods a game it does not contain. Install it from Steam over there. |
+| Tools outside the instance | xEdit, DynDOLOD and friends are third-party binaries with their own installers. They are **named** in the archive, so unpacking tells you exactly which ones are missing on the new machine. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Records of the machine that made the backup. `prereqs.done` in particular would claim the runtime libraries are already installed in a prefix that is not there. |
+| `loot/`, except `userlist.yaml` | A masterlist cache Eidos re-fetches on demand. Your own LOOT rules are not a cache - nobody re-fetches those - so that one file rides along. |
+| `.base/`, `.base-root/` | Empty mountpoints where the game's own files are stashed during a session. |
+| Half-written files | A paused download (`*.unfinished`), an atomic write in flight (`*.eidos-tmp*`). |
+| Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead. |
+
+Every one of these goes into `eidos-backup.ini` at the root of the archive, with
+its reason - so the answer to "what is not in here" is `cat`, not a guess. The
+same file records where the instance used to live, which profile was active, how
+big it unpacks to, and which tools the new machine will need.
+
+Download records (`downloads/*.meta`) go in with their `url=` line **emptied**.
+That URL is a signed Nexus link: it stops working within hours, and it carries
+the `user_id` of the account that downloaded the file. A backup is made to be
+handed to somebody else, so it does not carry that. Everything that makes the
+download re-findable - the mod id, the file id, the version - stays.
+
+### In the window
+
+Both are in the **File** menu: *Pack this instance...* and *Unpack a backup...*.
+Unpacking is also on the welcome screen, under the list of instances, because
+the machine that needs it most is the one that has no instances yet.
+
+The Pack dialog previews before it commits: how many files, how big, how much of
+that is `downloads/`, roughly what the archive will come to, and which tools are
+named but not carried. The Unpack dialog reads the backup's manifest the moment
+you choose the file, so it can tell you which game it holds, when it was made,
+where it used to live and which of its tools are missing here - before you give
+it a folder.
+
+Both run on a worker thread with a progress bar, so the window keeps answering
+while they work, and the bar becomes the report when they finish. Packing holds
+the instance lock for the whole run: nothing else may touch the instance while
+it is being read, which is what makes the backup a snapshot rather than a smear.
+
+### What unpacking repairs
+
+A plain copy of the folder would leave every tool button pointing at a path on
+the old machine. `eidos unpack` rewrites the values that name the old instance
+root and only those: `exe`, `workdir` and the numbered `arg` keys in
+`tools.ini`, and `installationFile` in each mod's `meta.ini`. A tool that was
+never inside the instance (`/opt/xedit/SSEEdit.exe`) is left exactly as it was
+and listed as something to reinstall - guessing where somebody else's xEdit went
+is invention, not repair. It also corrects whether the instance calls itself
+central or portable, so later commands look for it where it now is.
+
+Unpacking refuses a folder that is not empty (pass `--force` if you mean to
+overwrite), a disk too small for the manifest's own figure, an archive made by a
+newer Eidos than yours, and any archive holding an entry that would be written
+*outside* the folder you chose.
+
+Afterwards:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # rebuild the Proton prefix
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

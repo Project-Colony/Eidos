@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0fec5e6c87047a79c0ddc97d73bb492b7e05bd5b -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Používání Eidosu
 
@@ -18,6 +18,8 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
+eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
 
 `eidos tool`, `eidos prereqs`, `eidos nexus`, `eidos nxm` a `eidos export` sadu
@@ -44,9 +46,10 @@ Přenosné instance, které jste vytvořili nebo otevřeli, si Eidos pamatuje
 (naposledy použité první) v `~/.config/Colony/Eidos/instances.ini`; uvítací
 obrazovka GUI je nabízí k otevření jedním kliknutím, spuštění ze Steamu přistane
 na té, kterou jste hráli naposledy, a obsluha `nxm://` stahuje do ní. Dvě
-výhrady, které stojí za to znát: přesun přenosné složky zachová všechno kromě
-záznamů nástrojů, které jste zaregistrovali absolutními cestami do původního
-umístění (ty přidejte znovu), a sdílená mezipaměť běhových prostředí
+výhrady, které stojí za to znát: ruční přesun přenosné složky zachová všechno
+kromě záznamů nástrojů, které jste zaregistrovali absolutními cestami do
+původního umístění (`eidos pack` / `eidos unpack` níže je za vás opraví; prosté
+`mv` ne), a sdílená mezipaměť běhových prostředí
 (`~/.local/share/Colony/Eidos/runtimes/`) záměrně zůstává společná pro celý
 stroj - 78MB hostitel .NET není záležitost jednotlivé instance.
 
@@ -92,6 +95,108 @@ jmenný prostor místo uživatelského; módy se nasadí v obou případech stej
 
 Proč stará rada se `setcap` zmizela - a proč se FUSE passthrough dodává vypnutý -
 vysvětluje [troubleshooting.cs.md](troubleshooting.md#proč-je-passthrough-ve-výchozím-stavu-vypnutý).
+
+## Přesun instance na jiný stroj
+
+`eidos pack` zapíše celou instanci - každý mód, pořadí načítání, všechny
+profily, Overwrite i s vašimi savy uvnitř a archivy, ze kterých se všechno
+instalovalo - do jediného souboru. `eidos unpack` ji vrátí zpět:
+
+```sh
+eidos pack skyrimse ~/backup.eidos                  # or give a folder: named for the game and the date
+eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
+```
+
+`eidos pack --dry-run` přesně vypíše, co by se dovnitř dostalo, co ne a proč a
+kolik místa to potřebuje, aniž by cokoli zapsal. `eidos unpack --info` udělá
+totéž pro soubor, který už máte.
+
+Pokud 7-Zip něco nedokázal přečíst, archiv se přesto zapíše a pojmenuje - stojí
+za to ho mít - ale `eidos pack` skončí s kódem **1** a řekne, co chybí. Neúplná
+záloha není úspěch a tohle je příkaz, který lidé dávají před `&&`.
+
+Soubor `.eidos` je archiv 7-Zip pod vlastním názvem, což je volba, ne
+přestrojení: 7-Zip je stejně potřeba už k tomu, aby šlo mód vůbec nainstalovat,
+takže to nepřidává žádnou závislost, a kdybyste o Eidos někdy přišli, vaše záloha
+se pořád otevře v jakémkoli archivátoru, který máte. Je **nesolidní**
+(non-solid), takže jeden soubor lze ze 70GB zálohy vytáhnout, aniž byste
+rozbalili všechno před ním, a komprimovaný je LZMA2 na úrovni `-mx1` - asi 43 %
+původní velikosti na seznamu bohatém na textury, ve zlomku času, který `-mx9`
+stráví, aby ušetřil o pár bodů víc. Textury a meshe jsou už komprimované formáty;
+pro větší slovník toho zbývá k nalezení jen velmi málo. `--level` (0, 1, 3, 5, 7,
+9) to přebije, pokud u vlastního obsahu nesouhlasíte, a `--no-downloads` vynechá
+`downloads/`.
+
+Balení bere zámek instance, takže nemůže běžet ve chvíli, kdy do té instance
+zapisuje hra nebo jiný Eidos - záloha je snímek, ne šmouha. Zapisuje se pod
+názvem s `.part` a na konci se přejmenuje, takže přerušené balení zanechá něco
+zjevně nedokončeného místo souboru `.eidos`, který vypadá kompletní a není.
+
+### Co v ní není a proč
+
+| Vynecháno | Proč |
+| --- | --- |
+| Prefix Protonu | Má tvar daný strojem (mapování disků, pohled `Z:` na *tento* souborový systém) a Eidos jej za minutu znovu sestaví příkazem `eidos prereqs <instance> --install`. Vzít ho s sebou by archiv zhruba zdvojnásobilo, jen aby se dodalo něco, co druhý stroj stejně musí vygenerovat znovu. |
+| Hra | Instance moduje hru, kterou sama neobsahuje. Nainstalujte si ji tam ze Steamu. |
+| Nástroje mimo instanci | xEdit, DynDOLOD a spol. jsou binárky třetích stran s vlastními instalátory. V archivu jsou **pojmenované**, takže vám rozbalení přesně řekne, které na novém stroji chybí. |
+| `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Stopy po stroji, který zálohu vytvořil. `prereqs.done` by zvlášť tvrdil, že běhové knihovny už jsou nainstalované v prefixu, který tam není. |
+| `loot/`, kromě `userlist.yaml` | Mezipaměť masterlistu, kterou si Eidos podle potřeby stáhne znovu. Vaše vlastní pravidla LOOT žádná mezipaměť nejsou - ta nikdo znovu nestahuje - takže tenhle jeden soubor jede s sebou. |
+| `.base/`, `.base-root/` | Prázdné body připojení, kam se během relace odkládají vlastní soubory hry. |
+| Napůl zapsané soubory | Pozastavené stahování (`*.unfinished`), probíhající atomický zápis (`*.eidos-tmp*`). |
+| Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se jen nahlásí. |
+
+Každá z těchto věcí je i se svým důvodem zapsaná v `eidos-backup.ini` v kořeni
+archivu - takže odpovědí na otázku „co tady není" je `cat`, ne dohad. Tentýž
+soubor zaznamenává, kde instance dřív žila, který profil byl aktivní, na kolik se
+rozbalí a které nástroje bude nový stroj potřebovat.
+
+Záznamy o stažených souborech (`downloads/*.meta`) jdou dovnitř s
+**vyprázdněným** řádkem `url=`. Ta URL je podepsaný odkaz na Nexus: přestane
+fungovat během několika hodin a nese `user_id` účtu, který soubor stáhl. Záloha
+se dělá proto, aby se dala předat někomu jinému, takže tohle s sebou nenese.
+Všechno, díky čemu je stažení znovu dohledatelné - id módu, id souboru, verze -
+zůstává.
+
+### V okně
+
+Obojí najdete v nabídce **File**: *Pack this instance...* a *Unpack a backup...*.
+Rozbalení je i na uvítací obrazovce, pod seznamem instancí, protože stroj, který
+ho potřebuje nejvíc, je ten, který zatím žádnou instanci nemá.
+
+Dialog balení nejdřív ukáže náhled, než se k čemukoli zaváže: kolik souborů, jak
+velkých, kolik z toho je `downloads/`, na kolik archiv zhruba vyjde a které
+nástroje jsou pojmenované, ale s sebou nejedou. Dialog rozbalení přečte manifest
+zálohy ve chvíli, kdy soubor zvolíte, takže vám dokáže říct, kterou hru obsahuje,
+kdy vznikla, kde dřív žila a které z jejích nástrojů tu chybí - ještě než mu
+dáte složku.
+
+Obojí běží v pracovním vlákně s ukazatelem průběhu, takže okno během práce dál
+odpovídá a z ukazatele se po dokončení stane zpráva o výsledku. Balení drží zámek
+instance po celý běh: dokud se instance čte, nesmí na ni sáhnout nic jiného,
+a právě proto je záloha snímek, a ne šmouha.
+
+### Co rozbalení opraví
+
+Prostá kopie složky by nechala každé tlačítko nástroje ukazovat na cestu na
+starém stroji. `eidos unpack` přepíše hodnoty, které pojmenovávají starý kořen
+instance, a jen ty: `exe`, `workdir` a číslované klíče `arg` v `tools.ini` a
+`installationFile` v `meta.ini` každého módu. Nástroj, který nikdy nebyl uvnitř
+instance (`/opt/xedit/SSEEdit.exe`), zůstane přesně takový, jaký byl, a vypíše se
+jako něco k přeinstalování - hádat, kam si někdo jiný dal xEdit, je vymýšlení, ne
+oprava. Opraví také to, jestli se instance označuje za centrální, nebo přenosnou,
+aby ji pozdější příkazy hledaly tam, kde teď je.
+
+Rozbalení odmítne složku, která není prázdná (předejte `--force`, pokud ji
+opravdu chcete přepsat), disk příliš malý na číslo z vlastního manifestu, archiv
+vytvořený novějším Eidosem, než je ten váš, a jakýkoli archiv s položkou, která
+by se zapsala *mimo* složku, kterou jste zvolili.
+
+Potom:
+
+```sh
+eidos prereqs /mnt/games/EidosSkyrim --install   # rebuild the Proton prefix
+eidos play /mnt/games/EidosSkyrim
+```
 
 ## GUI
 

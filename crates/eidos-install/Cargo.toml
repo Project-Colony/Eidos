@@ -7,6 +7,7 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-fomod = { path = "../eidos-fomod" }
 eidos-gamedef = { path = "../eidos-gamedef" }

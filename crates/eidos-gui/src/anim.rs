@@ -140,11 +140,20 @@ pub(crate) fn animating(app: &crate::App) -> bool {
 
 /// Whether the window must keep receiving frames.
 ///
-/// Wider than [`animating`]: an extraction running on a worker thread has no
-/// animation, but its progress dialog has to repaint and its completion has to
-/// be noticed, and neither happens in a window that subscribed to nothing.
+/// Wider than [`animating`]: work running on a worker thread has no animation,
+/// but its progress dialog has to repaint and its completion has to be noticed,
+/// and neither happens in a window that subscribed to nothing. This is the ONLY
+/// thing that subscribes the 16 ms timer, so a job missing from here does not
+/// run slowly - it never reports and never finishes as far as the window is
+/// concerned, silently.
+///
+/// A finished transfer is deliberately not counted: its card is then showing a
+/// result and waiting to be closed, and sixty frames a second to redraw a
+/// sentence is the cost this function exists to avoid.
 pub(crate) fn needs_frames(app: &crate::App) -> bool {
-    animating(app) || app.install_job.is_some()
+    animating(app)
+        || app.install_job.is_some()
+        || app.transfer_job.as_ref().is_some_and(|j| j.running())
 }
 
 /// How far a phase should be DRAWN, honouring the motion preference.

@@ -71,6 +71,236 @@ fn spawn_open(
     }
 }
 
+/// Pack the whole instance into one file, on a worker thread.
+///
+/// Everything the ORDER of matters is in `pack_on_worker`; this is the same
+/// three-Arc handshake `spawn_open` uses, with `done` stored last so the poller
+/// cannot see a finished job whose result is not there yet.
+fn spawn_pack(
+    inst: Instance,
+    dest: std::path::PathBuf,
+    opt: eidos_transfer::Options,
+) -> crate::TransferJob {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::{Arc, Mutex};
+    let percent = Arc::new(AtomicU8::new(0));
+    let outcome = Arc::new(Mutex::new(None));
+    let done = Arc::new(AtomicBool::new(false));
+    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let title = format!(
+        "Packing {}",
+        inst.root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "this instance".to_string())
+    );
+    let target = dest.clone();
+    std::thread::spawn(move || {
+        let r = pack_on_worker(&inst, &dest, opt, &p);
+        if let Ok(mut slot) = o.lock() {
+            *slot = Some(r);
+        }
+        d.store(true, Ordering::SeqCst);
+    });
+    crate::TransferJob {
+        kind: crate::TransferKind::Pack,
+        title,
+        target,
+        percent,
+        outcome,
+        done,
+        finished: None,
+    }
+}
+
+/// The pack itself, in the order the order matters.
+fn pack_on_worker(
+    inst: &Instance,
+    dest: &std::path::Path,
+    opt: eidos_transfer::Options,
+    percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    let started = std::time::Instant::now();
+    // 7-Zip FIRST. Finding it costs up to three fork+exec, and a fork briefly
+    // shares every open descriptor - the instance lock included - so a probe
+    // made while holding that lock can be refused by our own child.
+    let transfer = eidos_transfer::Transfer::new(opt).map_err(|e| e.to_string())?;
+    // And the lock HERE, on the thread that will drop it. It is keyed by
+    // ThreadId: one taken on the window's thread and dropped on this one would
+    // leave its entry in the table and wedge the instance for the rest of the
+    // session, reported to the user as "in use by the Eidos window" - by the
+    // Eidos window.
+    let _lock = inst
+        .try_lock("the Eidos window (packing)")
+        .map_err(|e| format!("Cannot pack now: {e}."))?;
+    // Walked again, under the lock, rather than trusting the dialog's preview:
+    // the window kept running the whole time the file picker was up.
+    let plan = eidos_transfer::plan(inst, &opt);
+    transfer
+        .check_pack(inst, &plan, dest)
+        .map_err(|e| e.to_string())?;
+    let report = transfer
+        .pack(inst, &plan, dest, &mut |pct| {
+            // Clamped to its own maximum HERE rather than in the view. 7-Zip's
+            // percentage is not monotonic and a pack makes two passes into one
+            // archive, so the raw value climbs, resets and climbs again - and
+            // the view is asked to draw it sixty times a second.
+            percent.fetch_max(pct, Ordering::SeqCst);
+        })
+        .map_err(|e| e.to_string())?;
+    let ratio = report
+        .percent_of_source()
+        .map(|p| format!(", {p:.0}% of {}", eidos_transfer::human_bytes(report.source_bytes)))
+        .unwrap_or_default();
+    let head = format!(
+        "Packed {} entries into {} ({}{ratio}) in {}.",
+        report.entries,
+        report.path.display(),
+        eidos_transfer::human_bytes(report.bytes),
+        eidos_transfer::human_secs(started.elapsed().as_secs())
+    );
+    if report.warnings.is_empty() {
+        return Ok(head);
+    }
+    // An incomplete backup is not a success, however real the file is. The Err
+    // side is what the card draws as something to read rather than something to
+    // dismiss - the same call `eidos pack` makes when it exits 1.
+    Err(format!(
+        "{head}\n\n{}\n\nThe backup was written but it is NOT complete.",
+        report.warnings.join("\n")
+    ))
+}
+
+/// Put a backup back, on a worker thread.
+fn spawn_unpack(
+    archive: std::path::PathBuf,
+    dest: std::path::PathBuf,
+    opt: eidos_transfer::Options,
+) -> crate::TransferJob {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::{Arc, Mutex};
+    let percent = Arc::new(AtomicU8::new(0));
+    let outcome = Arc::new(Mutex::new(None));
+    let done = Arc::new(AtomicBool::new(false));
+    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let title = format!(
+        "Unpacking {}",
+        archive
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "the backup".to_string())
+    );
+    let target = dest.clone();
+    std::thread::spawn(move || {
+        let r = unpack_on_worker(&archive, &dest, opt, &p);
+        if let Ok(mut slot) = o.lock() {
+            *slot = Some(r);
+        }
+        d.store(true, Ordering::SeqCst);
+    });
+    crate::TransferJob {
+        kind: crate::TransferKind::Unpack,
+        title,
+        target,
+        percent,
+        outcome,
+        done,
+        finished: None,
+    }
+}
+
+fn unpack_on_worker(
+    archive: &std::path::Path,
+    dest: &std::path::Path,
+    opt: eidos_transfer::Options,
+    percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    let started = std::time::Instant::now();
+    let transfer = eidos_transfer::Transfer::new(opt).map_err(|e| e.to_string())?;
+    // Only when the folder is already there: nothing can be holding one that
+    // does not exist, and `try_lock` CREATES what it locks, so asking first
+    // would conjure the folder it was checking. Taken on this thread, dropped
+    // on this thread, for the reason `pack_on_worker` gives.
+    let _lock = if dest.is_dir() {
+        Some(
+            Instance::portable(dest.to_path_buf())
+                .try_lock("the Eidos window (unpacking)")
+                .map_err(|e| format!("Cannot unpack there: {e}."))?,
+        )
+    } else {
+        None
+    };
+    let report = transfer
+        .unpack(archive, dest, &mut |pct| {
+            percent.fetch_max(pct, Ordering::SeqCst);
+        })
+        .map_err(|e| e.to_string())?;
+    let mut lines = vec![format!(
+        "Unpacked {} entries into {} in {}.",
+        report.entries,
+        report.root.display(),
+        eidos_transfer::human_secs(started.elapsed().as_secs())
+    )];
+    if report.relocated.values > 0 {
+        lines.push(format!(
+            "{} path(s) in {} file(s) now point here instead of {}.",
+            report.relocated.values,
+            report.relocated.files.len(),
+            report.manifest.source_root
+        ));
+    }
+    if !report.missing_tools.is_empty() {
+        lines.push(String::new());
+        lines.push("Tools this instance uses that are not on this machine:".to_string());
+        for t in &report.missing_tools {
+            lines.push(format!("  {} - was at {}", t.title, t.exe));
+        }
+    }
+    for w in &report.warnings {
+        lines.push(String::new());
+        lines.push(w.clone());
+    }
+    Ok(lines.join("\n"))
+}
+
+/// Make a just-unpacked folder the open instance, or say why it cannot be.
+///
+/// Returns the sentence to append to the report, if there is one. The window
+/// cannot open an instance for a game it has not detected - `known_instances`
+/// lists only those - and on the fresh machine this feature exists for, the
+/// game arriving after the mods is the ordinary case, not the odd one. Saying
+/// so is the whole difference between "nothing happened" and "install Skyrim".
+fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
+    let inst = Instance::portable(root.to_path_buf());
+    let gid = inst.game_id()?;
+    let Some(idx) = app.games.iter().position(|g| g.def.id == gid) else {
+        return Some(format!(
+            "\n{gid} is not installed on this machine yet, so Eidos cannot open the \
+             instance. Install the game through Steam, then start Eidos again."
+        ));
+    };
+    app.selected = Some(idx);
+    let id = app.games[idx].def.id;
+    let _ = inst.ensure_profiles();
+    remember_open(&inst, id);
+    open_instance(app, inst);
+    // The welcome list is built once at startup and once on Restart; without
+    // this the instance just restored is not among the ones offered.
+    app.known = known_instances(&app.games);
+    // Said out loud, because it is a real consequence nobody was told about:
+    // opening an instance makes it the one Eidos comes back to, which is also
+    // the one a Steam launch lands on. That is right when the restore IS the
+    // move; it is a surprise when somebody only wanted a look inside a backup,
+    // and they find out by launching the game into the wrong mod list.
+    Some(
+        "\nThis is now the instance Eidos opens, and the one a Steam launch will \
+         use. Switch with \"New instance\" if you meant to keep using another."
+            .to_string(),
+    )
+}
+
 /// Act on what the archive turned out to be. Unchanged from when this ran
 /// inline; only its inputs are now carried by the job rather than by locals.
 fn finish_open(
@@ -251,6 +481,9 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
         && app.collision.is_none()
         // Re-armed by the poll that finishes the job, not while it runs.
         && app.install_job.is_none()
+        // And not while a pack is reading the instance: a queued drop would
+        // install a mod into the very tree being archived, halfway through.
+        && app.transfer_job.is_none()
     {
         return Task::batch([task, Task::done(Message::DrainDrops)]);
     }
@@ -292,6 +525,10 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         | Message::AnimationTick
         // Reached from that same tick, at the same rate, for the same reason.
         | Message::InstallPoll
+        // And its twin for a pack or an unpack, which runs for twenty minutes -
+        // long enough that a confirmation disarmed sixty times a second would
+        // look like a window that had simply stopped working.
+        | Message::TransferPoll
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
         // still is not the user deciding anything.
@@ -3297,7 +3534,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // selection, the focus and the drag hold.
             forget_hidden_rows(app);
         }
-        Message::ToggleFilterPane => app.filters_open = !app.filters_open,
+        Message::ToggleFilterPane => {
+            // Closing needs no measurement; opening does.
+            if app.filters_open {
+                app.filters_open = false;
+                return Task::none();
+            }
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILTERS_ANCHOR)).map(Message::FiltersAt);
+        }
         Message::ClearFilters => {
             app.filters = ModFilters::default();
             forget_hidden_rows(app);
@@ -4148,7 +4392,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CloseAbout => app.about_open = false,
         Message::OpenViewMenu => {
             app.file_menu_open = false;
-            app.view_menu_open = true;
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::VIEW_MENU_ANCHOR)).map(Message::ViewMenuAt);
         }
         Message::CloseViewMenu => app.view_menu_open = false,
         Message::OverwriteSyncToMods => {
@@ -4640,7 +4884,28 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Only one dropdown at a time, or the two cards overlap and the one
             // underneath eats clicks aimed at the one on top.
             app.view_menu_open = false;
+            // Opened by `FileMenuAt`, not here: the menu hangs from where the
+            // button actually is, and that is a question only iced can answer.
+            // One frame, and no wrong position ever drawn.
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILE_MENU_ANCHOR)).map(Message::FileMenuAt);
+        }
+        Message::FileMenuAt(at) => {
+            if at.is_some() {
+                app.file_menu_at = at;
+            }
             app.file_menu_open = true;
+        }
+        Message::ViewMenuAt(at) => {
+            if at.is_some() {
+                app.view_menu_at = at;
+            }
+            app.view_menu_open = true;
+        }
+        Message::FiltersAt(at) => {
+            if at.is_some() {
+                app.filters_at = at;
+            }
+            app.filters_open = true;
         }
         Message::CloseFileMenu => app.file_menu_open = false,
         Message::ToggleToolbar => {
@@ -6241,6 +6506,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // An extraction is already running. Starting a second one would
                 // race it for `mods/<name>/` and put two 7-Zips on the same disk.
                 || app.install_job.is_some()
+                // Same reason, over twenty minutes rather than thirty seconds.
+                || app.transfer_job.is_some()
             {
                 return Task::none();
             }
@@ -6625,9 +6892,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // its phase began, so a frame's whole job is to have arrived: reaching
         // `update` is what makes iced call `view` again.
         Message::AnimationTick => {
-            // The same 60 Hz tick drives the extraction dialog.
+            // The same 60 Hz tick drives every worker-thread dialog, and it has
+            // to reach ALL of them. An early return on the first was fine while
+            // there was only one; with two, a pack finishing while an extraction
+            // was in flight would never be noticed, and its dialog would sit
+            // there at 100% for as long as the window stayed open.
+            let mut polls = Vec::new();
             if app.install_job.is_some() {
-                return update_inner(app, Message::InstallPoll);
+                polls.push(update_inner(app, Message::InstallPoll));
+            }
+            if app.transfer_job.as_ref().is_some_and(|j| j.running()) {
+                polls.push(update_inner(app, Message::TransferPoll));
+            }
+            if !polls.is_empty() {
+                return Task::batch(polls);
             }
         }
         Message::InstallPoll => {
@@ -6715,6 +6993,268 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::ModifiersChanged(mods) => {
             app.modifiers = mods;
         }
+        // ---- move an instance to another machine (eidos pack / eidos unpack) ----
+        Message::ShowPackDialog => {
+            app.file_menu_open = false;
+            app.view_menu_open = false;
+            let Some(inst) = app.created.clone() else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            if app.transfer_job.is_some() {
+                app.status = Some("Something is already being packed or unpacked.".to_string());
+                return Task::none();
+            }
+            let opt = eidos_transfer::Options::default();
+            // The walk, now, so the dialog can say how many files and how big
+            // before anybody commits twenty minutes to it. It is a directory
+            // walk of an instance already in the page cache - measured at 0.2 s
+            // on a 57 000-file one - and it is the whole reason to have a dialog
+            // rather than a menu item that just starts.
+            let plan = eidos_transfer::plan(&inst, &opt);
+            let game_id = selected_game(app)
+                .map(|g| g.def.id.to_string())
+                .or_else(|| inst.game_id())
+                .unwrap_or_else(|| "instance".to_string());
+            // Beside the user's own files, not inside the instance - which the
+            // library refuses anyway, since an archive being written into the
+            // tree it is reading grows for as long as it is read.
+            let home = std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+            let dest = home
+                .join(eidos_transfer::default_file_name(&game_id))
+                .to_string_lossy()
+                .into_owned();
+            app.pack = Some(PackDialogState {
+                dest,
+                downloads: opt.downloads,
+                level: eidos_transfer::DEFAULT_LEVEL,
+                plan,
+            });
+        }
+        Message::ClosePackDialog => app.pack = None,
+        Message::PackDestChanged(v) => {
+            if let Some(d) = &mut app.pack {
+                d.dest = v;
+            }
+        }
+        Message::PackToggleDownloads => {
+            // No re-walk. The plan already counted `downloads/` separately, so
+            // the preview subtracts - which matters because this is a checkbox
+            // and walking 57 000 files under the user's finger is not what a
+            // checkbox should feel like.
+            if let Some(d) = &mut app.pack {
+                d.downloads = !d.downloads;
+            }
+        }
+        Message::PackLevelChanged(n) => {
+            if let Some(d) = &mut app.pack {
+                d.level = n;
+            }
+        }
+        Message::PackBrowse => {
+            let Some(d) = &app.pack else {
+                return Task::none();
+            };
+            let start = std::path::PathBuf::from(&d.dest);
+            let name = start
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| format!("backup.{}", eidos_transfer::EXTENSION));
+            let mut dlg = rfd::AsyncFileDialog::new()
+                .add_filter("Eidos backup", &[eidos_transfer::EXTENSION])
+                .set_file_name(name)
+                .set_title("Where should the backup go?");
+            if let Some(parent) = start.parent().filter(|p| p.is_dir()) {
+                dlg = dlg.set_directory(parent);
+            }
+            return Task::perform(dlg.save_file(), |h| {
+                Message::PackDestPicked(h.map(|h| h.path().to_path_buf()))
+            });
+        }
+        Message::PackDestPicked(picked) => {
+            // Re-read rather than trusted: the window keeps handling events
+            // while the native dialog is up, so the dialog may be gone.
+            if let (Some(path), Some(d)) = (picked, app.pack.as_mut()) {
+                d.dest = path.to_string_lossy().into_owned();
+            }
+        }
+        Message::PackRun => {
+            let Some(inst) = app.created.clone() else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            if app.transfer_job.is_some() {
+                return Task::none();
+            }
+            // Checked BEFORE the dialog is taken. The button is disabled while
+            // the field is empty, so this is unreachable by clicking - and a
+            // handler that loses what the user typed on a path nobody can take
+            // is still a handler that loses it.
+            let empty = app
+                .pack
+                .as_ref()
+                .is_none_or(|d| d.dest.trim().is_empty());
+            if empty {
+                app.status = Some("Give the backup a file name first.".to_string());
+                return Task::none();
+            }
+            let Some(d) = app.pack.take() else {
+                return Task::none();
+            };
+            let dest = std::path::PathBuf::from(d.dest.trim());
+            let opt = eidos_transfer::Options {
+                downloads: d.downloads,
+                level: d.level,
+                // The window asked before it got here (the dialog says so when
+                // the file exists), so the worker must not refuse it again.
+                force: true,
+            };
+            app.transfer_job = Some(spawn_pack(inst, dest, opt));
+        }
+        Message::ShowUnpackDialog => {
+            app.file_menu_open = false;
+            app.view_menu_open = false;
+            // Deliberately NO "open an instance first" guard. Restoring onto a
+            // machine that has none is the entire point of the file.
+            if app.transfer_job.is_some() {
+                app.status = Some("Something is already being packed or unpacked.".to_string());
+                return Task::none();
+            }
+            app.unpack = Some(UnpackDialogState {
+                archive: String::new(),
+                dest: String::new(),
+                manifest: None,
+                error: None,
+                force: false,
+            });
+        }
+        Message::CloseUnpackDialog => app.unpack = None,
+        Message::UnpackBrowseArchive => {
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .add_filter("Eidos backup", &[eidos_transfer::EXTENSION])
+                    .set_title("Choose a backup to unpack")
+                    .pick_file(),
+                |h| Message::UnpackArchivePicked(h.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::UnpackArchivePicked(picked) => {
+            let Some(path) = picked else {
+                return Task::none();
+            };
+            let Some(d) = app.unpack.as_mut() else {
+                return Task::none();
+            };
+            d.archive = path.to_string_lossy().into_owned();
+            d.manifest = None;
+            d.error = None;
+            // Reading the manifest is a HEADER read - measured at 39 ms on a
+            // 57 000-entry archive - so it happens here rather than through the
+            // worker machinery. It is also what tells a backup from any other
+            // file, and the answer decides what the dialog can offer.
+            match eidos_transfer::Transfer::new(eidos_transfer::Options::default())
+                .and_then(|t| t.peek(&path))
+            {
+                Ok(m) => {
+                    // A central backup knows where it belongs. A portable one
+                    // does not, and guessing would put 70 GB somewhere nobody
+                    // chose.
+                    if d.dest.is_empty() && !m.portable && !m.game_id.is_empty() {
+                        d.dest = Instance::global(&m.game_id)
+                            .root
+                            .to_string_lossy()
+                            .into_owned();
+                    }
+                    d.manifest = Some(m);
+                }
+                Err(e) => d.error = Some(e.to_string()),
+            }
+        }
+        Message::UnpackBrowseDest => {
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .set_title("Where should the instance go?")
+                    .pick_folder(),
+                |h| Message::UnpackDestPicked(h.map(|h| h.path().to_path_buf())),
+            );
+        }
+        Message::UnpackDestPicked(picked) => {
+            if let (Some(path), Some(d)) = (picked, app.unpack.as_mut()) {
+                d.dest = path.to_string_lossy().into_owned();
+            }
+        }
+        Message::UnpackDestChanged(v) => {
+            if let Some(d) = &mut app.unpack {
+                d.dest = v;
+            }
+        }
+        Message::UnpackToggleForce => {
+            if let Some(d) = &mut app.unpack {
+                d.force = !d.force;
+            }
+        }
+        Message::UnpackRun => {
+            if app.transfer_job.is_some() {
+                return Task::none();
+            }
+            let Some(d) = app.unpack.take() else {
+                return Task::none();
+            };
+            let (archive, dest) = (
+                std::path::PathBuf::from(d.archive.trim()),
+                std::path::PathBuf::from(d.dest.trim()),
+            );
+            if archive.as_os_str().is_empty() || dest.as_os_str().is_empty() {
+                // Put it back rather than losing what they had typed.
+                app.unpack = Some(UnpackDialogState {
+                    error: Some("Choose a backup file and a folder to put it in.".to_string()),
+                    ..d
+                });
+                return Task::none();
+            }
+            let opt = eidos_transfer::Options {
+                force: d.force,
+                ..eidos_transfer::Options::default()
+            };
+            app.transfer_job = Some(spawn_unpack(archive, dest, opt));
+        }
+        Message::TransferPoll => {
+            let Some(job) = app.transfer_job.as_ref() else {
+                return Task::none();
+            };
+            // `done` is read before anything is taken, and `finished` guards a
+            // second collection: the poll rides a 60 Hz tick, so it arrives
+            // again the frame after it has already done its work.
+            if job.finished.is_some() || !job.done.load(std::sync::atomic::Ordering::SeqCst) {
+                return Task::none();
+            }
+            let (kind, target) = (job.kind, job.target.clone());
+            let mut result = job
+                .outcome
+                .lock()
+                .ok()
+                .and_then(|mut o| o.take())
+                // A poisoned mutex means the worker panicked. Say so: the user
+                // is watching a dialog that would otherwise never finish.
+                .unwrap_or_else(|| {
+                    Err("The worker stopped without a result.".to_string())
+                });
+            if kind == crate::TransferKind::Unpack {
+                if let Ok(summary) = &mut result {
+                    if let Some(note) = open_unpacked(app, &target) {
+                        summary.push_str(&note);
+                    }
+                }
+            }
+            // Set LAST: `open_unpacked` calls `open_instance`, which resets a
+            // great deal of the window, and the card has to survive it.
+            if let Some(j) = app.transfer_job.as_mut() {
+                j.finished = Some(result);
+            }
+        }
+        Message::CloseTransferResult => app.transfer_job = None,
         Message::Noop => {}
     }
     Task::none()
