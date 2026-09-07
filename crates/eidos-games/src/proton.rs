@@ -169,25 +169,34 @@ fn find_proton_binary(steam_root: &Path, home: &Path, name: &str) -> Option<Path
     None
 }
 
-/// The value for `STEAM_COMPAT_LIBRARY_PATHS`: the library ROOT, the directory
-/// that HOLDS `steamapps`, e.g. `<lib>/steamapps/common/<game>` -> `<lib>`.
+/// The value for `STEAM_COMPAT_LIBRARY_PATHS` when EIDOS starts Proton for a
+/// tool: the library ROOT, the directory that HOLDS `steamapps`, e.g.
+/// `<lib>/steamapps/common/<game>` -> `<lib>`.
 ///
-/// This is not a free choice. Proton hands the value straight to
-/// `setup_dir_drive("gamedrive", "s:", ...)`, so the prefix's `S:` drive is
-/// recreated to point at whatever we pass, on every single run - and Windows
-/// programs find a Steam game by trying `<drive>\steamapps\common\<game>`,
-/// which is the shape Steam's own libraries have. The root is what makes that
-/// heuristic land on the game.
+/// This is Eidos's choice, and it is NOT what Steam does. Proton hands the
+/// value straight to `setup_dir_drive("gamedrive", "s:", ...)` without
+/// normalising it - `try_get_game_library_dir` in the `proton` script returns
+/// whichever entry is a prefix of the install path, as given - so the prefix's
+/// `S:` drive is whatever the launcher of the moment passed, recreated on every
+/// run. Steam, launching the game, passes `<lib>/steamapps`: observed on a real
+/// prefix (2026-09-04), `dosdevices/s:` after a Steam launch points there, and
+/// the game's own launcher writes `installed path = S:\common\<game>\`, a value
+/// that only resolves with THAT `S:`.
 ///
-/// It returned `<lib>/steamapps` for one release and that was WRONG, proven by
-/// behaviour rather than by inference: with `S:` one directory too low,
-/// `S:\steamapps\common\Fallout 4` no longer existed, so BodySlide CREATED it
-/// and wrote 267 MB of meshes into `<lib>/steamapps/steamapps/common/...` -
-/// outside the union mount, invisible to Eidos, and never captured into
-/// Overwrite. The doubled `steamapps` in that path is the whole story.
+/// Eidos passes the root for tools because BodySlide's fallback search tries
+/// `<drive>\steamapps\common\<game>`. With `S:` on `steamapps` that path did
+/// not exist, so BodySlide CREATED it and wrote 267 MB of meshes into
+/// `<lib>/steamapps/steamapps/common/...` - outside the union mount, invisible
+/// to Eidos, never captured into Overwrite. The doubled `steamapps` in that
+/// path is the whole story, and it is why this function returned `steamapps`
+/// for one release and was changed back.
 ///
-/// So: match Steam exactly. Eidos must not show the prefix a different world
-/// than the one Steam shows it.
+/// So the two launchers deliberately leave `S:` in different places, and
+/// nothing in the prefix may depend on which. That is why `ensure_registry`
+/// writes the game path in its absolute `Z:` form, and why the prefix health
+/// check treats either `S:` as sound. An earlier version of this comment said
+/// the root "matches Steam exactly"; it does not, and reading it that way is
+/// what made the health check flag Steam's own value as a fault.
 pub fn library_path(inside: &Path) -> Option<PathBuf> {
     inside
         .ancestors()
@@ -323,8 +332,8 @@ mod tests {
     fn the_library_path_is_the_root_that_holds_steamapps() {
         use super::library_path;
         use std::path::{Path, PathBuf};
-        // Proton turns this into the prefix's `S:` drive, and Windows programs
-        // find a Steam game by trying `S:\steamapps\common\<game>`. Return the
+        // For a TOOL launch Proton turns this into the prefix's `S:` drive, and
+        // BodySlide's fallback finds a Steam game by trying `S:\steamapps\common\<game>`. Return the
         // `steamapps` dir itself and that lands one level too deep: BodySlide
         // then CREATES `<lib>/steamapps/steamapps/common/<game>/Data` and writes
         // its output outside the mount, where Eidos never sees it.

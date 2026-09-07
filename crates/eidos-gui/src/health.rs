@@ -10,10 +10,10 @@
 //!
 //!   - the prefix registry was never written, so xEdit opened on a path that
 //!     did not exist and said "There are no modules in the data folder";
-//!   - the prefix's `S:` drive was pointed one directory BELOW where Steam puts
-//!     it, so `S:\steamapps\common\<game>` - the way a Windows program looks for
-//!     a Steam game - stopped existing, and BodySlide created it and wrote 267 MB
-//!     of meshes outside the union mount where nothing ever captured them;
+//!   - the prefix's `S:` drive was pointed at `<lib>/steamapps` for a TOOL
+//!     launch, so `S:\steamapps\common\<game>` - the path BodySlide's fallback
+//!     tries - stopped existing, and BodySlide created it and wrote 267 MB of
+//!     meshes outside the union mount where nothing ever captured them;
 //!   - a Skyrim instance had no Proton prefix at all, and nothing said so.
 //!
 //! Each check here answers its question by calling the SAME function as the
@@ -44,9 +44,11 @@ pub(crate) struct PrefixFacts {
     pub(crate) registry: RegistryStatus,
     /// Where `dosdevices/s:` points, if it exists.
     pub(crate) gamedrive_found: Option<PathBuf>,
-    /// Where Steam points it: the library ROOT, the directory that HOLDS
-    /// `steamapps`. Taken from `library_path`, the same function whose value is
-    /// handed to Proton, so this can never disagree with what Eidos passes.
+    /// Where EIDOS points it for a tool launch: the library ROOT, the directory
+    /// that HOLDS `steamapps`. Taken from `library_path`, the same function whose
+    /// value is handed to Proton, so this can never disagree with what Eidos
+    /// passes. Steam, launching the game, leaves it on `<root>/steamapps`
+    /// instead - both are sound, and the check below accepts both.
     pub(crate) gamedrive_want: Option<PathBuf>,
 }
 
@@ -55,14 +57,19 @@ pub(crate) struct PrefixFacts {
 /// been set up to run under Proton.
 pub(crate) fn prefix_facts(game: &DetectedGame) -> Option<PrefixFacts> {
     let compat = game.compatdata.as_ref()?;
+    // Read once and hand to both consumers: the registry check resolves the
+    // launcher's `S:`-relative value through THIS link, so the two facts must
+    // describe the same instant.
+    let gamedrive_found = std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok();
     Some(PrefixFacts {
         game_name: game.def.name.to_string(),
         registry: eidos_gamefeatures::registry_status(
             compat,
             &game.install_path,
             game.def.registry_name,
+            gamedrive_found.as_deref(),
         ),
-        gamedrive_found: std::fs::read_link(compat.join("pfx/dosdevices/s:")).ok(),
+        gamedrive_found,
         gamedrive_want: eidos_games::library_path(&game.install_path),
     })
 }
@@ -110,25 +117,33 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
         }),
     }
 
-    // The game drive. Steam points `S:` at the library ROOT - the directory that
-    // holds `steamapps` - because Windows programs find a Steam game by trying
-    // `<drive>\steamapps\common\<game>`, and the root is what makes that
-    // heuristic land. Proton recreates the symlink from whatever it is handed on
-    // EVERY run, so a wrong value here is not cosmetic: the path a tool looks for
-    // simply stops existing, and a tool that WRITES there creates it somewhere
-    // outside the mount instead of failing.
+    // The game drive. Proton recreates `dosdevices/s:` from whatever it is
+    // handed on EVERY run, and the two things that hand it something disagree
+    // on purpose: Eidos passes the library ROOT for a tool (so BodySlide's
+    // `<drive>\steamapps\common\<game>` search lands), Steam passes
+    // `<root>/steamapps` for the game. Both are sound; each launcher re-points
+    // the link before it runs anything. The old version of this check called
+    // Steam's value a fault, which lit the card after every game launch for as
+    // long as the instance existed. What IS a fault is a link that matches
+    // neither: a library that moved, or a prefix copied from another machine.
+    // Then every `S:`-relative path already stored in the prefix - the launcher's
+    // `installed path` above all - resolves nowhere, and a tool that WRITES
+    // there creates the directory outside the mount instead of failing.
     if let (Some(found), Some(want)) = (&f.gamedrive_found, &f.gamedrive_want) {
-        if found != want {
+        let steam = want.join("steamapps");
+        if found != want && *found != steam {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
-                title: "The prefix's S: drive is not where Steam puts it".to_string(),
+                title: "The prefix's S: drive points outside the Steam library".to_string(),
                 detail: format!(
-                    "S: points at  {}  and Steam points it at  {}. Anything that stored an \
-                     S:-relative path in this prefix - the game's own launcher writes one - now \
-                     resolves somewhere else. Launching {game} or any tool through Eidos rewrites \
-                     it correctly.",
+                    "S: points at  {}. Eidos points it at  {}  for a tool and Steam at  {}  for \
+                     {game}; it matches neither, so the library has probably moved, or this \
+                     prefix came from another machine. Anything that stored an S:-relative path \
+                     in it - the game's own launcher writes one - resolves nowhere until the \
+                     next launch through Eidos or Steam re-points it.",
                     found.display(),
-                    want.display()
+                    want.display(),
+                    steam.display()
                 ),
                 actions: Vec::new(),
             });
@@ -185,8 +200,11 @@ mod tests {
         PrefixFacts {
             game_name: "Fallout 4".to_string(),
             registry,
+            // What a real instance looks like between two launches: Steam left
+            // `S:` on `steamapps` when the game last ran, and Eidos wants the
+            // root for the next tool. Both sound, so the default facts are quiet.
             gamedrive_found: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
-            gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps")),
+            gamedrive_want: Some(PathBuf::from("/mnt/Jeux/SteamLibrary")),
         }
     }
 
@@ -239,14 +257,35 @@ mod tests {
     }
 
     #[test]
-    fn a_moved_game_drive_is_reported_with_both_paths() {
+    fn steams_own_game_drive_is_not_a_fault() {
+        // The false positive that stood on a real instance for weeks: Steam
+        // leaves `S:` on `<lib>/steamapps` after every game launch, Eidos wants
+        // the root for tools, and the old check reported Steam's value as "not
+        // where Steam puts it" after every single game launch.
+        let f = facts(RegistryStatus::Correct);
+        assert_eq!(
+            f.gamedrive_found.as_ref(),
+            Some(&PathBuf::from("/mnt/Jeux/SteamLibrary/steamapps"))
+        );
+        assert!(prefix_checks(&f).is_empty());
+        // And Eidos's own value, the state right after a tool ran.
         let mut f = facts(RegistryStatus::Correct);
-        // One directory too high - exactly what Eidos itself used to do.
         f.gamedrive_found = Some(PathBuf::from("/mnt/Jeux/SteamLibrary"));
+        assert!(prefix_checks(&f).is_empty());
+    }
+
+    #[test]
+    fn a_game_drive_outside_the_library_is_reported_with_every_path() {
+        let mut f = facts(RegistryStatus::Correct);
+        // A library that moved, or a prefix copied from another machine.
+        f.gamedrive_found = Some(PathBuf::from("/mnt/OldDisk/SteamLibrary"));
         let d = prefix_checks(&f);
         assert_eq!(d.len(), 1);
-        assert!(d[0].detail.contains("/mnt/Jeux/SteamLibrary/steamapps"));
         assert!(d[0].title.contains("S: drive"));
+        // Where it is, and BOTH places it may legitimately be.
+        assert!(d[0].detail.contains("/mnt/OldDisk/SteamLibrary"));
+        assert!(d[0].detail.contains("/mnt/Jeux/SteamLibrary  for a tool"));
+        assert!(d[0].detail.contains("/mnt/Jeux/SteamLibrary/steamapps  for"));
     }
 
     #[test]
@@ -264,7 +303,7 @@ mod tests {
             found: Some(r"S:\common\Fallout 4\".to_string()),
             want: r"Z:\real\Fallout 4\".to_string(),
         });
-        f.gamedrive_found = Some(PathBuf::from("/mnt/Jeux/SteamLibrary"));
+        f.gamedrive_found = Some(PathBuf::from("/mnt/OldDisk/SteamLibrary"));
         assert_eq!(
             prefix_checks(&f).len(),
             2,

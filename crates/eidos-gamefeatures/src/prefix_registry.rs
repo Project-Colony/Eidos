@@ -128,15 +128,20 @@ fn marker_path(compatdata: &Path, registry_name: &str) -> PathBuf {
 /// `S:\common\...` - a path that resolves to a directory which does not exist.
 /// TexGen then died with `EDirectoryNotFoundException`.
 ///
-/// This comment used to claim the launcher's value had been CORRECT when written
-/// and was invalidated later by Steam moving the `S:` drive. That was a guess
-/// dressed as a finding, and acting on it cost a user 267 MB of BodySlide output
-/// written outside the mount - see `library_path` in `eidos-games`. The value was
-/// simply wrong the moment it was written, which is why the repair does not depend
-/// on any drive letter: Eidos writes the absolute `Z:` form, and `Z:` is `/` in
-/// every Proton prefix.
+/// The launcher's value is not garbage: `S:\common\<game>\` is exactly right
+/// under the `S:` STEAM creates for a game launch (`<lib>/steamapps`), and
+/// exactly wrong under the `S:` EIDOS creates for a tool launch (`<lib>`, so
+/// that BodySlide's `S:\steamapps\common\<game>` search lands - see
+/// `library_path` in `eidos-games`). The two launchers re-point that link on
+/// every run and disagree on purpose, so no key may depend on it. That is why
+/// the repair writes the absolute `Z:` form: `Z:` is `/` in every Proton prefix,
+/// whoever last started it.
 ///
-/// So the question has to be "is the key right NOW", which is what this asks.
+/// This predicate is the one `ensure_registry` decides with, right before Eidos
+/// re-points `S:` at the root, so it is deliberately textual: only the `Z:` form
+/// survives what is about to happen. `registry_status` asks a different
+/// question - would a tool find the game through the prefix AS IT STANDS - and
+/// resolves an `S:` value through the current link before calling it stale.
 /// Anything unparsed reads as "does not match", because re-importing is cheap
 /// and idempotent while a wrong path costs the user a support thread.
 /// The `installed path` currently recorded in one view of the game's key, if any.
@@ -206,6 +211,7 @@ pub fn registry_status(
     compatdata: &Path,
     install_path: &Path,
     registry_name: &str,
+    s_drive: Option<&Path>,
 ) -> RegistryStatus {
     if registry_name.is_empty() {
         return RegistryStatus::NotApplicable;
@@ -218,13 +224,69 @@ pub fn registry_status(
     let Ok(reg) = fs::read_to_string(prefix.join("system.reg")) else {
         return RegistryStatus::Stale { found: None, want };
     };
-    if registry_matches(&reg, registry_name, &want) {
+    registry_status_in(&reg, install_path, registry_name, s_drive)
+}
+
+/// The decision behind [`registry_status`], on a `system.reg` already read.
+/// Pure, so the cases can be written down: the `Z:` form Eidos writes, the
+/// launcher's `S:` form under each of the two drives, a key that is missing.
+///
+/// `s_drive` is where `dosdevices/s:` points right now. A view is sound if it
+/// holds the `Z:` form, or an `S:` form that RESOLVES through that link to the
+/// install directory - which is the launcher's own value whenever Steam started
+/// the game last. Calling that stale was the second half of a false positive
+/// that stood on a real instance for weeks (the first half was the game-drive
+/// card, see `eidos-gui`'s health checks).
+fn registry_status_in(
+    reg: &str,
+    install_path: &Path,
+    registry_name: &str,
+    s_drive: Option<&Path>,
+) -> RegistryStatus {
+    let want = to_windows_path(install_path);
+    if registry_matches(reg, registry_name, &want) {
+        return RegistryStatus::Correct;
+    }
+    let resolves = |view: &str| {
+        installed_path_in(reg, registry_name, view)
+            .and_then(|v| resolve_windows_path(&unescape_reg(&v), s_drive))
+            .is_some_and(|p| p == install_path)
+    };
+    if VIEWS.iter().copied().all(resolves) {
         return RegistryStatus::Correct;
     }
     // Report the 32-bit view: that is the one xEdit opens first, so it is the
     // value the user is actually about to be bitten by.
-    let found = installed_path_in(&reg, registry_name, VIEWS[1]).map(|v| v.replace("\\\\", "\\"));
+    let found = installed_path_in(reg, registry_name, VIEWS[1]).map(|v| unescape_reg(&v));
     RegistryStatus::Stale { found, want }
+}
+
+/// Undo [`escape_reg`]: doubled backslashes and quotes back to one.
+fn unescape_reg(s: &str) -> String {
+    s.replace("\\\\", "\\").replace("\\\"", "\"")
+}
+
+/// Where a Windows path stored in the prefix actually lands on this machine.
+///
+/// Only the two drives that occur in a Bethesda `installed path` are known:
+/// `Z:` is `/` in every Proton prefix, and `S:` is whatever `dosdevices/s:`
+/// points at this instant, handed in by the caller so that the answer describes
+/// the same moment as the rest of the facts. Anything else is `None`: a drive
+/// letter this code cannot place is not a path it may vouch for.
+fn resolve_windows_path(value: &str, s_drive: Option<&Path>) -> Option<PathBuf> {
+    let mut chars = value.chars();
+    let letter = chars.next()?.to_ascii_uppercase();
+    if chars.next() != Some(':') {
+        return None;
+    }
+    let rest = chars.as_str().replace('\\', "/");
+    let rest = rest.trim_matches('/');
+    let base = match letter {
+        'Z' => PathBuf::from("/"),
+        'S' => s_drive?.to_path_buf(),
+        _ => return None,
+    };
+    Some(if rest.is_empty() { base } else { base.join(rest) })
 }
 
 /// What `ensure_registry` did, and when it did nothing, why.
@@ -390,8 +452,9 @@ mod tests {
     //
     // Reproduced from a real prefix on 2026-07-30: Eidos wrote the correct Z:
     // path to both views, the game's 32-bit launcher later rewrote the
-    // Wow6432Node view through the S: drive, and Steam then repointed S: one
-    // directory up. The value stayed syntactically fine and became wrong.
+    // Wow6432Node view as `S:\common\...`, and the next tool launch re-pointed
+    // `S:` at the library root, where that value resolves nowhere. Textually
+    // fine, wrong under the drive the tool was about to get.
 
     const WANT: &str = r"Z:\mnt\Jeux\SteamLibrary\steamapps\common\Skyrim Special Edition\";
 
@@ -462,6 +525,82 @@ mod tests {
         let esc = escape_reg(WANT);
         let reg = system_reg(&esc, &esc);
         assert!(!registry_matches(&reg, "Fallout4", WANT));
+    }
+
+    // ---- "would a tool find the game through the prefix as it stands?" -------
+
+    const INSTALL: &str = "/mnt/Jeux/SteamLibrary/steamapps/common/Skyrim Special Edition";
+    const LAUNCHER: &str = r"S:\common\Skyrim Special Edition\";
+
+    #[test]
+    fn the_resolver_places_z_and_s_and_nothing_else() {
+        let s = Path::new("/mnt/Jeux/SteamLibrary/steamapps");
+        assert_eq!(
+            resolve_windows_path(WANT, Some(s)).as_deref(),
+            Some(Path::new(INSTALL))
+        );
+        assert_eq!(
+            resolve_windows_path(LAUNCHER, Some(s)).as_deref(),
+            Some(Path::new(INSTALL))
+        );
+        // Lower-case drive letters occur too; a launcher is not consistent.
+        assert_eq!(
+            resolve_windows_path(r"s:\common\Skyrim Special Edition", Some(s)).as_deref(),
+            Some(Path::new(INSTALL))
+        );
+        // No `S:` link yet: an `S:` value cannot be placed, and must not be
+        // guessed at.
+        assert_eq!(resolve_windows_path(LAUNCHER, None), None);
+        // A drive this code cannot place is not one it may vouch for.
+        assert_eq!(resolve_windows_path(r"D:\Games\Skyrim\", Some(s)), None);
+        assert_eq!(resolve_windows_path("not a path", Some(s)), None);
+    }
+
+    #[test]
+    fn the_launcher_value_is_correct_under_steams_own_s_drive() {
+        // The state between a game launch and the next tool: Eidos's `Z:` in
+        // one view, the launcher's `S:\common\...` in the other, and `S:` where
+        // Steam left it. Both views resolve to the game, so nothing is wrong,
+        // and the card that said otherwise was a false positive.
+        let reg = system_reg(&escape_reg(WANT), &escape_reg(LAUNCHER));
+        let steam = Path::new("/mnt/Jeux/SteamLibrary/steamapps");
+        assert!(matches!(
+            registry_status_in(&reg, Path::new(INSTALL), "Skyrim Special Edition", Some(steam)),
+            RegistryStatus::Correct
+        ));
+    }
+
+    #[test]
+    fn the_same_value_is_stale_once_s_points_at_the_root() {
+        // Same registry, but `S:` where Eidos leaves it after a tool. Now the
+        // launcher's value resolves to `<lib>/common/...`, which does not exist,
+        // and the card must show that value - it is the one xEdit would print.
+        let reg = system_reg(&escape_reg(WANT), &escape_reg(LAUNCHER));
+        let root = Path::new("/mnt/Jeux/SteamLibrary");
+        match registry_status_in(&reg, Path::new(INSTALL), "Skyrim Special Edition", Some(root)) {
+            RegistryStatus::Stale { found, want } => {
+                assert_eq!(found.as_deref(), Some(LAUNCHER));
+                assert_eq!(want, WANT);
+            }
+            _ => panic!("the launcher's value must read as stale under the root S:"),
+        }
+    }
+
+    #[test]
+    fn a_missing_key_is_stale_whatever_the_drive() {
+        let steam = Path::new("/mnt/Jeux/SteamLibrary/steamapps");
+        match registry_status_in(
+            "WINE REGISTRY Version 2\n",
+            Path::new(INSTALL),
+            "Skyrim Special Edition",
+            Some(steam),
+        ) {
+            RegistryStatus::Stale { found, want } => {
+                assert_eq!(found, None);
+                assert_eq!(want, WANT);
+            }
+            _ => panic!("a missing key is stale"),
+        }
     }
 
     #[test]
