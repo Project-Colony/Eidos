@@ -199,6 +199,12 @@ pub struct Account {
     pub name: String,
     pub user_id: u64,
     pub is_premium: bool,
+    /// Whether the token these came from had its signature checked.
+    ///
+    /// `false` whenever Nexus signs with a key it does not publish, which is
+    /// where access tokens stand - see `oauth::claims`. Carried so the fact is
+    /// reportable rather than silent; nothing decides anything on it.
+    pub verified: bool,
 }
 
 /// Whether this account may be shown adult mod metadata.
@@ -1034,6 +1040,7 @@ impl Nexus {
             name: c.username,
             user_id: c.user_id,
             is_premium: c.is_premium,
+            verified: c.verified,
         })
     }
 

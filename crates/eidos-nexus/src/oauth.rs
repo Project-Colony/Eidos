@@ -456,28 +456,136 @@ pub fn now_unix() -> u64 {
         .unwrap_or(0)
 }
 
-/// Nexus's JWT signing key, PKCS#1 `RSAPublicKey` DER.
+/// Where Nexus publishes the keys it signs tokens with.
 ///
-/// Published as SPKI PEM in their OAuth2 guide; `ring` wants PKCS#1, so the
-/// wrapper is stripped once here rather than parsing DER at runtime:
+/// Their OpenID discovery document (`/.well-known/openid-configuration`) names
+/// this as its `jwks_uri`, so it is theirs to change and ours to follow.
+const JWKS_URL: &str = "https://users.nexusmods.com/oauth/discovery/keys";
+
+/// One RSA key out of Nexus's JWKS.
 ///
-/// ```text
-/// openssl rsa -pubin -in nexus.pem -RSAPublicKey_out -outform DER
-/// ```
+/// The components are kept RAW, as the JWK carries them, because `ring` verifies
+/// straight from `n` and `e` - so there is no DER to assemble and no encoding to
+/// get wrong at three in the morning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SigningKey {
+    /// The key id a token's header names. Empty when the JWK carries none.
+    pub kid: String,
+    n: Vec<u8>,
+    e: Vec<u8>,
+}
+
+/// The keys in a JWKS document.
 ///
-/// `key_is_the_published_nexus_key` re-derives the modulus from the PEM and
-/// fails if this array ever drifts from what they publish.
-const NEXUS_JWT_KEY: &[u8] = &[
-    0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xe1, 0x28, 0x7c, 0x42, 0x58, 0xe7, 0x94, 0xcb, 0x7f,
-    0x12, 0xdd, 0x43, 0x81, 0x38, 0x1d, 0x75, 0x48, 0xd7, 0x7f, 0xc3, 0x22, 0xfd, 0x4d, 0x5b, 0xf3,
-    0xc5, 0xe3, 0xe4, 0x12, 0xc6, 0x5b, 0xe1, 0xf1, 0x15, 0x1a, 0x9d, 0x14, 0xe4, 0xc1, 0x1c, 0x0d,
-    0xc2, 0x60, 0x5d, 0x4a, 0x3f, 0x7d, 0x93, 0x98, 0x4d, 0x41, 0x4c, 0x5f, 0xb8, 0xa9, 0xbc, 0x20,
-    0xbb, 0xb1, 0xbb, 0x32, 0x2a, 0x92, 0x74, 0xc5, 0x9f, 0xcc, 0x97, 0x9c, 0xd7, 0x30, 0x17, 0x08,
-    0xd3, 0x78, 0x2e, 0xea, 0x9d, 0x53, 0xbc, 0x6f, 0x9e, 0x2f, 0x4c, 0x44, 0x93, 0xa5, 0xfc, 0x2c,
-    0x3f, 0xad, 0xf8, 0x66, 0xf3, 0x1f, 0xd1, 0x18, 0xe7, 0xc6, 0xd9, 0xf2, 0x43, 0x8b, 0x13, 0x1e,
-    0x25, 0x6c, 0x05, 0xf7, 0x7c, 0xd6, 0x21, 0x32, 0x16, 0xe1, 0x1c, 0x9a, 0xda, 0xf5, 0x95, 0x56,
-    0xd9, 0x07, 0x60, 0x1e, 0x80, 0xd5, 0xeb, 0x02, 0x03, 0x01, 0x00, 0x01,
-];
+/// Split out from the fetch so the shape Nexus actually publishes can be tested
+/// without a network - which is the whole reason the old arrangement failed
+/// silently: its guard compared two constants in the same file, so it could
+/// only ever catch a typo, never a rotation.
+fn parse_jwks(text: &str) -> Result<Vec<SigningKey>, String> {
+    let doc: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("unreadable JWKS: {e}"))?;
+    let Some(keys) = doc.get("keys").and_then(|k| k.as_array()) else {
+        return Err("JWKS has no \"keys\" array".to_string());
+    };
+    let out: Vec<SigningKey> = keys
+        .iter()
+        .filter(|k| {
+            // Signing keys only, and only the algorithm we verify. A JWKS may
+            // legitimately carry encryption keys and other algorithms.
+            k.get("kty").and_then(|v| v.as_str()) == Some("RSA")
+                && k.get("use").and_then(|v| v.as_str()).unwrap_or("sig") == "sig"
+                && k.get("alg").and_then(|v| v.as_str()).unwrap_or("RS256") == "RS256"
+        })
+        .filter_map(|k| {
+            Some(SigningKey {
+                kid: k
+                    .get("kid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string(),
+                n: b64(k.get("n")?.as_str()?).ok()?,
+                e: b64(k.get("e")?.as_str()?).ok()?,
+            })
+        })
+        .collect();
+    if out.is_empty() {
+        return Err("JWKS carries no usable RS256 signing key".to_string());
+    }
+    Ok(out)
+}
+
+/// Ask Nexus for the keys it is signing with right now.
+fn fetch_jwks() -> Result<String, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut resp = agent
+        .get(JWKS_URL)
+        .header("Application-Name", "Eidos")
+        .header("Application-Version", env!("CARGO_PKG_VERSION"))
+        .call()
+        .map_err(|e| e.to_string())?;
+    resp.body_mut().read_to_string().map_err(|e| e.to_string())
+}
+
+/// Where the last JWKS we fetched is kept, beside the session it verifies.
+///
+/// Not an optimisation: it is what lets Eidos start OFFLINE and still know
+/// whether the token on disk is genuine. Nothing secret is in it - these are
+/// public keys - so it is written with ordinary permissions.
+fn jwks_cache_path() -> std::path::PathBuf {
+    eidos_instance::settings::nexus_key_path().with_file_name("nexus-keys.json")
+}
+
+/// Every key we currently believe Nexus signs with, newest source first.
+///
+/// Memory, then disk, then the network - and the network again, unconditionally,
+/// when the token names a `kid` none of them has. That last step is the whole
+/// point: a rotation is now something Eidos notices and follows within one
+/// sign-in, rather than something that breaks every sign-in until somebody
+/// ships a new binary.
+fn signing_keys(want: Option<&str>) -> Result<Vec<SigningKey>, String> {
+    static CACHED: std::sync::Mutex<Vec<SigningKey>> = std::sync::Mutex::new(Vec::new());
+
+    let has = |keys: &[SigningKey]| match want {
+        // A token with no `kid` can only mean "the one key they publish".
+        None => !keys.is_empty(),
+        Some(kid) => keys.iter().any(|k| k.kid == kid),
+    };
+
+    if let Ok(memo) = CACHED.lock() {
+        if has(&memo) {
+            return Ok(memo.clone());
+        }
+    }
+    if let Some(keys) = std::fs::read_to_string(jwks_cache_path())
+        .ok()
+        .and_then(|t| parse_jwks(&t).ok())
+    {
+        if has(&keys) {
+            if let Ok(mut memo) = CACHED.lock() {
+                memo.clone_from(&keys);
+            }
+            return Ok(keys);
+        }
+    }
+    let text = fetch_jwks().map_err(|e| {
+        format!("could not reach Nexus to check its signing keys ({e}). Try again once you are online.")
+    })?;
+    let keys = parse_jwks(&text)?;
+    // Written only after it parses, so a proxy's error page cannot replace a
+    // good cache with something that will fail every start from now on.
+    let path = jwks_cache_path();
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(&path, &text);
+    if let Ok(mut memo) = CACHED.lock() {
+        memo.clone_from(&keys);
+    }
+    Ok(keys)
+}
 
 /// Who the access token says its bearer is.
 ///
@@ -491,29 +599,71 @@ pub struct Claims {
     pub is_premium: bool,
     /// Unix seconds, the token's own `exp`.
     pub expires_at: u64,
+    /// Whether the signature was actually CHECKED, or the payload merely read.
+    ///
+    /// `false` means Nexus is signing with a key it does not publish, which is
+    /// where things stand for access tokens: see [`claims`]. Nothing in Eidos
+    /// decides anything on the strength of this - it exists so the log can say
+    /// which of the two happened, instead of the difference being invisible.
+    pub verified: bool,
 }
 
-/// Verify an access token against Nexus's published key and return its claims.
+/// Read an access token's claims, checking the signature when that is possible.
 ///
-/// The signature IS checked. A JWT arrives over TLS from the token endpoint, so
-/// verifying it on arrival proves little - but Eidos writes tokens to disk and
-/// reads them back sessions later, and this is what makes a tampered
-/// `nexus.ini` fail closed instead of quietly claiming Premium.
+/// It was not always conditional. Eidos used to carry Nexus's signing key as a
+/// constant and refuse any token it could not verify, so that a hand-edited
+/// `nexus.ini` failed closed instead of quietly claiming Premium.
 ///
-/// Nexus signs with a 1024-bit key, below what `ring` accepts by default; the
-/// `..._FOR_LEGACY_USE_ONLY` verifier is the deliberate, named exception. That
-/// weakness is theirs to fix, and it is exactly why nothing here is treated as
-/// an authorization decision: the claims drive DISPLAY. Whether an account may
-/// actually download is answered by the API rejecting the request.
+/// That stopped working, and the way it stopped is the reason this is written
+/// out at length. Nexus rotated the key. The constant went stale, every sign-in
+/// began failing with "JWT signature does not match the Nexus signing key", and
+/// the guard test that was supposed to catch exactly this compared two
+/// constants IN THE SAME FILE - so it could only ever have caught a typo.
+///
+/// Following the rotation is now automatic: [`signing_keys`] reads their OpenID
+/// discovery document's `jwks_uri`. But that endpoint publishes the key for
+/// ID tokens, and measurement says it is not the one access tokens are signed
+/// with - a token issued minutes earlier carried `kid` `ysoTjItdaj...` against
+/// a published `3Y6X5Uv...`, a 2048-bit signature against a 3072-bit key, and
+/// it does not verify. The access-token key is published nowhere Eidos can
+/// reach it.
+///
+/// So verification is BEST-EFFORT, and the rule is precise:
+///
+/// * a token whose `kid` we have a key for is verified, and a mismatch is
+///   still fatal - tampering is caught wherever catching it is possible;
+/// * a token naming a key nobody publishes is read anyway, with
+///   [`Claims::verified`] `false`.
+///
+/// The alternative was refusing every sign-in, and the thing being defended
+/// against is a user editing their own file to make their own window print
+/// "Premium" - which gains them nothing, because these claims drive DISPLAY and
+/// nothing else. Whether an account may actually download is answered by the
+/// API rejecting the request. Two label sites and a status line are the entire
+/// blast radius, and that was checked rather than assumed.
 pub fn claims(access_token: &str) -> Result<Claims, String> {
-    claims_with_key(access_token, NEXUS_JWT_KEY)
+    // The header first, because it names the key. Parsed twice - here and in
+    // `claims_with_keys` - which costs a base64 decode of forty bytes and keeps
+    // the verification a pure function of its inputs.
+    let kid = access_token
+        .split('.')
+        .next()
+        .and_then(|h| b64(h).ok())
+        .and_then(|h| serde_json::from_slice::<serde_json::Value>(&h).ok())
+        .and_then(|h| h.get("kid").and_then(|k| k.as_str()).map(str::to_string));
+    // A failure to REACH Nexus is not a reason to refuse a token that is
+    // already on disk: an offline start would otherwise report the user signed
+    // out. Verification is best-effort by design (see below); no keys is one
+    // more way of having no key for this token.
+    let keys = signing_keys(kid.as_deref()).unwrap_or_default();
+    claims_with_keys(access_token, &keys)
 }
 
-/// [`claims`] against an arbitrary key, so the verification path can be tested
-/// with a key we hold the private half of. Nothing outside the tests should
-/// call this: a caller choosing its own key is a caller that can be told to
-/// trust anything.
-fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
+/// [`claims`] against keys given to it, so the verification path can be tested
+/// with a key we hold the private half of and with no network. Nothing outside
+/// the tests should call this: a caller choosing its own keys is a caller that
+/// can be told to trust anything.
+fn claims_with_keys(access_token: &str, keys: &[SigningKey]) -> Result<Claims, String> {
     let mut parts = access_token.split('.');
     let (Some(header), Some(payload), Some(signature), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
@@ -530,14 +680,45 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
         return Err("unexpected JWT algorithm (only RS256 is accepted)".to_string());
     }
 
-    let signed = format!("{header}.{payload}");
-    ring::signature::UnparsedPublicKey::new(
-        &ring::signature::RSA_PKCS1_1024_8192_SHA256_FOR_LEGACY_USE_ONLY,
-        key,
-    )
-    .verify(signed.as_bytes(), &b64(signature)?)
-    .map_err(|_| "JWT signature does not match the Nexus signing key".to_string())?;
+    // The key the header names, or every key we have when it names none.
+    let kid = head.get("kid").and_then(|k| k.as_str());
+    let candidates: Vec<&SigningKey> = match kid {
+        Some(kid) => keys.iter().filter(|k| k.kid == kid).collect(),
+        None => keys.iter().collect(),
+    };
+    // No key for it: read it anyway, and say so. See this function's docs -
+    // Nexus signs access tokens with a key it does not publish, and refusing
+    // them means refusing every sign-in.
+    if candidates.is_empty() {
+        return read_claims(payload, false);
+    }
 
+    let signed = format!("{header}.{payload}");
+    let sig = b64(signature)?;
+    // 2048 and up, not the 1024-and-up legacy exception this used to need.
+    // Nexus signed with a 1024-bit key when this was written and now signs with
+    // a 3072-bit one, so the weaker verifier is no longer the price of talking
+    // to them - and a verifier that accepts 1024-bit RSA is a verifier that
+    // accepts a forgery somebody can afford.
+    let ok = candidates.iter().any(|k| {
+        ring::signature::RsaPublicKeyComponents { n: &k.n, e: &k.e }
+            .verify(
+                &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+                signed.as_bytes(),
+                &sig,
+            )
+            .is_ok()
+    });
+    // A key we HAVE that does not match is still fatal: this is the tampering
+    // case, and it is the half of the old guarantee that survives.
+    if !ok {
+        return Err("JWT signature does not match the Nexus signing key".to_string());
+    }
+    read_claims(payload, true)
+}
+
+/// The claims themselves, once it has been decided whether they are trustworthy.
+fn read_claims(payload: &str, verified: bool) -> Result<Claims, String> {
     let body: serde_json::Value =
         serde_json::from_slice(&b64(payload)?).map_err(|e| format!("unreadable JWT body: {e}"))?;
     let user = body.get("user");
@@ -564,6 +745,7 @@ fn claims_with_key(access_token: &str, key: &[u8]) -> Result<Claims, String> {
                     .any(|r| r.contains("premium"))
             }),
         expires_at: body.get("exp").and_then(|x| x.as_u64()).unwrap_or(0),
+        verified,
     })
 }
 
@@ -1086,29 +1268,30 @@ mod tests {
 
     // ---- access-token claims -------------------------------------------------
     //
-    // Signed with a throwaway 1024-bit key generated for these tests, NOT with
+    // Signed with a throwaway 3072-bit key generated for these tests, NOT with
     // anyone's real token: the point is to exercise the verification path
     // deterministically. Payload copied from the shape in the Nexus OAuth2
-    // guide. `exp` is in 2100 so the vector does not rot.
+    // guide, `exp` in 2100 so the vector does not rot, and the same key SIZE
+    // Nexus signs with today - so the tests exercise the verifier production
+    // actually uses rather than a weaker one.
 
-    const TEST_JWT: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHBsaWNhdGlvbl9pZCI6MTAwLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTc1NDM4OTU5OCwianRpIjoidGVzdCIsInN1YiI6IjEyMzQ1IiwiaXNzIjoibmV4dXMtdXNlci1zZXJ2aWNlIiwidXNlciI6eyJpZCI6MTIzNDUsInVzZXJuYW1lIjoiVGVzdEFjY291bnQiLCJncm91cF9pZCI6MSwibWVtYmVyc2hpcF9yb2xlcyI6WyJtZW1iZXIiLCJzdXBwb3J0ZXIiLCJwcmVtaXVtIl0sInByZW1pdW1fZXhwaXJ5IjowLCJqb2luZWQiOjE0MTk1MzExMzR9fQ.cZDrnuTjfUip1Xsv2zG2Yj99LwmUM9vGaXtei3KlXaBs3OezwlQ9nCaf58hrCugeKYMHn4jRMwXRCSpTpIkpH44scPaVj1vhPJCUfMq5sNoYUvlsumYdeH3HHv4ijSbf8xs5gqeayNDPOlP2o_rBURAZXTKljqkUJKLEPK-xACI";
+    const TEST_JWT: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImVpZG9zLXRlc3Qta2V5In0.eyJhcHBsaWNhdGlvbl9pZCI6MTAwLCJleHAiOjQxMDI0NDQ4MDAsImlhdCI6MTc1NDM4OTU5OCwianRpIjoidGVzdCIsInN1YiI6IjEyMzQ1IiwiaXNzIjoibmV4dXMtdXNlci1zZXJ2aWNlIiwidXNlciI6eyJpZCI6MTIzNDUsInVzZXJuYW1lIjoiVGVzdEFjY291bnQiLCJncm91cF9pZCI6MSwibWVtYmVyc2hpcF9yb2xlcyI6WyJtZW1iZXIiLCJzdXBwb3J0ZXIiLCJwcmVtaXVtIl0sInByZW1pdW1fZXhwaXJ5IjowLCJqb2luZWQiOjE0MTk1MzExMzR9fQ.F3aUtaK3Fv0ZTulzklXOSIMycPmnAZj9DmBLSBduKi4SlLGjiVfo9hi_zxh0eeQ23WqCz55LnjOHh-r3nG655T5msWNlP0LTk_l8KO81TUqtmVtnDmjQh9dxEX58WT70HFmk7BoFAIN4fecGcrOMwnb7Rx_ctsEnN_2inKEtiOaA9DVZdV_QLM5AmOpkwMbbbJ97QWCQjtTTKvsIv6XjGCFRbeBeKrivQdvFdE0fjkuRGzbO7IToYLEhHBeSwy__uuQjxo1nutz9TsCHzW3XkwEX8oJtNcTNkT46SuepgfKm67fkBT1edV2zgbO6J6i4DYMIqjWdEH9WUBDjnK_lJn3PzhUjce2gc9G3lbDv9QYjZx7ehKI3mA3Vg_RrwcjVg07oYpS94Tu-IrTnZl818DtnCHjlktaML9K0qgmHH57tqR-4ht73GA2P0H3N6ht45seOIrjtTNaDj3HQ5-ITHxTPoU1hlZSCtlmrUaXp8myfhPSG3lFnPJIfJN_UgLeM";
 
-    const TEST_KEY: &[u8] = &[
-        0x30, 0x81, 0x89, 0x02, 0x81, 0x81, 0x00, 0xa2, 0xf2, 0x82, 0x31, 0xe2, 0xd6, 0xa4, 0x01,
-        0x24, 0xe7, 0x08, 0x0d, 0x75, 0xf4, 0xc2, 0xf5, 0xc1, 0x9c, 0xd0, 0xbe, 0x65, 0xcc, 0x2b,
-        0x17, 0x69, 0xb6, 0x8f, 0x0b, 0x40, 0x20, 0x74, 0xd3, 0xdb, 0x13, 0x92, 0xda, 0x48, 0x56,
-        0x95, 0x48, 0x16, 0x2d, 0x2e, 0x81, 0x36, 0x8f, 0x1e, 0xe0, 0xa1, 0xa6, 0x6d, 0xfe, 0x5a,
-        0x65, 0x64, 0xec, 0xe0, 0x6d, 0xa1, 0xff, 0x57, 0xbb, 0xd7, 0x1a, 0xc4, 0x4a, 0xa3, 0xef,
-        0xc5, 0x24, 0xc0, 0xd2, 0x3b, 0x33, 0x7d, 0xb0, 0xe8, 0x8f, 0xaa, 0xb1, 0xab, 0x63, 0x2a,
-        0xdc, 0xda, 0xbb, 0xc8, 0x6c, 0x1e, 0xbf, 0x9f, 0x18, 0xc1, 0x9e, 0x54, 0x4e, 0x7d, 0xc5,
-        0x0c, 0xb7, 0xf7, 0x53, 0xef, 0x08, 0x4d, 0x85, 0xc3, 0x7d, 0xa6, 0xc3, 0x13, 0x43, 0x0b,
-        0x74, 0xf7, 0x71, 0x6a, 0x23, 0xdd, 0x6a, 0x7d, 0x60, 0xbb, 0x7e, 0x8d, 0xb3, 0xf9, 0x7b,
-        0x02, 0x03, 0x01, 0x00, 0x01,
-    ];
+    /// The public half, as a JWKS carries it.
+    const TEST_N: &str = "4-OtZFAhG9tkax3yxsylxyJWR8Lp4B8rykcwm_KGjuwQ6YVU-PLQOxb3A0i6-A-K41FPcw5PR2hnTlRlTQWV30dKXHJ-qEIxqSmwshSj4Bx_it-XrmcfXGkjahprNv-Jyf5iQeOY6uLGYO5TB2PhAeUFQLMeq-8VgNUVeBSEp3RvL5_HosFGqAiJZ6hIXU_fJkngSb_mEQVJUH6Xi8O3V66OJpN_BNnPPhOruO5sSeHVx-Ac3XjyqZkl465sAxfGoxg8FzGqjkImkfvbbJZPJwsOFq_B5cgivDp9az2AHkJoPhSABNHoSj0x5794z087Z-XlJrfXhpFzza2JCDI7liLiYpPHb4JrYXSlEdSr4PpUd2ZsqJzyp4-fTDxKsgiwRNG5_McI5z2otn5vS_y5edpCYpzTEV4ItTlRm7j98dTuXrh7amW6QrYBtYJt2B5-Ci-Bb6Qq_foPFZcBt0EtCSIqgSA92DldvKenrO_EK14i76a_dgyAq0ux8oFng6GV";
+    const TEST_E: &str = "AQAB";
+
+    fn test_keys() -> Vec<SigningKey> {
+        parse_jwks(&format!(
+            r#"{{"keys":[{{"kty":"RSA","use":"sig","alg":"RS256","kid":"eidos-test-key","n":"{TEST_N}","e":"{TEST_E}"}}]}}"#
+        ))
+        .expect("the fixture is a well-formed JWKS")
+    }
 
     #[test]
     fn a_valid_token_yields_its_claims() {
-        let c = claims_with_key(TEST_JWT, TEST_KEY).expect("the vector is correctly signed");
+        let c = claims_with_keys(TEST_JWT, &test_keys()).expect("the vector is correctly signed");
+        assert!(c.verified, "a key that matches means a signature that was checked");
         assert_eq!(c.user_id, 12345);
         assert_eq!(c.username, "TestAccount");
         assert!(c.is_premium, "membership_roles carries \"premium\"");
@@ -1125,7 +1308,7 @@ mod tests {
             br#"{"exp":4102444800,"user":{"id":1,"username":"Nobody","membership_roles":["premium"]}}"#,
         );
         parts[1] = &forged;
-        let err = claims_with_key(&parts.join("."), TEST_KEY).unwrap_err();
+        let err = claims_with_keys(&parts.join("."), &test_keys()).unwrap_err();
         assert!(err.contains("signature"), "{err}");
     }
 
@@ -1133,14 +1316,14 @@ mod tests {
     fn the_algorithm_is_pinned_so_alg_none_cannot_pass() {
         let head = URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#);
         let body = URL_SAFE_NO_PAD.encode(br#"{"user":{"username":"Nobody"}}"#);
-        let err = claims_with_key(&format!("{head}.{body}."), TEST_KEY).unwrap_err();
+        let err = claims_with_keys(&format!("{head}.{body}."), &test_keys()).unwrap_err();
         assert!(err.contains("algorithm"), "{err}");
     }
 
     #[test]
     fn junk_is_rejected_without_panicking() {
         for bad in ["", "abc", "a.b", "a.b.c.d", "....", "!!.??.$$"] {
-            assert!(claims_with_key(bad, TEST_KEY).is_err(), "accepted {bad:?}");
+            assert!(claims_with_keys(bad, &test_keys()).is_err(), "accepted {bad:?}");
         }
     }
 
@@ -1157,25 +1340,75 @@ mod tests {
     }
 
     #[test]
-    fn key_is_the_published_nexus_key() {
-        // The modulus in the PEM Nexus publishes must be byte-identical to the
-        // one baked in above; if they ever rotate the key this fails loudly
-        // instead of every sign-in failing mysteriously.
-        let spki = base64::engine::general_purpose::STANDARD
-            .decode(concat!(
-                "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDhKHxCWOeUy38S3UOBOB11SNd/",
-                "wyL9TVvzxePkEsZb4fEVGp0U5MEcDcJgXUo/fZOYTUFMX7ipvCC7sbsyKpJ0xZ/M",
-                "l5zXMBcI03gu6p1TvG+eL0xEk6X8LD+t+GbzH9EY58bZ8kOLEx4lbAX3fNYhMhbh",
-                "HJra9ZVW2QdgHoDV6wIDAQAB"
-            ))
-            .expect("the published key is valid base64");
-        // The 128-byte modulus sits inside both encodings; find it in the SPKI
-        // and require our PKCS#1 array to carry the same run of bytes.
-        let modulus = &NEXUS_JWT_KEY[7..7 + 128];
-        assert!(
-            spki.windows(modulus.len()).any(|w| w == modulus),
-            "the baked-in modulus is not the one Nexus publishes"
-        );
+    fn a_token_naming_a_key_nobody_publishes_is_read_but_marked_unverified() {
+        // The failure that started this. Nexus signs access tokens with a key
+        // it does not publish, so refusing them refuses every sign-in - while
+        // the claims drive nothing but two labels. They are read, and the fact
+        // that nothing vouched for them is recorded rather than hidden.
+        let keys = test_keys();
+        let mut other = keys[0].clone();
+        other.kid = "some-other-key".to_string();
+        let c = claims_with_keys(TEST_JWT, &[other]).expect("read, not refused");
+        assert_eq!(c.username, "TestAccount");
+        assert!(!c.verified, "and it must not claim to have been checked");
+        // With no keys at all - offline, empty cache - the same.
+        let c = claims_with_keys(TEST_JWT, &[]).expect("an offline start still signs in");
+        assert!(!c.verified);
+    }
+
+    #[test]
+    fn a_key_we_do_have_still_refuses_a_forgery() {
+        // The half of the old guarantee that survives, and the reason the rule
+        // is "no key means read it" rather than "verification is optional":
+        // where a matching key EXISTS, a mismatch is still fatal.
+        let mut parts: Vec<&str> = TEST_JWT.split('.').collect();
+        let forged = URL_SAFE_NO_PAD.encode(br#"{"user":{"username":"Nobody"}}"#);
+        parts[1] = &forged;
+        let err = claims_with_keys(&parts.join("."), &test_keys()).unwrap_err();
+        assert!(err.contains("signature"), "{err}");
+    }
+
+    #[test]
+    fn a_token_with_no_kid_is_tried_against_every_key() {
+        // Nexus published no `kid` at all when this code was written. A token
+        // from that era, or from a provider that omits it, must still verify
+        // against the one key they publish.
+        let head = URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#);
+        let mut parts: Vec<&str> = TEST_JWT.split('.').collect();
+        parts[0] = &head;
+        // The signature no longer covers this header, so it must FAIL on the
+        // signature - not on the key lookup, which is what is being tested.
+        let err = claims_with_keys(&parts.join("."), &test_keys()).unwrap_err();
+        assert!(err.contains("signature"), "{err}");
+    }
+
+    /// The document Nexus actually serves at their `jwks_uri`, captured
+    /// 2026-09-07. Not for its key - that will rotate again, which is the whole
+    /// point - but for its SHAPE, so a parser that stops understanding what they
+    /// publish fails here rather than at somebody's sign-in.
+    #[test]
+    fn the_real_nexus_jwks_shape_parses() {
+        let doc = r#"{"keys":[{"kty":"RSA","n":"9J0ftAKHorF8SoB0qztUQM8JfLjVi3GssO0owIfwDAhKzt5p4fG6osmuq5-G4OpR8MW9ZDwG8KXTz12FrlWyKdzbjDxM4h03VtoQjGSLuvEob0rfwRvneY8SHA1ogABD_igH7nq8otuW4gA8-KV15HRuGrd4KTKzt4kVXJc9F5q4wAuBi_kmqyhVtk4RRRaONsqxKCUTUdQghbeTjiuBF_5lXiFuGWip7AuWt-ohXyKFAZw9EkuBR-S6lZ4WfRkxApKtHHgG0xmPMYRJjXlz55ARDQClkV6jFjIex3Jo9QOvpOqlQnU3cX8bM-Jb8DNoVaBBTm8iYxNph2jqi9HafSTGnqmToGTJlq3BDUwnZUmptz1n2MreHYZPdAUtks7HzLJJioLg4tr1C0xTTdTce0qGWTksOA5Q5CLYdPsFImapZ37rpegXdf9mebjfl4-qqSH4WA7peAQkgauuO_kBqVBGJ3r5a3l4p6G2zSPLPc9BoXe77efAsRjd_rmWC9VX","e":"AQAB","kid":"3Y6X5UvJYLH_G759QiLBWDy8ozRAVWzEua0VTEJvj58","use":"sig","alg":"RS256"}]}"#;
+        let keys = parse_jwks(doc).expect("their own document must parse");
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].kid, "3Y6X5UvJYLH_G759QiLBWDy8ozRAVWzEua0VTEJvj58");
+        assert_eq!(keys[0].e, vec![0x01, 0x00, 0x01]);
+    }
+
+    #[test]
+    fn a_jwks_with_nothing_usable_in_it_is_an_error_not_an_empty_list() {
+        // An empty key list that verified nothing would be indistinguishable
+        // from a forgery being accepted.
+        for doc in [
+            r#"{"keys":[]}"#,
+            r#"{"keys":[{"kty":"EC","crv":"P-256","x":"a","y":"b"}]}"#,
+            r#"{"keys":[{"kty":"RSA","use":"enc","n":"AQAB","e":"AQAB"}]}"#,
+            r#"{"keys":[{"kty":"RSA","alg":"RS512","n":"AQAB","e":"AQAB"}]}"#,
+            r#"{"nope":1}"#,
+            "not json at all",
+        ] {
+            assert!(parse_jwks(doc).is_err(), "accepted {doc}");
+        }
     }
 
     #[test]

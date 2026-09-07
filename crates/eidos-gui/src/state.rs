@@ -622,6 +622,7 @@ pub(crate) fn nexus_sign_in() -> Result<eidos_nexus::Account, String> {
         name: claims.username,
         user_id: claims.user_id,
         is_premium: claims.is_premium,
+        verified: claims.verified,
     })
 }
 
