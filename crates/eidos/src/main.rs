@@ -81,6 +81,15 @@ fn cmd_nexus(args: &[String]) {
                     // Say it out loud. When adult metadata is being withheld the
                     // user needs to know it is a setting and where to change it,
                     // not wonder why a mod page came back blank.
+                    // Said only when it is NOT the good case, so the ordinary
+                    // run stays quiet: Nexus signs access tokens with a key it
+                    // publishes nowhere, so there is nothing to check against.
+                    if !acct.verified {
+                        println!(
+                            "  (the session's signature could not be checked: Nexus does not \
+                             publish the key it signs access tokens with)"
+                        );
+                    }
                     println!(
                         "Adult content: {}",
                         match nexus.adult_policy() {
