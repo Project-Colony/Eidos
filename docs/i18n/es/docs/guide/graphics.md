@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS y generación de fotogramas
 
@@ -71,6 +71,36 @@ negra. Arreglo, por orden:
 2. Si no basta, un `dxvk.conf` junto al ejecutable del juego (el directorio
    `Root/` de un mod coloca uno ahí) con
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Mods de texturas mezclados: PGPatcher
+
+Community Shaders sabe representar parallax, complex material y PBR, pero solo
+donde una malla esta preparada para ello. Historicamente eso significaba
+instalar mallas preparcheadas y luego un mod para volver a apagar el efecto
+alli donde faltaban las texturas: cobertura limitada a las mallas que uno tenia,
+y CPU gastada en tiempo de ejecucion deshaciendo una decision que nunca debio
+tomarse.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) le da la
+vuelta. Usted instala las texturas que quiera, de cualquier tipo de shader, y el
+reescribe mallas y plugins para que cada superficie use el correcto - incluidos
+los registros de texturas alternativas de los plugins, que el metodo antiguo
+dejaba fuera. Es la diferencia entre un paquete de texturas que se ve y uno que
+solo se carga, y cuenta sobre todo en una instalacion mezclada, que es lo que es
+cualquier orden de carga real.
+
+Dos cosas antes de ejecutarlo en Linux:
+
+- necesita el argumento **`--ignore-mo2vfscheck`** o sale al instante
+  quejandose de MO2. Eidos lo aporta - vea
+  [Herramientas](tools.md#por-que-pgpatcher-necesita---ignore-mo2vfscheck) para saber que es la opcion y por que la
+  comprobacion falla aqui;
+- edita mallas, asi que se ejecuta **despues** de instalar todos los mods de
+  texturas y **antes** de DynDOLOD, que debe ver las mallas finales. Cambiar sus
+  texturas mas tarde significa ejecutar ambos otra vez, en ese orden.
+
+Su salida va al Overwrite como la de cualquier herramienta, donde un clic la
+convierte en un mod. Dele a ese mod prioridad alta: esta hecho para ganar.
 
 ## Leer los números después
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders、DLSS、フレーム生成
 
@@ -64,6 +64,33 @@ FG + Display Tweaks + DXVK の組み合わせには既知の黒画面不具合�
 2. それで足りなければ、ゲーム実行ファイルの隣に `dxvk.conf`(MOD の `Root/`
    ディレクトリがそこへ置いてくれます)を用意し
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## テクスチャ MOD が混在する場合: PGPatcher
+
+Community Shaders は parallax・complex material・PBR を描画できますが、メッシュ
+がそのように設定されている場所に限られます。従来はあらかじめパッチ済みの
+メッシュを導入し、テクスチャが欠けている箇所では効果を切り戻す MOD を重ねる
+必要がありました。対応範囲は手持ちのメッシュ次第で、しかも本来下すべきでな
+かった判断を取り消すために実行時の CPU を使っていたのです。
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) はこれ
+を逆転させます。どの種類のシェーダーのテクスチャでも好きに導入すれば、各面が
+正しいものを使うようにメッシュとプラグインを書き換えます。旧来の方法では
+扱えなかった、プラグイン内の代替テクスチャレコードも含めてです。表示される
+テクスチャパックと、ただ読み込まれるだけのものとの違いであり、混在した構成
+つまり現実のあらゆるロードオーダーでこそ効いてきます。
+
+Linux で実行する前に二点:
+
+- 引数 **`--ignore-mo2vfscheck`** が必要です。ないと MO2 について文句を言って
+  即座に終了します。Eidos が付与します。フラグの内容とここで確認が失敗する
+  理由は[ツール](tools.md#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照;
+- メッシュを編集するため、テクスチャ MOD をすべて導入した**後**、最終的な
+  メッシュを見る必要がある DynDOLOD の**前**に実行します。後からテクスチャを
+  変えたら、この順で両方を実行し直すことになります。
+
+出力は他のツールと同様 Overwrite に入り、クリック一つで MOD になります。その
+MOD には高い優先度を与えてください。勝つために作られたものです。
 
 ## あとで数字をどう読むか
 

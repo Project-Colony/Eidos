@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Araçlar: xEdit, BodySlide, DynDOLOD, FNIS
+# Araçlar: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Eidos üzerinden çalıştırılan bir araç, oyunun kendi Proton öneki içinde
 **birleşik görünümü** görür. Oyunun okuyacağını okur - etkin her mod, öncelik
@@ -19,6 +19,8 @@ düzenlemelerin düğmesidir. Eidos onları dosya adına göre şuralarda arar:
 - MO2 kullanıcılarının araçları kurduğu yer olan **bu örneğin `mods/`** dizini;
 - örnekler arasında paylaşılan dizin için Ayarlar'da belirlediğiniz **araçlar
   klasörü** (Tools -> Tools folder) - `/mnt/Games/Tools` ve benzerleri.
+
+`PGPatcher.exe` Creation Engine oyunlarinda ayni sekilde bulunur ve onsuz calisamayacagi bir argumanla gelir - bkz. [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
 
 Liste oyun başınadır, yani bir Skyrim örneğine Fallout'un düzenleyicisi asla
 önerilmez. Arama dört düzey aşağıda durur, çünkü bir mod havuzu yüz binlerce
@@ -124,6 +126,11 @@ Liste `default_prereqs` içindedir (`crates/eidos-instance/src/tools.rs`) ve
 Executables iletişim kutusundaki `Prereqs` alanı düzenlenebilir - algılama bir
 öntanımdır, kural değil.
 
+Baslik **argumanlara** da ayni sekilde karar verir; kimsenin tahmin
+edemeyecegi bir arguman isteyen tek arac icin: `pgpatcher` (ya da eski adi
+`parallaxgen`) iceren bir baslik `--ignore-mo2vfscheck` alir. Nedeni ve neden
+istege bagli olmadigi [asagisi](#pgpatcher-neden---ignore-mo2vfscheck-ister).
+
 ### Üç tür ön gereksinim
 
 **Kademe 1 - paketle gelen DLL'ler** (`d3dx9_43`, `d3dcompiler_47`,
@@ -178,6 +185,47 @@ Eidos, sistemdeki `winetricks`'i Proton'un kendi `wine`'ı ve oyun öneki üzeri
 uyuşmazlığını atlar. Kurulmamış bir Kademe 2 fiili bildiren bir araç yine de
 başlar; fiili ve onu düzeltecek komutu anan bir uyarıyla - kullanıcıda başka bir
 yerden gelmiş olabilir.
+
+### PGPatcher neden `--ignore-mo2vfscheck` ister
+
+PGPatcher, sahip oldugunuz doku modlarinin - vanilla, parallax, complex
+material, PBR - her yuzeyde dogru shader'i kullanmasi icin mesh'leri ve
+eklentileri yeniden yazar. Bir mod yoneticisi disinda calismayi hakli olarak
+reddeder: ciplak bir oyun klasorunu yamamak yikici olurdu.
+
+Sorun bunu NASIL denetledigidir: Windows'ta MO2'nin oyuna enjekte ettigi DLL
+kanca katmani olan **usvfs**'i arar. Eidos'ta boyle bir sey yok ve hicbir zaman
+olmayacak - birlesik gorunum, Wine'in varligindan habersiz icine girdigi bir
+FUSE baglamasidir - dolayisiyla denetim hicbir sey bulamaz ve arac hemen su
+mesajla cikar
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+kullanicinin calistirmadigi bir programi adlandirarak, herhangi bir is
+yapmadan once. Yazarin iki Linux bildirimine ([#716][pg716] ve [#725][pg725],
+ikisi de ayni nedenle FUSE tabanli olan MO2'nin Linux catallanmasi Fluorine'den)
+kendi yaniti, denetimi atlayan bir bayraktir.
+
+Bu yuzden Eidos onu onceden koyar. Bir mod havuzunda bulunan PGPatcher argumani
+ayarlanmis olarak gelir ve Executables penceresinde baslik olarak `PGPatcher`
+yazmak Arguments alanini ayni sekilde doldurur. Yazdiginiz her zaman kazanir:
+yalnizca bos biraktiginiz bir alan doldurulur, tipki yukaridaki on kosullar
+gibi.
+
+Liste `default_args` icinde (`crates/eidos-instance/src/tools.rs`),
+`default_prereqs` yaninda. Tek girdisi var ve bir tanesi bir islevi hakli
+cikarmaya yeter: bir bayragi kimse tahmin edemez ve onledigi hata yanlis
+programi adlandirir.
+
+Calisirken hicbir sey istemez, bir .NET araci icin alisilmadik bicimde: kendi
+calisma zamanini tasir (`dotnetlib/`, `includedFrameworks` bildiren bir
+`runtimeconfig.json` ile) ve Microsoft CRT DLL'lerini yurutulebilir dosyanin
+yanina koyar. Prereqs alanini bos birakin.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Önekteki oyun yolu
 

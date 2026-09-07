@@ -3764,6 +3764,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         state.prereqs = seeded;
                     }
                 }
+                // Same rule for arguments, and the reason is stronger: a missing
+                // prereq usually surfaces as a runtime error naming the DLL, while
+                // PGPatcher's missing `--ignore-mo2vfscheck` makes it exit at once
+                // complaining about MO2, a program the user is not running. The
+                // field is one per line, like the editor shows it.
+                if state.args_editor.text().trim().is_empty() {
+                    let seeded = eidos_instance::default_args(&s).join("\n");
+                    if !seeded.is_empty() {
+                        state.args_editor =
+                            iced::widget::text_editor::Content::with_text(&seeded);
+                    }
+                }
                 state.title = s;
             }
         }

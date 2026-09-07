@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS et génération d'images
 
@@ -72,6 +72,36 @@ dans l'ordre :
 2. Si cela ne suffit pas, un `dxvk.conf` à côté de l'exécutable du jeu (le dossier
    `Root/` d'un mod en place un là) avec
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Mods de textures mélangés : PGPatcher
+
+Community Shaders sait rendre le parallax, le complex material et le PBR, mais
+seulement là où un mesh est préparé pour. Historiquement cela voulait dire
+installer des meshes pré-patchés puis un mod pour rééteindre l'effet partout où
+les textures manquaient : une couverture limitée aux meshes que vous aviez, et
+du CPU dépensé à l'exécution pour défaire une décision qui n'aurait jamais dû
+être prise.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) inverse
+la chose. Vous installez les textures que vous voulez, de n'importe quel type de
+shader, et il réécrit les meshes et les plugins pour que chaque surface utilise
+le bon - y compris les enregistrements de textures alternatives des plugins, que
+l'ancienne méthode laissait de côté. C'est la différence entre un pack de
+textures qui s'affiche et un qui se contente de se charger, et cela compte
+surtout sur une installation mélangée, ce qu'est tout ordre de chargement réel.
+
+Deux choses à savoir avant de le lancer sous Linux :
+
+- il lui faut l'argument **`--ignore-mo2vfscheck`** ou il quitte aussitôt en se
+  plaignant de MO2. Eidos le fournit - voir
+  [Outils](tools.md#pourquoi-pgpatcher-a-besoin-de---ignore-mo2vfscheck) pour ce qu'est ce drapeau et pourquoi la
+  vérification échoue ici ;
+- il modifie des meshes, donc il tourne **après** l'installation de tous les
+  mods de textures et **avant** DynDOLOD, qui doit voir les meshes finaux.
+  Changer vos textures ensuite veut dire relancer les deux, dans cet ordre.
+
+Sa sortie va dans l'Overwrite comme celle de tout outil, où un clic en fait un
+mod. Donnez à ce mod une priorité haute : il est fait pour gagner.
 
 ## Lire les chiffres ensuite
 

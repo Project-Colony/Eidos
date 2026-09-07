@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# ツール: xEdit, BodySlide, DynDOLOD, FNIS
+# ツール: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Eidos 越しに実行したツールは、ゲーム自身の Proton プレフィックスの中で
 **統合ビュー**を見ます。ゲームが読むものをそのまま読み - 有効な MOD すべてを、
@@ -19,6 +19,8 @@ Fallout 4 なら `FO4Edit.exe`、Skyrim SE なら `SSEEdit.exe`、初代なら
 - **このインスタンスの `mods/`**。MO2 の利用者がツールを入れる場所です;
 - 設定で指定した**ツールフォルダ**(Tools -> Tools folder)。インスタンス間で
   共有するディレクトリ - `/mnt/Games/Tools` のようなもののためです。
+
+`PGPatcher.exe` も Creation Engine 系のゲームで同じように見つかり、これがないと動作できない引数とともに登録されます - [下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)を参照。
 
 一覧はゲームごとなので、Skyrim のインスタンスに Fallout のエディタが出ることは
 ありません。探索は四階層で止まります。MOD プールは数十万ファイルあり、これは
@@ -120,6 +122,11 @@ Overwrite にあったものはそのまま残ります。だから取り込み�
 Executables ダイアログの `Prereqs` 欄は編集できます - この検出は既定であって、
 規則ではありません。
 
+タイトルは **引数** も同じように決めます。誰にも推測できない引数を必要とする
+唯一のツールのためです。`pgpatcher`（または旧名の `parallaxgen`）を含む
+タイトルには `--ignore-mo2vfscheck` が与えられます。理由と、それが任意では
+ない理由は[下記](#pgpatcher-に---ignore-mo2vfscheck-が要る理由)。
+
 ### 前提条件は三種類
 
 **Tier 1 - 同梱の DLL**(`d3dx9_43`、`d3dcompiler_47`、`d3dx11_43`)。Eidos が
@@ -172,6 +179,43 @@ Eidos はシステムの `winetricks` を、Proton 自身の `wine` とゲーム
 protontricks + Proton-GE の食い違いを回避します。未インストールの Tier 2 の
 verb を宣言したツールも起動はします。その verb と、直すためのコマンドを挙げた
 警告付きで - 別の経路ですでに入っていることもあるからです。
+
+### PGPatcher に `--ignore-mo2vfscheck` が要る理由
+
+PGPatcher は、導入しているテクスチャ MOD が vanilla・parallax・complex
+material・PBR のいずれであっても、各面で正しいシェーダーが使われるように
+メッシュとプラグインを書き換えます。MOD マネージャーの外では動作を拒否しますが、
+これは妥当です。素のゲームフォルダーに手を入れるのは破壊的だからです。
+
+問題はその確認の「やり方」です。Windows で MO2 がゲームに注入する DLL フック層、
+**usvfs** を探すのです。Eidos にそれはなく、今後もありません。統合ビューは Wine
+が存在を知らないまま入っていく FUSE マウントだからです。したがって確認は何も
+見つけられず、ツールは作業を始める前に次のメッセージで即座に終了します。
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+しかも、利用者が起動してもいないプログラムの名前を挙げてです。作者自身が二件の
+Linux 報告（[#716][pg716] と [#725][pg725]、いずれも同じ理由で FUSE を用いる
+MO2 の Linux フォーク Fluorine から）に示した答えが、この確認を省くフラグです。
+
+そこで Eidos があらかじめ入れます。MOD プールで見つかった PGPatcher は引数が
+設定済みの状態で現れ、Executables ダイアログのタイトルに `PGPatcher` と入力
+しても Arguments 欄が同じように埋まります。入力した内容が常に優先されます。
+補完されるのは空のままにした欄だけで、これは上記の前提条件と同じ規則です。
+
+一覧は `default_args`（`crates/eidos-instance/src/tools.rs`）にあり、
+`default_prereqs` の隣です。項目は一つですが、一つで関数を設ける価値があります。
+フラグは誰にも推測できず、防いでいる失敗が別のプログラムの名を挙げるからです。
+
+実行時に必要なものはありません。.NET ツールとしては珍しく、自前のランタイムを
+同梱し（`dotnetlib/`、`includedFrameworks` を宣言する `runtimeconfig.json`
+つき）、Microsoft の CRT DLL を実行ファイルの隣に置いています。Prereqs は空の
+ままで構いません。
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## プレフィックスの中のゲームパス
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS, 프레임 생성
 
@@ -64,6 +64,32 @@ FG + Display Tweaks + DXVK 조합에는 알려진 검은 화면 결함이 있습
 2. 그것으로 부족하면 게임 실행 파일 옆에 `dxvk.conf`(모드의 `Root/` 디렉터리가 그곳에
    놓아 줍니다)를 두고
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## 텍스처 모드가 섞인 경우: PGPatcher
+
+Community Shaders는 parallax, complex material, PBR을 그릴 수 있지만 메시가 그에
+맞게 설정된 곳에서만 가능합니다. 예전에는 미리 패치된 메시를 설치하고, 텍스처가
+없는 곳에서는 효과를 다시 끄는 모드를 얹어야 했습니다. 적용 범위는 가진 메시에
+묶였고, 애초에 내리지 말았어야 할 결정을 되돌리는 데 실행 중 CPU 시간이
+쓰였습니다.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946)는 이를
+뒤집습니다. 어떤 셰이더 유형의 텍스처든 원하는 대로 설치하면, 각 표면이 올바른
+것을 쓰도록 메시와 플러그인을 다시 씁니다. 예전 방식이 다루지 못하던 플러그인의
+대체 텍스처 레코드까지 포함해서요. 보이는 텍스처 팩과 그저 불러와지기만 하는
+팩의 차이이며, 섞인 구성 즉 현실의 모든 로드 오더에서 가장 크게 드러납니다.
+
+Linux에서 실행하기 전에 두 가지:
+
+- 인자 **`--ignore-mo2vfscheck`**가 필요합니다. 없으면 MO2를 탓하며 즉시
+  종료합니다. Eidos가 제공합니다. 이 플래그가 무엇이고 왜 여기서 확인이
+  실패하는지는 [도구](tools.md#pgpatcher에---ignore-mo2vfscheck가-필요한-이유)를 보세요;
+- 메시를 수정하므로 모든 텍스처 모드를 설치한 **뒤**, 최종 메시를 보아야 하는
+  DynDOLOD **앞**에 실행합니다. 나중에 텍스처를 바꾸면 이 순서로 둘 다 다시
+  돌려야 합니다.
+
+출력은 다른 도구와 마찬가지로 Overwrite로 가며, 클릭 한 번으로 모드가 됩니다.
+그 모드에는 높은 우선순위를 주세요. 이기라고 만든 것입니다.
 
 ## 그 뒤에 숫자를 읽는 법
 

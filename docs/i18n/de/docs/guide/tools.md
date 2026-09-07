@@ -1,6 +1,6 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=b24d131068de5d901d82e279d67d64cf50106ab4 -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
 
-# Tools: xEdit, BodySlide, DynDOLOD, FNIS
+# Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 Ein durch Eidos gestartetes Tool sieht **den zusammengeführten Blick**, im
 Proton-Präfix des Spiels selbst. Es liest, was das Spiel lesen wird - jeden
@@ -20,6 +20,8 @@ ist, vor denen LOOT ständig warnt. Eidos sucht danach, nach Dateiname, in:
 - dem **Tools folder**, den Sie in den Settings festlegen (Tools -> Tools
   folder), für das zwischen Instanzen geteilte Verzeichnis - `/mnt/Games/Tools`
   und dergleichen.
+
+`PGPatcher.exe` wird auf den Creation-Engine-Spielen genauso gefunden, und es kommt mit einem Argument, ohne das es nicht arbeiten kann - siehe [unten](#warum-pgpatcher---ignore-mo2vfscheck-braucht).
 
 Die Liste gilt pro Spiel, einer Skyrim-Instanz wird also nie Fallouts Editor
 angeboten. Die Suche hört vier Ebenen tief auf, weil ein Mod-Bestand
@@ -128,6 +130,11 @@ Die Liste steht in `default_prereqs` (`crates/eidos-instance/src/tools.rs`), und
 das Feld `Prereqs` im Executables-Dialog ist editierbar - die Erkennung ist eine
 Vorgabe, keine Regel.
 
+Der Titel entscheidet genauso ueber **Argumente**, fuer das eine Werkzeug, das
+eines braucht, das niemand erraten koennte: ein Titel mit `pgpatcher` (oder
+`parallaxgen`, dem frueheren Namen) erhaelt `--ignore-mo2vfscheck`. Warum, und
+warum es nicht optional ist, steht [unten](#warum-pgpatcher---ignore-mo2vfscheck-braucht).
+
 ### Drei Arten von Voraussetzung
 
 **Tier 1 - mitgelieferte DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`).
@@ -183,6 +190,46 @@ zwischen protontricks und Proton-GE umgeht. Ein Tool, das ein nicht
 installiertes Tier-2-Verb deklariert, startet trotzdem, mit einer Warnung, die
 das Verb und den Befehl zur Behebung nennt - der Nutzer hat es vielleicht
 anderswoher.
+
+### Warum PGPatcher `--ignore-mo2vfscheck` braucht
+
+PGPatcher schreibt Meshes und Plugins so um, dass die vorhandenen Textur-Mods -
+vanilla, Parallax, Complex Material, PBR - auf jeder Oberflaeche den richtigen
+Shader verwenden. Es weigert sich zu Recht, ausserhalb eines Mod-Managers zu
+laufen: einen nackten Spielordner zu patchen waere zerstoererisch.
+
+Das Problem ist, WIE es das prueft: es sucht **usvfs**, die DLL-Hooking-Schicht,
+die MO2 unter Windows ins Spiel injiziert. Eidos hat keine und wird nie eine
+haben - die zusammengefuehrte Ansicht ist ein FUSE-Mount, in das Wine laeuft,
+ohne davon zu wissen - also findet die Pruefung nichts und das Werkzeug beendet
+sich sofort mit
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+und nennt dabei ein Programm, das die Nutzerin gar nicht ausfuehrt, noch vor der
+ersten Arbeit. Die Antwort des Autors auf die beiden Linux-Meldungen
+([#716][pg716] und [#725][pg725], beide von Fluorine, MO2s Linux-Fork, der aus
+demselben Grund FUSE nutzt) ist ein Schalter, der die Pruefung ueberspringt.
+
+Eidos setzt ihn daher vor. Ein im Mod-Pool gefundener PGPatcher kommt mit dem
+Argument bereits gesetzt, und `PGPatcher` als Titel im Executables-Dialog fuellt
+das Arguments-Feld genauso. Was Sie tippen, gewinnt immer: vorbelegt wird nur
+ein Feld, das Sie leer gelassen haben, genau wie bei den Voraussetzungen oben.
+
+Die Liste steht in `default_args` (`crates/eidos-instance/src/tools.rs`), neben
+`default_prereqs`. Sie hat einen Eintrag, und einer genuegt fuer eine eigene
+Funktion: einen Schalter kann niemand erraten, und der verhinderte Fehler nennt
+das falsche Programm.
+
+Zur Laufzeit braucht es nichts, ungewoehnlich fuer ein .NET-Werkzeug: es bringt
+seine eigene mit (`dotnetlib/`, mit einer `runtimeconfig.json`, die
+`includedFrameworks` deklariert) und liefert die Microsoft-CRT-DLLs neben der
+ausfuehrbaren Datei. Lassen Sie Prereqs leer.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## Der Spielpfad im Präfix
 

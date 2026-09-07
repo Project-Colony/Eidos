@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS a generování snímků
 
@@ -67,6 +67,33 @@ popořadě:
 2. Pokud to nestačí, `dxvk.conf` vedle spustitelného souboru hry (adresář `Root/`
    nějakého módu ho tam umístí) s
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Smisene modifikace textur: PGPatcher
+
+Community Shaders umi vykreslit parallax, complex material i PBR, ale jen tam,
+kde je sit pro to pripravena. Drive to znamenalo nainstalovat predem zaplatovane
+site a pak modifikaci, ktera efekt zase vypne vsude, kde textury chybely:
+pokryti omezene na site, ktere jste meli, a cas procesoru utraceny za behu
+rusenim rozhodnuti, ktere nikdy nemelo padnout.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) to
+obraci. Nainstalujete libovolne textury libovolneho typu shaderu a on prepise
+site i pluginy tak, aby kazdy povrch pouzil ten spravny - vcetne zaznamu
+alternativnich textur v pluginech, ktere stara metoda nepokryvala. Je to rozdil
+mezi balikem textur, ktery je videt, a takovym, ktery se jen nacte, a nejvic to
+plati u smisene sestavy, cimz je kazde skutecne poradi nacitani.
+
+Dve veci pred spustenim na Linuxu:
+
+- potrebuje argument **`--ignore-mo2vfscheck`**, jinak okamzite skonci se
+  stiznosti na MO2. Eidos jej dodava - viz [Nastroje](tools.md#proc-pgpatcher-potrebuje---ignore-mo2vfscheck), co ten
+  prepinac je a proc kontrola zde selhava;
+- upravuje site, takze bezi **po** instalaci vsech modifikaci textur a **pred**
+  DynDOLOD, ktery musi videt konecne site. Pozdejsi zmena textur znamena spustit
+  oba znovu, v tomto poradi.
+
+Vystup miri do Overwrite jako u kazdeho nastroje, kde z nej jedno kliknuti udela
+modifikaci. Dejte te modifikaci vysokou prioritu: ma vyhravat.
 
 ## Jak potom číst čísla
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/graphics.md sha=9a0f3b34319681bf27f11f455a3b1e87d7d44f13 -->
+<!-- eidos-i18n: source=docs/guide/graphics.md sha=ee3cee732aafbf91d8085d03a74f7d4e0cfa224d -->
 
 # Community Shaders, DLSS en frame generation
 
@@ -70,6 +70,36 @@ Oplossing, op volgorde:
 2. Als dat niet genoeg is, een `dxvk.conf` naast het uitvoerbare bestand van het
    spel (de `Root/`-map van een mod zet er een neer) met
    `dxvk.enableGraphicsPipelineLibrary = False`
+
+## Gemengde texture-mods: PGPatcher
+
+Community Shaders kan parallax, complex material en PBR weergeven, maar alleen
+waar een mesh daarvoor is ingericht. Vroeger betekende dat: voorgepatchte meshes
+installeren en daarna een mod om het effect weer uit te zetten waar de textures
+ontbraken. De dekking bleef beperkt tot de meshes die je toevallig had, en er
+ging CPU-tijd op aan het terugdraaien van een beslissing die nooit genomen had
+mogen worden.
+
+[PGPatcher](https://www.nexusmods.com/skyrimspecialedition/mods/120946) draait
+het om. Jij installeert welke textures je wilt, van elk shader-type, en het
+herschrijft meshes en plugins zodat elk oppervlak de juiste gebruikt - inclusief
+de alternate-texture-records in plugins, die de oude methode niet dekte. Het is
+het verschil tussen een texture-pakket dat te zien is en een dat alleen laadt,
+en het telt het zwaarst bij een gemengde opstelling, wat elke echte laadvolgorde
+is.
+
+Twee dingen om te weten voor je het onder Linux draait:
+
+- het heeft het argument **`--ignore-mo2vfscheck`** nodig, anders stopt het
+  meteen met een klacht over MO2. Eidos levert het mee - zie
+  [Gereedschap](tools.md#waarom-pgpatcher---ignore-mo2vfscheck-nodig-heeft) voor wat de vlag is en waarom de controle
+  hier faalt;
+- het bewerkt meshes, dus het draait **na** alle texture-mods en **voor**
+  DynDOLOD, dat de uiteindelijke meshes moet zien. Verander je later je
+  textures, dan draaien ze allebei opnieuw, in die volgorde.
+
+De uitvoer belandt in de Overwrite zoals bij elk gereedschap, waar een klik er
+een mod van maakt. Geef die mod een hoge prioriteit: hij hoort te winnen.
 
 ## De getallen achteraf lezen
 

@@ -1,4 +1,4 @@
-# Tools: xEdit, BodySlide, DynDOLOD, FNIS
+# Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
 A tool run through Eidos sees **the merged view**, inside the game's own Proton
 prefix. It reads what the game will read - every enabled mod, in priority order -
@@ -11,7 +11,10 @@ Some tools are named uniquely enough to be found rather than declared, and xEdit
 is the obvious case: `FO4Edit.exe` for Fallout 4, `SSEEdit.exe` for Skyrim SE,
 `TES5Edit.exe` for the original, and so on - along with each one's
 **QuickAutoClean** twin, which is the button for the dirty edits LOOT keeps
-warning about. Eidos looks for them, by file name, in:
+warning about. `PGPatcher.exe` is found the same way on the Creation Engine
+games, and it arrives with an argument it cannot work without - see
+[below](#why-pgpatcher-needs---ignore-mo2vfscheck). Eidos looks for them, by
+file name, in:
 
 - the game's install folder, and the `Root/` trees of enabled mods;
 - **this instance's `mods/`**, which is where MO2 users install tools;
@@ -117,6 +120,11 @@ The list is in `default_prereqs` (`crates/eidos-instance/src/tools.rs`), and the
 `Prereqs` field in the Executables dialog is editable - the detection is a
 default, not a rule.
 
+The title decides **arguments** the same way, for the one tool that needs one
+nobody could guess: a title containing `pgpatcher` (or `parallaxgen`, its former
+name) is given `--ignore-mo2vfscheck`. Why, and why it is not optional, is
+[below](#why-pgpatcher-needs---ignore-mo2vfscheck).
+
 ### Three kinds of prerequisite
 
 **Tier 1 - bundled DLLs** (`d3dx9_43`, `d3dcompiler_47`, `d3dx11_43`). Eidos
@@ -167,6 +175,44 @@ prefix, which sidesteps Steam's pressure-vessel container and the
 protontricks + Proton-GE mismatch. A tool that declares an uninstalled Tier-2
 verb still launches, with a warning naming the verb and the command to fix it -
 the user may have it from elsewhere.
+
+### Why PGPatcher needs `--ignore-mo2vfscheck`
+
+PGPatcher rewrites meshes and plugins so that whatever texture mods you have -
+vanilla, parallax, complex material, PBR - use the right shader on every
+surface. It refuses to run outside a mod manager, sensibly, because patching a
+bare game folder would be destructive.
+
+The trouble is HOW it checks: it looks for **usvfs**, the Windows DLL-hooking
+layer MO2 injects into the game. Eidos does not have one and never will - the
+merged view is a FUSE mount that Wine walks into without knowing it exists - so
+the check finds nothing and the tool exits immediately with
+
+```
+Please verify that you are launching PGPatcher from MO2, VFS not detected.
+```
+
+naming a program the user is not running, before doing any work. Its author's
+own answer to the two Linux reports of this ([#716][pg716] and [#725][pg725],
+both from Fluorine, MO2's Linux fork, which is FUSE-based for the same reason)
+is a flag that skips the check.
+
+So Eidos seeds it. A PGPatcher found in a mod pool arrives with the argument
+already set, and typing `PGPatcher` as the title in the Executables dialog fills
+the Arguments field the same way. What you type always wins: the seeding only
+fills a field you left empty, exactly like the prerequisites above.
+
+The list is in `default_args` (`crates/eidos-instance/src/tools.rs`), beside
+`default_prereqs`. It has one entry, and one entry is enough to be worth a
+function: nobody can guess a flag, and the failure it prevents names the wrong
+program.
+
+Its runtime needs nothing, unusually for a .NET tool: it bundles its own
+(`dotnetlib/`, with a `runtimeconfig.json` declaring `includedFrameworks`), and
+ships the Microsoft CRT DLLs beside its executable. Leave Prereqs empty.
+
+[pg716]: https://github.com/hakasapl/PGPatcher/issues/716
+[pg725]: https://github.com/hakasapl/PGPatcher/issues/725
 
 ## The game path in the prefix
 

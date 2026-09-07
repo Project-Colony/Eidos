@@ -276,6 +276,7 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
                 let (_, title) = want.remove(pos);
                 out.push(Tool {
                     prereqs: default_prereqs(&title),
+                    args: default_args(&title),
                     title,
                     exe: e.path(),
                     ..Default::default()
@@ -313,6 +314,7 @@ fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, ex
     if !exe.is_empty() && search.iter().any(|d| d.join(exe).is_file()) {
         v.push(Tool {
             prereqs: default_prereqs(&title),
+            args: default_args(&title),
             title,
             exe: PathBuf::from(exe),
             ..Default::default()
@@ -383,6 +385,33 @@ pub fn default_tools_in(
     // all and every user added them by hand.
     v.extend(find_known_tools(&search, execs.known_tools));
     v
+}
+
+/// The arguments a well-known tool needs that nobody could guess, by title.
+///
+/// Sibling of [`default_prereqs`] and same rule: this only SEEDS a tool Eidos
+/// creates itself. A user-declared `args=` in `tools.ini` always wins, because
+/// the point is to spare somebody a discovery, not to override their choice.
+///
+/// Today there is exactly one entry, and it earns the function. PGPatcher checks
+/// that it was launched under a mod manager by looking for **usvfs**, MO2's
+/// Windows hooking layer. Eidos's view is a FUSE mount, so the check finds
+/// nothing and the tool exits immediately with
+/// `Please verify that you are launching PGPatcher from MO2, VFS not detected`
+/// before doing any work. Its author's own answer to the two Linux reports of
+/// this (hakasapl/PGPatcher#716 and #725, both from Fluorine, MO2's Linux fork,
+/// which is FUSE-based for the same reason) is this flag. Every Eidos user would
+/// otherwise hit it, read a message naming a program they are not running, and
+/// have nothing to connect it to.
+pub fn default_args(title: &str) -> Vec<String> {
+    let t = title.to_ascii_lowercase();
+    // `parallaxgen` is the tool's former name, still on disk in older setups.
+    let args: &[&str] = if t.contains("pgpatcher") || t.contains("parallaxgen") {
+        &["--ignore-mo2vfscheck"]
+    } else {
+        &[]
+    };
+    args.iter().map(|s| s.to_string()).collect()
 }
 
 /// The known runtime prerequisites for a well-known modding tool, by title (so a
@@ -721,6 +750,37 @@ mod tests {
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[0].exe, PathBuf::from("/custom/skse64_loader.exe")); // user won
         assert_eq!(merged[1].title, "Launcher");
+    }
+
+    #[test]
+    fn a_discovered_pgpatcher_arrives_with_its_flag_already_set() {
+        // The property that matters: a user who drops PGPatcher in their mods
+        // folder and never reads a wiki still gets a tool that runs.
+        let root = tmp();
+        let dir = root.join("mods").join("PGPatcher 1.3.0").join("PGPatcher");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("PGPatcher.exe"), b"MZ").unwrap();
+        let known: &[(&str, &str)] = &[("PGPatcher.exe", "PGPatcher")];
+        let found = find_known_tools(&[root.join("mods")], known);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].title, "PGPatcher");
+        assert_eq!(found[0].args, vec!["--ignore-mo2vfscheck"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_tool_that_needs_an_unguessable_flag_is_seeded_with_it() {
+        // Without this the tool exits before its first line of work, naming a
+        // program the user is not running. Both spellings: the mod was called
+        // ParallaxGen until 2026 and older setups still have that folder.
+        assert_eq!(default_args("PGPatcher"), vec!["--ignore-mo2vfscheck"]);
+        assert_eq!(default_args("ParallaxGen"), vec!["--ignore-mo2vfscheck"]);
+        // Case-insensitive, like every other title lookup here.
+        assert_eq!(default_args("pgpatcher"), vec!["--ignore-mo2vfscheck"]);
+        // And nothing else gets arguments it did not ask for.
+        assert!(default_args("SSEEdit").is_empty());
+        assert!(default_args("BodySlide x64").is_empty());
+        assert!(default_args("DynDOLOD").is_empty());
     }
 
     #[test]

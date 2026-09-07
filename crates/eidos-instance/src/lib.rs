@@ -45,7 +45,8 @@ pub use profile::{
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use settings::Settings;
 pub use tools::{
-    default_prereqs, default_tools, default_tools_in, merge_tools, read_tools, tool_search_roots,
+    default_args, default_prereqs, default_tools, default_tools_in, merge_tools, read_tools,
+    tool_search_roots,
     write_tools, GameExecutables, Tool,
 };
 

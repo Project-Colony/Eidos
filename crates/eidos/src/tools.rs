@@ -106,7 +106,14 @@ pub(crate) fn cmd_tool(args: &[String]) {
             user.push(eidos_instance::Tool {
                 title: title.to_string(),
                 exe: std::path::PathBuf::from(exe),
-                args: args[4..].to_vec(),
+                // What the user typed wins. Seeded only when they typed nothing,
+                // so a known tool that needs an unguessable flag (PGPatcher's
+                // `--ignore-mo2vfscheck`) still gets it from the CLI.
+                args: if args.len() > 4 {
+                    args[4..].to_vec()
+                } else {
+                    eidos_instance::default_args(title)
+                },
                 workdir: None,
                 // Seed known tools' runtime prereqs (BodySlide -> d3dx, Synthesis ->
                 // dotnet...); the user can edit tools.ini to override.
