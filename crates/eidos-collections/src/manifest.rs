@@ -35,6 +35,22 @@ pub struct Collection {
     pub plugins: Vec<Plugin>,
     /// Bethesda games only: LOOT userlist entries, to be MERGED into the user's.
     pub plugin_rules: PluginRules,
+    /// Tools the collection expects to exist. NAMED, never created.
+    ///
+    /// `exe` is a Windows path relative to the game directory, with no field for
+    /// a prefix, a runner or a launcher - and Vortex's own authoring UI warns
+    /// that the user must already have these installed. Under Eidos this is the
+    /// DynDOLOD situation: the honest thing is to tell the user which tools the
+    /// collection assumes, not to invent tool entries pointing at nothing.
+    pub tools: Vec<Tool>,
+}
+
+/// A tool a collection expects the user to already have.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct Tool {
+    pub name: String,
+    pub exe: String,
 }
 
 /// What the collection says about itself.
@@ -246,6 +262,10 @@ const KNOWN_SECTIONS: &[&str] = &[
     "plugins",
     "pluginRules",
     "collectionConfig",
+    // Read and reported, though nothing is created from it - see `Tool`. It
+    // appears in real published collections, so leaving it out of this list
+    // would put "tools" in the not-understood line of every single report.
+    "tools",
 ];
 
 /// What reading a manifest produced, INCLUDING what it did not understand.

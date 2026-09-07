@@ -5646,6 +5646,7 @@ mod tests {
             summary: String::new(),
             author: "HookerHeels".to_string(),
             game_domain: "skyrimspecialedition".to_string(),
+            download_link: "/v2/collections/335/revisions/467/download_link".to_string(),
             mod_count: 3,
             total_size: 3072,
             instructions: String::new(),
@@ -5703,7 +5704,7 @@ mod tests {
             &[],
             &[second],
         );
-        let mut state = |app: &mut App| {
+        let state = |app: &mut App| {
             app.collection = Some(CollectionState {
                 link: String::new(),
                 revision: Some(captured_revision()),

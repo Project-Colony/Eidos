@@ -79,6 +79,10 @@ pub struct CollectionRevision {
     /// The collection author's own installation notes, if any.
     pub instructions: String,
     pub mods: Vec<CollectionMod>,
+    /// Where the collection's ARCHIVE is, as a relative API path. Everything
+    /// that makes a collection a recipe rather than a list is inside it, and no
+    /// API call returns any of it - so this field is the door to the feature.
+    pub download_link: String,
     /// Set when the revision's metadata is withheld - see [`gate`].
     pub hidden: Option<HiddenReason>,
 }
@@ -99,6 +103,7 @@ const QUERY: &str = r#"
 query collectionRevision($slug: String, $revision: Int, $viewAdultContent: Boolean, $domainName: String) {
   collectionRevision(slug: $slug, revision: $revision, viewAdultContent: $viewAdultContent, domainName: $domainName) {
     revisionNumber
+    downloadLink
     adultContent
     modCount
     totalSize
@@ -255,6 +260,10 @@ pub(crate) fn from_payload(
             str_at(coll.and_then(|c| c.get("user")), "name")
         },
         game_domain: str_at(coll.and_then(|c| c.get("game")), "domainName"),
+        // Not redacted with the rest: it is a URL, not metadata about the
+        // collection's content, and a gated revision that could still be
+        // downloaded is a situation the gate is not there to create.
+        download_link: str_at(Some(rev), "downloadLink"),
         mod_count: loose_u64(rev.get("modCount")).unwrap_or(0) as u32,
         total_size: loose_u64(rev.get("totalSize")).unwrap_or(0),
         instructions: if redact {

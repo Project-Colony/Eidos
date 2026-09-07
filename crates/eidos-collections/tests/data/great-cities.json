@@ -1,0 +1,279 @@
+{
+  "info": {
+    "author": "HookerHeels",
+    "authorUrl": "",
+    "name": "The Great Cities Collection",
+    "description": "",
+    "domainName": "skyrimspecialedition"
+  },
+  "mods": [
+    {
+      "name": "The Great Town of Karthwasten Patch Collection",
+      "version": "2.1",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 37471,
+        "fileId": 232153,
+        "md5": "ad453eedf3660139782bb2e8f80e32aa",
+        "fileSize": 3609261,
+        "logicalFilename": "The Great Town of Karthwasten Patch Collection",
+        "updatePolicy": "prefer"
+      },
+      "author": "Janquel",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Village of Mixwater Mill Patch Collection",
+      "version": "2.1",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 37414,
+        "fileId": 232146,
+        "md5": "e7406ee6251f3240da3339d548815648",
+        "fileSize": 1100767,
+        "logicalFilename": "The Great Village of Mixwater Mill Patch Collection",
+        "updatePolicy": "prefer"
+      },
+      "author": "Janquel",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "Great Town of Shor's Stone Patch Collection",
+      "version": "2.0.3",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 36462,
+        "fileId": 234034,
+        "md5": "d1368dd018aade3da3eec512bebf5ca4",
+        "fileSize": 4877361,
+        "logicalFilename": "Great Town of Shor's Stone Patch Collection",
+        "updatePolicy": "prefer"
+      },
+      "author": "Janquel",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Village of Mixwater Mill 1.1",
+      "version": "1.1",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 36350,
+        "fileId": 213426,
+        "md5": "74a545ee07838999cbe2343805946aed",
+        "fileSize": 1767102,
+        "logicalFilename": "The Great Village of Mixwater Mill 1.1",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Town of Shor's Stone 1.04",
+      "version": "1.04",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 35977,
+        "fileId": 164102,
+        "md5": "1c6fdd2d36236700a1f9a09e7aa44363",
+        "fileSize": 5119941,
+        "logicalFilename": "The Great Town of Shor's Stone 1.04",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Town of Ivarstead SSE 1.2",
+      "version": "1.2",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 34505,
+        "fileId": 164101,
+        "md5": "bcc12b95a8ff7076161fcfedd2faafb9",
+        "fileSize": 3925981,
+        "logicalFilename": "The Great Town of Ivarstead SSE 1.2",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Village of Old Hroldan 1.03",
+      "version": "1.03",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 33189,
+        "fileId": 126681,
+        "md5": "bd79fa94f4dc00df1e7e94603535613b",
+        "fileSize": 1242365,
+        "logicalFilename": "The Great Village of Old Hroldan 1.03",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Town of Karthwasten 1.2",
+      "version": "1.2",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 33032,
+        "fileId": 213430,
+        "md5": "415cc73baa192d66122233c813450bf7",
+        "fileSize": 1933327,
+        "logicalFilename": "The Great Town of Karthwasten 1.2",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great City of Solitude SSE - USSEP Patch",
+      "version": "1",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 22243,
+        "fileId": 123687,
+        "md5": "1f7455749b669e866dad5423eab80f4c",
+        "fileSize": 2424,
+        "logicalFilename": "USSEP Patch",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great City of Solitude 2.02",
+      "version": "2.02",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 22243,
+        "fileId": 123645,
+        "md5": "2a8bb59601685edba367a4d3f5d11390",
+        "fileSize": 4453936,
+        "logicalFilename": "The Great City of Solitude 2.02",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Cities - Resources V1.0",
+      "version": "1.0",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 20272,
+        "fileId": 171055,
+        "md5": "146353a05ebea54424f2c89e30c9fdfd",
+        "fileSize": 90597968,
+        "logicalFilename": "The Great Cities - Resources V1.0",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    },
+    {
+      "name": "The Great Cities 2.01",
+      "version": "2.01",
+      "optional": false,
+      "domainName": "skyrimspecialedition",
+      "source": {
+        "type": "nexus",
+        "modId": 20272,
+        "fileId": 83508,
+        "md5": "4653229b9d53db5524da47ae8759f835",
+        "fileSize": 3355575,
+        "logicalFilename": "The Great Cities 2.01",
+        "updatePolicy": "prefer"
+      },
+      "author": "Archinatic",
+      "details": {},
+      "phase": 0
+    }
+  ],
+  "modRules": [],
+  "tools": [],
+  "plugins": [
+    {
+      "name": "Resources - The Great Cities.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Cities - Minor Cities and Towns.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Town of Ivarstead.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Town of Karthwasten.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Town of Shor's Stone.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Village of Old Hroldan.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great City of Solitude.esp",
+      "enabled": true
+    },
+    {
+      "name": "The Great Village of Mixwater Mill.esp",
+      "enabled": true
+    },
+    {
+      "name": "Great Village of Mixwater Mill - USSEP Patch.esp",
+      "enabled": true
+    },
+    {
+      "name": "USSEP - The Great City of Solitude Patch.esp",
+      "enabled": true
+    },
+    {
+      "name": "Great Town of Shor's Stone - USSEP Patch.esp",
+      "enabled": true
+    }
+  ],
+  "pluginRules": {
+    "plugins": [],
+    "groups": []
+  }
+}

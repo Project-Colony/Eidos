@@ -574,6 +574,41 @@ pub struct Nexus {
 /// returns for one node is not stable enough to compare whole: the same CDN has
 /// come back as "Nexus CDN" and "Nexus Global CDN". A preference of "nexus"
 /// should keep matching it.
+/// The mirror list a collection's `download_link` endpoint answers with.
+///
+/// Its own function because the envelope differs from the one v1 uses for mods:
+/// the mirrors sit under `download_links` rather than being the top-level array.
+/// Pulled out so the shape can be tested without a network or an account.
+pub(crate) fn pick_collection_mirror(
+    body: &serde_json::Value,
+    preferred: &[String],
+) -> Result<String, String> {
+    let list = body
+        .get("download_links")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "Nexus answered without a download link for this collection".to_string())?;
+    let mirrors: Vec<(String, String)> = list
+        .iter()
+        .map(|m| {
+            let label = ["short_name", "name"]
+                .iter()
+                .filter_map(|k| m.get(*k).and_then(|v| v.as_str()))
+                .find(|s| !s.is_empty())
+                .unwrap_or_default()
+                .to_string();
+            let uri = m
+                .get("URI")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            (label, uri)
+        })
+        .filter(|(_, uri)| !uri.is_empty())
+        .collect();
+    pick_mirror(&mirrors, preferred)
+        .ok_or_else(|| "Nexus listed no usable mirror for this collection".to_string())
+}
+
 pub(crate) fn pick_mirror(mirrors: &[(String, String)], preferred: &[String]) -> Option<String> {
     for want in preferred {
         let want = want.trim().to_ascii_lowercase();
@@ -1326,6 +1361,52 @@ impl Nexus {
         collections::from_payload(&v, &c.slug, self.adult)
     }
 
+    /// Where to download a collection revision's ARCHIVE from.
+    ///
+    /// This is the whole feature's foundation. Everything that makes a
+    /// collection more than a shopping list - the install phases, the mod
+    /// rules, the answers each scripted installer was given, the patches, the
+    /// LOOT rules - is inside that archive and is returned by no API call.
+    ///
+    /// Two steps, because that is how Nexus spells it. The revision carries a
+    /// `downloadLink` that is a RELATIVE API PATH, not a URL
+    /// (`/v2/collections/335/revisions/467/download_link`); fetching that path
+    /// with the session yields the same `{name, short_name, URI}` mirror list
+    /// every mod download uses, so the user's server preference applies here
+    /// exactly as it does everywhere else.
+    ///
+    /// Measured on a FREE account: this answers 200. The archive is not the
+    /// premium-gated part - the member mods are. So a free account can read a
+    /// collection's real recipe, which is worth knowing before deciding what
+    /// the feature may offer whom.
+    pub fn collection_archive_url(&self, download_link: &str) -> Result<String, String> {
+        if download_link.is_empty() {
+            return Err(
+                "this collection revision carries no download link (Nexus did not return one)"
+                    .to_string(),
+            );
+        }
+        let url = if download_link.starts_with("http") {
+            download_link.to_string()
+        } else {
+            format!("https://api.nexusmods.com{download_link}")
+        };
+        let Credential::Bearer(token) = &self.credential;
+        let mut resp = self
+            .agent
+            .get(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .header("Application-Name", "Eidos")
+            .header("Application-Version", env!("CARGO_PKG_VERSION"))
+            .call()
+            .map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(Nexus::status_err(resp.status().as_u16()));
+        }
+        let body: serde_json::Value = resp.body_mut().read_json().map_err(|e| e.to_string())?;
+        pick_collection_mirror(&body, &self.preferred_servers)
+    }
+
     /// Stream a (non-API) CDN URL to `dest`. Returns the total byte count.
     ///
     /// Resumes an interrupted download: if a `<dest>.unfinished` partial is present
@@ -1937,6 +2018,44 @@ pub fn write_recovered_meta(
 
 #[cfg(test)]
 mod tests {
+    /// The envelope the collection download-link endpoint really answers with,
+    /// captured from `api.nexusmods.com` rather than imagined. It differs from
+    /// the v1 mod one: the mirrors sit under `download_links`, not at the top.
+    #[test]
+    fn a_collections_mirror_list_is_read_out_of_its_own_envelope() {
+        let body: serde_json::Value = serde_json::json!({
+            "download_links": [
+                { "name": "Nexus Global Content Delivery Network",
+                  "short_name": "Nexus CDN",
+                  "URI": "https://supporter-files.nexus-cdn.com/collections/x.7z?md5=a&expires=1" }
+            ]
+        });
+        let url = pick_collection_mirror(&body, &[]).unwrap();
+        assert!(url.starts_with("https://supporter-files.nexus-cdn.com/"), "{url}");
+        // The server preference applies here exactly as it does for a mod.
+        let two: serde_json::Value = serde_json::json!({
+            "download_links": [
+                { "short_name": "Nexus CDN", "URI": "https://cdn/one" },
+                { "short_name": "Paris", "URI": "https://paris/two" }
+            ]
+        });
+        assert_eq!(
+            pick_collection_mirror(&two, &["paris".to_string()]).unwrap(),
+            "https://paris/two"
+        );
+    }
+
+    #[test]
+    fn a_collection_with_no_usable_mirror_says_so_rather_than_returning_nothing() {
+        for body in [
+            serde_json::json!({}),
+            serde_json::json!({ "download_links": [] }),
+            serde_json::json!({ "download_links": [ { "short_name": "x", "URI": "" } ] }),
+        ] {
+            assert!(pick_collection_mirror(&body, &[]).is_err(), "{body}");
+        }
+    }
+
 
     #[test]
     fn a_mirror_preference_is_an_ordering_not_a_filter() {
