@@ -25,6 +25,7 @@ mod sort;
 #[cfg(test)]
 mod tests;
 mod tools;
+mod transfer;
 
 use export::*;
 use games::*;
@@ -36,6 +37,7 @@ use prereqs::*;
 use resolve::*;
 use sort::*;
 use tools::*;
+use transfer::*;
 
 /// `~/.config/Colony/Eidos/nexus.ini`, holding the personal Nexus API key. Delegates to
 /// the shared `eidos-instance` settings store so the CLI and the GUI can never
@@ -231,6 +233,8 @@ fn usage() -> ! {
          \x20 eidos play <instance>             show what would be mounted\n\
          \x20 eidos play <instance> -- <cmd...> run <cmd> with mods mounted over the game\n\
          \x20 eidos install <instance> <archive> install a downloaded mod archive (.7z/.zip/.rar)\n\
+         \x20 eidos pack <instance> <file.eidos> write the whole instance into one file\n\
+         \x20 eidos unpack <file.eidos> [folder] put a packed instance back (--info to look first)\n\
          \x20 eidos tool <instance> [...]       manage + run tools (xEdit/FNIS/...) through the view\n\
          \x20 eidos nexus status|update         check the Nexus sign-in / check for mod updates\n\
          \x20 eidos nxm <url> | --register      download a Nexus Mod Manager link / register the handler\n\
@@ -250,11 +254,19 @@ fn usage() -> ! {
 /// better bucket than the verb; falling back to the verb keeps every run in a
 /// named file rather than one shared one.
 ///
-/// A URL is the exception, and it mattered: `eidos nxm <link>` bucketed by the
+/// A URL is one exception, and an archive path is the other. The URL case
+/// mattered: `eidos nxm <link>` bucketed by the
 /// LINK, so every mod ever downloaded got a bucket of its own and the
 /// ten-per-bucket retention never pruned anything. One collection's "fetch
 /// missing" alone left a file per member, each named after the ids it fetched.
 fn log_bucket(args: &[String]) -> &str {
+    // `unpack` is the other verb whose first argument is not an instance: it is
+    // an ARCHIVE PATH, and bucketing by it would give every backup file a log of
+    // its own, so the ten-per-bucket retention would never prune - the same
+    // defect the nxm test below exists for.
+    if args.first().is_some_and(|v| v == "unpack") {
+        return "unpack";
+    }
     args.get(1)
         .filter(|a| !a.starts_with('-') && !a.contains("://"))
         .or_else(|| args.first())
@@ -289,6 +301,8 @@ fn main() {
         },
         Some("play") => cmd_play(&args[1..]),
         Some("install") => cmd_install(&args[1..]),
+        Some("pack") => cmd_pack(&args[1..]),
+        Some("unpack") => cmd_unpack(&args[1..]),
         Some("tool") => cmd_tool(&args[1..]),
         Some("prereqs") => cmd_prereqs(&args[1..]),
         Some("export") => cmd_export(&args[1..]),
@@ -321,6 +335,21 @@ mod bucket_tests {
             "nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest",
         ]);
         assert_eq!(log_bucket(&a), "nxm");
+    }
+
+    #[test]
+    fn a_backup_file_is_never_its_own_rotation_bucket_either() {
+        // `unpack` takes an ARCHIVE first, not an instance. Bucketing by it gives
+        // every backup file a log of its own, which is the nxm defect above with
+        // a different first argument.
+        let a = v(&["unpack", "/mnt/Jeux/skyrimse-2026-09-07-1340.eidos", "/mnt/x"]);
+        assert_eq!(log_bucket(&a), "unpack");
+        // `pack` is the other way round: its first argument IS the instance, and
+        // one log per instance is exactly what the retention wants.
+        assert_eq!(
+            log_bucket(&v(&["pack", "/mnt/Jeux/Eidos-Skyrim", "/tmp/b.eidos"])),
+            "/mnt/Jeux/Eidos-Skyrim"
+        );
     }
 
     #[test]

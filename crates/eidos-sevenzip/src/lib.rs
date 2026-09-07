@@ -234,6 +234,72 @@ where
     Ok(())
 }
 
+/// Every entry PATH inside `archive`, in the order 7-Zip lists them.
+///
+/// This reads the archive's HEADER only, so it is cheap even on a 70 GB backup,
+/// and it is the only way to know what an archive will write before it writes
+/// it. `-slt` prints one block of properties per entry, each beginning with a
+/// `Path = ` line; `-ba` drops the banner and the archive's own properties, so
+/// every such line in the output is an entry.
+///
+/// The output is read line by line rather than collected whole: a 57 000-entry
+/// archive prints tens of megabytes of properties and only the paths are wanted.
+/// It is also read LOSSILY - an entry whose name is not UTF-8 must still be seen
+/// by a caller checking for dangerous paths, and a decoding error there would
+/// hide exactly the entry worth looking at.
+pub fn list_paths(bin: &str, archive: &Path) -> Result<Vec<String>, SevenZipError> {
+    use std::io::BufRead;
+    use std::process::Stdio;
+    let mut child = Command::new(bin)
+        .args([
+            std::ffi::OsStr::new("l"),
+            std::ffi::OsStr::new("-ba"),
+            std::ffi::OsStr::new("-slt"),
+            archive.as_os_str(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| SevenZipError::Failed(e.to_string()))?;
+    let mut err = child.stderr.take().expect("stderr was piped");
+    let drain = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = io::Read::read_to_string(&mut err, &mut s);
+        s
+    });
+    let out = child.stdout.take().expect("stdout was piped");
+    let mut reader = io::BufReader::new(out);
+    let mut paths = Vec::new();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) => break,
+            Ok(_) => {}
+            Err(e) => return Err(SevenZipError::Failed(e.to_string())),
+        }
+        let text = String::from_utf8_lossy(&line);
+        let text = text.trim_end_matches(['\n', '\r']);
+        if let Some(p) = text.strip_prefix("Path = ") {
+            paths.push(p.to_string());
+        }
+    }
+    let status = child
+        .wait()
+        .map_err(|e| SevenZipError::Failed(e.to_string()))?;
+    let stderr = drain.join().unwrap_or_default();
+    if !status.success() {
+        let why = if stderr.trim().is_empty() {
+            format!("exited with {status}")
+        } else {
+            stderr.trim().to_string()
+        };
+        return Err(SevenZipError::Failed(why));
+    }
+    Ok(paths)
+}
+
 /// Extract every entry of `archive` into `dest`, reporting 7-Zip's own progress.
 pub fn extract_all_with(
     bin: &str,

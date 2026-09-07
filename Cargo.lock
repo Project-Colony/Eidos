@@ -1039,6 +1039,7 @@ dependencies = [
  "eidos-nexus",
  "eidos-paths",
  "eidos-plugins",
+ "eidos-transfer",
 ]
 
 [[package]]
@@ -1211,6 +1212,16 @@ dependencies = [
 [[package]]
 name = "eidos-sevenzip"
 version = "1.14.3"
+
+[[package]]
+name = "eidos-transfer"
+version = "1.14.3"
+dependencies = [
+ "eidos-ini",
+ "eidos-instance",
+ "eidos-sevenzip",
+ "libc",
+]
 
 [[package]]
 name = "either"
