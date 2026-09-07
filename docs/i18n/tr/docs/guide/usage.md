@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Eidos kullanımı
 
@@ -131,10 +131,20 @@ Bu yüzden Eidos arşivi indirir, tarifi okur ve onu uygular:
 | `INI Tweaks/` | onları kendi başına bir mod olarak kurar |
 | `tools` | hangi araçları beklediğini söyler; hiçbir şey oluşturmaz |
 
+Üyeler kurulurken, mod listesinin sonunda kurulum sırasıyla, `modRules` onları
+kımıldatmadan önce **açık** duruma getirilir - hiçbir şeyin listelemediği bir
+mod, hiçbir şeyin yüklemediği bir moddur ve diskte atıl duran bir koleksiyon,
+raporun göremeyeceği tek başarısızlıktır.
+
 Durum **her** üyeden sonra
-`<instance>/collections/<slug>-<revision>/state.json` dosyasına yazılır, yani
-200 üyenin 147'sinde yarıda kesilen bir kurulum 147'den devam eder. Aynı komutu
-yeniden çalıştırın.
+`<instance>/collections/<slug>-<revision>.state.json` dosyasına yazılır - o
+revizyonun klasörünün yanına, asla içine değil, böylece bir koleksiyon kendi
+kayıt defterini kendisi taşıyamaz - ve 200 üyenin 147'sinde yarıda kesilen bir
+kurulum 147'den devam eder. Geçici bir adla yazılıp yerine yeniden adlandırılır,
+yani yarıda kesilme geriye ya eski kaydı ya da yenisini bırakır, asla ikisinden
+birinin yarısını değil; bir gün okunamaz hale gelirse Eidos bütün koleksiyonu
+sessizce baştan başlatmaktansa durur ve bunu söyler. Aynı komutu yeniden
+çalıştırın.
 
 ### Neyi varmış gibi göstermez
 
@@ -143,12 +153,16 @@ yeniden çalıştırın.
 Manager Download" düğmesini ister. Koleksiyon ARŞİVİ ücretsiz bir hesapta
 sorunsuz iner - yani bütün tarifi okuyabilirsiniz - ama her üye, kendiniz
 getirmeniz için tam sayfa URL'siyle birlikte raporlanır. Bu bir Nexus iş
-kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz.
+kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz. Onları sitenin
+düğmesiyle getirin ve komutu yeniden çalıştırın: o üyeler her koşuda
+`downloads/` içinde aranır, yani koleksiyon siz sağladıkça tamamlanır.
 
 Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
-yamalar** ve dosyaları koleksiyon arşivinin içinde gelen üyeler (`bundle`).
-Koleksiyonun elle getirmenizi beklediği üyeler (`browse`, `manual`), yazarın
-kendi yönergelerini rapora taşır.
+yamalar**, **dosya geçersiz kılmaları** ve dosyaları koleksiyon arşivinin içinde
+gelen üyeler (`bundle`). Koleksiyonun elle getirmenizi beklediği üyeler
+(`browse`, `manual`), yazarın kendi yönergelerini rapora taşır. Adı zaten sizin
+bir modunuzun adı olan bir üye, onun üzerine değil, yanına, boşta bir adla
+kurulur ve rapor hangisi olduğunu söyler.
 
 ### Rapor
 
@@ -420,15 +434,12 @@ süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
 Bir koleksiyon bağlantısı yapıştırın - ya da sitede birine tıklayın - Eidos o
 revizyonun üyelerini listeler; her biri bu örnekle eşleştirilmiş olarak: kurulu,
-indirilmiş ya da eksik. Bir koleksiyonu **okur**; kurmaz ve bölme de bunu söyler.
-Burada bir kurucuyu yalnızca zor değil, dürüstlükten uzak kılan dört şey var:
-üyeler, sitenin kendi düğmesi dışında yalnızca premium bir hesabın
-üretebileceği, dosya başına bir anahtar isteyen sıradan Nexus dosyalarıdır; tam
-bir kurulum, bu istemcinin aşmayı reddettiği bir bütçeye karşı üye başına üç API
-çağrısıdır; manifest'in aşamaları, kuralları ve yeniden oynatılan FOMOD yanıtları
-gerçek, yayımlanmış bir Bethesda koleksiyonuna karşı doğrulanamadı ve tahmin
-etmek, doğru görünen ama olmayan bir yükleme sırası üretir. Okumak bir istek eder
-ve kesindir.
+indirilmiş ya da eksik. *Install this collection* ise bütün tarifi, paketleme ve
+açma işlerinin kullandığı ilerleme çubuğunun aynısıyla, bir çalışan iş
+parçacığında koşturur; bitirdiğinde çubuk raporun kendisi olur. Yukarıda neyin
+uygulandığı ve neyin yalnızca adının geçtiği üzerine söylenen her şey burada da
+kelimesi kelimesine geçerlidir: pencere ile `eidos collection`, iki ön yüzü olan
+tek bir motordur.
 
 Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallout 4
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle

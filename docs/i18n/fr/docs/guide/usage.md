@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Utiliser Eidos
 
@@ -140,9 +140,20 @@ Eidos télécharge donc l'archive, lit la recette, et l'applique :
 | `INI Tweaks/` | les installe comme un mod à part entière |
 | `tools` | vous dit quels outils il attend ; n'en crée aucun |
 
-L'état est écrit dans `<instance>/collections/<slug>-<revision>/state.json` après
-**chaque** membre, si bien qu'une installation interrompue au membre 147 sur 200
-reprend à 147. Relancez la même commande.
+Les membres sont **activés** au fur et à mesure de leur installation, à la fin de
+la liste de mods dans l'ordre d'installation, avant que `modRules` ne les
+déplace - un mod que rien ne liste est un mod que rien ne charge, et une
+collection posée inerte sur le disque est le seul échec que le rapport ne
+pouvait pas voir.
+
+L'état est écrit dans `<instance>/collections/<slug>-<revision>.state.json` après
+**chaque** membre - à côté du dossier de cette révision, jamais dedans, si bien
+qu'une collection ne peut pas embarquer sa propre comptabilité - et une
+installation interrompue au membre 147 sur 200 reprend à 147. Il est écrit sous
+un nom temporaire puis renommé en place, si bien qu'une interruption laisse
+l'ancien enregistrement ou le nouveau, jamais la moitié de l'un ou de l'autre ;
+et s'il devenait un jour illisible, Eidos s'arrête et le dit plutôt que de
+recommencer silencieusement toute la collection. Relancez la même commande.
 
 ### Ce qu'il ne fera pas semblant de faire
 
@@ -152,13 +163,18 @@ fichier exige le bouton « Mod Manager Download » du site lui-même. L'ARCHIVE 
 la collection se télécharge très bien avec un compte gratuit - vous pouvez donc
 lire toute la recette - mais chaque membre est signalé avec l'URL exacte de sa
 page pour que vous le récupériez vous-même. C'est une règle commerciale de Nexus,
-et aucune quantité de réessais n'en vient à bout.
+et aucune quantité de réessais n'en vient à bout. Récupérez-les avec le bouton du
+site et relancez la commande : ces membres sont cherchés dans `downloads/` à
+chaque exécution, si bien que la collection s'achève à mesure que vous la
+fournissez.
 
 Pas encore appliqués, et nommés dans le rapport plutôt que passés sous silence :
-les **patchs binaires**, et les membres dont les fichiers voyagent à l'intérieur
-de l'archive de la collection (`bundle`). Les membres que la collection attend
-que vous récupériez à la main (`browse`, `manual`) transmettent jusque dans le
-rapport les instructions de l'auteur lui-même.
+les **patchs binaires**, les **surcharges de fichiers**, et les membres dont les
+fichiers voyagent à l'intérieur de l'archive de la collection (`bundle`). Les
+membres que la collection attend que vous récupériez à la main (`browse`,
+`manual`) transmettent jusque dans le rapport les instructions de l'auteur
+lui-même. Un membre dont le nom est déjà celui d'un de vos mods est installé à
+côté de lui sous un nom libre, jamais par-dessus, et le rapport dit lequel.
 
 ### Le rapport
 
@@ -451,15 +467,12 @@ lesquelles vous vouliez dire.
 
 Collez un lien de collection - ou cliquez-en un sur le site - et Eidos liste les
 membres de la révision, chacun rapproché de cette instance : installé,
-téléchargé, ou manquant. Il **lit** une collection ; il n'en installe pas, et le
-panneau le dit. Quatre choses rendent ici un installeur malhonnête plutôt que
-seulement difficile : les membres sont des fichiers Nexus ordinaires qui exigent
-une clé par fichier que seul un compte premium peut émettre en dehors du bouton
-du site lui-même ; une installation complète, c'est trois appels d'API par membre
-contre un budget que ce client refuse de dépasser ; les phases, les règles et les
-réponses FOMOD rejouées du manifeste n'ont pas pu être vérifiées contre une vraie
-collection Bethesda publiée, et deviner produit un ordre de chargement qui a
-l'air juste et ne l'est pas. Lire coûte une requête et est exact.
+téléchargé, ou manquant. *Install this collection* déroule ensuite toute la
+recette sur un fil de travail, avec la même barre de progression que les travaux
+d'empaquetage et de dépaquetage, et la barre devient le rapport quand il a fini.
+Tout ce qui est dit plus haut sur ce qui est appliqué et ce qui est seulement
+nommé vaut ici mot pour mot : la fenêtre et `eidos collection` sont un seul
+moteur avec deux façades.
 
 Une collection ne peut être lue que contre **son propre jeu**. Ouvrez une
 collection Skyrim avec une instance Fallout 4 chargée et il refuse en nommant le

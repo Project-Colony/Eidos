@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Používání Eidosu
 
@@ -127,9 +127,18 @@ Eidos tedy archiv stáhne, přečte recept a použije jej:
 | `INI Tweaks/` | nainstaluje je jako samostatný mód |
 | `tools` | řekne vám, které nástroje očekává; nic nevytváří |
 
-Stav se zapisuje do `<instance>/collections/<slug>-<revision>/state.json` po
-**každém** členovi, takže instalace přerušená na 147. členovi z 200 pokračuje od
-147. Spusťte tentýž příkaz znovu.
+Členové se při instalaci **zapínají**, na konec seznamu módů v pořadí
+instalace, ještě než s nimi pohne `modRules` - mód, který není v žádném seznamu,
+je mód, který se nikdy nenačte, a kolekce nečinně ležící na disku je to jediné
+selhání, které zpráva vidět nedokáže.
+
+Stav se zapisuje do `<instance>/collections/<slug>-<revision>.state.json` po
+**každém** členovi - vedle složky té revize, nikdy do ní, takže si kolekce
+nemůže přinést vlastní účetnictví - a instalace přerušená na 147. členovi z 200
+pokračuje od 147. Zapisuje se pod dočasným názvem a na místo se přejmenuje,
+takže po přerušení zůstane starý záznam, nebo nový, nikdy půlka ani jednoho
+z nich; a pokud jej někdy nelze přečíst, Eidos se zastaví a řekne to, místo aby
+potichu začal celou kolekci znovu. Spusťte tentýž příkaz znovu.
 
 ### Co nebude předstírat
 
@@ -139,11 +148,15 @@ tlačítko „Mod Manager Download" na webu. ARCHIV kolekce se na bezplatném ú
 stáhne bez potíží - takže si celý recept přečtete - ale u každého člena se
 nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodní
 pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
+Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
+běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
 
 Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
-patche** a členové, jejichž soubory cestují uvnitř archivu kolekce (`bundle`).
-U členů, u kterých kolekce čeká, že si je stáhnete ručně (`browse`, `manual`),
-se do zprávy přenesou vlastní pokyny autora.
+patche**, **přepisy souborů** a členové, jejichž soubory cestují uvnitř archivu
+kolekce (`bundle`). U členů, u kterých kolekce čeká, že si je stáhnete ručně
+(`browse`, `manual`), se do zprávy přenesou vlastní pokyny autora. Člen, jehož
+název už patří některému z vašich módů, se nainstaluje vedle něj pod volným
+názvem, nikdy přes něj, a zpráva řekne, o který jde.
 
 ### Zpráva
 
@@ -405,14 +418,11 @@ jste řekli, které jste mysleli.
 
 Vložte odkaz na kolekci - nebo na něj klikněte na webu - a Eidos vypíše členy
 dané revize, každého spárovaného s touto instancí: nainstalovaný, stažený, nebo
-chybějící. Kolekci **čte**; neinstaluje ji, a panel to říká. Instalátor tu dělají
-spíš nepoctivým než jen obtížným čtyři věci: členové jsou obyčejné soubory
-z Nexusu, které potřebují klíč pro každý soubor zvlášť, jejž mimo vlastní
-tlačítko webu dokáže vyrobit jen prémiový účet; plná instalace jsou tři volání
-API na člena proti rozpočtu, který tento klient odmítá přečerpat; fáze, pravidla
-a přehrané odpovědi FOMOD z manifestu se nepodařilo ověřit proti skutečné
-publikované kolekci pro hru od Bethesdy a hádání vyrobí pořadí načítání, které
-vypadá správně a správně není. Čtení stojí jeden požadavek a je přesné.
+chybějící. *Install this collection* pak spustí celý recept v pracovním vlákně,
+se stejným ukazatelem průběhu, jaký používají úlohy pack a unpack, a z ukazatele
+se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se jen
+pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
+motor se dvěma rozhraními.
 
 Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy

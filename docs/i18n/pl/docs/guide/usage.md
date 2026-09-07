@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Używanie Eidos
 
@@ -132,9 +132,19 @@ Więc Eidos pobiera archiwum, czyta przepis i go stosuje:
 | `INI Tweaks/` | instaluje je jako osobny mod |
 | `tools` | mówi ci, jakich narzędzi oczekuje; nie tworzy żadnego |
 
-Stan zapisywany jest do `<instance>/collections/<slug>-<revision>/state.json` po
-**każdym** członku, więc instalacja przerwana na członku 147 z 200 ciągnie dalej
-od 147. Uruchom to samo polecenie ponownie.
+Członkowie są **włączani** w miarę instalowania, na końcu listy modów w
+kolejności instalacji, zanim przestawi ich `modRules` - mod, którego nic nie
+wypisuje, to mod, którego nic nie wczytuje, a kolekcja leżąca bezwładnie na dysku
+to jedyna porażka, której raport nie mógł zobaczyć.
+
+Stan zapisywany jest do `<instance>/collections/<slug>-<revision>.state.json` po
+**każdym** członku - obok folderu tej rewizji, nigdy w jego środku, żeby kolekcja
+nie mogła dostarczyć własnej księgowości - a instalacja przerwana na członku 147
+z 200 ciągnie dalej od 147. Zapisuje się go pod nazwą tymczasową i dopiero zmiana
+nazwy stawia go na miejscu, więc przerwanie zostawia stary stan albo nowy i nigdy
+połowy żadnego z nich; a jeśli kiedykolwiek nie da się go odczytać, Eidos
+zatrzymuje się i mówi o tym, zamiast po cichu zaczynać całą kolekcję od nowa.
+Uruchom to samo polecenie ponownie.
 
 ### Czego nie będzie udawać
 
@@ -143,12 +153,17 @@ nie wystawia przez API odnośników do pobrania dla darmowych kont; każdy plik
 wymaga własnego przycisku „Mod Manager Download" w serwisie. ARCHIWUM kolekcji
 pobiera się na darmowym koncie bez przeszkód - więc możesz odczytać cały przepis
 - ale każdy członek jest zgłaszany wraz z dokładnym adresem swojej strony, żebyś
-pobrał go sam. To reguła biznesowa Nexusa i żadna liczba ponowień jej nie obejdzie.
+pobrał go sam. To reguła biznesowa Nexusa i żadna liczba ponowień jej nie
+obejdzie. Pobierz ich przyciskiem w serwisie i uruchom polecenie ponownie: tych
+członków szuka się w `downloads/` przy każdym uruchomieniu, więc kolekcja domyka
+się w miarę, jak ich dostarczasz.
 
 Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
-**poprawki binarne** oraz członkowie, których pliki podróżują wewnątrz archiwum
-kolekcji (`bundle`). Członkowie, których kolekcja każe pobrać ręcznie (`browse`,
-`manual`), niosą własne instrukcje autora aż do raportu.
+**poprawki binarne**, **nadpisania plików** oraz członkowie, których pliki
+podróżują wewnątrz archiwum kolekcji (`bundle`). Członkowie, których kolekcja
+każe pobrać ręcznie (`browse`, `manual`), niosą własne instrukcje autora aż do
+raportu. Członek, którego nazwę nosi już któryś z twoich modów, instaluje się
+obok niego pod wolną nazwą, nigdy na niego, a raport mówi, kogo to dotyczy.
 
 ### Raport
 
@@ -422,15 +437,11 @@ powiedziałeś, o które ci chodziło.
 
 Wklej odnośnik do kolekcji - albo kliknij taki na stronie - a Eidos wypisze
 członków tej rewizji, każdego zestawionego z tą instancją: zainstalowany,
-pobrany albo brakujący. **Czyta** kolekcję; nie instaluje jej i panel to mówi.
-Cztery rzeczy czynią tu instalator nieuczciwym, a nie tylko trudnym: członkowie
-to zwykłe pliki Nexusa wymagające klucza na plik, który poza własnym przyciskiem
-serwisu potrafi wybić tylko konto premium; pełna instalacja to trzy wywołania API
-na członka wobec budżetu, którego ten klient nie chce przekraczać; faz, reguł i
-odtwarzanych odpowiedzi FOMOD z manifestu nie dało się zweryfikować wobec
-prawdziwej opublikowanej kolekcji Bethesdy, a zgadywanie daje kolejność
-wczytywania, która wygląda dobrze i dobra nie jest. Czytanie kosztuje jedno
-żądanie i jest dokładne.
+pobrany albo brakujący. *Install this collection* uruchamia potem cały przepis na
+wątku roboczym, z tym samym paskiem postępu, którego używają pakowanie i
+rozpakowanie, a pasek na koniec staje się raportem. Wszystko powyżej o tym, co
+jest stosowane, a co tylko nazwane, obowiązuje tu co do słowa: okno i
+`eidos collection` to jeden silnik z dwoma interfejsami.
 
 Kolekcję da się odczytać tylko wobec **jej własnej gry**. Otwórz kolekcję do
 Skyrima przy wczytanej instancji Fallouta 4, a odmówi z nazwy, zamiast zestawiać

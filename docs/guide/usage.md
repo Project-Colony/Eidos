@@ -125,9 +125,18 @@ So Eidos downloads the archive, reads the recipe, and applies it:
 | `INI Tweaks/` | installs them as a mod of their own |
 | `tools` | tells you which tools it expects; creates nothing |
 
-The state is written to `<instance>/collections/<slug>-<revision>/state.json`
-after **every** member, so an install interrupted at member 147 of 200 continues
-from 147. Run the same command again.
+Members are switched **on** as they install, at the end of the mod list in
+install order, before `modRules` moves them - a mod nothing lists is a mod
+nothing loads, and a collection sitting inert on disk is the one failure the
+report could not see.
+
+The state is written to `<instance>/collections/<slug>-<revision>.state.json`
+after **every** member - beside that revision's folder, never inside it, so a
+collection cannot ship its own bookkeeping - and an install interrupted at
+member 147 of 200 continues from 147. It is written to a temporary name and
+renamed into place, so an interruption leaves the old record or the new one and
+never half of either; if it ever cannot be read, Eidos stops and says so rather
+than quietly starting the whole collection over. Run the same command again.
 
 ### What it will not pretend
 
@@ -136,12 +145,16 @@ download links for free accounts through the API; every file needs the site's
 own "Mod Manager Download" button. The collection ARCHIVE downloads fine on a
 free account - so you can read the whole recipe - but each member is reported
 with its exact page URL for you to fetch yourself. That is a Nexus business
-rule, and no amount of retrying gets past it.
+rule, and no amount of retrying gets past it. Fetch them through the site's
+button and run the command again: those members are looked for in `downloads/`
+on every run, so the collection finishes as you supply it.
 
 Not applied yet, and named in the report rather than passed over: **binary
-patches**, and members whose files travel inside the collection archive
-(`bundle`). Members the collection expects you to fetch by hand (`browse`,
-`manual`) carry the author's own instructions through to the report.
+patches**, **file overrides**, and members whose files travel inside the
+collection archive (`bundle`). Members the collection expects you to fetch by
+hand (`browse`, `manual`) carry the author's own instructions through to the
+report. A member whose name is already a mod of yours is installed beside it
+under a free name, never over it, and the report says which.
 
 ### The report
 
@@ -398,14 +411,11 @@ how you said which ones you meant.
 
 Paste a collection link - or click one on the site - and Eidos lists the
 revision's members, each joined against this instance: installed, downloaded, or
-missing. It **reads** a collection; it does not install one, and the pane says
-so. Four things make an installer dishonest rather than merely hard here: the
-members are ordinary Nexus files needing a per-file key that only a premium
-account can mint outside the site's own button; a full install is three API
-calls per member against a budget this client refuses to overspend; the
-manifest's phases, rules and replayed FOMOD answers could not be verified
-against a real published Bethesda collection, and guessing produces a load order
-that looks right and is not. Reading costs one request and is exact.
+missing. *Install this collection* then runs the whole recipe on a worker
+thread, with the same progress bar the pack and unpack jobs use, and the bar
+becomes the report when it finishes. Everything above about what is applied and
+what is only named applies here word for word: the window and `eidos collection`
+are one engine with two front ends.
 
 A collection can only be read against **its own game**. Open a Skyrim collection
 with a Fallout 4 instance loaded and it refuses by name rather than joining the

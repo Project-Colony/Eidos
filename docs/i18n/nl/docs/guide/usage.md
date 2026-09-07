@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Eidos gebruiken
 
@@ -133,10 +133,20 @@ Dus downloadt Eidos het archief, leest het recept, en past het toe:
 | `INI Tweaks/` | installeert ze als een mod op zichzelf |
 | `tools` | vertelt je welke tools het verwacht; maakt er geen aan |
 
+Leden worden **ingeschakeld** zodra ze installeren, achteraan de modlijst in
+installatievolgorde, voordat `modRules` ze verplaatst - een mod die door niets
+vermeld wordt is een mod die door niets geladen wordt, en een collectie die
+roerloos op schijf ligt is de ene mislukking die het verslag niet kon zien.
+
 De staat wordt na **elk** lid weggeschreven naar
-`<instance>/collections/<slug>-<revision>/state.json`, zodat een installatie die
-bij lid 147 van 200 onderbroken is vanaf 147 verdergaat. Draai dezelfde opdracht
-opnieuw.
+`<instance>/collections/<slug>-<revision>.state.json` - naast de map van die
+revisie, nooit erin, zodat een collectie haar eigen boekhouding niet kan
+meeleveren - en een installatie die bij lid 147 van 200 onderbroken is, gaat
+vanaf 147 verder. Ze wordt onder een tijdelijke naam geschreven en op haar plaats
+hernoemd, zodat een onderbreking de oude staat achterlaat of de nieuwe en nooit
+de helft van een van beide; als ze ooit niet gelezen kan worden, stopt Eidos en
+zegt het, in plaats van stilletjes de hele collectie opnieuw te beginnen. Draai
+dezelfde opdracht opnieuw.
 
 ### Wat het niet zal voorwenden
 
@@ -146,13 +156,16 @@ eigen knop "Mod Manager Download" van de site. Het ARCHIEF van de collectie
 downloadt prima op een gratis account - dus je kunt het hele recept lezen - maar
 elk lid wordt gemeld met zijn exacte pagina-URL om het zelf op te halen. Dat is
 een zakelijke regel van Nexus, en geen hoeveelheid opnieuw proberen komt eraan
-voorbij.
+voorbij. Haal ze op via de knop van de site en draai de opdracht opnieuw: er
+wordt bij elke run in `downloads/` naar die leden gezocht, zodat de collectie
+afgemaakt wordt naarmate jij ze aanlevert.
 
 Nog niet toegepast, en in het verslag benoemd in plaats van overgeslagen:
-**binaire patches**, en leden waarvan de bestanden binnen het collectiearchief
-meereizen (`bundle`). Leden die de collectie je met de hand laat ophalen
-(`browse`, `manual`) dragen de eigen instructies van de auteur door tot in het
-verslag.
+**binaire patches**, **bestandsoverrides**, en leden waarvan de bestanden binnen
+het collectiearchief meereizen (`bundle`). Leden die de collectie je met de hand
+laat ophalen (`browse`, `manual`) dragen de eigen instructies van de auteur door
+tot in het verslag. Een lid waarvan de naam al een mod van jou is, wordt ernaast
+geïnstalleerd onder een vrije naam, nooit eroverheen, en het verslag zegt welke.
 
 ### Het verslag
 
@@ -433,15 +446,11 @@ filter heb je gezegd welke je bedoelde.
 
 Plak een collectielink - of klik er een aan op de site - en Eidos toont de leden
 van die revisie, elk gekoppeld aan deze instantie: geïnstalleerd, gedownload of
-ontbrekend. Het **leest** een collectie; het installeert er geen, en het paneel
-zegt dat. Vier dingen maken een installer hier oneerlijk in plaats van alleen
-moeilijk: de leden zijn gewone Nexus-bestanden die een sleutel per bestand vergen
-die alleen een premium-account buiten de knop van de site zelf kan aanmaken; een
-volledige installatie is drie API-oproepen per lid tegen een budget dat deze
-client weigert te overschrijden; de fasen, regels en herspeelde FOMOD-antwoorden
-van het manifest konden niet gecontroleerd worden tegen een echt gepubliceerde
-Bethesda-collectie, en gokken levert een laadvolgorde die er goed uitziet en het
-niet is. Lezen kost één verzoek en is exact.
+ontbrekend. *Install this collection* draait vervolgens het hele recept op een
+werkthread, met dezelfde voortgangsbalk die de Pack- en Unpack-taken gebruiken,
+en de balk wordt het verslag zodra de run klaar is. Alles hierboven over wat er
+toegepast wordt en wat er alleen benoemd wordt, geldt hier woord voor woord: het
+venster en `eidos collection` zijn één motor met twee front-ends.
 
 Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en
