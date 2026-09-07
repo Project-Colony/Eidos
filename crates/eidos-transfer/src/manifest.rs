@@ -51,6 +51,22 @@ pub struct BackupManifest {
     pub left_out_more: u64,
 }
 
+/// Whether a value is a single ordinary path component: no separator, no
+/// traversal, no drive letter, nothing that could be read as absolute.
+///
+/// Deliberately strict rather than clever. A game id is `skyrimse`; anything
+/// that is not shaped like one is not worth guessing about when the answer
+/// decides where 77 GB gets written.
+fn is_one_plain_segment(v: &str) -> bool {
+    !v.is_empty()
+        && v != "."
+        && v != ".."
+        && v.len() <= 64
+        && !v.contains(['/', '\\', '\0'])
+        && !v.contains(':')
+        && !v.chars().any(char::is_control)
+}
+
 /// A value safe to write into a one-line `key=value` file. Filenames on Linux
 /// may contain newlines; a manifest that a filename can tear in half is a
 /// manifest that stops parsing halfway through a backup's description.
@@ -192,8 +208,19 @@ impl BackupManifest {
                     "eidos_version" => m.eidos_version = v.to_string(),
                     "created" => m.created = v.to_string(),
                     "game_id" => {
-                        m.game_id = v.to_string();
-                        have_game = !v.is_empty();
+                        // This value BECOMES A PATH COMPONENT: with no folder
+                        // given, `eidos unpack` restores a central instance to
+                        // `$XDG_DATA_HOME/eidos/<game_id>`. A backup is a file
+                        // handed between people, so a `game_id` of
+                        // `../../.config/systemd/user` would choose its own
+                        // destination. Refusing it here rather than at the one
+                        // call site covers every future caller, and a manifest
+                        // with no usable game id is already the case `parse`
+                        // answers with `None` and `peek` refuses by name.
+                        if is_one_plain_segment(v) {
+                            m.game_id = v.to_string();
+                            have_game = true;
+                        }
                     }
                     "kind" => m.portable = !v.eq_ignore_ascii_case("global"),
                     "source_root" => m.source_root = v.to_string(),
@@ -292,6 +319,35 @@ mod tests {
             vec![("mods/we ird".into(), "a symbolic link".into())]
         );
         assert_eq!(back.game_id, "skyrimse", "the rest of the file still parsed");
+    }
+
+    #[test]
+    fn a_game_id_that_could_choose_its_own_destination_is_refused() {
+        // With no folder given, `eidos unpack` puts a central instance back at
+        // `$XDG_DATA_HOME/eidos/<game_id>`. A .eidos file is passed between
+        // people, so this value is untrusted input that names a directory.
+        for hostile in [
+            "../../../../home/somebody/.ssh",
+            "/etc/systemd/system",
+            "..",
+            ".",
+            "a/b",
+            "a\\b",
+            "C:",
+            "with\u{7f}control",
+            "",
+        ] {
+            let text = format!("[backup]\ngame_id={hostile}\n");
+            assert!(
+                BackupManifest::parse(&text).is_none(),
+                "'{hostile}' should not be accepted as a game id"
+            );
+        }
+        // And the real ones still are.
+        for ok in ["skyrimse", "fallout4", "skyrimvr", "enderal-se"] {
+            let text = format!("[backup]\ngame_id={ok}\n");
+            assert_eq!(BackupManifest::parse(&text).unwrap().game_id, ok);
+        }
     }
 
     #[test]

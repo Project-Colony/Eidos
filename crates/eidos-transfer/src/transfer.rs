@@ -78,6 +78,13 @@ impl PackReport {
     }
 }
 
+/// What reading an archive's table of contents established, as opposed to what
+/// its manifest claims about itself.
+struct Contents {
+    entries: usize,
+    warnings: Vec<String>,
+}
+
 /// What an unpack produced.
 #[derive(Debug, Clone)]
 pub struct UnpackReport {
@@ -126,11 +133,34 @@ fn with_suffix(p: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// Throw away a half-built archive AND the scratch file 7-Zip builds it in.
+///
+/// 7-Zip writes `<archive>.tmp` beside the archive and renames at the end, so a
+/// pack that dies leaves a full-size second file - tens of gigabytes - that
+/// nothing here was removing and that the next attempt does not reuse.
+fn discard_partial(part: &Path) {
+    let _ = fs::remove_file(part);
+    let _ = fs::remove_file(with_suffix(part, ".tmp"));
+}
+
+/// The list file 7-Zip reads, one name per line - each in quotes.
+///
+/// Not decoration: 7-Zip TRIMS whitespace off every line it reads, so a mod
+/// folder called `" Weapons"` - and Windows-sourced archives really do carry
+/// leading spaces - is looked up under the trimmed name, not found, and dropped
+/// from the backup with a warning nobody reads as data loss. Measured on 7-Zip
+/// 26.02: with a bare line the leading-space file was skipped; with the line
+/// quoted it packed.
+///
+/// A blanket quote is safe: 7-Zip strips exactly ONE surrounding pair and takes
+/// the rest literally, so an embedded `"` needs no escaping - also measured,
+/// with a file whose name contains one.
 fn list_file_body(entries: &[String]) -> String {
     let mut s = String::new();
     for e in entries {
+        s.push('"');
         s.push_str(e);
-        s.push('\n');
+        s.push_str("\"\n");
     }
     s
 }
@@ -346,7 +376,7 @@ impl Transfer {
             .map_err(io("could not write the list of files to pack"))?;
 
         let part = with_suffix(dest, ".part");
-        let _ = fs::remove_file(&part);
+        discard_partial(&part);
 
         // The first pass decides whether this 7-Zip understands `-spd`, while
         // failing costs nothing.
@@ -356,15 +386,15 @@ impl Transfer {
             .map(|_| ())
         {
             let TransferError::Archive(ref why) = first else {
-                let _ = fs::remove_file(&part);
+                discard_partial(&part);
                 return Err(first);
             };
             if !looks_like_an_unknown_switch(why) {
-                let _ = fs::remove_file(&part);
+                discard_partial(&part);
                 return Err(first);
             }
             if let Some(name) = plan.wildcards.first() {
-                let _ = fs::remove_file(&part);
+                discard_partial(&part);
                 return Err(TransferError::Refused(format!(
                     "This 7-Zip is too old to pack '{name}' safely: its name contains a \
                      wildcard character, and without the -spd switch (7-Zip 21.01 and \
@@ -372,7 +402,7 @@ impl Transfer {
                      the file."
                 )));
             }
-            let _ = fs::remove_file(&part);
+            discard_partial(&part);
             literal_names = false;
             self.add(&part, &stage, &staged_list, literal_names, &mut |_| {})?;
         }
@@ -388,7 +418,7 @@ impl Transfer {
                      files. It said:\n{said}"
                 )),
                 Err(e) => {
-                    let _ = fs::remove_file(&part);
+                    discard_partial(&part);
                     return Err(e);
                 }
             }
@@ -455,13 +485,14 @@ impl Transfer {
         }
     }
 
+    /// What `preflight_unpack` learned by reading the archive rather than by
     /// The checks that must pass before anything is written to `dest`.
     fn preflight_unpack(
         &self,
         archive: &Path,
         manifest: &BackupManifest,
         dest: &Path,
-    ) -> Result<Vec<String>, TransferError> {
+    ) -> Result<Contents, TransferError> {
         if manifest.schema_version > SCHEMA_VERSION {
             return Err(TransferError::Refused(format!(
                 "'{}' was made by a newer Eidos (backup format {}, this build understands \
@@ -470,22 +501,29 @@ impl Transfer {
                 manifest.schema_version
             )));
         }
-        let paths = eidos_sevenzip::list_paths(self.bin, archive)?;
-        if let Some(bad) = paths.iter().find(|p| escapes_the_destination(p)) {
+        // The archive's own table of contents, not the manifest's summary of it.
+        // The manifest is a claim BY the file about itself; these are the entries
+        // that will actually be written, which is what both the safety check and
+        // the free-space answer have to be about.
+        let entries = eidos_sevenzip::list_entries(self.bin, archive)?;
+        if let Some(bad) = entries.iter().find(|e| escapes_the_destination(&e.path)) {
             return Err(TransferError::Refused(format!(
                 "'{}' contains an entry that would be written OUTSIDE the folder you \
-                 chose ('{bad}'). Eidos will not unpack it.",
-                archive.display()
+                 chose ('{}'). Eidos will not unpack it.",
+                archive.display(),
+                bad.path
             )));
         }
         let mut warnings = Vec::new();
-        if !paths.iter().any(|p| p == "eidos-instance.ini") {
+        if !entries.iter().any(|e| e.path == "eidos-instance.ini") {
             warnings.push(
                 "The backup has no eidos-instance.ini, so the unpacked folder will not \
                  describe its own game. Open it once through the GUI wizard to adopt it."
                     .to_string(),
             );
         }
+        let bytes: u64 = entries.iter().map(|e| e.size).sum();
+        let mut overwriting = false;
         if dest.symlink_metadata().is_ok() {
             if !dest.is_dir() {
                 return Err(TransferError::Refused(format!(
@@ -511,18 +549,35 @@ impl Transfer {
                     dest.display()
                 )));
             }
+            overwriting = occupied;
         }
         if let Some(free) = free_bytes(&existing_ancestor(dest)) {
-            if free < manifest.bytes {
+            // Not when replacing what is already there: a restore over the same
+            // instance frees most of what it needs as it goes, so demanding the
+            // whole size again would refuse the one case where the disk is
+            // fullest - somebody putting a backup back where it came from.
+            if free < bytes && !overwriting {
                 return Err(TransferError::Refused(format!(
                     "Not enough room at '{}': {} free, and the backup unpacks to {}.",
                     dest.display(),
                     human_bytes(free),
-                    human_bytes(manifest.bytes)
+                    human_bytes(bytes)
                 )));
             }
+            if free < bytes {
+                warnings.push(format!(
+                    "Only {} is free at '{}' and the backup unpacks to {}. It should fit \
+                     because it is replacing what is there, but it is close.",
+                    human_bytes(free),
+                    dest.display(),
+                    human_bytes(bytes)
+                ));
+            }
         }
-        Ok(warnings)
+        Ok(Contents {
+            entries: entries.len(),
+            warnings,
+        })
     }
 
     /// Put a backup back, and repair what a plain copy would have broken.
@@ -533,7 +588,8 @@ impl Transfer {
         on_progress: &mut impl FnMut(u8),
     ) -> Result<UnpackReport, TransferError> {
         let manifest = self.peek(archive)?;
-        let mut warnings = self.preflight_unpack(archive, &manifest, dest)?;
+        let contents = self.preflight_unpack(archive, &manifest, dest)?;
+        let mut warnings = contents.warnings;
         fs::create_dir_all(dest).map_err(io("could not create the destination folder"))?;
 
         let mut out = OsString::from("-o");
@@ -582,11 +638,13 @@ impl Transfer {
             .cloned()
             .collect();
 
-        let entries = manifest.files as usize + manifest.directories as usize;
         Ok(UnpackReport {
             root: dest.to_path_buf(),
             manifest,
-            entries,
+            // Counted in the archive, not read off the manifest: the two differ
+            // whenever a pack lost a file, and the number the user is shown
+            // should be what arrived.
+            entries: contents.entries,
             relocated,
             missing_tools,
             warnings,
@@ -650,13 +708,26 @@ mod tests {
     }
 
     #[test]
-    fn a_list_file_is_one_entry_per_line_with_no_leading_dot_slash() {
-        // The defect this exists for: a list built from `find .` gives every line
-        // a `./` prefix, and 7-Zip then sees `./x` and `x` as two names for one
+    fn a_list_file_is_one_quoted_entry_per_line_with_no_leading_dot_slash() {
+        // Two defects in one line. A list built from `find .` gives every line a
+        // `./` prefix, and 7-Zip then sees `./x` and `x` as two names for one
         // file and refuses the whole archive with "Duplicate filename on disk".
-        let body = list_file_body(&["mods/A/x.dds".into(), "empty dir".into()]);
-        assert_eq!(body, "mods/A/x.dds\nempty dir\n");
+        // And 7-Zip TRIMS each line, so an unquoted ` Weapons` is looked up
+        // trimmed, not found, and dropped from the backup.
+        let body = list_file_body(&[
+            "mods/A/x.dds".into(),
+            "empty dir".into(),
+            " leading space".into(),
+            "trailing space ".into(),
+        ]);
+        assert_eq!(
+            body,
+            "\"mods/A/x.dds\"\n\"empty dir\"\n\" leading space\"\n\"trailing space \"\n"
+        );
         assert!(!body.contains("./"));
+        // 7-Zip strips exactly one surrounding pair and takes the rest
+        // literally, so a name containing a quote needs no escaping.
+        assert_eq!(list_file_body(&["has\"quote".into()]), "\"has\"quote\"\n");
         assert_eq!(list_file_body(&[]), "");
     }
 

@@ -305,7 +305,15 @@ where
     Ok((status, stderr, last))
 }
 
-/// Every entry PATH inside `archive`, in the order 7-Zip lists them.
+/// One entry in an archive's table of contents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entry {
+    pub path: String,
+    /// The UNPACKED size. A directory reads 0.
+    pub size: u64,
+}
+
+/// Every entry inside `archive`, in the order 7-Zip lists them.
 ///
 /// This reads the archive's HEADER only, so it is cheap even on a 70 GB backup,
 /// and it is the only way to know what an archive will write before it writes
@@ -318,7 +326,7 @@ where
 /// It is also read LOSSILY - an entry whose name is not UTF-8 must still be seen
 /// by a caller checking for dangerous paths, and a decoding error there would
 /// hide exactly the entry worth looking at.
-pub fn list_paths(bin: &str, archive: &Path) -> Result<Vec<String>, SevenZipError> {
+pub fn list_entries(bin: &str, archive: &Path) -> Result<Vec<Entry>, SevenZipError> {
     use std::io::BufRead;
     use std::process::Stdio;
     let mut child = Command::new(bin)
@@ -341,7 +349,7 @@ pub fn list_paths(bin: &str, archive: &Path) -> Result<Vec<String>, SevenZipErro
     });
     let out = child.stdout.take().expect("stdout was piped");
     let mut reader = io::BufReader::new(out);
-    let mut paths = Vec::new();
+    let mut entries: Vec<Entry> = Vec::new();
     let mut line = Vec::new();
     loop {
         line.clear();
@@ -353,7 +361,17 @@ pub fn list_paths(bin: &str, archive: &Path) -> Result<Vec<String>, SevenZipErro
         let text = String::from_utf8_lossy(&line);
         let text = text.trim_end_matches(['\n', '\r']);
         if let Some(p) = text.strip_prefix("Path = ") {
-            paths.push(p.to_string());
+            entries.push(Entry {
+                path: p.to_string(),
+                size: 0,
+            });
+        } else if let Some(n) = text.strip_prefix("Size = ") {
+            // `Packed Size = ` does not match this prefix, and `Size` is the
+            // first of the two in every block, so the entry being filled in is
+            // always the one just pushed.
+            if let (Some(e), Ok(n)) = (entries.last_mut(), n.trim().parse::<u64>()) {
+                e.size = n;
+            }
         }
     }
     let status = child
@@ -368,7 +386,7 @@ pub fn list_paths(bin: &str, archive: &Path) -> Result<Vec<String>, SevenZipErro
         };
         return Err(SevenZipError::Failed(why));
     }
-    Ok(paths)
+    Ok(entries)
 }
 
 /// Extract every entry of `archive` into `dest`, reporting 7-Zip's own progress.

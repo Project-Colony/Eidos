@@ -32,6 +32,8 @@ eidos-conflicts = { path = "../eidos-conflicts" }
 eidos-gamefeatures = { path = "../eidos-gamefeatures" }
 eidos-install = { path = "../eidos-install" }
 eidos-fomod = { path = "../eidos-fomod" }
+# `eidos pack` / `eidos unpack` in the window: a whole instance in one file.
+eidos-transfer = { path = "../eidos-transfer" }
 rfd = "0.17"
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from

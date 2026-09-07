@@ -50,6 +50,10 @@ fn build_instance(root: &Path) {
     );
     write(&root.join("mods/Weapons * Armour/textures/w.dds"), "dds");
     write(&root.join("mods/스크린아처메뉴/x.esp"), "esp");
+    // A leading space in a mod folder name. Windows-sourced archives carry
+    // them, and 7-Zip trims every list-file line, so an unquoted list drops
+    // this whole mod with a warning that reads like nothing.
+    write(&root.join("mods/ Leading Space/x.dds"), "dds");
     // Empty directories: invisible to a list file of files only, and a mod that
     // comes back without one is a mod that has changed.
     fs::create_dir_all(root.join("mods/[Rudolph] Dark Souls/textures/Новая папка")).unwrap();
@@ -131,7 +135,7 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
 
     let opt = Options::default();
     let p = plan(&inst, &opt);
-    assert_eq!(p.files, 10, "{:?}", p.entries);
+    assert_eq!(p.files, 11, "{:?}", p.entries);
     assert_eq!(p.empty_dirs, 2);
     assert_eq!(p.scrub, vec!["downloads/Mod.7z.meta".to_string()]);
     assert_eq!(p.wildcards, vec!["mods/Weapons * Armour/textures/w.dds"]);
@@ -189,6 +193,11 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
     assert_eq!(
         fs::read_to_string(dest.join("mods/Weapons * Armour/textures/w.dds")).unwrap(),
         "dds"
+    );
+    assert_eq!(
+        fs::read_to_string(dest.join("mods/ Leading Space/x.dds")).unwrap(),
+        "dds",
+        "a name 7-Zip would have trimmed"
     );
 
     // The signed URL did not travel; the rest of the record did.

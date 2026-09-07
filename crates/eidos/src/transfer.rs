@@ -61,6 +61,7 @@ fn human_secs(secs: u64) -> String {
 }
 
 /// What the flags on `eidos pack` parsed to.
+#[derive(Debug)]
 struct PackArgs {
     positional: Vec<String>,
     opt: Options,
@@ -106,10 +107,22 @@ fn parse_pack_args(args: &[String]) -> Result<PackArgs, String> {
                 out.opt.level = level(v)?;
             }
             _ if a.starts_with("--level=") => out.opt.level = level(&a["--level=".len()..])?,
-            _ if a.starts_with("--") => return Err(format!("unknown option '{a}'")),
+            // Any leading dash, not only two. `-force` is a plausible typo and
+            // `-` is not a filename anybody means, so treating either as the
+            // destination would write the backup to a file called `-force`.
+            _ if a.starts_with('-') => return Err(format!("unknown option '{a}'")),
             _ => out.positional.push(a.to_string()),
         }
         i += 1;
+    }
+    // Two, and only two. A third is a mistyped flag or a path with an unquoted
+    // space in it, and silently packing to the SECOND of three names the user
+    // typed is the kind of quiet wrong answer this whole feature must not give.
+    if out.positional.len() > 2 {
+        return Err(format!(
+            "too many arguments (expected an instance and a destination, got {})",
+            out.positional.len()
+        ));
     }
     Ok(out)
 }
@@ -130,7 +143,12 @@ fn default_name(game_id: &str) -> String {
 /// name with no extension at all gets ours.
 fn resolve_destination(given: &str, game_id: &str) -> PathBuf {
     let p = expand(given);
-    if p.is_dir() {
+    // A trailing slash means a FOLDER, whether or not it exists yet. Without
+    // this, `eidos pack skyrimse ~/backups/` on a folder not yet created falls
+    // through to the extension test, and `~/backups` gains no extension, so the
+    // backup is written as `~/backups/.eidos` - a hidden file, inside a folder
+    // the user thought they were naming.
+    if p.is_dir() || given.ends_with('/') {
         return p.join(default_name(game_id));
     }
     match p.extension() {
@@ -241,10 +259,24 @@ pub(crate) fn cmd_pack(args: &[String]) {
                 human_bytes(r.bytes),
                 human_secs(started.elapsed().as_secs())
             );
-            for w in &r.warnings {
-                eidos_log::warn!("  {w}");
-            }
             println!("On the other machine: eidos unpack {} <folder>", r.path.display());
+            // An incomplete backup is not a success, and this is a command
+            // people put in front of `&&`. The archive is real and worth
+            // keeping - it is named above - but the exit code has to say that
+            // something did not make it in, or `eidos pack ... && rm -rf <old>`
+            // proceeds on a short archive. 7-Zip's own convention, and this
+            // program's: 1 means the operation did not fully succeed.
+            if !r.warnings.is_empty() {
+                println!();
+                for w in &r.warnings {
+                    println!("WARNING: {w}");
+                }
+                println!(
+                    "The backup was written but it is NOT complete. Fix what is above and \
+                     pack again before you rely on it."
+                );
+                exit(1);
+            }
         }
         Err(e) => {
             end_progress();
@@ -318,10 +350,10 @@ fn unpack_usage() -> ! {
 pub(crate) fn cmd_unpack(args: &[String]) {
     let info = args.iter().any(|a| a == "--info");
     let force = args.iter().any(|a| a == "--force");
-    let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
+    let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
     if let Some(bad) = args
         .iter()
-        .find(|a| a.starts_with("--") && *a != "--info" && *a != "--force")
+        .find(|a| a.starts_with('-') && *a != "--info" && *a != "--force")
     {
         eidos_log::info!("eidos unpack: unknown option '{bad}'");
         unpack_usage();
@@ -329,6 +361,13 @@ pub(crate) fn cmd_unpack(args: &[String]) {
     let Some(archive) = positional.first() else {
         unpack_usage();
     };
+    if positional.len() > 2 {
+        eidos_log::info!(
+            "eidos unpack: too many arguments (expected a backup file and a folder, got {}).",
+            positional.len()
+        );
+        unpack_usage();
+    }
     let archive = expand(archive);
 
     let opt = Options {
@@ -514,6 +553,34 @@ mod tests {
         assert!(parse_pack_args(&v(&["skyrimse", "--level", "4"])).is_err());
         assert!(parse_pack_args(&v(&["skyrimse", "--level", "x"])).is_err());
         assert!(parse_pack_args(&v(&["skyrimse", "--level"])).is_err());
+    }
+
+    #[test]
+    fn a_single_dash_is_an_option_not_a_filename() {
+        // `-force` would otherwise become the destination, and the backup would
+        // be written to a file called `-force`.
+        assert!(parse_pack_args(&v(&["skyrimse", "-force", "out.eidos"])).is_err());
+        assert!(parse_pack_args(&v(&["skyrimse", "-", "out.eidos"])).is_err());
+    }
+
+    #[test]
+    fn a_third_positional_is_refused_rather_than_ignored() {
+        // An unquoted space in a path is the usual cause, and quietly packing to
+        // the second of three names is a wrong answer given in silence.
+        let e = parse_pack_args(&v(&["skyrimse", "my", "backup.eidos"])).unwrap_err();
+        assert!(e.contains("too many"), "{e}");
+    }
+
+    #[test]
+    fn a_trailing_slash_names_a_folder_even_before_it_exists() {
+        // Otherwise the backup lands as a HIDDEN `.eidos` file inside it.
+        let chosen = resolve_destination("/tmp/eidos-no-such-dir-xyz/", "skyrimse");
+        assert_eq!(chosen.parent().unwrap(), Path::new("/tmp/eidos-no-such-dir-xyz"));
+        assert!(chosen
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("skyrimse-"));
     }
 
     #[test]

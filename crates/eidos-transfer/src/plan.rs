@@ -149,6 +149,10 @@ fn root_rules(inst: &Instance, opt: &Options) -> Vec<(String, Why)> {
     rules
 }
 
+/// The one file under `loot/` that is the user's own work rather than a cache:
+/// LOOT's local rule overrides, which `eidos sort` reads and nothing re-fetches.
+const USERLIST: &str = "userlist.yaml";
+
 /// Whether a name is a file being written right now rather than one to keep.
 ///
 /// Two shapes, because the workspace writes both: `write_atomic` and friends
@@ -190,9 +194,19 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
             Ok(r) => r,
             Err(e) => {
                 out.left.push(Left {
-                    path: if rel.is_empty() { ".".into() } else { rel },
+                    path: if rel.is_empty() { "." } else { &rel }.to_string(),
                     why: Why::Unreadable(e.to_string()),
                 });
+                // The directory itself still goes in. Its PARENT was marked as
+                // contributing the moment this was pushed, so without this line
+                // a mod folder whose only child cannot be read produces no
+                // entries at all - and the whole ancestor chain vanishes from
+                // the archive while `left` names only the deepest one. 7-Zip
+                // stores a directory it cannot read and warns, which is the
+                // honest outcome: the shape survives, the loss is reported.
+                if !rel.is_empty() {
+                    out.entries.push(rel);
+                }
                 continue;
             }
         };
@@ -227,6 +241,19 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
             };
             if at_root {
                 if let Some((_, why)) = rules.iter().find(|(n, _)| n.as_str() == name) {
+                    // `loot/` is a masterlist cache Eidos re-fetches - except for
+                    // `userlist.yaml`, which nobody re-fetches because the user
+                    // WROTE it. Those are their own LOOT rules, and dropping
+                    // them is dropping hand-made work, so the one file rides
+                    // along while the cache around it does not.
+                    if *why == Why::Refetchable && abs.join(name).join(USERLIST).is_file() {
+                        out.files += 1;
+                        contributes = true;
+                        if let Ok(md) = fs::metadata(abs.join(name).join(USERLIST)) {
+                            out.bytes += md.len();
+                        }
+                        out.entries.push(format!("{child}/{USERLIST}"));
+                    }
                     out.left.push(Left {
                         path: child,
                         why: why.clone(),
@@ -274,9 +301,6 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
                     out.downloads_bytes += md.len();
                 }
             }
-            if child.contains('*') || child.contains('?') {
-                out.wildcards.push(child.clone());
-            }
             out.entries.push(child);
         }
         if !contributes && !at_root {
@@ -289,6 +313,18 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
     out.tools_outside = tools_outside(inst);
     out.entries.sort();
     out.scrub.sort();
+    // From the FINISHED list, not from each file as it is seen. An empty
+    // directory is named in the list file exactly like a file is, so a mod
+    // folder called `Weapons * Armour` with nothing in it needs `-spd` just as
+    // much - and counting only files let it through the check that decides
+    // whether packing without `-spd` is safe.
+    out.wildcards = out
+        .entries
+        .iter()
+        .chain(out.scrub.iter())
+        .filter(|e| e.contains('*') || e.contains('?'))
+        .cloned()
+        .collect();
     out.wildcards.sort();
     out.left.sort_by(|a, b| a.path.cmp(&b.path));
     out
@@ -317,10 +353,16 @@ fn move_scrubbable_metas(plan: &mut Plan, downloads_prefix: &str) {
     plan.scrub = scrub;
 }
 
-/// Whether a `.meta` file carries a non-empty `url=`.
+/// Whether a `.meta` file must be scrubbed before it travels.
+///
+/// A file that cannot be read as text counts as YES, which routes it into
+/// `scrub` - where the pack, unable to clean it either, leaves it out and says
+/// so. The alternative reading of an unreadable `.meta` is "pack it verbatim",
+/// and verbatim is exactly the signed URL, with the downloader's account id in
+/// it, going to whoever the backup is handed to.
 fn has_url(path: &Path) -> bool {
     let Ok(text) = fs::read_to_string(path) else {
-        return false;
+        return true;
     };
     text.lines().any(|l| is_url_line(l).is_some())
 }
@@ -486,6 +528,94 @@ mod tests {
             .left
             .iter()
             .any(|l| l.path == MANIFEST_NAME && l.why == Why::Regenerated));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_users_own_loot_rules_survive_the_cache_around_them() {
+        let root = tmp("userlist");
+        let inst = instance(&root);
+        fs::create_dir_all(root.join("loot")).unwrap();
+        fs::write(root.join("loot/masterlist.yaml"), b"cache").unwrap();
+        fs::write(root.join("loot/userlist.yaml"), b"my rules").unwrap();
+        let p = plan(&inst, &Options::default());
+        assert!(
+            p.entries.contains(&"loot/userlist.yaml".to_string()),
+            "hand-written LOOT rules are not a cache: {:?}",
+            p.entries
+        );
+        assert!(!p.entries.iter().any(|e| e.contains("masterlist")));
+        // And an instance that has never sorted still just skips the folder.
+        let bare = tmp("userlist-none");
+        let inst2 = instance(&bare);
+        fs::create_dir_all(bare.join("loot")).unwrap();
+        fs::write(bare.join("loot/masterlist.yaml"), b"cache").unwrap();
+        let p2 = plan(&inst2, &Options::default());
+        assert!(!p2.entries.iter().any(|e| e.starts_with("loot")));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(&bare);
+    }
+
+    #[test]
+    fn an_empty_directory_named_like_a_pattern_still_counts_as_one() {
+        // The `-spd` decision is made from this list. Counting only FILES let a
+        // mod folder with nothing in it slip past, into an archive built in
+        // pattern mode.
+        let root = tmp("wildcard-dir");
+        let inst = instance(&root);
+        fs::create_dir_all(root.join("mods/Weapons * Armour/empty")).unwrap();
+        let p = plan(&inst, &Options::default());
+        assert!(
+            p.wildcards
+                .iter()
+                .any(|w| w == "mods/Weapons * Armour/empty"),
+            "{:?}",
+            p.wildcards
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_directory_nobody_can_read_still_leaves_its_shape_behind() {
+        // Its parent was marked as contributing the moment it was pushed, so
+        // without an entry of its own the parent is not listed either and a
+        // whole mod folder leaves the archive with only the deepest name
+        // mentioned anywhere.
+        let root = tmp("unreadable");
+        let inst = instance(&root);
+        fs::create_dir_all(root.join("mods/A/B")).unwrap();
+        fs::write(root.join("mods/A/B/f.dds"), b"x").unwrap();
+        let mut perms = fs::metadata(root.join("mods/A/B")).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o000);
+        fs::set_permissions(root.join("mods/A/B"), perms).unwrap();
+
+        let p = plan(&inst, &Options::default());
+        assert!(
+            p.entries.contains(&"mods/A/B".to_string()),
+            "the folder itself must still be named: {:?}",
+            p.entries
+        );
+        assert!(p
+            .left
+            .iter()
+            .any(|l| l.path == "mods/A/B" && matches!(l.why, Why::Unreadable(_))));
+
+        let mut perms = fs::metadata(root.join("mods/A/B")).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o755);
+        let _ = fs::set_permissions(root.join("mods/A/B"), perms);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_download_record_that_cannot_be_read_does_not_travel_verbatim() {
+        // Verbatim IS the signed URL with the downloader's account id in it.
+        let root = tmp("badmeta");
+        let inst = instance(&root);
+        fs::create_dir_all(root.join("downloads")).unwrap();
+        fs::write(root.join("downloads/Mod.7z.meta"), [0xffu8, 0xfe, 0xfd]).unwrap();
+        let p = plan(&inst, &Options::default());
+        assert_eq!(p.scrub, vec!["downloads/Mod.7z.meta".to_string()]);
+        assert!(!p.entries.iter().any(|e| e.ends_with(".meta")));
         let _ = fs::remove_dir_all(&root);
     }
 

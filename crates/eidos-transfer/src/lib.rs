@@ -180,6 +180,10 @@ pub fn existing_ancestor(path: &Path) -> PathBuf {
             return p.to_path_buf();
         }
         match p.parent() {
+            // The parent of a bare `backup.eidos` is the EMPTY path, which is
+            // not a directory and whose own parent is nothing - so walking on
+            // would answer `/` for a relative name that means "here".
+            Some(parent) if parent.as_os_str().is_empty() => return PathBuf::from("."),
             Some(parent) => p = parent,
             None => return PathBuf::from("/"),
         }
@@ -206,6 +210,18 @@ mod tests {
         let m = TransferError::NoSevenZip.to_string();
         assert!(m.contains("7zip"), "{m}");
         assert!(m.contains("7zz"), "{m}");
+    }
+
+    #[test]
+    fn a_relative_destination_asks_about_here_not_about_the_root() {
+        assert_eq!(
+            existing_ancestor(Path::new("backup.eidos")),
+            PathBuf::from(".")
+        );
+        assert_eq!(
+            existing_ancestor(Path::new("no-such-dir/backup.eidos")),
+            PathBuf::from(".")
+        );
     }
 
     #[test]

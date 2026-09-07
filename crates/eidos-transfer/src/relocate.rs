@@ -99,10 +99,17 @@ fn relocate_line(line: &str, keys: &[&str], from: &str, to: &str) -> Option<Stri
 
 /// `arg0`, `arg1`, ... - one key per argument, and an argument may embed a path
 /// (`-D:/mnt/Jeux/Eidos-Skyrim/mods/...`).
+///
+/// On BYTES, not on `str` slices. `k` is whatever came before the first `=` in a
+/// file a person may have hand-edited, and `k[..3]` panics the moment byte 3 is
+/// in the middle of a character - a commented-out `# ecran=1` with its accent is
+/// enough. That panic would land AFTER `7z x` had written the whole instance,
+/// unwinding out of a program with no `catch_unwind`, so the restore would end
+/// at exit 101 with nothing repaired. The sibling parser in `eidos-instance`
+/// (`tools.rs`) already does it this way; this is that test, not a new one.
 fn starts_with_arg(k: &str) -> bool {
-    k.len() > 3
-        && k[..3].eq_ignore_ascii_case("arg")
-        && k[3..].chars().all(|c| c.is_ascii_digit())
+    let b = k.as_bytes();
+    b.len() > 3 && b[..3].eq_ignore_ascii_case(b"arg") && b[3..].iter().all(u8::is_ascii_digit)
 }
 
 /// Rewrite one file in place, preserving its line endings byte for byte.
@@ -139,6 +146,12 @@ fn rewrite(path: &Path, keys: &[&str], from: &str, to: &str) -> Result<u64, Stri
 pub fn relocate(root: &Path, from: &str) -> io::Result<Relocated> {
     let mut done = Relocated::default();
     let from = from.trim_end_matches('/');
+    // Resolved, not as typed. `pack` records `source_root` from an instance
+    // whose path has been canonicalised, so a destination given as `./here` or
+    // with a symlinked parent would write `./here/mods/...` into every value it
+    // repaired - paths that work today and that the NEXT relocation cannot
+    // match against its own recorded root.
+    let root = &std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let to = root.to_string_lossy();
     let to = to.trim_end_matches('/');
     if from.is_empty() || from == to {
@@ -151,6 +164,10 @@ pub fn relocate(root: &Path, from: &str) -> io::Result<Relocated> {
     if let Ok(mods) = fs::read_dir(root.join("mods")) {
         let mut metas: Vec<std::path::PathBuf> = mods
             .flatten()
+            // Never through a link. A backup never contains one, but this is a
+            // public entry point, and following a symlinked mod folder would
+            // rewrite a file outside the instance it was asked about.
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
             .map(|e| e.path().join("meta.ini"))
             .filter(|p| p.is_file())
             .collect();
@@ -247,6 +264,22 @@ mod tests {
         assert!(starts_with_arg("arg12"));
         assert!(!starts_with_arg("args"));
         assert!(!starts_with_arg("arg"));
+    }
+
+    #[test]
+    fn a_key_that_is_not_ascii_does_not_bring_the_whole_restore_down() {
+        // `k[..3]` on a str panics when byte 3 splits a character, and this runs
+        // AFTER the archive has been extracted - so the panic cost the restore
+        // its repair pass and exited 101 with nothing said.
+        let keys = ["# ecran", "\u{e9}\u{e9}x", "a\u{5b57}x", "\u{1f600}x", "\u{5b57}xx"];
+        for k in keys {
+            assert!(!starts_with_arg(k), "{k} is not an arg key");
+            let line = format!("{k}=/old/root/x");
+            // The point is that it RETURNS rather than unwinds.
+            let _ = relocate_line(&line, &TOOL_KEYS, "/old/root", "/new");
+        }
+        assert!(starts_with_arg("arg0") && starts_with_arg("arg12"));
+        assert!(!starts_with_arg("args") && !starts_with_arg("arg"));
     }
 
     #[test]

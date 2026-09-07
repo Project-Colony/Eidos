@@ -863,6 +863,42 @@ enum Message {
     CloseFileMenu,
     /// Open a URL in the user's browser (LOOT advice links in the report).
     OpenUrl(String),
+    // ---- move an instance to another machine (eidos pack / eidos unpack) ----
+    /// Open the Pack dialog, which previews what would go into the file.
+    ShowPackDialog,
+    ClosePackDialog,
+    /// The destination typed into the dialog.
+    PackDestChanged(String),
+    /// Include `downloads/` (the archives the mods were installed from).
+    PackToggleDownloads,
+    /// One of 7-Zip's compression levels.
+    PackLevelChanged(u8),
+    /// Open a native save dialog for the destination.
+    PackBrowse,
+    /// Where it will be written (`None` = cancelled).
+    PackDestPicked(Option<PathBuf>),
+    /// Start packing on a worker thread.
+    PackRun,
+    /// Open the Unpack dialog. Reachable with NO instance open: restoring a
+    /// backup onto a fresh machine is the whole point of the file.
+    ShowUnpackDialog,
+    CloseUnpackDialog,
+    /// Choose the `.eidos` file, and what reading its manifest said.
+    UnpackBrowseArchive,
+    UnpackArchivePicked(Option<PathBuf>),
+    /// Choose the folder it goes into.
+    UnpackBrowseDest,
+    UnpackDestPicked(Option<PathBuf>),
+    UnpackDestChanged(String),
+    /// Unpack into a folder that is not empty.
+    UnpackToggleForce,
+    /// Start unpacking on a worker thread.
+    UnpackRun,
+    /// The 60 Hz look at a running pack or unpack. Reached from `AnimationTick`,
+    /// like `InstallPoll`, because iced's timer needs a non-capturing closure.
+    TransferPoll,
+    /// Dismiss the card showing what a finished pack or unpack did.
+    CloseTransferResult,
     // ---- manual plugin reorder (MO2 lets the load order be dragged by hand) ----
     /// Move the plugin at this index one slot earlier / later in the load order.
     Noop,
@@ -1753,6 +1789,16 @@ struct App {
     file_menu_open: bool,
     /// The open Export dialog: which rows, and which columns are ticked.
     export: Option<ExportDialogState>,
+    /// The open Pack dialog (the instance being written to one file).
+    pack: Option<PackDialogState>,
+    /// The open Unpack dialog. Deliberately NOT gated on an open instance.
+    unpack: Option<UnpackDialogState>,
+    /// The pack or unpack on a worker thread, and afterwards what it said.
+    ///
+    /// ONE field for both directions rather than two: they are both minutes of
+    /// 7-Zip on the same disk, running them at once would only make each slower,
+    /// and a single slot makes that impossible rather than merely discouraged.
+    transfer_job: Option<TransferJob>,
     /// The open collection view, if any.
     collection: Option<CollectionState>,
     /// Whether the instance manager is showing.
@@ -2192,7 +2238,97 @@ const _: fn() = || {
     fn assert_send<T: Send>() {}
     assert_send::<eidos_install::Opened>();
     assert_send::<eidos_install::InstallError>();
+    // A pack hands back sentences, not library types (see `TransferJob`), but
+    // the worker owns an Instance and a Plan while it runs.
+    assert_send::<eidos_instance::Instance>();
+    assert_send::<eidos_transfer::Plan>();
+    assert_send::<eidos_transfer::Transfer>();
 };
+
+/// The Pack dialog: where the file goes, what goes in it, and the preview of
+/// what that means - which is `eidos pack --dry-run`, drawn.
+struct PackDialogState {
+    /// The destination, as typed or as the picker returned it.
+    dest: String,
+    /// Include `downloads/`.
+    downloads: bool,
+    /// 7-Zip's `-mx` level.
+    level: u8,
+    /// What the walk found, so the dialog can say how many files and how big
+    /// BEFORE the user commits twenty minutes to it. Recomputed when an option
+    /// changes, because `downloads` moves the numbers.
+    plan: eidos_transfer::Plan,
+}
+
+/// The Unpack dialog: which backup, where it goes, and what its manifest says.
+struct UnpackDialogState {
+    /// The `.eidos` file.
+    archive: String,
+    /// Where the instance will be put back.
+    dest: String,
+    /// What the archive says about itself, once it has been read. `None` before
+    /// a file is chosen; the error is kept separately so a file that is not a
+    /// backup can say so in the dialog rather than through a status bar the
+    /// welcome screen does not draw.
+    manifest: Option<eidos_transfer::BackupManifest>,
+    error: Option<String>,
+    /// Unpack into a folder that is not empty.
+    force: bool,
+}
+
+/// Which way a transfer is going, for what the poll does when it finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransferKind {
+    Pack,
+    Unpack,
+}
+
+/// A pack or an unpack running on a worker thread.
+///
+/// The same three-Arc shape as [`InstallJob`], for the same reason: twenty
+/// minutes of 7-Zip inside `update()` would be twenty minutes of a window the
+/// compositor declares dead. Two differences earned by this job being longer
+/// and rarer than an extraction.
+///
+/// The outcome is a `Result<String, String>` rather than the library's own
+/// types. `Message` derives Clone and the GUI has no business making
+/// `PackReport` and `TransferError` satisfy the message plumbing's bounds, so
+/// the worker turns its answer into the sentences the card will show. What the
+/// GUI still needs afterwards - where the file or the instance landed - is
+/// `target`, which it knew before the thread started.
+///
+/// And the job OUTLIVES its own completion: `finished` holds what the poll took
+/// out of `outcome`, so the same card that showed a progress bar shows the
+/// result until the user closes it. An extraction can report through the status
+/// bar because it is thirty seconds and its result is the mod appearing; a pack
+/// has a path, a size, a ratio and possibly a list of files it could not read,
+/// and the welcome screen - where an unpack happens - draws no status bar at all.
+struct TransferJob {
+    kind: TransferKind,
+    /// What the card says is happening.
+    title: String,
+    /// The archive being written, or the folder being restored into.
+    target: PathBuf,
+    /// 7-Zip's percentage, already clamped to its own maximum by the worker.
+    ///
+    /// The raw value is NOT monotonic and a pack makes two passes into one
+    /// archive, so the bar would climb, reset and climb again. `fetch_max` in
+    /// the worker is the whole fix, and it belongs there rather than in the
+    /// view: a bar that walks backwards for minutes reads as a broken program,
+    /// and the view is asked to draw sixty times a second.
+    percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<String, String>>>>,
+    done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// What the worker said, once the poll has taken it. `None` while running.
+    finished: Option<Result<String, String>>,
+}
+
+impl TransferJob {
+    /// Whether this job is still working - the condition for wanting frames.
+    fn running(&self) -> bool {
+        self.finished.is_none()
+    }
+}
 
 struct RunningState {
     /// What is running (the tool title or the game name), for the overlay text.
