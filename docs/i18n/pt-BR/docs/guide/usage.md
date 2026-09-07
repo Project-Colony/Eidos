@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Usar o Eidos
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adotar a ordem e o estado dos plugins de 
 eidos sort skyrimse               # ordenar a carga dos plugins com o LOOT
 eidos play skyrimse               # mostrar o que seria montado
 eidos play skyrimse -- <command>  # rodar <command> com os mods montados sobre o jogo
+eidos collection skyrimse <link>  # instalar uma coleção do Nexus do jeito que o autor dela a montou
 eidos pack skyrimse backup.eidos  # a instância inteira num arquivo só, para levá-la a outro lugar
 eidos unpack backup.eidos <folder>   # repô-la na outra máquina
 ```
@@ -103,6 +104,83 @@ jeito ou de outro.
 Por que o antigo conselho do `setcap` sumiu - e por que o passthrough FUSE vem
 desligado - está explicado em
 [troubleshooting.pt-BR.md](troubleshooting.md#por-que-o-passthrough-vem-desligado).
+
+## Instalar uma coleção do Nexus
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # lê-la e dizer o que aconteceria
+```
+
+Na janela: cole o link em **File -> Open a Nexus collection...** e aperte
+*Install this collection*.
+
+### Por que isso não é "baixar estes mods"
+
+Uma coleção é uma RECEITA, não uma lista de compras, e quase nada da receita
+fica visível pela API do Nexus. A ordem de instalação, as respostas que o autor
+deu ao instalador com script de cada mod, qual mod vence um conflito de arquivo,
+quais plugins carregam onde, os patches binários - tudo isso mora num
+`collection.json` dentro do arquivo da própria coleção. Baixar os mesmos mods e
+instalá-los com as opções padrão deles produz um jogo diferente.
+
+Então o Eidos baixa o arquivo, lê a receita e a aplica:
+
+| A coleção diz | O Eidos faz |
+| --- | --- |
+| `phase` | instala nessa ordem, os membros opcionais por último |
+| `choices` | repete as respostas do autor a cada FOMOD, e diz quando não consegue |
+| `modRules` | reordena a lista de mods para que o mod certo vença cada arquivo |
+| `plugins` / `pluginRules` | mescla as regras do LOOT na sua userlist e ordena |
+| `INI Tweaks/` | instala-os como um mod próprio |
+| `tools` | diz quais ferramentas ele espera; não cria nada |
+
+Os membros são **ligados** conforme vão sendo instalados, no fim da lista de
+mods e na ordem de instalação, antes que o `modRules` os mova - um mod que nada
+lista é um mod que nada carrega, e uma coleção parada inerte no disco é a única
+falha que o relatório não conseguia ver.
+
+O estado é escrito em `<instance>/collections/<slug>-<revision>.state.json`
+depois de **cada** membro - ao lado da pasta daquela revisão, nunca dentro dela,
+para que uma coleção não possa trazer junto a própria contabilidade - e uma
+instalação interrompida no membro 147 de 200 continua do 147. Ele é escrito sob
+um nome temporário e renomeado para o definitivo, então uma interrupção deixa o
+registro antigo ou o novo, e nunca metade de nenhum dos dois; se algum dia ele
+não puder ser lido, o Eidos para e diz isso, em vez de recomeçar a coleção
+inteira caladamente. Rode o mesmo comando de novo.
+
+### O que ele não vai fingir
+
+**Uma conta gratuita do Nexus não consegue buscar os mods membros.** O Nexus não
+emite links de download para contas gratuitas pela API; todo arquivo precisa do
+botão "Mod Manager Download" do próprio site. O ARQUIVO da coleção baixa sem
+problema numa conta gratuita - então você pode ler a receita inteira - mas cada
+membro é reportado com a URL exata da página dele para você mesmo buscá-lo. Essa
+é uma regra de negócio do Nexus, e nenhuma quantidade de tentativas passa por
+cima dela. Busque-os pelo botão do site e rode o comando de novo: esses membros
+são procurados em `downloads/` a cada execução, então a coleção vai se
+completando conforme você os fornece.
+
+Ainda não aplicados, e nomeados no relatório em vez de deixados de lado:
+**patches binários**, **overrides de arquivo**, e os membros cujos arquivos
+viajam dentro do arquivo da coleção (`bundle`). Os membros que a coleção espera
+que você busque à mão (`browse`, `manual`) levam as instruções do próprio autor
+até o relatório. Um membro cujo nome já é um mod seu é instalado ao lado dele
+sob um nome livre, nunca por cima dele, e o relatório diz quais.
+
+### O relatório
+
+O ponto do relatório é que "instalado" mereça confiança. Um membro cujas
+respostas de instalador não puderam ser todas repetidas fica **instalado, mas
+não do jeito que a coleção pede** - numa linha própria, separada dos sucessos
+com que ele se parece superficialmente, porque os arquivos em disco diferem dos
+do autor. Regras de ordenação que não nomearam nada na coleção, mods presos num
+laço de regras contraditórias, grupos do LOOT que não existem, e qualquer parte
+do manifesto que esta versão do Eidos não entende também são listados.
+
+A alternativa - registrar esse tipo de coisa no log e dar a instalação por
+concluída - é como uma coleção acaba jogando errado por motivos que ninguém
+consegue achar.
 
 ## Mover uma instância para outra máquina
 
@@ -364,15 +442,11 @@ estão **na tela**: o filtro é como você disse quais eram.
 
 Cole o link de uma coleção - ou clique num na página - e o Eidos lista os
 membros daquela revisão, cada um cruzado com esta instância: instalado, baixado
-ou faltando. Ele **lê** uma coleção; não instala uma, e o painel diz isso.
-Quatro coisas tornam um instalador desonesto aqui, e não apenas difícil: os
-membros são arquivos comuns do Nexus que exigem uma chave por arquivo que só uma
-conta premium consegue emitir fora do botão do próprio site; uma instalação
-completa são três chamadas de API por membro contra um orçamento que este
-cliente se recusa a estourar; as fases, as regras e as respostas FOMOD
-reproduzidas do manifesto não puderam ser verificadas contra uma coleção
-Bethesda publicada de verdade, e adivinhar produz uma ordem de carga que parece
-certa e não é. Ler custa uma requisição e é exato.
+ou faltando. O *Install this collection* então roda a receita inteira numa
+thread de trabalho, com a mesma barra de progresso que os trabalhos de pack e
+unpack usam, e a barra vira o relatório quando termina. Tudo o que está acima
+sobre o que é aplicado e o que é só nomeado vale aqui palavra por palavra: a
+janela e o `eidos collection` são um motor só com duas interfaces.
 
 Uma coleção só pode ser lida contra **o próprio jogo dela**. Abra uma coleção de
 Skyrim com uma instância de Fallout 4 carregada e ele recusa dizendo o nome, em

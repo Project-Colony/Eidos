@@ -39,6 +39,12 @@ eidos-install = { path = "../eidos-install" }
 eidos-fomod = { path = "../eidos-fomod" }
 # `eidos pack` / `eidos unpack` in the window: a whole instance in one file.
 eidos-transfer = { path = "../eidos-transfer" }
+# Nexus mod ids are per game, so joining a collection member against the mod
+# list needs the domain-to-short-name table the game definitions carry.
+eidos-gamedef = { path = "../eidos-gamedef" }
+# Installing a collection from the window runs the SAME driver the terminal
+# does; a second copy of it here is how this workspace got three find_7z.
+eidos-collections = { path = "../eidos-collections" }
 rfd = "0.17"
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from

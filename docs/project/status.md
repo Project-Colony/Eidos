@@ -160,6 +160,34 @@ README carries only the short version; this is the receipts.
       `plugins.txt`/`loadorder.txt` verbatim (the formats are already identical).
       Mods MO2 listed that are not installed here are reported rather than dropped,
       and local mods MO2 never knew about are kept at the bottom
+- [x] Nexus collections, installed rather than listed (`eidos collection`, the GUI's
+      collection pane, `eidos-collections`) - a collection is a RECIPE and almost
+      none of it is visible from the API: the install phases, the answers its
+      author gave each FOMOD, which mod wins a file conflict, the plugin LOOT
+      rules and the INI tweaks all live in a `collection.json` inside the
+      collection's own archive. Eidos fetches the archive (`downloadLink` is a
+      relative API path, and it answers 200 on a FREE account - the member mods
+      are the gated part, not the recipe), reads it, and applies it: phase order
+      with optionals last, FOMOD answers replayed through the engine's own
+      forward pass, `modRules` topologically sorted into the mod list, plugin
+      rules merged into `userlist.yaml` as additions where the user's own
+      choices win, INI fragments installed as their own mod, and each member
+      switched ON as it installs - a mod nothing lists is a mod nothing loads,
+      which is the one failure a report cannot see. The per-member state is
+      written after EVERY member, beside the revision's folder rather than
+      inside the directory the collection's own archive unpacks into, under a
+      temporary name and renamed into place; an install interrupted at 147 of
+      200 continues from 147, and a record that cannot be read stops the run
+      instead of silently repeating hours of downloads. A member only the user
+      can fetch is re-checked on every run, because "fetch it yourself and run
+      this again" has to be an instruction that works. What it does not do is
+      named in the report rather than passed over: binary patches, file
+      overrides, bundled members, manifest sections this build has never seen,
+      and - on a free account - each member with the page URL to fetch it from,
+      because Nexus does not mint download links for free accounts and no retry
+      gets past that. The report separates "installed" from "installed, but not
+      the way the collection asks", which is the whole point: Vortex logs that
+      distinction at level "info" with the words "This is normal"
 - [x] Whole-instance transfer (`eidos pack` / `eidos unpack`, `eidos-transfer`) -
       an entire instance in ONE `.eidos` file: mods, load order, every profile,
       the Overwrite with its saves, and the archives it was all installed from.
@@ -224,10 +252,9 @@ README carries only the short version; this is the receipts.
       Downloads tab as an archive library, eight optional columns with a sort on
       any of them, grouping by category or source, file operations in a mod's
       tree, per-mod backup and restore, executable extras (Steam AppID, hide,
-      pin, `.desktop` shortcut), and image/text previews. Thirty-seven of the
-      thirty-eight are closed; the last is Nexus **collection installation**,
-      which is a decision rather than a remainder - Eidos reads a collection and
-      says on screen why it does not install one
+      pin, `.desktop` shortcut), and image/text previews. All thirty-eight are
+      closed: the last of them, Nexus **collection installation**, installs from
+      the window on a worker thread whose progress bar becomes the report
 - [x] The Colony filesystem layout (`eidos-paths`) - `~/.config/Colony/Eidos`,
       with logs under `~/.local/state/Colony/Eidos`, migrated by COPY so a wrong
       migration cannot cost anybody a Nexus session. Four crates had each been

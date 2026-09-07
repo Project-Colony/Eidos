@@ -59,8 +59,19 @@ pub enum InstanceKind {
     Portable,
 }
 
-/// One mod in the list: a folder under `mods/`, with its enabled state. Order in
-/// the returned vec is priority order, highest first (wins file conflicts).
+/// One mod in the list: a folder under `mods/`, with its enabled state.
+///
+/// Order is MO2's DISPLAY order, which `Profile::modlist` documents in full:
+/// index 0 is the top of the list and the LOWEST priority, and the last entry
+/// is the highest - the one that wins a file conflict. (`modlist.txt` stores
+/// the opposite way up; the reader reverses it.)
+///
+/// This said "highest first" and had it backwards. Everything that consumes the
+/// list already assumed the truth - `prepare` asks for `enabled_lowest_first`
+/// and gets this vec unmodified, `load_order` reverses it to reach
+/// highest-first, and `eidos install` appends to give a new mod the top
+/// priority - so only the sentence was wrong, which is the kind of wrong that
+/// costs somebody an afternoon.
 #[derive(Debug, Clone)]
 pub struct ModEntry {
     pub name: String,

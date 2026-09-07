@@ -24,4 +24,8 @@ eidos-install = { path = "../eidos-install" }
 eidos-gamefeatures = { path = "../eidos-gamefeatures" }
 # `eidos pack` / `eidos unpack`: a whole instance in one file.
 eidos-transfer = { path = "../eidos-transfer" }
+# Reading a collection's recipe and installing it in the order it asks for.
+eidos-collections = { path = "../eidos-collections" }
+eidos-fomod = { path = "../eidos-fomod" }
+eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-nexus = { path = "../eidos-nexus" }

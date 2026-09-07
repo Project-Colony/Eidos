@@ -230,6 +230,246 @@ pub fn sort(view: &GameView<'_>) -> Result<Vec<String>, LootError> {
         .map_err(|e| LootError::Loot(e.to_string()))
 }
 
+/// One plugin rule a collection contributes, in neutral terms.
+///
+/// Neutral on purpose: this crate must not learn about collections, and the
+/// collection crate must not learn about libloot. The caller translates.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserRule {
+    pub plugin: String,
+    /// Plugins this one must load after.
+    pub after: Vec<String>,
+    /// The LOOT group it belongs in, if the collection assigns one.
+    pub group: Option<String>,
+}
+
+/// A LOOT group a collection defines.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GroupDef {
+    pub name: String,
+    pub after: Vec<String>,
+}
+
+/// What merging a collection's rules changed, and what it refused to.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Merged {
+    pub rules_added: usize,
+    pub groups_added: usize,
+    /// Plugins whose group the USER had already set, so the collection's was
+    /// not applied. Reported, because the load order will differ from the
+    /// collection author's and the user is entitled to know why.
+    pub kept_user_group: Vec<String>,
+    /// Group assignments dropped because no such group exists.
+    ///
+    /// This one is not politeness, it is survival: LOOT refuses to sort at all
+    /// when a plugin names a group nothing defines, and the failure surfaces as
+    /// no load order rather than as a bad one.
+    pub dangling_groups: Vec<String>,
+    /// `after` entries dropped from a collection's own group definitions,
+    /// as `"<group> -> <name>"`.
+    ///
+    /// The same survival rule, one level up: libloot builds the group graph
+    /// before it sorts anything, and a group whose `after` names nothing makes
+    /// EVERY later sort of that instance fail - including the ones the user runs
+    /// for reasons of their own, long after the collection is forgotten.
+    pub dangling_after: Vec<String>,
+    /// Groups the collection defined that already existed, and whose `after`
+    /// list was folded into the existing one rather than added again.
+    pub groups_extended: Vec<String>,
+}
+
+/// Merge a collection's plugin rules into the instance's userlist.
+///
+/// ADDITIONS only. The user's own userlist is theirs: nothing is removed, and
+/// where the two disagree about a plugin's group the user wins. That is Vortex's
+/// rule too, and it is the right way round - a collection is a suggestion about
+/// a mod list the user owns.
+///
+/// The masterlist is loaded as well, because the set of groups that EXIST is
+/// the masterlist's plus the userlist's plus whatever the collection defines,
+/// and a group assignment naming none of them is the dangling case above.
+pub fn merge_user_rules(
+    view: &GameView<'_>,
+    rules: &[UserRule],
+    groups: &[GroupDef],
+) -> Result<Merged, LootError> {
+    let (game_type, _repo) = loot_support(view.game_id)
+        .ok_or_else(|| LootError::Unsupported(view.game_id.to_string()))?;
+    let userlist = view
+        .userlist
+        .ok_or_else(|| LootError::Loot("no userlist path to merge into".into()))?;
+
+    let game = Game::with_local_path(game_type, view.game_path, view.local_path)
+        .map_err(|e| LootError::Loot(e.to_string()))?;
+    let db = game.database();
+    let mut db = db
+        .write()
+        .map_err(|_| LootError::Loot("database lock poisoned".into()))?;
+    db.load_masterlist_with_prelude(view.masterlist, view.prelude)
+        .map_err(|e| LootError::Loot(e.to_string()))?;
+    if userlist.is_file() {
+        db.load_userlist(userlist)
+            .map_err(|e| LootError::Loot(e.to_string()))?;
+    }
+
+    let mut out = Merged::default();
+
+    // Groups first: a plugin can only be put in a group that exists by the time
+    // the assignments are considered.
+    let existing: std::collections::HashSet<String> = db
+        .groups(libloot::MergeMode::WithUserMetadata)
+        .iter()
+        .map(|g| g.name().to_string())
+        .collect();
+    let mut user_groups = db.user_groups().to_vec();
+    // Every name that will exist once this merge is written: what LOOT already
+    // knows, plus what the collection is about to define. An `after` may point
+    // at any of them, including a sibling defined in the same batch.
+    let mut known: std::collections::HashSet<String> = existing.clone();
+    for g in groups {
+        if !g.name.is_empty() {
+            known.insert(g.name.clone());
+        }
+    }
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for g in groups {
+        if g.name.is_empty() {
+            continue;
+        }
+        // A userlist group may be named twice in one file only by mistake, and
+        // libloot's reader REFUSES a userlist with a duplicate entry - so the
+        // next load of the file this function is about to write would fail.
+        if !seen.insert(g.name.clone()) {
+            continue;
+        }
+        // An `after` naming nothing is the same disaster as a plugin naming
+        // nothing, one level up, and it is not otherwise checked anywhere.
+        let after: Vec<String> = g
+            .after
+            .iter()
+            .filter(|a| !a.is_empty())
+            .filter(|a| {
+                if known.contains(*a) {
+                    true
+                } else {
+                    out.dangling_after.push(format!("{} -> {a}", g.name));
+                    false
+                }
+            })
+            .cloned()
+            .collect();
+
+        // In LOOT a userlist group sharing a masterlist group's name does not
+        // replace it, it EXTENDS it: the two `after` lists are unioned. Dropping
+        // the collection's entry, which is what "the name is taken" used to do,
+        // silently discards the author's placement.
+        if let Some(slot) = user_groups.iter_mut().find(|u| u.name() == g.name) {
+            let mut merged: Vec<String> =
+                slot.after_groups().iter().map(|a| a.to_string()).collect();
+            let mut grew = false;
+            for a in &after {
+                if !merged.iter().any(|m| m.eq_ignore_ascii_case(a)) {
+                    merged.push(a.clone());
+                    grew = true;
+                }
+            }
+            if grew {
+                *slot = libloot::metadata::Group::new(g.name.clone()).with_after_groups(merged);
+                out.groups_extended.push(g.name.clone());
+            }
+            continue;
+        }
+        if existing.contains(&g.name) {
+            // A masterlist group. A userlist entry of the same name extends it,
+            // so it is worth adding - but only if it says something.
+            if after.is_empty() {
+                continue;
+            }
+            user_groups.push(
+                libloot::metadata::Group::new(g.name.clone()).with_after_groups(after),
+            );
+            out.groups_extended.push(g.name.clone());
+            continue;
+        }
+        user_groups.push(libloot::metadata::Group::new(g.name.clone()).with_after_groups(after));
+        out.groups_added += 1;
+    }
+    if out.groups_added > 0 || !out.groups_extended.is_empty() {
+        db.set_user_groups(user_groups);
+    }
+
+    for rule in rules {
+        if rule.plugin.is_empty() {
+            continue;
+        }
+        let mut meta = db
+            .plugin_user_metadata(&rule.plugin, libloot::EvalMode::DoNotEvaluate)
+            .map_err(|e| LootError::Loot(e.to_string()))?
+            .unwrap_or(
+                libloot::metadata::PluginMetadata::new(&rule.plugin)
+                    .map_err(|e| LootError::Loot(e.to_string()))?,
+            );
+
+        // `after`: a union with whatever is already there. Never a replacement.
+        let mut after: Vec<libloot::metadata::File> = meta.load_after_files().to_vec();
+        let mut changed = false;
+        for name in rule.after.iter().filter(|n| !n.is_empty()) {
+            let already = after
+                .iter()
+                .any(|f| f.name().as_str().eq_ignore_ascii_case(name));
+            if !already {
+                after.push(libloot::metadata::File::new(name.clone()));
+                changed = true;
+            }
+        }
+        if changed {
+            meta.set_load_after_files(after);
+        }
+
+        if let Some(group) = rule.group.as_ref().filter(|g| !g.is_empty()) {
+            if meta.group().is_some_and(|g| g != group.as_str()) {
+                // The user already decided something ELSE. Theirs stands.
+                //
+                // Equal is not a conflict: this function runs at the end of
+                // every collection run, and re-running is the documented way to
+                // finish an interrupted install, so the second pass always meets
+                // its own output. Reporting that as the user's decision would
+                // put a line in the report on every re-run and hide the real
+                // ones.
+                out.kept_user_group.push(rule.plugin.clone());
+            } else if meta.group().is_some() {
+                // Already exactly what the collection asks for.
+            } else if known.contains(group) {
+                meta.set_group(group.clone());
+                changed = true;
+            } else {
+                // Assigning it would make LOOT refuse to sort AT ALL, and the
+                // symptom is an empty load order with no explanation.
+                out.dangling_groups.push(format!("{} -> {group}", rule.plugin));
+            }
+        }
+
+        if changed {
+            db.set_plugin_user_metadata(meta);
+            out.rules_added += 1;
+        }
+    }
+
+    if out.rules_added > 0 || out.groups_added > 0 || !out.groups_extended.is_empty() {
+        if let Some(dir) = userlist.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| LootError::Loot(e.to_string()))?;
+        }
+        // Truncate: this REPLACES the userlist file with what the database now
+        // holds, which is the merge of what was in it and what was added. It is
+        // not a fresh file - the load above is what makes it a merge.
+        let mut opts = libloot::MetadataWriteOptions::new();
+        opts.set_truncate(true);
+        db.write_user_metadata(userlist, &opts)
+            .map_err(|e| LootError::Loot(e.to_string()))?;
+    }
+    Ok(out)
+}
+
 /// Everything LOOT needs to look at one game: who it is, where it lives, and
 /// which trees count as its data.
 ///

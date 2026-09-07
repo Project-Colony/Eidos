@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
 eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 ```
@@ -99,6 +100,83 @@ yerine düz bir bağlama ad alanı alır; modlar iki durumda da aynı biçimde y
 Eski `setcap` önerisinin neden ortadan kalktığı - ve FUSE passthrough'un neden
 kapalı geldiği - [troubleshooting.tr.md](troubleshooting.md#passthrough-neden-öntanımlı-olarak-kapalı)
 içinde anlatılıyor.
+
+## Bir Nexus koleksiyonu kurmak
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # onu oku ve ne olacağını söyle
+```
+
+Pencerede: bağlantıyı **File -> Open a Nexus collection...** içine yapıştırın ve
+*Install this collection*'a basın.
+
+### Bu neden "şu modları indir" değil
+
+Bir koleksiyon bir alışveriş listesi değil, bir TARİFTİR ve tarifin neredeyse
+hiçbir yanı Nexus API'sinden görünmez. Kurulum sırası, yazarın her modun betikli
+kurucusuna verdiği yanıtlar, bir dosya çakışmasını hangi modun kazandığı, hangi
+eklentilerin nereye yükleneceği, ikili yamalar - hepsi koleksiyonun kendi
+arşivinin içindeki bir `collection.json` dosyasında yaşar. Aynı modları indirip
+öntanımlı seçenekleriyle kurmak başka bir oyun üretir.
+
+Bu yüzden Eidos arşivi indirir, tarifi okur ve onu uygular:
+
+| Koleksiyon şunu der | Eidos şunu yapar |
+| --- | --- |
+| `phase` | o sırayla kurar, isteğe bağlı üyeler en sona |
+| `choices` | yazarın her FOMOD'a verdiği yanıtları yeniden oynatır, oynatamadığında da bunu söyler |
+| `modRules` | doğru modun her dosyayı kazanması için mod listesini yeniden sıralar |
+| `plugins` / `pluginRules` | LOOT kurallarını userlist'inize katar ve sıralar |
+| `INI Tweaks/` | onları kendi başına bir mod olarak kurar |
+| `tools` | hangi araçları beklediğini söyler; hiçbir şey oluşturmaz |
+
+Üyeler kurulurken, mod listesinin sonunda kurulum sırasıyla, `modRules` onları
+kımıldatmadan önce **açık** duruma getirilir - hiçbir şeyin listelemediği bir
+mod, hiçbir şeyin yüklemediği bir moddur ve diskte atıl duran bir koleksiyon,
+raporun göremeyeceği tek başarısızlıktır.
+
+Durum **her** üyeden sonra
+`<instance>/collections/<slug>-<revision>.state.json` dosyasına yazılır - o
+revizyonun klasörünün yanına, asla içine değil, böylece bir koleksiyon kendi
+kayıt defterini kendisi taşıyamaz - ve 200 üyenin 147'sinde yarıda kesilen bir
+kurulum 147'den devam eder. Geçici bir adla yazılıp yerine yeniden adlandırılır,
+yani yarıda kesilme geriye ya eski kaydı ya da yenisini bırakır, asla ikisinden
+birinin yarısını değil; bir gün okunamaz hale gelirse Eidos bütün koleksiyonu
+sessizce baştan başlatmaktansa durur ve bunu söyler. Aynı komutu yeniden
+çalıştırın.
+
+### Neyi varmış gibi göstermez
+
+**Ücretsiz bir Nexus hesabı üye modları getiremez.** Nexus, API üzerinden
+ücretsiz hesaplar için indirme bağlantısı üretmez; her dosya sitenin kendi "Mod
+Manager Download" düğmesini ister. Koleksiyon ARŞİVİ ücretsiz bir hesapta
+sorunsuz iner - yani bütün tarifi okuyabilirsiniz - ama her üye, kendiniz
+getirmeniz için tam sayfa URL'siyle birlikte raporlanır. Bu bir Nexus iş
+kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz. Onları sitenin
+düğmesiyle getirin ve komutu yeniden çalıştırın: o üyeler her koşuda
+`downloads/` içinde aranır, yani koleksiyon siz sağladıkça tamamlanır.
+
+Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
+yamalar**, **dosya geçersiz kılmaları** ve dosyaları koleksiyon arşivinin içinde
+gelen üyeler (`bundle`). Koleksiyonun elle getirmenizi beklediği üyeler
+(`browse`, `manual`), yazarın kendi yönergelerini rapora taşır. Adı zaten sizin
+bir modunuzun adı olan bir üye, onun üzerine değil, yanına, boşta bir adla
+kurulur ve rapor hangisi olduğunu söyler.
+
+### Rapor
+
+Raporun amacı "kuruldu"nun güvenilmeye değer olmasıdır. Kurucu yanıtlarının
+hepsi yeniden oynatılamayan bir üye **kurulmuştur ama koleksiyonun istediği
+biçimde değil** - yüzeysel olarak benzediği başarılardan ayrı, kendi satırında;
+çünkü diskteki dosyalar yazarınkilerden farklıdır. Koleksiyonda hiçbir şeye
+karşılık gelmeyen sıralama kuralları, birbiriyle çelişen kuralların döngüsüne
+yakalanan modlar, var olmayan LOOT grupları ve manifest'in bu Eidos sürümünün
+anlamadığı her parçası da listelenir.
+
+Alternatifi - böyle şeyleri günlüğe yazıp kurulumu bitmiş saymak - bir
+koleksiyonun, kimsenin bulamayacağı nedenlerle yanlış oynamaya başlamasının
+yoludur.
 
 ## Bir örneği başka bir makineye taşımak
 
@@ -356,15 +434,12 @@ süzgeç, hangilerini kastettiğinizi söyleme biçiminizdir.
 
 Bir koleksiyon bağlantısı yapıştırın - ya da sitede birine tıklayın - Eidos o
 revizyonun üyelerini listeler; her biri bu örnekle eşleştirilmiş olarak: kurulu,
-indirilmiş ya da eksik. Bir koleksiyonu **okur**; kurmaz ve bölme de bunu söyler.
-Burada bir kurucuyu yalnızca zor değil, dürüstlükten uzak kılan dört şey var:
-üyeler, sitenin kendi düğmesi dışında yalnızca premium bir hesabın
-üretebileceği, dosya başına bir anahtar isteyen sıradan Nexus dosyalarıdır; tam
-bir kurulum, bu istemcinin aşmayı reddettiği bir bütçeye karşı üye başına üç API
-çağrısıdır; manifest'in aşamaları, kuralları ve yeniden oynatılan FOMOD yanıtları
-gerçek, yayımlanmış bir Bethesda koleksiyonuna karşı doğrulanamadı ve tahmin
-etmek, doğru görünen ama olmayan bir yükleme sırası üretir. Okumak bir istek eder
-ve kesindir.
+indirilmiş ya da eksik. *Install this collection* ise bütün tarifi, paketleme ve
+açma işlerinin kullandığı ilerleme çubuğunun aynısıyla, bir çalışan iş
+parçacığında koşturur; bitirdiğinde çubuk raporun kendisi olur. Yukarıda neyin
+uygulandığı ve neyin yalnızca adının geçtiği üzerine söylenen her şey burada da
+kelimesi kelimesine geçerlidir: pencere ile `eidos collection`, iki ön yüzü olan
+tek bir motordur.
 
 Bir koleksiyon yalnızca **kendi oyununa** karşı okunabilir. Yüklü bir Fallout 4
 örneğiyle bir Skyrim koleksiyonu açın; üyeleri yanlış mod listesiyle

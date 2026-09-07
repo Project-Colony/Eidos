@@ -172,6 +172,162 @@ fn pack_on_worker(
     ))
 }
 
+/// Install a Nexus collection on a worker thread.
+///
+/// The same three-Arc handshake as the other two long jobs, and the same reason:
+/// a 200-mod collection is hours, and doing it inside `update()` would be hours
+/// of a window the compositor calls dead.
+fn spawn_collection(
+    inst: Instance,
+    game: eidos_games::DetectedGame,
+    game_id: String,
+    link: String,
+) -> crate::TransferJob {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::{Arc, Mutex};
+    let percent = Arc::new(AtomicU8::new(0));
+    let outcome = Arc::new(Mutex::new(None));
+    let done = Arc::new(AtomicBool::new(false));
+    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let target = inst.root.clone();
+    std::thread::spawn(move || {
+        let r = collection_on_worker(&inst, &game, &game_id, &link, &p);
+        if let Ok(mut slot) = o.lock() {
+            *slot = Some(r);
+        }
+        d.store(true, Ordering::SeqCst);
+    });
+    crate::TransferJob {
+        kind: crate::TransferKind::Collection,
+        title: "Installing a collection".to_string(),
+        target,
+        percent,
+        outcome,
+        done,
+        finished: None,
+    }
+}
+
+fn collection_on_worker(
+    inst: &Instance,
+    game: &eidos_games::DetectedGame,
+    game_id: &str,
+    link: &str,
+    percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    let nexus = eidos_nexus::Nexus::connect()?;
+    let want = match eidos_nexus::NxmLink::parse(link) {
+        Ok(eidos_nexus::NxmLink::Collection(c)) => c,
+        _ => return Err("that is not a collection link".to_string()),
+    };
+    let rev = nexus.collection_revision(&want)?;
+    // The lock is taken HERE, on the thread that will drop it: it is keyed by
+    // ThreadId, so one taken on the window's thread would leak its entry and
+    // wedge the instance for the rest of the session.
+    let _lock = inst
+        .try_lock("the Eidos window (installing a collection)")
+        .map_err(|e| format!("Cannot install now: {e}."))?;
+    let dir =
+        eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
+    let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
+    let read = eidos_collections::read(&manifest)?;
+    let c = &read.collection;
+
+    let state_path =
+        eidos_collections::state::InstallState::path(&inst.root, &rev.slug, rev.revision_number);
+    // An unreadable state file is NOT a first run: starting over would download
+    // everything again and wipe-reinstall every member, so it stops here.
+    let mut state = match eidos_collections::state::InstallState::load(&state_path)? {
+        Some(s) => s,
+        None => eidos_collections::state::InstallState {
+            slug: rev.slug.clone(),
+            revision: rev.revision_number,
+            game_domain: rev.game_domain.clone(),
+            ..Default::default()
+        },
+    };
+
+    let total = c.mods.len().max(1);
+    let mut say = |_line: String| {};
+    let mut hooks = eidos_collections::driver::RealHooks {
+        nexus: &nexus,
+        inst,
+        game,
+        game_id: game_id.to_string(),
+        say: &mut say,
+        collection_domain: c.info.domain_name.clone(),
+        known_members: state.members.keys().cloned().collect(),
+        renamed: Vec::new(),
+        installed_now: Vec::new(),
+    };
+    // The bar counts members reached, which is the only honest measure here: a
+    // collection that is half skipped still moves, and 7-Zip's own percentage
+    // would restart on every single member.
+    let seen = std::sync::atomic::AtomicUsize::new(0);
+    let mut counting = CountingHooks {
+        inner: &mut hooks,
+        seen: &seen,
+        total,
+        percent,
+    };
+    let mut save = |s: &eidos_collections::state::InstallState| {
+        let _ = s.save(&state_path);
+    };
+    let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
+    report.unknown_sections = read.unknown_sections.clone();
+    for (member, folder) in std::mem::take(&mut hooks.renamed) {
+        report.renamed.push(eidos_collections::report::Note {
+            subject: member,
+            detail: format!(
+                "installed as \"{folder}\", because a mod of yours already had that name"
+            ),
+        });
+    }
+    eidos_collections::driver::apply_ordering(inst, c, &state, &mut report);
+    eidos_collections::driver::apply_plugin_states(inst, game, c, &mut report);
+    eidos_collections::driver::apply_plugin_rules(inst, game, c, &mut report);
+    eidos_collections::driver::apply_ini_tweaks(inst, &dir, c, &mut report);
+    percent.store(100, Ordering::SeqCst);
+
+    let text = report.render();
+    // A collection that is not complete is not an error - it is waiting for the
+    // user to fetch what a free account cannot. But it must not read as success.
+    if report.is_complete() && report.is_faithful() {
+        Ok(text)
+    } else {
+        Err(text)
+    }
+}
+
+/// Wraps the real hooks to drive the progress bar off members reached.
+struct CountingHooks<'a> {
+    inner: &'a mut dyn eidos_collections::install::Hooks,
+    seen: &'a std::sync::atomic::AtomicUsize,
+    total: usize,
+    percent: &'a std::sync::Arc<std::sync::atomic::AtomicU8>,
+}
+
+impl eidos_collections::install::Hooks for CountingHooks<'_> {
+    fn obtain(&mut self, m: &eidos_collections::manifest::Mod) -> eidos_collections::install::Obtained {
+        self.inner.obtain(m)
+    }
+    fn install(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+        a: &std::path::Path,
+    ) -> eidos_collections::install::Installed {
+        self.inner.install(m, a)
+    }
+    fn progress(&mut self, done: usize, total: usize, member: &str) {
+        use std::sync::atomic::Ordering;
+        self.seen.store(done, Ordering::SeqCst);
+        let pct = ((done * 100) / self.total.max(1)).min(99) as u8;
+        self.percent.fetch_max(pct, Ordering::SeqCst);
+        self.inner.progress(done, total, member);
+    }
+}
+
 /// Put a backup back, on a worker thread.
 fn spawn_unpack(
     archive: std::path::PathBuf,
@@ -7220,6 +7376,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             };
             app.transfer_job = Some(spawn_unpack(archive, dest, opt));
         }
+        Message::CollectionInstall => {
+            // The busy check FIRST. When both are true it is the more specific
+            // answer, and pointing at the instance while a job is running on
+            // that very instance would send somebody the wrong way.
+            if app.transfer_job.is_some() {
+                app.status = Some("Something is already running on this instance.".to_string());
+                return Task::none();
+            }
+            let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned())
+            else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            let Some(link) = app.collection.as_ref().map(|c| c.link.clone()) else {
+                return Task::none();
+            };
+            let game_id = game.def.id.to_string();
+            app.collection = None;
+            app.transfer_job = Some(spawn_collection(inst, game, game_id, link));
+        }
         Message::TransferPoll => {
             let Some(job) = app.transfer_job.as_ref() else {
                 return Task::none();
@@ -7247,6 +7423,16 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         summary.push_str(&note);
                     }
                 }
+            }
+            if kind == crate::TransferKind::Collection {
+                // The worker added folders to `mods/` and rewrote `modlist.txt`
+                // from its own thread, so the window is holding the list as it
+                // was BEFORE the install. Saving that stale list - which the
+                // next tick of a checkbox does - writes the members straight
+                // back out of the profile, and the rule-derived order with them.
+                reload_mods(app);
+                refresh_after_tree_change(app);
+                refresh_meta_cache(app);
             }
             // Set LAST: `open_unpacked` calls `open_instance`, which resets a
             // great deal of the window, and the card has to survive it.
@@ -7702,9 +7888,32 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         return;
     };
 
-    let installed: std::collections::HashSet<u64> =
-        app.meta_cache.values().filter_map(|r| r.mod_id).collect();
-    // Every downloaded archive's file id, from the sidecars.
+    // Nexus mod ids are per GAME, so a bare id is ambiguous across games - and a
+    // collection may legitimately pull a member from another game's page (an SE
+    // collection using an LE asset). `meta.ini` records the game by its SHORT
+    // name ("SkyrimSE") while a collection names the DOMAIN
+    // ("skyrimspecialedition"), so the two are translated through the game
+    // definitions rather than compared as strings.
+    let short_for_domain = |domain: &str| -> Option<&'static str> {
+        eidos_gamedef::all()
+            .iter()
+            .find(|d| d.nexus_game.eq_ignore_ascii_case(domain))
+            .map(|d| d.short_name)
+    };
+    // Installed mods by Nexus id, with the game and version they record. Both
+    // are OPTIONAL in a `meta.ini` and frequently absent - MO2 omits them all
+    // the time - so an absent one means "unknown", never "no". Only a value that
+    // is present and different rules a match out.
+    let installed: std::collections::HashMap<u64, (Option<String>, Option<String>)> = app
+        .meta_cache
+        .values()
+        .filter_map(|r| Some((r.mod_id?, (r.game_name.clone(), r.version.clone()))))
+        .collect();
+
+    // A member counts as downloaded when the ARCHIVE is there and whole. The
+    // sidecar alone proves nothing: `eidos nxm` writes it before the first byte
+    // and deliberately leaves it behind after a failure, so a member flipped to
+    // "downloaded" instantly and stayed there after a download that died at 2%.
     let downloaded: std::collections::HashSet<u64> = match app.created.as_ref() {
         Some(inst) => std::fs::read_dir(inst.downloads_dir())
             .into_iter()
@@ -7712,7 +7921,12 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|x| x == "meta"))
-            .filter_map(|p| eidos_instance::ModMeta::read(&p).file_id())
+            .filter_map(|p| {
+                let id = eidos_instance::ModMeta::read(&p).file_id()?;
+                let archive = p.with_extension("");
+                let partial = std::path::PathBuf::from(format!("{}.unfinished", archive.display()));
+                (archive.is_file() && !partial.exists()).then_some(id)
+            })
             .collect(),
         None => std::collections::HashSet::new(),
     };
@@ -7721,12 +7935,32 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         .mods
         .iter()
         .map(|m| {
-            if installed.contains(&m.mod_id) {
-                MemberState::Installed
-            } else if downloaded.contains(&m.file_id) {
-                MemberState::Downloaded
-            } else {
-                MemberState::Missing
+            // The member's own game, as `meta.ini` would spell it.
+            let want = short_for_domain(&m.domain);
+            let hit = installed.get(&m.mod_id).filter(|(have_game, _)| {
+                match (have_game.as_deref().filter(|g| !g.is_empty()), want) {
+                    // Both known: they must agree. This is the case that used to
+                    // report an LE-hosted member "installed" because an SE mod
+                    // happened to share its id.
+                    (Some(have), Some(want)) => have.eq_ignore_ascii_case(want),
+                    // Either side silent: not evidence of a mismatch.
+                    _ => true,
+                }
+            });
+            match hit {
+                // An empty version on either side is not a mismatch either:
+                // plenty of mods carry none, and inventing a warning out of a
+                // blank field is the same class of lie this pass is removing.
+                Some((_, have)) => {
+                    let have = have.clone().unwrap_or_default();
+                    if have.is_empty() || m.version.is_empty() || have == m.version {
+                        MemberState::Installed
+                    } else {
+                        MemberState::OtherVersion
+                    }
+                }
+                None if downloaded.contains(&m.file_id) => MemberState::Downloaded,
+                None => MemberState::Missing,
             }
         })
         .collect();

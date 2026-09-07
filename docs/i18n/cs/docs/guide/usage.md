@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Používání Eidosu
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -95,6 +96,80 @@ jmenný prostor místo uživatelského; módy se nasadí v obou případech stej
 
 Proč stará rada se `setcap` zmizela - a proč se FUSE passthrough dodává vypnutý -
 vysvětluje [troubleshooting.cs.md](troubleshooting.md#proč-je-passthrough-ve-výchozím-stavu-vypnutý).
+
+## Instalace kolekce z Nexusu
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+```
+
+V okně: vložte odkaz do **File -> Open a Nexus collection...** a stiskněte
+*Install this collection*.
+
+### Proč tohle není „stáhni tyhle módy"
+
+Kolekce je RECEPT, ne nákupní seznam, a z API Nexusu není vidět skoro nic
+z toho receptu. Pořadí instalace, odpovědi, které autor dal skriptovanému
+instalátoru každého módu, který mód vyhraje konflikt souboru, které pluginy se
+načtou kde, binární patche - to všechno žije v souboru `collection.json` uvnitř
+vlastního archivu kolekce. Stáhnout tytéž módy a nainstalovat je s jejich
+výchozími volbami vyrobí jinou hru.
+
+Eidos tedy archiv stáhne, přečte recept a použije jej:
+
+| Kolekce říká | Eidos udělá |
+| --- | --- |
+| `phase` | instaluje v tomto pořadí, volitelné členy jako poslední |
+| `choices` | přehraje autorovy odpovědi na každý FOMOD a řekne to, když nemůže |
+| `modRules` | přeuspořádá seznam módů tak, aby každý soubor vyhrál ten správný mód |
+| `plugins` / `pluginRules` | sloučí pravidla LOOT do vašeho userlistu a seřadí |
+| `INI Tweaks/` | nainstaluje je jako samostatný mód |
+| `tools` | řekne vám, které nástroje očekává; nic nevytváří |
+
+Členové se při instalaci **zapínají**, na konec seznamu módů v pořadí
+instalace, ještě než s nimi pohne `modRules` - mód, který není v žádném seznamu,
+je mód, který se nikdy nenačte, a kolekce nečinně ležící na disku je to jediné
+selhání, které zpráva vidět nedokáže.
+
+Stav se zapisuje do `<instance>/collections/<slug>-<revision>.state.json` po
+**každém** členovi - vedle složky té revize, nikdy do ní, takže si kolekce
+nemůže přinést vlastní účetnictví - a instalace přerušená na 147. členovi z 200
+pokračuje od 147. Zapisuje se pod dočasným názvem a na místo se přejmenuje,
+takže po přerušení zůstane starý záznam, nebo nový, nikdy půlka ani jednoho
+z nich; a pokud jej někdy nelze přečíst, Eidos se zastaví a řekne to, místo aby
+potichu začal celou kolekci znovu. Spusťte tentýž příkaz znovu.
+
+### Co nebude předstírat
+
+**Bezplatný účet na Nexusu módy členů stáhnout nedokáže.** Nexus přes API
+bezplatným účtům odkazy ke stažení nevyrábí; každý soubor potřebuje vlastní
+tlačítko „Mod Manager Download" na webu. ARCHIV kolekce se na bezplatném účtu
+stáhne bez potíží - takže si celý recept přečtete - ale u každého člena se
+nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodní
+pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
+Stáhněte je tlačítkem na webu a spusťte příkaz znovu: tito členové se při každém
+běhu hledají v `downloads/`, takže se kolekce dokončuje tak, jak ji dodáváte.
+
+Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
+patche**, **přepisy souborů** a členové, jejichž soubory cestují uvnitř archivu
+kolekce (`bundle`). U členů, u kterých kolekce čeká, že si je stáhnete ručně
+(`browse`, `manual`), se do zprávy přenesou vlastní pokyny autora. Člen, jehož
+název už patří některému z vašich módů, se nainstaluje vedle něj pod volným
+názvem, nikdy přes něj, a zpráva řekne, o který jde.
+
+### Zpráva
+
+Smysl zprávy je v tom, že se slovu „nainstalováno" dá věřit. Člen, u kterého se
+nepodařilo přehrát všechny odpovědi instalátoru, je **nainstalovaný, ale ne tak,
+jak kolekce žádá** - má vlastní řádek, oddělený od úspěchů, kterým se navenek
+podobá, protože soubory na disku se od autorových liší. Vypíšou se i pravidla
+pořadí, která v kolekci nic nepojmenovala, módy chycené ve smyčce protichůdných
+pravidel, skupiny LOOT, které neexistují, a jakákoli část manifestu, které tato
+verze Eidosu nerozumí.
+
+Ta druhá možnost - něco takového zalogovat a prohlásit instalaci za hotovou - je
+přesně to, jak kolekce začne hrát špatně z důvodů, které nikdo nedokáže najít.
 
 ## Přesun instance na jiný stroj
 
@@ -343,14 +418,11 @@ jste řekli, které jste mysleli.
 
 Vložte odkaz na kolekci - nebo na něj klikněte na webu - a Eidos vypíše členy
 dané revize, každého spárovaného s touto instancí: nainstalovaný, stažený, nebo
-chybějící. Kolekci **čte**; neinstaluje ji, a panel to říká. Instalátor tu dělají
-spíš nepoctivým než jen obtížným čtyři věci: členové jsou obyčejné soubory
-z Nexusu, které potřebují klíč pro každý soubor zvlášť, jejž mimo vlastní
-tlačítko webu dokáže vyrobit jen prémiový účet; plná instalace jsou tři volání
-API na člena proti rozpočtu, který tento klient odmítá přečerpat; fáze, pravidla
-a přehrané odpovědi FOMOD z manifestu se nepodařilo ověřit proti skutečné
-publikované kolekci pro hru od Bethesdy a hádání vyrobí pořadí načítání, které
-vypadá správně a správně není. Čtení stojí jeden požadavek a je přesné.
+chybějící. *Install this collection* pak spustí celý recept v pracovním vlákně,
+se stejným ukazatelem průběhu, jaký používají úlohy pack a unpack, a z ukazatele
+se po dokončení stane zpráva. Všechno výše o tom, co se použije a co se jen
+pojmenuje, platí i tady slovo od slova: okno a `eidos collection` jsou jeden
+motor se dvěma rozhraními.
 
 Kolekci lze číst jen proti **její vlastní hře**. Otevřete kolekci pro Skyrim
 s načtenou instancí Fallout 4 a Eidos ji jmenovitě odmítne, místo aby členy

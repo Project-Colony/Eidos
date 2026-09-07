@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
 eidos unpack backup.eidos <folder>   # zet ze terug op de andere machine
 ```
@@ -100,6 +101,85 @@ identiek uitgerold.
 Waarom het oude `setcap`-advies weg is - en waarom FUSE-passthrough uit
 geleverd wordt - wordt uitgelegd in
 [troubleshooting.nl.md](troubleshooting.md#waarom-passthrough-standaard-uit-staat).
+
+## Een Nexus-collectie installeren
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # haar lezen en zeggen wat er zou gebeuren
+```
+
+In het venster: plak de link in **File -> Open a Nexus collection...** en druk op
+*Install this collection*.
+
+### Waarom dit geen "download deze mods" is
+
+Een collectie is een RECEPT, geen boodschappenlijstje, en bijna niets van dat
+recept is zichtbaar vanaf de Nexus-API. De installatievolgorde, de antwoorden die
+de auteur aan de gescripte installer van elke mod gaf, welke mod een
+bestandsconflict wint, welke plugins waar laden, de binaire patches - dat alles
+staat in een `collection.json` binnen het eigen archief van de collectie.
+Dezelfde mods downloaden en ze met hun standaardopties installeren levert een
+ander spel op.
+
+Dus downloadt Eidos het archief, leest het recept, en past het toe:
+
+| De collectie zegt | Eidos doet |
+| --- | --- |
+| `phase` | installeert in die volgorde, optionele leden als laatste |
+| `choices` | herspeelt de antwoorden van de auteur op elke FOMOD, en zegt het wanneer dat niet lukt |
+| `modRules` | herordent de modlijst zodat de juiste mod elk bestand wint |
+| `plugins` / `pluginRules` | voegt de LOOT-regels samen met je userlist en sorteert |
+| `INI Tweaks/` | installeert ze als een mod op zichzelf |
+| `tools` | vertelt je welke tools het verwacht; maakt er geen aan |
+
+Leden worden **ingeschakeld** zodra ze installeren, achteraan de modlijst in
+installatievolgorde, voordat `modRules` ze verplaatst - een mod die door niets
+vermeld wordt is een mod die door niets geladen wordt, en een collectie die
+roerloos op schijf ligt is de ene mislukking die het verslag niet kon zien.
+
+De staat wordt na **elk** lid weggeschreven naar
+`<instance>/collections/<slug>-<revision>.state.json` - naast de map van die
+revisie, nooit erin, zodat een collectie haar eigen boekhouding niet kan
+meeleveren - en een installatie die bij lid 147 van 200 onderbroken is, gaat
+vanaf 147 verder. Ze wordt onder een tijdelijke naam geschreven en op haar plaats
+hernoemd, zodat een onderbreking de oude staat achterlaat of de nieuwe en nooit
+de helft van een van beide; als ze ooit niet gelezen kan worden, stopt Eidos en
+zegt het, in plaats van stilletjes de hele collectie opnieuw te beginnen. Draai
+dezelfde opdracht opnieuw.
+
+### Wat het niet zal voorwenden
+
+**Een gratis Nexus-account kan de mods van de leden niet ophalen.** Nexus maakt
+via de API geen downloadlinks aan voor gratis accounts; elk bestand vergt de
+eigen knop "Mod Manager Download" van de site. Het ARCHIEF van de collectie
+downloadt prima op een gratis account - dus je kunt het hele recept lezen - maar
+elk lid wordt gemeld met zijn exacte pagina-URL om het zelf op te halen. Dat is
+een zakelijke regel van Nexus, en geen hoeveelheid opnieuw proberen komt eraan
+voorbij. Haal ze op via de knop van de site en draai de opdracht opnieuw: er
+wordt bij elke run in `downloads/` naar die leden gezocht, zodat de collectie
+afgemaakt wordt naarmate jij ze aanlevert.
+
+Nog niet toegepast, en in het verslag benoemd in plaats van overgeslagen:
+**binaire patches**, **bestandsoverrides**, en leden waarvan de bestanden binnen
+het collectiearchief meereizen (`bundle`). Leden die de collectie je met de hand
+laat ophalen (`browse`, `manual`) dragen de eigen instructies van de auteur door
+tot in het verslag. Een lid waarvan de naam al een mod van jou is, wordt ernaast
+geïnstalleerd onder een vrije naam, nooit eroverheen, en het verslag zegt welke.
+
+### Het verslag
+
+Het punt van het verslag is dat "geïnstalleerd" het vertrouwen waard is. Een lid
+waarvan niet alle installer-antwoorden herspeeld konden worden is
+**geïnstalleerd, maar niet zoals de collectie het vraagt** - een eigen regel,
+apart van de successen waar het oppervlakkig op lijkt, want de bestanden op
+schijf verschillen van die van de auteur. Ordeningsregels die niets in de
+collectie benoemden, mods gevangen in een lus van tegenstrijdige regels,
+LOOT-groepen die niet bestaan, en elk deel van het manifest dat deze versie van
+Eidos niet begrijpt, worden ook allemaal vermeld.
+
+Het alternatief - zoiets loggen en de installatie klaar noemen - is hoe een
+collectie verkeerd gaat spelen om redenen die niemand kan vinden.
 
 ## Een instantie naar een andere machine verhuizen
 
@@ -366,15 +446,11 @@ filter heb je gezegd welke je bedoelde.
 
 Plak een collectielink - of klik er een aan op de site - en Eidos toont de leden
 van die revisie, elk gekoppeld aan deze instantie: geïnstalleerd, gedownload of
-ontbrekend. Het **leest** een collectie; het installeert er geen, en het paneel
-zegt dat. Vier dingen maken een installer hier oneerlijk in plaats van alleen
-moeilijk: de leden zijn gewone Nexus-bestanden die een sleutel per bestand vergen
-die alleen een premium-account buiten de knop van de site zelf kan aanmaken; een
-volledige installatie is drie API-oproepen per lid tegen een budget dat deze
-client weigert te overschrijden; de fasen, regels en herspeelde FOMOD-antwoorden
-van het manifest konden niet gecontroleerd worden tegen een echt gepubliceerde
-Bethesda-collectie, en gokken levert een laadvolgorde die er goed uitziet en het
-niet is. Lezen kost één verzoek en is exact.
+ontbrekend. *Install this collection* draait vervolgens het hele recept op een
+werkthread, met dezelfde voortgangsbalk die de Pack- en Unpack-taken gebruiken,
+en de balk wordt het verslag zodra de run klaar is. Alles hierboven over wat er
+toegepast wordt en wat er alleen benoemd wordt, geldt hier woord voor woord: het
+venster en `eidos collection` zijn één motor met twee front-ends.
 
 Een collectie kan alleen tegen **haar eigen spel** gelezen worden. Open een
 Skyrim-collectie met een Fallout 4-instantie geladen en het weigert met naam en

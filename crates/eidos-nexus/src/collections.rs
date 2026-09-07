@@ -30,6 +30,21 @@
 
 use crate::{AdultPolicy, HiddenReason, NxmCollection};
 
+/// A byte count out of the v2 payload, whether it arrives as a number or as a
+/// STRING.
+///
+/// Nexus sends them quoted - the captured fixture in `tests/data` holds
+/// `"totalSize": "22342118"` - and `Value::as_u64` only matches
+/// `Value::Number`, so every size this crate reported was 0. Nothing asserted
+/// on the field, so five green tests said nothing about it.
+fn loose_u64(v: Option<&serde_json::Value>) -> Option<u64> {
+    match v? {
+        serde_json::Value::Number(n) => n.as_u64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
 /// One member of a collection revision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectionMod {
@@ -64,6 +79,10 @@ pub struct CollectionRevision {
     /// The collection author's own installation notes, if any.
     pub instructions: String,
     pub mods: Vec<CollectionMod>,
+    /// Where the collection's ARCHIVE is, as a relative API path. Everything
+    /// that makes a collection a recipe rather than a list is inside it, and no
+    /// API call returns any of it - so this field is the door to the feature.
+    pub download_link: String,
     /// Set when the revision's metadata is withheld - see [`gate`].
     pub hidden: Option<HiddenReason>,
 }
@@ -84,6 +103,7 @@ const QUERY: &str = r#"
 query collectionRevision($slug: String, $revision: Int, $viewAdultContent: Boolean, $domainName: String) {
   collectionRevision(slug: $slug, revision: $revision, viewAdultContent: $viewAdultContent, domainName: $domainName) {
     revisionNumber
+    downloadLink
     adultContent
     modCount
     totalSize
@@ -168,17 +188,14 @@ pub(crate) fn from_payload(
         for m in list {
             let file = m.get("file");
             let inner = file.and_then(|f| f.get("mod"));
-            let Some(mod_id) = inner
-                .and_then(|x| x.get("modId"))
-                .and_then(serde_json::Value::as_u64)
-            else {
+            let Some(mod_id) = loose_u64(inner.and_then(|x| x.get("modId"))) else {
                 // A member whose mod was deleted comes back with a null `file`.
                 // Skipped rather than shown as a zero: a row that cannot be acted
                 // on is worse than a member count that does not add up, and the
                 // count is reported separately from the API anyway.
                 continue;
             };
-            let Some(file_id) = m.get("fileId").and_then(serde_json::Value::as_u64) else {
+            let Some(file_id) = loose_u64(m.get("fileId")) else {
                 continue;
             };
             mods.push(CollectionMod {
@@ -207,9 +224,7 @@ pub(crate) fn from_payload(
                 } else {
                     str_at(file, "name")
                 },
-                size_in_bytes: file
-                    .and_then(|f| f.get("sizeInBytes"))
-                    .and_then(serde_json::Value::as_u64)
+                size_in_bytes: loose_u64(file.and_then(|f| f.get("sizeInBytes")))
                     .unwrap_or(0),
                 optional: m
                     .get("optional")
@@ -228,10 +243,7 @@ pub(crate) fn from_payload(
                 s
             }
         },
-        revision_number: rev
-            .get("revisionNumber")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0) as u32,
+        revision_number: loose_u64(rev.get("revisionNumber")).unwrap_or(0) as u32,
         name: if redact {
             String::new()
         } else {
@@ -248,14 +260,12 @@ pub(crate) fn from_payload(
             str_at(coll.and_then(|c| c.get("user")), "name")
         },
         game_domain: str_at(coll.and_then(|c| c.get("game")), "domainName"),
-        mod_count: rev
-            .get("modCount")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0) as u32,
-        total_size: rev
-            .get("totalSize")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0),
+        // Not redacted with the rest: it is a URL, not metadata about the
+        // collection's content, and a gated revision that could still be
+        // downloaded is a situation the gate is not there to create.
+        download_link: str_at(Some(rev), "downloadLink"),
+        mod_count: loose_u64(rev.get("modCount")).unwrap_or(0) as u32,
+        total_size: loose_u64(rev.get("totalSize")).unwrap_or(0),
         instructions: if redact {
             String::new()
         } else {
@@ -307,6 +317,34 @@ mod tests {
         assert_eq!(first.version, "2.1");
         assert_eq!(first.domain, "skyrimspecialedition");
         assert!(!first.optional);
+    }
+
+    #[test]
+    fn the_sizes_are_read_even_though_nexus_quotes_them() {
+        // The captured payload spells every byte count as a JSON STRING
+        // (`"totalSize": "22342118"`). `as_u64` matches only `Value::Number`, so
+        // every size this crate reported was 0 - and no test looked at the field,
+        // which is why five green tests said nothing about it.
+        let raw: serde_json::Value = serde_json::from_str(REAL).unwrap();
+        let quoted = &raw["data"]["collectionRevision"]["totalSize"];
+        assert!(quoted.is_string(), "the fixture must keep the wire's shape");
+
+        let c = parse(AdultPolicy::Allowed);
+        assert_eq!(c.total_size, 22_342_118);
+        assert!(
+            c.mods.iter().all(|m| m.size_in_bytes > 0),
+            "every member carries a size: {:?}",
+            c.mods.iter().map(|m| m.size_in_bytes).collect::<Vec<_>>()
+        );
+        // And a number, if they ever send one, still reads.
+        let mut num = raw.clone();
+        num["data"]["collectionRevision"]["totalSize"] = serde_json::json!(4242u64);
+        assert_eq!(
+            from_payload(&num, "rqhcxy", AdultPolicy::Allowed)
+                .unwrap()
+                .total_size,
+            4242
+        );
     }
 
     #[test]

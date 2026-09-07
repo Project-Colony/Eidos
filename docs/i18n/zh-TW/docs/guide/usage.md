@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -85,6 +86,72 @@ setuid 輔助程式、沒有常駐程式,也沒有什麼權限要授予。
 舊的 `setcap` 建議為什麼消失了 - 以及 FUSE passthrough 為什麼出貨時就關著 - 在
 [troubleshooting.zh-TW.md](troubleshooting.md#為什麼-passthrough-預設關閉)
 有說明。
+
+## 安裝一份 Nexus 合集
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+```
+
+在視窗裡:把連結貼進 **File -> Open a Nexus collection...**,然後按
+*Install this collection*。
+
+### 這為什麼不是「下載這些模組」
+
+一份合集是一張「食譜」,不是一張購物清單,而且這張食譜幾乎沒有哪個部分能從 Nexus
+API 看得到。安裝順序、作者給每個模組的腳本安裝器的那些答案、檔案衝突時哪個模組
+勝出、哪些外掛載入到哪裡、那些二進位修補 - 全都住在合集自己的壓縮檔裡的一份
+`collection.json` 中。下載同樣那些模組、再用它們的預設選項安裝,做出來的是另一個
+遊戲。
+
+所以 Eidos 會下載那份壓縮檔,讀出食譜,然後把它套用上去:
+
+| 合集說的 | Eidos 做的 |
+| --- | --- |
+| `phase` | 依那個順序安裝,選用的成員排在最後 |
+| `choices` | 重播作者對每一個 FOMOD 給的答案,做不到時就直說 |
+| `modRules` | 重新排列模組清單,讓該贏的模組贏下每一個檔案 |
+| `plugins` / `pluginRules` | 把 LOOT 規則合併進你的 userlist 並排序 |
+| `INI Tweaks/` | 把它們裝成一個自成一格的模組 |
+| `tools` | 告訴你它預期哪些工具;什麼都不建立 |
+
+成員會在安裝的當下就被**啟用**,以安裝順序排在模組清單的最後面,在 `modRules` 把
+它們搬動之前 - 沒有任何清單列到的模組,就是不會被載入的模組,而一份就這麼呆在磁碟
+上不動的合集,正是那份報告看不見的唯一一種失敗。
+
+狀態會在**每一個**成員之後寫進
+`<instance>/collections/<slug>-<revision>.state.json` - 就在那個修訂版的資料夾
+旁邊,絕不在它裡面,這樣一份合集就沒辦法夾帶自己的帳本 - 所以一次在 200 個成員中的
+第 147 個被中斷的安裝,會從 147 接著跑。它會先以一個暫時的名稱寫出,再改名到定位,
+所以一次中斷留下的不是舊的那份紀錄、就是新的那份,絕不會是任何一份的一半;萬一它
+讀不出來,Eidos 會停下來直說,而不是靜悄悄地把整份合集從頭再跑一遍。再執行一次
+同樣的命令就好。
+
+### 它不會假裝什麼
+
+**免費的 Nexus 帳號抓不到那些成員模組。** Nexus 不會透過 API 為免費帳號鑄出下載
+連結;每一個檔案都需要網站自己的「Mod Manager Download」按鈕。合集「壓縮檔」本身
+用免費帳號下載毫無問題 - 所以你讀得到整張食譜 - 但每一個成員都會連同它確切的頁面
+URL 一起回報,讓你自己去抓。那是 Nexus 的商業規則,重試再多次也繞不過去。透過網站
+的按鈕把它們抓下來,再執行一次那道命令:每一次執行都會到 `downloads/` 裡找那些
+成員,所以你補到哪裡,合集就完成到哪裡。
+
+還沒有被套用,而且會在報告裡被指名、而不是被略過的:**二進位修補**、**檔案覆寫**,
+以及那些檔案隨著合集壓縮檔一起走的成員(`bundle`)。合集預期你親手去抓的成員
+(`browse`、`manual`)會把作者自己的說明一路帶進報告裡。名稱已經和你某個模組撞上
+的成員,會以一個沒被占用的名稱裝在它旁邊,絕不覆蓋它,而報告會說明是哪幾個。
+
+### 那份報告
+
+報告的重點,是讓「已安裝」值得信任。一個安裝器答案沒能全部重播完的成員,
+是**已安裝,但不是照合集要求的方式** - 它自成一行,和它表面上很像的那些成功項目分開,
+因為磁碟上的檔案和作者的不一樣。在合集裡沒有指到任何東西的排序規則、卡在一圈互相
+矛盾的規則裡的模組、根本不存在的 LOOT 群組,以及這個版本的 Eidos 看不懂的 manifest
+的任何部分,也全都會被列出來。
+
+另一種做法 - 把那類事情記進日誌,然後宣告安裝完成 - 正是一份合集後來玩起來不對、
+卻沒有人找得出原因的由來。
 
 ## 把一個實例搬到另一台機器
 
@@ -291,12 +358,10 @@ Downloads 分頁是一座壓縮檔**圖書館**,不是傳輸佇列。可以依�
 ### Nexus 合集
 
 貼上一條合集連結 - 或在網站上點一條 - Eidos 就會列出該修訂版的成員,每一個都和這個
-實例對照過:已安裝、已下載,或缺少。它**讀取**一份合集;它不安裝合集,面板上也這麼
-寫著。有四件事讓安裝器在這裡不只是難做,而是不誠實:成員是普通的 Nexus 檔案,需要
-每個檔案專屬的金鑰,而在網站自己的按鈕之外,只有 premium 帳號鑄得出來;一次完整
-安裝是每個成員三次 API 呼叫,而這個用戶端拒絕超支這份預算;manifest 的階段、規則
-與重播的 FOMOD 答案,無法對照一份真正發佈過的 Bethesda 合集來驗證,而用猜的會產出
-一份看起來對、實際上不對的載入順序。讀取只花一次請求,而且是精確的。
+實例對照過:已安裝、已下載,或缺少。接著按 *Install this collection*,它就會在工作
+執行緒上跑完整張食譜,用的是打包與解包工作用的同一條進度列,而做完時那條進度列就
+變成報告。上面關於什麼會被套用、什麼只會被指名的一切,在這裡一字不差地同樣成立:
+這個視窗和 `eidos collection` 是同一具引擎的兩個前端。
 
 一份合集只能對照**它自己的遊戲**來讀取。載入 Fallout 4 實例時開啟一份 Skyrim 合集,
 它會指名拒絕,而不是把成員和錯誤的模組清單對照 - 在那份清單上,每一個「已安裝」和
