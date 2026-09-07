@@ -7702,9 +7702,32 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         return;
     };
 
-    let installed: std::collections::HashSet<u64> =
-        app.meta_cache.values().filter_map(|r| r.mod_id).collect();
-    // Every downloaded archive's file id, from the sidecars.
+    // Nexus mod ids are per GAME, so a bare id is ambiguous across games - and a
+    // collection may legitimately pull a member from another game's page (an SE
+    // collection using an LE asset). `meta.ini` records the game by its SHORT
+    // name ("SkyrimSE") while a collection names the DOMAIN
+    // ("skyrimspecialedition"), so the two are translated through the game
+    // definitions rather than compared as strings.
+    let short_for_domain = |domain: &str| -> Option<&'static str> {
+        eidos_gamedef::all()
+            .iter()
+            .find(|d| d.nexus_game.eq_ignore_ascii_case(domain))
+            .map(|d| d.short_name)
+    };
+    // Installed mods by Nexus id, with the game and version they record. Both
+    // are OPTIONAL in a `meta.ini` and frequently absent - MO2 omits them all
+    // the time - so an absent one means "unknown", never "no". Only a value that
+    // is present and different rules a match out.
+    let installed: std::collections::HashMap<u64, (Option<String>, Option<String>)> = app
+        .meta_cache
+        .values()
+        .filter_map(|r| Some((r.mod_id?, (r.game_name.clone(), r.version.clone()))))
+        .collect();
+
+    // A member counts as downloaded when the ARCHIVE is there and whole. The
+    // sidecar alone proves nothing: `eidos nxm` writes it before the first byte
+    // and deliberately leaves it behind after a failure, so a member flipped to
+    // "downloaded" instantly and stayed there after a download that died at 2%.
     let downloaded: std::collections::HashSet<u64> = match app.created.as_ref() {
         Some(inst) => std::fs::read_dir(inst.downloads_dir())
             .into_iter()
@@ -7712,7 +7735,12 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
             .flatten()
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|x| x == "meta"))
-            .filter_map(|p| eidos_instance::ModMeta::read(&p).file_id())
+            .filter_map(|p| {
+                let id = eidos_instance::ModMeta::read(&p).file_id()?;
+                let archive = p.with_extension("");
+                let partial = std::path::PathBuf::from(format!("{}.unfinished", archive.display()));
+                (archive.is_file() && !partial.exists()).then_some(id)
+            })
             .collect(),
         None => std::collections::HashSet::new(),
     };
@@ -7721,12 +7749,32 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         .mods
         .iter()
         .map(|m| {
-            if installed.contains(&m.mod_id) {
-                MemberState::Installed
-            } else if downloaded.contains(&m.file_id) {
-                MemberState::Downloaded
-            } else {
-                MemberState::Missing
+            // The member's own game, as `meta.ini` would spell it.
+            let want = short_for_domain(&m.domain);
+            let hit = installed.get(&m.mod_id).filter(|(have_game, _)| {
+                match (have_game.as_deref().filter(|g| !g.is_empty()), want) {
+                    // Both known: they must agree. This is the case that used to
+                    // report an LE-hosted member "installed" because an SE mod
+                    // happened to share its id.
+                    (Some(have), Some(want)) => have.eq_ignore_ascii_case(want),
+                    // Either side silent: not evidence of a mismatch.
+                    _ => true,
+                }
+            });
+            match hit {
+                // An empty version on either side is not a mismatch either:
+                // plenty of mods carry none, and inventing a warning out of a
+                // blank field is the same class of lie this pass is removing.
+                Some((_, have)) => {
+                    let have = have.clone().unwrap_or_default();
+                    if have.is_empty() || m.version.is_empty() || have == m.version {
+                        MemberState::Installed
+                    } else {
+                        MemberState::OtherVersion
+                    }
+                }
+                None if downloaded.contains(&m.file_id) => MemberState::Downloaded,
+                None => MemberState::Missing,
             }
         })
         .collect();

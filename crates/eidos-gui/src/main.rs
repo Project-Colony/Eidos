@@ -1038,9 +1038,16 @@ impl ExecutablesDialogState {
 /// One member of a collection, joined against what the instance already has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MemberState {
-    /// A mod with this Nexus id is in the mod list.
+    /// This mod, at the version the collection asks for, is in the mod list.
     Installed,
-    /// The exact file is in downloads/, ready to install.
+    /// The mod is installed, at a DIFFERENT version.
+    ///
+    /// Its own state because it is its own situation: the collection will not
+    /// play as its author built it, and "installed" said otherwise. A user with
+    /// an outdated copy of every member used to be told the whole collection was
+    /// already installed.
+    OtherVersion,
+    /// The archive is in `downloads/`, whole, ready to install.
     Downloaded,
     /// Neither. This is what the collection is asking you to get.
     Missing,
@@ -5529,6 +5536,59 @@ mod tests {
     }
 
     /// A collection state holding a revision built from the captured payload.
+    /// `mods` is (folder, mod id, extra `meta.ini` lines), `downloads` is the
+    /// file ids to leave a WHOLE archive for.
+    fn collection_app_with(
+        mods: &[(&str, u64, &str)],
+        downloads: &[u64],
+        partial: &[u64],
+    ) -> (App, PathBuf) {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for (name, mod_id, extra) in mods {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("meta.ini"),
+                format!("[General]\nmodid={mod_id}\n{extra}"),
+            )
+            .unwrap();
+        }
+        let dl = inst.downloads_dir();
+        fs::create_dir_all(&dl).unwrap();
+        for file_id in downloads.iter().chain(partial) {
+            fs::write(
+                dl.join(format!("a{file_id}.7z.meta")),
+                format!("[General]\nmodID=1\nfileID={file_id}\n"),
+            )
+            .unwrap();
+        }
+        // Whole: the archive is there and nothing is still arriving beside it.
+        for file_id in downloads {
+            fs::write(dl.join(format!("a{file_id}.7z")), b"x").unwrap();
+        }
+        // Interrupted: `eidos nxm` wrote the sidecar before the first byte and
+        // left it behind when the transfer died.
+        for file_id in partial {
+            fs::write(dl.join(format!("a{file_id}.7z.unfinished")), b"x").unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.mods = mods
+            .iter()
+            .map(|(n, _, _)| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.created = Some(inst);
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+        (app, root)
+    }
+
     fn collection_app(mods: &[(&str, u64)], downloads: &[u64]) -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
         let inst = Instance::portable(root.clone());
@@ -5624,6 +5684,67 @@ mod tests {
             "matched on the exact file id"
         );
         assert!(st[2..].iter().all(|s| *s == MemberState::Missing));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The three things the join used to get wrong, each of which told the user
+    /// something specific and false.
+    #[test]
+    fn the_join_does_not_claim_more_than_it_knows() {
+        let rev = captured_revision();
+        let (first, second) = (rev.mods[0].mod_id, rev.mods[1].file_id);
+        let want = rev.mods[0].version.clone();
+        assert!(!want.is_empty(), "the fixture must pin a version");
+
+        // (1) A mod id from ANOTHER game's page is not this member. Nexus ids
+        //     are per game, so a bare id is ambiguous across them.
+        let (mut app, root) = collection_app_with(
+            &[("Elsewhere", first, "gameName=Skyrim\n")],
+            &[],
+            &[second],
+        );
+        let mut state = |app: &mut App| {
+            app.collection = Some(CollectionState {
+                link: String::new(),
+                revision: Some(captured_revision()),
+                states: Vec::new(),
+                loading: false,
+                error: None,
+                confirm_fetch: false,
+                asked: std::collections::HashSet::new(),
+            });
+            recompute_collection_states(app);
+            app.collection.as_ref().unwrap().states.clone()
+        };
+        let st = state(&mut app);
+        assert_eq!(st[0], MemberState::Missing, "another game's mod id");
+        // (2) A sidecar beside an UNFINISHED transfer is not a download. It is
+        //     written before the first byte and survives a failure.
+        assert_eq!(st[1], MemberState::Missing, "the archive never arrived");
+        let _ = fs::remove_dir_all(&root);
+
+        // (3) An outdated copy is not the version the collection asks for.
+        let (mut app, root) = collection_app_with(
+            &[("Outdated", first, "gameName=SkyrimSE\nversion=0.0.1-old\n")],
+            &[],
+            &[],
+        );
+        let st = state(&mut app);
+        assert_eq!(st[0], MemberState::OtherVersion);
+        let _ = fs::remove_dir_all(&root);
+
+        // And the same mod, at the right version, on the right game, is installed.
+        let (mut app, root) = collection_app_with(
+            &[(
+                "Right",
+                first,
+                &format!("gameName=SkyrimSE\nversion={want}\n"),
+            )],
+            &[],
+            &[],
+        );
+        let st = state(&mut app);
+        assert_eq!(st[0], MemberState::Installed);
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -7,16 +7,51 @@ use eidos_instance::Instance;
 
 use crate::*;
 
-/// The instance a browser-initiated download should land in. The browser
-/// carries no instance context at all - this process is spawned by
-/// xdg-open - so the answer comes from the registry: the LAST instance the
-/// user actually used, when it belongs to one of the candidate games, then
-/// each candidate's known instances (portables first, per the registry's
-/// preference order), then the first candidate's global path as the
-/// create-on-demand fallback. Before the registry existed this hardwired
-/// `Instance::global`, which sent every download to the XDG folder no matter
-/// which portable instance the user was playing.
+/// The instance a browser-initiated download should land in.
+///
+/// `EIDOS_INSTANCE` first, when the caller set it. A link the user clicked in a
+/// browser carries no instance context - this process is spawned by xdg-open -
+/// but a link EIDOS ITSELF started does: the window sets the variable on the
+/// children it spawns to fetch a collection's members, and it means "this one,
+/// not whichever the registry happens to remember".
+///
+/// That was not honoured. The window set the variable, this function never read
+/// it, and every fetched archive went wherever `Registry::load` pointed - so
+/// with two instances of one game the download landed in the wrong one, the row
+/// stayed "missing" forever, and the two-click guard blocked a retry. The commit
+/// that claimed to fix this by setting the variable fixed nothing, because
+/// nothing was reading it.
+///
+/// Then the registry, as before: the LAST instance the user actually used, when
+/// it belongs to one of the candidate games, then each candidate's known
+/// instances (portables first, per the registry's preference order), then the
+/// first candidate's global path as the create-on-demand fallback.
 fn pick_instance<'a>(candidates: &[&'a DetectedGame]) -> (&'a DetectedGame, Instance) {
+    if let Some(pinned) = std::env::var_os("EIDOS_INSTANCE").filter(|v| !v.is_empty()) {
+        let root = std::path::PathBuf::from(&pinned);
+        // Self-describing or nothing: the manifest names the game, and a folder
+        // that cannot say which game it is for cannot be matched to a candidate.
+        if let Ok((inst, man)) = Instance::open_at(&root) {
+            if let Some(game) = candidates.iter().find(|g| g.def.id == man.game_id) {
+                return (game, inst);
+            }
+            eidos_log::warn!(
+                "EIDOS_INSTANCE points at a '{}' instance, but this link is for {}. \
+                 Ignoring it.",
+                man.game_id,
+                candidates
+                    .iter()
+                    .map(|g| g.def.id)
+                    .collect::<Vec<_>>()
+                    .join(" / ")
+            );
+        } else {
+            eidos_log::warn!(
+                "EIDOS_INSTANCE names '{}', which is not an instance folder. Ignoring it.",
+                root.display()
+            );
+        }
+    }
     let reg = eidos_instance::Registry::load();
     if let Some(last) = &reg.last {
         let inst = last.instance();
