@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Używanie Eidos
 
@@ -117,6 +117,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # na drugiej maszynie
 dlaczego, oraz ile miejsca to zajmie, niczego nie zapisując. `eidos unpack
 --info` robi to samo dla pliku, który już masz.
 
+Jeśli 7-Zip czegoś nie zdołał odczytać, archiwum i tak zostaje zapisane i
+nazwane - warto je mieć - ale `eidos pack` kończy się kodem **1** i mówi, czego
+brakuje. Niekompletna kopia nie jest sukcesem, a to polecenie ludzie stawiają
+przed `&&`.
+
 Plik `.eidos` to archiwum 7-Zip pod własną nazwą, co jest wyborem, a nie
 przebraniem: 7-Zip i tak jest wymagany, żeby w ogóle zainstalować mod, więc nie
 dokłada to żadnej zależności, a jeśli kiedyś stracisz Eidos, twoja kopia nadal
@@ -143,7 +148,7 @@ kompletny i taki nie jest.
 | Gra | Instancja moduje grę, której nie zawiera. Zainstaluj ją tam ze Steama. |
 | Narzędzia spoza instancji | xEdit, DynDOLOD i spółka to pliki wykonywalne obcych producentów, z własnymi instalatorami. W archiwum są **wymienione z nazwy**, więc rozpakowanie mówi ci dokładnie, których brakuje na nowej maszynie. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Zapisy maszyny, która zrobiła kopię. Zwłaszcza `prereqs.done` twierdziłby, że biblioteki środowiska uruchomieniowego są już zainstalowane w prefiksie, którego nie ma. |
-| `loot/` | Cache masterlisty, którą Eidos pobiera na nowo na żądanie. |
+| `loot/`, poza `userlist.yaml` | Cache masterlisty, którą Eidos pobiera na nowo na żądanie. Twoje własne reguły LOOT nie są cache'em - nikt ich nie pobiera na nowo - więc ten jeden plik jedzie razem z resztą. |
 | `.base/`, `.base-root/` | Puste punkty montowania, w których na czas sesji odkładane są własne pliki gry. |
 | Pliki zapisane w połowie | Wstrzymane pobieranie (`*.unfinished`), atomowy zapis w locie (`*.eidos-tmp*`). |
 | Dowiązania symboliczne | 7-Zip poszedłby za takim i skopiował to, na co ono wskazuje, co przy dowiązaniu bezwzględnym znaczy wciągnięcie obcego drzewa do twojej kopii. Zamiast tego są zgłaszane. |
@@ -159,6 +164,24 @@ Ten URL to podpisany odnośnik Nexusa: przestaje działać w ciągu godzin i nie
 `user_id` konta, które pobrało plik. Kopia powstaje po to, by dało się ją komuś
 przekazać, więc tego nie niesie. Wszystko, co pozwala odnaleźć pobranie na nowo
 - identyfikator moda, identyfikator pliku, wersja - zostaje.
+
+### W oknie
+
+Oba są w menu **File**: *Pack this instance...* oraz *Unpack a backup...*.
+Rozpakowanie jest też na ekranie powitalnym, pod listą instancji, bo maszyna,
+która potrzebuje go najbardziej, to ta, która nie ma jeszcze żadnej instancji.
+
+Okno pakowania pokazuje podgląd, zanim się do czegokolwiek zobowiąże: ile
+plików, jak dużych, ile z tego to `downloads/`, na ile mniej więcej wyjdzie
+archiwum i które narzędzia są wymienione z nazwy, ale nie niesione. Okno
+rozpakowania czyta manifest kopii w chwili, gdy wybierasz plik, więc potrafi
+powiedzieć, którą grę ona zawiera, kiedy powstała, gdzie leżała wcześniej i
+których jej narzędzi tutaj brakuje - zanim wskażesz mu folder.
+
+Oba działają na wątku roboczym z paskiem postępu, więc okno dalej odpowiada,
+kiedy pracują, a pasek na koniec staje się raportem. Pakowanie trzyma blokadę
+instancji przez cały czas: nic innego nie może dotknąć instancji, gdy jest
+czytana, i to właśnie czyni kopię migawką, a nie rozmazem.
 
 ### Co naprawia rozpakowanie
 

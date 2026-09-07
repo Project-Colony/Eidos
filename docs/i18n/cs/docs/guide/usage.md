@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Používání Eidosu
 
@@ -111,6 +111,10 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
 kolik místa to potřebuje, aniž by cokoli zapsal. `eidos unpack --info` udělá
 totéž pro soubor, který už máte.
 
+Pokud 7-Zip něco nedokázal přečíst, archiv se přesto zapíše a pojmenuje - stojí
+za to ho mít - ale `eidos pack` skončí s kódem **1** a řekne, co chybí. Neúplná
+záloha není úspěch a tohle je příkaz, který lidé dávají před `&&`.
+
 Soubor `.eidos` je archiv 7-Zip pod vlastním názvem, což je volba, ne
 přestrojení: 7-Zip je stejně potřeba už k tomu, aby šlo mód vůbec nainstalovat,
 takže to nepřidává žádnou závislost, a kdybyste o Eidos někdy přišli, vaše záloha
@@ -136,7 +140,7 @@ zjevně nedokončeného místo souboru `.eidos`, který vypadá kompletní a nen
 | Hra | Instance moduje hru, kterou sama neobsahuje. Nainstalujte si ji tam ze Steamu. |
 | Nástroje mimo instanci | xEdit, DynDOLOD a spol. jsou binárky třetích stran s vlastními instalátory. V archivu jsou **pojmenované**, takže vám rozbalení přesně řekne, které na novém stroji chybí. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Stopy po stroji, který zálohu vytvořil. `prereqs.done` by zvlášť tvrdil, že běhové knihovny už jsou nainstalované v prefixu, který tam není. |
-| `loot/` | Mezipaměť masterlistu, kterou si Eidos podle potřeby stáhne znovu. |
+| `loot/`, kromě `userlist.yaml` | Mezipaměť masterlistu, kterou si Eidos podle potřeby stáhne znovu. Vaše vlastní pravidla LOOT žádná mezipaměť nejsou - ta nikdo znovu nestahuje - takže tenhle jeden soubor jede s sebou. |
 | `.base/`, `.base-root/` | Prázdné body připojení, kam se během relace odkládají vlastní soubory hry. |
 | Napůl zapsané soubory | Pozastavené stahování (`*.unfinished`), probíhající atomický zápis (`*.eidos-tmp*`). |
 | Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se jen nahlásí. |
@@ -152,6 +156,24 @@ fungovat během několika hodin a nese `user_id` účtu, který soubor stáhl. Z
 se dělá proto, aby se dala předat někomu jinému, takže tohle s sebou nenese.
 Všechno, díky čemu je stažení znovu dohledatelné - id módu, id souboru, verze -
 zůstává.
+
+### V okně
+
+Obojí najdete v nabídce **File**: *Pack this instance...* a *Unpack a backup...*.
+Rozbalení je i na uvítací obrazovce, pod seznamem instancí, protože stroj, který
+ho potřebuje nejvíc, je ten, který zatím žádnou instanci nemá.
+
+Dialog balení nejdřív ukáže náhled, než se k čemukoli zaváže: kolik souborů, jak
+velkých, kolik z toho je `downloads/`, na kolik archiv zhruba vyjde a které
+nástroje jsou pojmenované, ale s sebou nejedou. Dialog rozbalení přečte manifest
+zálohy ve chvíli, kdy soubor zvolíte, takže vám dokáže říct, kterou hru obsahuje,
+kdy vznikla, kde dřív žila a které z jejích nástrojů tu chybí - ještě než mu
+dáte složku.
+
+Obojí běží v pracovním vlákně s ukazatelem průběhu, takže okno během práce dál
+odpovídá a z ukazatele se po dokončení stane zpráva o výsledku. Balení drží zámek
+instance po celý běh: dokud se instance čte, nesmí na ni sáhnout nic jiného,
+a právě proto je záloha snímek, a ne šmouha.
 
 ### Co rozbalení opraví
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Utiliser Eidos
 
@@ -124,6 +124,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # sur l'autre machine
 pas et pourquoi, et la place qu'il lui faut, sans rien écrire. `eidos unpack
 --info` fait la même chose pour un fichier que vous avez déjà.
 
+Si 7-Zip n'a pas pu lire quelque chose, l'archive est quand même écrite et
+nommée - elle vaut la peine d'être gardée - mais `eidos pack` sort avec le code
+**1** et dit ce qui manque. Une sauvegarde incomplète n'est pas un succès, et
+c'est une commande que les gens mettent devant un `&&`.
+
 Un fichier `.eidos` est une archive 7-Zip sous un nom à elle, ce qui est un choix
 plutôt qu'un déguisement : 7-Zip est déjà nécessaire pour installer un mod tout
 court, cela n'ajoute donc aucune dépendance, et si vous perdez un jour Eidos
@@ -151,7 +156,7 @@ inachevé plutôt qu'un fichier `.eidos` qui a l'air complet et ne l'est pas.
 | Le jeu | Une instance modifie un jeu qu'elle ne contient pas. Installez-le depuis Steam là-bas. |
 | Les outils hors de l'instance | xEdit, DynDOLOD et consorts sont des binaires tiers avec leurs propres installeurs. Ils sont **nommés** dans l'archive, si bien que le dépaquetage vous dit exactement lesquels manquent sur la nouvelle machine. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Des traces de la machine qui a fait la sauvegarde. `prereqs.done` en particulier prétendrait que les bibliothèques runtime sont déjà installées dans un préfixe qui n'est pas là. |
-| `loot/` | Un cache de masterlist qu'Eidos re-télécharge à la demande. |
+| `loot/`, sauf `userlist.yaml` | Un cache de masterlist qu'Eidos re-télécharge à la demande. Vos propres règles LOOT ne sont pas un cache - personne ne les re-télécharge - ce seul fichier fait donc le voyage. |
 | `.base/`, `.base-root/` | Des points de montage vides où les fichiers du jeu lui-même sont mis de côté pendant une session. |
 | Les fichiers à moitié écrits | Un téléchargement en pause (`*.unfinished`), une écriture atomique en cours (`*.eidos-tmp*`). |
 | Les liens symboliques | 7-Zip en suivrait un et copierait ce qu'il désigne, ce qui, pour un lien absolu, veut dire tirer une arborescence étrangère dans votre sauvegarde. Ils sont signalés à la place. |
@@ -168,6 +173,28 @@ fonctionner en quelques heures, et il porte le `user_id` du compte qui a
 téléchargé le fichier. Une sauvegarde est faite pour être remise à quelqu'un
 d'autre, elle ne transporte donc pas cela. Tout ce qui rend le téléchargement
 retrouvable - l'identifiant du mod, celui du fichier, la version - reste.
+
+### Dans la fenêtre
+
+Les deux sont dans le menu **File** : *Pack this instance...* et *Unpack a
+backup...*. Le dépaquetage est aussi sur l'écran d'accueil, sous la liste des
+instances, parce que la machine qui en a le plus besoin est celle qui n'a encore
+aucune instance.
+
+La boîte de dialogue Pack prévisualise avant de s'engager : combien de fichiers,
+quelle taille, quelle part de cela est `downloads/`, à peu près ce que fera
+l'archive, et quels outils sont nommés mais pas emportés. La boîte de dialogue
+Unpack lit le manifeste de la sauvegarde dès l'instant où vous choisissez le
+fichier, si bien qu'elle peut vous dire quel jeu elle contient, quand elle a été
+faite, où elle vivait et lesquels de ses outils manquent ici - avant que vous ne
+lui donniez un dossier.
+
+Les deux tournent sur un fil de travail avec une barre de progression, si bien
+que la fenêtre continue de répondre pendant qu'ils travaillent, et la barre
+devient le rapport quand ils ont fini. L'empaquetage garde le verrou de
+l'instance pendant toute la durée : rien d'autre ne peut toucher à l'instance
+pendant qu'elle est lue, et c'est ce qui fait de la sauvegarde un instantané
+plutôt qu'un flou.
 
 ### Ce que le dépaquetage répare
 

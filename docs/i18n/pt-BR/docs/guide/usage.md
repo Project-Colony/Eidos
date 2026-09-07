@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Usar o Eidos
 
@@ -119,6 +119,11 @@ O `eidos pack --dry-run` lista exatamente o que entraria, o que não entraria e
 por quê, e de quanto espaço precisa, sem escrever nada. O `eidos unpack --info`
 faz o mesmo para um arquivo que você já tem.
 
+Se o 7-Zip não conseguiu ler alguma coisa, o arquivo ainda é escrito e nomeado -
+vale a pena tê-lo - mas o `eidos pack` sai com **1** e diz o que está faltando.
+Um backup incompleto não é um sucesso, e este é um comando que as pessoas põem
+na frente de um `&&`.
+
 Um arquivo `.eidos` é um arquivo 7-Zip sob um nome próprio, o que é uma escolha e
 não um disfarce: o 7-Zip já é necessário para instalar qualquer mod, então isso
 não acrescenta dependência nenhuma, e se um dia você perder o Eidos o seu backup
@@ -145,7 +150,7 @@ parece completo e não é.
 | O jogo | Uma instância modifica um jogo que ela não contém. Instale-o pelo Steam do outro lado. |
 | Ferramentas fora da instância | xEdit, DynDOLOD e companhia são binários de terceiros com instaladores próprios. Eles são **nomeados** no arquivo, então desempacotar diz exatamente quais estão faltando na máquina nova. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Registros da máquina que fez o backup. O `prereqs.done`, em particular, alegaria que as bibliotecas de runtime já estão instaladas num prefixo que não está ali. |
-| `loot/` | Um cache da masterlist que o Eidos rebusca sob demanda. |
+| `loot/`, exceto `userlist.yaml` | Um cache da masterlist que o Eidos rebusca sob demanda. As suas próprias regras do LOOT não são um cache - ninguém rebusca essas - então esse arquivo vai junto. |
 | `.base/`, `.base-root/` | Pontos de montagem vazios onde os arquivos do próprio jogo ficam guardados durante uma sessão. |
 | Arquivos escritos pela metade | Um download pausado (`*.unfinished`), uma escrita atômica em curso (`*.eidos-tmp*`). |
 | Links simbólicos | O 7-Zip seguiria um e copiaria o que quer que ele aponte, o que para um link absoluto significa puxar uma árvore estranha para dentro do seu backup. Em vez disso, eles são reportados. |
@@ -161,6 +166,25 @@ Os registros de download (`downloads/*.meta`) entram com a linha `url=`
 poucas horas, e carrega o `user_id` da conta que baixou o arquivo. Um backup é
 feito para ser entregue a outra pessoa, então ele não leva isso. Tudo o que torna
 o download reencontrável - o id do mod, o id do arquivo, a versão - fica.
+
+### Na janela
+
+Ambos estão no menu **File**: *Pack this instance...* e *Unpack a backup...*.
+Desempacotar também está na tela de boas-vindas, embaixo da lista de instâncias,
+porque a máquina que mais precisa disso é a que ainda não tem instância nenhuma.
+
+O diálogo Pack mostra uma prévia antes de se comprometer: quantos arquivos, o
+tamanho deles, quanto disso é `downloads/`, mais ou menos quanto o arquivo vai
+dar, e quais ferramentas estão nomeadas mas não vão junto. O diálogo Unpack lê o
+manifesto do backup no momento em que você escolhe o arquivo, então ele consegue
+dizer qual jogo ele guarda, quando foi feito, onde ele morava e quais das
+ferramentas dele estão faltando aqui - antes de você lhe dar uma pasta.
+
+Ambos rodam numa thread de trabalho com uma barra de progresso, então a janela
+continua respondendo enquanto eles trabalham, e a barra vira o relatório quando
+eles terminam. Empacotar segura o lock da instância pela execução inteira: nada
+mais pode tocar na instância enquanto ela está sendo lida, que é o que faz do
+backup um instantâneo em vez de um borrão.
 
 ### O que o desempacotamento conserta
 

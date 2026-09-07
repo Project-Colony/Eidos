@@ -7039,14 +7039,22 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if app.transfer_job.is_some() {
                 return Task::none();
             }
+            // Checked BEFORE the dialog is taken. The button is disabled while
+            // the field is empty, so this is unreachable by clicking - and a
+            // handler that loses what the user typed on a path nobody can take
+            // is still a handler that loses it.
+            let empty = app
+                .pack
+                .as_ref()
+                .is_none_or(|d| d.dest.trim().is_empty());
+            if empty {
+                app.status = Some("Give the backup a file name first.".to_string());
+                return Task::none();
+            }
             let Some(d) = app.pack.take() else {
                 return Task::none();
             };
             let dest = std::path::PathBuf::from(d.dest.trim());
-            if dest.as_os_str().is_empty() {
-                app.status = Some("Give the backup a file name first.".to_string());
-                return Task::none();
-            }
             let opt = eidos_transfer::Options {
                 downloads: d.downloads,
                 level: d.level,

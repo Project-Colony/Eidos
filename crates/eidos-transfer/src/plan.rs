@@ -34,6 +34,10 @@ pub enum Why {
     /// A cache Eidos re-fetches on demand (the LOOT masterlist), which is also
     /// where the only symlinks in a typical instance live.
     Refetchable,
+    /// The same, on an instance where the one file in there that is NOT a cache
+    /// was found and kept. Its own variant so the report cannot read as "your
+    /// LOOT rules went with it".
+    RefetchableKeptRules,
     /// Written fresh by this backup.
     Regenerated,
     /// A half-written file: an atomic write in flight, or a paused download.
@@ -59,6 +63,9 @@ impl std::fmt::Display for Why {
             Why::Local => f.write_str("specific to this machine"),
             Why::Prefix => f.write_str("describes a Proton prefix the backup does not carry"),
             Why::Refetchable => f.write_str("a cache Eidos re-fetches"),
+            Why::RefetchableKeptRules => {
+                f.write_str("a cache Eidos re-fetches - your own userlist.yaml is kept")
+            }
             Why::Regenerated => f.write_str("written fresh by this backup"),
             Why::InFlight => f.write_str("half-written"),
             Why::ByRequest => f.write_str("left out on request"),
@@ -251,18 +258,17 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
                     // WROTE it. Those are their own LOOT rules, and dropping
                     // them is dropping hand-made work, so the one file rides
                     // along while the cache around it does not.
-                    if *why == Why::Refetchable && abs.join(name).join(USERLIST).is_file() {
+                    let mut why = why.clone();
+                    if why == Why::Refetchable && abs.join(name).join(USERLIST).is_file() {
                         out.files += 1;
                         contributes = true;
                         if let Ok(md) = fs::metadata(abs.join(name).join(USERLIST)) {
                             out.bytes += md.len();
                         }
                         out.entries.push(format!("{child}/{USERLIST}"));
+                        why = Why::RefetchableKeptRules;
                     }
-                    out.left.push(Left {
-                        path: child,
-                        why: why.clone(),
-                    });
+                    out.left.push(Left { path: child, why });
                     continue;
                 }
             }
@@ -553,6 +559,14 @@ mod tests {
             p.entries
         );
         assert!(!p.entries.iter().any(|e| e.contains("masterlist")));
+        // And the report must not read as "your LOOT rules went with it".
+        let why = p
+            .left
+            .iter()
+            .find(|l| l.path == "loot")
+            .map(|l| l.why.to_string())
+            .unwrap_or_default();
+        assert!(why.contains("userlist.yaml is kept"), "{why}");
         // And an instance that has never sorted still just skips the folder.
         let bare = tmp("userlist-none");
         let inst2 = instance(&bare);

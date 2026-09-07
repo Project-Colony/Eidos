@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Eidos gebruiken
 
@@ -116,6 +116,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # op de andere machine
 hoeveel ruimte het nodig heeft, zonder iets te schrijven. `eidos unpack --info`
 doet hetzelfde voor een bestand dat je al hebt.
 
+Als 7-Zip iets niet kon lezen, wordt het archief alsnog geschreven en van een
+naam voorzien - het is het waard om te hebben - maar `eidos pack` sluit af met
+**1** en zegt wat er ontbreekt. Een onvolledige back-up is geen succes, en dit is
+een opdracht die mensen vóór `&&` zetten.
+
 Een `.eidos`-bestand is een 7-Zip-archief onder een eigen naam, en dat is een
 keuze, geen vermomming: 7-Zip is toch al nodig om überhaupt een mod te
 installeren, dus dit voegt geen afhankelijkheid toe, en raak je Eidos ooit kwijt,
@@ -143,7 +148,7 @@ zodat een onderbroken pack iets zichtbaar onafs achterlaat in plaats van een
 | Het spel | Een instantie modt een spel dat ze niet bevat. Installeer het daarginds vanaf Steam. |
 | Tools buiten de instantie | xEdit, DynDOLOD en consorten zijn programma's van derden met hun eigen installatieprogramma's. Ze worden in het archief wel **benoemd**, dus bij het uitpakken hoor je precies welke er op de nieuwe machine ontbreken. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Verslagen van de machine die de back-up gemaakt heeft. `prereqs.done` zou in het bijzonder beweren dat de runtime-bibliotheken al geïnstalleerd zijn in een prefix dat er niet is. |
-| `loot/` | Een cache van de masterlist die Eidos op verzoek opnieuw ophaalt. |
+| `loot/`, behalve `userlist.yaml` | Een cache van de masterlist die Eidos op verzoek opnieuw ophaalt. Je eigen LOOT-regels zijn geen cache - niemand haalt die opnieuw op - dus dat ene bestand gaat mee. |
 | `.base/`, `.base-root/` | Lege koppelpunten waar de eigen bestanden van het spel tijdens een sessie gestald worden. |
 | Halfgeschreven bestanden | Een gepauzeerde download (`*.unfinished`), een atomaire schrijfactie onderweg (`*.eidos-tmp*`). |
 | Symbolische links | 7-Zip zou er een volgen en kopiëren waar hij naar wijst, wat bij een absolute link betekent dat er een vreemde boom je back-up in getrokken wordt. Ze worden in plaats daarvan gemeld. |
@@ -160,6 +165,26 @@ uren op te werken, en hij draagt het `user_id` van het account dat het bestand
 gedownload heeft. Een back-up is gemaakt om aan iemand anders gegeven te worden,
 dus draagt ze dat niet mee. Alles wat de download terugvindbaar maakt - het
 mod-id, het bestands-id, de versie - blijft.
+
+### In het venster
+
+Beide zitten in het menu **File**: *Pack this instance...* en
+*Unpack a backup...*. Uitpakken staat ook op het welkomscherm, onder de lijst
+met instanties, want de machine die het het hardst nodig heeft, is die zonder
+instanties.
+
+De Pack-dialoog toont een voorbeeld voordat ze zich vastlegt: hoeveel bestanden,
+hoe groot, hoeveel daarvan `downloads/` is, ruwweg waar het archief op uitkomt,
+en welke tools wel benoemd maar niet meegenomen worden. De Unpack-dialoog leest
+het manifest van de back-up zodra je het bestand kiest, zodat ze je kan vertellen
+welk spel erin zit, wanneer ze gemaakt is, waar ze vroeger stond en welke van
+haar tools hier ontbreken - voordat je haar een map geeft.
+
+Beide draaien op een werkthread met een voortgangsbalk, zodat het venster blijft
+antwoorden terwijl ze bezig zijn, en de balk wordt het verslag zodra ze klaar
+zijn. Packen houdt het slot van de instantie de hele run vast: niets anders mag
+de instantie aanraken terwijl ze gelezen wordt, en dat is wat de back-up een
+momentopname maakt in plaats van een veeg.
 
 ### Wat uitpakken repareert
 

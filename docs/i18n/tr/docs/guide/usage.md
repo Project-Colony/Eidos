@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Eidos kullanımı
 
@@ -115,6 +115,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # öteki makinede
 ve nedenini, bir de ne kadar yer gerektiğini tam olarak listeler.
 `eidos unpack --info`, elinizde zaten olan bir dosya için aynısını yapar.
 
+7-Zip bir şeyi okuyamadıysa arşiv yine de yazılır ve adlandırılır - elde
+olması iyidir - ama `eidos pack` **1** ile çıkar ve neyin eksik olduğunu
+söyler. Eksik bir yedek bir başarı değildir ve bu, insanların `&&` işaretinin
+önüne koyduğu bir komuttur.
+
 Bir `.eidos` dosyası, kendine ait bir ad altındaki bir 7-Zip arşividir; bu bir
 kılık değil, bir tercihtir: bir modu kurabilmek için zaten 7-Zip gerekiyor, yani
 bu hiçbir bağımlılık eklemez ve Eidos'u bir gün yitirseniz de yedeğiniz
@@ -141,7 +146,7 @@ yerine açıkça yarım kalmış bir şey bırakır.
 | Oyun | Bir örnek, içinde barındırmadığı bir oyunu modlar. Onu orada Steam'den kurun. |
 | Örneğin dışındaki araçlar | xEdit, DynDOLOD ve arkadaşları, kendi kurucuları olan üçüncü taraf ikili dosyalarıdır. Arşivde **adları geçer**, böylece açma işlemi yeni makinede hangilerinin eksik olduğunu tam olarak söyler. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Yedeği alan makinenin kayıtları. Özellikle `prereqs.done`, çalışma zamanı kitaplıklarının orada olmayan bir önekte zaten kurulu olduğunu iddia ederdi. |
-| `loot/` | Eidos'un gerektiğinde yeniden getirdiği bir masterlist önbelleği. |
+| `loot/`, `userlist.yaml` dışında | Eidos'un gerektiğinde yeniden getirdiği bir masterlist önbelleği. Kendi LOOT kurallarınız bir önbellek değildir - onları kimse yeniden getirmez - bu yüzden o tek dosya birlikte gelir. |
 | `.base/`, `.base-root/` | Oyunun kendi dosyalarının bir oturum boyunca saklandığı boş bağlama noktaları. |
 | Yarım yazılmış dosyalar | Duraklatılmış bir indirme (`*.unfinished`), yolda olan atomik bir yazma (`*.eidos-tmp*`). |
 | Sembolik bağlar | 7-Zip birini izler ve neyi gösteriyorsa onu kopyalardı; mutlak bir bağ için bu, yedeğinizin içine yabancı bir ağaç çekmek demektir. Onun yerine bildirilirler. |
@@ -157,6 +162,26 @@ girer. O URL imzalı bir Nexus bağlantısıdır: saatler içinde çalışmayı 
 dosyayı indiren hesabın `user_id`'sini taşır. Bir yedek başkasının eline
 verilmek üzere alınır, bu yüzden onu taşımaz. İndirmeyi yeniden bulunabilir
 kılan her şey - mod kimliği, dosya kimliği, sürüm - kalır.
+
+### Pencerede
+
+İkisi de **File** menüsündedir: *Pack this instance...* ve
+*Unpack a backup...*. Açma işlemi ayrıca karşılama ekranında, örneklerin
+listesinin altında da bulunur; çünkü ona en çok gereksinim duyan makine, henüz
+hiç örneği olmayandır.
+
+Pack iletişim kutusu, işe girişmeden önce önizler: kaç dosya, ne kadar büyük,
+bunun ne kadarı `downloads/`, arşivin kabaca ne tutacağı ve hangi araçların adı
+geçtiği halde taşınmadığı. Unpack iletişim kutusu, dosyayı seçtiğiniz anda
+yedeğin manifest'ini okur; böylece daha ona bir klasör vermeden hangi oyunu
+barındırdığını, ne zaman alındığını, eskiden nerede olduğunu ve araçlarından
+hangilerinin burada eksik olduğunu size söyleyebilir.
+
+İkisi de bir ilerleme çubuğuyla birlikte bir çalışan iş parçacığında koşar,
+böylece onlar çalışırken pencere yanıt vermeyi sürdürür ve bitirdiklerinde
+çubuk raporun kendisi olur. Paketleme, örnek kilidini bütün koşu boyunca
+tutar: örnek okunurken başka hiçbir şey ona dokunamaz, yedeği hareket halinde
+alınmış bulanık bir kare değil de bir anlık görüntü yapan da budur.
 
 ### Açma işleminin onardıkları
 

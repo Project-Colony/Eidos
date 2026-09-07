@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Usar Eidos
 
@@ -121,6 +121,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # en la otra máquina
 sitio hace falta, sin escribir nada. `eidos unpack --info` hace lo mismo con un
 fichero que ya tengas.
 
+Si 7-Zip no pudo leer algo, el archivo se escribe y se nombra igual - vale la
+pena tenerlo - pero `eidos pack` sale con **1** y dice qué falta. Una copia de
+seguridad incompleta no es un éxito, y ésta es una orden que la gente pone
+delante de `&&`.
+
 Un fichero `.eidos` es un archivo 7-Zip bajo un nombre propio, lo que es una
 elección y no un disfraz: 7-Zip ya hace falta para instalar un mod siquiera, así
 que esto no añade ninguna dependencia, y si algún día pierdes Eidos tu copia de
@@ -147,7 +152,7 @@ vez de un fichero `.eidos` que parece completo y no lo está.
 | El juego | Una instancia modea un juego que no contiene. Instálalo allí desde Steam. |
 | Las herramientas fuera de la instancia | xEdit, DynDOLOD y compañía son binarios de terceros con sus propios instaladores. Sí se **nombran** en el archivo, así que al desempaquetar sabes exactamente cuáles faltan en la máquina nueva. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Constancia de la máquina que hizo la copia. `prereqs.done` en particular afirmaría que las bibliotecas de runtime ya están instaladas en un prefijo que no existe ahí. |
-| `loot/` | Una caché de la masterlist que Eidos vuelve a descargar cuando hace falta. |
+| `loot/`, salvo `userlist.yaml` | Una caché de la masterlist que Eidos vuelve a descargar cuando hace falta. Tus propias reglas de LOOT no son una caché - eso no lo vuelve a descargar nadie - así que ese fichero sí viaja con ella. |
 | `.base/`, `.base-root/` | Puntos de montaje vacíos donde se guardan los propios archivos del juego durante una sesión. |
 | Ficheros a medio escribir | Una descarga en pausa (`*.unfinished`), una escritura atómica en curso (`*.eidos-tmp*`). |
 | Los enlaces simbólicos | 7-Zip seguiría uno y copiaría aquello a lo que apunta, lo que para un enlace absoluto significa arrastrar un árbol ajeno dentro de tu copia de seguridad. En vez de eso se informan. |
@@ -164,6 +169,26 @@ de horas y lleva el `user_id` de la cuenta que descargó el fichero. Una copia d
 seguridad está hecha para dársela a otra persona, así que no lleva eso. Todo lo
 que hace que la descarga se pueda volver a encontrar - el id del mod, el id del
 fichero, la versión - se queda.
+
+### En la ventana
+
+Ambas están en el menú **File**: *Pack this instance...* y *Unpack a backup...*.
+Desempaquetar está además en la pantalla de bienvenida, bajo la lista de
+instancias, porque la máquina que más lo necesita es la que todavía no tiene
+ninguna instancia.
+
+El diálogo de empaquetado enseña una vista previa antes de comprometerse: cuántos
+ficheros, cuánto ocupan, cuánto de eso es `downloads/`, en cuánto quedará más o
+menos el archivo y qué herramientas se nombran pero no se llevan. El diálogo de
+desempaquetado lee el manifiesto de la copia de seguridad en cuanto eliges el
+fichero, así que puede decirte qué juego contiene, cuándo se hizo, dónde vivía
+antes y cuáles de sus herramientas faltan aquí - antes de que le des una carpeta.
+
+Ambos se ejecutan en un hilo de trabajo con una barra de progreso, así que la
+ventana sigue respondiendo mientras trabajan, y la barra se convierte en el
+informe cuando terminan. Empaquetar mantiene el bloqueo de la instancia durante
+toda la ejecución: nada más puede tocar la instancia mientras se la lee, que es
+lo que hace de la copia de seguridad una instantánea y no un borrón.
 
 ### Qué repara el desempaquetado
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Eidos verwenden
 
@@ -121,6 +121,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # auf dem anderen Rechner
 wie viel Platz es braucht, ohne irgendetwas zu schreiben. `eidos unpack --info`
 tut dasselbe für eine Datei, die Sie bereits haben.
 
+Falls 7-Zip etwas nicht lesen konnte, wird das Archiv trotzdem geschrieben und
+benannt - es ist brauchbar -, aber `eidos pack` endet mit **1** und sagt, was
+fehlt. Eine unvollständige Sicherung ist kein Erfolg, und das ist ein Befehl,
+den Leute vor ein `&&` setzen.
+
 Eine `.eidos`-Datei ist ein 7-Zip-Archiv unter einem eigenen Namen, und das ist
 eine Entscheidung, keine Verkleidung: 7-Zip wird ohnehin gebraucht, um überhaupt
 eine Mod zu installieren, das fügt also keine Abhängigkeit hinzu, und sollten Sie
@@ -150,7 +155,7 @@ es nicht ist.
 | Das Spiel | Eine Instanz moddet ein Spiel, das sie nicht enthält. Installieren Sie es drüben aus Steam. |
 | Tools außerhalb der Instanz | xEdit, DynDOLOD und Konsorten sind fremde Programme mit eigenen Installern. Sie werden im Archiv **benannt**, sodass das Auspacken Ihnen genau sagt, welche auf dem neuen Rechner fehlen. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Aufzeichnungen der Maschine, die die Sicherung erstellt hat. `prereqs.done` würde insbesondere behaupten, die Runtime-Bibliotheken seien bereits in einem Präfix installiert, das gar nicht da ist. |
-| `loot/` | Ein Masterlist-Cache, den Eidos bei Bedarf neu holt. |
+| `loot/`, außer `userlist.yaml` | Ein Masterlist-Cache, den Eidos bei Bedarf neu holt. Ihre eigenen LOOT-Regeln sind kein Cache - die holt niemand neu -, also kommt diese eine Datei mit. |
 | `.base/`, `.base-root/` | Leere Mountpunkte, an denen die eigenen Dateien des Spiels während einer Sitzung verstaut werden. |
 | Halb geschriebene Dateien | Ein angehaltener Download (`*.unfinished`), ein atomares Schreiben im Flug (`*.eidos-tmp*`). |
 | Symbolische Links | 7-Zip würde einem folgen und kopieren, worauf er zeigt, was bei einem absoluten Link heißt, einen fremden Baum in Ihre Sicherung zu ziehen. Sie werden stattdessen gemeldet. |
@@ -167,6 +172,27 @@ Stunden auf zu funktionieren, und er trägt die `user_id` des Kontos, das die
 Datei heruntergeladen hat. Eine Sicherung ist dazu da, jemand anderem gegeben zu
 werden, also trägt sie das nicht mit. Alles, was den Download wiederauffindbar
 macht - die Mod-ID, die Datei-ID, die Version - bleibt drin.
+
+### Im Fenster
+
+Beides steckt im **File**-Menü: *Pack this instance...* und *Unpack a backup...*.
+Das Auspacken liegt außerdem auf dem Willkommensbildschirm, unter der Liste der
+Instanzen, weil der Rechner, der es am nötigsten hat, derjenige ohne jede
+Instanz ist.
+
+Der Pack-Dialog zeigt eine Vorschau, bevor er sich festlegt: wie viele Dateien,
+wie groß, wie viel davon `downloads/` ist, worauf das Archiv ungefähr
+hinausläuft und welche Tools benannt, aber nicht mitgenommen werden. Der
+Unpack-Dialog liest das Manifest der Sicherung in dem Moment, in dem Sie die
+Datei auswählen, und kann Ihnen daher sagen, welches Spiel sie enthält, wann
+sie erstellt wurde, wo sie früher lag und welche ihrer Tools hier fehlen - bevor
+Sie ihm einen Ordner geben.
+
+Beide laufen auf einem Worker-Thread mit Fortschrittsbalken, sodass das Fenster
+weiter reagiert, während sie arbeiten, und der Balken wird zum Bericht, wenn sie
+fertig sind. Das Packen hält die Sperre der Instanz über den ganzen Lauf: nichts
+sonst darf die Instanz anfassen, während sie gelesen wird, und genau das macht
+die Sicherung zu einer Momentaufnahme statt zu einer Schliere.
 
 ### Was das Auspacken repariert
 

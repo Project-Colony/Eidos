@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=170be1e9e02bf39934971713ceac34e95e769d83 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
 
 # Usare Eidos
 
@@ -121,6 +121,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # sull'altra macchina
 perché, e quanto spazio serve, senza scrivere niente. `eidos unpack --info` fa
 lo stesso per un file che hai già.
 
+Se 7-Zip non è riuscito a leggere qualcosa, l'archivio viene comunque scritto e
+rinominato - vale la pena averlo - ma `eidos pack` esce con **1** e dice cosa
+manca. Una copia di sicurezza incompleta non è un successo, e questo è un
+comando che la gente mette davanti a un `&&`.
+
 Un file `.eidos` è un archivio 7-Zip sotto un nome tutto suo, cosa che è una
 scelta e non un travestimento: 7-Zip serve già per installare una mod, quindi
 questo non aggiunge nessuna dipendenza, e se un giorno perdi Eidos la tua copia
@@ -148,7 +153,7 @@ palesemente incompleto invece di un file `.eidos` che sembra completo e non lo
 | Il gioco | Un'istanza modda un gioco che non contiene. Installalo da Steam di là. |
 | Gli strumenti fuori dall'istanza | xEdit, DynDOLOD e compagnia sono binari di terze parti con i propri installatori. Nell'archivio sono **nominati**, così lo spacchettamento ti dice esattamente quali mancano sulla macchina nuova. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Registrazioni della macchina che ha fatto la copia. `prereqs.done` in particolare sosterrebbe che le librerie di runtime sono già installate in un prefisso che non c'è. |
-| `loot/` | Una cache della masterlist che Eidos riscarica su richiesta. |
+| `loot/`, tranne `userlist.yaml` | Una cache della masterlist che Eidos riscarica su richiesta. Le tue regole LOOT non sono una cache - quelle non le riscarica nessuno - quindi quel file viaggia insieme. |
 | `.base/`, `.base-root/` | Punti di mount vuoti dove i file del gioco stesso vengono messi da parte durante una sessione. |
 | File scritti a metà | Un download in pausa (`*.unfinished`), una scrittura atomica ancora in corso (`*.eidos-tmp*`). |
 | Collegamenti simbolici | 7-Zip ne seguirebbe uno e copierebbe quello a cui punta, cosa che per un link assoluto significa tirarsi dentro la copia un albero estraneo. Vengono invece segnalati. |
@@ -165,6 +170,27 @@ di poche ore e si porta dietro lo `user_id` dell'account che ha scaricato il
 file. Una copia di sicurezza è fatta per essere passata a qualcun altro, quindi
 quello non se lo porta. Tutto ciò che rende il download ritrovabile - l'id della
 mod, l'id del file, la versione - resta.
+
+### Nella finestra
+
+Entrambi stanno nel menu **File**: *Pack this instance...* e *Unpack a
+backup...*. Lo spacchettamento sta anche sulla schermata di benvenuto, sotto
+l'elenco delle istanze, perché la macchina che ne ha più bisogno è quella che
+non ha ancora nessuna istanza.
+
+La finestra di dialogo Pack mostra un'anteprima prima di impegnarsi: quanti
+file, quanto occupano, quanta parte di questo è `downloads/`, all'incirca a
+quanto verrà l'archivio e quali strumenti sono nominati ma non portati dentro.
+La finestra di dialogo Unpack legge il manifest della copia nel momento stesso
+in cui scegli il file, così può dirti quale gioco contiene, quando è stata
+fatta, dove stava prima e quali dei suoi strumenti mancano qui - prima che tu le
+dia una cartella.
+
+Entrambi girano su un thread di lavoro con una barra di avanzamento, così la
+finestra continua a rispondere mentre lavorano, e alla fine la barra diventa il
+resoconto. L'impacchettamento tiene il lock dell'istanza per tutta la durata:
+nient'altro può toccare l'istanza mentre viene letta, ed è questo che rende la
+copia un'istantanea e non una sbavatura.
 
 ### Cosa ripara lo spacchettamento
 

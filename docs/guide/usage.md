@@ -109,6 +109,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
 and how much room it needs, without writing anything. `eidos unpack --info` does
 the same for a file you already have.
 
+If 7-Zip could not read something, the archive is still written and named - it
+is worth having - but `eidos pack` exits **1** and says what is missing. An
+incomplete backup is not a success, and this is a command people put in front of
+`&&`.
+
 A `.eidos` file is a 7-Zip archive under a name of its own, which is a choice
 rather than a disguise: 7-Zip is already required to install a mod at all, so
 this adds no dependency, and if you ever lose Eidos your backup still opens in
@@ -134,7 +139,7 @@ complete and is not.
 | The game | An instance mods a game it does not contain. Install it from Steam over there. |
 | Tools outside the instance | xEdit, DynDOLOD and friends are third-party binaries with their own installers. They are **named** in the archive, so unpacking tells you exactly which ones are missing on the new machine. |
 | `logs/`, `.eidos.lock`, `prereqs.done`, `prereqs.log` | Records of the machine that made the backup. `prereqs.done` in particular would claim the runtime libraries are already installed in a prefix that is not there. |
-| `loot/` | A masterlist cache Eidos re-fetches on demand. |
+| `loot/`, except `userlist.yaml` | A masterlist cache Eidos re-fetches on demand. Your own LOOT rules are not a cache - nobody re-fetches those - so that one file rides along. |
 | `.base/`, `.base-root/` | Empty mountpoints where the game's own files are stashed during a session. |
 | Half-written files | A paused download (`*.unfinished`), an atomic write in flight (`*.eidos-tmp*`). |
 | Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead. |
@@ -149,6 +154,24 @@ That URL is a signed Nexus link: it stops working within hours, and it carries
 the `user_id` of the account that downloaded the file. A backup is made to be
 handed to somebody else, so it does not carry that. Everything that makes the
 download re-findable - the mod id, the file id, the version - stays.
+
+### In the window
+
+Both are in the **File** menu: *Pack this instance...* and *Unpack a backup...*.
+Unpacking is also on the welcome screen, under the list of instances, because
+the machine that needs it most is the one that has no instances yet.
+
+The Pack dialog previews before it commits: how many files, how big, how much of
+that is `downloads/`, roughly what the archive will come to, and which tools are
+named but not carried. The Unpack dialog reads the backup's manifest the moment
+you choose the file, so it can tell you which game it holds, when it was made,
+where it used to live and which of its tools are missing here - before you give
+it a folder.
+
+Both run on a worker thread with a progress bar, so the window keeps answering
+while they work, and the bar becomes the report when they finish. Packing holds
+the instance lock for the whole run: nothing else may touch the instance while
+it is being read, which is what makes the backup a snapshot rather than a smear.
 
 ### What unpacking repairs
 
