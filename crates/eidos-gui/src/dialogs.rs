@@ -2468,6 +2468,14 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 .size(12.0)
                 .width(Length::Fill),
             );
+        // The real action. It sits ahead of "fetch missing" because fetching is
+        // now a step INSIDE it rather than a thing to do instead of it.
+        summary = summary.push(
+            button(text("Install this collection").size(11.0))
+                .padding([3, 10])
+                .style(button::primary)
+                .on_press(Message::CollectionInstall),
+        );
         if missing > 0 {
             let label = if state.confirm_fetch {
                 "Click again to start them".to_string()
@@ -2559,10 +2567,13 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
 
     card = card.push(
         text(
-            "Eidos reads a collection; it does not install one. Its mods are ordinary Nexus \
-             files, so without the site's own download button only a premium account can fetch \
-             them - and the load order rules, FOMOD answers and patches a collection carries are \
-             not applied here. Open takes you to the exact file the collection pins.",
+            "Installing reads the collection's own recipe - the install order, the answers its \
+             author gave each mod's installer, the deployment order and its LOOT rules - and \
+             applies them. What it cannot do for you is fetch the member mods on a free Nexus \
+             account: those need the site's own download button, and the report names each one \
+             with its page. Binary patches and bundled members are not applied yet, and the \
+             report says so rather than passing over it. Open takes you to the exact file the \
+             collection pins.",
         )
         .size(10.0),
     );

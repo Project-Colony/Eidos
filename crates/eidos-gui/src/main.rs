@@ -870,6 +870,8 @@ enum Message {
     /// Open a URL in the user's browser (LOOT advice links in the report).
     OpenUrl(String),
     // ---- move an instance to another machine (eidos pack / eidos unpack) ----
+    /// Install the collection the pane is showing, on a worker thread.
+    CollectionInstall,
     /// Open the Pack dialog, which previews what would go into the file.
     ShowPackDialog,
     ClosePackDialog,
@@ -2302,6 +2304,10 @@ struct UnpackDialogState {
 enum TransferKind {
     Pack,
     Unpack,
+    /// Installing a Nexus collection. In the same slot as the other two because
+    /// they are all minutes of archive work on one instance, and running two at
+    /// once would only make each slower.
+    Collection,
 }
 
 /// A pack or an unpack running on a worker thread.
@@ -8257,6 +8263,35 @@ mod tests {
         // Pack acts ON an instance, so it says so instead of opening onto one.
         let _ = update_inner(&mut app, Message::ShowPackDialog);
         assert!(app.pack.is_none());
+        assert!(app.status.unwrap_or_default().contains("instance"));
+    }
+
+    /// A collection install is the third long job, and it shares the one slot
+    /// the other two use - they are all minutes of archive work on one instance.
+    #[test]
+    fn a_collection_install_uses_the_same_single_job_slot() {
+        let mut app = nav_app(&[]);
+        app.transfer_job = Some(fake_transfer(TransferKind::Collection, None));
+        assert!(anim::needs_frames(&app), "it must get frames like the others");
+        // And nothing else may start beside it.
+        let _ = update_inner(&mut app, Message::ShowUnpackDialog);
+        assert!(app.unpack.is_none());
+        let _ = update_inner(&mut app, Message::CollectionInstall);
+        assert!(
+            app.status.clone().unwrap_or_default().contains("already"),
+            "{:?}",
+            app.status
+        );
+    }
+
+    /// Installing a collection acts ON an instance, so with none open it says so
+    /// rather than starting a worker with nowhere to put anything.
+    #[test]
+    fn installing_a_collection_needs_an_instance() {
+        let mut app = nav_app(&[]);
+        assert!(app.created.is_none());
+        let _ = update_inner(&mut app, Message::CollectionInstall);
+        assert!(app.transfer_job.is_none());
         assert!(app.status.unwrap_or_default().contains("instance"));
     }
 

@@ -172,6 +172,152 @@ fn pack_on_worker(
     ))
 }
 
+/// Install a Nexus collection on a worker thread.
+///
+/// The same three-Arc handshake as the other two long jobs, and the same reason:
+/// a 200-mod collection is hours, and doing it inside `update()` would be hours
+/// of a window the compositor calls dead.
+fn spawn_collection(
+    inst: Instance,
+    game: eidos_games::DetectedGame,
+    game_id: String,
+    link: String,
+) -> crate::TransferJob {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+    use std::sync::{Arc, Mutex};
+    let percent = Arc::new(AtomicU8::new(0));
+    let outcome = Arc::new(Mutex::new(None));
+    let done = Arc::new(AtomicBool::new(false));
+    let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
+    let target = inst.root.clone();
+    std::thread::spawn(move || {
+        let r = collection_on_worker(&inst, &game, &game_id, &link, &p);
+        if let Ok(mut slot) = o.lock() {
+            *slot = Some(r);
+        }
+        d.store(true, Ordering::SeqCst);
+    });
+    crate::TransferJob {
+        kind: crate::TransferKind::Collection,
+        title: "Installing a collection".to_string(),
+        target,
+        percent,
+        outcome,
+        done,
+        finished: None,
+    }
+}
+
+fn collection_on_worker(
+    inst: &Instance,
+    game: &eidos_games::DetectedGame,
+    game_id: &str,
+    link: &str,
+    percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
+) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    let nexus = eidos_nexus::Nexus::connect()?;
+    let want = match eidos_nexus::NxmLink::parse(link) {
+        Ok(eidos_nexus::NxmLink::Collection(c)) => c,
+        _ => return Err("that is not a collection link".to_string()),
+    };
+    let rev = nexus.collection_revision(&want)?;
+    // The lock is taken HERE, on the thread that will drop it: it is keyed by
+    // ThreadId, so one taken on the window's thread would leak its entry and
+    // wedge the instance for the rest of the session.
+    let _lock = inst
+        .try_lock("the Eidos window (installing a collection)")
+        .map_err(|e| format!("Cannot install now: {e}."))?;
+    let dir = inst
+        .root
+        .join("collections")
+        .join(format!("{}-{}", rev.slug, rev.revision_number));
+    let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
+    let read = eidos_collections::read(&manifest)?;
+    let c = &read.collection;
+
+    let state_path =
+        eidos_collections::state::InstallState::path(&inst.root, &rev.slug, rev.revision_number);
+    let mut state = std::fs::read_to_string(&state_path)
+        .ok()
+        .and_then(|t| eidos_collections::state::InstallState::from_json(&t))
+        .unwrap_or(eidos_collections::state::InstallState {
+            slug: rev.slug.clone(),
+            revision: rev.revision_number,
+            game_domain: rev.game_domain.clone(),
+            ..Default::default()
+        });
+
+    let total = c.mods.len().max(1);
+    let mut say = |_line: String| {};
+    let mut hooks = eidos_collections::driver::RealHooks {
+        nexus: &nexus,
+        inst,
+        game,
+        game_id: game_id.to_string(),
+        say: &mut say,
+    };
+    // The bar counts members reached, which is the only honest measure here: a
+    // collection that is half skipped still moves, and 7-Zip's own percentage
+    // would restart on every single member.
+    let seen = std::sync::atomic::AtomicUsize::new(0);
+    let mut counting = CountingHooks {
+        inner: &mut hooks,
+        seen: &seen,
+        total,
+        percent,
+    };
+    let mut save = |s: &eidos_collections::state::InstallState| {
+        if let Some(d) = state_path.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(&state_path, s.to_json());
+    };
+    let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
+    report.unknown_sections = read.unknown_sections.clone();
+    eidos_collections::driver::apply_ordering(inst, c, &state, &mut report);
+    eidos_collections::driver::apply_plugin_rules(inst, game, c, &mut report);
+    eidos_collections::driver::apply_ini_tweaks(inst, &dir, c, &mut report);
+    percent.store(100, Ordering::SeqCst);
+
+    let text = report.render();
+    // A collection that is not complete is not an error - it is waiting for the
+    // user to fetch what a free account cannot. But it must not read as success.
+    if report.is_complete() && report.is_faithful() {
+        Ok(text)
+    } else {
+        Err(text)
+    }
+}
+
+/// Wraps the real hooks to drive the progress bar off members reached.
+struct CountingHooks<'a> {
+    inner: &'a mut dyn eidos_collections::install::Hooks,
+    seen: &'a std::sync::atomic::AtomicUsize,
+    total: usize,
+    percent: &'a std::sync::Arc<std::sync::atomic::AtomicU8>,
+}
+
+impl eidos_collections::install::Hooks for CountingHooks<'_> {
+    fn obtain(&mut self, m: &eidos_collections::manifest::Mod) -> eidos_collections::install::Obtained {
+        self.inner.obtain(m)
+    }
+    fn install(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+        a: &std::path::Path,
+    ) -> eidos_collections::install::Installed {
+        self.inner.install(m, a)
+    }
+    fn progress(&mut self, done: usize, total: usize, member: &str) {
+        use std::sync::atomic::Ordering;
+        self.seen.store(done, Ordering::SeqCst);
+        let pct = ((done * 100) / self.total.max(1)).min(99) as u8;
+        self.percent.fetch_max(pct, Ordering::SeqCst);
+        self.inner.progress(done, total, member);
+    }
+}
+
 /// Put a backup back, on a worker thread.
 fn spawn_unpack(
     archive: std::path::PathBuf,
@@ -7219,6 +7365,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 ..eidos_transfer::Options::default()
             };
             app.transfer_job = Some(spawn_unpack(archive, dest, opt));
+        }
+        Message::CollectionInstall => {
+            // The busy check FIRST. When both are true it is the more specific
+            // answer, and pointing at the instance while a job is running on
+            // that very instance would send somebody the wrong way.
+            if app.transfer_job.is_some() {
+                app.status = Some("Something is already running on this instance.".to_string());
+                return Task::none();
+            }
+            let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned())
+            else {
+                app.status = Some("Open a game instance first.".to_string());
+                return Task::none();
+            };
+            let Some(link) = app.collection.as_ref().map(|c| c.link.clone()) else {
+                return Task::none();
+            };
+            let game_id = game.def.id.to_string();
+            app.collection = None;
+            app.transfer_job = Some(spawn_collection(inst, game, game_id, link));
         }
         Message::TransferPoll => {
             let Some(job) = app.transfer_job.as_ref() else {
