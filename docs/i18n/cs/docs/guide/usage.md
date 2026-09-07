@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Používání Eidosu
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -95,6 +96,67 @@ jmenný prostor místo uživatelského; módy se nasadí v obou případech stej
 
 Proč stará rada se `setcap` zmizela - a proč se FUSE passthrough dodává vypnutý -
 vysvětluje [troubleshooting.cs.md](troubleshooting.md#proč-je-passthrough-ve-výchozím-stavu-vypnutý).
+
+## Instalace kolekce z Nexusu
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+```
+
+V okně: vložte odkaz do **File -> Open a Nexus collection...** a stiskněte
+*Install this collection*.
+
+### Proč tohle není „stáhni tyhle módy"
+
+Kolekce je RECEPT, ne nákupní seznam, a z API Nexusu není vidět skoro nic
+z toho receptu. Pořadí instalace, odpovědi, které autor dal skriptovanému
+instalátoru každého módu, který mód vyhraje konflikt souboru, které pluginy se
+načtou kde, binární patche - to všechno žije v souboru `collection.json` uvnitř
+vlastního archivu kolekce. Stáhnout tytéž módy a nainstalovat je s jejich
+výchozími volbami vyrobí jinou hru.
+
+Eidos tedy archiv stáhne, přečte recept a použije jej:
+
+| Kolekce říká | Eidos udělá |
+| --- | --- |
+| `phase` | instaluje v tomto pořadí, volitelné členy jako poslední |
+| `choices` | přehraje autorovy odpovědi na každý FOMOD a řekne to, když nemůže |
+| `modRules` | přeuspořádá seznam módů tak, aby každý soubor vyhrál ten správný mód |
+| `plugins` / `pluginRules` | sloučí pravidla LOOT do vašeho userlistu a seřadí |
+| `INI Tweaks/` | nainstaluje je jako samostatný mód |
+| `tools` | řekne vám, které nástroje očekává; nic nevytváří |
+
+Stav se zapisuje do `<instance>/collections/<slug>-<revision>/state.json` po
+**každém** členovi, takže instalace přerušená na 147. členovi z 200 pokračuje od
+147. Spusťte tentýž příkaz znovu.
+
+### Co nebude předstírat
+
+**Bezplatný účet na Nexusu módy členů stáhnout nedokáže.** Nexus přes API
+bezplatným účtům odkazy ke stažení nevyrábí; každý soubor potřebuje vlastní
+tlačítko „Mod Manager Download" na webu. ARCHIV kolekce se na bezplatném účtu
+stáhne bez potíží - takže si celý recept přečtete - ale u každého člena se
+nahlásí přesná URL jeho stránky, abyste si jej stáhli sami. To je obchodní
+pravidlo Nexusu a žádné množství opakovaných pokusů se přes ně nedostane.
+
+Zatím se nepoužijí a ve zprávě se jmenují, místo aby se mlčky přešly: **binární
+patche** a členové, jejichž soubory cestují uvnitř archivu kolekce (`bundle`).
+U členů, u kterých kolekce čeká, že si je stáhnete ručně (`browse`, `manual`),
+se do zprávy přenesou vlastní pokyny autora.
+
+### Zpráva
+
+Smysl zprávy je v tom, že se slovu „nainstalováno" dá věřit. Člen, u kterého se
+nepodařilo přehrát všechny odpovědi instalátoru, je **nainstalovaný, ale ne tak,
+jak kolekce žádá** - má vlastní řádek, oddělený od úspěchů, kterým se navenek
+podobá, protože soubory na disku se od autorových liší. Vypíšou se i pravidla
+pořadí, která v kolekci nic nepojmenovala, módy chycené ve smyčce protichůdných
+pravidel, skupiny LOOT, které neexistují, a jakákoli část manifestu, které tato
+verze Eidosu nerozumí.
+
+Ta druhá možnost - něco takového zalogovat a prohlásit instalaci za hotovou - je
+přesně to, jak kolekce začne hrát špatně z důvodů, které nikdo nedokáže najít.
 
 ## Přesun instance na jiný stroj
 

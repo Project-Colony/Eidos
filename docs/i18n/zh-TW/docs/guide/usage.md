@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -85,6 +86,61 @@ setuid 輔助程式、沒有常駐程式,也沒有什麼權限要授予。
 舊的 `setcap` 建議為什麼消失了 - 以及 FUSE passthrough 為什麼出貨時就關著 - 在
 [troubleshooting.zh-TW.md](troubleshooting.md#為什麼-passthrough-預設關閉)
 有說明。
+
+## 安裝一份 Nexus 合集
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+```
+
+在視窗裡:把連結貼進 **File -> Open a Nexus collection...**,然後按
+*Install this collection*。
+
+### 這為什麼不是「下載這些模組」
+
+一份合集是一張「食譜」,不是一張購物清單,而且這張食譜幾乎沒有哪個部分能從 Nexus
+API 看得到。安裝順序、作者給每個模組的腳本安裝器的那些答案、檔案衝突時哪個模組
+勝出、哪些外掛載入到哪裡、那些二進位修補 - 全都住在合集自己的壓縮檔裡的一份
+`collection.json` 中。下載同樣那些模組、再用它們的預設選項安裝,做出來的是另一個
+遊戲。
+
+所以 Eidos 會下載那份壓縮檔,讀出食譜,然後把它套用上去:
+
+| 合集說的 | Eidos 做的 |
+| --- | --- |
+| `phase` | 依那個順序安裝,選用的成員排在最後 |
+| `choices` | 重播作者對每一個 FOMOD 給的答案,做不到時就直說 |
+| `modRules` | 重新排列模組清單,讓該贏的模組贏下每一個檔案 |
+| `plugins` / `pluginRules` | 把 LOOT 規則合併進你的 userlist 並排序 |
+| `INI Tweaks/` | 把它們裝成一個自成一格的模組 |
+| `tools` | 告訴你它預期哪些工具;什麼都不建立 |
+
+狀態會在**每一個**成員之後寫進
+`<instance>/collections/<slug>-<revision>/state.json`,所以一次在 200 個成員中的
+第 147 個被中斷的安裝,會從 147 接著跑。再執行一次同樣的命令就好。
+
+### 它不會假裝什麼
+
+**免費的 Nexus 帳號抓不到那些成員模組。** Nexus 不會透過 API 為免費帳號鑄出下載
+連結;每一個檔案都需要網站自己的「Mod Manager Download」按鈕。合集「壓縮檔」本身
+用免費帳號下載毫無問題 - 所以你讀得到整張食譜 - 但每一個成員都會連同它確切的頁面
+URL 一起回報,讓你自己去抓。那是 Nexus 的商業規則,重試再多次也繞不過去。
+
+還沒有被套用,而且會在報告裡被指名、而不是被略過的:**二進位修補**,以及那些檔案
+隨著合集壓縮檔一起走的成員(`bundle`)。合集預期你親手去抓的成員(`browse`、
+`manual`)會把作者自己的說明一路帶進報告裡。
+
+### 那份報告
+
+報告的重點,是讓「已安裝」值得信任。一個安裝器答案沒能全部重播完的成員,
+是**已安裝,但不是照合集要求的方式** - 它自成一行,和它表面上很像的那些成功項目分開,
+因為磁碟上的檔案和作者的不一樣。在合集裡沒有指到任何東西的排序規則、卡在一圈互相
+矛盾的規則裡的模組、根本不存在的 LOOT 群組,以及這個版本的 Eidos 看不懂的 manifest
+的任何部分,也全都會被列出來。
+
+另一種做法 - 把那類事情記進日誌,然後宣告安裝完成 - 正是一份合集後來玩起來不對、
+卻沒有人找得出原因的由來。
 
 ## 把一個實例搬到另一台機器
 

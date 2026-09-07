@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Eidos kullanımı
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını +
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
 eidos play skyrimse               # neyin bağlanacağını göster
 eidos play skyrimse -- <command>  # <command>'ı modlar oyunun üzerine bağlanmış halde çalıştır
+eidos collection skyrimse <link>  # bir Nexus koleksiyonunu yazarının kurduğu gibi kur
 eidos pack skyrimse backup.eidos  # bütün örnek tek bir dosyada, başka yere taşımak için
 eidos unpack backup.eidos <folder>   # öteki makinede geri koy
 ```
@@ -99,6 +100,69 @@ yerine düz bir bağlama ad alanı alır; modlar iki durumda da aynı biçimde y
 Eski `setcap` önerisinin neden ortadan kalktığı - ve FUSE passthrough'un neden
 kapalı geldiği - [troubleshooting.tr.md](troubleshooting.md#passthrough-neden-öntanımlı-olarak-kapalı)
 içinde anlatılıyor.
+
+## Bir Nexus koleksiyonu kurmak
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # onu oku ve ne olacağını söyle
+```
+
+Pencerede: bağlantıyı **File -> Open a Nexus collection...** içine yapıştırın ve
+*Install this collection*'a basın.
+
+### Bu neden "şu modları indir" değil
+
+Bir koleksiyon bir alışveriş listesi değil, bir TARİFTİR ve tarifin neredeyse
+hiçbir yanı Nexus API'sinden görünmez. Kurulum sırası, yazarın her modun betikli
+kurucusuna verdiği yanıtlar, bir dosya çakışmasını hangi modun kazandığı, hangi
+eklentilerin nereye yükleneceği, ikili yamalar - hepsi koleksiyonun kendi
+arşivinin içindeki bir `collection.json` dosyasında yaşar. Aynı modları indirip
+öntanımlı seçenekleriyle kurmak başka bir oyun üretir.
+
+Bu yüzden Eidos arşivi indirir, tarifi okur ve onu uygular:
+
+| Koleksiyon şunu der | Eidos şunu yapar |
+| --- | --- |
+| `phase` | o sırayla kurar, isteğe bağlı üyeler en sona |
+| `choices` | yazarın her FOMOD'a verdiği yanıtları yeniden oynatır, oynatamadığında da bunu söyler |
+| `modRules` | doğru modun her dosyayı kazanması için mod listesini yeniden sıralar |
+| `plugins` / `pluginRules` | LOOT kurallarını userlist'inize katar ve sıralar |
+| `INI Tweaks/` | onları kendi başına bir mod olarak kurar |
+| `tools` | hangi araçları beklediğini söyler; hiçbir şey oluşturmaz |
+
+Durum **her** üyeden sonra
+`<instance>/collections/<slug>-<revision>/state.json` dosyasına yazılır, yani
+200 üyenin 147'sinde yarıda kesilen bir kurulum 147'den devam eder. Aynı komutu
+yeniden çalıştırın.
+
+### Neyi varmış gibi göstermez
+
+**Ücretsiz bir Nexus hesabı üye modları getiremez.** Nexus, API üzerinden
+ücretsiz hesaplar için indirme bağlantısı üretmez; her dosya sitenin kendi "Mod
+Manager Download" düğmesini ister. Koleksiyon ARŞİVİ ücretsiz bir hesapta
+sorunsuz iner - yani bütün tarifi okuyabilirsiniz - ama her üye, kendiniz
+getirmeniz için tam sayfa URL'siyle birlikte raporlanır. Bu bir Nexus iş
+kuralıdır ve ne kadar yeniden denerseniz deneyin aşılmaz.
+
+Henüz uygulanmayan ve göz ardı edilmek yerine raporda adı geçenler: **ikili
+yamalar** ve dosyaları koleksiyon arşivinin içinde gelen üyeler (`bundle`).
+Koleksiyonun elle getirmenizi beklediği üyeler (`browse`, `manual`), yazarın
+kendi yönergelerini rapora taşır.
+
+### Rapor
+
+Raporun amacı "kuruldu"nun güvenilmeye değer olmasıdır. Kurucu yanıtlarının
+hepsi yeniden oynatılamayan bir üye **kurulmuştur ama koleksiyonun istediği
+biçimde değil** - yüzeysel olarak benzediği başarılardan ayrı, kendi satırında;
+çünkü diskteki dosyalar yazarınkilerden farklıdır. Koleksiyonda hiçbir şeye
+karşılık gelmeyen sıralama kuralları, birbiriyle çelişen kuralların döngüsüne
+yakalanan modlar, var olmayan LOOT grupları ve manifest'in bu Eidos sürümünün
+anlamadığı her parçası da listelenir.
+
+Alternatifi - böyle şeyleri günlüğe yazıp kurulumu bitmiş saymak - bir
+koleksiyonun, kimsenin bulamayacağı nedenlerle yanlış oynamaya başlamasının
+yoludur.
 
 ## Bir örneği başka bir makineye taşımak
 

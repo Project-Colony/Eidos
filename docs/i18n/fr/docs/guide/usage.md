@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Utiliser Eidos
 
@@ -19,6 +19,7 @@ eidos import skyrimse <mo2-profile>  # adopter l'ordre et l'état des plugins d'
 eidos sort skyrimse               # trier l'ordre de chargement des plugins avec LOOT
 eidos play skyrimse               # afficher ce qui serait monté
 eidos play skyrimse -- <command>  # exécuter <command> avec les mods montés sur le jeu
+eidos collection skyrimse <link>  # installer une collection Nexus comme son auteur l'a construite
 eidos pack skyrimse backup.eidos  # toute l'instance dans un seul fichier, pour la déplacer ailleurs
 eidos unpack backup.eidos <folder>   # la remettre en place sur l'autre machine
 ```
@@ -107,6 +108,72 @@ utilisateur ; le déploiement des mods est identique dans les deux cas.
 Pourquoi l'ancien conseil `setcap` a disparu - et pourquoi le passthrough FUSE
 est livré désactivé - est expliqué dans
 [troubleshooting.fr.md](troubleshooting.md#pourquoi-le-passthrough-est-désactivé-par-défaut).
+
+## Installer une collection Nexus
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # la lire et dire ce qui se passerait
+```
+
+Dans la fenêtre : collez le lien dans **File -> Open a Nexus collection...** et
+appuyez sur *Install this collection*.
+
+### Pourquoi ce n'est pas « télécharger ces mods »
+
+Une collection est une RECETTE, pas une liste de courses, et presque rien de
+cette recette n'est visible depuis l'API Nexus. L'ordre d'installation, les
+réponses que l'auteur a données à l'installeur scripté de chaque mod, quel mod
+gagne un conflit de fichiers, quels plugins se chargent où, les patchs
+binaires - tout cela vit dans un `collection.json` à l'intérieur de l'archive de
+la collection elle-même. Télécharger les mêmes mods et les installer avec leurs
+options par défaut produit un jeu différent.
+
+Eidos télécharge donc l'archive, lit la recette, et l'applique :
+
+| La collection dit | Eidos fait |
+| --- | --- |
+| `phase` | installe dans cet ordre, les membres facultatifs en dernier |
+| `choices` | rejoue les réponses de l'auteur à chaque FOMOD, et le dit quand il ne peut pas |
+| `modRules` | réordonne la liste de mods pour que le bon mod gagne chaque fichier |
+| `plugins` / `pluginRules` | fusionne les règles LOOT dans votre userlist et trie |
+| `INI Tweaks/` | les installe comme un mod à part entière |
+| `tools` | vous dit quels outils il attend ; n'en crée aucun |
+
+L'état est écrit dans `<instance>/collections/<slug>-<revision>/state.json` après
+**chaque** membre, si bien qu'une installation interrompue au membre 147 sur 200
+reprend à 147. Relancez la même commande.
+
+### Ce qu'il ne fera pas semblant de faire
+
+**Un compte Nexus gratuit ne peut pas récupérer les mods membres.** Nexus n'émet
+pas de liens de téléchargement pour les comptes gratuits via l'API ; chaque
+fichier exige le bouton « Mod Manager Download » du site lui-même. L'ARCHIVE de
+la collection se télécharge très bien avec un compte gratuit - vous pouvez donc
+lire toute la recette - mais chaque membre est signalé avec l'URL exacte de sa
+page pour que vous le récupériez vous-même. C'est une règle commerciale de Nexus,
+et aucune quantité de réessais n'en vient à bout.
+
+Pas encore appliqués, et nommés dans le rapport plutôt que passés sous silence :
+les **patchs binaires**, et les membres dont les fichiers voyagent à l'intérieur
+de l'archive de la collection (`bundle`). Les membres que la collection attend
+que vous récupériez à la main (`browse`, `manual`) transmettent jusque dans le
+rapport les instructions de l'auteur lui-même.
+
+### Le rapport
+
+Tout l'intérêt du rapport, c'est que « installé » vaille la peine d'être cru. Un
+membre dont les réponses d'installeur n'ont pas toutes pu être rejouées est
+**installé, mais pas comme la collection le demande** - sa propre ligne, séparée
+des succès auxquels il ressemble superficiellement, parce que les fichiers sur le
+disque diffèrent de ceux de l'auteur. Les règles d'ordre qui ne nommaient rien
+dans la collection, les mods pris dans une boucle de règles contradictoires, les
+groupes LOOT qui n'existent pas, et toute partie du manifeste que cette version
+d'Eidos ne comprend pas sont listés eux aussi.
+
+L'alternative - journaliser ce genre de choses et déclarer l'installation
+terminée - c'est ainsi qu'une collection en vient à mal tourner en jeu pour des
+raisons que personne n'arrive à trouver.
 
 ## Déplacer une instance vers une autre machine
 

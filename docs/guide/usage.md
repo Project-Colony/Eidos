@@ -16,6 +16,7 @@ eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + p
 eidos sort skyrimse               # LOOT-sort the plugin load order
 eidos play skyrimse               # show what would be mounted
 eidos play skyrimse -- <command>  # run <command> with the mods mounted over the game
+eidos collection skyrimse <link>  # install a Nexus collection the way its author built it
 eidos pack skyrimse backup.eidos  # the whole instance in one file, to move it elsewhere
 eidos unpack backup.eidos <folder>   # put it back on the other machine
 ```
@@ -93,6 +94,67 @@ instead of a user namespace; mods deploy identically either way.
 
 Why the old `setcap` advice is gone - and why FUSE passthrough ships off - is
 explained in [troubleshooting.md](troubleshooting.md#why-passthrough-is-off-by-default).
+
+## Installing a Nexus collection
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # read it and say what would happen
+```
+
+In the window: paste the link into **File -> Open a Nexus collection...** and
+press *Install this collection*.
+
+### Why this is not "download these mods"
+
+A collection is a RECIPE, not a shopping list, and almost none of the recipe is
+visible from the Nexus API. The install order, the answers the author gave each
+mod's scripted installer, which mod wins a file conflict, which plugins load
+where, the binary patches - all of it lives in a `collection.json` inside the
+collection's own archive. Downloading the same mods and installing them with
+their default options produces a different game.
+
+So Eidos downloads the archive, reads the recipe, and applies it:
+
+| The collection says | Eidos does |
+| --- | --- |
+| `phase` | installs in that order, optional members last |
+| `choices` | replays the author's answers to each FOMOD, and says so when it cannot |
+| `modRules` | reorders the mod list so the right mod wins each file |
+| `plugins` / `pluginRules` | merges the LOOT rules into your userlist and sorts |
+| `INI Tweaks/` | installs them as a mod of their own |
+| `tools` | tells you which tools it expects; creates nothing |
+
+The state is written to `<instance>/collections/<slug>-<revision>/state.json`
+after **every** member, so an install interrupted at member 147 of 200 continues
+from 147. Run the same command again.
+
+### What it will not pretend
+
+**A free Nexus account cannot fetch the member mods.** Nexus does not mint
+download links for free accounts through the API; every file needs the site's
+own "Mod Manager Download" button. The collection ARCHIVE downloads fine on a
+free account - so you can read the whole recipe - but each member is reported
+with its exact page URL for you to fetch yourself. That is a Nexus business
+rule, and no amount of retrying gets past it.
+
+Not applied yet, and named in the report rather than passed over: **binary
+patches**, and members whose files travel inside the collection archive
+(`bundle`). Members the collection expects you to fetch by hand (`browse`,
+`manual`) carry the author's own instructions through to the report.
+
+### The report
+
+The point of the report is that "installed" is worth trusting. A member whose
+installer answers could not all be replayed is **installed, but not the way the
+collection asks** - its own line, separate from the successes it superficially
+resembles, because the files on disk differ from the author's. Ordering rules
+that named nothing in the collection, mods caught in a loop of contradictory
+rules, LOOT groups that do not exist, and any part of the manifest this version
+of Eidos does not understand are all listed too.
+
+The alternative - logging that sort of thing and calling the install done - is
+how a collection comes to play wrong for reasons nobody can find.
 
 ## Moving an instance to another machine
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Eidos 사용하기
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # 기존 MO2 프로필의 순서 + 플러�
 eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
 eidos play skyrimse               # 무엇이 마운트될지 보기
 eidos play skyrimse -- <command>  # 게임 위에 모드를 마운트한 채 <command> 실행
+eidos collection skyrimse <link>  # Nexus 컬렉션을 제작자가 만든 그대로 설치하기
 eidos pack skyrimse backup.eidos  # 인스턴스 전체를 파일 하나로, 다른 곳으로 옮기려고
 eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 ```
@@ -95,6 +96,65 @@ Eidos는 완전히 rootless로 동작합니다. 비공개 user + mount 네임스
 예전의 `setcap` 안내가 사라진 이유와 FUSE 패스스루가 꺼진 채로 배포되는 이유는
 [troubleshooting.ko.md](troubleshooting.md#패스스루가-기본으로-꺼져-있는-이유)에
 설명되어 있습니다.
+
+## Nexus 컬렉션 설치하기
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # 읽어서 무슨 일이 일어날지 말해주기
+```
+
+창 안에서: 링크를 **File -> Open a Nexus collection...**에 붙여넣고 *Install this
+collection*을 누르세요.
+
+### 이것이 "이 모드들을 내려받기"가 아닌 이유
+
+컬렉션은 장바구니 목록이 아니라 **레시피**이고, 그 레시피의 거의 아무것도 Nexus
+API에서는 보이지 않습니다. 설치 순서, 모드마다의 스크립트 설치 프로그램에 제작자가
+준 답, 파일 충돌에서 어느 모드가 이기는지, 어느 플러그인이 어디에 로드되는지,
+바이너리 패치까지 - 전부 컬렉션 자신의 압축 파일 안 `collection.json`에 들어
+있습니다. 같은 모드들을 내려받아 기본 옵션으로 설치하면 다른 게임이 나옵니다.
+
+그래서 Eidos는 압축 파일을 내려받고, 레시피를 읽고, 그것을 적용합니다:
+
+| 컬렉션이 말하는 것 | Eidos가 하는 일 |
+| --- | --- |
+| `phase` | 그 순서대로 설치하고, 선택 구성 항목은 맨 마지막에 |
+| `choices` | 각 FOMOD에 제작자가 준 답을 재생하고, 그럴 수 없을 때는 그렇다고 말합니다 |
+| `modRules` | 각 파일에서 옳은 모드가 이기도록 모드 목록을 다시 정렬합니다 |
+| `plugins` / `pluginRules` | LOOT 규칙을 여러분의 userlist에 병합하고 정렬합니다 |
+| `INI Tweaks/` | 그것들을 그 자체로 하나의 모드로 설치합니다 |
+| `tools` | 어떤 도구를 기대하는지 알려줍니다; 아무것도 만들지 않습니다 |
+
+상태는 **모든** 구성 항목마다
+`<instance>/collections/<slug>-<revision>/state.json`에 쓰이므로, 200개 중
+147번째에서 끊긴 설치는 147번부터 이어집니다. 같은 명령을 다시 실행하세요.
+
+### 척하지 않는 것
+
+**무료 Nexus 계정으로는 구성 항목 모드들을 받아올 수 없습니다.** Nexus는 API를
+통해 무료 계정에는 내려받기 링크를 발급하지 않습니다; 파일마다 사이트 자체의 "Mod
+Manager Download" 버튼이 필요합니다. 컬렉션 **압축 파일**은 무료 계정에서도 잘
+내려받아지므로 - 그래서 레시피 전체를 읽을 수 있습니다 - 각 구성 항목은 여러분이
+직접 받아올 수 있도록 정확한 페이지 URL과 함께 보고됩니다. 이것은 Nexus의 사업
+규칙이고, 아무리 재시도해도 그것을 넘어설 수는 없습니다.
+
+아직 적용되지 않으며, 그냥 넘어가는 대신 보고서에 이름이 적히는 것: **바이너리
+패치**, 그리고 파일이 컬렉션 압축 파일 안에 실려 오는 구성 항목(`bundle`).
+컬렉션이 여러분더러 손으로 받아오라고 기대하는 구성 항목(`browse`, `manual`)은
+제작자 자신의 지침을 보고서까지 그대로 전달합니다.
+
+### 보고서
+
+보고서의 핵심은 "설치됨"이 믿을 값어치가 있다는 것입니다. 설치 프로그램 응답을
+전부 재생할 수는 없었던 구성 항목은 **설치되었지만, 컬렉션이 요구하는 방식은
+아님**입니다 - 겉보기에 닮은 성공들과 분리된 자기만의 줄로요, 디스크 위의 파일이
+제작자의 것과 다르기 때문입니다. 컬렉션 안의 아무것도 가리키지 못한 순서 규칙,
+서로 모순되는 규칙의 고리에 걸린 모드, 존재하지 않는 LOOT 그룹, 그리고 이 버전의
+Eidos가 이해하지 못하는 매니페스트의 어떤 부분이든 모두 함께 나열됩니다.
+
+그 대안은 - 그런 것을 로그에 적고 설치가 끝났다고 부르는 것은 - 컬렉션이 아무도
+찾아낼 수 없는 이유로 잘못 돌아가게 되는 경로입니다.
 
 ## 인스턴스를 다른 기계로 옮기기
 

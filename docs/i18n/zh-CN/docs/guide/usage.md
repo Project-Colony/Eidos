@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # 使用 Eidos
 
@@ -17,6 +17,7 @@ eidos import skyrimse <mo2-profile>  # 接管已有 MO2 配置档的顺序与插
 eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
 eidos play skyrimse               # 显示将会挂载什么
 eidos play skyrimse -- <command>  # 在模组盖住游戏的视图下运行 <command>
+eidos collection skyrimse <link>  # 按作者构建它的方式安装一个 Nexus 合集
 eidos pack skyrimse backup.eidos  # 整个实例装进一个文件,好搬到别处去
 eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 ```
@@ -83,6 +84,59 @@ Eidos 取的是普通的 mount 命名空间而不是 user 命名空间;两种方
 旧的 `setcap` 建议为什么被移除 - 以及 FUSE passthrough 为什么出厂就是关的 - 在
 [troubleshooting.zh-CN.md](troubleshooting.md#为什么-passthrough-默认关闭)
 里有解释。
+
+## 安装一个 Nexus 合集
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # 读一遍它,说出将会发生什么
+```
+
+在窗口里:把链接粘贴进 **File -> Open a Nexus collection...**,然后按下
+*Install this collection*。
+
+### 为什么这不是"把这些模组下载下来"
+
+一个合集是一份配方,不是一张购物清单,而这份配方几乎没有哪一部分是从 Nexus API 看得见
+的。安装顺序、作者给每个模组的脚本化安装器所填的答案、文件冲突时哪个模组胜出、哪些插件
+加载在哪里、二进制补丁 - 这一切都住在合集自己压缩包里的一个 `collection.json` 中。把
+同样的模组下载下来、用它们的默认选项装上,得到的是另一个游戏。
+
+所以 Eidos 下载那个压缩包,读这份配方,再把它施加下去:
+
+| 合集说 | Eidos 做 |
+| --- | --- |
+| `phase` | 按那个顺序安装,可选成员排在最后 |
+| `choices` | 回放作者对每个 FOMOD 的答案,做不到时如实说明 |
+| `modRules` | 重排模组列表,让该赢的模组赢下每个文件 |
+| `plugins` / `pluginRules` | 把 LOOT 规则并进你的 userlist 并排序 |
+| `INI Tweaks/` | 把它们作为一个独立的模组安装 |
+| `tools` | 告诉你它期待哪些工具;什么也不创建 |
+
+状态在**每一个**成员之后都写进
+`<instance>/collections/<slug>-<revision>/state.json`,所以一次在 200 个成员里停在第
+147 个的安装会从 147 接着来。再跑一遍同一条命令就行。
+
+### 它不会假装什么
+
+**免费的 Nexus 账号取不到成员模组。** Nexus 不通过 API 给免费账号签发下载链接;每一个
+文件都需要站点自己的 "Mod Manager Download" 按钮。合集的压缩包本身用免费账号下载没有
+问题 - 所以你能把整份配方读完 - 但每一个成员都会带着它确切的页面 URL 被报告出来,由你
+自己去取。这是 Nexus 的一条商业规则,重试多少次也绕不过去。
+
+尚未施加、并且在报告里被点名而不是被略过的:**二进制补丁**,以及那些文件随合集压缩包
+一起走的成员(`bundle`)。合集指望你手工去取的成员(`browse`、`manual`)会把作者自己
+的说明一路带进报告。
+
+### 那份报告
+
+报告的意义在于让"已安装"值得信任。一个安装器答案没能全部回放的成员是**已安装,但不是
+合集要求的那样** - 它单占一行,与它表面上很像的那些成功分开,因为磁盘上的文件和作者的
+不一样。在合集里什么也没点到的排序规则、卡在互相矛盾的规则环里的模组、并不存在的 LOOT
+分组,以及清单里这个版本的 Eidos 不理解的任何部分,也全都会被列出来。
+
+另一条路 - 把这类事情记进日志,然后宣布安装完成 - 正是一个合集最后跑歪、而原因谁也查
+不出来的由来。
 
 ## 把一个实例搬到另一台机器
 

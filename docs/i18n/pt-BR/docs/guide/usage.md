@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Usar o Eidos
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # adotar a ordem e o estado dos plugins de 
 eidos sort skyrimse               # ordenar a carga dos plugins com o LOOT
 eidos play skyrimse               # mostrar o que seria montado
 eidos play skyrimse -- <command>  # rodar <command> com os mods montados sobre o jogo
+eidos collection skyrimse <link>  # instalar uma coleção do Nexus do jeito que o autor dela a montou
 eidos pack skyrimse backup.eidos  # a instância inteira num arquivo só, para levá-la a outro lugar
 eidos unpack backup.eidos <folder>   # repô-la na outra máquina
 ```
@@ -103,6 +104,69 @@ jeito ou de outro.
 Por que o antigo conselho do `setcap` sumiu - e por que o passthrough FUSE vem
 desligado - está explicado em
 [troubleshooting.pt-BR.md](troubleshooting.md#por-que-o-passthrough-vem-desligado).
+
+## Instalar uma coleção do Nexus
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # lê-la e dizer o que aconteceria
+```
+
+Na janela: cole o link em **File -> Open a Nexus collection...** e aperte
+*Install this collection*.
+
+### Por que isso não é "baixar estes mods"
+
+Uma coleção é uma RECEITA, não uma lista de compras, e quase nada da receita
+fica visível pela API do Nexus. A ordem de instalação, as respostas que o autor
+deu ao instalador com script de cada mod, qual mod vence um conflito de arquivo,
+quais plugins carregam onde, os patches binários - tudo isso mora num
+`collection.json` dentro do arquivo da própria coleção. Baixar os mesmos mods e
+instalá-los com as opções padrão deles produz um jogo diferente.
+
+Então o Eidos baixa o arquivo, lê a receita e a aplica:
+
+| A coleção diz | O Eidos faz |
+| --- | --- |
+| `phase` | instala nessa ordem, os membros opcionais por último |
+| `choices` | repete as respostas do autor a cada FOMOD, e diz quando não consegue |
+| `modRules` | reordena a lista de mods para que o mod certo vença cada arquivo |
+| `plugins` / `pluginRules` | mescla as regras do LOOT na sua userlist e ordena |
+| `INI Tweaks/` | instala-os como um mod próprio |
+| `tools` | diz quais ferramentas ele espera; não cria nada |
+
+O estado é escrito em `<instance>/collections/<slug>-<revision>/state.json`
+depois de **cada** membro, então uma instalação interrompida no membro 147 de
+200 continua do 147. Rode o mesmo comando de novo.
+
+### O que ele não vai fingir
+
+**Uma conta gratuita do Nexus não consegue buscar os mods membros.** O Nexus não
+emite links de download para contas gratuitas pela API; todo arquivo precisa do
+botão "Mod Manager Download" do próprio site. O ARQUIVO da coleção baixa sem
+problema numa conta gratuita - então você pode ler a receita inteira - mas cada
+membro é reportado com a URL exata da página dele para você mesmo buscá-lo. Essa
+é uma regra de negócio do Nexus, e nenhuma quantidade de tentativas passa por
+cima dela.
+
+Ainda não aplicados, e nomeados no relatório em vez de deixados de lado:
+**patches binários**, e os membros cujos arquivos viajam dentro do arquivo da
+coleção (`bundle`). Os membros que a coleção espera que você busque à mão
+(`browse`, `manual`) levam as instruções do próprio autor até o relatório.
+
+### O relatório
+
+O ponto do relatório é que "instalado" mereça confiança. Um membro cujas
+respostas de instalador não puderam ser todas repetidas fica **instalado, mas
+não do jeito que a coleção pede** - numa linha própria, separada dos sucessos
+com que ele se parece superficialmente, porque os arquivos em disco diferem dos
+do autor. Regras de ordenação que não nomearam nada na coleção, mods presos num
+laço de regras contraditórias, grupos do LOOT que não existem, e qualquer parte
+do manifesto que esta versão do Eidos não entende também são listados.
+
+A alternativa - registrar esse tipo de coisa no log e dar a instalação por
+concluída - é como uma coleção acaba jogando errado por motivos que ninguém
+consegue achar.
 
 ## Mover uma instância para outra máquina
 

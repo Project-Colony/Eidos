@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Używanie Eidos
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # przejąć kolejność i stan wtyczek istn
 eidos sort skyrimse               # posortować kolejność wczytywania wtyczek LOOT-em
 eidos play skyrimse               # pokazać, co zostałoby zamontowane
 eidos play skyrimse -- <command>  # uruchomić <command> z modami zamontowanymi nad grą
+eidos collection skyrimse <link>  # zainstalować kolekcję Nexusa tak, jak zbudował ją jej autor
 eidos pack skyrimse backup.eidos  # cała instancja w jednym pliku, żeby przenieść ją gdzie indziej
 eidos unpack backup.eidos <folder>   # odtworzyć ją na drugiej maszynie
 ```
@@ -100,6 +101,68 @@ obu przypadkach.
 Dlaczego dawna rada z `setcap` zniknęła - i dlaczego passthrough FUSE jest
 dostarczany wyłączony - wyjaśnia
 [troubleshooting.pl.md](troubleshooting.md#dlaczego-passthrough-jest-domyślnie-wyłączony).
+
+## Instalowanie kolekcji Nexusa
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # odczytać ją i powiedzieć, co by się stało
+```
+
+W oknie: wklej odnośnik w **File -> Open a Nexus collection...** i naciśnij
+*Install this collection*.
+
+### Dlaczego to nie jest „pobierz te mody"
+
+Kolekcja to PRZEPIS, a nie lista zakupów, i prawie nic z tego przepisu nie jest
+widoczne przez API Nexusa. Kolejność instalacji, odpowiedzi, jakich autor udzielił
+skryptowemu instalatorowi każdego moda, to, który mod wygrywa konflikt plików,
+które wtyczki wczytują się gdzie, poprawki binarne - wszystko to leży w pliku
+`collection.json` wewnątrz własnego archiwum kolekcji. Pobranie tych samych modów
+i zainstalowanie ich z domyślnymi opcjami daje inną grę.
+
+Więc Eidos pobiera archiwum, czyta przepis i go stosuje:
+
+| Kolekcja mówi | Eidos robi |
+| --- | --- |
+| `phase` | instaluje w tej kolejności, członków opcjonalnych na końcu |
+| `choices` | odtwarza odpowiedzi autora dla każdego FOMOD-a, a gdy nie potrafi, mówi o tym |
+| `modRules` | przestawia listę modów tak, by właściwy mod wygrał każdy plik |
+| `plugins` / `pluginRules` | scala reguły LOOT z twoim plikiem userlist i sortuje |
+| `INI Tweaks/` | instaluje je jako osobny mod |
+| `tools` | mówi ci, jakich narzędzi oczekuje; nie tworzy żadnego |
+
+Stan zapisywany jest do `<instance>/collections/<slug>-<revision>/state.json` po
+**każdym** członku, więc instalacja przerwana na członku 147 z 200 ciągnie dalej
+od 147. Uruchom to samo polecenie ponownie.
+
+### Czego nie będzie udawać
+
+**Darmowe konto Nexusa nie pobierze modów wchodzących w skład kolekcji.** Nexus
+nie wystawia przez API odnośników do pobrania dla darmowych kont; każdy plik
+wymaga własnego przycisku „Mod Manager Download" w serwisie. ARCHIWUM kolekcji
+pobiera się na darmowym koncie bez przeszkód - więc możesz odczytać cały przepis
+- ale każdy członek jest zgłaszany wraz z dokładnym adresem swojej strony, żebyś
+pobrał go sam. To reguła biznesowa Nexusa i żadna liczba ponowień jej nie obejdzie.
+
+Jeszcze niestosowane, a wymienione z nazwy w raporcie zamiast pominięte:
+**poprawki binarne** oraz członkowie, których pliki podróżują wewnątrz archiwum
+kolekcji (`bundle`). Członkowie, których kolekcja każe pobrać ręcznie (`browse`,
+`manual`), niosą własne instrukcje autora aż do raportu.
+
+### Raport
+
+Sens raportu polega na tym, że „zainstalowany" jest wart zaufania. Członek, dla
+którego nie dało się odtworzyć wszystkich odpowiedzi instalatora, jest
+**zainstalowany, ale nie tak, jak każe kolekcja** - z własnym wierszem, oddzielnie
+od sukcesów, do których z pozoru jest podobny, bo pliki na dysku różnią się od
+tych u autora. Reguły kolejności, które nie nazwały niczego w kolekcji, mody
+uwięzione w pętli sprzecznych reguł, grupy LOOT, które nie istnieją, i każda
+część manifestu, której ta wersja Eidos nie rozumie, są wypisane tak samo.
+
+Alternatywa - zapisać coś takiego w logu i uznać instalację za zrobioną - to
+sposób, w jaki kolekcja zaczyna grać źle z powodów, których nikt nie potrafi
+znaleźć.
 
 ## Przeniesienie instancji na inną maszynę
 

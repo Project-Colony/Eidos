@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=46ad634368dc712808acd2f7916663f4b7b900a3 -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=54719b24df9c60a7be8fce47e6300a4bfb96c035 -->
 
 # Eidos gebruiken
 
@@ -18,6 +18,7 @@ eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaa
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
 eidos play skyrimse               # tonen wat er gekoppeld zou worden
 eidos play skyrimse -- <command>  # <command> draaien met de mods over het spel gekoppeld
+eidos collection skyrimse <link>  # een Nexus-collectie installeren zoals de auteur haar gebouwd heeft
 eidos pack skyrimse backup.eidos  # de hele instantie in één bestand, om ze elders heen te verhuizen
 eidos unpack backup.eidos <folder>   # zet ze terug op de andere machine
 ```
@@ -100,6 +101,72 @@ identiek uitgerold.
 Waarom het oude `setcap`-advies weg is - en waarom FUSE-passthrough uit
 geleverd wordt - wordt uitgelegd in
 [troubleshooting.nl.md](troubleshooting.md#waarom-passthrough-standaard-uit-staat).
+
+## Een Nexus-collectie installeren
+
+```sh
+eidos collection skyrimse nxm://skyrimspecialedition/collections/rqhcxy/revisions/latest
+eidos collection skyrimse rqhcxy --dry-run     # haar lezen en zeggen wat er zou gebeuren
+```
+
+In het venster: plak de link in **File -> Open a Nexus collection...** en druk op
+*Install this collection*.
+
+### Waarom dit geen "download deze mods" is
+
+Een collectie is een RECEPT, geen boodschappenlijstje, en bijna niets van dat
+recept is zichtbaar vanaf de Nexus-API. De installatievolgorde, de antwoorden die
+de auteur aan de gescripte installer van elke mod gaf, welke mod een
+bestandsconflict wint, welke plugins waar laden, de binaire patches - dat alles
+staat in een `collection.json` binnen het eigen archief van de collectie.
+Dezelfde mods downloaden en ze met hun standaardopties installeren levert een
+ander spel op.
+
+Dus downloadt Eidos het archief, leest het recept, en past het toe:
+
+| De collectie zegt | Eidos doet |
+| --- | --- |
+| `phase` | installeert in die volgorde, optionele leden als laatste |
+| `choices` | herspeelt de antwoorden van de auteur op elke FOMOD, en zegt het wanneer dat niet lukt |
+| `modRules` | herordent de modlijst zodat de juiste mod elk bestand wint |
+| `plugins` / `pluginRules` | voegt de LOOT-regels samen met je userlist en sorteert |
+| `INI Tweaks/` | installeert ze als een mod op zichzelf |
+| `tools` | vertelt je welke tools het verwacht; maakt er geen aan |
+
+De staat wordt na **elk** lid weggeschreven naar
+`<instance>/collections/<slug>-<revision>/state.json`, zodat een installatie die
+bij lid 147 van 200 onderbroken is vanaf 147 verdergaat. Draai dezelfde opdracht
+opnieuw.
+
+### Wat het niet zal voorwenden
+
+**Een gratis Nexus-account kan de mods van de leden niet ophalen.** Nexus maakt
+via de API geen downloadlinks aan voor gratis accounts; elk bestand vergt de
+eigen knop "Mod Manager Download" van de site. Het ARCHIEF van de collectie
+downloadt prima op een gratis account - dus je kunt het hele recept lezen - maar
+elk lid wordt gemeld met zijn exacte pagina-URL om het zelf op te halen. Dat is
+een zakelijke regel van Nexus, en geen hoeveelheid opnieuw proberen komt eraan
+voorbij.
+
+Nog niet toegepast, en in het verslag benoemd in plaats van overgeslagen:
+**binaire patches**, en leden waarvan de bestanden binnen het collectiearchief
+meereizen (`bundle`). Leden die de collectie je met de hand laat ophalen
+(`browse`, `manual`) dragen de eigen instructies van de auteur door tot in het
+verslag.
+
+### Het verslag
+
+Het punt van het verslag is dat "geïnstalleerd" het vertrouwen waard is. Een lid
+waarvan niet alle installer-antwoorden herspeeld konden worden is
+**geïnstalleerd, maar niet zoals de collectie het vraagt** - een eigen regel,
+apart van de successen waar het oppervlakkig op lijkt, want de bestanden op
+schijf verschillen van die van de auteur. Ordeningsregels die niets in de
+collectie benoemden, mods gevangen in een lus van tegenstrijdige regels,
+LOOT-groepen die niet bestaan, en elk deel van het manifest dat deze versie van
+Eidos niet begrijpt, worden ook allemaal vermeld.
+
+Het alternatief - zoiets loggen en de installatie klaar noemen - is hoe een
+collectie verkeerd gaat spelen om redenen die niemand kan vinden.
 
 ## Een instantie naar een andere machine verhuizen
 
