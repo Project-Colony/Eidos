@@ -3534,7 +3534,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // selection, the focus and the drag hold.
             forget_hidden_rows(app);
         }
-        Message::ToggleFilterPane => app.filters_open = !app.filters_open,
+        Message::ToggleFilterPane => {
+            // Closing needs no measurement; opening does.
+            if app.filters_open {
+                app.filters_open = false;
+                return Task::none();
+            }
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILTERS_ANCHOR)).map(Message::FiltersAt);
+        }
         Message::ClearFilters => {
             app.filters = ModFilters::default();
             forget_hidden_rows(app);
@@ -4373,7 +4380,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CloseAbout => app.about_open = false,
         Message::OpenViewMenu => {
             app.file_menu_open = false;
-            app.view_menu_open = true;
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::VIEW_MENU_ANCHOR)).map(Message::ViewMenuAt);
         }
         Message::CloseViewMenu => app.view_menu_open = false,
         Message::OverwriteSyncToMods => {
@@ -4865,7 +4872,28 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Only one dropdown at a time, or the two cards overlap and the one
             // underneath eats clicks aimed at the one on top.
             app.view_menu_open = false;
+            // Opened by `FileMenuAt`, not here: the menu hangs from where the
+            // button actually is, and that is a question only iced can answer.
+            // One frame, and no wrong position ever drawn.
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILE_MENU_ANCHOR)).map(Message::FileMenuAt);
+        }
+        Message::FileMenuAt(at) => {
+            if at.is_some() {
+                app.file_menu_at = at;
+            }
             app.file_menu_open = true;
+        }
+        Message::ViewMenuAt(at) => {
+            if at.is_some() {
+                app.view_menu_at = at;
+            }
+            app.view_menu_open = true;
+        }
+        Message::FiltersAt(at) => {
+            if at.is_some() {
+                app.filters_at = at;
+            }
+            app.filters_open = true;
         }
         Message::CloseFileMenu => app.file_menu_open = false,
         Message::ToggleToolbar => {

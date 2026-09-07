@@ -457,11 +457,54 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
 /// that carry ONE useful action fire it directly (Tools -> Executables, Run,
 /// Refresh, Help -> About); File and View open small floating menus, because they
 /// each host several things.
-pub(crate) fn menu_bar<'a>() -> Element<'a, Message> {
+/// The ids the two menu-bar dropdowns hang from.
+///
+/// A `container` around each button, because that is the widget iced reports a
+/// laid-out rectangle for - `Button::operate` passes no id at all. Without
+/// them, a dropdown's x can only be guessed, and a button is exactly as wide as
+/// its label in whatever font the machine resolves.
+pub(crate) const FILE_MENU_ANCHOR: &str = "menu-bar-file";
+pub(crate) const VIEW_MENU_ANCHOR: &str = "menu-bar-view";
+/// And the toolbar's Filters button, whose pane had the same defect twice over:
+/// its hardcoded x also moved with the window width and with the split divider.
+pub(crate) const FILTERS_ANCHOR: &str = "toolbar-filters";
+
+/// A menu-bar item, lit while its own dropdown is open.
+///
+/// Without this the two buttons look identical open or shut, so the card has no
+/// visible parent - it is a panel that appeared, rather than a menu that came
+/// out of something. Lit with the same colour a row uses under the pointer, so
+/// the bar and the card agree.
+fn bar_item<'a>(label: &'a str, msg: Message, open: bool) -> Element<'a, Message> {
+    if !open {
+        return flat_btn(label, msg);
+    }
+    button(text(label).size(13.0))
+        .padding(6)
+        .on_press(msg)
+        .style(|_t: &Theme, _s| button::Style {
+            background: Some(Background::Color(sel_bg())),
+            text_color: pal().text_primary,
+            border: Border {
+                radius: 2.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
+pub(crate) fn menu_bar<'a>(app: &App) -> Element<'a, Message> {
     let row = Row::new()
         .spacing(0)
-        .push(flat_btn("File", Message::OpenFileMenu))
-        .push(flat_btn("View", Message::OpenViewMenu))
+        .push(
+            container(bar_item("File", Message::OpenFileMenu, app.file_menu_open))
+                .id(menu_anchor_id(FILE_MENU_ANCHOR)),
+        )
+        .push(
+            container(bar_item("View", Message::OpenViewMenu, app.view_menu_open))
+                .id(menu_anchor_id(VIEW_MENU_ANCHOR)),
+        )
         .push(flat_btn("Tools", Message::ShowExecutablesDialog))
         // Shortcut hints inline, MO2-style (the keys are wired in `subscription`).
         .push(flat_btn("Run (Ctrl+R)", Message::Run))
@@ -493,11 +536,15 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
     fn entry<'a>(label: &'a str, path: Option<PathBuf>, owned: bool) -> Element<'a, Message> {
         match path.filter(|p| owned || p.exists()) {
             Some(p) => menu_item_owned(label.to_string(), Message::OpenFolder(p)),
-            None => container(text(label).size(12.0))
+            // Ink from the palette, not a surface colour: `background.weak` is
+            // meant to be painted BEHIND text, and used as text it came out at
+            // 1.33:1 on the card - a blank row rather than a greyed one, which
+            // is the opposite of the "the absence is legible" this exists for.
+            None => container(menu_label(label))
                 .width(Length::Fill)
                 .padding([4, 8])
-                .style(|t: &Theme| container::Style {
-                    text_color: Some(t.extended_palette().background.weak.color),
+                .style(|_t: &Theme| container::Style {
+                    text_color: Some(pal().text_dimmer),
                     ..Default::default()
                 })
                 .into(),
@@ -1500,21 +1547,55 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
 /// A single left-aligned action in the mod context menu.
 /// A menu row whose label is owned, so the resulting element borrows nothing.
 pub(crate) fn menu_item_owned<'a>(label: String, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(menu_label(label))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(msg)
-        .style(button::text)
+        .style(menu_row_style)
         .into()
 }
 
 pub(crate) fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(menu_label(label))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(msg)
-        .style(button::text)
+        .style(menu_row_style)
         .into()
+}
+
+/// A menu row's label: one line, always.
+///
+/// iced wraps text by word, and a menu whose rows are not all the same height
+/// reads as broken rather than as truncated. Clipping is the lesser answer for a
+/// list somebody is scanning down.
+fn menu_label<'a>(label: impl text::IntoFragment<'a>) -> iced::widget::Text<'a, Theme> {
+    text(label)
+        .size(12.0)
+        .wrapping(iced::widget::text::Wrapping::None)
+}
+
+/// What a menu row looks like under the pointer.
+///
+/// `button::text` fades the label by 20% on hover and does nothing else, which
+/// in a twenty-row list leaves nothing to track down the menu with - the single
+/// loudest reason these read as unfinished. The fill is the window's own
+/// selection colour, so the menus agree with every list in the program and with
+/// all 57 palettes.
+fn menu_row_style(theme: &Theme, status: button::Status) -> button::Style {
+    let base = button::text(theme, status);
+    match status {
+        button::Status::Hovered | button::Status::Pressed => button::Style {
+            background: Some(Background::Color(sel_bg())),
+            text_color: pal().text_primary,
+            border: Border {
+                radius: 2.0.into(),
+                ..Default::default()
+            },
+            ..base
+        },
+        _ => base,
+    }
 }
 
 /// MO2's right-click plugin menu: jump to the mod that ships this plugin, send
@@ -1586,11 +1667,11 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
         .push(menu_item("Activate all", Message::PluginsSetAll(true)))
         .push(menu_item("Deactivate all", Message::PluginsSetAll(false)));
 
-    container(col)
-        .width(Length::Fixed(240.0))
-        .padding(6)
-        .style(card_style)
-        .into()
+    // One frame for all six menus. This card used to draw its own - 240 wide,
+    // a 1.5 px border at radius 8, against menu_frame's 210 at 1.0 and radius 3
+    // - so right-clicking a mod and then a plugin visibly changed the shape of
+    // the popup. It also inherits menu_frame's shadow and its press guard.
+    menu_frame(col.into())
 }
 
 /// The profile names and the active one, memoised against the view generation.
@@ -1683,11 +1764,14 @@ pub(crate) fn filter_button<'a>(app: &App) -> Element<'a, Message> {
     } else {
         "Filters".to_string()
     };
-    button(text(label).size(12.0))
-        .padding(5)
-        .on_press(Message::ToggleFilterPane)
-        .style(if n > 0 { button::primary } else { button::text })
-        .into()
+    container(
+        button(text(label).size(12.0))
+            .padding(5)
+            .on_press(Message::ToggleFilterPane)
+            .style(if n > 0 { button::primary } else { button::text }),
+    )
+    .id(menu_anchor_id(FILTERS_ANCHOR))
+    .into()
 }
 
 /// MO2's filter pane: one row per criterion, each cycling off -> only -> except.
@@ -1750,13 +1834,19 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
 
 /// A small separator line inside the context menu.
 pub(crate) fn menu_sep<'a>() -> Element<'a, Message> {
-    container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-        .padding([2, 6])
-        .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(pal().border_subtle)),
-            ..Default::default()
-        })
-        .into()
+    // The fill goes on the INNER container, inside the padding. Painted on the
+    // padded one, the [2, 6] padding was inside the colour, so what should be a
+    // hairline drew as a 5 px full-bleed bar slicing the card in two.
+    container(
+        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).style(
+            |_t: &Theme| container::Style {
+                background: Some(Background::Color(pal().border_subtle)),
+                ..Default::default()
+            },
+        ),
+    )
+    .padding([3, 6])
+    .into()
 }
 
 /// MO2's right-click mod menu, rendered as a floating card (the action set from
@@ -2138,17 +2228,40 @@ pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Elem
 
 /// The bordered card chrome around the context menu's contents.
 pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Message> {
-    container(content)
-        .width(Length::Fixed(210.0))
-        .padding(6)
-        .style(|_t: &Theme| container::Style {
-            background: Some(Background::Color(pal().bg_card)),
-            border: Border {
-                color: accent(),
-                width: 1.0,
-                radius: 3.0.into(),
-            },
-            ..Default::default()
-        })
-        .into()
+    // 240 rather than 210: at 210 the frame gave 182 px of text, and several
+    // labels the program already ships - "Game INIs (in the Proton prefix)",
+    // "Back to load order (drag needs it)", "Pack this instance..." - were
+    // wrapping to a second line inside a list of single-line rows.
+    mouse_area(
+        container(content)
+            .width(Length::Fixed(240.0))
+            .padding(6)
+            .style(|_t: &Theme| container::Style {
+                background: Some(Background::Color(pal().bg_card)),
+                border: Border {
+                    color: accent(),
+                    width: 1.0,
+                    radius: 3.0.into(),
+                },
+                // The one thing that says "this is on top of the window" rather
+                // than "this is part of it". The card fill is 1.10:1 against the
+                // page behind it and the border is the same hairline the panels
+                // already draw, so without a shadow a menu and a panel are the
+                // same object.
+                shadow: iced::Shadow {
+                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.28),
+                    offset: iced::Vector::new(0.0, 3.0),
+                    blur_radius: 10.0,
+                },
+                ..Default::default()
+            }),
+    )
+    // Swallow the press. iced's Stack dispatches top-down and stops only when a
+    // widget CAPTURES the event; a bare container never does, so a click on the
+    // frame's padding, on a separator, or on an inert row fell through to the
+    // dismiss catcher behind and closed the menu the user was reading. The
+    // filter pane already guarded itself this way; the menus did not.
+    .on_press(Message::Noop)
+    .on_right_press(Message::Noop)
+    .into()
 }

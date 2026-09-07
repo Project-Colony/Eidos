@@ -572,3 +572,124 @@ pub(crate) fn icon_btn<'a>(
     }
     b.into()
 }
+
+/// Where a dropdown hangs from before iced has answered where its button is,
+/// and if it never does.
+///
+/// The y is the bottom edge of the menu bar, and unlike the two literals this
+/// replaces it is DERIVED rather than measured off a screenshot: the main
+/// screen's Column is `padding(4).spacing(4)`, its header row is 30.0 tall
+/// (a 20.0 text at iced's fixed 1.3 line height, plus `[2, 6]` button padding),
+/// and the menu bar is 30.9 (a 13.0 text, plus 6 of button padding each side,
+/// plus 1 of container padding each side). 4 + 30.0 + 4 + 30.9 = 68.9. Nothing
+/// that can be hidden sits above it, so the number is the same in every state
+/// of the window - the old `44.0` was simply 25 px short, which put both cards
+/// on top of the menu bar they were supposed to hang from.
+///
+/// The x is exact for the File item: 4 of Column padding plus 1 of the bar's
+/// own. It is only a starting point for the others, which is why they are
+/// measured rather than assumed.
+pub(crate) const FALLBACK_MENU_ANCHOR: iced::Rectangle = iced::Rectangle {
+    x: 5.0,
+    y: 68.9,
+    width: 0.0,
+    height: 0.0,
+};
+
+/// The id of the menu-bar item a dropdown hangs from.
+///
+/// A `container` rather than the button itself, because `Button::operate`
+/// passes `None` for the id (iced_widget button.rs) while `Container::operate`
+/// passes its own through with the laid-out rectangle. Wrapping the button is
+/// the whole trick.
+pub(crate) const fn menu_anchor_id(name: &'static str) -> iced::advanced::widget::Id {
+    iced::advanced::widget::Id::new(name)
+}
+
+/// Where iced actually laid out the container carrying `id`.
+///
+/// This is what replaces the hand-measured coordinates the two menu-bar
+/// dropdowns used to be pinned at. A button's width is the width of its LABEL
+/// in the resolved font, so no literal can be right on every machine, in every
+/// theme, at every scale factor - and the two literals in the tree were both
+/// wrong: the File menu by 1 px horizontally and 25 px vertically, the View menu
+/// by 6 px and 25 px, and the filter pane by roughly 90 px in both axes at the
+/// default window size, growing with every resize.
+///
+/// One frame of latency, spent deliberately: the caller opens the menu ON the
+/// answer rather than before it, so the card is never drawn at a wrong place
+/// first and then corrected.
+pub(crate) fn measure(id: iced::advanced::widget::Id) -> iced::Task<Option<iced::Rectangle>> {
+    use iced::advanced::widget::{operation::Outcome, Id, Operation};
+
+    struct Find {
+        target: Id,
+        found: Option<iced::Rectangle>,
+    }
+
+    impl Operation<Option<iced::Rectangle>> for Find {
+        fn traverse(
+            &mut self,
+            operate: &mut dyn FnMut(&mut dyn Operation<Option<iced::Rectangle>>),
+        ) {
+            operate(self);
+        }
+
+        fn container(&mut self, id: Option<&Id>, bounds: iced::Rectangle) {
+            if id == Some(&self.target) {
+                self.found = Some(bounds);
+            }
+        }
+
+        fn finish(&self) -> Outcome<Option<iced::Rectangle>> {
+            Outcome::Some(self.found)
+        }
+    }
+
+    iced::advanced::widget::operate(Find {
+        target: id,
+        found: None,
+    })
+}
+
+/// Hang `card` under `anchor`, kept inside the window.
+///
+/// Two things the padding-based placement it replaces could not do.
+///
+/// It positions with `pin`, whose layout calls `move_to` unconditionally.
+/// Position expressed as container padding goes through `layout::positioned`,
+/// which runs `Padding::fit` and SHRINKS the very padding that is doing the
+/// positioning as soon as the card does not fit - so a tall menu did not
+/// overflow where it was put, it slid back towards the window's top-left corner.
+/// That is the "half of it sticks out at the top" this fixes.
+///
+/// And it clamps with `float`, whose closure is handed the card's real laid-out
+/// rectangle and the viewport - the only place in this codebase where the size
+/// of a floating card is actually known, rather than guessed at from which half
+/// of the window its anchor sits in.
+pub(crate) fn dropdown_under<'a>(
+    card: Element<'a, Message>,
+    anchor: iced::Rectangle,
+    win: iced::Size,
+) -> Element<'a, Message> {
+    // `Pin` caps its content to what is left below and to the right of the
+    // position, so a menu taller than the space under the bar is squeezed
+    // rather than allowed to run off - and the scrollable gives that squeeze
+    // somewhere to go instead of clipping the last items away.
+    let room = (win.height - anchor.y - anchor.height - 8.0).max(80.0);
+    let body: Element<'a, Message> =
+        iced::widget::scrollable(card).height(Length::Shrink).into();
+    let pinned = iced::widget::pin(body)
+        .x(anchor.x)
+        .y(anchor.y + anchor.height);
+    iced::widget::float(container(pinned).max_height(room))
+        .translate(|bounds: iced::Rectangle, viewport: iced::Rectangle| {
+            // Only ever back INTO the window: `min(0.0)` leaves a card that
+            // already fits exactly where it was put.
+            iced::Vector::new(
+                (viewport.x + viewport.width - bounds.x - bounds.width).min(0.0),
+                (viewport.y + viewport.height - bounds.y - bounds.height).min(0.0),
+            )
+        })
+        .into()
+}

@@ -861,6 +861,12 @@ enum Message {
     /// Open / dismiss the File dropdown, which lists every folder that matters.
     OpenFileMenu,
     CloseFileMenu,
+    /// Where iced laid the File / View / Filters button out. The menu opens ON
+    /// this rather than before it, so it is never drawn in the wrong place and
+    /// then corrected a frame later.
+    FileMenuAt(Option<iced::Rectangle>),
+    ViewMenuAt(Option<iced::Rectangle>),
+    FiltersAt(Option<iced::Rectangle>),
     /// Open a URL in the user's browser (LOOT advice links in the report).
     OpenUrl(String),
     // ---- move an instance to another machine (eidos pack / eidos unpack) ----
@@ -1787,6 +1793,14 @@ struct App {
     confirm_set_all: Option<bool>,
     /// Whether the File dropdown (the folder list) is showing.
     file_menu_open: bool,
+    /// Where the File / View / Filters buttons actually are, measured by iced
+    /// rather than guessed at: a dropdown hangs from the rectangle of the thing
+    /// that opened it. `None` until the first measurement comes back, and after
+    /// that the last known place - which is right, because none of the three
+    /// buttons moves while its menu is open.
+    file_menu_at: Option<iced::Rectangle>,
+    view_menu_at: Option<iced::Rectangle>,
+    filters_at: Option<iced::Rectangle>,
     /// The open Export dialog: which rows, and which columns are ticked.
     export: Option<ExportDialogState>,
     /// The open Pack dialog (the instance being written to one file).
@@ -7776,19 +7790,94 @@ mod tests {
         );
     }
 
+    /// A menu-bar dropdown opens in TWO steps: the click asks iced where the
+    /// button is, and the answer opens the menu at that rectangle. Driven here
+    /// the way the runtime drives it, because the Task the click returns does
+    /// not run in a test.
+    fn open_bar_menu(app: &mut App, click: Message, at: Message) {
+        let _ = update_inner(app, click);
+        let _ = update_inner(app, at);
+    }
+
     #[test]
     fn only_one_menu_bar_dropdown_is_open_at_a_time() {
         // Two cards at the same corner would overlap, and the one underneath
         // would eat clicks aimed at the one on top.
         let mut app = nav_app(&[]);
-        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        let some = |x: f32| {
+            Some(iced::Rectangle {
+                x,
+                y: 38.0,
+                width: 36.0,
+                height: 30.9,
+            })
+        };
+        open_bar_menu(
+            &mut app,
+            Message::OpenFileMenu,
+            Message::FileMenuAt(some(5.0)),
+        );
         assert!(app.file_menu_open && !app.view_menu_open);
-        let _ = update_inner(&mut app, Message::OpenViewMenu);
+        open_bar_menu(
+            &mut app,
+            Message::OpenViewMenu,
+            Message::ViewMenuAt(some(41.0)),
+        );
         assert!(app.view_menu_open && !app.file_menu_open);
-        let _ = update_inner(&mut app, Message::OpenFileMenu);
+        open_bar_menu(
+            &mut app,
+            Message::OpenFileMenu,
+            Message::FileMenuAt(some(5.0)),
+        );
         assert!(app.file_menu_open && !app.view_menu_open);
         let _ = update_inner(&mut app, Message::CloseFileMenu);
         assert!(!app.file_menu_open);
+    }
+
+    /// The measurement is what a dropdown hangs from, and it must be REMEMBERED:
+    /// the answer that arrives is the button's real rectangle, and a menu drawn
+    /// from a stale or absent one is the defect this whole mechanism replaced.
+    #[test]
+    fn a_dropdown_remembers_where_its_button_was_measured() {
+        let mut app = nav_app(&[]);
+        assert_eq!(app.file_menu_at, None, "nothing measured yet");
+        let real = iced::Rectangle {
+            x: 5.0,
+            y: 38.0,
+            width: 36.4,
+            height: 30.9,
+        };
+        let _ = update_inner(&mut app, Message::FileMenuAt(Some(real)));
+        assert_eq!(app.file_menu_at, Some(real));
+        assert!(app.file_menu_open, "the answer is what opens it");
+
+        // A measurement that comes back empty must not erase the last good one -
+        // the menu would then fall back to a guess it had already improved on.
+        let _ = update_inner(&mut app, Message::CloseFileMenu);
+        let _ = update_inner(&mut app, Message::FileMenuAt(None));
+        assert_eq!(app.file_menu_at, Some(real), "kept, not cleared");
+        assert!(app.file_menu_open, "and it still opens");
+    }
+
+    /// The filter pane is the third surface with the same defect, and it toggles
+    /// rather than opening - so closing must NOT go looking for a rectangle.
+    #[test]
+    fn the_filter_pane_measures_on_the_way_open_and_not_on_the_way_shut() {
+        let mut app = nav_app(&[]);
+        let _ = update_inner(&mut app, Message::ToggleFilterPane);
+        assert!(!app.filters_open, "the click only asks where the button is");
+        let _ = update_inner(
+            &mut app,
+            Message::FiltersAt(Some(iced::Rectangle {
+                x: 411.0,
+                y: 72.9,
+                width: 56.0,
+                height: 26.0,
+            })),
+        );
+        assert!(app.filters_open);
+        let _ = update_inner(&mut app, Message::ToggleFilterPane);
+        assert!(!app.filters_open, "shut, with no second round trip");
     }
 
     #[test]
