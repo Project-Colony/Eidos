@@ -1141,6 +1141,7 @@ dependencies = [
  "eidos-gamedef",
  "eidos-instance",
  "eidos-log",
+ "eidos-sevenzip",
 ]
 
 [[package]]
@@ -1206,6 +1207,10 @@ dependencies = [
  "encoding_rs",
  "esplugin",
 ]
+
+[[package]]
+name = "eidos-sevenzip"
+version = "1.14.3"
 
 [[package]]
 name = "either"
