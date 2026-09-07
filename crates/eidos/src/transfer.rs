@@ -486,7 +486,15 @@ pub(crate) fn cmd_unpack(args: &[String]) {
                 );
             }
             remember_use(&inst, &r.manifest.game_id);
-            println!("\nNext:");
+            // The consequence nobody was told about: this is now the instance
+            // the GUI reopens and the one a Steam launch lands on. Right when
+            // the restore IS the move, a surprise when somebody only wanted a
+            // look inside a backup - and they find out by launching the game
+            // into the wrong mod list.
+            println!(
+                "\nThis is now the instance Eidos opens, and the one a Steam launch will use."
+            );
+            println!("Next:");
             println!(
                 "  1. Install the game through Steam and launch it once, if you have not."
             );

@@ -289,7 +289,16 @@ fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
     // The welcome list is built once at startup and once on Restart; without
     // this the instance just restored is not among the ones offered.
     app.known = known_instances(&app.games);
-    None
+    // Said out loud, because it is a real consequence nobody was told about:
+    // opening an instance makes it the one Eidos comes back to, which is also
+    // the one a Steam launch lands on. That is right when the restore IS the
+    // move; it is a surprise when somebody only wanted a look inside a backup,
+    // and they find out by launching the game into the wrong mod list.
+    Some(
+        "\nThis is now the instance Eidos opens, and the one a Steam launch will \
+         use. Switch with \"New instance\" if you meant to keep using another."
+            .to_string(),
+    )
 }
 
 /// Act on what the archive turned out to be. Unchanged from when this ran
