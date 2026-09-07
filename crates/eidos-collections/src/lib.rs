@@ -8,7 +8,9 @@
 //! collection's own archive. Downloading the same mods is not installing the
 //! collection, and the difference is a different game.
 
+pub mod install;
 pub mod manifest;
+pub mod report;
 pub mod rules;
 pub mod state;
 
