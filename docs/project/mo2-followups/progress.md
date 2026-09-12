@@ -2,7 +2,7 @@
 
 Plan: docs/project/mo2-followups/plan.md
 Base: 9f01d7dc94cf257ccbc579fee8ccf0f39de73f19 (v1.17.1).
-Branch: codex/eidos-mo2-followups.
+Branch: eidos-mo2-followups.
 
 ## Publication boundary — complete
 
@@ -18,7 +18,7 @@ The unpublished v1.17.0 candidate remains immutable and was superseded.
 ## Execution
 
 A–H are authorized. Integration is in progress; the complete follow-up branch
-has not yet passed its final review or been published.
+has not yet passed its final review or been released.
 Root owns Git, dependency locks, add-on protocols, and shared GUI types.
 Independent archive, installer and collection work uses distinct owned files.
 Installer C owns staging/publication; collection G consumes its pre-publication
@@ -69,7 +69,7 @@ Read-only process inspection found that the currently open GUI (PID 86497) is
 actually version 1.15.0, from the original checkout's September 7 binary; its
 application startup string and live executable digest match that disk binary.
 Consequently the currently running GUI does not contain the September 12 audit
-release or this uncommitted follow-up work. No gameplay benchmark is claimed.
+release or this unreleased follow-up work. No gameplay benchmark is claimed.
 
 Ruling: reject transforming Merge before staging or backups — callbacks must
 never receive live installed data; ordinary non-transforming Merge stays usable.
@@ -99,3 +99,21 @@ bare game marker must not change existing metadata before being rejected.
 Ruling: implement independent leaf areas concurrently with exclusive ownership,
 then integrate shared types centrally. This follows the task's parallel-work
 instructions and avoids shared-file edit conflicts.
+
+## Preserved checkpoint and naming correction
+
+All implementation work through this checkpoint is committed as e60849a and
+pushed with MotherSphere. Production workspace Clippy passed with -D warnings.
+The branch is eidos-mo2-followups. The prior assistant-name prefix was removed
+locally and on GitHub at the user's request; the same correction applies to
+eidos-audit-completion and the local eidos-performance-baseline-v1.16.0 branch.
+The user's global instructions now prohibit assistant/provider names in branches.
+
+The clean v1.16.0 reference was compiled with Rust 1.94.1 in release mode, with
+locked offline dependencies. 72 core/FUSE/launch unit tests passed, and 23 real
+FUSE integration tests passed in each of the two directory modes, without skips.
+Its paired CLI/GUI binaries are selected through the user's existing local-bin
+links for the next Steam launch. The previously selected 1.15.0 binaries are
+preserved separately with their hashes and a tested restoration helper.
+No real game/profile/mod files or original checkout files were changed.
+The already-open GUI retains its old executable until the user closes it.

@@ -10,8 +10,9 @@
 ## Global constraints
 
 - Start implementation only after the requested current release is published.
-- New branch codex/eidos-mo2-followups in the isolated work clone; no changes to the original repository or real game/mod directories.
+- New branch eidos-mo2-followups in the isolated work clone; no changes to the original repository or real game/mod directories.
 - MotherSphere Git identity and GitHub account only for agent-authored mutations; no AI attribution.
+- Branch names must never include an AI assistant/provider name or prefix. Use plain task names, including for temporary worktrees.
 - English code/comments/UI/docs. Preserve licenses/credits for reused code.
 - No sudo or system package installs on the user's machine; use isolated synthetic fixtures and test XDG state.
 - Root owns Git index/dependency-lock coordination, all eidos-addons protocol/types, and shared GUI Message/Preview/App types. Do not move an existing tag.
