@@ -87,6 +87,9 @@ jobs:
       # The release profile is already compiled, so this reuses those artifacts
       # instead of building the whole tree a second time in dev. A tag that fails
       # its own test suite must not become a download.
+      - name: Prepare real FUSE tests
+        run: bash scripts/ci-fuse.sh
+
       - name: Test the release build
         run: |
           # The GUI suite runs serially: two of its tests race each other under

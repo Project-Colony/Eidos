@@ -1,6 +1,12 @@
 # Changelog
 
-## [1.17.0](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.0) (2026-09-12)
+## [1.17.1](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.1) (2026-09-12)
+
+### Fixes
+
+* Prepare FUSE and user namespaces consistently in CI and release builds, so the isolated root/Overwrite launch test runs on Ubuntu. The 1.17.0 candidate was not published.
+
+## [1.17.0](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.0) (2026-09-12) — unpublished candidate
 
 ### Features
 
