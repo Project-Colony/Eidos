@@ -84,6 +84,13 @@ jobs:
       - name: Build
         run: cargo build --workspace --release --locked
 
+      - name: Build and test the native NIF helper
+        run: |
+          cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+          cmake --build target/nif-preview --parallel 2
+          ctest --test-dir target/nif-preview --output-on-failure
+          echo "$PWD/target/nif-preview" >> "$GITHUB_PATH"
+
       # The release profile is already compiled, so this reuses those artifacts
       # instead of building the whole tree a second time in dev. A tag that fails
       # its own test suite must not become a download.
@@ -110,6 +117,12 @@ jobs:
           # together means the extracted directory works when run in place, before
           # anything is installed.
           cp target/release/eidos target/release/eidos-gui "dist/${name}/"
+          cp target/nif-preview/eidos-nif-preview "dist/${name}/"
+          mkdir -p "dist/${name}/licenses/nifly"
+          cp native/eidos-nif-preview/UPSTREAM.md native/eidos-nif-preview/VENDORED-SHA256SUMS \
+             native/eidos-nif-preview/vendor/nifly/LICENSE native/eidos-nif-preview/vendor/nifly/README.md \
+             native/eidos-nif-preview/vendor/nifly/external/half.hpp \
+             native/eidos-nif-preview/vendor/nifly/external/Miniball.hpp "dist/${name}/licenses/nifly/"
           cp README.md LICENSE SECURITY.md "dist/${name}/"
           # Not stripped on purpose. Cargo's release profile emits no DWARF
           # anyway, so `--strip-all` would only remove the symbol table - which is

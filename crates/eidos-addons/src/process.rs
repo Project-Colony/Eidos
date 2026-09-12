@@ -41,6 +41,21 @@ pub fn capture(
     } else if let Some(instance) = context.values.get("instance") {
         command.current_dir(instance);
     }
+    capture_command(&mut command, timeout, cancel, OUTPUT_LIMIT)
+}
+
+/// Capture a bundled helper using the same process lifetime and pipe limits as
+/// extensions. Large geometry replies may raise stdout's limit; stderr stays
+/// bounded to 1 MiB. The command receives no inherited stdin.
+pub fn capture_command(
+    command: &mut Command,
+    timeout: Duration,
+    cancel: &AtomicBool,
+    stdout_limit: usize,
+) -> Result<Output, String> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err("helper cancelled".into());
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -80,8 +95,8 @@ pub fn capture(
         }
         // One bounded read per pipe per iteration prevents a noisy stream from
         // starving cancellation or the other stream. No reader threads survive.
-        let progress = drain(&mut stdout, &mut out, &mut out_closed)?
-            | drain(&mut stderr, &mut err, &mut err_closed)?;
+        let progress = drain(&mut stdout, &mut out, &mut out_closed, stdout_limit)?
+            | drain(&mut stderr, &mut err, &mut err_closed, OUTPUT_LIMIT)?;
         if status.is_none() {
             status = guard.child.try_wait().map_err(|e| e.to_string())?;
         }
@@ -104,7 +119,12 @@ fn nonblocking(fd: &impl AsFd) -> Result<(), String> {
     rustix::fs::fcntl_setfl(fd, flags | rustix::fs::OFlags::NONBLOCK).map_err(|e| e.to_string())
 }
 
-fn drain(pipe: &mut impl Read, bytes: &mut Vec<u8>, closed: &mut bool) -> Result<bool, String> {
+fn drain(
+    pipe: &mut impl Read,
+    bytes: &mut Vec<u8>,
+    closed: &mut bool,
+    limit: usize,
+) -> Result<bool, String> {
     if *closed {
         return Ok(false);
     }
@@ -115,8 +135,10 @@ fn drain(pipe: &mut impl Read, bytes: &mut Vec<u8>, closed: &mut bool) -> Result
             Ok(true)
         }
         Ok(count) => {
-            if bytes.len() + count > OUTPUT_LIMIT {
-                return Err("extension output exceeded 1 MiB per stream".into());
+            if count > limit.saturating_sub(bytes.len()) {
+                return Err(format!(
+                    "helper output exceeded {limit} bytes for this stream"
+                ));
             }
             bytes.extend_from_slice(&buffer[..count]);
             Ok(true)
@@ -203,5 +225,28 @@ mod tests {
         assert!(capture(&shell("exit 0"), &ctx, timeout, &cancel)
             .unwrap_err()
             .contains("cancelled"));
+    }
+
+    #[test]
+    fn bundled_helper_stdout_limit_does_not_raise_stderr_limit() {
+        let cancel = AtomicBool::new(false);
+        for (script, limit, expected) in [
+            ("head -c 1048577 /dev/zero", 2 * OUTPUT_LIMIT, true),
+            ("head -c 1048577 /dev/zero >&2", 2 * OUTPUT_LIMIT, false),
+            ("printf abc", 2, false),
+        ] {
+            let result = capture_command(
+                Command::new("/bin/sh").args(["-c", script]),
+                Duration::from_secs(2),
+                &cancel,
+                limit,
+            );
+            assert_eq!(result.is_ok(), expected);
+            if let Ok(output) = result {
+                assert_eq!(output.stdout.len(), OUTPUT_LIMIT + 1);
+            } else {
+                assert!(result.unwrap_err().contains("exceeded"));
+            }
+        }
     }
 }

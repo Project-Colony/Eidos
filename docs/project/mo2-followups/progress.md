@@ -40,8 +40,9 @@ transform API. Reviews and test evidence will be recorded per completed slice.
   shared manual backup are integrated. Transformation callbacks reject Merge
   before mutation; ordinary Merge remains supported. Final caller review pending.
 - D: bounded DDS decoder and mip/layer/face/alpha controls are integrated. Pinned
-  licensed native NIF geometry helper implemented and tested independently; Rust
-  renderer, provider texture resolution and GUI/packaging integration remain pending.
+  licensed NIF helper, static Rust renderer, current-provider diffuse textures,
+  orbit/tilt/zoom/wireframe and source/release packaging are integrated. Synthetic
+  rendered images were inspected; actual window interaction remains pending.
 - E1: ZIP/LZMA OMOD containers and unscripted installation use ordinary staging,
   including collection recipes. 248 installer/collection tests and production
   Clippy passed; upstream reference checked all 157 members. Script interpreter,
@@ -194,8 +195,22 @@ remain unchanged. No Skyrim/Proton frame-time test or hardware diagnosis is clai
   unambiguous. 17 store tests and all-target Clippy passed. Reinitializing a legacy
   instance still refuses a literal key mismatch; old noncanonical Steam keys
   require reselection instead of silently following a retargeted symlink.
-- NIF rendering, provider texture resolution and packaging integration are now
-  active. The existing bounded helper process runner is reused.
+- NIF rendering, provider texture resolution and packaging integration now pass
+  361 serial GUI tests. The native LE/SSE fixture tests require the real helper;
+  none silently skip it. Loose Overwrite textures beat archive members, changed
+  model/texture identities and late replies are refused, and failed reads consume
+  their attempted input budget. Native parser tests and 8 renderer test groups
+  separately cover bounds, transforms, alpha, pixels and cancellation.
+- Independent NIF review reproduced a valid 19,000-warning model that previously
+  copied and laid out 2.4 MB of text on every view. A red/green regression now
+  verifies 64 displayed warnings, bounded individual text and an explicit omitted
+  count. Display text and scene/texture data are shared between controls. The
+  original scene diagnostics remain available internally. Approximate lighting,
+  static orthographic rendering and absent engine/animation parity remain visible.
+- The native helper is included in release, Arch and `just` builds with upstream
+  notices. The rootless installer smoke check passed with all three binaries and
+  no privileged command. Shell syntax passed; `just` itself is not installed on
+  this host, so its recipes were inspected rather than executed through `just`.
 - The OBMM interpreter and the exact known-handler inventory are active in
   separate ownership areas. Full E2/E3 effects and caller acceptance remain pending.
 

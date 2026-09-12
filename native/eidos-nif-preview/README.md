@@ -9,6 +9,21 @@ ctest --test-dir /tmp/eidos-nif-build --output-on-failure
 /tmp/eidos-nif-build/eidos-nif-preview input.nif
 ```
 
+For the GUI, keep `eidos-nif-preview` beside `eidos-gui` or add its absolute
+directory to `PATH`. `just build` and release packaging do this automatically.
+For direct GUI tests, use
+`PATH=/tmp/eidos-nif-build:$PATH cargo test -p eidos-gui -- --test-threads=1`.
+
+The GUI provides orbit, tilt, zoom and wireframe controls. It loads diffuse
+textures from the current loose/archive winners after archive analysis completes;
+missing, changed or uncertain providers are reported in the preview. Reopen the
+model after refreshing providers. Rendering is a 640×420 orthographic static
+view with approximate lighting, alpha testing and basic transparency, not an
+engine shader or animation preview. Normal maps and material effects are not
+evaluated. At most 64 diffuse textures are attempted, within 256 MiB of input
+and 64 MiB of decoded pixels. A texture larger than 4096 pixels uses an existing
+smaller mip or is reported unsupported. Cube/array diffuse textures are unsupported.
+
 `nif-preview-fixtures output-directory` creates synthetic LE/SSE files for tests and GUI smoke checks. They contain a triangle and synthetic texture references, with no redistributed game content. Tests assert fixed world-space coordinates, rather than merely round-tripping parser output.
 
 ## Protocol version 1

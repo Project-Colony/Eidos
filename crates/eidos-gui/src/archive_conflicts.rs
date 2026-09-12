@@ -446,6 +446,63 @@ fn current_target(app: &App) -> Option<CollectionTarget> {
     })
 }
 
+#[derive(Debug, Clone)]
+pub(crate) enum ProviderSource {
+    Loose(PathBuf),
+    Archive(MemberSource),
+}
+
+/// Resolve one already-selected provider without cloning the complete asset map.
+pub(crate) fn resolve_provider(
+    app: &App,
+    member: &str,
+    provider: &eidos_conflicts::AssetProvider,
+) -> Result<ProviderSource, String> {
+    let layer = conflict_layers(app)
+        .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
+        .ok_or("The selected provider is no longer enabled")?;
+    let relative = provider.archive.as_deref().unwrap_or(member);
+    // Winning map paths already retain their physical spelling. Only losing
+    // providers need the cached spelling fallback.
+    let direct = resolve_in_mod(&layer.root, relative).filter(|p| p.is_file());
+    let path = direct
+        .or_else(|| {
+            let actual = app
+                .files_cache
+                .borrow()
+                .get(&layer.name)
+                .and_then(|(files, _)| {
+                    files
+                        .iter()
+                        .find(|name| name.eq_ignore_ascii_case(relative))
+                        .cloned()
+                })
+                .or_else(|| {
+                    app.archive_sources.keys().find_map(|path| {
+                        let tail = path.strip_prefix(&layer.root).ok()?.to_str()?;
+                        tail.eq_ignore_ascii_case(relative)
+                            .then(|| tail.to_string())
+                    })
+                })?;
+            resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file())
+        })
+        .ok_or("The selected provider is no longer present. Refresh the file list.")?;
+    if provider.archive.is_none() {
+        return Ok(ProviderSource::Loose(path));
+    }
+    let identity = app
+        .archive_sources
+        .get(&path)
+        .cloned()
+        .filter(|i| eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i))
+        .ok_or("The archive changed since it was scanned. Refresh before reading it.")?;
+    Ok(ProviderSource::Archive(MemberSource {
+        path,
+        member: member.into(),
+        identity,
+    }))
+}
+
 pub(crate) fn provider_action(
     app: &mut App,
     epoch: u64,
@@ -464,52 +521,15 @@ pub(crate) fn provider_action(
         app.status = Some("Archive analysis changed. Refresh before selecting a provider.".into());
         return Task::none();
     }
-    let Some(layer) = conflict_layers(app)
-        .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
-    else {
-        return Task::none();
-    };
-    let relative = provider.archive.as_deref().unwrap_or(&member);
-    let actual = app
-        .files_cache
-        .borrow()
-        .get(&layer.name)
-        .and_then(|(files, _)| {
-            files
-                .iter()
-                .find(|name| name.eq_ignore_ascii_case(relative))
-                .cloned()
-        });
-    let actual = actual
-        .or_else(|| {
-            app.archive_sources.keys().find_map(|path| {
-                let tail = path.strip_prefix(&layer.root).ok()?.to_str()?;
-                tail.eq_ignore_ascii_case(relative)
-                    .then(|| tail.to_string())
-            })
-        })
-        .unwrap_or_else(|| relative.to_string());
-    let Some(path) = resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file()) else {
-        app.status =
-            Some("The selected provider is no longer present. Refresh the file list.".into());
-        return Task::none();
-    };
-    if provider.archive.is_none() {
-        return crate::file_preview::start(app, path, None, None, None);
-    }
-    let Some(identity) =
-        app.archive_sources.get(&path).cloned().filter(|i| {
-            eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i)
-        })
-    else {
-        app.status =
-            Some("The archive changed since it was scanned. Refresh before reading it.".into());
-        return Task::none();
-    };
-    let source = MemberSource {
-        path,
-        member,
-        identity,
+    let source = match resolve_provider(app, &member, &provider) {
+        Ok(ProviderSource::Loose(path)) => {
+            return crate::file_preview::start(app, path, None, None, None);
+        }
+        Ok(ProviderSource::Archive(source)) => source,
+        Err(error) => {
+            app.status = Some(error);
+            return Task::none();
+        }
     };
     if !export {
         return crate::file_preview::start(app, source.path.clone(), None, None, Some(source));

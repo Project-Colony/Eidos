@@ -2323,7 +2323,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 /// fetch them - so a progress bar here would stall on the first mod for most
 /// people. What it can do exactly, it does exactly.
 /// The preview pane: one file, shown as far as it can be.
-pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
+pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
     let name = p
         .path()
         .file_name()
@@ -2436,6 +2436,70 @@ pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
                 )
                 .push(body)
                 .into()
+        }
+        Preview::Nif { model, .. } => {
+            let view = model.view;
+            let orbit = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Orbit").size(11.0))
+                .push(
+                    slider(
+                        -std::f32::consts::PI..=std::f32::consts::PI,
+                        view.yaw,
+                        move |yaw| Message::PreviewNifView(crate::nif_render::View { yaw, ..view }),
+                    )
+                    .step(0.03)
+                    .width(Length::Fill),
+                )
+                .push(text("Tilt").size(11.0))
+                .push(
+                    slider(-1.5..=1.5, view.pitch, move |pitch| {
+                        Message::PreviewNifView(crate::nif_render::View { pitch, ..view })
+                    })
+                    .step(0.03)
+                    .width(Length::Fill),
+                );
+            let controls = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Zoom").size(11.0))
+                .push(
+                    slider(0.1..=10.0, view.zoom, move |zoom| {
+                        Message::PreviewNifView(crate::nif_render::View { zoom, ..view })
+                    })
+                    .step(0.1)
+                    .width(Length::Fill),
+                )
+                .push(
+                    checkbox(view.wireframe)
+                        .label("Wireframe")
+                        .on_toggle(move |wireframe| {
+                            Message::PreviewNifView(crate::nif_render::View { wireframe, ..view })
+                        }),
+                )
+                .push(button(text("Reset")).on_press(Message::PreviewNifView(Default::default())));
+            let image: Element<'a, Message> = match &model.image {
+                Some(Ok(handle)) => container(
+                    iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
+                )
+                .center(Length::Fill)
+                .into(),
+                Some(Err(error)) => container(text(error.clone())).center(Length::Fill).into(),
+                None => container(text("Loading model textures…"))
+                    .center(Length::Fill)
+                    .into(),
+            };
+            let mut body = Column::new().spacing(8).push(orbit).push(controls)
+                .push(text(format!("{} static shapes · orthographic view · diffuse textures and approximate lighting", model.scene.meshes.len())).size(10.0))
+                .push(image);
+            if !model.warnings.is_empty() {
+                body = body.push(
+                    scrollable(text(model.warnings.as_ref()).size(10.0))
+                        .height(Length::Fixed(58.0)),
+                );
+            }
+            body.into()
         }
         Preview::Image { handle, .. } => {
             container(iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain))

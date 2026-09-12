@@ -28,7 +28,7 @@
 //! ambiguous.
 
 mod process;
-pub use process::capture;
+pub use process::{capture, capture_command};
 pub mod protocol;
 
 use std::collections::BTreeMap;

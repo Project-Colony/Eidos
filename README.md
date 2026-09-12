@@ -132,8 +132,8 @@ instance played normally, not on a benchmark.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Then set your game's Steam launch option to `~/.local/bin/eidos-gui %command%`

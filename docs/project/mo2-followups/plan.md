@@ -56,9 +56,9 @@ Owner: installer worker. Files: shared eidos-install publication, shared instanc
 
 Owner: archive worker for byte decoding, root for GUI; separate NIF worker after a slot frees.
 
-- [ ] Decode supported BC1–BC7 and RGBA/BGRA DDS formats under checked allocation limits; expose mip/layer/face and alpha controls.
-- [ ] Reuse a pinned licensed NIF parser/helper and render static LE/SSE shapes/transforms/material references with orbit/zoom/wireframe.
-- [ ] Resolve model textures through current loose/archive providers; report missing textures/unsupported blocks explicitly.
+- [x] Decode supported BC1–BC7 and RGBA/BGRA DDS formats under checked allocation limits; expose mip/layer/face and alpha controls.
+- [x] Reuse a pinned licensed NIF parser/helper and render static LE/SSE shapes/transforms/material references with orbit/zoom/wireframe.
+- [x] Resolve model textures through current loose/archive providers; report missing textures/unsupported blocks explicitly.
 - [ ] Verify pixels, malformed input, geometry bounds, fixture transforms and actual synthetic visual interaction.
 
 ## E. OMOD and trusted custom installers

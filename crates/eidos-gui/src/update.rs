@@ -6140,7 +6140,17 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return crate::file_preview::start(app, path, Some(operation), None, None);
             }
         }
-        Message::PreviewReady(id, preview) => crate::file_preview::complete(app, id, preview),
+        Message::PreviewReady(id, preview) => {
+            if let Some(task) = crate::nif_preview::prepare_textures(app, id, &preview) {
+                return task;
+            }
+            crate::file_preview::complete(app, id, preview);
+        }
+        Message::PreviewNifView(view) => {
+            if let Some(preview) = &app.preview {
+                return crate::file_preview::start_nif(app, preview.path().to_path_buf(), view);
+            }
+        }
         Message::PreviewDdsSelection(selection) => {
             if app.preview_pending.is_none() {
                 if let Some(preview) = &app.preview {

@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(mktemp -d)"
 trap 'rm -rf "$root"' EXIT
 mkdir -p "$root/source" "$root/tools"
-for binary in eidos eidos-gui; do
+for binary in eidos eidos-gui eidos-nif-preview; do
     printf '#!/bin/sh\nexit 0\n' > "$root/source/$binary"
     chmod +x "$root/source/$binary"
 done
@@ -17,6 +17,7 @@ EIDOS_INSTALL_TEST_GUARD="$root/privileged" PATH="$root/tools:$PATH" XDG_DATA_HO
     bash "$script" --from "$root/source" > "$root/install.log"
 test -x "$root/Eidos Tools/eidos"
 test -x "$root/Eidos Tools/eidos-gui"
+test -x "$root/Eidos Tools/eidos-nif-preview"
 test ! -e "$root/privileged"
 if [ "$(id -u)" != 0 ]; then
     grep -Fx "Exec=\"$root/Eidos Tools/eidos-gui\"" "$root/data/applications/eidos.desktop"

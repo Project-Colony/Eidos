@@ -28,8 +28,15 @@ default:
     @just --list --unsorted
 
 # Rebuild the workspace without requesting privileges.
-build:
+build: build-nif
     cargo build --workspace --profile {{ profile }}
+
+# Build the bundled, bounded static-model parser and keep it beside the GUI.
+build-nif:
+    cmake -S native/eidos-nif-preview -B "{{ target_dir }}/nif-preview" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "{{ target_dir }}/nif-preview" --parallel 2
+    mkdir -p "{{ out_dir }}"
+    cp "{{ target_dir }}/nif-preview/eidos-nif-preview" "{{ out_dir }}/"
 
 # Re-apply CAP_SYS_ADMIN to the built `eidos` binary. Needs sudo; idempotent.
 setcap:
@@ -71,9 +78,10 @@ run *args: build
     {{ eidos_bin }} {{ args }}
 
 # The whole suite: unit tests plus the real-mount FUSE integration test.
-test:
+test: build-nif
+    ctest --test-dir "{{ target_dir }}/nif-preview" --output-on-failure
     cargo test --workspace --exclude eidos-gui
-    cargo test -p eidos-gui -- --test-threads=1
+    env PATH="$(realpath '{{ target_dir }}/nif-preview'):$PATH" cargo test -p eidos-gui -- --test-threads=1
 
 # This one mounts a real union in a private user+mount namespace and drives it
 # through the kernel. It skips itself when the namespace or /dev/fuse is

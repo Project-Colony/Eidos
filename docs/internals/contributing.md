@@ -7,9 +7,15 @@ Building, testing, and where everything lives. For what Eidos *is*, start at the
 ## Build and test
 
 ```sh
-cargo test                 # workspace unit tests + the eidos-fuse real-mount suite
+just test                  # native helper, workspace tests, then serial GUI tests
 cargo build -p eidos-fuse  # the union daemon on its own
 ```
+
+The complete application also needs CMake 3.20+, a C++17 compiler and Python 3
+for the native helper's tests. `just build` builds the helper beside the Rust
+binaries. Without `just`, follow the [native build instructions](../../native/eidos-nif-preview/README.md)
+and add the helper's absolute output directory to `PATH` before GUI tests.
+Those tests require the real helper and do not silently skip model parsing.
 
 The `eidos-fuse` integration suite is not a mock: it mounts a real union inside
 its own private user+mount namespace (no root, no host mounts touched) and drives

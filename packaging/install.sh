@@ -13,7 +13,7 @@ set -euo pipefail
 # Everything ships together; the GUI locates the CLI as its own
 # sibling before falling back to PATH, so they must share a directory.
 REQUIRED_BINS=(eidos eidos-gui)
-OPTIONAL_BINS=(eidos-fuse eidos-launch)
+OPTIONAL_BINS=(eidos-fuse eidos-launch eidos-nif-preview)
 
 # Only `eidos` is capped. Capabilities are per-file and this is the binary the
 # product mounts through; handing CAP_SYS_ADMIN to more files than that widens

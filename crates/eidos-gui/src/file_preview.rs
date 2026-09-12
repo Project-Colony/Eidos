@@ -48,14 +48,21 @@ pub(crate) fn unsupported(path: &Path, why: impl Into<String>) -> Preview {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn read(path: &Path) -> Preview {
+    read_cancel(path, &AtomicBool::new(false))
+}
+
+fn read_cancel(path: &Path, cancel: &AtomicBool) -> Preview {
     use std::os::unix::fs::OpenOptionsExt;
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    let limit = if IMAGES.contains(&ext.as_str()) || ext == "dds" || ext == "nif" {
+    let limit = if ext == "nif" {
+        crate::nif_preview::MAX_MODEL_BYTES
+    } else if IMAGES.contains(&ext.as_str()) || ext == "dds" {
         dds_preview::MAX_DDS_BYTES
     } else {
         PREVIEW_TEXT_CAP
@@ -77,17 +84,22 @@ pub(crate) fn read(path: &Path) -> Preview {
         let truncated = bytes.len() > limit;
         bytes.truncate(limit);
         if truncated && limit != PREVIEW_TEXT_CAP {
-            return Err("Preview input exceeds 128 MiB".into());
+            return Err(format!("Preview input exceeds {} MiB", limit / 1024 / 1024));
         }
         Ok((bytes, truncated))
     })();
     match read {
-        Ok((data, truncated)) => from_bytes(path, data, truncated),
+        Ok((data, truncated)) => from_bytes_cancel(path, data, truncated, cancel),
         Err(e) => unsupported(path, e),
     }
 }
 
+#[cfg(test)]
 pub(crate) fn from_bytes(path: &Path, bytes: Vec<u8>, truncated: bool) -> Preview {
+    from_bytes_cancel(path, bytes, truncated, &AtomicBool::new(false))
+}
+
+fn from_bytes_cancel(path: &Path, bytes: Vec<u8>, truncated: bool, cancel: &AtomicBool) -> Preview {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -117,7 +129,7 @@ pub(crate) fn from_bytes(path: &Path, bytes: Vec<u8>, truncated: bool) -> Previe
         };
     }
     if ext == "nif" {
-        return unsupported(path,"NIF model viewing is unavailable for this file. Use a matching preview extension or Reveal.");
+        return crate::nif_preview::from_bytes(path, &bytes, cancel);
     }
     if bytes.contains(&0) {
         return unsupported(path, "This is a binary file; no text preview is available.");
@@ -191,6 +203,32 @@ pub(crate) fn start(
     selection: Option<dds_preview::Selection>,
     archive: Option<crate::archive_conflicts::MemberSource>,
 ) -> Task<Message> {
+    start_control(app, path, extension, selection.map(Control::Dds), archive)
+}
+
+enum Control {
+    Dds(dds_preview::Selection),
+    Nif(crate::nif_render::View),
+}
+
+pub(crate) fn start_nif(
+    app: &mut App,
+    path: PathBuf,
+    view: crate::nif_render::View,
+) -> Task<Message> {
+    if let Some(preview) = &mut app.preview {
+        crate::nif_preview::requested_view(preview, view);
+    }
+    start_control(app, path, None, Some(Control::Nif(view)), None)
+}
+
+fn start_control(
+    app: &mut App,
+    path: PathBuf,
+    extension: Option<Operation>,
+    selection: Option<Control>,
+    archive: Option<crate::archive_conflicts::MemberSource>,
+) -> Task<Message> {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     app.preview_pending.take();
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
@@ -242,15 +280,28 @@ pub(crate) fn start(
                     .unwrap_or_else(|e| unsupported(&path, e));
             }
             if let Some(source) = archive {
+                let limit = if Path::new(&source.member)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("nif"))
+                {
+                    crate::nif_preview::MAX_MODEL_BYTES
+                } else {
+                    dds_preview::MAX_DDS_BYTES
+                };
                 let result = eidos_conflicts::read_archive_member_checked(
                     &source.path,
                     &source.member,
-                    dds_preview::MAX_DDS_BYTES as u64,
+                    limit as u64,
                     Some(&source.identity),
                 );
                 return match result {
                     Ok(bytes) => Preview::Archive {
-                        content: Box::new(from_bytes(Path::new(&source.member), bytes, false)),
+                        content: Box::new(from_bytes_cancel(
+                            Path::new(&source.member),
+                            bytes,
+                            false,
+                            &cancel,
+                        )),
                         source,
                     },
                     Err(e) => unsupported(&path, e.to_string()),
@@ -260,6 +311,12 @@ pub(crate) fn start(
                 if identity.is_none() || identity != eidos_conflicts::archive_identity(&path).ok() {
                     return unsupported(&path, "The preview source changed. Open it again.");
                 }
+                let selection = match selection {
+                    Control::Nif(view) => {
+                        return crate::nif_preview::change_view(old, view, &cancel)
+                    }
+                    Control::Dds(selection) => selection,
+                };
                 return match old {
                     Preview::Dds { bytes, info, .. } => dds(&path, bytes, info, selection),
                     Preview::Archive { source, content } => match *content {
@@ -277,7 +334,7 @@ pub(crate) fn start(
                     _ => unsupported(&path, "The selected file is not a DDS texture"),
                 };
             }
-            crate::build_preview(&path)
+            read_cancel(&path, &cancel)
         }),
         move |preview| Message::PreviewReady(id, preview),
     )
@@ -285,7 +342,7 @@ pub(crate) fn start(
 
 fn cached_snapshot(preview: &Preview) -> Option<&Snapshot> {
     match preview {
-        Preview::Dds { provenance, .. } => provenance.as_ref(),
+        Preview::Dds { provenance, .. } | Preview::Nif { provenance, .. } => provenance.as_ref(),
         Preview::Archive { content, .. } => cached_snapshot(content),
         _ => None,
     }
@@ -293,20 +350,37 @@ fn cached_snapshot(preview: &Preview) -> Option<&Snapshot> {
 
 fn retain_snapshot(preview: &mut Preview, snapshot: &Snapshot) {
     match preview {
-        Preview::Dds { provenance, .. } => *provenance = Some(snapshot.clone()),
+        Preview::Dds { provenance, .. } | Preview::Nif { provenance, .. } => {
+            *provenance = Some(snapshot.clone())
+        }
         Preview::Archive { content, .. } => retain_snapshot(content, snapshot),
         _ => {}
     }
+}
+
+pub(crate) fn is_current(app: &App, id: u64, preview: &Preview) -> bool {
+    let Some(pending) = app.preview_pending.as_ref().filter(|p| p.id == id) else {
+        return false;
+    };
+    pending.snapshot.target == target(app)
+        && pending.snapshot.epoch == app.archive_epoch.get()
+        && pending.path == preview.path()
+        && pending.snapshot.identity == eidos_conflicts::archive_identity(&pending.path).ok()
+        && crate::nif_preview::dependencies_current(preview)
+}
+
+pub(crate) fn pending_cancel(app: &App, id: u64) -> Option<Arc<AtomicBool>> {
+    app.preview_pending
+        .as_ref()
+        .filter(|p| p.id == id)
+        .map(|p| p.cancel.clone())
 }
 
 pub(crate) fn complete(app: &mut App, id: u64, mut preview: Preview) {
     let Some(pending) = app.preview_pending.as_ref().filter(|p| p.id == id) else {
         return;
     };
-    let current = pending.snapshot.target == target(app)
-        && pending.snapshot.epoch == app.archive_epoch.get()
-        && pending.path == preview.path()
-        && pending.snapshot.identity == eidos_conflicts::archive_identity(&pending.path).ok();
+    let current = is_current(app, id, &preview);
     retain_snapshot(&mut preview, &pending.snapshot);
     app.preview_pending.take();
     if current {
@@ -347,11 +421,12 @@ fn extension_preview(
             } => {
                 let file = eidos_addons::protocol::regular_file(workspace.path(), &output)?;
                 // Decode before deleting the helper workspace; Reveal keeps the original.
-                let mut preview = read(&file);
+                let mut preview = read_cancel(&file, cancel);
                 match &mut preview {
                     Preview::Image { path: origin, .. }
                     | Preview::Text { path: origin, .. }
                     | Preview::Dds { path: origin, .. }
+                    | Preview::Nif { path: origin, .. }
                     | Preview::Unsupported { path: origin, .. } => *origin = path.into(),
                     Preview::Archive { .. } => {
                         return Err("Unexpected archived helper result".into())

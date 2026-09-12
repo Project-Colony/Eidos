@@ -43,6 +43,8 @@ mod file_preview;
 mod fomod;
 mod health;
 mod modinfo;
+mod nif_preview;
+mod nif_render;
 mod state;
 mod theme;
 mod update;
@@ -286,6 +288,7 @@ enum Message {
     ExtensionFilePicked(eidos_addons::protocol::Operation, Option<PathBuf>),
     PreviewReady(u64, Preview),
     PreviewDdsSelection(dds_preview::Selection),
+    PreviewNifView(nif_render::View),
     ArchiveProviderAction {
         epoch: u64,
         member: String,
@@ -1286,6 +1289,11 @@ pub(crate) enum Preview {
         selection: dds_preview::Selection,
         image: Result<iced::widget::image::Handle, String>,
     },
+    Nif {
+        path: PathBuf,
+        provenance: Option<file_preview::Snapshot>,
+        model: nif_preview::Model,
+    },
     /// The head of a text file, and whether there was more.
     Text {
         path: PathBuf,
@@ -1303,6 +1311,7 @@ impl Preview {
             Preview::Archive { source, .. } => &source.path,
             Preview::Image { path, .. }
             | Preview::Dds { path, .. }
+            | Preview::Nif { path, .. }
             | Preview::Text { path, .. }
             | Preview::Unsupported { path, .. } => path,
         }

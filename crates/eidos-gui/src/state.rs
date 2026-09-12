@@ -895,6 +895,7 @@ pub(crate) fn reload_mods(app: &mut App) {
 /// without a window. Every failure ends in `Unsupported` with a reason, because
 /// an empty preview pane with no explanation reads as the feature being broken
 /// rather than as the file being unreadable.
+#[cfg(test)]
 pub(crate) fn build_preview(path: &Path) -> Preview {
     crate::file_preview::read(path)
 }
