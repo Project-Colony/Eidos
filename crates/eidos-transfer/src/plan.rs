@@ -52,6 +52,8 @@ pub enum Why {
     /// A name that is not valid UTF-8, so it cannot be written into the list
     /// file 7-Zip reads.
     NotUtf8,
+    /// A line break cannot be represented safely in a 7-Zip list file.
+    LineBreak,
     /// The filesystem refused.
     Unreadable(String),
 }
@@ -71,6 +73,9 @@ impl std::fmt::Display for Why {
             Why::ByRequest => f.write_str("left out on request"),
             Why::Symlink => f.write_str("a symbolic link"),
             Why::NotUtf8 => f.write_str("the name is not valid UTF-8"),
+            Why::LineBreak => {
+                f.write_str("the name contains a line break and cannot be packed safely")
+            }
             Why::Unreadable(e) => write!(f, "unreadable: {e}"),
         }
     }
@@ -251,6 +256,13 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
             } else {
                 format!("{rel}/{name}")
             };
+            if name.contains(['\r', '\n']) {
+                out.left.push(Left {
+                    path: child,
+                    why: Why::LineBreak,
+                });
+                continue;
+            }
             if at_root {
                 if let Some((_, why)) = rules.iter().find(|(n, _)| n.as_str() == name) {
                     // `loot/` is a masterlist cache Eidos re-fetches - except for
@@ -713,7 +725,8 @@ mod tests {
 
     #[test]
     fn scrubbing_empties_the_url_and_keeps_everything_else_byte_for_byte() {
-        let text = "[General]\r\nmodID=18780\r\nurl=\"https://cdn/x?user_id=42\"\r\nversion=2.5\r\n";
+        let text =
+            "[General]\r\nmodID=18780\r\nurl=\"https://cdn/x?user_id=42\"\r\nversion=2.5\r\n";
         let out = scrub_meta(text);
         assert!(out.contains("modID=18780"), "{out}");
         assert!(out.contains("version=2.5"), "{out}");
