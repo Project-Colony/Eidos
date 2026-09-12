@@ -52,8 +52,14 @@ pub enum Installed {
 pub trait Hooks {
     /// Get this member's archive, or say why not.
     fn obtain(&mut self, m: &Mod) -> Obtained;
+    /// Reserve an owned destination before the engine persists it and starts extraction.
+    fn reserve(&mut self, m: &Mod, previous: Option<&str>) -> Result<String, String> {
+        Ok(previous.unwrap_or(&m.name).to_string())
+    }
+    /// Check a completed member before trusting a resumed state file.
+    fn verify_installed(&mut self, _m: &Mod, _folder: &str) -> Result<bool, String> { Ok(true) }
     /// Install it, replaying `m.choices` where the installer has questions.
-    fn install(&mut self, m: &Mod, archive: &std::path::Path) -> Installed;
+    fn install(&mut self, m: &Mod, archive: &std::path::Path, folder: &str) -> Installed;
     /// One member is done. `done` counts every member reached, `total` is all of
     /// them - so a progress bar can be honest about a collection that is half
     /// skipped.
@@ -80,7 +86,7 @@ pub fn run(
     c: &Collection,
     state: &mut InstallState,
     hooks: &mut dyn Hooks,
-    save: &mut dyn FnMut(&InstallState),
+    save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
 ) -> Report {
     let mut report = Report {
         collection: c.info.name.clone(),
@@ -98,17 +104,26 @@ pub fn run(
             detail: d.to_string(),
         };
 
-        // Already settled by a previous run, or by the user.
+        // A durable status is not proof that its folder still exists or is still ours.
         match state.status(&key) {
-            Status::Installed(_) => {
-                report.installed.push(m.name.clone());
-                hooks.progress(n + 1, total, &m.name);
-                continue;
-            }
-            Status::Approximate(_, why) => {
-                report.approximate.push(note(&why.join("; ")));
-                hooks.progress(n + 1, total, &m.name);
-                continue;
+            Status::Installed(folder) | Status::Approximate(folder, _) => {
+                match hooks.verify_installed(m, folder) {
+                    Ok(true) => {
+                        if let Status::Approximate(_, why) = state.status(&key) {
+                            report.approximate.push(note(&why.join("; ")));
+                        } else { report.installed.push(m.name.clone()); }
+                        hooks.progress(n + 1, total, &m.name);
+                        continue;
+                    }
+                    Ok(false) => { state.set(&key, Status::Pending); }
+                    Err(error) => {
+                        state.set(&key, Status::Failed(error.clone()));
+                        if !persist(state, save, &mut report, &m.name) { return report; }
+                        report.failed.push(note(&error));
+                        hooks.progress(n + 1, total, &m.name);
+                        continue;
+                    }
+                }
             }
             Status::Skipped => {
                 report.skipped.push(note("you skipped it"));
@@ -138,7 +153,7 @@ pub fn run(
                 m.source.instructions.clone()
             };
             state.set(&key, Status::Unavailable(why.clone()));
-            save(state);
+            if !persist(state, save, &mut report, &m.name) { return report; }
             report.needs_you.push(note(&why));
             hooks.progress(n + 1, total, &m.name);
             continue;
@@ -147,19 +162,19 @@ pub fn run(
         let archive = match hooks.obtain(m) {
             Obtained::Ready(p) => {
                 state.set(&key, Status::Downloaded);
-                save(state);
+                if !persist(state, save, &mut report, &m.name) { return report; }
                 p
             }
             Obtained::NeedsUser(why) => {
                 state.set(&key, Status::Unavailable(why.clone()));
-                save(state);
+                if !persist(state, save, &mut report, &m.name) { return report; }
                 report.needs_you.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
             }
             Obtained::Unavailable(why) => {
                 state.set(&key, Status::Unavailable(why.clone()));
-                save(state);
+                if !persist(state, save, &mut report, &m.name) { return report; }
                 report.needs_you.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
@@ -168,14 +183,27 @@ pub fn run(
                 // Failed, not unavailable: it is worth another go, and the state
                 // says so, so a re-run picks it up.
                 state.set(&key, Status::Failed(why.clone()));
-                save(state);
+                if !persist(state, save, &mut report, &m.name) { return report; }
                 report.failed.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
             }
         };
 
-        match hooks.install(m, &archive) {
+        let folder = match hooks.reserve(m, state.folders.get(&key).map(String::as_str)) {
+            Ok(folder) => folder,
+            Err(why) => {
+                state.set(&key, Status::Failed(why.clone()));
+                report.failed.push(note(&why));
+                if !persist(state, save, &mut report, &m.name) { return report; }
+                hooks.progress(n + 1, total, &m.name);
+                continue;
+            }
+        };
+        state.folders.insert(key.clone(), folder.clone());
+        if !persist(state, save, &mut report, &m.name) { return report; }
+
+        match hooks.install(m, &archive, &folder) {
             Installed::Ok(folder) => {
                 state.set(&key, Status::Installed(folder));
                 report.installed.push(m.name.clone());
@@ -189,7 +217,7 @@ pub fn run(
                 report.failed.push(note(&why));
             }
         }
-        save(state);
+        if !persist(state, save, &mut report, &m.name) { return report; }
         hooks.progress(n + 1, total, &m.name);
     }
 
@@ -234,6 +262,24 @@ pub fn run(
     report
 }
 
+fn persist(
+    state: &InstallState,
+    save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+    report: &mut Report,
+    member: &str,
+) -> bool {
+    if let Err(error) = save(state) {
+        report.aborted = true;
+        report.failed.push(Note {
+            subject: member.to_string(),
+            detail: format!("Could not save collection progress; installation stopped: {error}"),
+        });
+        false
+    } else {
+        true
+    }
+}
+
 /// Which mod folder each member installed as, for the ordering pass.
 pub fn installed_folders(c: &Collection, state: &InstallState) -> Vec<(usize, String)> {
     c.mods
@@ -270,7 +316,7 @@ mod tests {
                 .cloned()
                 .unwrap_or_else(|| Obtained::Ready(PathBuf::from(format!("/dl/{}.7z", m.name))))
         }
-        fn install(&mut self, m: &Mod, _a: &std::path::Path) -> Installed {
+        fn install(&mut self, m: &Mod, _a: &std::path::Path, _folder: &str) -> Installed {
             self.installed_order.push(m.name.clone());
             self.install
                 .get(&m.name)
@@ -303,7 +349,7 @@ mod tests {
         }
     }
 
-    fn noop(_: &InstallState) {}
+    fn noop(_: &InstallState) -> Result<(), String> { Ok(()) }
 
     #[test]
     fn members_install_by_phase_then_by_the_order_the_collection_listed_them() {
@@ -332,9 +378,23 @@ mod tests {
         let c = collection(vec![member("a", 0, false, 1), member("b", 0, false, 2)]);
         let mut state = InstallState::default();
         let mut saves = 0;
-        let mut save = |_: &InstallState| saves += 1;
+        let mut save = |_: &InstallState| { saves += 1; Ok(()) };
         run(&c, &mut state, &mut Fake::default(), &mut save);
         assert!(saves >= 4, "downloaded + installed for each member: {saves}");
+    }
+
+    #[test]
+    fn extraction_cannot_start_before_its_reservation_is_durable() {
+        let c = collection(vec![member("a", 0, false, 1)]);
+        let mut state = InstallState::default();
+        let mut hooks = Fake::default();
+        let mut save = |s: &InstallState| {
+            if s.folders.is_empty() { Ok(()) } else { Err("disk full".to_string()) }
+        };
+        let report = run(&c, &mut state, &mut hooks, &mut save);
+        assert!(report.aborted);
+        assert!(hooks.installed_order.is_empty());
+        assert!(report.failed[0].detail.contains("disk full"));
     }
 
     #[test]

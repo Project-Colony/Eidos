@@ -86,6 +86,8 @@ pub struct InstallState {
     /// its index, so a revision that gains or loses a member does not shift
     /// every later member's recorded status by one.
     pub members: BTreeMap<String, Status>,
+    /// Exact folders reserved before extraction. Download state never confers ownership.
+    pub folders: BTreeMap<String, String>,
 }
 
 /// What identifies a member across runs.
@@ -221,7 +223,18 @@ impl InstallState {
         }
         let tmp = path.with_extension("json.new");
         std::fs::write(&tmp, self.to_json())?;
-        std::fs::rename(&tmp, path)
+        std::fs::File::open(&tmp)?.sync_all()?;
+        std::fs::rename(&tmp, path)?;
+        if let Some(parent) = path.parent() { std::fs::File::open(parent)?.sync_all()?; }
+        Ok(())
+    }
+
+    /// Refuse a state file belonging to another revision, including sanitized slug collisions.
+    pub fn validate_revision(&self, slug: &str, revision: u32, domain: &str) -> Result<(), String> {
+        if self.slug != slug || self.revision != revision || !self.game_domain.eq_ignore_ascii_case(domain) {
+            return Err("The saved collection state belongs to another revision or game; nothing was installed".into());
+        }
+        Ok(())
     }
 
     /// Read the state back.
@@ -258,28 +271,26 @@ impl InstallState {
             "revision": self.revision,
             "gameDomain": self.game_domain,
             "members": members,
+            "folders": self.folders,
         });
         serde_json::to_string_pretty(&doc).unwrap_or_default()
     }
 
-    /// Read a state file back. A file that cannot be understood is `None`, not an
-    /// error: the worst it costs is starting the collection over, and refusing
-    /// to run because of an unreadable bookkeeping file would be worse.
+    /// Decode bookkeeping without treating a malformed reservation as a fresh install.
+    /// `load` turns a decoding failure into an error for callers.
     pub fn from_json(text: &str) -> Option<InstallState> {
         let v: serde_json::Value = serde_json::from_str(text).ok()?;
         let members = v.get("members")?.as_object()?;
         Some(InstallState {
-            slug: v.get("slug")?.as_str().unwrap_or_default().to_string(),
-            revision: v.get("revision").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
-            game_domain: v
-                .get("gameDomain")
-                .and_then(|x| x.as_str())
-                .unwrap_or_default()
-                .to_string(),
+            slug: v.get("slug")?.as_str()?.to_string(),
+            revision: u32::try_from(v.get("revision")?.as_u64()?).ok()?,
+            game_domain: v.get("gameDomain")?.as_str()?.to_string(),
             members: members
                 .iter()
-                .filter_map(|(k, v)| Some((k.clone(), status_from_json(v)?)))
-                .collect(),
+                .map(|(k, v)| Some((k.clone(), status_from_json(v)?)))
+                .collect::<Option<_>>()?,
+            folders: serde_json::from_value(v.get("folders").cloned()
+                .unwrap_or_else(|| serde_json::json!({}))).ok()?,
         })
     }
 }
@@ -402,14 +413,14 @@ mod tests {
     }
 
     #[test]
-    fn a_state_file_that_cannot_be_understood_is_a_fresh_start_not_a_refusal() {
+    fn corrupt_state_is_rejected_and_unknown_member_status_is_preserved() {
         assert!(InstallState::from_json("not json").is_none());
         assert!(InstallState::from_json("{}").is_none());
         // But a member whose status a NEWER Eidos wrote is left alone rather
         // than re-run: re-installing what a later version finished is the more
         // destructive guess.
         let s = InstallState::from_json(
-            r#"{"slug":"x","revision":1,"members":{"file:1":{"status":"quantum"}}}"#,
+            r#"{"slug":"x","revision":1,"gameDomain":"skyrimspecialedition","members":{"file:1":{"status":"quantum"}}}"#,
         )
         .unwrap();
         assert!(!s.status("file:1").is_open());
@@ -417,6 +428,24 @@ mod tests {
         let round = InstallState::from_json(&s.to_json()).unwrap();
         assert_eq!(round.status("file:1"), s.status("file:1"));
         assert!(s.to_json().contains("quantum"));
+    }
+
+    #[test]
+    fn invalid_bookkeeping_cannot_drop_members_or_change_collection_identity() {
+        let state = InstallState { slug: "one".into(), revision: 1, game_domain: "skyrimspecialedition".into(), ..Default::default() };
+        assert!(state.validate_revision("one", 1, "SkyrimSpecialEdition").is_ok());
+        assert!(state.validate_revision("two", 1, "skyrimspecialedition").is_err());
+        assert!(state.validate_revision("one", 2, "skyrimspecialedition").is_err());
+        for (key, invalid) in [
+            ("members", serde_json::json!({"file:1": {}})),
+            ("folders", serde_json::json!({"file:1": 9})),
+            ("revision", serde_json::json!(4294967296u64)),
+            ("slug", serde_json::json!([])),
+        ] {
+            let mut value: serde_json::Value = serde_json::from_str(&state.to_json()).unwrap();
+            value[key] = invalid;
+            assert!(InstallState::from_json(&value.to_string()).is_none(), "{key}");
+        }
     }
 
     #[test]
