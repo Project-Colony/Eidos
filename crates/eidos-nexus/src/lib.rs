@@ -1539,9 +1539,7 @@ pub struct ModUpdate {
     pub latest: String,
 }
 
-/// The outcome of a GUI-triggered update check across an instance's mods. Mirrors
-/// the CLI summary so the GUI status bar can report the same numbers, plus the
-/// per-mod list of mods now behind.
+/// The outcome of an update check shared by the CLI and GUI.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateCheckResult {
     /// Mods with a Nexus id that were considered.
@@ -1564,10 +1562,12 @@ pub struct UpdateCheckResult {
     /// through a check silently and only be noticed when someone went looking
     /// for its page.
     pub unavailable: Vec<String>,
+    /// Per-mod request failures; these mods were not successfully checked.
+    pub failures: Vec<(String, String)>,
 }
 
-/// Run a Nexus update check across every mod in `inst` (the GUI-callable port of
-/// `eidos nexus update`). `nexus_game` is the game's Nexus domain
+/// Run the shared CLI/GUI Nexus update check across every mod in `inst`.
+/// `nexus_game` is the game's Nexus domain
 /// (`GameDef::nexus_game`, e.g. `skyrimspecialedition`).
 ///
 /// MO2's strategy: one `updated?period=1m` bulk query, then an individual
@@ -1665,8 +1665,8 @@ pub fn check_updates(
                     result.rate_limited = true;
                     break;
                 }
-                // A single mod's failure (deleted page, transient error) must not
-                // abort the whole check - skip it and keep going, like the CLI.
+                // Continue checking other mods, but preserve incomplete results.
+                result.failures.push((m.name.clone(), e));
             }
         }
     }
@@ -3010,6 +3010,7 @@ mod tests {
         let r = UpdateCheckResult::default();
         assert_eq!((r.checked, r.queried, r.updates_found), (0, 0, 0));
         assert!(r.updates.is_empty());
+        assert!(r.failures.is_empty());
         assert!(!r.rate_limited);
         assert!(r.hourly_remaining.is_none() && r.daily_remaining.is_none());
     }

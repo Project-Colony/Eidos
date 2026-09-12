@@ -8477,12 +8477,28 @@ mod tests {
             hourly_remaining: Some(1388),
             daily_remaining: Some(2100),
             unavailable: Vec::new(),
+            failures: Vec::new(),
         };
         let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
         // It arrived in the result and used to be dropped on the floor.
         assert_eq!(app.nexus_hourly_left, Some(1388));
         assert_eq!(app.nexus_daily_left, Some(2100));
         assert!(nexus_budget_suffix(&app).contains("1388"));
+    }
+
+    #[test]
+    fn an_update_check_reports_failed_requests_as_incomplete() {
+        let mut app = nav_app(&[]);
+        let result = eidos_nexus::UpdateCheckResult {
+            checked: 1,
+            queried: 1,
+            failures: vec![("Example Mod".into(), "HTTP 503".into())],
+            ..Default::default()
+        };
+        let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+        let status = app.status.as_deref().unwrap();
+        assert!(status.contains("1 mod(s) could not be checked"));
+        assert!(status.contains("0 update(s) found"));
     }
 
     #[test]

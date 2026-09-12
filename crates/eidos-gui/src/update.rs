@@ -4575,7 +4575,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     app.nexus_hourly_left = r.hourly_remaining;
                     app.nexus_daily_left = r.daily_remaining;
                     let mut msg = format!(
-                        "Update check: {} mods checked, {} update(s) found.",
+                        "Update check: {} mods considered, {} update(s) found.",
                         r.checked, r.updates_found
                     );
                     if !r.unavailable.is_empty() {
@@ -4591,6 +4591,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                 .cloned()
                                 .collect::<Vec<_>>()
                                 .join(", ")
+                        ));
+                    }
+                    if !r.failures.is_empty() {
+                        for (name, error) in &r.failures {
+                            eidos_log::warn!("Update not checked for {name}: {error}");
+                        }
+                        msg.push_str(&format!(
+                            " {} mod(s) could not be checked; see the log for details.",
+                            r.failures.len()
                         ));
                     }
                     if r.rate_limited {

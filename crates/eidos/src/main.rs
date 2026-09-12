@@ -127,97 +127,37 @@ fn cmd_nexus(args: &[String]) {
             let inst = target.inst;
             let nexus = nexus_client();
 
-            // MO2's approach: one "updated this month" query, then only fetch
-            // the mods in the intersection (stays inside the API rate limits).
-            let updated = match nexus.updated_mod_ids(game.def.nexus_game, "1m") {
-                Ok(v) => v,
-                Err(e) => {
-                    eidos_log::warn!("update query failed: {e}");
+            let result = match eidos_nexus::check_updates(&nexus, &inst, game.def.nexus_game) {
+                Ok(result) => result,
+                Err(error) => {
+                    eidos_log::info!("Update check failed: {error}");
                     exit(1);
                 }
             };
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            const MONTH: u64 = 30 * 24 * 3600;
-
-            let mut checked = 0u32;
-            let mut updates = 0u32;
-            let mut individual = 0u32;
-            let mut rate_limited = false;
-            for m in inst.modlist() {
-                let mut meta = inst.mod_meta(&m.name);
-                let Some(mod_id) = meta.mod_id() else {
-                    continue;
-                };
-                checked += 1;
-                // MO2: the `updated?period=1m` list is only trustworthy for mods
-                // checked within that window. A mod never checked - or checked over
-                // a month ago - gets an individual query regardless of the
-                // intersection, else an update published >1 month ago is missed
-                // forever (the common first-run case on an established mod list).
-                let stale = meta
-                    .last_nexus_update()
-                    .map(|t| now.saturating_sub(t) > MONTH)
-                    .unwrap_or(true);
-                if !stale && !updated.contains(&mod_id) {
-                    continue;
-                }
-                if stale {
-                    individual += 1;
-                }
-                // Stop before the request is built, not after Nexus refuses it.
-                if nexus.would_block() {
-                    rate_limited = true;
-                    eidos_log::info!(
-                        "  Nexus request budget spent - stopping; remaining mods unchecked."
-                    );
-                    break;
-                }
-                match nexus.mod_info(game.def.nexus_game, mod_id) {
-                    Ok(remote) => {
-                        meta.set_newest_version(&remote.version);
-                        meta.set_last_nexus_update(now);
-                        let _ = meta.write(&inst.mods_dir().join(&m.name).join("meta.ini"));
-                        if meta.update_available() {
-                            updates += 1;
-                            println!(
-                                "  UPDATE {:<40} {} -> {}",
-                                m.name,
-                                meta.version().unwrap_or_default(),
-                                remote.version
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        // The shared predicate, not a bare "429". This loop used
-                        // to test for the status code while the library tested
-                        // for the wording, so a pre-flight refusal - which has no
-                        // status code - stopped one and left this one hammering.
-                        if eidos_nexus::is_rate_limited(&e) {
-                            rate_limited = true;
-                            eidos_log::info!("  {e} - stopping; remaining mods unchecked.");
-                            break;
-                        }
-                        eidos_log::info!("  {}: {e}", m.name);
-                    }
-                }
+            for update in &result.updates {
+                println!(
+                    "  UPDATE {:<40} {} -> {}",
+                    update.name, update.installed, update.latest
+                );
+            }
+            for (name, error) in &result.failures {
+                eidos_log::warn!("Update not checked for {name}: {error}");
+            }
+            for name in &result.unavailable {
+                println!("  UNAVAILABLE {name}");
             }
             println!(
-                "{updates} update(s) available ({checked} mod(s) with a Nexus id; \
-                 {individual} queried individually; {} recently updated on Nexus).",
-                updated.len()
+                "{} update(s) available ({} mod(s) with a Nexus id; {} queried).",
+                result.updates_found, result.checked, result.queried
             );
-            let rl = nexus.rate_limits();
-            if let Some(h) = rl.hourly_remaining {
-                let daily = rl
+            if let Some(hourly) = result.hourly_remaining {
+                let daily = result
                     .daily_remaining
-                    .map(|d| format!(", {d} today"))
+                    .map(|count| format!(", {count} today"))
                     .unwrap_or_default();
-                println!("Nexus budget: {h} request(s) left this hour{daily}.");
+                println!("Nexus budget: {hourly} request(s) left this hour{daily}.");
             }
-            if rate_limited {
+            if result.rate_limited {
                 eidos_log::info!(
                     "Some mods were not checked (request budget spent). Re-run once it refills."
                 );
