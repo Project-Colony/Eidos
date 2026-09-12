@@ -2,26 +2,15 @@
 #
 # Eidos tarball installer.
 #
-# Copies the binaries into place, applies the CAP_SYS_ADMIN file capability that
-# kernel FUSE passthrough needs, and registers the nxm:// handler so the Nexus
-# "Mod Manager Download" button lands in your instance. Re-running it is safe and
-# is in fact the supported way to upgrade: every step overwrites rather than
-# appends, and the capability is re-applied because a new binary is a new inode
-# and never inherits the old one's.
+# Copies the binaries and registers desktop/Nexus handlers. The default user
+# installation is unprivileged. --cap explicitly requests the optional capability;
+# it does not enable kernel passthrough, which is off by default.
 #
-# Usage:
-#   ./install.sh                     install into ~/.local/bin (default)
-#   ./install.sh --system            install into /usr/local/bin (uses sudo)
-#   ./install.sh --bindir DIR        install into DIR
-#   ./install.sh --from DIR          take the binaries from DIR
-#   ./install.sh --no-cap            skip setcap (print the command instead)
-#
-# On Arch, prefer the package: packaging/PKGBUILD applies the capability through
-# the package payload, so pacman owns it. See docs/internals/packaging.md.
+# Usage: ./install.sh [--system] [--bindir DIR] [--from DIR] [--cap | --no-cap]
 
 set -euo pipefail
 
-# Everything ships together; the GUI locates the privileged CLI as its own
+# Everything ships together; the GUI locates the CLI as its own
 # sibling before falling back to PATH, so they must share a directory.
 REQUIRED_BINS=(eidos eidos-gui)
 OPTIONAL_BINS=(eidos-fuse eidos-launch)
@@ -35,7 +24,7 @@ CAP=cap_sys_admin+ep
 bindir=""
 srcdir=""
 system=0
-apply_cap=1
+apply_cap=0
 cap_skip_reason=""
 
 die() { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
@@ -43,20 +32,18 @@ say() { printf '  %s\n' "$*"; }
 
 usage() {
 	cat <<-'EOF'
-		Install Eidos: binaries, the CAP_SYS_ADMIN file capability that kernel FUSE
-		passthrough needs, and the nxm:// download handler. Safe to re-run, and
-		re-running is how you upgrade - a rebuilt binary never inherits the old
-		one's capability.
+		Install Eidos binaries and desktop/Nexus handlers. Safe to re-run.
 
 		usage:
-		  ./install.sh                install into ~/.local/bin (default)
+		  ./install.sh                install into ~/.local/bin without sudo
 		  ./install.sh --system       install into /usr/local/bin (uses sudo)
 		  ./install.sh --bindir DIR   install into DIR
 		  ./install.sh --from DIR     take the binaries from DIR
-		  ./install.sh --no-cap       skip setcap, print the command instead
+		  ./install.sh --cap          request CAP_SYS_ADMIN (uses sudo)
+		  ./install.sh --no-cap       use the default rootless installation
 
-		On Arch, prefer the package: packaging/PKGBUILD ships the capability in the
-		package payload, so pacman owns it. See docs/internals/packaging.md.
+		Kernel passthrough is an experimental opt-in mode. Granting the capability
+		does not enable it and is unnecessary for normal game or tool launches.
 	EOF
 }
 
@@ -65,6 +52,7 @@ while [[ $# -gt 0 ]]; do
 		--system)  system=1; shift ;;
 		--bindir)  bindir="${2:-}"; [[ -n "$bindir" ]] || die "--bindir needs a directory"; shift 2 ;;
 		--from)    srcdir="${2:-}"; [[ -n "$srcdir" ]] || die "--from needs a directory"; shift 2 ;;
+		--cap)     apply_cap=1; shift ;;
 		--no-cap)  apply_cap=0; shift ;;
 		-h|--help) usage; exit 0 ;;
 		*)         die "unknown option '$1' (try --help)" ;;
@@ -155,8 +143,7 @@ echo
 
 # A file capability is silently ignored on a nosuid mount: setcap reports
 # success, getcap shows the bits, and the kernel grants nothing at exec time.
-# Catching it here is the difference between a clear message now and a
-# "why are my SKSE plugins not loading" hunt later.
+# Check before attempting an explicitly requested capability grant.
 mount_opts=",$(findmnt -no OPTIONS --target "$(nearest_existing "$bindir")" 2>/dev/null || true),"
 if (( apply_cap )) && [[ "$mount_opts" == *,nosuid,* ]]; then
 	echo "WARNING: $bindir is on a nosuid mount. The kernel ignores file"
@@ -175,6 +162,7 @@ for b in "${REQUIRED_BINS[@]}" "${OPTIONAL_BINS[@]}"; do
 	sudo_if_needed "$bindir" install -m755 "$srcdir/$b" "$bindir/$b"
 	say "$bindir/$b"
 done
+bindir="$(cd "$bindir" && pwd)"
 echo
 
 echo "capability"
@@ -186,7 +174,7 @@ if (( apply_cap )); then
 	elif run_as_root setcap "$CAP" "$bindir/$CAP_BIN"; then
 		capped=1
 		say "$(getcap "$bindir/$CAP_BIN" 2>/dev/null || echo "$bindir/$CAP_BIN $CAP")"
-		say "kernel FUSE passthrough enabled (script-extender DLLs will image-map)"
+		say "capability applied; passthrough remains off unless explicitly requested"
 	else
 		say "could not apply it - run this yourself:"
 		say "  sudo setcap $CAP $bindir/$CAP_BIN"
@@ -194,7 +182,7 @@ if (( apply_cap )); then
 elif [[ "$cap_skip_reason" == nosuid ]]; then
 	say "not applied - a nosuid mount cannot carry one, so setcap would lie to you"
 else
-	say "skipped - run this yourself when you want passthrough:"
+	say "not requested (normal rootless operation); optional command:"
 	say "  sudo setcap $CAP $bindir/$CAP_BIN"
 fi
 (( capped )) || say "without it Eidos still works, but mounts rootless"
@@ -262,13 +250,25 @@ else
 		say "no assets/ beside this script - keeping the stock icon name"
 	fi
 
+	# Desktop Entry values are decoded before Exec argument quoting.
+	# https://specifications.freedesktop.org/desktop-entry/latest/exec-variables.html
+	desktop_exe="$bindir/eidos-gui"
+	desktop_exe=${desktop_exe//\\/\\\\}
+	desktop_exe=${desktop_exe//\"/\\\"}
+	desktop_exe=${desktop_exe//\$/\\\$}
+	desktop_exe=${desktop_exe//\`/\\\`}
+	desktop_exe=${desktop_exe//\\/\\\\}
+	desktop_exe=${desktop_exe//%/%%}
+	desktop_exe=${desktop_exe//$'\n'/\\n}
+	desktop_exe=${desktop_exe//$'\r'/\\r}
+
 	cat > "$apps/eidos.desktop" <<-EOF
 		[Desktop Entry]
 		Type=Application
 		Name=Eidos
 		GenericName=Mod Manager
 		Comment=Mod manager for games running under Proton
-		Exec=$bindir/eidos-gui
+		Exec="$desktop_exe"
 		Icon=$icon_key
 		Categories=Game;
 		Keywords=mod;mods;modding;skyrim;fallout;starfield;bethesda;
@@ -298,4 +298,4 @@ echo "Steam launch option for a game (absolute path: Steam does not read your PA
 echo "  WINEDLLOVERRIDES=\"d3dcompiler_47=n\" $bindir/eidos-gui %command%"
 echo
 echo "Re-run this script after every upgrade. A rebuilt binary is a new file and"
-echo "does not inherit the capability - that is a kernel rule, not an Eidos quirk."
+echo "does not inherit an optional capability; use --cap again only if needed."

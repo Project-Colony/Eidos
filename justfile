@@ -1,12 +1,7 @@
 # Eidos task runner (https://just.systems). `just` lists the recipes.
 #
-# The recipe that earns its keep is `build`. A file capability is an xattr on an
-# inode, and every `cargo build` writes a brand new inode over the old binary, so
-# the CAP_SYS_ADMIN that FUSE passthrough needs is gone after every single
-# rebuild. Nothing errors out when that happens: the launch path falls back to a
-# rootless mount, reads stop going through the kernel, and script-extender DLLs
-# quietly fail to image-map in-game. Hours get lost to that. So `build` rebuilds
-# *and* re-applies the capability, and you never run bare `cargo build` again.
+# Builds and tests use the normal rootless path. `just setcap` is an explicit
+# opt-in for experiments requiring CAP_SYS_ADMIN; it does not enable passthrough.
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
@@ -32,8 +27,8 @@ gui_bin := out_dir / "eidos-gui"
 default:
     @just --list --unsorted
 
-# Rebuild the workspace, then re-apply the capability the rebuild just wiped.
-build: && setcap
+# Rebuild the workspace without requesting privileges.
+build:
     cargo build --workspace --profile {{ profile }}
 
 # Re-apply CAP_SYS_ADMIN to the built `eidos` binary. Needs sudo; idempotent.
@@ -47,7 +42,7 @@ setcap:
     fi
     # A nosuid mount makes the kernel ignore file capabilities outright, so
     # setcap would report success and change precisely nothing at exec time.
-    # Catch that here rather than three hours later, in-game, with no DLLs.
+    # Check before requesting an optional capability.
     opts=",$(findmnt -no OPTIONS --target "$bin" 2>/dev/null || true),"
     if [[ "$opts" == *,nosuid,* ]]; then
         echo "just: $bin sits on a nosuid mount - the kernel ignores file" >&2
@@ -67,7 +62,7 @@ setcap:
 # privileged `eidos` as its own sibling, so it has to start from the directory
 # the build just wrote, not from a cargo shim.
 
-# Build (with the capability re-applied) and start the GUI.
+# Build and start the GUI.
 run-gui: build
     {{ gui_bin }}
 
@@ -77,7 +72,8 @@ run *args: build
 
 # The whole suite: unit tests plus the real-mount FUSE integration test.
 test:
-    cargo test --workspace
+    cargo test --workspace --exclude eidos-gui
+    cargo test -p eidos-gui -- --test-threads=1
 
 # This one mounts a real union in a private user+mount namespace and drives it
 # through the kernel. It skips itself when the namespace or /dev/fuse is
@@ -88,7 +84,7 @@ test:
 test-fuse:
     cargo test -p eidos-fuse --test union
 
-# Clippy over every target, warnings fatal (what CI enforces).
+# Optional strict Clippy pass over tests and examples as well as production.
 lint:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -103,9 +99,7 @@ fmt-check:
 # Everything CI runs, in CI's order.
 ci: fmt-check lint test
 
-# The first question in every bug report is "does your eidos binary still have
-# the capability". This answers it for every copy on the machine, and checks the
-# three other things that silently downgrade a mount.
+# Report mount prerequisites and the optional capability on every installed copy.
 
 # Diagnose the mount path: capability state, kernel passthrough, FUSE plumbing.
 doctor:
@@ -160,18 +154,18 @@ doctor:
         elif [[ "$caps" == *cap_sys_admin* ]]; then
             state="OK - cap_sys_admin present"
         else
-            state="MISSING - rootless fallback, script-extender DLLs may not load"
+            state="not set - normal rootless operation"
         fi
         printf '  %-40s %s\n' "$bin" "$state"
     done
     (( found )) || echo "  (none found - run 'just build')"
 
     echo
-    echo "Fix any MISSING with:  sudo setcap cap_sys_admin+ep <path>"
+    echo "Optional capability:   sudo setcap cap_sys_admin+ep <path>"
     echo "or just:               just setcap        (for {{ eidos_bin }})"
     echo "Every rebuild of a binary wipes its capability. That is expected."
 
-# Install into ~/.local/bin (binaries, capability, nxm:// handler).
+# Install into ~/.local/bin (binaries and desktop/Nexus handlers).
 install: build
     packaging/install.sh --from {{ out_dir }}
 

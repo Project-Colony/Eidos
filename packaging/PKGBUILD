@@ -2,50 +2,8 @@
 #
 # Arch package for Eidos.
 #
-# The interesting part of this file is the setcap in package(). Eidos needs the
-# file capability CAP_SYS_ADMIN on /usr/bin/eidos for kernel FUSE passthrough;
-# without it the mount silently degrades to rootless and script-extender DLLs
-# may not load. The usual assumption is that a package cannot apply a file
-# capability and that the user has to run setcap by hand afterwards. That
-# assumption is wrong on Arch, and the mechanism below is the one that works.
-#
-# Why it works, end to end:
-#
-#   1. makepkg runs package() under fakeroot. fakeroot intercepts the *xattr
-#      syscalls and records security.capability in its own bookkeeping, so
-#      `setcap` succeeds even though we are not root.
-#   2. makepkg then archives $pkgdir with bsdtar, in the same fakeroot session.
-#      bsdtar reads back the emulated xattr and stores it in the payload as
-#      SCHILY.xattr.security.capability / LIBARCHIVE.xattr.security.capability.
-#      This needs no extra flag: makepkg's plain `bsdtar --no-fflags -cnf -`
-#      already captures it.
-#   3. pacman restores xattrs when it extracts the package as root, so the
-#      capability lands on the installed binary.
-#
-# You can verify all three steps on any Arch machine without building anything:
-#
-#   getcap /usr/bin/btop            -> cap_dac_read_search,cap_perfmon=ep
-#   ls /var/lib/pacman/local/btop-*/install   -> does not exist
-#
-# btop carries a file capability that no .install scriptlet ever set, because it
-# came out of the package payload. Dumping the payload confirms it:
-#
-#   bsdtar -xOf /var/cache/pacman/pkg/btop-*.pkg.tar.zst   (pax header shows
-#   LIBARCHIVE.xattr.security.capability on usr/bin/btop)
-#
-# So no .install file is needed, and a post_install hook calling setcap would be
-# strictly worse: it would fire on every upgrade, need the binary to already be
-# in place, and hide the capability from `pacman -Qkk` verification.
-#
-# Two caveats worth knowing, because they are how this fails in the field:
-#
-#   * The capability is ignored on a nosuid mount. If /usr lives on one (rare,
-#     but it happens on locked-down or container-ish installs), no packaging
-#     trick helps; nothing can grant a capability there.
-#   * The filesystem must carry security.* xattrs. ext4/btrfs/xfs/f2fs do.
-#
-# If you are building this by hand rather than through an AUR helper:
-#   cd packaging && makepkg -si
+# Rootless FUSE is the default; no file capability is needed for normal use.
+# Build and install with: cd packaging && makepkg -si
 
 _pkgname=eidos
 pkgname=eidos-git
@@ -59,8 +17,7 @@ license=('GPL-3.0-or-later')
 # the mod installer's extraction; xdg-utils is the nxm:// handler registration
 # and "open in explorer".
 depends=('fuse3' '7zip' 'xdg-utils' 'gcc-libs' 'glibc')
-# libcap for setcap in package(); git for the VCS source.
-makedepends=('cargo' 'git' 'libcap')
+makedepends=('cargo' 'git')
 optdepends=(
 	'steam: game and Proton detection'
 	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
@@ -106,19 +63,20 @@ check() {
 	# namespace and skips itself when it cannot (no /dev/fuse, user namespaces
 	# disabled, restricted build chroot), so this stays green off a build host
 	# that has no FUSE - it just tests less there.
-	cargo test --frozen --workspace
+	cargo test --frozen --release --workspace --exclude eidos-gui
+	cargo test --frozen --release -p eidos-gui -- --test-threads=1
 }
 
 package() {
 	cd "$srcdir/$_pkgname"
 
 	install -Dm755 target/release/eidos "$pkgdir/usr/bin/eidos"
-	# The GUI finds the privileged CLI as its own sibling before falling back to
+	# The GUI finds the CLI as its own sibling before falling back to
 	# PATH, so the two binaries must land in the same directory.
 	install -Dm755 target/release/eidos-gui "$pkgdir/usr/bin/eidos-gui"
 	# The two lower-level CLIs the README documents: mount a union by hand, or
 	# run one command through a union in a private namespace. They stay
-	# uncapped - see the setcap note at the end of this function.
+	# unprivileged, like the main launcher.
 	install -Dm755 target/release/eidos-fuse "$pkgdir/usr/bin/eidos-fuse"
 	install -Dm755 target/release/eidos-launch "$pkgdir/usr/bin/eidos-launch"
 
@@ -168,19 +126,4 @@ package() {
 		StartupNotify=true
 	EOF
 
-	# The whole point of this file. See the header for why this survives into the
-	# installed package instead of needing a post_install scriptlet.
-	#
-	# Only this one binary gets it. Capabilities are per-file, and `eidos` is the
-	# one the product actually launches games through (the GUI shells out to it).
-	# Anyone driving eidos-launch or eidos-fuse directly can setcap their own
-	# copy; those tools already print the exact command when they fall back to a
-	# rootless mount.
-	#
-	# One ordering note: makepkg strips binaries in tidy_install(), which runs
-	# *after* package(). That is fine - strip rewrites the file in place and the
-	# fakeroot-tracked capability comes through unharmed - but it is the reason
-	# to double-check with `getcap /usr/bin/eidos` after installing, not with
-	# `getcap` on the pkgdir copy mid-build.
-	setcap cap_sys_admin+ep "$pkgdir/usr/bin/eidos"
 }
