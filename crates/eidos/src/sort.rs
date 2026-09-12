@@ -3,8 +3,6 @@
 use std::path::PathBuf;
 use std::process::exit;
 
-use eidos_instance::ModEntry;
-
 use crate::*;
 
 /// `eidos sort <game-id> [--dry-run] [--update-masterlist]` - run LOOT's real
@@ -61,19 +59,11 @@ pub(crate) fn cmd_sort(args: &[String]) {
     }
     let state_dir = prof.plugins_state_dir();
 
-    // Discover exactly what a launch would use, preserving the current order.
-    let enabled: Vec<ModEntry> = inst
-        .modlist()
-        .into_iter()
-        .filter(|m| m.is_active())
-        .collect();
-    let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
-    let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
-    list.apply_prefix_state(&state_dir, &spec);
-    // Pins resist LOOT here exactly as they do in the window, or `eidos sort`
-    // would quietly undo what the GUI promised to hold.
-    list.locked = inst.active().read_locked_order();
-    list.refresh(&spec);
+    // Share launch discovery, including whiteouts, profile state and pins.
+    let Some(mut list) = inst.plugin_list(&game.data_path, id, Some(&state_dir)) else {
+        eidos_log::warn!("Plugin load order is unavailable for '{id}'.");
+        exit(1);
+    };
 
     if list.plugins.is_empty() {
         eidos_log::info!("No plugins discovered for '{id}'; nothing to sort.");
@@ -108,6 +98,14 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let mut mod_dirs: Vec<PathBuf> = vec![inst.overwrite_dir()];
     mod_dirs.extend(inst.load_order());
     mod_dirs.retain(|p| p.is_dir());
+    if let Err(e) = eidos_loot::add_case_bridge(
+        &masterlist,
+        &mut mod_dirs,
+        &game.install_path,
+        &cache.join("case-bridge"),
+    ) {
+        eidos_log::warn!("Could not build the LOOT case bridge: {e}");
+    }
 
     let view = eidos_loot::GameView {
         game_id: id,

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Eidos 설치
 
@@ -69,8 +69,8 @@ eidos play skyrimse -- %command%  # 무엇이든 병합된 뷰를 통해 실행
 
 ## 선택: FUSE 패스스루
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"`는 커널 FUSE 패스스루를
-켭니다. **기본값은 꺼짐이고, 거의 확실히 그대로 두는 편이 좋습니다**: Skyrim
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"`는 선택적 권한을 부여하지만 패스스루를 켜지는 않습니다.
+실행 시 별도의 `EIDOS_FUSE_PASSTHROUGH=1` 설정으로 활성화합니다. **기본값은 꺼짐이고, 거의 확실히 그대로 두는 편이 좋습니다**: Skyrim
 SE에서 측정한 결과, 게임이 자기 아카이브와 플러그인을 열지 못하게 되어 모드가
 조용히 로드되지 않습니다. 이 스위치는 메커니즘을 다시 시험하기 위한 것이지
 권장되기 때문이 아닙니다.

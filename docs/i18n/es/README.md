@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -83,14 +83,7 @@ partidas se analizan, se comparan con tus plugins actuales - con un botón que
 activa lo que una partida necesita - y se resincronizan para Steam Cloud después
 de cada sesión.
 
-**Nexus.** Conecta una cuenta y el botón «Mod Manager Download» del sitio
-aterriza directamente en tu instancia, con comprobación de actualizaciones
-frente a lo que tienes instalado, quién hizo cada mod y un enlace a su perfil. Un
-enlace de **colección** lista sus miembros cruzados con tu instancia -
-instalados, descargados, ausentes - lo que es leer una colección en vez de
-instalarla, y el panel dice por qué. La pestaña Downloads es una biblioteca de
-archivos: filtrar, ordenar, ocultar sin borrar, y purgar los que ya están
-instalados. Un interruptor **sin conexión** lo detiene todo.
+**Nexus.** Conecta una cuenta para recibir enlaces de «Mod Manager Download», comprobar actualizaciones y consultar autores y sus perfiles. Las colecciones se instalan a partir de sus recetas, con progreso reanudable e informes explícitos sobre los pasos no compatibles. La comparación verifica los archivos de origen exactos; los metadatos antiguos incompletos quedan sin verificar. La pestaña Descargas permite filtrar, ordenar, ocultar y eliminar archivos. Un interruptor **sin conexión** detiene el acceso a Nexus.
 
 **Herramientas.** xEdit, BodySlide, DynDOLOD y compañía se ejecutan *a través de
 la vista combinada* dentro del prefijo Proton del juego - ven tus mods, su
@@ -115,6 +108,8 @@ bajo `~/.local/state/Colony/Eidos/`. La disposición que usa todo programa de la
 familia Colony. Un Eidos más antiguo los guardaba en `~/.config/eidos/`; el
 primer lanzamiento tras actualizar los copia, lo dice en el registro, y deja el
 directorio antiguo exactamente como estaba.
+
+Consulta [Comprobaciones de integridad y archivos generados](../../../docs/internals/integrity.md) (en inglés) para conocer la protección al reemplazar mods, los conflictos de archivos BSA/BA2, los diagnósticos estáticos de SKSE y los registros de generación, con sus límites.
 
 ## Cómo se compara
 

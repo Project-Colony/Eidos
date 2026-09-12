@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Eidos のインストール
 
@@ -70,8 +70,8 @@ eidos play skyrimse -- %command%  # 何でも統合ビュー越しに実行す�
 
 ## 任意: FUSE パススルー
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` でカーネルの FUSE
-パススルーが有効になります。**既定では無効で、ほぼ確実にそのままがよい**です。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` は任意のケーパビリティを付与しますが、パススルーは有効にしません。
+実行時に有効にするには、別途 `EIDOS_FUSE_PASSTHROUGH=1` を指定します。**既定では無効で、ほぼ確実にそのままがよい**です。
 Skyrim SE で実測したところ、ゲームが自分の書庫やプラグインを開けなくなり、
 MOD が黙って読み込まれません。このスイッチは仕組みを再検証するためにあり、
 推奨されているからではありません。

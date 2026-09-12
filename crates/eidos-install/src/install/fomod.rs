@@ -8,11 +8,37 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use eidos_instance::ModMeta;
-
-use crate::{fix_directory_name, guess_mod_name_and_id};
-
 use super::*;
+
+/// Build installer conditions from the same persisted plugin state used at launch.
+pub fn fomod_context_for_instance(
+    instance: &eidos_instance::Instance,
+    game_data: &Path,
+    game_id: &str,
+    fallback_state: Option<&Path>,
+) -> eidos_fomod::Context {
+    let mods = instance.modlist();
+    let enabled: Vec<_> = mods
+        .iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.path.clone())
+        .collect();
+    let disabled: Vec<_> = mods
+        .iter()
+        .filter(|m| !m.is_active() && !m.is_separator())
+        .map(|m| m.path.clone())
+        .collect();
+    let plugins = instance.plugin_list(game_data, game_id, fallback_state);
+    fomod_context_with_plugins(
+        game_data,
+        &enabled,
+        &disabled,
+        &instance.overwrite_dir(),
+        plugins
+            .iter()
+            .flat_map(|list| list.plugins.iter().map(|p| (p.name.as_str(), p.enabled))),
+    )
+}
 
 /// Build a FOMOD install [`Context`](eidos_fomod::Context) from the current setup:
 /// a plugin (`.esp`/`.esm`/`.esl`) in the game's Data or an enabled mod is marked
@@ -63,11 +89,52 @@ pub fn fomod_context(
     }
 }
 
+/// Build conditions from discovered plugin activation after applying profile/prefix
+/// state. Overwrite contributes installed presence just like the enabled mod roots.
+/// Absent plugins remain Missing even if a stale activation entry names them.
+pub fn fomod_context_with_plugins<'a>(
+    game_data: &Path,
+    enabled_mod_roots: &[PathBuf],
+    disabled_mod_roots: &[PathBuf],
+    overwrite: &Path,
+    plugins: impl IntoIterator<Item = (&'a str, bool)>,
+) -> eidos_fomod::Context {
+    let mut roots = enabled_mod_roots.to_vec();
+    roots.push(overwrite.to_path_buf());
+    let mut ctx = fomod_context(game_data, &roots, disabled_mod_roots);
+    let lower = enabled_mod_roots
+        .iter()
+        .rev()
+        .cloned()
+        .chain(std::iter::once(game_data.to_path_buf()))
+        .collect();
+    let stack = eidos_core::LayerStack::new(lower, overwrite.to_path_buf());
+    let disabled: std::collections::HashSet<_> = disabled_mod_roots
+        .iter()
+        .flat_map(|root| fs::read_dir(root).into_iter().flatten())
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_file())
+        .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
+        .collect();
+    ctx.file_states.retain(|name, _| {
+        stack.resolve_read(name).is_some_and(|p| p.is_file()) || disabled.contains(name)
+    });
+    for state in ctx.file_states.values_mut() {
+        *state = "Inactive".into();
+    }
+    for (name, active) in plugins {
+        if let Some(state) = ctx.file_states.get_mut(&name.to_ascii_lowercase()) {
+            *state = if active { "Active" } else { "Inactive" }.into();
+        }
+    }
+    ctx
+}
+
 /// Find the directory that contains a `fomod/ModuleConfig.xml` (case-insensitive),
 /// descending through a wrapper folder or two.
 pub(crate) fn find_fomod_root(tmp: &Path) -> Option<PathBuf> {
-    fn walk(dir: &Path, depth: u32) -> Option<PathBuf> {
-        if depth > 4 {
+    fn walk(root: &Path, dir: &Path, depth: u32) -> Option<PathBuf> {
+        if depth > 4 || !source_within(root, dir) {
             return None;
         }
         let entries: Vec<_> = fs::read_dir(dir).ok()?.flatten().collect();
@@ -87,14 +154,14 @@ pub(crate) fn find_fomod_root(tmp: &Path) -> Option<PathBuf> {
                 .to_string_lossy()
                 .eq_ignore_ascii_case("fomod");
             if e.path().is_dir() && !is_fomod {
-                if let Some(found) = walk(&e.path(), depth + 1) {
+                if let Some(found) = walk(root, &e.path(), depth + 1) {
                     return Some(found);
                 }
             }
         }
         None
     }
-    walk(tmp, 0)
+    walk(tmp, tmp, 0)
 }
 
 /// Parse the `fomod/ModuleConfig.xml` under `root`.
@@ -159,14 +226,7 @@ pub(crate) fn apply_plan(
             )));
         }
         let dst = dest.join(&destination);
-        if item.is_folder {
-            copy_dir_all(&src, &dst)?;
-        } else {
-            if let Some(parent) = dst.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::copy(&src, &dst)?;
-        }
+        copy_plan_source(root, &src, dest, &dst, item.is_folder)?;
     }
     Ok(missing)
 }
@@ -209,7 +269,7 @@ impl FomodSession {
 /// Apply the chosen selection and finish the FOMOD install, resolving a
 /// destination collision per `policy` (like [`install_archive_with_policy`]):
 /// Fail returns `Exists`, Merge installs over, Replace preserves the user
-/// metadata and wipes only after the plan is built, Rename installs under the
+/// metadata and publishes only after the payload and metadata are ready, Rename installs under the
 /// new name (failing if that also exists).
 pub fn finish_fomod(
     session: FomodSession,
@@ -219,52 +279,18 @@ pub fn finish_fomod(
     ctx: &eidos_fomod::Context,
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
-    let mut name = fix_directory_name(&session.name).unwrap_or_else(|| "Mod".to_string());
-    let (_, guessed_id) = guess_mod_name_and_id(&session.archive.to_string_lossy());
-    let mut dest = mods_dir.join(&name);
-    let mut preserved: Option<ModMeta> = None;
-    let mut replacing = false;
-    if dest.exists() && is_nonempty_dir(&dest) {
-        match &policy {
-            OverwritePolicy::Fail => return Err(InstallError::Exists(dest)),
-            OverwritePolicy::Merge => {}
-            OverwritePolicy::Replace => {
-                preserved = Some(ModMeta::read(&dest.join("meta.ini")));
-                replacing = true;
-            }
-            OverwritePolicy::Rename(new) => {
-                name = fix_directory_name(new).unwrap_or_else(|| "Mod".to_string());
-                dest = mods_dir.join(&name);
-                if dest.exists() && is_nonempty_dir(&dest) {
-                    return Err(InstallError::Exists(dest));
-                }
-            }
-        }
-    }
-    // Belt-and-braces: never install a FOMOD whose module dependencies are unmet,
-    // even if a caller skipped the upfront check (MO2 parity).
-    if let Some(req) = eidos_fomod::unmet_module_dependencies(&session.config, ctx) {
+    if let Some(req) = session.unmet_dependencies(ctx) {
         return Err(InstallError::UnmetDependency(req));
     }
-    // Build the plan (pure) before the destructive step, so a bad selection can
-    // never cost the existing mod.
     let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
-    if replacing {
-        fs::remove_dir_all(&dest)?;
-    }
-    fs::create_dir_all(&dest)?;
-    let missing = apply_plan(&session.root, &plan, &dest)?;
-    write_meta(&session.archive, &dest, game_id, guessed_id)?;
-    if let Some(old) = preserved {
-        reapply_user_meta(&old, &dest.join("meta.ini"));
-    }
-    Ok(InstallReport {
-        name,
-        stripped: String::new(),
-        fomod: true,
-        missing,
-        dest,
-    })
+    install_destination(
+        &session.archive,
+        mods_dir,
+        &session.name,
+        game_id,
+        policy,
+        |dest, _| Ok((String::new(), true, apply_plan(&session.root, &plan, dest)?)),
+    )
 }
 
 // ---- case-collision normalisation -------------------------------------------

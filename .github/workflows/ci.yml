@@ -105,6 +105,9 @@ jobs:
       # release build resolves too, so CI must fail loudly if a manifest change
       # landed without regenerating it, rather than quietly resolving something
       # else than what ships.
+      - name: Test the rootless installer
+        run: bash packaging/tests/install.sh
+
       - name: Build
         run: cargo build --workspace --locked
 

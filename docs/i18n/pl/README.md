@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -81,14 +81,7 @@ są parsowane, porównywane z twoimi obecnymi wtyczkami - z przyciskiem
 włączającym to, czego zapis potrzebuje - i po każdej sesji synchronizowane z
 powrotem dla Steam Cloud.
 
-**Nexus.** Podłącz konto, a przycisk „Mod Manager Download" na stronie ląduje
-prosto w twojej instancji, wraz ze sprawdzaniem aktualizacji względem tego, co
-masz zainstalowane, autorem każdego moda i odnośnikiem do jego profilu. Odnośnik
-do **kolekcji** wypisuje jej elementy zestawione z twoją instancją -
-zainstalowane, pobrane, brakujące - co jest czytaniem kolekcji, a nie jej
-instalowaniem, i panel mówi dlaczego. Zakładka Downloads to biblioteka archiwów:
-filtruj, sortuj, ukrywaj bez usuwania i wyczyść te już zainstalowane.
-Przełącznik **offline** zatrzymuje to wszystko.
+**Nexus.** Połącz konto, aby odbierać odnośniki „Mod Manager Download”, sprawdzać aktualizacje oraz przeglądać autorów i ich profile. Kolekcje są instalowane według swoich przepisów, z możliwością wznowienia postępu i wyraźnymi raportami o nieobsługiwanych krokach. Porównanie sprawdza dokładne pliki źródłowe; niepełne starsze metadane pozostają niezweryfikowane. Karta pobierania pozwala filtrować, sortować, ukrywać i usuwać archiwa. Przełącznik **offline** blokuje dostęp do Nexusa.
 
 **Narzędzia.** xEdit, BodySlide, DynDOLOD i spółka działają *przez scalony widok*
 wewnątrz prefiksu Proton gry - widzą twoje mody, ich wyniki lądują w Overwrite,
@@ -112,6 +105,8 @@ definicje gier i dodatków - z logami pod `~/.local/state/Colony/Eidos/`. Układ
 którego używa każdy program z rodziny Colony. Starszy Eidos trzymał to w
 `~/.config/eidos/`; pierwsze uruchomienie po aktualizacji kopiuje je, mówi o tym
 w logu i zostawia stary folder dokładnie takim, jaki był.
+
+[Kontrole integralności i wygenerowane pliki](../../../docs/internals/integrity.md) (po angielsku) opisuje ochronę przy zastępowaniu modów, konflikty plików w BSA/BA2, statyczną diagnostykę SKSE i zapisy generowania wraz z ich ograniczeniami.
 
 ## Jak wypada na tle innych
 

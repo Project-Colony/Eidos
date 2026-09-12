@@ -25,7 +25,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use object::pe::{ImageNtHeaders32, ImageNtHeaders64};
-use object::read::pe::{ImageNtHeaders, ImportTable, PeFile};
+use object::read::pe::{ImageNtHeaders, PeFile};
 use object::LittleEndian as LE;
 
 /// A genuine Microsoft redistributable DLL Eidos bundles to drop into a Proton
@@ -125,17 +125,14 @@ pub fn imported_dlls(path: &Path) -> Result<BTreeSet<String>, NativeDllError> {
 fn parse<Pe: ImageNtHeaders>(data: &[u8]) -> Result<BTreeSet<String>, object::Error> {
     let file: PeFile<Pe> = PeFile::parse(data)?;
     let mut out = BTreeSet::new();
-    let import_table: ImportTable = match file.import_table()? {
-        Some(t) => t,
-        None => return Ok(out),
-    };
-    let mut descriptors = import_table.descriptors()?;
-    while let Some(descriptor) = descriptors.next()? {
-        let name_rva = descriptor.name.get(LE);
-        // One malformed descriptor name must not discard the file's other imports
-        // (a later, valid d3dcompiler_47 import), so skip a bad one rather than `?`.
-        if let Ok(name_bytes) = import_table.name(name_rva) {
-            out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
+    if let Some(import_table) = file.import_table()? {
+        let mut descriptors = import_table.descriptors()?;
+        while let Some(descriptor) = descriptors.next()? {
+            let name_rva = descriptor.name.get(LE);
+            // Preserve other imports when one descriptor's name is malformed.
+            if let Ok(name_bytes) = import_table.name(name_rva) {
+                out.insert(String::from_utf8_lossy(name_bytes).to_ascii_lowercase());
+            }
         }
     }
     // DELAY-LOADED imports count too: a plugin that binds d3dcompiler lazily
@@ -364,6 +361,34 @@ fn same_contents(path: &Path, bytes: &[u8]) -> io::Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delay_only_imports_trigger_the_native_dll_prerequisite() {
+        // A PE32+ with one ordinal delay import and no classic import directory.
+        let mut pe = vec![0_u8; 1024];
+        pe[..2].copy_from_slice(b"MZ");
+        pe[60..64].copy_from_slice(&128_u32.to_le_bytes());
+        pe[128..132].copy_from_slice(b"PE\0\0");
+        for (at, value) in [(132, 0x8664_u16), (134, 1), (148, 240), (150, 0x2022), (152, 0x20b)] {
+            pe[at..at + 2].copy_from_slice(&value.to_le_bytes());
+        }
+        for (at, value) in [(184, 4096_u32), (188, 512), (208, 8192), (212, 512),
+            (260, 16), (368, 4096), (372, 64), (400, 512), (404, 4096), (408, 512),
+            (412, 512), (428, 0x40000040), (512, 1), (516, 4224), (524, 4256), (528, 4272)] {
+            pe[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        pe[392..400].copy_from_slice(b".rdata\0\0");
+        pe[640..659].copy_from_slice(b"d3dcompiler_47.dll\0");
+        for at in [672, 688] {
+            pe[at..at + 8].copy_from_slice(&0x8000000000000001_u64.to_le_bytes());
+        }
+        let dir = tmp_dir();
+        let dll = dir.join("delay.dll");
+        fs::write(&dll, pe).unwrap();
+        assert!(imported_dlls(&dll).unwrap().contains("d3dcompiler_47.dll"));
+        assert!(scan_imports_provisionable(&[dir.clone()]));
+        fs::remove_dir_all(dir).unwrap();
+    }
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static N: AtomicU32 = AtomicU32::new(0);

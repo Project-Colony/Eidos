@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -83,14 +83,7 @@ worden ontleed, vergeleken met je huidige plugins - met een knop die inschakelt
 wat een save nodig heeft - en na elke sessie teruggesynchroniseerd voor Steam
 Cloud.
 
-**Nexus.** Koppel een account en de knop "Mod Manager Download" van de site landt
-rechtstreeks in je instantie, met updatecontroles tegen wat je geïnstalleerd
-hebt, wie elke mod gemaakt heeft en een link naar zijn profiel. Een
-**collectie**-link somt haar leden op, gekruist met je instantie - geïnstalleerd,
-gedownload, ontbrekend - wat neerkomt op een collectie lezen in plaats van er een
-installeren, en het paneel zegt waarom. Het tabblad Downloads is een
-archiefbibliotheek: filteren, sorteren, verbergen zonder verwijderen, en de al
-geïnstalleerde opruimen. Een **offline**-schakelaar zet dat alles stil.
+**Nexus.** Koppel een account om Mod Manager Download-links te ontvangen, updates te controleren en auteurs en hun profielen te bekijken. Collecties worden vanuit hun recepten geïnstalleerd, met hervatbare voortgang en duidelijke rapporten over niet-ondersteunde stappen. De vergelijking controleert de exacte bronbestanden; onvolledige oudere metadata blijven ongeverifieerd. Het tabblad Downloads kan archieven filteren, sorteren, verbergen en verwijderen. Een **offline**-schakelaar stopt de toegang tot Nexus.
 
 **Tools.** xEdit, BodySlide, DynDOLOD en consorten draaien *door de samengevoegde
 weergave* binnen het Proton-prefix van het spel - ze zien je mods, hun uitvoer
@@ -115,6 +108,8 @@ add-on-definities die je geschreven hebt - met logs onder
 Colony-familie gebruikt. Een oudere Eidos hield die in `~/.config/eidos/`; de
 eerste start na het bijwerken kopieert ze over, meldt dat in het log, en laat de
 oude map precies zoals ze was.
+
+Zie [Integriteitscontroles en gegenereerde bestanden](../../../docs/internals/integrity.md) (Engels) voor bescherming bij vervanging, conflicten tussen BSA/BA2-bestanden, statische SKSE-diagnostiek en generatieregistraties, inclusief hun beperkingen.
 
 ## Hoe het zich verhoudt
 

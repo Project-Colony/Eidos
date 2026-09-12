@@ -29,6 +29,7 @@ mod export;
 mod manifest;
 mod meta;
 mod profile;
+mod provenance;
 mod registry;
 pub mod settings;
 mod tools;
@@ -42,11 +43,14 @@ pub use profile::{
     cosave_siblings, format_stamp, is_save_data, is_save_listing, read_text_lossy, untweak_ini,
     write_text, Backup, BackupKind, ListTrust, Profile, SaveEntry, TweakedKey,
 };
+pub use provenance::{
+    GeneratedInput, GeneratedOutput, GeneratedReceipt, GeneratedRun, ToolExecutable,
+};
 pub use registry::{registry_path, InstanceRef, Registry};
 pub use settings::Settings;
 pub use tools::{
-    default_args, default_prereqs, default_tools, default_tools_in, merge_tools, read_tools,
-    tool_search_roots,
+    default_args, default_prereqs, default_tools, default_tools_in, default_tools_in_view,
+    merge_tools, read_tools, root_executable, root_executable_source, tool_search_roots,
     write_tools, GameExecutables, Tool,
 };
 
@@ -625,10 +629,23 @@ impl Instance {
         if self.overwrite_is_empty() {
             return Err(Error::new(ErrorKind::NotFound, "the Overwrite is empty"));
         }
+        let _lock = self.try_lock("moving generated output")?;
+        let before = self.overwrite_snapshot();
+        let mut provenance = self.generated_store_for_move()?;
         let dest = self.mods_dir().join(name);
         let fresh = !dest.exists();
-        fs::create_dir_all(&dest)?;
-        move_tree(&src, &dest)?;
+        let result = move_tree(&self.mods_dir(), &src, &dest);
+        let moved: Vec<_> = before
+            .files
+            .keys()
+            .filter(|path| {
+                fs::symlink_metadata(src.join(path)).is_err()
+                    && fs::symlink_metadata(dest.join(path)).is_ok()
+            })
+            .map(|path| (name.to_string(), path.clone()))
+            .collect();
+        provenance.moved(self, &before, &moved)?;
+        result?;
         if fresh {
             // The same minimal meta.ini `create_empty_mod` writes, so the new mod
             // reads back like any other.
@@ -685,6 +702,8 @@ impl Instance {
         if !crate::tools::is_mod_folder_name(name) {
             return Err(Error::new(ErrorKind::InvalidInput, "invalid mod name"));
         }
+        let _lock = self.try_lock("moving generated output")?;
+        let mut provenance = self.generated_store_for_move()?;
         let src = self.overwrite_dir();
         let dest = self.mods_dir().join(name);
         let fresh = !dest.exists();
@@ -703,6 +722,7 @@ impl Instance {
         produced.sort();
 
         let mut moved = 0usize;
+        let mut moved_paths = Vec::new();
         let mut failures: Vec<String> = Vec::new();
         for rel in produced {
             let to = dest.join(rel);
@@ -716,7 +736,9 @@ impl Instance {
                 continue;
             }
             moved += 1;
+            moved_paths.push((name.to_string(), rel.clone()));
         }
+        provenance.moved(self, &after, &moved_paths)?;
         if moved == 0 {
             // Nothing was produced. Do not leave an empty mod behind.
             if fresh {
@@ -789,6 +811,8 @@ impl Instance {
         &self,
         owners: &HashMap<String, String>,
     ) -> std::io::Result<(usize, Vec<String>)> {
+        let _lock = self.try_lock("moving generated output")?;
+        let mut provenance = self.generated_store_for_move()?;
         let src = self.overwrite_dir();
         let mut snapshot = OverwriteSnapshot::default();
         snapshot_into(&src, Path::new(""), &mut snapshot);
@@ -798,6 +822,7 @@ impl Instance {
         rels.sort();
 
         let mut moved = 0usize;
+        let mut moved_paths = Vec::new();
         let mut failures: Vec<String> = Vec::new();
         for rel in rels {
             let key = rel.to_string_lossy().to_ascii_lowercase();
@@ -820,7 +845,9 @@ impl Instance {
                 continue;
             }
             moved += 1;
+            moved_paths.push((owner.clone(), rel.clone()));
         }
+        provenance.moved(self, &snapshot, &moved_paths)?;
         if moved > 0 {
             prune_empty_dirs(&src, &snapshot);
         }
@@ -872,8 +899,8 @@ impl Instance {
             return Ok(0);
         }
         let dest = self.root_overwrite_dir();
-        fs::create_dir_all(&dest)?;
-        move_tree(&legacy, &dest)?;
+        fs::create_dir_all(self.overwrite_dir())?;
+        move_tree(&self.overwrite_dir(), &legacy, &dest)?;
         let _ = fs::remove_dir(&legacy);
         Ok(n)
     }
@@ -950,6 +977,54 @@ impl Instance {
         self.active().modlist()
     }
 
+    /// Keep existing installation decisions; only new names are enabled and appended.
+    pub fn register_installed_mod(&self, name: &str) -> std::io::Result<()> {
+        let _lock = self.try_lock("registering an installed mod")?;
+        self.active().register_installed_mod(name)
+    }
+
+    /// Read the plugin state the next launch will use, including generated Overwrite plugins.
+    pub fn plugin_list(
+        &self,
+        game_data: &Path,
+        game_id: &str,
+        fallback_state: Option<&Path>,
+    ) -> Option<eidos_plugins::PluginList> {
+        let spec = eidos_plugins::GameSpec::for_id(game_id)?;
+        let mut sources = vec![(String::new(), game_data.to_path_buf())];
+        sources.extend(
+            self.modlist()
+                .into_iter()
+                .filter(|m| m.is_active())
+                .map(|m| (m.name, m.path)),
+        );
+        sources.push(("overwrite".to_string(), self.overwrite_dir()));
+        let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
+        let stack = eidos_core::LayerStack::new(
+            sources
+                .iter()
+                .rev()
+                .skip(1)
+                .map(|(_, p)| p.clone())
+                .collect(),
+            self.overwrite_dir(),
+        );
+        list.plugins.retain(|plugin| {
+            stack
+                .resolve_read(&plugin.name)
+                .is_some_and(|path| path.is_file())
+        });
+        let profile = self.active();
+        if profile.has_plugin_state() {
+            list.apply_prefix_state(&profile.plugins_state_dir(), &spec);
+        } else if let Some(path) = fallback_state {
+            list.apply_prefix_state(path, &spec);
+        }
+        list.locked = profile.read_locked_order();
+        list.refresh(&spec);
+        Some(list)
+    }
+
     /// Persist the active profile's mod list.
     pub fn save_modlist(&self, mods: &[ModEntry]) -> std::io::Result<()> {
         self.active().save_modlist(mods)
@@ -1018,11 +1093,20 @@ impl Instance {
 
     /// Set the active profile, persisted in the manifest (if one exists).
     pub fn set_active_profile(&self, name: &str) -> std::io::Result<()> {
-        if let Some(mut m) = self.read_manifest() {
-            m.selected_profile = Some(name.to_string());
-            m.write(&self.manifest_path())?;
+        if !crate::tools::is_mod_folder_name(name) || !self.profile(name).dir().is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "select an existing profile with a safe name",
+            ));
         }
-        Ok(())
+        let mut manifest = Manifest::read_checked(&self.manifest_path())?.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "the instance manifest is missing",
+            )
+        })?;
+        manifest.selected_profile = Some(name.to_string());
+        manifest.write(&self.manifest_path())
     }
 
     /// The active [`Profile`].
@@ -1153,6 +1237,7 @@ impl Instance {
     /// MO2 listed but we do not have is reported rather than silently dropped.
     pub fn import_mo2_profile(&self, mo2_profile_dir: &Path) -> std::io::Result<Mo2Import> {
         use std::io::{Error, ErrorKind};
+        let _lock = self.try_lock("importing an MO2 profile")?;
         let src_modlist = mo2_profile_dir.join("modlist.txt");
         if !src_modlist.is_file() {
             return Err(Error::new(
@@ -1173,17 +1258,19 @@ impl Instance {
         let mut missing: Vec<String> = Vec::new();
         // MO2 writes highest priority first; our in-memory list is display order
         // (lowest first), so collect then reverse.
-        for line in text.lines() {
+        for line in text.trim_start_matches('\u{feff}').lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            let (enabled, name) = match line.split_at(1) {
-                ("+", rest) => (true, rest.trim()),
-                ("-", rest) => (false, rest.trim()),
-                // MO2 marks unmanaged/foreign mods with '*'; we do not model those.
-                ("*", _) => continue,
-                _ => (true, line),
+            let (enabled, name) = if let Some(rest) = line.strip_prefix('+') {
+                (true, rest.trim())
+            } else if let Some(rest) = line.strip_prefix('-') {
+                (false, rest.trim())
+            } else if line.starts_with('*') {
+                continue; // MO2's unmanaged/foreign content is not imported.
+            } else {
+                (true, line)
             };
             if name.is_empty() {
                 continue;
@@ -1360,7 +1447,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// So the inode and the ctime come too. A write through a temp file and a rename
 /// changes the inode; an in-place write changes the ctime, and unlike mtime the
 /// ctime cannot be set back by `utimes` - setting it is itself a ctime change.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FileStamp {
     len: u64,
     mtime: SystemTime,
@@ -1578,8 +1665,13 @@ fn create_dirs_under(base: &Path, rel: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
-    for e in fs::read_dir(from)?.flatten() {
+fn move_tree(base: &Path, from: &Path, to: &Path) -> std::io::Result<()> {
+    let relative = to
+        .strip_prefix(base)
+        .map_err(|_| std::io::Error::other("move destination is outside the instance"))?;
+    create_dirs_under(base, relative)?;
+    for e in fs::read_dir(from)? {
+        let e = e?;
         let src = e.path();
         let dst = to.join(e.file_name());
         // Merging only makes sense dir-into-dir. On a TYPE conflict the source -
@@ -1591,17 +1683,12 @@ fn move_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         let dst_is_dir = fs::symlink_metadata(&dst)
             .map(|m| m.file_type().is_dir())
             .unwrap_or(false);
-        if src.is_dir() && dst_is_dir {
+        if fs::symlink_metadata(&src)?.is_dir() && dst_is_dir {
             // Merge rather than clobber, then drop the now-empty source dir.
-            move_tree(&src, &dst)?;
+            move_tree(base, &src, &dst)?;
             let _ = fs::remove_dir(&src);
         } else {
-            match fs::symlink_metadata(&dst).map(|m| m.file_type()) {
-                Ok(t) if t.is_dir() => fs::remove_dir_all(&dst)?,
-                Ok(_) => fs::remove_file(&dst)?,
-                Err(_) => {}
-            }
-            fs::rename(&src, &dst)?;
+            move_one_into(base, &src, &dst)?;
         }
     }
     Ok(())
@@ -1672,7 +1759,9 @@ mod tests {
         fs::create_dir_all(inst.profiles_dir().join("Default")).unwrap();
         fs::create_dir_all(inst.profiles_dir().join("Modded")).unwrap();
         // ...but the manifest still points at a profile deleted/renamed away.
+        inst.profile("Ghost").create().unwrap();
         inst.set_active_profile("Ghost").unwrap();
+        fs::remove_dir(inst.profile("Ghost").dir()).unwrap();
         // active_profile must NOT return the ghost (which, lacking a modlist,
         // would launch with every mod on); it falls back to an existing profile.
         let active = inst.active_profile();
@@ -2538,5 +2627,204 @@ mod tests {
             .unwrap();
         assert!(after, "released for good once the last hold drops");
         let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod whole_audit_regressions {
+    use super::*;
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    struct Fixture(Instance);
+    impl Fixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let root = std::env::temp_dir().join(format!(
+                "eidos-whole-instance-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            let instance = Instance::portable(root);
+            instance.create().unwrap();
+            instance
+                .ensure_manifest("skyrimse", InstanceKind::Portable)
+                .unwrap();
+            Self(instance)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0.root);
+        }
+    }
+    fn put(path: &Path, content: &[u8]) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn overwrite_move_failure_preserves_both_copies() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        put(&i.mods_dir().join("Existing/a.txt"), b"old");
+        put(&i.overwrite_dir().join("a.txt"), b"new");
+        fs::set_permissions(i.overwrite_dir(), fs::Permissions::from_mode(0o555)).unwrap();
+        let result = i.overwrite_into_mod("Existing");
+        fs::set_permissions(i.overwrite_dir(), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read(i.mods_dir().join("Existing/a.txt")).unwrap(),
+            b"old"
+        );
+        assert_eq!(fs::read(i.overwrite_dir().join("a.txt")).unwrap(), b"new");
+    }
+
+    #[test]
+    fn overwrite_move_never_follows_source_or_destination_directory_links() {
+        for source_link in [true, false] {
+            let fixture = Fixture::new();
+            let i = &fixture.0;
+            let outside = i.root.join("outside");
+            put(&outside.join("personal.txt"), b"precious");
+            if source_link {
+                fs::create_dir_all(i.mods_dir().join("Existing/linked")).unwrap();
+                symlink(&outside, i.overwrite_dir().join("linked")).unwrap();
+                i.overwrite_into_mod("Existing").unwrap();
+                assert!(fs::symlink_metadata(i.mods_dir().join("Existing/linked"))
+                    .unwrap()
+                    .file_type()
+                    .is_symlink());
+            } else {
+                symlink(&outside, i.mods_dir().join("Existing")).unwrap();
+                put(&i.overwrite_dir().join("personal.txt"), b"new");
+                assert!(i.overwrite_into_mod("Existing").is_err());
+            }
+            assert_eq!(fs::read(outside.join("personal.txt")).unwrap(), b"precious");
+        }
+    }
+
+    #[test]
+    fn profile_copy_reports_unreadable_nested_save_and_missing_source() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let save = i.active().saves_dir().join("Save.ess");
+        put(&save, b"save");
+        fs::set_permissions(&save, fs::Permissions::from_mode(0)).unwrap();
+        let result = i.profile("Copy").create_from(&i.active());
+        fs::set_permissions(&save, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(result.is_err());
+        assert!(i
+            .profile("MissingCopy")
+            .create_from(&i.profile("Missing"))
+            .is_err());
+    }
+
+    #[test]
+    fn selecting_profile_requires_readable_valid_manifest_and_existing_safe_name() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        i.profile("Other").create().unwrap();
+        let good = fs::read(i.manifest_path()).unwrap();
+        fs::write(i.manifest_path(), b"broken manifest").unwrap();
+        assert!(i.set_active_profile("Other").is_err());
+        assert_eq!(fs::read(i.manifest_path()).unwrap(), b"broken manifest");
+        fs::write(i.manifest_path(), good).unwrap();
+        assert!(i.set_active_profile("../outside").is_err());
+        assert!(i.set_active_profile("Missing").is_err());
+        fs::set_permissions(i.manifest_path(), fs::Permissions::from_mode(0)).unwrap();
+        let result = i.set_active_profile("Other");
+        fs::set_permissions(i.manifest_path(), fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mo2_import_accepts_bom_and_unicode_names_without_prefix() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        i.create_empty_mod("Étoile").unwrap();
+        let source = i.root.join("import");
+        put(
+            &source.join("modlist.txt"),
+            "\u{feff}# generated\nÉtoile\n".as_bytes(),
+        );
+        let result = i.import_mo2_profile(&source).unwrap();
+        assert_eq!(result.matched, 1);
+        assert!(i.modlist()[0].enabled);
+    }
+    #[test]
+    fn modlist_unknown_new_folders_do_not_hide_loss_of_saved_mods() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        i.create_empty_mod("NewUnrelated").unwrap();
+        let path = i.active().dir().join("modlist.txt");
+        fs::write(&path, b"+OldMissing\n").unwrap();
+        let (list, trust) = i.modlist_checked();
+        assert!(!trust.is_good());
+        assert!(i.save_modlist(&list).is_err());
+        assert_eq!(fs::read(path).unwrap(), b"+OldMissing\n");
+    }
+
+    #[test]
+    fn saving_modlist_refuses_unreadable_existing_order() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let entry = i.create_empty_mod("Mod").unwrap();
+        i.save_modlist(&[entry.clone()]).unwrap();
+        let path = i.active().dir().join("modlist.txt");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0)).unwrap();
+        let result = i.save_modlist(&[entry]);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn mo2_import_refuses_a_busy_instance_before_writing() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let source = i.root.join("import");
+        put(&source.join("modlist.txt"), b"# empty\n");
+        let _lock = i.try_lock("active session").unwrap();
+        let other = i.clone();
+        let result = std::thread::spawn(move || other.import_mo2_profile(&source))
+            .join()
+            .unwrap();
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        assert!(!i.active().dir().join("modlist.txt").exists());
+    }
+
+    #[test]
+    fn installer_warning_roundtrips_windows_paths_quotes_and_newlines() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let path = i.root.join("meta.ini");
+        let warning =
+            "Missing archive sources: scripts\\engine\\plugin.dll, \"optional\"\nSecond line";
+        let mut meta = ModMeta::default();
+        meta.set_install_warning(warning);
+        meta.write(&path).unwrap();
+        assert_eq!(
+            ModMeta::read(&path).install_warning().as_deref(),
+            Some(warning)
+        );
+        meta.set_install_warning("");
+        meta.write(&path).unwrap();
+        assert!(ModMeta::read(&path).install_warning().is_none());
+    }
+
+    #[test]
+    fn compact_ini_capture_requires_successful_safety_copy() {
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let profile = i.active();
+        let original = "[General]\n".to_string() + &"oldSetting=value\n".repeat(40);
+        put(&profile.ini_path("Skyrim.ini"), original.as_bytes());
+        let prefix = i.root.join("prefix");
+        put(&prefix.join("Skyrim.ini"), b"[General]\nx=1\n");
+        assert_eq!(profile.capture_inis(&prefix, &["Skyrim.ini"]).unwrap(), 0);
+        fs::create_dir(profile.dir().join("Skyrim.ini.eidos-tmp")).unwrap();
+        assert!(profile.capture_inis(&prefix, &["Skyrim.ini"]).is_err());
+        assert_eq!(
+            fs::read_to_string(profile.ini_path("Skyrim.ini")).unwrap(),
+            original
+        );
     }
 }

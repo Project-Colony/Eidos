@@ -527,70 +527,56 @@ fn fomod_context_distinguishes_inactive_from_missing() {
 }
 
 #[test]
-fn reapply_user_meta_restores_endorsement_and_category() {
-    let dir = TempDir::new("meta");
-    let old_path = dir.path().join("old.ini");
+fn replacement_preserves_user_metadata_and_updates_archive_facts() {
+    let t = TempDir::new("preserved-meta");
+    let mods = t.path().join("mods");
+    let dest = mods.join("Test");
+    write_at(&dest, "meta.ini", b"[General]\r\nmodid=7\r\nversion=1\r\ncategory=\"42,\"\r\neidosCollectionOwner=reservation-token\r\n\r\n[Other]\r\nraw=keep=verbatim\r\n");
+    let meta_path = dest.join("meta.ini");
+    let mut old = ModMeta::read(&meta_path);
+    old.set_endorsed(true);
+    old.set_tracked(true);
+    old.set_notes("needs the AE patch");
+    old.set_color(Some([0x2e, 0x5e, 0x8b]));
+    old.set_url("https://github.com/me/mod");
+    old.set_ignore_update(true);
+    old.set_author("Arthmoor");
+    old.set_uploader("Arthmoor", "https://www.nexusmods.com/users/1234");
+    old.write(&meta_path).unwrap();
+    let archive = t.path().join("archive.7z");
     fs::write(
-        &old_path,
-        "[General]\nendorsed=1\ncategory=\"42,\"\ntracked=1\n",
+        t.path().join("archive.7z.meta"),
+        "[General]\nmodID=7\nfileID=123\nversion=2\n",
     )
     .unwrap();
-    let old = ModMeta::read(&old_path);
-
-    let new_path = dir.path().join("new.ini");
-    fs::write(
-        &new_path,
-        "[General]\nendorsed=0\ncategory=\"-1,\"\ntracked=0\n",
+    let src = t.path().join("source");
+    write_at(&src, "test.esp", b"updated");
+    install_extracted(
+        &extracted(&src),
+        &archive,
+        &mods,
+        "Test",
+        "skyrimse",
+        OverwritePolicy::Replace,
+        &Default::default(),
     )
     .unwrap();
-    reapply_user_meta(&old, &new_path);
-
-    let s = fs::read_to_string(&new_path).unwrap();
-    assert!(s.contains("endorsed=1"));
-    assert!(s.contains("tracked=1"));
-    assert!(s.contains("category=\"42,\""));
-
-    // Everything else the USER typed. A reinstall rewrites meta.ini from the
-    // archive, and these are not recoverable from anywhere: a note is a sentence
-    // somebody wrote, a colour is a decision about a list, a page is a link
-    // nothing else records. Losing them was a silent, permanent cost of the
-    // ordinary act of keeping a mod up to date.
-    let mut old2 = ModMeta::default();
-    old2.set_notes("needs the AE patch");
-    old2.set_color(Some([0x2e, 0x5e, 0x8b]));
-    old2.set_url("https://github.com/me/mod");
-    old2.set_ignore_update(true);
-    let fresh = dir.path().join("fresh.ini");
-    std::fs::write(&fresh, "[General]\nmodid=7\nversion=2\n").unwrap();
-    reapply_user_meta(&old2, &fresh);
-    let back = ModMeta::read(&fresh);
+    let back = ModMeta::read(&meta_path);
+    assert!(back.endorsed() && back.tracked() && back.ignore_update());
+    assert_eq!(back.category().as_deref(), Some("42,"));
     assert_eq!(back.notes().as_deref(), Some("needs the AE patch"));
     assert_eq!(back.color(), Some([0x2e, 0x5e, 0x8b]));
     assert_eq!(back.url().as_deref(), Some("https://github.com/me/mod"));
-    assert!(
-        back.ignore_update(),
-        "re-arming it every reinstall is exactly backwards"
-    );
-    // And the new archive's own facts are NOT clobbered.
-    assert_eq!(back.version().as_deref(), Some("2"));
-
-    // Who made it. Not user-typed, but a reinstall does not make the Nexus call
-    // that learned it, so dropping it here made "Visit X's profile" come and go
-    // off the menu with no visible cause.
-    let mut old3 = ModMeta::default();
-    old3.set_author("Arthmoor");
-    old3.set_uploader("Arthmoor", "https://www.nexusmods.com/users/1234");
-    let again = dir.path().join("again.ini");
-    std::fs::write(&again, "[General]\nmodid=7\nversion=3\n").unwrap();
-    reapply_user_meta(&old3, &again);
-    let back = ModMeta::read(&again);
     assert_eq!(back.author().as_deref(), Some("Arthmoor"));
     assert_eq!(back.uploader().as_deref(), Some("Arthmoor"));
     assert_eq!(
         back.uploader_url().as_deref(),
-        Some("https://www.nexusmods.com/users/1234"),
-        "the link is what makes the menu entry clickable"
+        Some("https://www.nexusmods.com/users/1234")
     );
+    assert_eq!(back.version().as_deref(), Some("2"));
+    let raw = fs::read_to_string(meta_path).unwrap();
+    assert!(!raw.contains("eidosCollectionOwner=reservation-token\r\n"));
+    assert!(raw.contains("[Other]\r\nraw=keep=verbatim\r\n"));
 }
 
 #[test]
@@ -1513,4 +1499,689 @@ fn an_archive_shipping_data_as_a_symlink_still_classifies_by_its_contents() {
         "its contents must be described: {all:?}"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn failed_replacements_preserve_payload_and_raw_metadata_in_every_flow() {
+    for flow in ["simple", "manual", "bain", "fomod", "default-fomod"] {
+        let t = TempDir::new(flow);
+        let mods = t.path().join("mods");
+        let src = t.path().join("source");
+        let archive = t.path().join("Update.7z");
+        let original = b"[General]\r\nnotes=precious\r\n\r\n[Unknown]\r\nraw=unchanged\r\n";
+        write_at(&mods, "Old/precious.esp", b"original payload");
+        write_at(&mods, "Old/meta.ini", original);
+        let root = if flow == "bain" { "00 Core/" } else { "" };
+        write_at(&src, &format!("{root}new.esp"), b"replacement");
+        // Metadata publication must fail after payload placement has succeeded.
+        write_at(&src, &format!("{root}meta.ini/blocker"), b"directory");
+        let xml = "<config><moduleName>Test</moduleName><requiredInstallFiles><file source=\"new.esp\" destination=\"new.esp\"/><file source=\"new.esp\" destination=\"../escape.esp\"/></requiredInstallFiles></config>";
+        if flow.contains("fomod") {
+            write_at(&src, "fomod/ModuleConfig.xml", xml.as_bytes());
+        }
+        let tree = extracted(&src);
+        let ctx = eidos_fomod::Context::default();
+        let result = match flow {
+            "manual" => install_manual(
+                &tree,
+                "",
+                &archive,
+                &mods,
+                "Old",
+                "skyrimse",
+                OverwritePolicy::Replace,
+            ),
+            "bain" => install_bain(
+                &tree,
+                &["00 Core".into()],
+                &archive,
+                &mods,
+                "Old",
+                "skyrimse",
+                OverwritePolicy::Replace,
+            ),
+            "fomod" => {
+                let config = parse_fomod_at(&src).unwrap();
+                let selection = eidos_fomod::default_selection(&config, &ctx);
+                finish_fomod(
+                    FomodSession {
+                        config,
+                        root: src,
+                        tree,
+                        name: "Old".into(),
+                        archive,
+                    },
+                    &selection,
+                    &mods,
+                    "skyrimse",
+                    &ctx,
+                    OverwritePolicy::Replace,
+                )
+            }
+            _ => install_extracted(
+                &tree,
+                &archive,
+                &mods,
+                "Old",
+                "skyrimse",
+                OverwritePolicy::Replace,
+                &ctx,
+            ),
+        };
+        assert!(
+            result.is_err(),
+            "{flow} must reject the incomplete replacement"
+        );
+        assert_eq!(
+            fs::read(mods.join("Old/precious.esp")).ok().as_deref(),
+            Some(b"original payload".as_slice()),
+            "{flow}"
+        );
+        assert_eq!(
+            fs::read(mods.join("Old/meta.ini")).ok().as_deref(),
+            Some(original.as_slice()),
+            "{flow}"
+        );
+    }
+}
+
+#[test]
+fn default_fomod_wins_over_loose_plugins_and_reports_missing_sources() {
+    let t = TempDir::new("default-fomod-priority");
+    let src = t.path().join("source");
+    write_at(&src, "one.esp", b"selected");
+    write_at(&src, "two.esp", b"unselected");
+    write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><requiredInstallFiles><file source="one.esp" destination="chosen.esp"/><file source="missing.esp" destination="missing.esp"/></requiredInstallFiles></config>"#);
+    let report = install_extracted(
+        &extracted(&src),
+        &t.path().join("archive.7z"),
+        &t.path().join("mods"),
+        "Test",
+        "skyrimse",
+        OverwritePolicy::Fail,
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(report.fomod);
+    assert_eq!(report.missing, ["missing.esp"]);
+    assert!(eidos_instance::ModMeta::read(&report.dest.join("meta.ini"))
+        .install_warning()
+        .unwrap()
+        .contains("missing.esp"));
+    assert_eq!(
+        fs::read(report.dest.join("chosen.esp")).unwrap(),
+        b"selected"
+    );
+    assert!(!report.dest.join("two.esp").exists());
+}
+
+#[test]
+fn wrapped_root_archives_keep_both_data_and_sibling_payload() {
+    for prefix in ["Wrapper/", "Outer/Inner/"] {
+        let t = TempDir::new("wrapped-root");
+        let src = t.path().join("source");
+        write_at(&src, &format!("{prefix}Data/scripts/test.pex"), b"script");
+        write_at(&src, &format!("{prefix}loader.dll"), b"loader");
+        let report = install_extracted(
+            &extracted(&src),
+            &t.path().join("archive.7z"),
+            &t.path().join("mods"),
+            "Test",
+            "skyrimse",
+            OverwritePolicy::Fail,
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(report.dest.join("scripts/test.pex")).unwrap(),
+            b"script"
+        );
+        assert_eq!(
+            fs::read(report.dest.join("Root/loader.dll")).unwrap(),
+            b"loader"
+        );
+    }
+}
+
+#[test]
+fn merge_retains_distinct_file_sources_and_replace_discards_old_sources() {
+    let t = TempDir::new("installed-sources");
+    let mods = t.path().join("mods");
+    for (id, policy) in [
+        (101, OverwritePolicy::Fail),
+        (102, OverwritePolicy::Merge),
+        (103, OverwritePolicy::Replace),
+    ] {
+        let archive = t.path().join(format!("archive-{id}.7z"));
+        fs::write(
+            PathBuf::from(format!("{}.meta", archive.display())),
+            format!("[General]\nmodID=42\nfileID={id}\nversion=1\n"),
+        )
+        .unwrap();
+        let src = t.path().join(format!("source-{id}"));
+        write_at(&src, "test.esp", b"plugin");
+        let report = install_extracted(
+            &extracted(&src),
+            &archive,
+            &mods,
+            "Test",
+            "skyrimse",
+            policy,
+            &Default::default(),
+        )
+        .unwrap();
+        let meta_path = report.dest.join("meta.ini");
+        let text = fs::read_to_string(&meta_path).unwrap();
+        assert!(text.contains(&format!("\\fileid={id}\n")), "{text}");
+        if id == 101 {
+            fs::write(&meta_path, format!("{text}\n[Custom]\nraw=keep=verbatim\n")).unwrap();
+        } else {
+            assert!(text.contains("[Custom]\nraw=keep=verbatim\n"), "{text}");
+            assert_eq!(text.contains("\\fileid=101\n"), id == 102, "{text}");
+        }
+    }
+}
+
+#[test]
+fn fomod_context_uses_plugin_activation_and_overwrite_presence() {
+    let t = TempDir::new("plugin-context");
+    let game = t.path().join("game");
+    let enabled = t.path().join("enabled");
+    let disabled = t.path().join("disabled");
+    let overwrite = t.path().join("overwrite");
+    write_at(&game, "Skyrim.esm", b"master");
+    write_at(&enabled, "DisabledInProfile.esp", b"plugin");
+    write_at(&disabled, "Unavailable.esp", b"plugin");
+    write_at(&overwrite, "Generated.esp", b"plugin");
+    write_at(&overwrite, "Unselected.esp", b"plugin");
+    let ctx = fomod_context_with_plugins(
+        &game,
+        &[enabled],
+        &[disabled],
+        &overwrite,
+        [
+            ("SKYRIM.ESM", true),
+            ("DisabledInProfile.esp", false),
+            ("Generated.esp", true),
+            ("Absent.esp", true),
+        ],
+    );
+    for (name, state) in [
+        ("skyrim.esm", "Active"),
+        ("disabledinprofile.esp", "Inactive"),
+        ("unavailable.esp", "Inactive"),
+        ("generated.esp", "Active"),
+        ("unselected.esp", "Inactive"),
+    ] {
+        assert_eq!(
+            ctx.file_states.get(name).map(String::as_str),
+            Some(state),
+            "{name}"
+        );
+    }
+    assert!(!ctx.file_states.contains_key("absent.esp"));
+}
+
+#[test]
+fn failed_publication_restores_the_original_mod() {
+    let t = TempDir::new("publication-rollback");
+    let dest = t.path().join("Old");
+    write_at(&dest, "precious.esp", b"original");
+    write_at(&dest, "meta.ini", b"raw metadata");
+    let stage = t.path().join("stage");
+    fs::create_dir(&stage).unwrap();
+    assert!(publish_install(extracted(&stage), &stage.join("missing-payload"), &dest).is_err());
+    assert_eq!(fs::read(dest.join("precious.esp")).unwrap(), b"original");
+    assert_eq!(fs::read(dest.join("meta.ini")).unwrap(), b"raw metadata");
+    assert!(!stage.exists());
+}
+
+#[test]
+fn wrappers_with_docs_keep_explicit_root_data_and_refuse_sibling_payload() {
+    let t = TempDir::new("wrapper-docs");
+    let src = t.path().join("source");
+    write_at(&src, "Readme.txt", b"documentation");
+    write_at(&src, "Wrapper/Root/Data/scripts/test.pex", b"script");
+    write_at(&src, "Wrapper/Root/loader.dll", b"loader");
+    let layout = ArchiveTree::from_dir(&src).unwrap();
+    assert!(layout.root_builder_split(rules()).is_some());
+    let report = install_extracted(
+        &extracted(&src),
+        &t.path().join("archive.7z"),
+        &t.path().join("mods"),
+        "Test",
+        "skyrimse",
+        OverwritePolicy::Fail,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(report.dest.join("scripts/test.pex")).unwrap(),
+        b"script"
+    );
+    assert_eq!(
+        fs::read(report.dest.join("Root/loader.dll")).unwrap(),
+        b"loader"
+    );
+    let ambiguous = t.path().join("ambiguous");
+    write_at(&ambiguous, "Wrapper/Data/scripts/test.pex", b"script");
+    write_at(&ambiguous, "Wrapper/loader.dll", b"loader");
+    write_at(&ambiguous, "outside.dll", b"must not be dropped");
+    assert!(ArchiveTree::from_dir(&ambiguous)
+        .unwrap()
+        .root_builder_split(rules())
+        .is_none());
+}
+
+#[test]
+fn merging_the_same_source_deduplicates_and_an_unknown_replacement_clears_identity() {
+    let t = TempDir::new("source-reset");
+    let dest = t.path().join("mods/Test");
+    write_at(&dest, "meta.ini", b"[General]\nmodid=42\nfileID=101\neidosCollectionOwner=owned\n\n[installedFiles]\n1\\modid=42\n1\\fileid=101\nsize=1\n");
+    let archive = t.path().join("archive.7z");
+    fs::write(
+        t.path().join("archive.7z.meta"),
+        "[General]\nmodID=42\nfileID=101\n",
+    )
+    .unwrap();
+    for policy in [OverwritePolicy::Merge, OverwritePolicy::Replace] {
+        let src = t.path().join("source");
+        write_at(&src, "test.esp", b"plugin");
+        install_extracted(
+            &extracted(&src),
+            &archive,
+            &t.path().join("mods"),
+            "Test",
+            "skyrimse",
+            policy.clone(),
+            &Default::default(),
+        )
+        .unwrap();
+        let meta = ModMeta::read(&dest.join("meta.ini"));
+        if policy == OverwritePolicy::Merge {
+            assert_eq!(meta.installed_files(), [(42, 101)]);
+            fs::remove_file(t.path().join("archive.7z.meta")).unwrap();
+        } else {
+            assert!(meta.installed_files().is_empty());
+            assert_eq!(meta.file_id(), None);
+            assert_eq!(meta.mod_id(), None);
+        }
+        assert_ne!(
+            meta.collection_owner(),
+            Some("owned"),
+            "manual edits revoke collection replacement authority"
+        );
+    }
+}
+
+#[test]
+fn public_archive_entry_points_apply_the_same_fomod_plan() {
+    let Some(bin) = eidos_sevenzip::find_7z() else {
+        return;
+    };
+    let t = TempDir::new("public-fomod");
+    let src = t.path().join("source");
+    write_at(&src, "one.esp", b"selected");
+    write_at(&src, "two.esp", b"unselected");
+    write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><requiredInstallFiles><file source="one.esp" destination="chosen.esp"/><file source="missing.esp" destination="missing.esp"/></requiredInstallFiles></config>"#);
+    let archive = t.path().join("archive.zip");
+    let output = std::process::Command::new(bin)
+        .args(["a", "-tzip"])
+        .arg(&archive)
+        .arg(".")
+        .current_dir(&src)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let mods = t.path().join("mods");
+    let ctx = Default::default();
+    let automatic = install_archive_with_policy(
+        &archive,
+        &mods,
+        "Automatic",
+        "skyrimse",
+        OverwritePolicy::Fail,
+        &ctx,
+    )
+    .unwrap();
+    let Opened::Fomod(session) = open_archive(&archive, &mods, "Interactive", "skyrimse").unwrap()
+    else {
+        panic!("FOMOD must take priority")
+    };
+    let selection = eidos_fomod::default_selection(&session.config, &ctx);
+    let interactive = finish_fomod(
+        *session,
+        &selection,
+        &mods,
+        "skyrimse",
+        &ctx,
+        OverwritePolicy::Fail,
+    )
+    .unwrap();
+    for report in [automatic, interactive] {
+        assert!(report.fomod);
+        assert_eq!(report.missing, ["missing.esp"]);
+        assert!(eidos_instance::ModMeta::read(&report.dest.join("meta.ini"))
+            .install_warning()
+            .unwrap()
+            .contains("missing.esp"));
+        assert_eq!(
+            fs::read(report.dest.join("chosen.esp")).unwrap(),
+            b"selected"
+        );
+        assert!(!report.dest.join("two.esp").exists());
+    }
+}
+
+#[test]
+fn persisted_fomod_context_uses_profile_activation_and_whiteouts() {
+    let t = TempDir::new("persisted-fomod-context");
+    let inst = eidos_instance::Instance::portable(t.path().join("instance"));
+    inst.create().unwrap();
+    let source = inst.create_empty_mod("Source").unwrap();
+    inst.save_modlist(&[source.clone()]).unwrap();
+    let game = t.path().join("game/Data");
+    fs::create_dir_all(&game).unwrap();
+    let mut header = [0u8; 24];
+    header[..4].copy_from_slice(b"TES4");
+    header[20..22].copy_from_slice(&44u16.to_le_bytes());
+    for name in ["Enabled.esp", "Disabled.esp", "Hidden.esp"] {
+        write_at(&source.path, name, &header);
+    }
+    write_at(&inst.overwrite_dir(), "Generated.esp", &header);
+    fs::write(
+        inst.active().plugins_state_dir().join("plugins.txt"),
+        "*Enabled.esp\nDisabled.esp\n*Hidden.esp\n*Generated.esp\n",
+    )
+    .unwrap();
+    let stack = eidos_core::LayerStack::new(vec![source.path], inst.overwrite_dir());
+    stack.remove("Hidden.esp").unwrap();
+    let context = fomod_context_for_instance(&inst, &game, "skyrimse", None);
+    assert_eq!(
+        context.file_states.get("enabled.esp").map(String::as_str),
+        Some("Active")
+    );
+    assert_eq!(
+        context.file_states.get("disabled.esp").map(String::as_str),
+        Some("Inactive")
+    );
+    assert_eq!(
+        context.file_states.get("generated.esp").map(String::as_str),
+        Some("Active")
+    );
+    assert!(!context.file_states.contains_key("hidden.esp"));
+}
+
+#[test]
+fn unreadable_metadata_aborts_replacement_before_old_payload_is_touched() {
+    let t = TempDir::new("unreadable-replacement-meta");
+    let mods = t.path().join("mods");
+    write_at(&mods.join("Old"), "keep.esp", b"old");
+    write_at(&mods.join("Old"), "meta.ini", &[0xff]);
+    let src = t.path().join("source");
+    write_at(&src, "new.esp", b"new");
+    assert!(install_extracted(
+        &extracted(&src),
+        &t.path().join("archive.7z"),
+        &mods,
+        "Old",
+        "skyrimse",
+        OverwritePolicy::Replace,
+        &Default::default()
+    )
+    .is_err());
+    assert_eq!(fs::read(mods.join("Old/meta.ini")).unwrap(), [0xff]);
+    assert_eq!(fs::read(mods.join("Old/keep.esp")).unwrap(), b"old");
+    assert!(!mods.join("Old/new.esp").exists());
+}
+
+#[test]
+fn replacement_reuses_existing_case_and_does_not_resurrect_empty_source_arrays() {
+    let t = TempDir::new("case-source-replacement");
+    let mods = t.path().join("mods");
+    write_at(
+        &mods.join("Mixed Case"),
+        "meta.ini",
+        b"[General]\nmodid=9\nfileID=10\n[installedFiles]\nsize=0\n",
+    );
+    write_at(&mods.join("Mixed Case"), "old.esp", b"old");
+    let src = t.path().join("source");
+    write_at(&src, "new.esp", b"new");
+    assert_eq!(
+        collision_name(&mods, "mixed case").as_deref(),
+        Some("Mixed Case")
+    );
+    let report = install_extracted(
+        &extracted(&src),
+        &t.path().join("archive.7z"),
+        &mods,
+        "mixed case",
+        "skyrimse",
+        OverwritePolicy::Merge,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(report.name, "Mixed Case");
+    assert!(!mods.join("mixed case").exists());
+    assert!(ModMeta::read(&report.dest.join("meta.ini"))
+        .installed_files()
+        .is_empty());
+}
+
+#[test]
+fn failed_merge_revokes_exact_identity_and_marks_partial_content() {
+    let mods = TempDir::new("merge-checkpoint");
+    let dest = mods.path().join("Owned");
+    fs::create_dir(&dest).unwrap();
+    let mut original = ModMeta::default();
+    original.set("eidosCollectionOwner", "collection:member");
+    original.set("modid", "1");
+    original.set("fileID", "2");
+    original.set_installed_files(&[(1, 2)]);
+    original.write(&dest.join("meta.ini")).unwrap();
+    let result = install_destination(
+        Path::new("Update.7z"),
+        mods.path(),
+        "Owned",
+        "skyrimse",
+        OverwritePolicy::Merge,
+        |target, _| {
+            fs::write(target.join("changed.esp"), b"partial")?;
+            Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "injected mid-merge copy failure",
+            )
+            .into())
+        },
+    );
+    assert!(result.is_err());
+    assert!(dest.join("changed.esp").is_file());
+    let meta = ModMeta::read(&dest.join("meta.ini"));
+    assert_ne!(meta.collection_owner(), Some("collection:member"));
+    assert!(meta.has_installed_files());
+    assert!(meta.installed_files().is_empty());
+    assert!(meta.file_id().is_none());
+    assert!(meta
+        .install_warning()
+        .unwrap()
+        .contains("Merge did not complete"));
+}
+
+#[test]
+fn fomod_copy_refuses_destination_links_at_any_depth() {
+    use std::os::unix::fs::symlink;
+    for (folder, link_path, destination) in [
+        (false, "scripts", "scripts/personal.txt"),
+        (false, "scripts/personal.txt", "scripts/personal.txt"),
+        (true, "scripts", "scripts"),
+        (true, "scripts/nested", "scripts"),
+        (true, "scripts/nested/personal.txt", "scripts"),
+    ] {
+        let root = TempDir::new("fomod-safe-source");
+        let dest = TempDir::new("fomod-safe-dest");
+        let outside = TempDir::new("fomod-safe-outside");
+        write_at(root.path(), "payload/nested/personal.txt", b"incoming");
+        write_at(outside.path(), "personal.txt", b"precious");
+        let link = dest.path().join(link_path);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        let target = if link_path.ends_with(".txt") {
+            outside.path().join("personal.txt")
+        } else {
+            outside.path().to_path_buf()
+        };
+        symlink(target, link).unwrap();
+        let mut item = file_item(
+            if folder {
+                "payload"
+            } else {
+                "payload/nested/personal.txt"
+            },
+            destination,
+        );
+        item.is_folder = folder;
+        assert!(
+            apply_plan(root.path(), &[item], dest.path()).is_err(),
+            "{link_path}"
+        );
+        assert_eq!(
+            fs::read(outside.path().join("personal.txt")).unwrap(),
+            b"precious"
+        );
+        assert!(!outside.path().join("nested").exists());
+    }
+}
+
+#[test]
+fn fomod_copy_refuses_sources_outside_archive() {
+    use std::os::unix::fs::symlink;
+    for folder in [false, true] {
+        let root = TempDir::new("fomod-source-link");
+        let dest = TempDir::new("fomod-source-link-dest");
+        let outside = TempDir::new("fomod-source-link-outside");
+        write_at(outside.path(), "personal.txt", b"private");
+        symlink(outside.path(), root.path().join("escape")).unwrap();
+        let mut item = file_item(
+            if folder {
+                "escape"
+            } else {
+                "escape/personal.txt"
+            },
+            "copied",
+        );
+        item.is_folder = folder;
+        assert!(apply_plan(root.path(), &[item], dest.path()).is_err());
+        assert!(!dest.path().join("copied").exists());
+    }
+}
+
+#[test]
+fn fomod_folder_copy_allows_internal_links_but_refuses_cycles() {
+    let root = TempDir::new("fomod-source-cycle");
+    let dest = TempDir::new("fomod-source-cycle-dest");
+    write_at(root.path(), "payload/personal.txt", b"included");
+    std::os::unix::fs::symlink("payload", root.path().join("alias")).unwrap();
+    let mut item = file_item("alias", "copied");
+    item.is_folder = true;
+    apply_plan(root.path(), &[item.clone()], dest.path()).unwrap();
+    assert_eq!(
+        fs::read(dest.path().join("copied/personal.txt")).unwrap(),
+        b"included"
+    );
+    std::os::unix::fs::symlink(".", root.path().join("payload/cycle")).unwrap();
+    assert!(apply_plan(root.path(), &[item], dest.path()).is_err());
+}
+
+#[test]
+fn merge_metadata_failure_keeps_incomplete_checkpoint_after_payload() {
+    let mods = TempDir::new("merge-metadata-failure");
+    let archive = mods.path().join("Update.7z");
+    fs::create_dir(archive.with_extension("7z.meta")).unwrap();
+    let result = install_destination(
+        &archive,
+        mods.path(),
+        "Mod",
+        "skyrimse",
+        OverwritePolicy::Merge,
+        |target, _| {
+            fs::write(target.join("changed.esp"), b"partial")?;
+            fs::write(
+                target.join("meta.ini"),
+                b"[General]\neidosCollectionOwner=forged\n",
+            )?;
+            Ok((String::new(), false, Vec::new()))
+        },
+    );
+    assert!(result.is_err());
+    let meta = ModMeta::read(&mods.path().join("Mod/meta.ini"));
+    assert_ne!(meta.collection_owner(), Some("forged"));
+    assert!(meta
+        .install_warning()
+        .unwrap()
+        .contains("Merge did not complete"));
+}
+
+#[test]
+fn root_split_merge_refuses_nested_destination_symlink() {
+    let fixture = TempDir::new("root-merge-link");
+    let dest = fixture.path().join("Mod");
+    let outside = fixture.path().join("outside");
+    write_at(&outside, "Binaries/personal.txt", b"precious");
+    write_at(fixture.path(), "source/personal.txt", b"incoming");
+    fs::create_dir_all(dest.join("Root")).unwrap();
+    std::os::unix::fs::symlink(&outside, dest.join("Root/SB")).unwrap();
+    let sources = RootSources {
+        data: None,
+        data_extra: Vec::new(),
+        root: vec![("SB/Binaries".into(), fixture.path().join("source"))],
+    };
+    assert!(place_root_split(&sources, &dest, true).is_err());
+    assert_eq!(
+        fs::read(outside.join("Binaries/personal.txt")).unwrap(),
+        b"precious"
+    );
+}
+
+#[test]
+fn manual_and_root_selection_refuse_intermediate_source_escape() {
+    let root = TempDir::new("selection-source-link");
+    let outside = TempDir::new("selection-source-outside");
+    write_at(outside.path(), "Data/personal.txt", b"precious");
+    std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
+    assert!(resolve_manual_root(root.path(), "escape/Data").is_err());
+    let split = crate::RootSplit {
+        wrapper_prefix: String::new(),
+        data_prefix: Some("escape/Data".into()),
+        root_dir: None,
+        root_entries: vec![],
+    };
+    assert!(resolve_root_split(root.path(), &split).is_err());
+    assert!(outside.path().join("Data/personal.txt").exists());
+}
+
+#[test]
+fn merge_updates_the_case_insensitive_winner_for_plain_and_fomod_content() {
+    for fomod in [false, true] {
+        let fixture = TempDir::new("merge-ci-winner");
+        let source = fixture.path().join("source");
+        let dest = fixture.path().join("Mod");
+        write_at(&source, "textures/a.dds", b"new");
+        write_at(&dest, "Textures/A.dds", b"old");
+        if fomod {
+            apply_plan(
+                &source,
+                &[file_item("textures/a.dds", "textures/a.dds")],
+                &dest,
+            )
+            .unwrap();
+        } else {
+            overlay_dir(&source, &dest).unwrap();
+        }
+        let stack =
+            eidos_core::LayerStack::new(vec![dest.clone()], fixture.path().join("Overwrite"));
+        assert_eq!(
+            fs::read(stack.resolve_read("textures/a.dds").unwrap()).unwrap(),
+            b"new"
+        );
+        assert!(!dest.join("textures").exists());
+    }
 }

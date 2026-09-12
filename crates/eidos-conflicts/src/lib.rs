@@ -7,7 +7,10 @@
 //! GUI and a future `eidos conflicts` CLI can both consume it. Mirrors MO2's
 //! `DirectoryRefresher` (winner + ordered alternatives per file) and
 //! `ModInfoWithConflictInfo` (per-mod overwrite/overwritten sets + state), but
-//! collapsed into a single pass since Eidos has no BSA tiebreak yet.
+//! with optional directory-only BSA/BA2 member analysis and archive provenance.
+
+pub mod archives;
+pub use archives::{ActiveArchive, AssetNode, AssetProvider, ArchiveDiagnostic, ArchiveError, read_archive_members};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -93,6 +96,11 @@ pub struct ConflictMap {
     pub files: BTreeMap<String, FileNode>,
     pub mods: HashMap<OriginId, ModConflicts>,
     pub names: HashMap<OriginId, String>,
+    pub asset_files: BTreeMap<String, AssetNode>,
+    pub asset_mods: HashMap<OriginId, ModConflicts>,
+    /// Member-conflict paths by provider, precomputed so UI frames do not scan archives.
+    pub asset_conflicts: HashMap<OriginId, Vec<String>>,
+    pub archive_diagnostics: Vec<ArchiveDiagnostic>,
 }
 
 impl ConflictMap {
@@ -204,7 +212,7 @@ impl ConflictMap {
             .iter()
             .map(|(l, _)| (l.origin, l.name.clone()))
             .collect();
-        ConflictMap { files, mods, names }
+        ConflictMap { files, mods, names, ..Default::default() }
     }
 
     /// The name of an origin (or `?` if unknown).
@@ -212,10 +220,14 @@ impl ConflictMap {
         self.names.get(&origin).map(String::as_str).unwrap_or("?")
     }
 
+    /// Effective asset statistics once archives are available, otherwise loose files.
+    pub fn mod_conflicts(&self, origin: OriginId) -> Option<&ModConflicts> {
+        self.asset_mods.get(&origin).or_else(|| self.mods.get(&origin))
+    }
+
     /// The conflict state of a mod (None if it has no files).
     pub fn state(&self, origin: OriginId) -> ConflictState {
-        self.mods
-            .get(&origin)
+        self.mod_conflicts(origin)
             .map(|m| m.state)
             .unwrap_or(ConflictState::None)
     }

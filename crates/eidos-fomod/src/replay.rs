@@ -223,7 +223,10 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
             // Only options this installer would actually let somebody pick can
             // satisfy a group's own rule; counting the rest turns a faithful
             // replay into a reported divergence.
-            let usable = types.iter().filter(|t| **t != PluginType::NotUsable).count();
+            let usable = types
+                .iter()
+                .filter(|t| **t != PluginType::NotUsable)
+                .count();
             let picked = on.iter().filter(|x| **x).count();
             let complaint = if group.plugins.is_empty() {
                 // Nothing to answer, so no rule to break.
@@ -265,6 +268,16 @@ pub fn replay(config: &ModuleConfig, ctx: &Context, recorded: &[RecordedStep]) -
                 }
             }
             step_sel.push(on);
+        }
+        if let Some(recorded) = rec_step {
+            for (index, group) in recorded.groups.iter().enumerate() {
+                if !used_groups[index] {
+                    unmatched.push(format!(
+                        "this installer has no group called \"{}\" in \"{}\"",
+                        group.name, step.name
+                    ));
+                }
+            }
         }
         selection.push(step_sel);
     }
@@ -432,7 +445,11 @@ mod tests {
 
         // And taking the other path DOES ask it - and then not having an answer
         // for it is a mismatch, not a silent default.
-        let r = replay(&config, &ctx(), &[rec("Choose", "Path", &[("Advanced", 1)])]);
+        let r = replay(
+            &config,
+            &ctx(),
+            &[rec("Choose", "Path", &[("Advanced", 1)])],
+        );
         assert!(!r.is_faithful());
         assert!(
             r.unmatched.iter().any(|u| u.contains("Options")),
@@ -513,7 +530,9 @@ mod tests {
         );
         assert!(!r.is_faithful());
         assert!(
-            r.unmatched.iter().any(|u| u.contains("A Step That Went Away")),
+            r.unmatched
+                .iter()
+                .any(|u| u.contains("A Step That Went Away")),
             "{:?}",
             r.unmatched
         );
@@ -739,5 +758,36 @@ mod tests {
         };
         let r = replay(&config, &ctx(), &[]);
         assert!(r.unmatched.is_empty(), "{:?}", r.unmatched);
+    }
+}
+
+#[cfg(test)]
+mod missing_group_regression {
+    use super::*;
+    #[test]
+    fn an_unmatched_recorded_group_is_not_a_faithful_replay() {
+        let config = ModuleConfig::parse(r#"<config><installSteps><installStep name="Main"><optionalFileGroups><group name="Current" type="SelectAny"><plugins/></group></optionalFileGroups></installStep></installSteps></config>"#).unwrap();
+        let recorded = vec![RecordedStep {
+            name: "Main".into(),
+            groups: vec![
+                RecordedGroup {
+                    name: "Current".into(),
+                    selected: vec![],
+                },
+                RecordedGroup {
+                    name: "Removed".into(),
+                    selected: vec![RecordedOption {
+                        name: "Missing choice".into(),
+                        idx: 0,
+                    }],
+                },
+            ],
+        }];
+        let result = replay(&config, &Context::default(), &recorded);
+        assert!(!result.is_faithful());
+        assert!(result
+            .unmatched
+            .iter()
+            .any(|message| message.contains("Removed") && message.contains("Main")));
     }
 }

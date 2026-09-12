@@ -55,6 +55,20 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
         if let Some(id) = meta.mod_id() {
             col = col.push(info_kv("Nexus id", id.to_string()));
         }
+        let sources = meta.installed_files();
+        if !sources.is_empty() {
+            col = col.push(info_kv(
+                "Nexus files",
+                sources
+                    .iter()
+                    .map(|(m, f)| format!("mod {m} / file {f}"))
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            ));
+        }
+        if let Some(warning) = meta.install_warning() {
+            col = col.push(info_kv("Install warning", warning));
+        }
         if let Some(a) = meta.author() {
             col = col.push(info_kv("Author", a));
         }
@@ -88,6 +102,9 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
                 },
             ));
     }
+    if !app.info_provenance.is_empty() {
+        col = col.push(info_kv("Generated output", app.info_provenance.clone()));
+    }
     // A page for mods that are not on Nexus. Without it every such mod is a dead
     // end in the interface: "Visit on Nexus" only appears when a Nexus id
     // exists, so a LoversLab or GitHub mod has nowhere to go from here.
@@ -117,6 +134,37 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     .push(info_kv("Folder", m.path.display().to_string()))
     .push(url_row)
     .into()
+}
+
+/// Build the receipt text on dialog-open, never by reading the journal every frame.
+pub(crate) fn generated_summary(app: &App, name: &str) -> String {
+    let Some(inst) = app.created.as_ref() else {
+        return String::new();
+    };
+    let outputs = match inst.generated_output(Some(name)) {
+        Ok(outputs) => outputs,
+        Err(error) => return format!("Could not read generation receipts: {error}"),
+    };
+    if outputs.is_empty() {
+        return String::new();
+    }
+    let plugins = app.plugins.clone().or_else(|| compute_plugins(app));
+    let inputs: Vec<_> = plugins
+        .as_ref()
+        .into_iter()
+        .flat_map(|list| list.plugins.iter().map(|p| (p.name.clone(), p.enabled)))
+        .collect();
+    outputs.iter().map(|output| {
+        let receipt = &output.receipt;
+        let state = if inst.generated_input_drift(receipt, &inputs) { "Inputs changed; review whether regeneration is needed" } else { "Recorded inputs unchanged" };
+        let versions = receipt.inputs.iter().map(|input| {
+            let sources = input.installed_files.iter().map(|(m, f)| format!("{m}/{f}")).collect::<Vec<_>>().join(", ");
+            format!("{}: {}{}", input.name, input.version.as_deref().unwrap_or("version unknown"), if sources.is_empty() { String::new() } else { format!(" [{sources}]") })
+        }).collect::<Vec<_>>().join("; ");
+        format!("{} · {} UTC · profile {} · {} file(s)\n{}\nInputs: {}\nCommand: {}\nExecutable fingerprint: {}",
+            receipt.tool, eidos_instance::format_stamp(receipt.started_at), receipt.profile, output.paths.len(), state, versions, receipt.command.join(" "),
+            receipt.executable.as_ref().map(|exe| format!("{} ({} bytes; modified {})", exe.path.display(), exe.size, format_when(exe.modified))).unwrap_or_else(|| "unavailable".into()))
+    }).collect::<Vec<_>>().join("\n\n")
 }
 
 /// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
@@ -173,7 +221,7 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
     for (p, who) in &loses {
         col = col.push(text(format!("  {p}   <   {who}")).size(11.0));
     }
-    col.into()
+    col.push(archive_member_rows(app, cmap, origin, 100)).into()
 }
 
 /// Filetree tab: every file the mod ships, relative to its root, each with a
@@ -1715,18 +1763,93 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     };
     match plugins {
         Some(list) => {
+            if let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) {
+                let mut unverified = Vec::new();
+                for d in list.diagnostics(&spec) {
+                    if d.code == "plugin_records_unverified" {
+                        let checked = app
+                            .loot_meta
+                            .as_ref()
+                            .and_then(|m| m.get(&d.plugin.to_ascii_lowercase()))
+                            .is_some_and(|m| m.record_validity.is_some());
+                        if !checked {
+                            unverified.push(d.plugin);
+                        }
+                        continue;
+                    }
+                    let origin = if d.origin_mod.is_empty() {
+                        "Game"
+                    } else {
+                        &d.origin_mod
+                    };
+                    out.push(Diagnostic {
+                        level: match d.severity {
+                            eidos_plugins::DiagnosticSeverity::Error => DiagLevel::Problem,
+                            _ => DiagLevel::Advice,
+                        },
+                        title: format!("{:?}: {} [{}]", d.severity, d.plugin, d.code),
+                        detail: format!("{} ({origin}): {}", d.plugin, d.detail),
+                        actions: Vec::new(),
+                    });
+                }
+                if !unverified.is_empty() {
+                    out.push(Diagnostic {
+                        level: DiagLevel::Advice,
+                        title: format!("Unverified record limits for {} plugin(s)", unverified.len()),
+                        detail: format!("{}. Header scanning cannot validate new FormIDs in light, medium or update plugins. Run LOOT to read their full records.{}", unverified.iter().take(8).cloned().collect::<Vec<_>>().join(", "), if unverified.len() > 8 { " Additional plugins are also unverified." } else { "" }),
+                        actions: Vec::new(),
+                    });
+                }
+                for p in list.plugins.iter().filter(|p| p.enabled) {
+                    if let Some(meta) = app
+                        .loot_meta
+                        .as_ref()
+                        .and_then(|m| m.get(&p.name.to_ascii_lowercase()))
+                    {
+                        for message in &meta.messages {
+                            if message.kind == eidos_loot::MessageType::Say {
+                                continue;
+                            }
+                            out.push(Diagnostic {
+                                level: if message.kind == eidos_loot::MessageType::Error {
+                                    DiagLevel::Problem
+                                } else {
+                                    DiagLevel::Advice
+                                },
+                                title: format!("LOOT: {}", p.name),
+                                detail: format!(
+                                    "{} ({}): {}",
+                                    p.name,
+                                    if p.origin_mod.is_empty() {
+                                        "Game"
+                                    } else {
+                                        &p.origin_mod
+                                    },
+                                    message.text
+                                ),
+                                actions: Vec::new(),
+                            });
+                        }
+                    }
+                }
+            }
             let missing = list.missing_masters();
-            if missing.is_empty() {
+            let unreadable = list
+                .plugins
+                .iter()
+                .filter(|p| p.enabled && p.header_error.is_some())
+                .count();
+            if missing.is_empty() && unreadable == 0 {
                 out.push(Diagnostic {
                     level: DiagLevel::Ok,
                     title: "No missing masters".to_string(),
                     detail: format!(
-                        "All {} plugins have their masters enabled.",
-                        list.plugins.len()
+                        "All {} active plugins have their masters enabled.",
+                        list.plugins.iter().filter(|p| p.enabled).count()
                     ),
                     actions: Vec::new(),
                 });
-            } else {
+            } else if !missing.is_empty() {
                 let mut detail = missing
                     .iter()
                     .take(8)
@@ -1742,6 +1865,13 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                     detail: format!(
                         "{detail}. The game will crash on load - enable or install them."
                     ),
+                    actions: Vec::new(),
+                });
+            } else {
+                out.push(Diagnostic {
+                    level: DiagLevel::Advice,
+                    title: "Unverified masters".into(),
+                    detail: format!("{unreadable} active plugin header(s) could not be read. Missing-master checks are incomplete; see the header errors above."),
                     actions: Vec::new(),
                 });
             }
@@ -1765,6 +1895,31 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
 
     // ENB + Community Shaders both injecting into D3D11.
     if let (Some(game), Some(inst)) = (selected_game(app), app.created.as_ref()) {
+        let mods = app
+            .mods
+            .iter()
+            .rev()
+            .filter(|m| m.is_active())
+            .map(|m| (m.name.clone(), m.path.clone()))
+            .collect::<Vec<_>>();
+        for d in eidos_gamefeatures::preflight::scan_skse(
+            game.def,
+            &game.data_path,
+            &game.install_path,
+            &mods,
+            &inst.overwrite_dir(),
+        ) {
+            out.push(Diagnostic {
+                level: if d.severity == eidos_gamefeatures::preflight::DiagnosticSeverity::Error {
+                    DiagLevel::Problem
+                } else {
+                    DiagLevel::Advice
+                },
+                title: format!("{:?}: native plugin check [{}]", d.severity, d.code),
+                detail: format!("{} ({}): {}", d.path.display(), d.origin_mod, d.detail),
+                actions: Vec::new(),
+            });
+        }
         let cs_roots: Vec<PathBuf> = inst
             .modlist()
             .into_iter()
@@ -1784,6 +1939,90 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
 
     // A non-empty Overwrite is generated content sitting outside any mod.
     if let Some(inst) = app.created.as_ref() {
+        for m in app
+            .mods
+            .iter()
+            .filter(|m| !m.unmanaged && !m.is_separator())
+        {
+            if let Some(warning) = inst.mod_meta(&m.name).install_warning() {
+                out.push(Diagnostic {
+                    level: if m.is_active() {
+                        DiagLevel::Problem
+                    } else {
+                        DiagLevel::Advice
+                    },
+                    title: format!("Incomplete installation: {}", m.name),
+                    detail: format!("{}: {warning}", m.name),
+                    actions: Vec::new(),
+                });
+            }
+        }
+        match inst.pending_tool_runs() {
+            Ok(runs) => {
+                for run in runs {
+                    out.push(Diagnostic {
+                    level: DiagLevel::Advice,
+                    title: format!("Unverified output from unfinished tool: {}", run.tool),
+                    detail: format!("The run started at {} for profile '{}' has no completed output capture. Its generated files and provenance are unverified.", run.started_at, run.profile),
+                    actions: Vec::new(),
+                });
+                }
+            }
+            Err(e) => out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: "Unverified tool-run history".into(),
+                detail: e.to_string(),
+                actions: Vec::new(),
+            }),
+        }
+        let active_plugins = plugins
+            .map(|list| {
+                list.plugins
+                    .iter()
+                    .map(|p| (p.name.clone(), p.enabled))
+                    .collect::<Vec<_>>()
+            })
+            .or_else(|| (!game_has_plugins(app)).then(Vec::new));
+        match inst.generated_outputs() {
+            Ok(outputs) => {
+                for (owner, output) in outputs {
+                    if owner.as_ref().is_some_and(|owner| {
+                        !app.mods
+                            .iter()
+                            .any(|m| m.is_active() && m.name.eq_ignore_ascii_case(owner))
+                    }) {
+                        continue;
+                    }
+                    let Some(active_plugins) = active_plugins.as_ref() else {
+                        out.push(Diagnostic {
+                            level: DiagLevel::Advice,
+                            title: "Unverified generated-output inputs".into(),
+                            detail: format!(
+                                "The current plugin set is unavailable for {} output in {}.",
+                                output.receipt.tool,
+                                owner.as_deref().unwrap_or("Overwrite")
+                            ),
+                            actions: Vec::new(),
+                        });
+                        continue;
+                    };
+                    if inst.generated_input_drift(&output.receipt, active_plugins) {
+                        out.push(Diagnostic {
+                        level: DiagLevel::Advice,
+                        title: "Generated output inputs changed".into(),
+                        detail: format!("{} output in {} was generated for different recorded inputs, plugin order, profile or tool executable. Review whether to rerun the tool. Files: {}{}", output.receipt.tool, owner.as_deref().unwrap_or("Overwrite"), output.paths.iter().take(8).map(|p| p.display().to_string()).collect::<Vec<_>>().join(", "), if output.paths.len() > 8 { ", …" } else { "" }),
+                        actions: Vec::new(),
+                    });
+                    }
+                }
+            }
+            Err(e) => out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: "Unverified generated-output provenance".into(),
+                detail: e.to_string(),
+                actions: Vec::new(),
+            }),
+        }
         if !inst.overwrite_is_empty() {
             out.push(Diagnostic {
                 level: DiagLevel::Advice,
@@ -1817,6 +2056,15 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 actions: vec![("Delete them", Message::CleanInstallDebris)],
             });
         }
+    }
+
+    for warning in &app.archive_warnings {
+        out.push(Diagnostic {
+            level: DiagLevel::Advice,
+            title: "Unverified archive contents".into(),
+            detail: warning.clone(),
+            actions: Vec::new(),
+        });
     }
 
     // The last session wrecked the active set (a crash artifact written straight
@@ -2046,12 +2294,13 @@ pub(crate) struct ArchiveRow {
     pub(crate) by_plugin: Option<String>,
     /// Whether the profile's INI registers it explicitly.
     pub(crate) registered: bool,
+    pub(crate) overridden_by: Option<String>,
 }
 
 impl ArchiveRow {
     /// Whether the engine will load it at all.
     pub(crate) fn loaded(&self) -> bool {
-        self.registered || self.by_plugin.is_some()
+        self.overridden_by.is_none() && (self.registered || self.by_plugin.is_some())
     }
 }
 
@@ -2074,56 +2323,53 @@ pub(crate) fn cached_archive_rows(app: &App, game_id: &str) -> Option<Vec<Archiv
 
 pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> {
     let inst = app.created.as_ref()?;
-    let mods: Vec<(String, PathBuf)> = app
+    let mods: Vec<_> = app
         .mods
         .iter()
         .filter(|m| m.is_active())
         .map(|m| (m.name.clone(), m.path.clone()))
         .collect();
     let archives = eidos_gamefeatures::mod_archives(&mods);
-    let active = active_plugin_names(app, game_id)?;
-    // The profile's own INI copy is the one that gets deployed, so it is what
-    // the next launch will actually register.
-    let registered = eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
-    let orphans = eidos_gamefeatures::orphan_archives(&archives, &active, &registered);
-
+    let fallback;
+    let plan = if app.archive_completed_epoch == Some(app.archive_epoch.get()) {
+        app.archive_plan.as_ref()?
+    } else {
+        let active = active_plugin_names(app, game_id)?;
+        let game = selected_game(app)?;
+        let (texts, _) = archive_ini_texts(game, inst);
+        fallback = eidos_gamefeatures::archives::archive_plan(
+            game_id,
+            &archives.iter().map(|(_, a)| a.clone()).collect::<Vec<_>>(),
+            &active,
+            &texts,
+            "en",
+        );
+        &fallback
+    };
     Some(
         archives
             .into_iter()
             .map(|(mod_name, archive)| {
-                let is_registered = registered
+                let activation = plan
+                    .archives
                     .iter()
-                    .any(|r| r.trim().eq_ignore_ascii_case(&archive));
-                // An orphan is exactly "no active plugin names it and the INI does
-                // not register it", so anything NOT an orphan is loaded - and the
-                // plugin responsible is the one whose base name matches. Asked of
-                // the same function the diagnostic uses, so the tab and the health
-                // check can never disagree about what loads.
-                let orphan = orphans.iter().any(|(m, a)| *m == mod_name && *a == archive);
-                let by_plugin = (!orphan && !is_registered)
-                    .then(|| {
-                        let stem = archive
-                            .rsplit_once('.')
-                            .map_or(archive.as_str(), |(s, _)| s)
-                            .to_ascii_lowercase();
-                        active.iter().find(|p| {
-                            let base = p
-                                .rsplit_once('.')
-                                .map_or(p.as_str(), |(s, _)| s)
-                                .to_ascii_lowercase();
-                            stem == base
-                                || stem
-                                    .strip_prefix(base.as_str())
-                                    .is_some_and(|r| r.starts_with(" - "))
-                        })
+                    .find(|a| a.name.eq_ignore_ascii_case(&archive));
+                let overridden_by = app
+                    .conflicts
+                    .as_ref()
+                    .and_then(|map| {
+                        map.files
+                            .get(&archive.to_ascii_lowercase())
+                            .map(|n| (map, n))
                     })
-                    .flatten()
-                    .cloned();
+                    .filter(|(map, n)| map.name(n.winner) != mod_name)
+                    .map(|(map, n)| map.name(n.winner).to_string());
                 ArchiveRow {
                     mod_name,
                     archive,
-                    by_plugin,
-                    registered: is_registered,
+                    by_plugin: activation.and_then(|a| a.plugin.clone()),
+                    registered: activation.is_some_and(|a| a.plugin.is_none()),
+                    overridden_by,
                 }
             })
             .collect(),
@@ -2131,91 +2377,17 @@ pub(crate) fn archive_rows(app: &App, game_id: &str) -> Option<Vec<ArchiveRow>> 
 }
 
 pub(crate) fn orphan_archive_diagnostics(app: &App, game_id: &str) -> Vec<Diagnostic> {
-    let Some(inst) = app.created.as_ref() else {
+    let Some(rows) = cached_archive_rows(app, game_id) else {
         return Vec::new();
     };
-    let mods: Vec<(String, PathBuf)> = app
-        .mods
+    let orphan: Vec<_> = rows
         .iter()
-        .filter(|m| m.is_active())
-        .map(|m| (m.name.clone(), m.path.clone()))
+        .filter(|r| !r.loaded() && r.overridden_by.is_none())
         .collect();
-    let archives = eidos_gamefeatures::mod_archives(&mods);
-    if archives.is_empty() {
+    if orphan.is_empty() {
         return Vec::new();
     }
-    // `app.plugins` is a CACHE. It is dropped whenever the mod list changes and
-    // only rebuilt while the Plugins tab is open, so most of the time it is
-    // `None` - and `unwrap_or_default()` turned "we have not looked" into
-    // "nothing is active", which makes EVERY archive an orphan. The tab then
-    // announced that eleven archives would not load, naming mods whose plugins
-    // were all active, and sent the user hunting a problem that did not exist.
-    //
-    // An absent list is not an empty one. Read the profile's own plugins.txt
-    // instead - one small file, on a diagnostic that already walks every enabled
-    // mod for archives - and if even that is unreadable, say nothing at all.
-    let active: Vec<String> = match app.plugins.as_ref() {
-        Some(l) => l
-            .plugins
-            .iter()
-            .filter(|p| p.enabled)
-            .map(|p| p.name.clone())
-            .collect(),
-        None => {
-            let Some(spec) = GameSpec::for_id(game_id) else {
-                return Vec::new();
-            };
-            let prof = inst.active();
-            let dir = if prof.has_plugin_state() {
-                prof.plugins_state_dir()
-            } else {
-                match selected_game(app).and_then(|g| g.compatdata.clone()) {
-                    Some(cd) => plugins_txt_dir(&cd.join("pfx"), &spec),
-                    None => return Vec::new(),
-                }
-            };
-            PluginList::read_active(&dir, &spec)
-                .into_iter()
-                .filter(|(_, on)| *on)
-                .map(|(n, _)| n)
-                .collect()
-        }
-    };
-    // Still nothing? Then the load order is unknown, and an unknown load order
-    // cannot be evidence that an archive is unloaded.
-    if active.is_empty() {
-        return Vec::new();
-    }
-    // The profile's own INI copy is the one that gets deployed, so it is what the
-    // next launch will actually register.
-    let registered = eidos_gamefeatures::registered_archives_in(&inst.active().dir(), game_id);
-
-    let orphans = eidos_gamefeatures::orphan_archives(&archives, &active, &registered);
-    if orphans.is_empty() {
-        return Vec::new();
-    }
-    let listed: Vec<String> = orphans
-        .iter()
-        .take(8)
-        .map(|(m, a)| format!("{a} ({m})"))
-        .collect();
-    let more = orphans.len().saturating_sub(listed.len());
-    let tail = if more > 0 {
-        format!(", and {more} more")
-    } else {
-        String::new()
-    };
-    vec![Diagnostic {
-        level: DiagLevel::Advice,
-        title: format!("{} archive(s) no active plugin loads", orphans.len()),
-        detail: format!(
-            "{}{tail}. An engine only loads an archive named after an ACTIVE plugin \
-             (<plugin>.bsa or \"<plugin> - Textures.bsa\"), or one the INI registers. \
-             Enable the matching plugin, or the mod's assets will not appear.",
-            listed.join(", ")
-        ),
-        actions: Vec::new(),
-    }]
+    vec![Diagnostic{level:DiagLevel::Advice,title:format!("{} archive(s) no active plugin loads",orphan.len()),detail:format!("{}. These archives match neither an enabled plugin's game-specific archive names nor the effective INI archive lists.",orphan.iter().take(8).map(|r|format!("{} ({})",r.archive,r.mod_name)).collect::<Vec<_>>().join(", ")),actions:Vec::new()}]
 }
 
 /// The Diagnostics tab label, carrying the count of things needing attention.
@@ -2328,6 +2500,22 @@ pub(crate) fn tab_btn<'a>(label: String, t: Tab, mix: f32) -> Element<'a, Messag
         .into()
 }
 
+/// Installer decisions use fresh persisted profile state, even before opening Plugins.
+pub(crate) fn current_fomod_context(app: &App) -> eidos_fomod::Context {
+    let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+        return eidos_fomod::Context::default();
+    };
+    let fallback = game.compatdata.as_ref().and_then(|cd| {
+        GameSpec::for_id(game.def.id).map(|spec| plugins_txt_dir(&cd.join("pfx"), &spec))
+    });
+    eidos_install::fomod_context_for_instance(
+        inst,
+        &game.data_path,
+        game.def.id,
+        fallback.as_deref(),
+    )
+}
+
 /// Compute the ESP/ESM load order for the Plugins tab: discover from the selected
 /// game's Data plus the enabled mods, preserve any existing prefix order, and
 /// validate. `None` if there is no game with a plugin system.
@@ -2346,6 +2534,23 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     }
 
     let mut list = PluginList::discover(&sources, &spec);
+    if let Some(inst) = app.created.as_ref() {
+        let stack = eidos_core::LayerStack::new(
+            sources
+                .iter()
+                .rev()
+                .skip(1)
+                .map(|(_, path)| path.clone())
+                .collect(),
+            inst.overwrite_dir(),
+        );
+        list.plugins.retain(|plugin| {
+            stack
+                .resolve_read(&plugin.name)
+                .is_some_and(|path| path.is_file())
+        });
+    }
+
     // The load order is per-profile: read the active profile's own copy once it
     // has one, and otherwise the prefix's (which the profile adopts on first
     // launch). Same primitive as the launch path, so for PlainList games this also
@@ -2877,6 +3082,10 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
 /// Conflicts tab and the mod-row flags. Highest-priority mod first; game data
 /// last as origin 0. `None` if there is no game.
 pub(crate) fn compute_conflicts(app: &App) -> Option<ConflictMap> {
+    Some(build_conflicts_cached(app, conflict_layers(app)?))
+}
+
+pub(crate) fn conflict_layers(app: &App) -> Option<Vec<Layer>> {
     let game = selected_game(app)?;
     // app.mods is MO2 display order (lowest priority first); the conflict crate wants
     // layers highest-priority first, so reverse. The origin stays the app.mods index
@@ -2886,7 +3095,7 @@ pub(crate) fn compute_conflicts(app: &App) -> Option<ConflictMap> {
         .mods
         .iter()
         .enumerate()
-        .filter(|(_, m)| m.is_active())
+        .filter(|(_, m)| m.is_active() && !m.is_unmanaged())
         .map(|(i, m)| Layer {
             origin: (i + 1) as u32,
             name: m.name.clone(),
@@ -2916,7 +3125,7 @@ pub(crate) fn compute_conflicts(app: &App) -> Option<ConflictMap> {
         name: format!("[{}]", game.def.id),
         root: game.data_path.clone(),
     });
-    Some(build_conflicts_cached(app, layers))
+    Some(layers)
 }
 
 /// Build the conflict map from cached per-layer file walks: only layers missing
@@ -2974,8 +3183,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
             ConflictState::None => continue,
         };
         let detail = map
-            .mods
-            .get(&origin)
+            .mod_conflicts(origin)
             .map(|c| format!("{}/{} won", c.won, c.total))
             .unwrap_or_default();
         let row = Row::new()
@@ -2992,7 +3200,18 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
     );
     Column::new()
         .spacing(6)
-        .push(text(format!("Conflicts: {summary}")).size(12.0))
+        .push(
+            text(format!(
+                "Conflicts: {summary}{}",
+                if app.archive_job.is_some() {
+                    " — archive analysis running"
+                } else {
+                    ""
+                }
+            ))
+            .size(12.0),
+        )
+        .push(text(app.archive_warnings.join("\n")).size(11.0))
         .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(10.0))
         .push(scrollable(rows).height(Length::FillPortion(2)))
         .push(conflicting_files(app, map))
@@ -3079,6 +3298,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
         .height(Length::FillPortion(3))
         .push(text(head).size(12.0))
         .push(scrollable(rows).height(Length::Fill))
+        .push(archive_member_rows(app, map, origin, 100))
         .into()
 }
 
@@ -3952,9 +4172,9 @@ pub(crate) fn remember_bain_options(app: &App, mod_name: &str, choice: &PickerCh
     let (PickerChoice::Bain(subs), Some(inst)) = (choice, app.created.as_ref()) else {
         return;
     };
-    let mut meta = inst.mod_meta(mod_name);
-    meta.set_bain_options(subs);
-    let _ = meta.write(&inst.meta_path(mod_name));
+    if let Err(error) = edit_mod_meta(inst, mod_name, |meta| meta.set_bain_options(subs)) {
+        eidos_log::warn!("Could not remember BAIN choices for {mod_name}: {error}");
+    }
 }
 
 pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
@@ -3992,24 +4212,12 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         }
         return;
     }
-    let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+    let Some(inst) = app.created.as_ref() else {
         app.status = Some("Open a game instance first.".to_string());
         return;
     };
     let mods_dir = inst.mods_dir();
-    let enabled_roots: Vec<std::path::PathBuf> = app
-        .mods
-        .iter()
-        .filter(|m| m.is_active())
-        .map(|m| m.path.clone())
-        .collect();
-    let disabled_roots: Vec<std::path::PathBuf> = app
-        .mods
-        .iter()
-        .filter(|m| !m.is_active() && !m.is_separator())
-        .map(|m| m.path.clone())
-        .collect();
-    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
+    let ctx = current_fomod_context(app);
     let archive = c.archive.clone();
     // A collision raised by the manual / BAIN picker: replay the SAME picks. The
     // tree alone does not say which sub-packages were ticked, so re-running the
@@ -4369,9 +4577,8 @@ pub(crate) fn copy_dir_contents(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Shared post-install step: give the new mod the highest priority (wins conflicts
-/// by default, like MO2), reload the list, and invalidate the plugin + conflict
-/// caches. modlist() is lowest-priority-first, so highest = the END of the list.
+/// Register new mods at highest priority, preserve existing profile decisions,
+/// and refresh the affected list, plugin and conflict caches.
 pub(crate) fn after_install(
     app: &mut App,
     name: &str,
@@ -4379,6 +4586,7 @@ pub(crate) fn after_install(
     fomod: bool,
     archive: Option<&Path>,
 ) {
+    let mut registration_warning = None;
     if let Some(inst) = &app.created {
         // Same lock as save_mods: the modlist must not be rewritten under a
         // running session. A refusal is not a lost install - the files are on
@@ -4386,20 +4594,16 @@ pub(crate) fn after_install(
         // auto-enable is skipped.
         match inst.try_lock("the Eidos window") {
             Ok(_lock) => {
-                let mut ml = inst.modlist();
-                ml.retain(|m| m.name != name);
-                ml.push(ModEntry {
-                    name: name.to_string(),
-                    enabled: true,
-                    path: dest,
-                    unmanaged: false,
-                });
-                let _ = inst.save_modlist(&ml);
+                if let Err(error) = inst.register_installed_mod(name) {
+                    app.status = Some(format!(
+                        "Installed '{name}', but could not register it: {error}"
+                    ));
+                    return;
+                }
             }
             Err(e) => {
-                app.status = Some(format!(
-                    "Installed '{name}', but could not enable it now: {e}. Enable it once the \
-                     game closes."
+                registration_warning = Some(format!(
+                    "Could not register it now: {e}. Check its enabled state once the game closes."
                 ));
             }
         }
@@ -4458,11 +4662,17 @@ pub(crate) fn after_install(
         .take()
         .map(|n| format!(" ({n})"))
         .unwrap_or_default();
+    let warning = eidos_instance::ModMeta::read(&dest.join("meta.ini")).install_warning();
     app.status = Some(if fomod {
         format!("Installed '{name}' via FOMOD{where_to}{note}.")
     } else {
         format!("Installed '{name}'{where_to}{note}.")
     });
+    for warning in [warning, registration_warning].into_iter().flatten() {
+        if let Some(status) = &mut app.status {
+            status.push_str(&format!(" Warning: {warning}"));
+        }
+    }
 }
 
 /// The install-collision chooser card (MO2's QueryOverwriteDialog): Merge / Replace
@@ -4829,7 +5039,10 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
             .into();
     };
 
-    let orphans = rows.iter().filter(|r| !r.loaded()).count();
+    let orphans = rows
+        .iter()
+        .filter(|r| !r.loaded() && r.overridden_by.is_none())
+        .count();
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
@@ -4870,13 +5083,19 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         list = list.push(text("None of your enabled mods ships a BSA or BA2.").size(12.0));
     }
     for (i, r) in rows.iter().enumerate() {
-        let why: Element<'a, Message> = match (&r.by_plugin, r.registered) {
-            (_, true) => text("the INI registers it").size(11.0).into(),
-            (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
-            (None, false) => text("nothing loads it - it is dead weight")
+        let why: Element<'a, Message> = if let Some(winner) = &r.overridden_by {
+            text(format!("Physical archive overridden by {winner}"))
                 .size(11.0)
-                .color(conflict_loses_fg())
-                .into(),
+                .into()
+        } else {
+            match (&r.by_plugin, r.registered) {
+                (_, true) => text("the INI registers it").size(11.0).into(),
+                (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
+                (None, false) => text("nothing loads it - it is dead weight")
+                    .size(11.0)
+                    .color(conflict_loses_fg())
+                    .into(),
+            }
         };
         let row = Row::new()
             .spacing(8)

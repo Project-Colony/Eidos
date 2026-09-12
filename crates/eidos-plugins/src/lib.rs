@@ -25,7 +25,7 @@ pub use loadorder::{
 /// case-insensitively - MO2's plugin filter (`*.esp *.esm *.esl`).
 pub fn is_plugin(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl")
+    !n.starts_with(".eidoswh.") && (n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl"))
 }
 
 /// Whether `name` loads as a master by its extension (`.esm`/`.esl`) - MO2's
@@ -125,6 +125,12 @@ pub struct Plugin {
     pub is_light: bool,
     /// Medium plugin (Starfield ESH).
     pub is_medium: bool,
+    /// Header data could not be read; an empty master list is then unknown.
+    pub header_error: Option<String>,
+    /// TES4 record form version (distinct from the HEDR plugin version).
+    pub form_version: Option<u16>,
+    pub is_blueprint: bool,
+    pub is_update: bool,
     /// MAST subrecords: the plugins this one depends on.
     pub masters: Vec<String>,
     /// Contiguous user-order priority (0 = first), assigned by `sort`.
@@ -144,6 +150,23 @@ impl Plugin {
     pub fn loads_as_master(&self) -> bool {
         self.is_master || is_master_ext(&self.name)
     }
+}
+
+/// Stable severity shared by plugin diagnostic consumers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Unverified,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginDiagnostic {
+    pub code: &'static str,
+    pub severity: DiagnosticSeverity,
+    pub plugin: String,
+    pub origin_mod: String,
+    pub detail: String,
 }
 
 /// Where a plugin is allowed to sit in the load order, and what bounds it.
@@ -257,6 +280,94 @@ pub fn implicit_plugins(game_root: &Path) -> Vec<String> {
 }
 
 impl PluginList {
+    /// Header and load-order checks only; full record validation belongs to LOOT.
+    pub fn diagnostics(&self, spec: &GameSpec) -> Vec<PluginDiagnostic> {
+        let mut indexed = self.clone();
+        indexed.generate_indexes(spec);
+        let mut out = Vec::new();
+        for p in &indexed.plugins {
+            let mut add = |code, severity, detail| {
+                out.push(PluginDiagnostic {
+                    code,
+                    severity,
+                    plugin: p.name.clone(),
+                    origin_mod: p.origin_mod.clone(),
+                    detail,
+                })
+            };
+            if let Some(error) = &p.header_error {
+                add(
+                    "plugin_header",
+                    if p.enabled {
+                        DiagnosticSeverity::Error
+                    } else {
+                        DiagnosticSeverity::Warning
+                    },
+                    format!(
+                        "Could not read {}: {error}. Its masters and flags are unknown.",
+                        p.name
+                    ),
+                );
+                continue;
+            }
+            if !p.enabled {
+                continue;
+            }
+            if p.force_disabled {
+                add(
+                    "unsupported_plugin",
+                    DiagnosticSeverity::Error,
+                    format!("{} cannot load in this game.", p.name),
+                );
+            } else if p.index.is_none() {
+                add(
+                    "plugin_capacity",
+                    DiagnosticSeverity::Error,
+                    format!(
+                        "{} exceeds the game's {} plugin capacity; no valid index can be assigned.",
+                        p.name,
+                        if p.is_light {
+                            "light (4096)"
+                        } else if p.is_medium {
+                            "medium (256)"
+                        } else {
+                            "full"
+                        }
+                    ),
+                );
+            }
+            if spec.esplugin_id == GameId::SkyrimSE && p.form_version.is_some_and(|v| v < 44) {
+                add(
+                    "old_form",
+                    DiagnosticSeverity::Warning,
+                    format!(
+                        "{} has form version {}; verify that this Skyrim LE plugin was ported for Skyrim SE.",
+                        p.name,
+                        p.form_version.unwrap()
+                    ),
+                );
+            }
+            if p.is_light || p.is_medium || p.is_update {
+                add(
+                    "plugin_records_unverified",
+                    DiagnosticSeverity::Unverified,
+                    format!(
+                        "{}: header flags are known; record-level light/medium/update validity requires a LOOT scan.",
+                        p.name
+                    ),
+                );
+            }
+        }
+        out
+    }
+
+    fn full_capacity(&self, spec: &GameSpec) -> u32 {
+        let light = spec.light_supported() && self.plugins.iter().any(|p| p.enabled && p.is_light);
+        let medium =
+            spec.medium_supported() && self.plugins.iter().any(|p| p.enabled && p.is_medium);
+        255 - u32::from(light) - u32::from(medium)
+    }
+
     /// Discover plugins from a set of sources - `(origin_mod, dir)` pairs in
     /// ascending plugin-priority order (earliest = lowest index; pass the game's
     /// own Data dir first with an empty origin). A later source providing a plugin
@@ -281,18 +392,22 @@ impl PluginList {
                 .flatten()
                 .filter_map(|e| {
                     let name = e.file_name().to_string_lossy().into_owned();
-                    is_plugin(&name).then(|| (name, e.path()))
+                    (is_plugin(&name) && e.path().is_file()).then(|| (name, e.path()))
                 })
                 .collect();
             found.sort_by_key(|(name, _)| name.to_ascii_lowercase());
 
             for (name, path) in found {
                 let key = name.to_ascii_lowercase();
-                let (is_master, is_light, is_medium, masters) =
-                    parse_header(&path, spec.esplugin_id).unwrap_or_else(|| {
-                        // Unparseable: fall back to the extension.
-                        (is_master_ext(&key), is_light_ext(&key), false, Vec::new())
-                    });
+                let parsed = parse_header(&path, spec.esplugin_id);
+                let header_error = parsed.as_ref().err().cloned();
+                let header = parsed.unwrap_or_default();
+                let (is_master, is_light, is_medium, masters) = (
+                    header.is_master,
+                    header.is_light,
+                    header.is_medium,
+                    header.masters,
+                );
                 // An `.esl` on a no-light engine is force-disabled (a packaging error;
                 // loading it would consume a normal index slot and shift every later
                 // plugin's index).
@@ -304,6 +419,10 @@ impl PluginList {
                     p.is_master = is_master;
                     p.is_light = is_light;
                     p.is_medium = is_medium;
+                    p.header_error = header_error;
+                    p.form_version = header.form_version;
+                    p.is_blueprint = header.is_blueprint;
+                    p.is_update = header.is_update;
                     p.masters = masters;
                     p.force_disabled = force_disabled;
                     if force_disabled {
@@ -326,6 +445,10 @@ impl PluginList {
                         is_master,
                         is_light,
                         is_medium,
+                        header_error,
+                        form_version: header.form_version,
+                        is_blueprint: header.is_blueprint,
+                        is_update: header.is_update,
                         masters,
                         priority: -1,
                         index: None,
@@ -484,25 +607,33 @@ impl PluginList {
     }
 
     /// Assign each enabled plugin its game-visible mod index, iterating in
-    /// priority order. Ported from MO2's `generatePluginIndexes`:
-    /// normal = sequential 2-hex; light = `FE:xxx` (254 + n/4096, slot n%4096);
-    /// medium = `FD:xx` (253 + n/256, slot n%256). Disabled plugins get no index.
+    /// priority order. Full plugins use the remaining slots below FF; light
+    /// plugins occupy FE:000..FFF and medium plugins FD:00..FF. The number of
+    /// full slots follows libloadorder (255 minus the active small/medium spaces).
+    /// Unknown, disabled and over-capacity plugins receive no invented index.
     pub fn generate_indexes(&mut self, spec: &GameSpec) {
         let (light_ok, medium_ok) = (spec.light_supported(), spec.medium_supported());
+        let full_capacity = self.full_capacity(spec);
+        let medium_present = medium_ok && self.plugins.iter().any(|p| p.enabled && p.is_medium);
         let (mut esl, mut esh, mut normal): (u32, u32, u32) = (0, 0, 0);
         for p in &mut self.plugins {
-            if !p.enabled {
+            if !p.enabled || p.force_disabled || p.header_error.is_some() {
                 p.index = None;
                 continue;
             }
             if medium_ok && p.is_medium {
-                p.index = Some(format!("{:02X}:{:02X}", 253 + esh / 256, esh % 256));
+                p.index = (esh < 256).then(|| format!("FD:{esh:02X}"));
                 esh += 1;
             } else if light_ok && p.is_light {
-                p.index = Some(format!("{:02X}:{:03X}", 254 + esl / 4096, esl % 4096));
+                p.index = (esl < 4096).then(|| format!("FE:{esl:03X}"));
                 esl += 1;
             } else {
-                p.index = Some(format!("{:02X}", normal));
+                p.index = (normal < full_capacity).then(|| {
+                    // With medium but no light plugins, the last full slot is FE:
+                    // FD still belongs to the medium index space.
+                    let index = normal + u32::from(medium_present && normal >= 253);
+                    format!("{index:02X}")
+                });
                 normal += 1;
             }
         }
@@ -586,6 +717,9 @@ impl PluginList {
         }) else {
             return false;
         };
+        if me.is_blueprint != other.is_blueprint {
+            return false;
+        }
         // A pinned neighbour owns its slot; stepping onto it would be undone by
         // apply_locks on the very next refresh.
         if self.locked.contains_key(&other.name.to_ascii_lowercase()) {
@@ -721,22 +855,21 @@ impl PluginList {
                 before: None,
             });
         }
-        // Tier boundaries. The list is sorted, so both blocks are contiguous.
-        let primaries_end = self
-            .plugins
+        let (_, tiers) = tier_order(&self.plugins, spec);
+        let my_tier = tiers[index];
+        let tier_start = tiers.iter().position(|&t| t == my_tier).unwrap_or(index);
+        let tier_end = tiers
             .iter()
-            .position(|p| !is_primary(&p.name))
-            .unwrap_or(len);
-        let normals_start = self
-            .plugins
-            .iter()
-            .position(|p| !is_primary(&p.name) && !p.loads_as_master())
-            .unwrap_or(len);
+            .rposition(|&t| t == my_tier)
+            .map_or(index + 1, |i| i + 1);
 
         // The last master of mine that is actually present: I must land after it.
         let mut after: Option<(usize, String)> = None;
         for (i, p) in self.plugins.iter().enumerate() {
-            if !block.contains(&i) && me.masters.iter().any(|m| m.eq_ignore_ascii_case(&p.name)) {
+            if !block.contains(&i)
+                && me.is_blueprint == p.is_blueprint
+                && me.masters.iter().any(|m| m.eq_ignore_ascii_case(&p.name))
+            {
                 after = Some((i, p.name.clone()));
             }
         }
@@ -746,7 +879,9 @@ impl PluginList {
             .iter()
             .enumerate()
             .find(|(i, p)| {
-                !block.contains(i) && p.masters.iter().any(|m| m.eq_ignore_ascii_case(&me.name))
+                !block.contains(i)
+                    && me.is_blueprint == p.is_blueprint
+                    && p.masters.iter().any(|m| m.eq_ignore_ascii_case(&me.name))
             })
             .map(|(i, p)| (i, p.name.clone()));
 
@@ -772,12 +907,8 @@ impl PluginList {
         blocked.retain(|g| *g >= lo && *g <= hi);
         blocked.sort_unstable();
         blocked.dedup();
-        if me.loads_as_master() {
-            lo = lo.max(primaries_end);
-            hi = hi.min(normals_start);
-        } else {
-            lo = lo.max(normals_start);
-        }
+        lo = lo.max(tier_start);
+        hi = hi.min(tier_end);
         // A contradictory set of rules must not produce an inverted range; pin the
         // plugin where it is rather than handing the UI something nonsensical.
         if lo > hi {
@@ -963,16 +1094,38 @@ impl PluginList {
     }
 }
 
-/// Parse a plugin header with esplugin: `(is_master, is_light, is_medium, masters)`.
-fn parse_header(path: &Path, game_id: GameId) -> Option<(bool, bool, bool, Vec<String>)> {
+#[derive(Default)]
+struct Header {
+    is_master: bool,
+    is_light: bool,
+    is_medium: bool,
+    is_blueprint: bool,
+    is_update: bool,
+    form_version: Option<u16>,
+    masters: Vec<String>,
+}
+
+fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
+    use std::io::Read;
     let mut p = EspPlugin::new(game_id, path);
-    p.parse_file(ParseOptions::header_only()).ok()?;
-    Some((
-        p.is_master_file(),
-        p.is_light_plugin(),
-        p.is_medium_plugin(),
-        p.masters().unwrap_or_default(),
-    ))
+    p.parse_file(ParseOptions::header_only())
+        .map_err(|e| e.to_string())?;
+    let masters = p.masters().map_err(|e| e.to_string())?;
+    // esplugin exposes HEDR version, not TES4 record form version. TES4's
+    // fixed header has a little-endian u16 at byte 20 for these engines.
+    let mut bytes = [0u8; 24];
+    std::fs::File::open(path)
+        .and_then(|mut f| f.read_exact(&mut bytes))
+        .map_err(|e| e.to_string())?;
+    Ok(Header {
+        is_master: p.is_master_file(),
+        is_light: p.is_light_plugin(),
+        is_medium: p.is_medium_plugin(),
+        is_blueprint: p.is_blueprint_plugin(),
+        is_update: p.is_update_plugin(),
+        form_version: Some(u16::from_le_bytes([bytes[20], bytes[21]])),
+        masters,
+    })
 }
 
 /// Stable topological order: respect `base` (the tier ordering) as the tiebreak,
@@ -997,7 +1150,9 @@ fn tier_order(plugins: &[Plugin], spec: &GameSpec) -> (Vec<usize>, Vec<u8>) {
     let tier: Vec<u8> = plugins
         .iter()
         .map(|p| {
-            if primary_pos(&p.name).is_some() {
+            if p.is_blueprint && spec.esplugin_id == GameId::Starfield {
+                if p.loads_as_master() { 3 } else { 4 }
+            } else if primary_pos(&p.name).is_some() {
                 0
             } else if p.loads_as_master() {
                 1
@@ -1030,7 +1185,7 @@ fn topo_stable(plugins: &[Plugin], base: &[usize], tier: &[u8]) -> Vec<usize> {
     for (i, p) in plugins.iter().enumerate() {
         for m in &p.masters {
             if let Some(&mi) = by_name.get(&m.to_ascii_lowercase()) {
-                if mi != i {
+                if mi != i && p.is_blueprint == plugins[mi].is_blueprint {
                     indeg[i] += 1;
                     dependents[mi].push(i);
                 }
@@ -1102,6 +1257,10 @@ mod tests {
             is_master: lower.ends_with(".esm"),
             is_light: lower.ends_with(".esl"),
             is_medium: false,
+            header_error: None,
+            form_version: None,
+            is_blueprint: false,
+            is_update: false,
             masters: masters.iter().map(|s| s.to_string()).collect(),
             priority: -1,
             index: None,
@@ -1114,6 +1273,150 @@ mod tests {
 
     fn se() -> GameSpec {
         GameSpec::for_id("skyrimse").unwrap()
+    }
+
+    #[test]
+    fn old_form_and_unknown_headers_are_distinct_diagnostics() {
+        let mut old = p("Oldrim.esp", &[]);
+        old.form_version = Some(43);
+        let mut broken = p("Broken.esp", &[]);
+        broken.header_error = Some("truncated header".into());
+        let list = PluginList {
+            plugins: vec![old, broken],
+            ..Default::default()
+        };
+        let diag = list.diagnostics(&se());
+        assert!(
+            diag.iter()
+                .any(|d| d.code == "old_form" && d.severity == DiagnosticSeverity::Warning)
+        );
+        assert!(
+            diag.iter()
+                .any(|d| d.code == "plugin_header" && d.severity == DiagnosticSeverity::Error)
+        );
+        assert!(
+            !list
+                .diagnostics(&GameSpec::for_id("fallout4").unwrap())
+                .iter()
+                .any(|d| d.code == "old_form")
+        );
+    }
+
+    #[test]
+    fn starfield_blueprints_follow_normal_plugins_even_when_named_as_masters() {
+        let mut bp = p("Blueprint.esm", &[]);
+        bp.is_blueprint = true;
+        let mut list = PluginList {
+            plugins: vec![bp, p("Regular.esp", &["Blueprint.esm"])],
+            ..Default::default()
+        };
+        let spec = GameSpec::for_id("starfield").unwrap();
+        list.refresh(&spec);
+        assert_eq!(names(&list), ["Regular.esp", "Blueprint.esm"]);
+        assert!(!list.can_move(1, true, &spec));
+        let range = list.movable_range(1, &spec).unwrap();
+        assert!(range.lo >= 1);
+    }
+
+    #[test]
+    fn indexes_never_spill_into_reserved_or_overflow_slots() {
+        let mut list = PluginList::default();
+        list.plugins = (0..256).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        list.plugins.push(p("Light.esl", &[]));
+        list.generate_indexes(&se());
+        assert_eq!(list.plugins[253].index.as_deref(), Some("FD"));
+        assert_eq!(list.plugins[254].index, None, "FE belongs to light plugins");
+        assert_eq!(list.plugins[255].index, None);
+        list.plugins = (0..4097)
+            .map(|i| p(&format!("Light{i}.esl"), &[]))
+            .collect();
+        list.generate_indexes(&se());
+        assert_eq!(list.plugins[4095].index.as_deref(), Some("FE:FFF"));
+        assert_eq!(
+            list.plugins[4096].index, None,
+            "FF is reserved by the engine"
+        );
+    }
+
+    #[test]
+    fn medium_slots_never_collide_with_full_indexes() {
+        let spec = GameSpec::for_id("starfield").unwrap();
+        let mut list = PluginList::default();
+        list.plugins = (0..255).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        let mut medium = p("Medium.esm", &[]);
+        medium.is_medium = true;
+        list.plugins.push(medium.clone());
+        list.generate_indexes(&spec);
+        assert_eq!(
+            list.plugins[253].index.as_deref(),
+            Some("FE"),
+            "FD is occupied by medium plugins"
+        );
+        assert_eq!(list.plugins[254].index, None);
+        assert_eq!(list.plugins[255].index.as_deref(), Some("FD:00"));
+        list.plugins = (0..257)
+            .map(|i| {
+                let mut p = medium.clone();
+                p.name = format!("M{i}.esm");
+                p
+            })
+            .collect();
+        list.generate_indexes(&spec);
+        assert_eq!(list.plugins[255].index.as_deref(), Some("FD:FF"));
+        assert_eq!(list.plugins[256].index, None);
+        assert!(
+            list.diagnostics(&spec)
+                .iter()
+                .any(|d| d.code == "plugin_capacity" && d.plugin == "M256.esm")
+        );
+    }
+
+    #[test]
+    fn parsed_header_preserves_form_and_engine_normalized_flags() {
+        let dir = std::env::temp_dir().join(format!("eidos-header-flags-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Patch.esm");
+        let mut bytes = vec![0u8; 24];
+        bytes[..4].copy_from_slice(b"TES4");
+        bytes[8..12].copy_from_slice(&0xA00u32.to_le_bytes());
+        bytes[20..22].copy_from_slice(&44u16.to_le_bytes());
+        bytes.extend_from_slice(b"MAST");
+        bytes.extend_from_slice(&11u16.to_le_bytes());
+        bytes.extend_from_slice(b"Master.esm\0");
+        let len = (bytes.len() - 24) as u32;
+        bytes[4..8].copy_from_slice(&len.to_le_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        let header = parse_header(&path, GameId::Starfield).unwrap();
+        assert!(header.is_update && header.is_blueprint);
+        assert_eq!(header.form_version, Some(44));
+        assert_eq!(header.masters, ["Master.esm"]);
+        // Starfield ignores the update flag on a light plugin.
+        bytes[8..12].copy_from_slice(&0xB00u32.to_le_bytes());
+        std::fs::write(&path, &bytes).unwrap();
+        let header = parse_header(&path, GameId::Starfield).unwrap();
+        assert!(header.is_light && !header.is_update);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn corrupt_plugins_do_not_receive_an_invented_valid_index() {
+        let dir = std::env::temp_dir().join(format!("eidos-bad-header-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("Broken.esp"), b"not a plugin").unwrap();
+        let mut list = PluginList::discover(&[("Broken mod".into(), dir.clone())], &se());
+        list.refresh(&se());
+        std::fs::remove_dir_all(dir).unwrap();
+        assert_eq!(list.plugins.len(), 1);
+        assert!(list.plugins[0].header_error.is_some());
+        assert!(
+            list.diagnostics(&se())
+                .iter()
+                .any(|d| d.code == "plugin_header" && d.origin_mod == "Broken mod")
+        );
+        assert_eq!(
+            list.plugins[0].index, None,
+            "unknown headers are not verified plugins"
+        );
     }
 
     #[test]
@@ -1223,7 +1526,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Skyrim.esm"), b"").unwrap(); // a primary master
         std::fs::write(dir.join("MyMod.esp"), b"").unwrap(); // a normal mod plugin
+        std::fs::write(dir.join(".eidoswh.Deleted.esp"), b"").unwrap();
+        std::fs::create_dir(dir.join("Directory.esp")).unwrap();
         let list = PluginList::discover(&[(String::new(), dir.clone())], &se());
+        assert_eq!(list.plugins.len(), 2, "internal markers and directories are not plugins");
         let esm = list
             .plugins
             .iter()

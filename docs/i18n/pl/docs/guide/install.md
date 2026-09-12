@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Instalacja Eidos
 
@@ -72,8 +72,8 @@ przenośnej - zob. [usage.pl.md](usage.md). Pełna wycieczka jest tamże.
 
 ## Opcjonalnie: passthrough FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` włącza jądrowy passthrough
-FUSE. Jest **domyślnie wyłączony i niemal na pewno chcesz, żeby tak zostało**:
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` nadaje opcjonalne uprawnienie, ale nie włącza passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` to osobny przełącznik używany podczas uruchamiania. Jest **domyślnie wyłączony i niemal na pewno chcesz, żeby tak zostało**:
 zmierzone na Skyrim SE - powstrzymuje grę przed otwarciem własnych archiwów i
 wtyczek, przez co mody po cichu się nie wczytują. Przełącznik istnieje po to, by
 mechanizm dało się przetestować ponownie, a nie dlatego, że jest zalecany.

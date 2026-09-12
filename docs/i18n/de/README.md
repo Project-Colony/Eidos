@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -85,15 +85,7 @@ Spielstände werden analysiert, gegen Ihre aktuellen Plugins abgeglichen - mit
 einem Knopf, der aktiviert, was ein Spielstand braucht - und nach jeder Sitzung
 für Steam Cloud zurücksynchronisiert.
 
-**Nexus.** Verbinden Sie ein Konto, und der "Mod Manager Download"-Knopf der
-Website landet direkt in Ihrer Instanz, mit Aktualisierungsprüfungen gegen das,
-was Sie installiert haben, wer jeden Mod gemacht hat und einem Link zu seinem
-Profil. Ein **Collection**-Link listet ihre Mitglieder, abgeglichen mit Ihrer
-Instanz - installiert, heruntergeladen, fehlend -, was das Lesen einer
-Collection ist statt ihrer Installation, und der Bereich sagt warum. Der
-Downloads-Tab ist eine Archivbibliothek: filtern, sortieren, ausblenden ohne zu
-löschen, und die bereits installierten bereinigen. Ein **Offline**-Schalter
-stoppt das alles.
+**Nexus.** Verbinden Sie ein Konto, um „Mod Manager Download“-Links zu empfangen, Updates zu prüfen und Autoren samt Profilen anzuzeigen. Kollektionen werden anhand ihrer Rezepte installiert, mit fortsetzbarem Fortschritt und ausdrücklichen Berichten über nicht unterstützte Schritte. Der Abgleich prüft die genauen Quelldateien; unvollständige ältere Metadaten bleiben ungeprüft. Der Downloads-Tab filtert, sortiert, verbirgt und entfernt Archive. Ein **Offline**-Schalter unterbindet den Nexus-Zugriff.
 
 **Werkzeuge.** xEdit, BodySlide, DynDOLOD und Konsorten laufen *durch den
 zusammengeführten Blick* im Proton-Präfix des Spiels - sie sehen Ihre Mods, ihre
@@ -119,6 +111,8 @@ Spiel- und Add-on-Definitionen, die Sie geschrieben haben - mit Logs unter
 Colony-Familie verwendet. Ein älteres Eidos legte diese in `~/.config/eidos/`
 ab; der erste Start nach der Aktualisierung kopiert sie herüber, sagt es im Log
 und lässt das alte Verzeichnis exakt so, wie es war.
+
+[Integritätsprüfungen und generierte Dateien](../../../docs/internals/integrity.md) (Englisch) beschreibt den Schutz beim Ersetzen, BSA/BA2-Dateikonflikte, statische SKSE-Diagnosen und Generierungsnachweise samt Grenzen.
 
 ## Wie es sich vergleicht
 

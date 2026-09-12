@@ -14,65 +14,52 @@ use eidos_instance::ModMeta;
 
 use crate::{fix_directory_name, guess_mod_name};
 
-/// Re-apply the user-set fields (endorsement, tracked, category) from a previous
-/// install's meta.ini onto a freshly written one, so a Replace doesn't lose them.
-pub(crate) fn reapply_user_meta(old: &ModMeta, meta_path: &Path) {
-    let mut m = ModMeta::read(meta_path);
-    if old.endorsed() {
-        m.set("endorsed", "1");
-    }
-    if old.tracked() {
-        m.set("tracked", "1");
-    }
-    if let Some(c) = old.category() {
-        m.set("category", &format!("\"{c}\""));
-    }
-    // Everything else the USER typed, which a reinstall rewrites from the
-    // archive and would otherwise destroy. These are not recoverable from
-    // anywhere - a note is a sentence somebody wrote, a colour is a decision
-    // about a list, a page is a link nothing else records - so losing them to
-    // "update this mod" is a silent, permanent cost of keeping a setup current.
-    if let Some(n) = old.notes() {
-        m.set_notes(&n);
-    }
-    if let Some(rgb) = old.color() {
-        m.set_color(Some(rgb));
-    }
-    if let Some(u) = old.url() {
-        m.set_url(&u);
-    }
-    // The local flags too: "ignore updates" survives an update by definition,
-    // and re-arming it every reinstall is exactly the wrong default.
-    if old.ignore_update() {
-        m.set_ignore_update(true);
-    }
-    // Who made it. Not user-typed, but it comes from a Nexus call the reinstall
-    // does not make, so dropping it here means "Visit X's profile" vanishes off
-    // the menu until the next update check - a menu entry that comes and goes
-    // with no visible cause.
-    if let Some(a) = old.author() {
-        m.set_author(&a);
-    }
-    if let Some(u) = old.uploader() {
-        m.set_uploader(&u, &old.uploader_url().unwrap_or_default());
-    }
-    let _ = m.write(meta_path);
-}
-
 /// Write a MO2-compatible `meta.ini`, seeded from the download's `<archive>.meta`
 /// sidecar if MO2/Nexus left one next to the file. `guessed_id` is the mod id
 /// recovered from the filename, used when the sidecar carries none.
+#[cfg(test)]
 pub(crate) fn write_meta(
     archive: &Path,
     dest: &Path,
     game_id: &str,
     guessed_id: Option<u64>,
 ) -> io::Result<()> {
+    write_meta_preserving(archive, dest, game_id, guessed_id, None, false)
+}
+
+pub(crate) fn write_meta_preserving(
+    archive: &Path,
+    dest: &Path,
+    game_id: &str,
+    guessed_id: Option<u64>,
+    preserved: Option<ModMeta>,
+    merging: bool,
+) -> io::Result<()> {
     // The sidecar is the full archive name + ".meta" (e.g. Mod-1234.7z.meta).
     let sidecar = PathBuf::from(format!("{}.meta", archive.to_string_lossy()));
-    let from = ModMeta::read(&sidecar);
+    let from = ModMeta::read_checked(&sidecar)?;
 
-    let mut meta = ModMeta::default();
+    // Preserve raw user keys and other sections, including collection ownership.
+    // Only archive facts and the source array are updated; failure aborts publication.
+    let had_metadata = preserved.is_some();
+    let mut meta = preserved.unwrap_or_default();
+    // Only an explicit collection-owned publication may retain replacement authority.
+    meta.set("eidosCollectionOwner", "");
+    let mut sources = if merging {
+        meta.installed_files()
+    } else {
+        Vec::new()
+    };
+    if merging && sources.is_empty() && !meta.has_installed_files() {
+        if let (Some(m), Some(f)) = (meta.mod_id(), meta.file_id()) {
+            sources.push((m, f));
+        }
+    }
+    if let (Some(m), Some(f)) = (from.mod_id().or(guessed_id), from.file_id()) {
+        sources.push((m, f));
+    }
+    meta.set_installed_files(&sources);
+    meta.set("fileID", &from.file_id().unwrap_or(0).to_string());
     // MO2 records the game's SHORT NAME here (`SkyrimSE`), not a lowercase id.
     // Eidos was writing its own id, which nothing reads back for behaviour but
     // which MO2 does not recognise when it opens a mod Eidos installed. An id
@@ -87,9 +74,10 @@ pub(crate) fn write_meta(
     );
     // Mod id: the sidecar's, else the one guessed from the Nexus filename, so a
     // manually-downloaded archive with no sidecar can still be update-checked.
-    if let Some(id) = from.mod_id().or(guessed_id) {
-        meta.set("modid", &id.to_string());
-    }
+    meta.set(
+        "modid",
+        &from.mod_id().or(guessed_id).unwrap_or(0).to_string(),
+    );
     // Version: the sidecar's, else a date stamp from the archive mtime (MO2's
     // dYYYY.M.D fallback) so update_available has a baseline to compare against.
     if let Some(v) = from.version().or_else(|| archive_date_version(archive)) {
@@ -99,7 +87,9 @@ pub(crate) fn write_meta(
         meta.set("newestVersion", &nv);
     }
     // The sidecar's category is a raw Nexus id we don't map yet; leave uncategorised.
-    meta.set("category", "\"-1,\"");
+    if !had_metadata {
+        meta.set("category", "\"-1,\"");
+    }
     // nexusFileStatus mirrors the sidecar's fileCategory (1 = main file by default).
     meta.set(
         "nexusFileStatus",
@@ -126,8 +116,10 @@ pub(crate) fn write_meta(
         "repository",
         &from.repository().unwrap_or_else(|| "Nexus".to_string()),
     );
-    meta.set("endorsed", "0");
-    meta.set("tracked", "0");
+    if !had_metadata {
+        meta.set("endorsed", "0");
+        meta.set("tracked", "0");
+    }
     meta.write(&dest.join("meta.ini"))
 }
 

@@ -43,8 +43,15 @@ impl ModMeta {
     /// Read a `meta.ini`. A missing or unreadable file yields an empty,
     /// non-dirty `ModMeta` (so callers can treat "no metadata" uniformly).
     pub fn read(path: &Path) -> ModMeta {
-        let Ok(text) = fs::read_to_string(path) else {
-            return ModMeta::default();
+        Self::read_checked(path).unwrap_or_default()
+    }
+
+    /// Mutating callers must distinguish absent metadata from unreadable data.
+    pub fn read_checked(path: &Path) -> io::Result<ModMeta> {
+        let text = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(ModMeta::default()),
+            Err(error) => return Err(error),
         };
         let crlf = eidos_ini::newline_style(&text) == "\r\n";
         let mut general = Vec::new();
@@ -80,14 +87,75 @@ impl ModMeta {
         }
         let ini_tweaks = parse_ini_tweaks(&tail);
         let bain_options = parse_bain_options(&tail);
-        ModMeta {
+        Ok(ModMeta {
             general,
             tail,
             ini_tweaks,
             bain_options,
             crlf,
             dirty: false,
+        })
+    }
+
+    /// Exact Nexus (mod id, file id) pairs in MO2's one-based QSettings array.
+    /// Incomplete or zero-valued entries are not source identities.
+    pub fn installed_files(&self) -> Vec<(u64, u64)> {
+        let mut entries = std::collections::BTreeMap::<usize, (u64, u64)>::new();
+        let fields = section_entries(&self.tail, "installedFiles");
+        let size = fields
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case("size"))
+            .and_then(|(_, value)| unquote(value).parse::<usize>().ok())
+            .unwrap_or(0);
+        for (key, value) in fields {
+            let Some((index, field)) = key.split_once('\\') else {
+                continue;
+            };
+            let (Ok(index), Ok(value)) = (index.parse::<usize>(), unquote(value).parse::<u64>())
+            else {
+                continue;
+            };
+            if index == 0 || index > size {
+                continue;
+            }
+            let pair = entries.entry(index).or_default();
+            if field.eq_ignore_ascii_case("modid") {
+                pair.0 = value;
+            }
+            if field.eq_ignore_ascii_case("fileid") {
+                pair.1 = value;
+            }
         }
+        entries
+            .into_values()
+            .filter(|(m, f)| *m > 0 && *f > 0)
+            .collect()
+    }
+
+    /// An explicit empty array is authoritative; only an absent array permits legacy fallback.
+    pub fn has_installed_files(&self) -> bool {
+        section_span(&self.tail, "installedFiles").is_some()
+    }
+
+    /// Replace exact source identities, keeping unrelated INI sections untouched.
+    pub fn set_installed_files(&mut self, files: &[(u64, u64)]) {
+        let mut unique = Vec::new();
+        for &(mod_id, file_id) in files {
+            if mod_id != 0 && file_id != 0 && !unique.contains(&(mod_id, file_id)) {
+                unique.push((mod_id, file_id));
+            }
+        }
+        if self.installed_files() == unique {
+            return;
+        }
+        let mut body = Vec::new();
+        for (n, (mod_id, file_id)) in unique.iter().enumerate() {
+            body.push(format!("{}\\modid={mod_id}", n + 1));
+            body.push(format!("{}\\fileid={file_id}", n + 1));
+        }
+        body.push(format!("size={}", unique.len()));
+        self.replace_section("installedFiles", &body);
+        self.dirty = true;
     }
 
     /// The INI-tweak fragments the user enabled for this mod, in application
@@ -179,6 +247,27 @@ impl ModMeta {
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(key))
             .map(|(_, v)| v.as_str())
+    }
+
+    /// Missing installer payloads retained for front-end diagnostics.
+    pub fn install_warning(&self) -> Option<String> {
+        let raw = self.raw("eidosInstallWarning")?;
+        let decoded = serde_json::from_str::<String>(raw).unwrap_or_else(|_| unquote(raw));
+        (!decoded.is_empty()).then_some(decoded)
+    }
+
+    pub fn set_install_warning(&mut self, warning: &str) {
+        // This Eidos-owned string may contain Windows paths, quotes and newlines.
+        // JSON quoting keeps it on one INI line and round-trips all of those.
+        self.set(
+            "eidosInstallWarning",
+            &serde_json::to_string(warning.trim()).expect("strings serialize"),
+        );
+    }
+
+    /// Raw collection reservation marker; callers compare its encoded bytes.
+    pub fn collection_owner(&self) -> Option<&str> {
+        self.raw("eidosCollectionOwner")
     }
 
     /// A `[General]` string value, unquoted and with empty treated as absent.
@@ -836,6 +925,46 @@ mod tests {
         "[installedFiles]\r\n",
         "size=0\r\n",
     );
+
+    #[test]
+    fn checked_metadata_reads_refuse_unreadable_bytes() {
+        let path = tmp_ini("[General]\nnotes=preserve\n");
+        fs::write(&path, b"[General]\nnotes=\xff\n").unwrap();
+        assert_eq!(
+            ModMeta::read_checked(&path).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"[General]\nnotes=\xff\n");
+        fs::remove_file(&path).unwrap();
+        assert!(ModMeta::read_checked(&path).is_ok());
+    }
+
+    #[test]
+    fn installed_file_identity_respects_the_declared_array_size() {
+        for (size, expected) in [("0", vec![]), ("1", vec![(42, 101)]), ("invalid", vec![])] {
+            let path = tmp_ini(&format!("[General]\n\n[installedFiles]\n1\\modid=42\n1\\fileid=101\n2\\modid=43\n2\\fileid=102\nsize={size}\n"));
+            assert_eq!(ModMeta::read(&path).installed_files(), expected);
+            fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn installed_file_identity_uses_mo2_array_and_preserves_unrelated_bytes() {
+        let p = tmp_ini("[General]\r\nnotes=keep\r\n\r\n[installedFiles]\r\n2\\modid=43\r\n2\\fileid=102\r\n1\\modid=42\r\n1\\fileid=101\r\n3\\modid=0\r\n3\\fileid=999\r\nsize=3\r\n[Custom]\r\nraw=keep=verbatim\r\n");
+        let mut meta = ModMeta::read(&p);
+        assert_eq!(meta.installed_files(), [(42, 101), (43, 102)]);
+        meta.set_installed_files(&[(44, 103), (44, 103), (0, 999)]);
+        meta.write(&p).unwrap();
+        let raw = fs::read_to_string(&p).unwrap();
+        assert!(raw.contains("1\\modid=44\r\n1\\fileid=103\r\nsize=1\r\n"));
+        assert!(raw.ends_with("[Custom]\r\nraw=keep=verbatim\r\n"));
+        let mut meta = ModMeta::read(&p);
+        assert_eq!(meta.installed_files(), [(44, 103)]);
+        meta.set_installed_files(&[]);
+        meta.write(&p).unwrap();
+        assert!(ModMeta::read(&p).installed_files().is_empty());
+        fs::remove_file(p).unwrap();
+    }
 
     #[test]
     fn ini_tweaks_round_trip_in_mo2s_array_form() {

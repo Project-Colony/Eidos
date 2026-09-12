@@ -54,8 +54,6 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         exit(1);
     };
     let inst = target.inst;
-    inst.create().ok();
-    let _ = inst.ensure_manifest(&target.game_id, InstanceKind::Global);
 
     // Union of every tool's declared prereqs, split by tier.
     let tools = eidos_instance::merge_tools(inst.tools(), default_tools_for(&game, Some(&inst)));
@@ -174,9 +172,48 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         );
     }
 
-    // --install: Tier 1 (copy bundled DLLs) then the consented Tier 2 (winetricks).
+    let _lock = match inst.try_lock("installing tool prerequisites") {
+        Ok(lock) => lock,
+        Err(e) => {
+            eidos_log::warn!("Cannot install prerequisites: {e}");
+            exit(1);
+        }
+    };
+    if let Err(e) = inst
+        .create()
+        .and_then(|_| inst.ensure_manifest(&target.game_id, InstanceKind::Global))
+    {
+        eidos_log::warn!("Cannot prepare the instance: {e}");
+        exit(1);
+    }
+    // Inspect the prefix before changing any bundled DLL or launching winetricks.
+    if let Some(compat) = game.compatdata.as_ref() {
+        let busy = eidos_gamefeatures::prefix_busy(&compat.join("pfx"), compat);
+        if !busy.is_empty() {
+            eidos_log::warn!("The prefix is still in use by {} process(es); close the game and its tools before installing prerequisites.", busy.len());
+            exit(1);
+        }
+    }
+    let mut failed = false;
+    // Shared runtimes can be installed even before Steam creates a prefix.
+    for v in &pending3 {
+        match eidos_gamefeatures::install_runtime(v, |step| println!("  {v}: {step}")) {
+            Ok(true) => println!("installed {v}"),
+            Ok(false) => {}
+            Err(e) => {
+                eidos_log::warn!("could not install {v}: {e}");
+                failed = true;
+            }
+        }
+    }
+    if tier1.is_empty() && pending2.is_empty() {
+        if failed {
+            exit(1);
+        }
+        return;
+    }
     let Some(compat) = game.compatdata.as_ref() else {
-        eidos_log::info!("No Proton prefix for {id} - launch the game once through Steam first.");
+        eidos_log::warn!("No Proton prefix for {id} - launch the game once through Steam first.");
         exit(1);
     };
     let win = compat.join("pfx").join("drive_c").join("windows");
@@ -184,23 +221,21 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         match eidos_gamefeatures::ensure_native_dll(&win, v) {
             Ok(true) => println!("provisioned {v} (bundled)"),
             Ok(false) => {}
-            Err(e) => eidos_log::warn!("could not provision {v}: {e}"),
-        }
-    }
-    // Tier 3 first: it needs no prefix and no Proton, so a machine that cannot
-    // run winetricks can still get its runtime.
-    for v in &pending3 {
-        match eidos_gamefeatures::install_runtime(v, |step| println!("  {v}: {step}")) {
-            Ok(true) => println!("installed {v}"),
-            Ok(false) => {}
-            Err(e) => eidos_log::warn!("could not install {v}: {e}"),
+            Err(e) => {
+                eidos_log::warn!("could not provision {v}: {e}");
+                failed = true;
+            }
         }
     }
     if pending2.is_empty() {
-        if pending3.is_empty() {
-            println!("Tier 2 already satisfied (nothing to download).");
+        if failed {
+            exit(1);
         }
+        println!("Tool prerequisites are ready.");
         return;
+    }
+    if failed {
+        exit(1);
     }
     let Some(run) =
         eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
@@ -213,20 +248,6 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
     let prefix = compat.join("pfx");
-    // Refuse rather than corrupt. A game, Steam or a stale wineserver still
-    // attached to this prefix holds registry and filesystem locks that a
-    // winetricks run waits on forever - and the prefix may belong to a session
-    // the user is deliberately keeping open, so naming the processes and stopping
-    // is the right move. We do not kill anything on the user's behalf.
-    let busy = eidos_gamefeatures::prefix_busy(&prefix, compat);
-    if !busy.is_empty() {
-        eidos_log::info!("This prefix is still in use by {} process(es):", busy.len());
-        for (pid, cmd) in busy.iter().take(10) {
-            eidos_log::info!("  pid {pid}: {}", cmd.chars().take(100).collect::<String>());
-        }
-        eidos_log::info!("Close the game, its tools and Steam, then run this again.");
-        exit(1);
-    }
     println!(
         "Installing {} via winetricks (downloads from Microsoft).",
         pending2.join(", ")
@@ -241,7 +262,10 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
             Ok(()) => {
                 done.insert(v.clone());
                 let body: String = done.iter().map(|x| format!("{x}\n")).collect();
-                let _ = std::fs::write(inst.root.join("prereqs.done"), body);
+                if let Err(e) = std::fs::write(inst.root.join("prereqs.done"), body) {
+                    eidos_log::warn!("Installed {v}, but could not record it: {e}");
+                    exit(1);
+                }
             }
             Err(e) => {
                 failed = Some((v.clone(), e.to_string()));

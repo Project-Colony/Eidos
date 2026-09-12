@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -86,14 +86,7 @@ sauvegardes sont analysées, comparées à vos plugins actuels - avec un bouton 
 active ce dont une sauvegarde a besoin - et resynchronisées pour Steam Cloud après
 chaque session.
 
-**Nexus.** Connectez un compte et le bouton « Mod Manager Download » du site
-atterrit directement dans votre instance, avec vérification des mises à jour face
-à ce que vous avez installé, l'auteur de chaque mod et un lien vers son profil. Un
-lien de **collection** en liste les membres croisés avec votre instance -
-installés, téléchargés, manquants - ce qui revient à lire une collection plutôt
-qu'à l'installer, et le panneau dit pourquoi. L'onglet Téléchargements est une
-bibliothèque d'archives : filtrer, trier, masquer sans supprimer, et purger celles
-déjà installées. Un interrupteur **hors ligne** arrête tout cela.
+**Nexus.** Connectez un compte pour recevoir les liens « Mod Manager Download », vérifier les mises à jour et consulter les auteurs et leurs profils. Les collections s'installent à partir de leurs recettes, avec une progression reprenable et des rapports explicites sur les étapes non prises en charge. La correspondance vérifie les fichiers source exacts ; les anciennes métadonnées incomplètes restent non vérifiées. L'onglet Téléchargements permet de filtrer, trier, masquer et supprimer les archives. Un interrupteur **hors ligne** bloque l'accès à Nexus.
 
 **Outils.** xEdit, BodySlide, DynDOLOD et compagnie s'exécutent *à travers la vue
 fusionnée* dans le préfixe Proton du jeu - ils voient vos mods, leur production
@@ -117,6 +110,8 @@ définitions de jeux et d'extensions que vous avez écrites - avec les journaux 
 famille Colony. Un Eidos plus ancien rangeait cela dans `~/.config/eidos/` ; le
 premier lancement après mise à jour les recopie, le dit dans le journal, et laisse
 l'ancien dossier exactement tel qu'il était.
+
+Consultez [Contrôles d'intégrité et fichiers générés](../../../docs/internals/integrity.md) (en anglais) pour la protection des remplacements, les conflits entre fichiers BSA/BA2, les diagnostics statiques SKSE et les traces de génération, ainsi que leurs limites.
 
 ## Comment il se compare
 

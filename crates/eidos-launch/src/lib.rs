@@ -48,8 +48,8 @@ pub struct LaunchSpec {
     ///
     /// This is MO2's Root Builder, and it is what makes a script extender, ENB,
     /// ReShade, `.asi` loaders and Engine Fixes manageable as mods instead of
-    /// files the user copies into their game by hand. Empty (the default) means
-    /// no second mount happens at all and behaviour is exactly as before.
+    /// files the user copies into their game by hand. An empty list skips the
+    /// second mount only when root Overwrite is also empty.
     ///
     /// Other managers deploy these by copying into the real game directory and
     /// restoring afterwards, with a journal so a crash can be cleaned up. Eidos
@@ -225,19 +225,24 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
 /// itself. Split out so its `?`s land back in [`launch`], which unmounts the
 /// profile binds no matter how this half exits.
 fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<ExitStatus> {
-    // ROOT UNION FIRST, if any mod ships a `Root/`. Order matters: this union
+    // ROOT UNION FIRST, if a mod or Overwrite supplies root files. Order matters: this union
     // covers the game install root, and the Data union below then mounts INSIDE
     // it. Mounting Data first would leave it shadowed by the root mount.
     //
     // `_root_session` is bound before `session` so that reverse drop order at the
     // end of this function unmounts Data before the root beneath it.
-    let _root_session = if spec.root_layers.is_empty() {
+    let root_overwrite_present = match spec.root_overwrite.as_ref().map(std::fs::read_dir) {
+        Some(Ok(mut entries)) => entries.next().transpose()?.is_some(),
+        Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+        _ => false,
+    };
+    let _root_session = if spec.root_layers.is_empty() && !root_overwrite_present {
         None
     } else {
         let Some((root_src, root_stash)) = spec.root_base_bind.as_ref() else {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "root_layers given without root_base_bind",
+                "root overlay given without root_base_bind",
             ));
         };
         std::fs::create_dir_all(root_stash)?;

@@ -111,13 +111,14 @@ pub(crate) fn cmd_collection(args: &[String]) {
             exit(1);
         }
     };
-    let read = match eidos_collections::read(&manifest) {
+    let mut read = match eidos_collections::read(&manifest) {
         Ok(r) => r,
         Err(e) => {
             eidos_log::warn!("eidos collection: {e}");
             exit(1);
         }
     };
+    if read.collection.info.domain_name.trim().is_empty() { read.collection.info.domain_name = rev.game_domain.clone(); }
     let c = &read.collection;
     if !c.info.install_instructions.is_empty() {
         println!("\n--- the author's notes ---\n{}\n", c.info.install_instructions);
@@ -140,6 +141,10 @@ pub(crate) fn cmd_collection(args: &[String]) {
             exit(1);
         }
     };
+    if let Err(error) = state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain) {
+        eidos_log::warn!("eidos collection: {error}");
+        exit(1);
+    }
     if no_optional {
         for m in c.mods.iter().filter(|m| m.optional) {
             let key = eidos_collections::state::key_for(m, &c.info.domain_name);
@@ -188,23 +193,10 @@ pub(crate) fn cmd_collection(args: &[String]) {
         game_id: target.game_id.clone(),
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
-        known_members: state.members.keys().cloned().collect(),
+        owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
         renamed: Vec::new(),
-        installed_now: Vec::new(),
     };
-    let mut said_save_failed = false;
-    let mut save = |s: &InstallState| {
-        if let Err(e) = s.save(&state_path) {
-            // Once. A failing disk would otherwise print this twice per member.
-            if !said_save_failed {
-                said_save_failed = true;
-                eidos_log::warn!(
-                    "Could not record what has been installed ({e}). If this run is \
-                     interrupted it will start over."
-                );
-            }
-        }
-    };
+    let mut save = |s: &InstallState| s.save(&state_path).map_err(|e| e.to_string());
     let mut report = eidos_collections::install::run(c, &mut state, &mut hooks, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
     for (member, folder) in std::mem::take(&mut hooks.renamed) {
@@ -214,10 +206,15 @@ pub(crate) fn cmd_collection(args: &[String]) {
         });
     }
 
+    if report.aborted {
+        eidos_log::warn!("{}", report.render());
+        exit(1);
+    }
+
     driver::apply_ordering(&inst, c, &state, &mut report);
     driver::apply_plugin_states(&inst, &game, c, &mut report);
     driver::apply_plugin_rules(&inst, &game, c, &mut report);
-    driver::apply_ini_tweaks(&inst, &dir, c, &mut report);
+    driver::apply_ini_tweaks(&inst, &dir, c, &mut state, &mut save, &mut report);
 
     println!("\n{}", report.render());
     if !report.is_complete() {

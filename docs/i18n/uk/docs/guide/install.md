@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Встановлення Eidos
 
@@ -70,8 +70,8 @@ eidos play skyrimse -- %command%  # запустити будь-що через 
 
 ## Необов'язково: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` вмикає passthrough FUSE на
-рівні ядра. Він **вимкнений типово, і майже напевно так і слід залишити**:
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` надає необов’язкову можливість, але не вмикає passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` — окремий перемикач під час запуску. Він **вимкнений типово, і майже напевно так і слід залишити**:
 виміряно на Skyrim SE - він заважає грі відкривати власні архіви та додатки, тож
 моди мовчки не завантажуються. Перемикач існує, щоб механізм можна було
 перевірити знову, а не тому, що він рекомендований.

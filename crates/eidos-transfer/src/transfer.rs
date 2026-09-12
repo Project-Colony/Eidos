@@ -29,14 +29,10 @@ impl Scratch {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!(
-            "eidos-{what}-{}-{nanos}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("eidos-{what}-{}-{nanos}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).map_err(|e| {
-            TransferError::Io(format!("could not create a scratch folder: {e}"))
-        })?;
+        fs::create_dir_all(&dir)
+            .map_err(|e| TransferError::Io(format!("could not create a scratch folder: {e}")))?;
         Ok(Scratch(dir))
     }
 
@@ -155,14 +151,17 @@ fn discard_partial(part: &Path) {
 /// A blanket quote is safe: 7-Zip strips exactly ONE surrounding pair and takes
 /// the rest literally, so an embedded `"` needs no escaping - also measured,
 /// with a file whose name contains one.
-fn list_file_body(entries: &[String]) -> String {
+fn list_file_body(entries: &[String]) -> Result<String, TransferError> {
     let mut s = String::new();
     for e in entries {
+        if e.contains(['\r', '\n']) {
+            return Err(TransferError::Refused("A backup path contains a line break and cannot be represented safely in a 7-Zip list file".into()));
+        }
         s.push('"');
         s.push_str(e);
         s.push_str("\"\n");
     }
-    s
+    Ok(s)
 }
 
 fn io(what: &str) -> impl Fn(std::io::Error) -> TransferError + '_ {
@@ -368,11 +367,24 @@ impl Transfer {
             }
         }
 
+        // 7-Zip recursively adds a named directory, even when the plan excluded
+        // all its children. Preserve its shape from an empty scratch directory.
+        let mut bulk = Vec::new();
+        for rel in &plan.entries {
+            if inst.root.join(rel).is_dir() {
+                fs::create_dir_all(stage.join(rel))
+                    .map_err(io("could not stage an empty directory"))?;
+                staged.push(rel.clone());
+            } else {
+                bulk.push(rel.clone());
+            }
+        }
+
         let staged_list = scratch.path().join("staged.lst");
-        fs::write(&staged_list, list_file_body(&staged))
+        fs::write(&staged_list, list_file_body(&staged)?)
             .map_err(io("could not write the list of staged files"))?;
         let bulk_list = scratch.path().join("bulk.lst");
-        fs::write(&bulk_list, list_file_body(&plan.entries))
+        fs::write(&bulk_list, list_file_body(&bulk)?)
             .map_err(io("could not write the list of files to pack"))?;
 
         let part = with_suffix(dest, ".part");
@@ -407,7 +419,7 @@ impl Transfer {
             self.add(&part, &stage, &staged_list, literal_names, &mut |_| {})?;
         }
 
-        if !plan.entries.is_empty() {
+        if !bulk.is_empty() {
             match self.add(&part, &inst.root, &bulk_list, literal_names, on_progress) {
                 Ok(None) => {}
                 // 7-Zip could not read something and packed everything else. The
@@ -513,6 +525,28 @@ impl Transfer {
                 archive.display(),
                 bad.path
             )));
+        }
+        // Lexically safe members can still escape through an existing destination
+        // link. Validate every ancestor and leaf before extracting any payload.
+        for entry in &entries {
+            for path in dest.join(&entry.path).ancestors() {
+                match fs::symlink_metadata(path) {
+                    Ok(metadata) if metadata.is_symlink() => {
+                        return Err(TransferError::Refused(format!(
+                            "The restore path '{}' is a symbolic link. Choose a destination without linked paths.",
+                            path.display()
+                        )));
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(TransferError::Io(format!(
+                            "could not inspect restore path '{}': {error}",
+                            path.display()
+                        )))
+                    }
+                }
+            }
         }
         let mut warnings = Vec::new();
         if !entries.iter().any(|e| e.path == "eidos-instance.ini") {
@@ -621,7 +655,9 @@ impl Transfer {
             if m.kind != kind {
                 m.kind = kind;
                 if let Err(e) = m.write(&inst.manifest_path()) {
-                    warnings.push(format!("Could not record where this instance now lives: {e}"));
+                    warnings.push(format!(
+                        "Could not record where this instance now lives: {e}"
+                    ));
                 }
             }
         }
@@ -684,9 +720,7 @@ mod tests {
     #[test]
     fn a_rejected_switch_is_told_apart_from_a_rejected_job() {
         assert!(looks_like_an_unknown_switch("Unsupported command: -spd"));
-        assert!(looks_like_an_unknown_switch(
-            "\nIncorrect command line\n"
-        ));
+        assert!(looks_like_an_unknown_switch("\nIncorrect command line\n"));
         assert!(!looks_like_an_unknown_switch(
             "ERROR: Can not open output file : No space left on device"
         ));
@@ -719,7 +753,8 @@ mod tests {
             "empty dir".into(),
             " leading space".into(),
             "trailing space ".into(),
-        ]);
+        ])
+        .unwrap();
         assert_eq!(
             body,
             "\"mods/A/x.dds\"\n\"empty dir\"\n\" leading space\"\n\"trailing space \"\n"
@@ -727,8 +762,18 @@ mod tests {
         assert!(!body.contains("./"));
         // 7-Zip strips exactly one surrounding pair and takes the rest
         // literally, so a name containing a quote needs no escaping.
-        assert_eq!(list_file_body(&["has\"quote".into()]), "\"has\"quote\"\n");
-        assert_eq!(list_file_body(&[]), "");
+        assert_eq!(
+            list_file_body(&["has\"quote".into()]).unwrap(),
+            "\"has\"quote\"\n"
+        );
+        assert_eq!(list_file_body(&[]).unwrap(), "");
+    }
+
+    #[test]
+    fn a_caller_supplied_list_cannot_inject_another_entry() {
+        for name in ["a\nb", "a\rb", "x\"\n\"../private"] {
+            assert!(list_file_body(&[name.into()]).is_err());
+        }
     }
 
     #[test]

@@ -62,6 +62,8 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
             RowMeta {
                 version: meta.version(),
                 mod_id: meta.mod_id(),
+                installed_files: meta.installed_files(),
+                install_warning: meta.install_warning(),
                 category_id,
                 category_name,
                 content_tags: eidos_install::classify_content_dir(&path).tags(),
@@ -84,6 +86,20 @@ pub(crate) fn refresh_meta_cache(app: &mut App) {
             },
         );
     }
+}
+
+/// Serialize metadata edits and refuse to replace an unreadable existing file.
+pub(crate) fn edit_mod_meta<T>(
+    inst: &Instance,
+    name: &str,
+    edit: impl FnOnce(&mut eidos_instance::ModMeta) -> T,
+) -> std::io::Result<T> {
+    let _lock = inst.try_lock("editing mod metadata")?;
+    let path = inst.meta_path(name);
+    let mut meta = eidos_instance::ModMeta::read_checked(&path)?;
+    let result = edit(&mut meta);
+    meta.write(&path)?;
+    Ok(result)
 }
 
 /// Drop one mod's cached row, for the paths that rewrite its `meta.ini`. The next
@@ -243,6 +259,11 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         mods: Vec::new(),
         plugins: None,
         conflicts: None,
+        archive_epoch: std::cell::Cell::new(1),
+        archive_completed_epoch: None,
+        archive_job: None,
+        archive_plan: None,
+        archive_warnings: Vec::new(),
         tab: Tab::Data,
         status: None,
         confirm_clear: false,
@@ -263,6 +284,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         meta_cache: HashMap::new(),
         confirm_remove: None,
         info_mod: None,
+        info_provenance: String::new(),
         info_tab: InfoTab::General,
         notes_edit: String::new(),
         collapsed: HashSet::new(),
@@ -499,6 +521,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     // Conflicts feed the mod-list emblems, so compute them as soon as the
     // instance opens instead of waiting for the Conflicts tab.
     app.conflicts = compute_conflicts(&app);
+    schedule_archive_conflicts(&mut app);
     refresh_meta_cache(&mut app);
     app.collapsed = load_collapsed(&app);
     // The field shows what is stored, so opening Settings does not present an
@@ -552,7 +575,7 @@ pub(crate) fn load_tools(app: &mut App) {
     let merged = match (selected_game(app), &app.created) {
         (Some(g), Some(inst)) => eidos_instance::merge_tools(
             inst.tools(),
-            eidos_instance::default_tools_in(
+            eidos_instance::default_tools_in_view(
                 game_executables(g),
                 &g.install_path,
                 &app.created
@@ -563,6 +586,7 @@ pub(crate) fn load_tools(app: &mut App) {
                     app.created.as_ref().map(|i| i.mods_dir()).as_deref(),
                     app.prefs.tools_dir.as_deref(),
                 ),
+                Some(&inst.root_overwrite_dir()),
             ),
         ),
         _ => Vec::new(),
@@ -667,11 +691,12 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
         .as_ref()
         .map(|i| i.root_layers())
         .unwrap_or_default();
-    let defaults = eidos_instance::default_tools_in(
+    let defaults = eidos_instance::default_tools_in_view(
         game_executables(game),
         &game.install_path,
         &roots,
         &eidos_instance::tool_search_roots(None, None),
+        Some(&inst.root_overwrite_dir()),
     );
     let merged = eidos_instance::merge_tools(user, defaults);
     let mut state = ExecutablesDialogState {
@@ -1066,19 +1091,25 @@ pub(crate) fn find_eidos_binary() -> PathBuf {
 pub(crate) fn play_command(
     game_id: &str,
     inst_arg: &str,
+    install: &Path,
+    instance: &eidos_instance::Instance,
     command: &[String],
 ) -> (std::process::Command, Option<String>) {
     let mut swapped: Vec<String> = command.to_vec();
     let mut warning = None;
+    let root_layers = instance.root_layers();
+    let root_overwrite = instance.root_overwrite_dir();
     if let Some((from, prefer)) = launch_targets(game_id) {
         for a in swapped.iter_mut() {
-            if !a.contains(from) {
+            if !Path::new(a)
+                .file_name()
+                .is_some_and(|name| name.eq_ignore_ascii_case(from))
+            {
                 continue;
             }
-            // First target that is actually on disk wins.
             let picked = prefer.iter().find_map(|to| {
-                let candidate = a.replace(from, to);
-                Path::new(&candidate).is_file().then_some((*to, candidate))
+                eidos_instance::root_executable(install, &root_layers, &root_overwrite, to)
+                    .map(|path| (*to, path.to_string_lossy().into_owned()))
             });
             match picked {
                 Some((to, candidate)) => {
@@ -1094,7 +1125,7 @@ pub(crate) fn play_command(
                 }
                 None => {
                     warning = Some(format!(
-                        "Neither {} nor the game binary was found next to {from}; launching it unchanged.",
+                        "Neither {} nor the game binary was found in the active root view; launching it unchanged.",
                         prefer.join(" nor ")
                     ));
                 }
@@ -1963,8 +1994,7 @@ pub(crate) fn mod_has_conflict(app: &App, row: usize) -> bool {
         return false;
     };
     // Origins are `index + 1`; 0 is the game's own data.
-    map.mods
-        .get(&((row + 1) as u32))
+    map.mod_conflicts((row + 1) as u32)
         .is_some_and(|c| c.state != eidos_conflicts::ConflictState::None)
 }
 
@@ -2312,6 +2342,8 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
 /// the next redraw that needs them. The stored entries are dropped rather than
 /// left to accumulate one stale copy per directory ever viewed.
 pub(crate) fn bump_views(app: &App) {
+    app.archive_epoch
+        .set(app.archive_epoch.get().wrapping_add(1));
     app.view_generation
         .set(app.view_generation.get().wrapping_add(1));
     app.data_listing.borrow_mut().clear();
@@ -2565,6 +2597,8 @@ pub(crate) fn drop_files_cache(app: &App, layer: Option<&str>) {
 /// and switching tabs does not either. One function, called from every path that
 /// can change that set, so a new path cannot silently forget one of them.
 pub(crate) fn plugin_state_changed(app: &App) {
+    app.archive_epoch
+        .set(app.archive_epoch.get().wrapping_add(1));
     app.archives_cache.borrow_mut().take();
     // The orphan-archive check reads the same set; leaving it would have the
     // Health tab and the Archives tab disagreeing about the same file.
@@ -2572,6 +2606,8 @@ pub(crate) fn plugin_state_changed(app: &App) {
 }
 
 pub(crate) fn invalidate_plugins(app: &mut App) {
+    // Whole-record checks belong to the previous winning plugin files.
+    app.loot_meta = None;
     // The menu holds a raw ROW, and the rebuild below renumbers them: acting on
     // a stale index would hit whichever plugin now sits there. The selection
     // survives because it is carried by name; an open menu cannot be, so it
@@ -2708,7 +2744,10 @@ pub(crate) fn switch_to_profile(app: &mut App, name: &str) -> bool {
         // sessions this window did not start (CLI, Steam direct).
         match inst.try_lock("the Eidos window") {
             Ok(_lock) => {
-                let _ = inst.set_active_profile(name);
+                if let Err(e) = inst.set_active_profile(name) {
+                    app.status = Some(format!("Cannot switch profiles: {e}."));
+                    return false;
+                }
             }
             Err(e) => {
                 app.status = Some(format!("Cannot switch profiles: {e}."));

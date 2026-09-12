@@ -44,10 +44,7 @@ fn build_instance(root: &Path) {
     );
     // Names that have broken a list file before: brackets, a 7-Zip wildcard,
     // non-ASCII in two scripts, spaces.
-    write(
-        &root.join("mods/[Rudolph] Dark Souls/meshes/a.nif"),
-        "nif",
-    );
+    write(&root.join("mods/[Rudolph] Dark Souls/meshes/a.nif"), "nif");
     write(&root.join("mods/Weapons * Armour/textures/w.dds"), "dds");
     write(&root.join("mods/스크린아처메뉴/x.esp"), "esp");
     // A leading space in a mod folder name. Windows-sourced archives carry
@@ -106,12 +103,7 @@ fn tree(root: &Path) -> Vec<String> {
     while let Some(dir) = stack.pop() {
         for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
             let p = e.path();
-            out.push(
-                p.strip_prefix(root)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned(),
-            );
+            out.push(p.strip_prefix(root).unwrap().to_string_lossy().into_owned());
             if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 stack.push(p);
             }
@@ -203,14 +195,20 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
     // The signed URL did not travel; the rest of the record did.
     let meta = fs::read_to_string(dest.join("downloads/Mod.7z.meta")).unwrap();
     assert!(!meta.contains("user_id"), "{meta}");
-    assert!(meta.contains("modID=18780") && meta.contains("version=2.5"), "{meta}");
+    assert!(
+        meta.contains("modID=18780") && meta.contains("version=2.5"),
+        "{meta}"
+    );
     assert!(meta.contains("\r\n"), "CRLF must survive: {meta:?}");
 
     // The instance now points at where it is, not where it was.
     assert_eq!(out.relocated.values, 3);
     let tools = fs::read_to_string(dest.join("tools.ini")).unwrap();
     assert!(
-        tools.contains(&format!("exe={}/mods/[Rudolph] Dark Souls/BodySlide.exe", dest.display())),
+        tools.contains(&format!(
+            "exe={}/mods/[Rudolph] Dark Souls/BodySlide.exe",
+            dest.display()
+        )),
         "{tools}"
     );
     assert!(
@@ -220,7 +218,10 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
     assert!(tools.contains("exe=/opt/nowhere/xEdit.exe"), "{tools}");
     let mod_meta = fs::read_to_string(dest.join("mods/[Rudolph] Dark Souls/meta.ini")).unwrap();
     assert!(
-        mod_meta.contains(&format!("installationFile={}/downloads/R.7z", dest.display())),
+        mod_meta.contains(&format!(
+            "installationFile={}/downloads/R.7z",
+            dest.display()
+        )),
         "{mod_meta}"
     );
 
@@ -345,4 +346,130 @@ fn a_file_that_vanishes_under_the_pack_costs_that_file_and_not_the_backup() {
     // to pack, so the walk listed the directory itself.
     assert!(dest.join("mods/스크린아처메뉴/empty-one").is_dir());
     let _ = fs::remove_dir_all(&base);
+}
+
+#[test]
+fn excluded_only_directories_are_packed_as_empty_placeholders() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    let base = tmp("excluded-only");
+    let src = base.join("source");
+    build_instance(&src);
+    let excluded = src.join("mods/ExcludedOnly");
+    fs::create_dir_all(&excluded).unwrap();
+    fs::write(excluded.join("private.unfinished"), b"excluded").unwrap();
+    let outside = base.join("outside");
+    fs::create_dir(&outside).unwrap();
+    fs::write(outside.join("sentinel.txt"), b"personal").unwrap();
+    std::os::unix::fs::symlink(&outside, excluded.join("link")).unwrap();
+    let instance = Instance::portable(src);
+    let options = Options::default();
+    let plan = plan(&instance, &options);
+    assert!(plan
+        .left
+        .iter()
+        .any(|item| item.path.ends_with("private.unfinished")));
+    let transfer = Transfer::new(options).unwrap();
+    let archive = base.join("backup.eidos");
+    transfer
+        .pack(&instance, &plan, &archive, &mut |_| {})
+        .unwrap();
+    let restored = base.join("restored");
+    transfer.unpack(&archive, &restored, &mut |_| {}).unwrap();
+    let empty = restored.join("mods/ExcludedOnly");
+    assert!(empty.is_dir());
+    assert_eq!(fs::read_dir(empty).unwrap().count(), 0);
+    assert_eq!(fs::read(outside.join("sentinel.txt")).unwrap(), b"personal");
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn forced_restore_refuses_symlink_ancestors_before_writing_any_payload() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    let base = tmp("restore-symlink");
+    let src = base.join("source");
+    build_instance(&src);
+    let instance = Instance::portable(src);
+    let options = Options::default();
+    let transfer = Transfer::new(options).unwrap();
+    let archive = base.join("backup.eidos");
+    transfer
+        .pack(&instance, &plan(&instance, &options), &archive, &mut |_| {})
+        .unwrap();
+    let forced = Transfer::new(Options {
+        force: true,
+        ..options
+    })
+    .unwrap();
+    for linked in [
+        "mods",
+        "mods/Weapons * Armour/textures",
+        "mods/Weapons * Armour/textures/w.dds",
+    ] {
+        let dest = base.join("restored");
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let sentinel = if linked.ends_with(".dds") {
+            outside.join("sentinel")
+        } else {
+            outside.join("w.dds")
+        };
+        fs::write(&sentinel, b"personal").unwrap();
+        let target = if linked.ends_with(".dds") {
+            &sentinel
+        } else {
+            &outside
+        };
+        let link = dest.join(linked);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(target, &link).unwrap();
+        let result = forced.unpack(&archive, &dest, &mut |_| {});
+        assert!(result.is_err());
+        assert_eq!(fs::read(&sentinel).unwrap(), b"personal", "{linked}");
+        assert!(
+            !dest.join("eidos-instance.ini").exists(),
+            "must refuse before extraction"
+        );
+        fs::remove_dir_all(dest).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+    fs::remove_dir_all(base).unwrap();
+}
+
+#[test]
+fn a_newline_in_a_filename_cannot_add_outside_files_to_the_backup() {
+    if eidos_sevenzip::find_7z().is_none() {
+        eprintln!("SKIPPED: no 7-Zip on this machine.");
+        return;
+    }
+    let base = tmp("list-injection");
+    let src = base.join("source");
+    build_instance(&src);
+    let original = src.join("mods/A/x\"\n\"../outside/sentinel");
+    write(&original, "innocent payload");
+    let outside = base.join("outside/sentinel");
+    write(&outside, "private outside bytes");
+    let instance = Instance::portable(src);
+    let options = Options::default();
+    let transfer = Transfer::new(options).unwrap();
+    let archive = base.join("backup.eidos");
+    let plan = plan(&instance, &options);
+    transfer
+        .pack(&instance, &plan, &archive, &mut |_| {})
+        .unwrap();
+    let restored = base.join("restored");
+    transfer.unpack(&archive, &restored, &mut |_| {}).unwrap();
+    assert!(
+        !restored.join("sentinel").exists(),
+        "outside data entered the backup"
+    );
+    assert!(plan.left.iter().any(|item| item.path.contains('\n')));
+    assert_eq!(fs::read(&original).unwrap(), b"innocent payload");
+    assert_eq!(fs::read(&outside).unwrap(), b"private outside bytes");
+    fs::remove_dir_all(base).unwrap();
 }

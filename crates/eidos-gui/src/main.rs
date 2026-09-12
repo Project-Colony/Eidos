@@ -35,6 +35,7 @@ use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 // The three modules main.rs no longer imports from - theme, widgets, fomod - are
 // the measure of the split: nothing at the root draws anything any more.
 mod anim;
+mod archive_conflicts;
 mod dialogs;
 mod fomod;
 mod health;
@@ -49,6 +50,7 @@ mod wizard;
 use dialogs::*;
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
 use modinfo::*;
+use archive_conflicts::*;
 use state::*;
 use theme::pal;
 use update::*;
@@ -545,7 +547,7 @@ enum Message {
     /// Endorse round-trip done. Carries the mod's FOLDER NAME (not an index): the
     /// list can shift while the network call is in flight, and writing the result
     /// into whatever mod now sits at the old index would corrupt its meta.ini.
-    ModEndorsed(String, Result<bool, String>),
+    ModEndorsed(PathBuf, String, u64, Result<bool, String>),
     /// Toggle the mod's local "Track" flag (MO2's Track; no network).
     ModTrack(usize),
     /// Toggle the mod's "Ignore update" flag (MO2's Ignore update; no network).
@@ -831,7 +833,11 @@ enum Message {
     /// Fetch the revision named by the pasted link.
     CollectionFetch,
     /// The revision came back.
-    CollectionFetched(Result<eidos_nexus::collections::CollectionRevision, String>),
+    CollectionFetched(
+        PathBuf,
+        String,
+        Result<eidos_nexus::collections::CollectionRevision, String>,
+    ),
     /// Open one member's Nexus page at the exact file the collection pins.
     CollectionOpenMod(usize),
     /// Ask the nxm handler to fetch every missing member, one at a time.
@@ -1040,8 +1046,10 @@ impl ExecutablesDialogState {
 /// One member of a collection, joined against what the instance already has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MemberState {
-    /// This mod, at the version the collection asks for, is in the mod list.
+    /// The exact Nexus source file is recorded in an installed mod.
     Installed,
+    /// A matching mod lacks enough source metadata to verify the requested file.
+    Unverified,
     /// The mod is installed, at a DIFFERENT version.
     ///
     /// Its own state because it is its own situation: the collection will not
@@ -1600,12 +1608,8 @@ type SortOutcome = Result<
     String,
 >;
 
-/// What a LOOT sort was computed against, so a stale answer can be recognised.
-///
-/// The profile, because each owns its own load order, and the SET of plugin
-/// names - not their order, which is precisely what the sort is allowed to
-/// change. If either moved while LOOT ran, the returned permutation is a
-/// permutation of something else.
+/// The instance, profile and input generation a LOOT result belongs to.
+/// Names alone do not detect activation changes or replacement of winning files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SortFingerprint {
     /// The game, not just the profile. Profiles are per-game and their names
@@ -1614,6 +1618,8 @@ struct SortFingerprint {
     game: String,
     profile: String,
     names: BTreeSet<String>,
+    instance: Option<PathBuf>,
+    epoch: u64,
 }
 
 /// An in-flight plugin drag. Unlike the mod list, where any order is legal, a
@@ -1680,6 +1686,11 @@ struct App {
     plugins: Option<PluginList>,
     /// Cached per-file conflict analysis for the Conflicts tab + mod-row flags.
     conflicts: Option<ConflictMap>,
+    archive_epoch: std::cell::Cell<u64>,
+    archive_completed_epoch: Option<u64>,
+    archive_job: Option<ArchiveWorker>,
+    archive_plan: Option<eidos_gamefeatures::archives::ArchivePlan>,
+    archive_warnings: Vec<String>,
     /// The last health-check run, cached.
     ///
     /// `diagnostics()` walks the mods directory, reads the script extender's log
@@ -1739,6 +1750,8 @@ struct App {
     /// The mod whose info dialog is open (None = closed), its active tab, and the
     /// note text being edited.
     info_mod: Option<usize>,
+    /// Generated receipts are read once when the mod information dialog opens.
+    info_provenance: String,
     info_tab: InfoTab,
     notes_edit: String,
     /// Collapsed separators, keyed by display name (MO2 keys by display name too).
@@ -2381,6 +2394,8 @@ struct RunningState {
 struct RowMeta {
     version: Option<String>,
     mod_id: Option<u64>,
+    installed_files: Vec<(u64, u64)>,
+    install_warning: Option<String>,
     /// The mod's PRIMARY category id (MO2 `category=` first id), for filtering.
     category_id: Option<i32>,
     /// That category resolved to a display name (MO2 Category column).
@@ -2535,7 +2550,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // so the tick always carries `AnimationTick` and the handler forwards to
     // `InstallPoll` when there is a job - which also keeps that message
     // separately testable.
-    let frames = anim::needs_frames(app).then(|| {
+    let frames = (anim::needs_frames(app) || app.archive_job.is_some()).then(|| {
         iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
     });
 
@@ -3029,6 +3044,323 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
 
 #[cfg(test)]
 mod tests {
+    fn archive_bsa_fixture() -> Vec<u8> {
+        let folder = b"textures\0";
+        let name = b"shared.dds\0";
+        let record = 60 + 1 + folder.len();
+        let names = record + 16;
+        let payload = names + name.len();
+        let mut b = vec![0; payload + 1];
+        b[..4].copy_from_slice(b"BSA\0");
+        for (at, n) in [
+            (4, 105),
+            (8, 36),
+            (12, 3),
+            (16, 1),
+            (20, 1),
+            (24, folder.len() as u32),
+            (28, name.len() as u32),
+            (44, 1),
+            (52, (60 + name.len()) as u32),
+            (record + 8, 1),
+            (record + 12, payload as u32),
+        ] {
+            b[at..at + 4].copy_from_slice(&n.to_le_bytes())
+        }
+        b[60] = folder.len() as u8;
+        b[61..61 + folder.len()].copy_from_slice(folder);
+        b[names..payload].copy_from_slice(name);
+        b
+    }
+
+    fn finish_archive_worker(app: &mut App) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.archive_job.is_some() {
+            poll_archive_conflicts(app);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "archive worker timeout"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn archive_worker_uses_plugin_order_ini_registration_and_cached_members() {
+        let (mut app, root) = data_app(&[("A.esp", "plugin")], &[]);
+        let a = app.mods[0].path.clone();
+        let b = root.join("mods/BBB");
+        fs::create_dir_all(&b).unwrap();
+        fs::write(a.join("A.bsa"), archive_bsa_fixture()).unwrap();
+        fs::write(a.join("Standalone.bsa"), archive_bsa_fixture()).unwrap();
+        fs::write(b.join("B.esp"), b"plugin").unwrap();
+        fs::write(b.join("B.bsa"), archive_bsa_fixture()).unwrap();
+        app.mods.push(ModEntry {
+            name: "BBB".into(),
+            enabled: true,
+            path: b,
+            unmanaged: false,
+        });
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA"), plugin_row("B.esp", "BBB")];
+        for p in &mut plugins.plugins {
+            p.enabled = true
+        }
+        app.plugins = Some(plugins);
+        let profile = app.created.as_ref().unwrap().active();
+        fs::write(
+            profile.ini_path("Skyrim.ini"),
+            "[Archive]\nsResourceArchiveList=Standalone.bsa\n",
+        )
+        .unwrap();
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let map = app.conflicts.as_ref().unwrap();
+        let node = &map.asset_files["textures/shared.dds"];
+        assert_eq!(node.winner.origin, 2);
+        assert_eq!(node.winner.plugin.as_deref(), Some("B.esp"));
+        assert_eq!(map.state(1), ConflictState::Overwritten);
+        assert_eq!(node.alternatives.len(), 2);
+        assert!(provider_label(map, &node.winner).contains("B.bsa / B.esp"));
+        assert!(app.archive_warnings.is_empty());
+        app.plugins.as_mut().unwrap().plugins[1].enabled = false;
+        plugin_state_changed(&app);
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert_eq!(
+            app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                .winner
+                .plugin
+                .as_deref(),
+            Some("A.esp")
+        );
+        fs::write(a.join("A.bsa"), b"broken").unwrap();
+        schedule_archive_conflicts(&mut app);
+        assert!(
+            app.archive_job.is_none(),
+            "unchanged input uses cached member map"
+        );
+        bump_views(&app);
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert!(app.archive_warnings.iter().any(|w| w.contains("A.bsa")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cold_archive_worker_honors_the_profiles_pinned_plugin_order() {
+        let (mut app, root) = data_app(&[("A.esp", "plugin"), ("B.esp", "plugin")], &[]);
+        let mod_root = app.mods[0].path.clone();
+        for name in ["A.bsa", "B.bsa"] {
+            fs::write(mod_root.join(name), archive_bsa_fixture()).unwrap();
+        }
+        let profile = app.created.as_ref().unwrap().active();
+        fs::write(
+            profile.plugins_state_dir().join("plugins.txt"),
+            "*B.esp\n*A.esp\n",
+        )
+        .unwrap();
+        profile
+            .write_locked_order(&std::collections::BTreeMap::from([("a.esp".into(), 0)]))
+            .unwrap();
+        app.plugins = None;
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let node = &app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"];
+        assert_eq!(node.winner.plugin.as_deref(), Some("B.esp"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_analysis_is_invalidated_by_file_edits_and_both_restore_messages() {
+        for action in ["rename", "mod_restore", "order_restore"] {
+            let (mut app, root) = data_app(&[("A.esp", "plugin"), ("B.esp", "plugin")], &[]);
+            let inst = app.created.clone().unwrap();
+            let mod_root = app.mods[0].path.clone();
+            let profile = inst.active();
+            fs::write(mod_root.join("A.bsa"), archive_bsa_fixture()).unwrap();
+            let stamp = if action == "order_restore" {
+                fs::write(mod_root.join("B.bsa"), archive_bsa_fixture()).unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("plugins.txt"),
+                    "A.esp\n*B.esp\n",
+                )
+                .unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("loadorder.txt"),
+                    "A.esp\nB.esp\n",
+                )
+                .unwrap();
+                let backup = profile
+                    .create_backup(eidos_instance::BackupKind::LoadOrder)
+                    .unwrap();
+                fs::write(
+                    profile.plugins_state_dir().join("plugins.txt"),
+                    "*A.esp\nB.esp\n",
+                )
+                .unwrap();
+                backup.stamp
+            } else {
+                0
+            };
+            if action == "mod_restore" {
+                let backup = root.join("mods/AAA_backup");
+                fs::create_dir_all(&backup).unwrap();
+                fs::write(backup.join("B.esp"), "restored plugin").unwrap();
+                fs::write(backup.join("B.bsa"), archive_bsa_fixture()).unwrap();
+                reload_mods(&mut app);
+            }
+            app.conflicts = compute_conflicts(&app);
+            schedule_archive_conflicts(&mut app);
+            finish_archive_worker(&mut app);
+            let epoch = app.archive_epoch.get();
+            assert_eq!(
+                app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                    .winner
+                    .plugin
+                    .as_deref(),
+                Some("A.esp")
+            );
+            app.loot_meta = Some(HashMap::new());
+            match action {
+                "rename" => {
+                    let index = app.mods.iter().position(|m| m.name == "AAA").unwrap();
+                    let _ = update_inner(
+                        &mut app,
+                        Message::FiletreeRenameStart(index, "A.bsa".into()),
+                    );
+                    let _ = update_inner(&mut app, Message::FiletreeRenameChanged("B.bsa".into()));
+                    let _ = update_inner(&mut app, Message::FiletreeRenameCommit);
+                }
+                "mod_restore" => {
+                    let _ = update_inner(
+                        &mut app,
+                        Message::ConfirmModRestoreBackup("AAA_backup".into()),
+                    );
+                }
+                "order_restore" => {
+                    let _ = update_inner(
+                        &mut app,
+                        Message::RestoreBackup(eidos_instance::BackupKind::LoadOrder, stamp),
+                    );
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                app.archive_epoch.get() > epoch,
+                "{action}: previous worker generation must be invalidated"
+            );
+            assert!(
+                app.loot_meta.is_none(),
+                "{action}: old record validity must be discarded"
+            );
+            schedule_archive_conflicts(&mut app);
+            finish_archive_worker(&mut app);
+            assert_eq!(
+                app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+                    .winner
+                    .plugin
+                    .as_deref(),
+                Some("B.esp"),
+                "{action}: {:?}",
+                app.archive_warnings
+            );
+            assert!(
+                app.archive_warnings.is_empty(),
+                "{action}: {:?}",
+                app.archive_warnings
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn archive_worker_discards_stale_results_and_honors_whiteouts_and_opacity() {
+        let (mut app, root) = data_app(
+            &[("A.esp", "plugin"), ("textures/shared.dds", "lower")],
+            &[
+                (".eidoswh.A.bsa", ""),
+                ("textures/.eidoswh_opaque", ""),
+                ("textures/shared.dds", "upper"),
+            ],
+        );
+        fs::write(app.mods[0].path.join("A.bsa"), archive_bsa_fixture()).unwrap();
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA")];
+        plugins.plugins[0].enabled = true;
+        app.plugins = Some(plugins);
+        schedule_archive_conflicts(&mut app);
+        bump_views(&app);
+        finish_archive_worker(&mut app);
+        assert!(
+            app.conflicts.is_none(),
+            "old generation must never install its winners"
+        );
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        let map = app.conflicts.as_ref().unwrap();
+        assert!(!map.files.contains_key("a.bsa"));
+        assert_eq!(map.files["textures/shared.dds"].winner, u32::MAX);
+        assert!(map.files["textures/shared.dds"].alternatives.is_empty());
+        assert!(map.asset_files["textures/shared.dds"]
+            .winner
+            .archive
+            .is_none());
+        assert!(archive_rows(&app, "skyrimse")
+            .unwrap()
+            .iter()
+            .all(|r| !r.loaded()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn archive_activation_rejects_sse_arbitrary_suffix_and_merges_ini_keys() {
+        let (mut app, root) = data_app(
+            &[
+                ("A.esp", "plugin"),
+                ("A - Scripts.bsa", "archive"),
+                ("A - Textures.bsa", "archive"),
+                ("Base.bsa", "archive"),
+            ],
+            &[],
+        );
+        let mut plugins = PluginList::default();
+        plugins.plugins = vec![plugin_row("A.esp", "AAA")];
+        plugins.plugins[0].enabled = true;
+        app.plugins = Some(plugins);
+        let profile = app.created.as_ref().unwrap().active();
+        fs::write(
+            profile.ini_path("Skyrim.ini"),
+            "[Archive]\nsResourceArchiveList=Base.bsa\n",
+        )
+        .unwrap();
+        fs::write(
+            profile.ini_path("SkyrimCustom.ini"),
+            "[Archive]\nsResourceArchiveList=\n",
+        )
+        .unwrap();
+        let rows = archive_rows(&app, "skyrimse").unwrap();
+        assert!(!rows
+            .iter()
+            .find(|r| r.archive == "A - Scripts.bsa")
+            .unwrap()
+            .loaded());
+        assert!(rows
+            .iter()
+            .find(|r| r.archive == "A - Textures.bsa")
+            .unwrap()
+            .loaded());
+        assert!(
+            !rows
+                .iter()
+                .find(|r| r.archive == "Base.bsa")
+                .unwrap()
+                .loaded(),
+            "custom empty list replaces base list"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
     use super::*;
     // The drawing modules, imported here rather than at the crate root: main.rs
     // itself no longer draws, and these tests are the only thing left that reads
@@ -3124,6 +3456,10 @@ mod tests {
             path: PathBuf::new(),
             enabled: true,
             force_disabled: false,
+            header_error: None,
+            form_version: Some(44),
+            is_blueprint: false,
+            is_update: false,
             is_master: false,
             is_light: false,
             is_medium: false,
@@ -3152,7 +3488,14 @@ mod tests {
 
     /// The args `play_command` will hand to `eidos play`, i.e. everything after `--`.
     fn played(game_id: &str, command: &[String]) -> (Vec<String>, Option<String>) {
-        let (cmd, warning) = play_command(game_id, game_id, command);
+        let install = command
+            .iter()
+            .rev()
+            .filter_map(|arg| Path::new(arg).parent())
+            .find(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let instance = eidos_instance::Instance::portable(install.join("test-instance"));
+        let (cmd, warning) = play_command(game_id, game_id, install, &instance, command);
         let args: Vec<String> = cmd
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())
@@ -3186,6 +3529,25 @@ mod tests {
             "{warning:?}"
         );
         fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn play_prefers_the_loader_from_the_active_root_view() {
+        let game = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe"]);
+        let instance = eidos_instance::Instance::portable(game.join("fixture-instance"));
+        instance.create().unwrap();
+        let entry = instance.create_empty_mod("SKSE").unwrap();
+        fs::create_dir(entry.path.join("Root")).unwrap();
+        fs::write(entry.path.join("Root/skse64_loader.exe"), b"loader").unwrap();
+        instance.save_modlist(&[entry]).unwrap();
+        let command = vec![game.join("SkyrimSELauncher.exe").display().to_string()];
+        let (cmd, warning) =
+            play_command("skyrimse", "portable-fixture", &game, &instance, &command);
+        assert_eq!(warning, None);
+        assert!(cmd
+            .get_args()
+            .any(|arg| arg == game.join("skse64_loader.exe").as_os_str()));
+        fs::remove_dir_all(game).unwrap();
     }
 
     #[test]
@@ -4780,6 +5142,7 @@ mod tests {
             files: Default::default(),
             mods,
             names: HashMap::new(),
+            ..Default::default()
         });
 
         app.selected_mod = Some(1);
@@ -5566,7 +5929,15 @@ mod tests {
         for file_id in downloads.iter().chain(partial) {
             fs::write(
                 dl.join(format!("a{file_id}.7z.meta")),
-                format!("[General]\nmodID=1\nfileID={file_id}\n"),
+                format!(
+                    "[General]\ngameName=SkyrimSE\nmodID={}\nfileID={file_id}\n",
+                    captured_revision()
+                        .mods
+                        .iter()
+                        .find(|m| m.file_id == *file_id)
+                        .map(|m| m.mod_id)
+                        .unwrap_or(1)
+                ),
             )
             .unwrap();
         }
@@ -5610,7 +5981,15 @@ mod tests {
             fs::write(dl.join(format!("a{file_id}.7z")), b"x").unwrap();
             fs::write(
                 dl.join(format!("a{file_id}.7z.meta")),
-                format!("[General]\nmodID=1\nfileID={file_id}\n"),
+                format!(
+                    "[General]\ngameName=SkyrimSE\nmodID={}\nfileID={file_id}\n",
+                    captured_revision()
+                        .mods
+                        .iter()
+                        .find(|m| m.file_id == *file_id)
+                        .map(|m| m.mod_id)
+                        .unwrap_or(1)
+                ),
             )
             .unwrap();
         }
@@ -5684,7 +6063,11 @@ mod tests {
         recompute_collection_states(&mut app);
 
         let st = &app.collection.as_ref().unwrap().states;
-        assert_eq!(st[0], MemberState::Installed, "matched on the Nexus mod id");
+        assert_eq!(
+            st[0],
+            MemberState::Unverified,
+            "a mod id does not identify the requested file"
+        );
         assert_eq!(
             st[1],
             MemberState::Downloaded,
@@ -5740,7 +6123,7 @@ mod tests {
         assert_eq!(st[0], MemberState::OtherVersion);
         let _ = fs::remove_dir_all(&root);
 
-        // And the same mod, at the right version, on the right game, is installed.
+        // A matching version alone cannot verify the requested file.
         let (mut app, root) = collection_app_with(
             &[(
                 "Right",
@@ -5751,8 +6134,263 @@ mod tests {
             &[],
         );
         let st = state(&mut app);
-        assert_eq!(st[0], MemberState::Installed);
+        assert_eq!(st[0], MemberState::Unverified);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn async_results_do_not_mutate_another_instance_or_collection_request() {
+        let (mut app, root) = list_app(&["Personal"]);
+        let inst = app.created.clone().unwrap();
+        let path = inst.meta_path("Personal");
+        fs::write(&path, "[General]\nmodid=42\nendorsed=0\n").unwrap();
+        let _ = update_inner(
+            &mut app,
+            Message::ModEndorsed(root.join("other-instance"), "Personal".into(), 42, Ok(true)),
+        );
+        let _ = update_inner(
+            &mut app,
+            Message::ModEndorsed(root.clone(), "Personal".into(), 99, Ok(true)),
+        );
+        assert!(!inst.mod_meta("Personal").endorsed());
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionFetched(
+                root.join("other-instance"),
+                "old-request".into(),
+                Ok(captured_revision()),
+            ),
+        );
+        assert!(app.collection.is_none());
+        let _ = update_inner(&mut app, Message::ShowCollection(String::new()));
+        app.collection.as_mut().unwrap().loading = true;
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionLinkChanged("current-request".into()),
+        );
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionFetched(root.clone(), "old-request".into(), Ok(captured_revision())),
+        );
+        assert!(app.collection.as_ref().unwrap().revision.is_none());
+        assert!(!app.collection.as_ref().unwrap().loading);
+        let names = BTreeSet::new();
+        let snapshot = SortFingerprint {
+            game: "skyrimse".into(),
+            profile: "Default".into(),
+            names,
+            instance: Some(root.clone()),
+            epoch: app.archive_epoch.get(),
+        };
+        let _ = update_inner(
+            &mut app,
+            Message::PluginsSorted(Ok((
+                SortFingerprint {
+                    instance: Some(root.join("other-instance")),
+                    ..snapshot.clone()
+                },
+                vec![],
+                Err("unused report".into()),
+            ))),
+        );
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Discarded"));
+        plugin_state_changed(&app);
+        let _ = update_inner(
+            &mut app,
+            Message::PluginsSorted(Ok((snapshot, vec![], Err("unused report".into())))),
+        );
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Discarded"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn restoring_hidden_files_keeps_external_links_opaque_and_reports_collisions() {
+        let (app, root) = list_app(&["Personal"]);
+        let dir = app.mods[0].path.clone();
+        let outside = root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("sentinel.mohidden"), b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+        fs::write(dir.join("local.mohidden"), b"local").unwrap();
+        assert_eq!(restore_hidden_files(&dir).unwrap(), 1);
+        assert!(outside.join("sentinel.mohidden").is_file());
+        fs::write(dir.join("local.mohidden"), b"new").unwrap();
+        assert!(restore_hidden_files(&dir).is_err());
+        assert_eq!(fs::read(dir.join("local")).unwrap(), b"local");
+        assert_eq!(fs::read(dir.join("local.mohidden")).unwrap(), b"new");
+        fs::remove_file(dir.join("local.mohidden")).unwrap();
+        fs::write(dir.join("LOCAL.mohidden"), b"new").unwrap();
+        assert!(restore_hidden_files(&dir).is_err());
+        assert_eq!(fs::read(dir.join("local")).unwrap(), b"local");
+        assert!(dir.join("LOCAL.mohidden").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_actions_preserve_unreadable_content_and_invalidate_ini_views() {
+        let (mut app, root) = list_app(&["Personal"]);
+        let inst = app.created.clone().unwrap();
+        let path = inst.meta_path("Personal");
+        fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
+        let _ = update_inner(&mut app, Message::ModTrack(0));
+        assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe, 0xfd]);
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Could not save"));
+        fs::write(&path, "[General]\nmodid=42\n").unwrap();
+        let epoch = app.archive_epoch.get();
+        let _ = update_inner(&mut app, Message::ToggleIniTweak(0, "Skyrim.ini".into()));
+        assert_eq!(inst.mod_meta("Personal").ini_tweaks(), &["Skyrim.ini"]);
+        assert!(app.archive_epoch.get() > epoch);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_profile_switch_preserves_the_view_and_reports_the_error() {
+        let (mut app, root) = list_app(&["Personal"]);
+        let inst = app.created.clone().unwrap();
+        fs::write(inst.manifest_path(), "malformed manifest").unwrap();
+        app.selected_mod = Some(0);
+        assert!(!switch_to_profile(&mut app, "Other"));
+        assert_eq!(app.selected_mod, Some(0));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Cannot switch"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn gui_plugin_discovery_and_diagnostics_ignore_whiteouted_plugins() {
+        let (mut app, root) = list_app(&["Broken"]);
+        let inst = app.created.clone().unwrap();
+        fs::write(app.mods[0].path.join("Broken.esp"), b"invalid header").unwrap();
+        let stack =
+            eidos_core::LayerStack::new(vec![app.mods[0].path.clone()], inst.overwrite_dir());
+        stack.remove("Broken.esp").unwrap();
+        app.plugins = compute_plugins(&app);
+        assert!(!app
+            .plugins
+            .as_ref()
+            .unwrap()
+            .plugins
+            .iter()
+            .any(|p| p.name == "Broken.esp"));
+        let unexpected: Vec<_> = diagnostics(&app)
+            .into_iter()
+            .filter(|d| d.detail.contains("Broken.esp"))
+            .map(|d| (d.title, d.detail))
+            .collect();
+        assert!(unexpected.is_empty(), "{unexpected:?}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mod_information_shows_generated_receipts_and_input_drift() {
+        let (mut app, root) = list_app(&["Input", "Output"]);
+        let inst = app.created.clone().unwrap();
+        inst.save_modlist(&app.mods).unwrap();
+        let run = inst
+            .begin_tool_run("Test Generator", None, &["generator".into()], &[])
+            .unwrap();
+        fs::write(inst.overwrite_dir().join("generated.txt"), b"output").unwrap();
+        inst.finish_tool_run(run).unwrap();
+        inst.overwrite_into_mod("Output").unwrap();
+        let _ = update(&mut app, Message::ShowModInfo(1));
+        assert!(app.info_provenance.contains("Test Generator"));
+        assert!(
+            app.info_provenance.contains("Recorded inputs unchanged"),
+            "{}",
+            app.info_provenance
+        );
+        let mut meta = inst.mod_meta("Input");
+        meta.set("version", "changed");
+        meta.write(&inst.meta_path("Input")).unwrap();
+        let _ = update(&mut app, Message::ShowModInfo(1));
+        assert!(app.info_provenance.contains("Inputs changed"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn completed_install_surfaces_persistent_missing_payload_warning() {
+        let (mut app, root) = list_app(&["Incomplete"]);
+        let inst = app.created.clone().unwrap();
+        let mut meta = inst.mod_meta("Incomplete");
+        meta.set_install_warning("Missing archive source: required.esp");
+        meta.write(&inst.meta_path("Incomplete")).unwrap();
+        after_install(
+            &mut app,
+            "Incomplete",
+            inst.mods_dir().join("Incomplete"),
+            true,
+            None,
+        );
+        assert!(app.status.as_deref().unwrap().contains("required.esp"));
+        assert!(app.meta_cache["Incomplete"].install_warning.is_some());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn collection_matching_uses_every_exact_merged_source_and_rejects_same_version_files() {
+        let mut rev = captured_revision();
+        rev.mods[1].mod_id = rev.mods[0].mod_id;
+        let id = rev.mods[0].mod_id;
+        let file = rev.mods[0].file_id;
+        let extra = format!("gameName=SkyrimSE\nversion=2.1\n[installedFiles]\n1\\modid={id}\n1\\fileid={file}\n2\\modid=999\n2\\fileid=123\nsize=2\n");
+        let (mut app, root) = collection_app_with(&[("Merged", id, &extra)], &[], &[]);
+        app.collection = Some(CollectionState {
+            revision: Some(rev),
+            link: String::new(),
+            states: Vec::new(),
+            loading: false,
+            error: None,
+            confirm_fetch: false,
+            asked: HashSet::new(),
+        });
+        recompute_collection_states(&mut app);
+        assert_eq!(
+            app.collection.as_ref().unwrap().states[..2],
+            [MemberState::Installed, MemberState::OtherVersion]
+        );
+        app.collection
+            .as_mut()
+            .unwrap()
+            .revision
+            .as_mut()
+            .unwrap()
+            .mods[0]
+            .mod_id = 999;
+        app.collection
+            .as_mut()
+            .unwrap()
+            .revision
+            .as_mut()
+            .unwrap()
+            .mods[0]
+            .file_id = 123;
+        recompute_collection_states(&mut app);
+        assert_eq!(
+            app.collection.as_ref().unwrap().states[0],
+            MemberState::Installed
+        );
+        app.meta_cache.get_mut("Merged").unwrap().install_warning = Some("Missing source".into());
+        recompute_collection_states(&mut app);
+        assert_eq!(
+            app.collection.as_ref().unwrap().states[0],
+            MemberState::Unverified
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -7839,12 +8477,28 @@ mod tests {
             hourly_remaining: Some(1388),
             daily_remaining: Some(2100),
             unavailable: Vec::new(),
+            failures: Vec::new(),
         };
         let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
         // It arrived in the result and used to be dropped on the floor.
         assert_eq!(app.nexus_hourly_left, Some(1388));
         assert_eq!(app.nexus_daily_left, Some(2100));
         assert!(nexus_budget_suffix(&app).contains("1388"));
+    }
+
+    #[test]
+    fn an_update_check_reports_failed_requests_as_incomplete() {
+        let mut app = nav_app(&[]);
+        let result = eidos_nexus::UpdateCheckResult {
+            checked: 1,
+            queried: 1,
+            failures: vec![("Example Mod".into(), "HTTP 503".into())],
+            ..Default::default()
+        };
+        let _ = update_inner(&mut app, Message::UpdatesChecked(Ok(result)));
+        let status = app.status.as_deref().unwrap();
+        assert!(status.contains("1 mod(s) could not be checked"));
+        assert!(status.contains("0 update(s) found"));
     }
 
     #[test]
@@ -8529,6 +9183,28 @@ mod tests {
             app.install_at.is_some(),
             "and the aim is still waiting for ITS archive"
         );
+    }
+
+    #[test]
+    fn reinstall_preserves_a_disabled_bases_priority_below_its_translation() {
+        let (mut app, root) = list_app(&["Base", "Translation"]);
+        app.mods[0].enabled = false;
+        app.created
+            .as_ref()
+            .unwrap()
+            .save_modlist(&app.mods)
+            .unwrap();
+        after_install(&mut app, "Base", root.join("mods/Base"), false, None);
+        let installed = app.created.as_ref().unwrap().modlist();
+        assert_eq!(
+            installed
+                .iter()
+                .map(|m| m.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Base", "Translation"]
+        );
+        assert!(!installed[0].enabled);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -9280,8 +9956,8 @@ mod tests {
         // was held down - about a tenth of a second - and could never be
         // completed.
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
-        update_inner(&mut app, Message::PointerReleased);
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::PointerReleased);
         assert_eq!(
             app.confirm_delete_download.as_deref(),
             Some("a.zip"),
@@ -9289,8 +9965,8 @@ mod tests {
         );
         // The same release must not cancel the other confirmations either.
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteSave(0));
-        update_inner(&mut app, Message::PointerReleased);
+        let _ = update_inner(&mut app, Message::DeleteSave(0));
+        let _ = update_inner(&mut app, Message::PointerReleased);
         assert!(app.confirm_delete_save.is_some(), "saves too");
 
         // Every drag the release ladder can cancel has to be exempt. Adding one
@@ -9304,7 +9980,7 @@ mod tests {
             Message::DownloadDragCancel,
         ] {
             app.confirm_delete_download = Some("a.zip".into());
-            update_inner(&mut app, cancel.clone());
+            let _ = update_inner(&mut app, cancel.clone());
             assert_eq!(
                 app.confirm_delete_download.as_deref(),
                 Some("a.zip"),
@@ -9323,8 +9999,8 @@ mod tests {
             gap: 2,
             aimed: true,
         });
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
-        update_inner(&mut app, Message::PointerReleased);
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::PointerReleased);
         assert_eq!(
             app.confirm_delete_download, None,
             "a committed drop is an action"
@@ -9337,8 +10013,8 @@ mod tests {
         // around a batch action is part of that gesture, not a decision to do
         // something else. The handler only stores the modifier set.
         let mut app = nav_app(&["a", "b"]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
-        update_inner(
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(
             &mut app,
             Message::ModifiersChanged(iced::keyboard::Modifiers::CTRL),
         );
@@ -9350,7 +10026,7 @@ mod tests {
         // Sixty a second while a tab is cross-fading. Arm Delete, switch tabs so
         // the strip animates, and the arming must survive every frame of it.
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
         assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
 
         for _ in 0..12 {
@@ -9481,15 +10157,15 @@ mod tests {
         // confirmation is gone. The pointer HAS to move to reach the button, so
         // the two-click guard could never be completed.
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
         assert_eq!(
             app.confirm_delete_download.as_deref(),
             Some("a.zip"),
             "the first click arms it"
         );
 
-        update_inner(&mut app, Message::PointerAt(iced::Point::new(10.0, 10.0)));
-        update_inner(
+        let _ = update_inner(&mut app, Message::PointerAt(iced::Point::new(10.0, 10.0)));
+        let _ = update_inner(
             &mut app,
             Message::WindowResized(iced::Size::new(800.0, 600.0)),
         );
@@ -9511,8 +10187,8 @@ mod tests {
             (Message::ClearOverwrite, 2),
             (Message::BatchRemoveMods, 3),
         ] {
-            update_inner(&mut app, arm);
-            update_inner(&mut app, Message::Refresh);
+            let _ = update_inner(&mut app, arm);
+            let _ = update_inner(&mut app, Message::Refresh);
             match check {
                 0 => assert_eq!(app.confirm_delete_download, None),
                 1 => assert_eq!(app.confirm_delete_save, None),
@@ -9525,8 +10201,8 @@ mod tests {
     #[test]
     fn arming_one_row_disarms_another() {
         let mut app = nav_app(&[]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
-        update_inner(&mut app, Message::DeleteDownload("b.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("b.zip".into()));
         assert_eq!(
             app.confirm_delete_download.as_deref(),
             Some("b.zip"),
@@ -9660,9 +10336,9 @@ mod tests {
         // The tick re-sorts the list twice a second. Keyed by index, arming a
         // row and confirming it could delete a DIFFERENT archive.
         let mut app = downloads_app(&[("a.zip", b"a"), ("b.zip", b"b")], &[]);
-        update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("a.zip".into()));
         assert_eq!(app.confirm_delete_download.as_deref(), Some("a.zip"));
-        update_inner(&mut app, Message::DownloadTick);
+        let _ = update_inner(&mut app, Message::DownloadTick);
         assert_eq!(
             app.confirm_delete_download.as_deref(),
             Some("a.zip"),
@@ -9694,8 +10370,8 @@ mod tests {
         load_downloads(&mut app);
         assert_eq!(app.downloads[0].state, DownloadState::Stalled);
 
-        update_inner(&mut app, Message::DeleteDownload("dead.zip".into()));
-        update_inner(&mut app, Message::ConfirmDeleteDownload("dead.zip".into()));
+        let _ = update_inner(&mut app, Message::DeleteDownload("dead.zip".into()));
+        let _ = update_inner(&mut app, Message::ConfirmDeleteDownload("dead.zip".into()));
         assert!(
             !dl.join("dead.zip.unfinished").exists(),
             "the partial must go"
@@ -9775,7 +10451,7 @@ mod tests {
         fs::create_dir_all(mods.join(".git")).unwrap();
         app.created = Some(eidos_instance::Instance::portable(root.clone()));
 
-        update_inner(&mut app, Message::CleanInstallDebris);
+        let _ = update_inner(&mut app, Message::CleanInstallDebris);
 
         assert!(!mods.join(".eidos-install-4194305-0").exists());
         assert!(!mods.join(".eidos-install-4194306-0").exists());
@@ -10106,5 +10782,118 @@ mod tests {
         ];
         let got = reconcile(listed, vec![]);
         assert_eq!(got, ["A", "B", "C"]);
+    }
+    #[test]
+    fn preflight_diagnostics_never_clear_masters_with_a_corrupt_header() {
+        let (app, root) = data_app(&[("Broken.esp", "TES4")], &[]);
+        let found = diagnostics(&app);
+        assert!(!found.iter().any(|d| d.title == "No missing masters"));
+        assert!(found
+            .iter()
+            .any(|d| d.title.contains("plugin_header") && d.detail.contains("Broken.esp")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn preflight_diagnostics_show_the_winning_dll_and_persistent_warnings() {
+        let (mut app, root) = data_app(
+            &[("SKSE/Plugins/Test.dll", "bad lower")],
+            &[("SKSE/Plugins/TEST.DLL", "bad winner")],
+        );
+        app.games[0].install_path = root.join("game");
+        let inst = app.created.as_ref().unwrap();
+        let mut meta = inst.mod_meta("AAA");
+        meta.set_install_warning("Missing required payload meshes/needed.nif");
+        meta.write(&inst.mods_dir().join("AAA/meta.ini")).unwrap();
+        app.archive_warnings = vec!["Corrupt archive Test.bsa".into()];
+        let found = diagnostics(&app);
+        assert!(found.iter().any(|d| d.title.contains("pe_unverified")
+            && d.detail.contains("Overwrite")
+            && d.detail.contains("overwrite/SKSE/Plugins/TEST.DLL")));
+        assert!(found.iter().any(
+            |d| d.title.contains("Incomplete installation") && d.detail.contains("needed.nif")
+        ));
+        assert!(found
+            .iter()
+            .any(|d| d.detail.contains("Corrupt archive Test.bsa")));
+        fs::remove_file(root.join("overwrite/SKSE/Plugins/TEST.DLL")).unwrap();
+        fs::write(root.join("overwrite/SKSE/Plugins/.eidoswh.test.dll"), []).unwrap();
+        assert!(!diagnostics(&app)
+            .iter()
+            .any(|d| d.title.contains("pe_unverified")));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn preflight_diagnostics_require_a_current_deep_record_check() {
+        let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+        let mut plugin = plugin_row("Small.esl", "AAA");
+        plugin.is_light = true;
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![plugin],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        assert!(diagnostics(&app)
+            .iter()
+            .any(|d| d.title.starts_with("Unverified record limits")));
+        app.loot_meta = Some(std::collections::HashMap::from([(
+            "small.esl".into(),
+            eidos_loot::PluginMetadataBundle {
+                record_validity: Some(false),
+                messages: vec![eidos_loot::LootMessage {
+                    kind: eidos_loot::MessageType::Error,
+                    text: "Invalid light plugin records".into(),
+                }],
+                ..Default::default()
+            },
+        )]));
+        let found = diagnostics(&app);
+        assert!(!found
+            .iter()
+            .any(|d| d.title.starts_with("Unverified record limits")));
+        assert!(found
+            .iter()
+            .any(|d| d.level == DiagLevel::Problem
+                && d.detail.contains("Invalid light plugin records")));
+        invalidate_plugins(&mut app);
+        assert!(
+            app.loot_meta.is_none(),
+            "a changed plugin set must discard the deep check"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn preflight_diagnostics_preserve_interrupted_runs_and_warn_when_inputs_change() {
+        let (app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+        let inst = app.created.as_ref().unwrap();
+        let plugins = compute_plugins(&app)
+            .unwrap()
+            .plugins
+            .into_iter()
+            .map(|p| (p.name, p.enabled))
+            .collect::<Vec<_>>();
+        let run = inst
+            .begin_tool_run("xEdit", None, &["xEdit.exe".into()], &plugins)
+            .unwrap();
+        assert!(diagnostics(&app)
+            .iter()
+            .any(|d| d.title.contains("unfinished tool: xEdit")));
+        fs::write(inst.overwrite_dir().join("Patch.esp"), b"generated").unwrap();
+        inst.finish_tool_run(run).unwrap();
+        let mut meta = inst.mod_meta("AAA");
+        meta.set_installed_files(&[(12, 34)]);
+        meta.write(&inst.meta_path("AAA")).unwrap();
+        let found = diagnostics(&app);
+        assert!(!found
+            .iter()
+            .any(|d| d.title.contains("unfinished tool: xEdit")));
+        assert!(found
+            .iter()
+            .any(|d| d.title.contains("Generated output inputs changed")
+                && d.detail.contains("xEdit")
+                && d.detail.contains("Patch.esp")));
+        fs::remove_dir_all(root).unwrap();
     }
 }

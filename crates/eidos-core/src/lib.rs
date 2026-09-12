@@ -77,6 +77,8 @@ pub struct LayerStack {
     /// same overwrite layer must serialise against each other, not each hold
     /// their own set.
     path_locks: std::sync::Arc<[std::sync::Mutex<()>]>,
+    /// A subtree rename validates and moves as one operation across all clones.
+    rename_lock: std::sync::Arc<std::sync::Mutex<()>>,
     /// What path resolution costs THIS mount. Per-stack, not global: Eidos
     /// mounts two unions at once - Data and, for Root Builder mods, the game
     /// install root - and a process-wide counter reported the same figure for
@@ -330,6 +332,7 @@ impl LayerStack {
             layers,
             overwrite,
             path_locks,
+            rename_lock: Default::default(),
             resolve: Default::default(),
             lower,
             ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
@@ -409,6 +412,16 @@ impl LayerStack {
     /// each of those walks paid `ci_lookup`'s enumeration whenever a component's
     /// spelling did not match. Descending once is linear and reads each level
     /// exactly once.
+    /// Whether a lower-layer provider survives overwrite deletion and opacity.
+    /// Unlike `resolve_read`, this remains false when Overwrite recreates the file.
+    pub fn lower_path_visible(&self, vpath: &str) -> bool {
+        !under_hidden(vpath)
+            && !self.ow_snapshot().map_or_else(
+                || self.overwrite_hides(vpath),
+                |ow| ow.hides(&fold_vpath(vpath)),
+            )
+    }
+
     fn overwrite_hides(&self, vpath: &str) -> bool {
         let norm = normalize(vpath);
         let comps: Vec<_> = norm.components().collect();
@@ -1112,16 +1125,49 @@ impl LayerStack {
 
     /// Rename `from` to `to` within the overwrite layer (copying `from` up first
     /// if it only exists in a lower layer), then whiteout `from` so its lower
-    /// copy is hidden. File-oriented; lower-only directory renames are not yet
-    /// supported.
+    /// copy is hidden. Directories move their merged subtree.
     pub fn rename(&self, from: &str, to: &str) -> std::io::Result<()> {
-        // A directory rename must move the MERGED subtree (overwrite + every lower
-        // layer), not just the overwrite half - otherwise a lower-only directory
-        // errors and a mixed directory silently loses its lower children.
-        if self.resolve_read(from).is_some_and(|p| p.is_dir()) {
+        let _guard = self.rename_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.rename_locked(from, to)
+    }
+
+    fn rename_locked(&self, from: &str, to: &str) -> std::io::Result<()> {
+        let source = self
+            .resolve_read(from)
+            .ok_or_else(|| std::io::Error::from_raw_os_error(libc::ENOENT))?;
+        let from_key = fold_vpath(from);
+        let to_key = fold_vpath(to);
+        if from_key == to_key {
+            return Ok(());
+        }
+        let is_dir = fs::symlink_metadata(&source)?.is_dir();
+        if is_dir && to_key.starts_with(&[from_key.as_slice(), b"/"].concat()) {
+            return Err(std::io::Error::from_raw_os_error(libc::EINVAL));
+        }
+        if let Some(destination) = self.resolve_read(to) {
+            let errno = match (is_dir, fs::symlink_metadata(&destination)?.is_dir()) {
+                (true, false) => Some(libc::ENOTDIR),
+                (false, true) => Some(libc::EISDIR),
+                (true, true) if !self.list_dir(to).is_empty() => Some(libc::ENOTEMPTY),
+                _ => None,
+            };
+            if let Some(errno) = errno {
+                return Err(std::io::Error::from_raw_os_error(errno));
+            }
+        }
+        if is_dir {
             return self.rename_dir(from, to);
         }
-        let src = self.open_for_write(from)?;
+        let src = if fs::symlink_metadata(&source)?.is_symlink() {
+            let dest = self.resolve_write(from);
+            if source == dest {
+                source
+            } else {
+                self.create_symlink(from, &fs::read_link(&source)?)?
+            }
+        } else {
+            self.open_for_write(from)?
+        };
         let dst = self.resolve_write(to);
         if let Some(parent) = dst.parent() {
             fs::create_dir_all(parent)?;
@@ -1149,7 +1195,7 @@ impl LayerStack {
     fn rename_dir(&self, from: &str, to: &str) -> std::io::Result<()> {
         self.make_dir(to)?;
         for (name, _) in self.list_dir(from) {
-            self.rename(&join_vpath(from, &name), &join_vpath(to, &name))?;
+            self.rename_locked(&join_vpath(from, &name), &join_vpath(to, &name))?;
         }
         self.remove(from)?;
         Ok(())
@@ -2139,6 +2185,107 @@ mod tests {
         assert!(stack.resolve_read("Foo.txt").is_none());
         assert!(stack.resolve_read("FOO.TXT").is_none());
         assert!(!over.join("Foo.txt").exists());
+    }
+
+    #[test]
+    fn concurrent_directory_renames_do_not_merge_and_lose_a_source() {
+        for _ in 0..8 {
+            let tree = TempTree::new();
+            let overwrite = tree.sub("overwrite");
+            for from in ["A", "B"] {
+                for index in 0..64 {
+                    put(&overwrite, &format!("{from}/{index}.txt"), from);
+                }
+            }
+            let stack = LayerStack::new(vec![], overwrite.clone());
+            let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+            let workers: Vec<_> = ["A", "B"]
+                .into_iter()
+                .map(|from| {
+                    let stack = stack.clone();
+                    let barrier = barrier.clone();
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        (from, stack.rename(from, "dest"))
+                    })
+                })
+                .collect();
+            barrier.wait();
+            let results: Vec<_> = workers.into_iter().map(|w| w.join().unwrap()).collect();
+            assert_eq!(results.iter().filter(|(_, r)| r.is_ok()).count(), 1);
+            for (from, result) in results {
+                let folder = if result.is_ok() {
+                    "dest"
+                } else {
+                    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::ENOTEMPTY));
+                    from
+                };
+                for index in 0..64 {
+                    assert_eq!(read(&overwrite.join(format!("{folder}/{index}.txt"))), from);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rename_rejects_invalid_destinations_without_changing_either_tree() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "source/conflict.ini", "source");
+        put(&game, "lower/conflict.ini", "lower destination");
+        put(&over, "upper/conflict.ini", "upper destination");
+        put(&game, "file", "file");
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+        for (from, to, errno) in [
+            ("source", "lower", libc::ENOTEMPTY),
+            ("source", "upper", libc::ENOTEMPTY),
+            ("source", "file", libc::ENOTDIR),
+            ("file", "source", libc::EISDIR),
+            ("source", "SOURCE/sub", libc::EINVAL),
+            ("missing", "created", libc::ENOENT),
+        ] {
+            assert_eq!(
+                stack.rename(from, to).unwrap_err().raw_os_error(),
+                Some(errno)
+            );
+            assert_eq!(
+                read(&stack.resolve_read("source/conflict.ini").unwrap()),
+                "source"
+            );
+            assert_eq!(
+                read(&stack.resolve_read("lower/conflict.ini").unwrap()),
+                "lower destination"
+            );
+            assert_eq!(
+                read(&stack.resolve_read("upper/conflict.ini").unwrap()),
+                "upper destination"
+            );
+            assert_eq!(read(&stack.resolve_read("file").unwrap()), "file");
+        }
+        stack.rename("source", "SOURCE").unwrap();
+        assert!(stack.resolve_read("source/conflict.ini").is_some());
+        fs::create_dir_all(game.join("empty")).unwrap();
+        stack.rename("source", "empty").unwrap();
+        assert_eq!(
+            read(&stack.resolve_read("empty/conflict.ini").unwrap()),
+            "source"
+        );
+        assert!(stack.resolve_read("source").is_none());
+    }
+
+    #[test]
+    fn renaming_a_directory_symlink_moves_the_link_not_its_target() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "target/file.txt", "target");
+        std::os::unix::fs::symlink("target", game.join("link")).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+        stack.rename("link", "moved").unwrap();
+        assert!(fs::symlink_metadata(over.join("moved"))
+            .unwrap()
+            .is_symlink());
+        assert_eq!(read(&game.join("target/file.txt")), "target");
+        assert!(stack.resolve_read("target/file.txt").is_some());
     }
 
     #[test]

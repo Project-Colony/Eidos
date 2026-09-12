@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.17.0](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.0) (2026-09-12)
+
+### Features
+
+* Inspect Bethesda archive-member conflicts with winning archive, plugin and mod origins.
+* Diagnose plugin headers, index capacity and declared SKSE/runtime compatibility before launch.
+* Recover collection installations with durable folder reservations and exact Nexus file identity.
+* Record tool inputs and generated Overwrite outputs, and show observed input drift.
+
+### Fixes
+
+* Stage new and replacement installations before publication; preserve existing files and report incomplete merges.
+* Protect union renames, directory-cache invalidation, save rescue and root/Overwrite loader selection.
+* Validate download resumes, backup boundaries, destination links and case-insensitive collisions.
+* Preserve concurrent metadata edits and reject stale GUI results; share checked Nexus updates between CLI and GUI.
+* Report profile, manifest and INI write failures; correct Unicode parsing, runtime locking and LOOT case bridging.
+* Install without elevated privileges by default and reuse one installer for release packages.
+
+### Verification
+
+* Reviewed all 22 workspace crates; 1,336 distinct Cargo tests, 24 mounted FUSE checks and one isolated root/Overwrite launch check passed locally.
+* Release build, production Clippy and translation/link checks passed with Rust 1.94.1.
+* No Skyrim/Proton gameplay validation was performed for this release. Static DLL checks cannot certify hook behavior.
+
+
 ## [1.16.0](https://github.com/Project-Colony/Eidos/compare/v1.15.0...v1.16.0) (2026-09-07)
 
 

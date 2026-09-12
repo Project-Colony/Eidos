@@ -58,7 +58,7 @@ pub(crate) fn resolve_manual_root(tmp: &Path, root: &str) -> Result<PathBuf, Ins
         return Ok(tmp.to_path_buf());
     }
     resolve_ci(tmp, trimmed)
-        .filter(|p| is_real_dir(p))
+        .filter(|p| is_real_dir(p) && source_within(tmp, p))
         .ok_or_else(|| {
             InstallError::BadSelection(format!("no such directory in the archive: '{root}'"))
         })

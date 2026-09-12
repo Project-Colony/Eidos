@@ -142,9 +142,23 @@ impl From<io::Error> for RuntimeError {
 /// Everything lands in a temporary directory and is renamed into place at the
 /// end, so an interrupted install leaves nothing that [`is_installed`] would
 /// mistake for a finished one.
-pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, RuntimeError> {
+pub fn install(verb: &str, progress: impl FnMut(&str)) -> Result<bool, RuntimeError> {
     let r = runtime(verb).ok_or_else(|| RuntimeError::Unknown(verb.to_string()))?;
-    if is_installed(r) {
+    install_into(r, &runtime_dir(r), progress)
+}
+
+fn install_into(r: &Runtime, dir: &Path, mut progress: impl FnMut(&str)) -> Result<bool, RuntimeError> {
+    // Instances share this cache. Hold one process-safe lock through the probe,
+    // staging and publication so a second installer cannot delete live work.
+    let cache = dir.parent().unwrap_or(dir);
+    fs::create_dir_all(cache)?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(cache.join(".install.lock"))?;
+    lock.lock()?;
+    if dir.join(r.sentinel).is_file() {
         return Ok(false);
     }
     // The SHARED probe. This crate had a third copy of it, whose doc comment
@@ -154,8 +168,6 @@ pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, Runti
     // told it had 7-Zip and then failed on every .zip a mod ships as.
     let seven = eidos_sevenzip::find_7z().ok_or(RuntimeError::No7z)?;
 
-    let dir = runtime_dir(r);
-    fs::create_dir_all(dir.parent().unwrap_or(&dir))?;
     let staging = dir.with_extension("incoming");
     let _ = fs::remove_dir_all(&staging);
     fs::create_dir_all(&staging)?;
@@ -202,8 +214,8 @@ pub fn install(verb: &str, mut progress: impl FnMut(&str)) -> Result<bool, Runti
 
     // Rename last: until this line there is nothing an interrupted run could
     // leave behind that looks installed.
-    let _ = fs::remove_dir_all(&dir);
-    fs::rename(&out, &dir)?;
+    let _ = fs::remove_dir_all(dir);
+    fs::rename(&out, dir)?;
     let _ = fs::remove_dir_all(&staging);
     progress("done");
     Ok(true)
@@ -352,6 +364,30 @@ impl Sha256 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn installers_wait_for_the_shared_runtime_cache_lock() {
+        let cache = std::env::temp_dir().join(format!("eidos-runtime-lock-{}", std::process::id()));
+        let dir = cache.join("dotnet10-10.0.10");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("dotnet.exe"), b"already installed").unwrap();
+        let lock = fs::File::create(cache.join(".install.lock")).unwrap();
+        lock.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result = install_into(runtime("dotnet10").unwrap(), &dir, |_| {
+                panic!("an installed runtime must never be downloaded");
+            });
+            tx.send(result.unwrap()).unwrap();
+        });
+        let early = rx.recv_timeout(std::time::Duration::from_millis(100));
+        drop(lock);
+        worker.join().unwrap();
+        fs::remove_dir_all(cache).unwrap();
+        assert!(matches!(early, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+            "another installer inspected the shared cache while it was locked");
+        assert!(!rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap());
+    }
 
     #[test]
     fn sha256_matches_the_published_vectors() {

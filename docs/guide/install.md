@@ -68,8 +68,8 @@ see [usage.md](usage.md#instances-global-and-portable). The full tour is in
 
 ## Optional: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` enables kernel FUSE
-passthrough. It is **off by default and you almost certainly want it that way**:
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` grants the optional capability; it does not enable passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` is the separate runtime switch. It is **off by default and you almost certainly want it that way**:
 measured on Skyrim SE it stops the game opening its own archives and plugins, so
 mods silently do not load. The switch exists to re-test the mechanism, not
 because it is recommended.

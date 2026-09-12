@@ -19,6 +19,8 @@ pub struct Note {
 /// The outcome of installing a collection.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
+    /// Persistence failed: callers must not apply any further collection changes.
+    pub aborted: bool,
     pub collection: String,
     pub revision: u32,
     /// Members installed exactly as asked.

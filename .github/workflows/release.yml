@@ -114,150 +114,15 @@ jobs:
           # act on. A few MB is a good trade for readable crash reports.
           ls -l "dist/${name}"
 
-      # The installer is generated here rather than tracked in the repo because
-      # the tarball is the only place it is ever used, and it must stay in step
-      # with the layout staged just above. If a second consumer ever appears
-      # (a distro package, say), promote it to a tracked file under packaging/.
-      - name: Write the install script
+      # Reuse the source installer's rootless defaults and desktop integration.
+      - name: Stage the installer and icons
         run: |
-          set -eu
           name='${{ steps.meta.outputs.name }}'
-          cat > "dist/${name}/install.sh" <<'INSTALLER'
-          #!/bin/sh
-          # Eidos installer.
-          #
-          # Copies the two binaries into a prefix and grants the launcher the one
-          # file capability it needs. Read it before running it; it uses sudo for
-          # exactly one command (setcap) and tells you before it does.
-          set -eu
+          install -m 0755 packaging/install.sh "dist/${name}/install.sh"
+          mkdir -p "dist/${name}/assets/brand"
+          cp -r assets/brand/png "dist/${name}/assets/brand/"
+          bash -n "dist/${name}/install.sh"
 
-          PREFIX="${PREFIX:-$HOME/.local/bin}"
-          SRC=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-
-          echo "Eidos installer"
-          echo "  source: $SRC"
-          echo "  prefix: $PREFIX   (override with PREFIX=/usr/local/bin ./install.sh)"
-          echo
-
-          for b in eidos eidos-gui; do
-            [ -f "$SRC/$b" ] || { echo "error: $b missing from $SRC" >&2; exit 1; }
-          done
-
-          mkdir -p "$PREFIX"
-          # Both binaries land in the SAME directory on purpose: eidos-gui finds
-          # the launcher by looking for an `eidos` sibling of its own executable.
-          install -m 0755 "$SRC/eidos" "$SRC/eidos-gui" "$PREFIX/"
-          echo "installed eidos and eidos-gui in $PREFIX"
-
-          # --- the capability -------------------------------------------------
-          # Eidos mounts a FUSE union in a private mount namespace. With
-          # CAP_SYS_ADMIN it can unshare a plain mount namespace and turn on FUSE
-          # kernel passthrough, so reads and DLL image-mapping go straight to the
-          # backing files. Without it, eidos still runs - it falls back to a
-          # rootless user+mount namespace - but passthrough is off, and
-          # relocation-heavy script-extender plugin DLLs (SKSE and friends) can
-          # fail to load with no in-game symptom beyond "my mods do not work".
-          target="$PREFIX/eidos"
-
-          # A capability is ignored by the kernel on a nosuid mount, so catch that
-          # before setcap reports success on a binary that will never use it.
-          if command -v findmnt >/dev/null 2>&1; then
-            opts=$(findmnt -no OPTIONS -T "$target" 2>/dev/null || echo "")
-            case ",$opts," in
-              *,nosuid,*)
-                echo "WARNING: $PREFIX is on a nosuid mount; the kernel ignores file" >&2
-                echo "         capabilities there. Install somewhere else, or expect" >&2
-                echo "         FUSE passthrough to stay off." >&2
-                ;;
-            esac
-          fi
-
-          if ! command -v setcap >/dev/null 2>&1; then
-            echo "setcap not found - install it, then run:" >&2
-            echo "    Arch:          sudo pacman -S libcap" >&2
-            echo "    Debian/Ubuntu: sudo apt install libcap2-bin" >&2
-            echo "    Fedora:        sudo dnf install libcap" >&2
-            echo "    openSUSE:      sudo zypper install libcap-progs" >&2
-            echo "  sudo setcap cap_sys_admin+ep $target" >&2
-            exit 1
-          fi
-
-          echo
-          echo "Granting CAP_SYS_ADMIN to $target (this is the sudo step):"
-          echo "  sudo setcap cap_sys_admin+ep $target"
-          if [ "$(id -u)" -eq 0 ]; then
-            setcap cap_sys_admin+ep "$target"
-          else
-            sudo setcap cap_sys_admin+ep "$target"
-          fi
-
-          # Do not take setcap's word for it - a filesystem without security
-          # xattrs (exfat, ntfs, some network mounts) fails here, and that is the
-          # exact failure worth catching at install time.
-          if command -v getcap >/dev/null 2>&1; then
-            got=$(getcap "$target" || true)
-            if [ -z "$got" ]; then
-              echo "WARNING: the capability did not stick. Is $PREFIX on a filesystem" >&2
-              echo "         without security xattrs? Move the install to one that has" >&2
-              echo "         them (any normal ext4/btrfs/xfs path)." >&2
-            else
-              echo "verified: $got"
-            fi
-          fi
-
-          case ":$PATH:" in
-            *":$PREFIX:"*) ;;
-            *) echo; echo "NOTE: $PREFIX is not on your PATH - add it to your shell profile." ;;
-          esac
-
-          cat <<'NOTES'
-
-          Done.
-
-            eidos games                 list the supported games found here
-            eidos init <game-id>        create an instance
-            eidos-gui                   the GUI
-
-          To play with mods, set the game's Steam launch option to:
-
-            eidos play <game-id> -- %command%
-
-          Remember: the capability lives on the FILE. Replacing that binary -
-          reinstalling, or rebuilding from source - wipes it, and Eidos then runs
-          without FUSE passthrough. The GUI's Diagnostics tab tells you when that
-          has happened, and `getcap $(command -v eidos)` is the one-line check.
-          NOTES
-          INSTALLER
-          chmod +x "dist/${name}/install.sh"
-          sh -n "dist/${name}/install.sh"
-
-      # A plain .tar.gz, and deliberately NOT a Flatpak or an AppImage. This is
-      # not a style preference - both formats are structurally incompatible with
-      # the file capability Eidos needs, and each claim below was checked rather
-      # than assumed:
-      #
-      #  * Setting security.capability requires CAP_SETFCAP. An unprivileged
-      #    build (`flatpak-builder` as your user, `mksquashfs` as your user)
-      #    cannot bake the capability into the image at all - setcap fails with
-      #    "unable to set CAP_SETFCAP effective capability: Operation not
-      #    permitted".
-      #  * Flatpak runs every app under bubblewrap, and bubblewrap sets
-      #    PR_SET_NO_NEW_PRIVS (verified: NoNewPrivs is 1 inside a bwrap shell,
-      #    0 outside). execve ignores file capabilities under no_new_privs, so
-      #    even a capability that somehow survived packaging would be dropped on
-      #    exec. On top of that, a user-mode Flatpak install is an OSTree
-      #    bare-user checkout, which cannot store security.* xattrs.
-      #  * An AppImage mounts its payload as a FUSE filesystem, and every FUSE
-      #    mount is nosuid (verified in /proc/self/mountinfo: nosuid on every
-      #    fuse line, including Eidos's own union mount). The kernel ignores file
-      #    capabilities on a nosuid mount, so the binary inside an AppImage can
-      #    never carry one. Extracting the AppImage does not help either: the
-      #    extraction path changes every run, so setcap would have to be redone
-      #    every launch.
-      #
-      # A tarball plus `setcap` is honest about that, and native distro packages
-      # (AUR, .deb, .rpm) are the other viable route since their formats do carry
-      # file capabilities through a privileged install.
       - name: Pack
         run: |
           set -eu
@@ -319,21 +184,16 @@ jobs:
           \`\`\`
 
           The installer copies \`eidos\` and \`eidos-gui\` into \`~/.local/bin\`
-          (override with \`PREFIX=\`) and runs one privileged command:
+          (override with \`--bindir DIR\`) and registers the desktop and Nexus
+          download handlers. The default user installation needs no sudo.
 
-          \`\`\`sh
-          sudo setcap cap_sys_admin+ep ~/.local/bin/eidos
-          \`\`\`
+          Eidos uses rootless FUSE by default. Kernel passthrough is an optional
+          diagnostic mode, disabled because of observed Skyrim/Proton failures.
+          Only use \`--cap\` if you deliberately need CAP_SYS_ADMIN for that mode;
+          setting the capability does not itself enable passthrough.
 
-          That capability is what lets Eidos enable FUSE kernel passthrough.
-          Without it Eidos still runs, but script-extender plugin DLLs (SKSE and
-          friends) may fail to load. It lives on the file, so it is wiped by any
-          reinstall or rebuild - \`getcap \$(command -v eidos)\` is the check, and
-          the GUI's Diagnostics tab flags it.
-
-          There is no Flatpak or AppImage build, and there cannot be one: a
-          sandboxed or FUSE-mounted binary cannot carry a file capability. See the
-          comment in \`.github/workflows/release.yml\` for the mechanism.
+          Native packages and this tarball are the supported formats. Flatpak
+          and AppImage integration has not been implemented or verified.
 
           ## Requirements
 

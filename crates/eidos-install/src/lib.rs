@@ -45,6 +45,8 @@ pub struct ArchiveTree {
 /// [`ArchiveTree::root_builder_split`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RootSplit {
+    /// Unambiguous wrapper chain stripped before resolving either destination.
+    pub wrapper_prefix: String,
     /// `/`-joined prefix of the subtree that becomes the mod root (Data-relative),
     /// e.g. `Data/` - or `Data/inner/` when the Data half needed its own descent.
     /// `None` when the archive is root content only, with no `Data` half at all:
@@ -238,6 +240,34 @@ impl ArchiveTree {
     /// while a dropped `.dll` is a mod that silently does nothing - the failure
     /// this whole path exists to prevent.
     pub fn root_builder_split(&self, rules: LayoutRules) -> Option<RootSplit> {
+        let mut tree = self;
+        let mut wrapper_prefix = String::new();
+        for _ in 0..=MAX_TREE_DEPTH {
+            if let Some(mut split) = tree.root_builder_split_here(rules) {
+                split.wrapper_prefix = wrapper_prefix;
+                return Some(split);
+            }
+            // Documentation is disposable; any other sibling could be root
+            // payload or an optional variant, so only one directory may remain.
+            let mut payload = tree.entries.values().filter(|node| match node {
+                TreeNode::File { name } => !name
+                    .rsplit_once('.')
+                    .is_some_and(|(_, ext)| DOC_EXTS.contains(&ext.to_ascii_lowercase().as_str())),
+                _ => true,
+            });
+            match (payload.next(), payload.next()) {
+                (Some(TreeNode::Dir { name, tree: inner }), None) => {
+                    wrapper_prefix.push_str(name);
+                    wrapper_prefix.push('/');
+                    tree = inner;
+                }
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    fn root_builder_split_here(&self, rules: LayoutRules) -> Option<RootSplit> {
         let mut data: Option<&str> = None;
         let mut root_dir: Option<String> = None;
         let mut game_dir: Option<&str> = None;
@@ -331,6 +361,7 @@ impl ArchiveTree {
             // `simple_archive_base` cannot see that far down, so it is claimed here
             // with no root half rather than sent to the picker.
             return Some(RootSplit {
+                wrapper_prefix: String::new(),
                 data_prefix,
                 root_dir: None,
                 root_entries: entries,
@@ -348,6 +379,7 @@ impl ArchiveTree {
                 return None;
             }
             return Some(RootSplit {
+                wrapper_prefix: String::new(),
                 data_prefix: None,
                 root_dir,
                 root_entries,
@@ -367,6 +399,7 @@ impl ArchiveTree {
         };
         let inner = sub.simple_archive_base(rules)?;
         Some(RootSplit {
+            wrapper_prefix: String::new(),
             data_prefix: Some(format!("{data}/{inner}")),
             root_dir,
             root_entries,
@@ -583,10 +616,10 @@ pub fn bain_default_selection(subpackages: &[String], previous: &[String]) -> Ve
 
 mod install;
 pub use install::{
-    collision_name, extract_to_temp, extract_to_temp_with, finish_fomod, fomod_context,
-    install_archive, install_archive_with_policy, install_bain, install_extracted, install_manual,
-    mod_name_for, open_archive, open_archive_with, ExtractedTree, FomodSession, InstallError,
-    InstallReport, Opened, OverwritePolicy,
+    collision_name, extract_to_temp, extract_to_temp_with, finish_fomod, fomod_context, fomod_context_for_instance,
+    fomod_context_with_plugins, install_archive, install_archive_with_policy, install_bain,
+    install_extracted, install_manual, mod_name_for, open_archive, open_archive_with,
+    ExtractedTree, FomodSession, InstallError, InstallReport, Opened, OverwritePolicy,
 };
 
 /// The same check as [`ArchiveTree::data_looks_valid`], against a directory that

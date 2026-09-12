@@ -308,18 +308,14 @@ fn find_known_tools(roots: &[PathBuf], known: &[(&str, &str)]) -> Vec<Tool> {
     out
 }
 
-/// Add a default tool for `exe` only if its file is present in `install` (detection
-/// is by file existence, like MO2's game plugins).
-fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, exe: &str) {
-    if !exe.is_empty() && search.iter().any(|d| d.join(exe).is_file()) {
-        v.push(Tool {
-            prereqs: default_prereqs(&title),
-            args: default_args(&title),
-            title,
-            exe: PathBuf::from(exe),
-            ..Default::default()
-        });
-    }
+fn push_tool(v: &mut Vec<Tool>, title: String, exe: &str) {
+    v.push(Tool {
+        prereqs: default_prereqs(&title),
+        args: default_args(&title),
+        title,
+        exe: PathBuf::from(exe),
+        ..Default::default()
+    });
 }
 
 /// The default tool list for a game, auto-detected by file existence in `install`
@@ -330,6 +326,34 @@ fn push_tool_if_present(v: &mut Vec<Tool>, search: &[PathBuf], title: String, ex
 /// next load with no user action, exactly like MO2.
 pub fn default_tools(execs: GameExecutables, install: &Path) -> Vec<Tool> {
     default_tools_in(execs, install, &[], &[])
+}
+
+/// Resolve an automatic executable in the same root union used at launch.
+/// Root layers are highest priority first; the returned path is inside the game
+/// install, where the root union projects the selected file during the run.
+pub fn root_executable(
+    install: &Path,
+    root_layers: &[PathBuf],
+    root_overwrite: &Path,
+    executable: &str,
+) -> Option<PathBuf> {
+    root_executable_source(install, root_layers, root_overwrite, executable)
+        .map(|real| install.join(real.file_name().unwrap()))
+}
+
+/// The real backing file for a root executable, for validation and fingerprints
+/// before the launch mount projects it onto the game install.
+pub fn root_executable_source(
+    install: &Path,
+    root_layers: &[PathBuf],
+    root_overwrite: &Path,
+    executable: &str,
+) -> Option<PathBuf> {
+    let mut layers = root_layers.to_vec();
+    layers.push(install.to_path_buf());
+    eidos_core::LayerStack::new(layers, root_overwrite.to_path_buf())
+        .resolve_read(executable)
+        .filter(|path| path.is_file())
 }
 
 /// [`default_tools`], but also looking in `root_layers` - the `Root/` directories
@@ -345,39 +369,55 @@ pub fn default_tools_in(
     root_layers: &[PathBuf],
     extra_roots: &[PathBuf],
 ) -> Vec<Tool> {
+    default_tools_in_view(execs, install, root_layers, extra_roots, None)
+}
+
+/// Detect root executables against the active view, including root Overwrite
+/// and its deletion markers. Known external tools still use the search roots.
+pub fn default_tools_in_view(
+    execs: GameExecutables,
+    install: &Path,
+    root_layers: &[PathBuf],
+    extra_roots: &[PathBuf],
+    root_overwrite: Option<&Path>,
+) -> Vec<Tool> {
     // The game folder, the mods' root trees, the instance's own mods pool, and
     // the user's shared tools directory - in that order, because the first match
     // for an executable wins and a tool inside THIS instance should beat a copy
     // in a directory shared with every other one.
-    let search: Vec<PathBuf> = std::iter::once(install.to_path_buf())
+    let search: Vec<PathBuf> = root_overwrite
+        .into_iter()
+        .map(Path::to_path_buf)
+        .chain(std::iter::once(install.to_path_buf()))
         .chain(root_layers.iter().cloned())
         .chain(extra_roots.iter().cloned())
         .collect();
-    let install = &search;
+    let visible = |exe: &str| match root_overwrite {
+        Some(overwrite) => root_executable_source(install, root_layers, overwrite, exe).is_some(),
+        None => search.iter().any(|dir| dir.join(exe).is_file()),
+    };
     let mut v = Vec::new();
-    if let Some(loader) = execs.script_extender.filter(|s| !s.is_empty()) {
-        push_tool_if_present(
-            &mut v,
-            install,
-            loader.trim_end_matches(".exe").to_string(),
-            loader,
-        );
+    if let Some(loader) = execs
+        .script_extender
+        .filter(|s| !s.is_empty() && visible(s))
+    {
+        push_tool(&mut v, loader.trim_end_matches(".exe").to_string(), loader);
     }
-    if let Some(launcher) = execs.launcher.filter(|s| !s.is_empty()) {
+    if let Some(launcher) = execs.launcher.filter(|s| !s.is_empty() && visible(s)) {
         let title = if execs.game_name.is_empty() {
             launcher.trim_end_matches(".exe").to_string()
         } else {
             format!("{} Launcher", execs.game_name)
         };
-        push_tool_if_present(&mut v, install, title, launcher);
+        push_tool(&mut v, title, launcher);
     }
-    if let Some(binary) = execs.binary.filter(|s| !s.is_empty()) {
+    if let Some(binary) = execs.binary.filter(|s| !s.is_empty() && visible(s)) {
         let title = if execs.game_name.is_empty() {
             binary.trim_end_matches(".exe").to_string()
         } else {
             execs.game_name.to_string()
         };
-        push_tool_if_present(&mut v, install, title, binary);
+        push_tool(&mut v, title, binary);
     }
     // The third-party tools, searched by name rather than at a fixed path. The
     // three above live in the game folder by construction; xEdit and its kind do
@@ -464,6 +504,87 @@ mod tests {
         let d = std::env::temp_dir().join(format!("eidos-tools-dir-{}-{}", std::process::id(), n));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn automatic_root_executable_uses_the_visible_union() {
+        let dir = tmp_dir();
+        let game = dir.join("game");
+        let root = dir.join("mod/Root");
+        let overwrite = dir.join("overwrite/Root");
+        for path in [&game, &root, &overwrite] {
+            fs::create_dir_all(path).unwrap();
+        }
+        let loader = "skse64_loader.exe";
+        assert!(root_executable(&game, &[], &overwrite, loader).is_none());
+        fs::write(root.join(loader), b"mod loader").unwrap();
+        assert_eq!(
+            root_executable(&game, &[root.clone()], &overwrite, loader),
+            Some(game.join(loader))
+        );
+        assert!(
+            root_executable(&game, &[], &overwrite, loader).is_none(),
+            "disabled mod"
+        );
+        fs::write(overwrite.join(loader), b"overwrite loader").unwrap();
+        assert_eq!(
+            root_executable(&game, &[], &overwrite, loader),
+            Some(game.join(loader))
+        );
+        fs::remove_file(overwrite.join(loader)).unwrap();
+        fs::write(
+            overwrite.join(format!("{}{loader}", eidos_core::WHITEOUT_PREFIX)),
+            b"",
+        )
+        .unwrap();
+        assert!(
+            root_executable(&game, &[root.clone()], &overwrite, loader).is_none(),
+            "whiteout"
+        );
+        fs::remove_file(overwrite.join(format!("{}{loader}", eidos_core::WHITEOUT_PREFIX)))
+            .unwrap();
+        fs::create_dir(overwrite.join(loader)).unwrap();
+        assert!(
+            root_executable(&game, &[root], &overwrite, loader).is_none(),
+            "directory shadows loader"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn default_tools_include_root_overwrite_and_respect_whiteouts() {
+        let dir = tmp_dir();
+        let game = dir.join("game");
+        let overwrite = dir.join("root-overwrite");
+        fs::create_dir_all(&game).unwrap();
+        fs::create_dir_all(&overwrite).unwrap();
+        let loader = "skse64_loader.exe";
+        let execs = GameExecutables {
+            game_name: "Skyrim",
+            launcher: None,
+            binary: None,
+            script_extender: Some(loader),
+            known_tools: &[],
+        };
+        fs::write(overwrite.join(loader), b"loader").unwrap();
+        assert_eq!(
+            default_tools_in_view(execs, &game, &[], &[], Some(&overwrite)).len(),
+            1
+        );
+        fs::rename(overwrite.join(loader), overwrite.join("SKSE64_LOADER.EXE")).unwrap();
+        assert_eq!(
+            default_tools_in_view(execs, &game, &[], &[], Some(&overwrite)).len(),
+            1
+        );
+        fs::remove_file(overwrite.join("SKSE64_LOADER.EXE")).unwrap();
+        fs::write(game.join(loader), b"lower").unwrap();
+        fs::write(
+            overwrite.join(format!("{}{loader}", eidos_core::WHITEOUT_PREFIX)),
+            b"",
+        )
+        .unwrap();
+        assert!(default_tools_in_view(execs, &game, &[], &[], Some(&overwrite)).is_empty());
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

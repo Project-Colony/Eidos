@@ -9,3 +9,7 @@ edition.workspace = true
 [dependencies]
 eidos-fuse = { path = "../eidos-fuse" }
 libc = "0.2"
+
+[[test]]
+name = "root_overwrite"
+harness = false

@@ -4,30 +4,60 @@
 use std::path::PathBuf;
 
 use eidos_games::DetectedGame;
-use eidos_instance::{Instance, ModEntry};
+use eidos_instance::Instance;
+#[cfg(test)]
+use eidos_instance::ModEntry;
 
-/// The plugin-discovery sources in ASCENDING priority (later wins same-name
-/// shadowing), as fed to [`eidos_plugins::PluginList::discover`]: the game's own
-/// Data (lowest), then each enabled mod from lowest to highest priority, then the
-/// Overwrite layer LAST (highest). Overwrite is the always-on writable top layer
-/// the launcher mounts, mirroring MO2's always-active top-priority Overwrite
-/// pseudo-mod - plugins a tool wrote there (xEdit / Bashed Patch output) must be
-/// discovered, not dropped from plugins.txt.
-pub(crate) fn plugin_sources(
-    game_data: &std::path::Path,
-    enabled_lowest_first: &[ModEntry],
-    overwrite: &std::path::Path,
-) -> Vec<(String, PathBuf)> {
-    let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game_data.to_path_buf())];
-    // `modlist()` is already in ascending-priority (MO2 display) order, so feed the
-    // mods through as-is: lowest priority first, highest last.
-    sources.extend(
-        enabled_lowest_first
-            .iter()
-            .map(|m| (m.name.clone(), m.path.clone())),
+fn runtime_diagnostics(
+    game: &DetectedGame,
+    inst: &Instance,
+) -> Vec<eidos_gamefeatures::preflight::PreflightDiagnostic> {
+    let mods = inst
+        .modlist()
+        .into_iter()
+        .rev()
+        .filter(|m| m.is_active())
+        .map(|m| (m.name, m.path))
+        .collect::<Vec<_>>();
+    eidos_gamefeatures::preflight::scan_skse(
+        game.def,
+        &game.data_path,
+        &game.install_path,
+        &mods,
+        &inst.overwrite_dir(),
+    )
+}
+
+fn plugin_diagnostic_messages(
+    list: &eidos_plugins::PluginList,
+    spec: &eidos_plugins::GameSpec,
+) -> Vec<String> {
+    let mut messages = Vec::new();
+    let mut unverified = 0;
+    for d in list.diagnostics(spec) {
+        if d.code == "plugin_records_unverified" {
+            unverified += 1;
+            continue;
+        }
+        let origin = if d.origin_mod.is_empty() {
+            "Game"
+        } else {
+            &d.origin_mod
+        };
+        messages.push(format!(
+            "{:?} [{}] {} ({origin}): {}",
+            d.severity, d.code, d.plugin, d.detail
+        ));
+    }
+    if unverified > 0 {
+        messages.push(format!("Unverified record limits for {unverified} light/medium/update plugin(s): launch preparation reads headers only. Run LOOT to validate full records."));
+    }
+    messages.extend(
+        list.missing_masters()
+            .into_iter()
+            .map(|(p, m)| format!("Error: {p} is missing master {m} (likely a crash)")),
     );
-    sources.push(("overwrite".to_string(), overwrite.to_path_buf()));
-    sources
+    messages
 }
 
 /// Before launch: give the active profile its own plugin state and hand back the
@@ -46,6 +76,16 @@ pub(crate) fn prepare_plugins(
     inst: &Instance,
     prof: &eidos_instance::Profile,
 ) -> Option<(PathBuf, PathBuf)> {
+    for d in runtime_diagnostics(game, inst) {
+        eidos_log::warn!(
+            "eidos play: {:?} [{}] {} ({}): {}",
+            d.severity,
+            d.code,
+            d.path.display(),
+            d.origin_mod,
+            d.detail
+        );
+    }
     let spec = eidos_plugins::GameSpec::for_id(id)?;
     let Some(compatdata) = game.compatdata.as_ref() else {
         eidos_log::info!("eidos play: no Proton prefix found, skipping plugins.txt");
@@ -89,32 +129,12 @@ pub(crate) fn prepare_plugins(
     let session_damage =
         eidos_plugins::GameSpec::for_id(id).and_then(|spec| prof.plugin_loss_since_snapshot(&spec));
 
-    // Sources in ascending plugin priority: the game's own Data (lowest), each
-    // enabled mod, then the Overwrite layer last (highest) so plugins a tool wrote
-    // into Overwrite are discovered and win same-name shadowing.
-    let enabled: Vec<ModEntry> = inst
-        .modlist()
-        .into_iter()
-        .filter(|m| m.is_active())
-        .collect();
-    let sources = plugin_sources(&game.data_path, &enabled, &inst.overwrite_dir());
+    // The shared merged view preserves profile order, enabled state and pins,
+    // and removes plugins hidden by the launcher's whiteouts.
+    let list = inst.plugin_list(&game.data_path, id, Some(&state_dir))?;
 
-    let mut list = eidos_plugins::PluginList::discover(&sources, &spec);
-
-    // Preserve the user's saved order + enabled state, FROM THE PROFILE - the
-    // single source of truth. loadorder.txt is the order authority; plugins.txt
-    // supplies the flags (it deliberately omits the primaries and Creations, so
-    // it cannot order them).
-    list.apply_prefix_state(&state_dir, &spec);
-    // The pinned positions are part of that saved state. Loading them only in
-    // the GUI made a pin a window decoration: this pass rewrites the order right
-    // before the game starts, so an unpinned launch silently handed the engine a
-    // load order the user had explicitly nailed down.
-    list.locked = prof.read_locked_order();
-    list.refresh(&spec);
-
-    for (p, m) in list.missing_masters() {
-        eidos_log::warn!("eidos play: WARNING - {p} is missing master {m} (likely a crash)");
+    for message in plugin_diagnostic_messages(&list, &spec) {
+        eidos_log::warn!("eidos play: {message}");
     }
     let active = list.plugins.iter().filter(|p| p.enabled).count();
     match list.write_load_order(&state_dir, &spec) {
@@ -357,35 +377,33 @@ pub(crate) fn sync_saves_for_cloud(
         .unwrap_or_default();
     let mut new_entries: Vec<String> = Vec::new();
 
-    let mut n = 0;
+    // Rescue the whole batch before replacing any file, so a failed co-save
+    // rescue also leaves its prefix save untouched.
+    let mut copies = Vec::new();
     for (src, src_mtime) in files {
         let Some(name) = src.file_name() else {
             continue;
         };
         let dst = prefix_saves.join(name);
         match std::fs::metadata(&dst).and_then(|m| m.modified()) {
-            Err(_) => {} // missing: plain copy below
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
             Ok(d) if src_mtime > d => {
-                // The prefix copy is older, but it may be a save the profile has
-                // NEVER seen: a failed-bind session once wrote saves straight
-                // into the prefix, and Skyrim reuses fixed names (quicksave.ess)
-                // - overwriting would destroy the only copy of that session.
-                // UNLESS this sync put it there itself: without the provenance
-                // check, every quicksave rotation "rescued" our own previous
-                // copy, minting an orphan file per session, forever.
-                if !manifest.contains(&manifest_key(name, meta_of(&dst))) {
-                    preserve_diverged_save(&dst, d, prof_saves);
+                if !manifest.contains(&manifest_key(&dst)?) {
+                    preserve_diverged_save(&dst, d, prof_saves)?;
                 }
             }
-            Ok(_) => continue, // prefix copy is newer: leave it alone
+            Ok(_) => continue,
         }
+        copies.push((src, dst, src_mtime));
+    }
+    let mut n = 0;
+    for (src, dst, src_mtime) in copies {
         std::fs::copy(&src, &dst)?;
-        // Stamp the copy with the SOURCE mtime, then record it: that pair is how
-        // the next sync recognises its own work.
         if let Ok(f) = std::fs::File::options().write(true).open(&dst) {
             let _ = f.set_modified(src_mtime);
         }
-        new_entries.push(manifest_key(name, meta_of(&dst)));
+        new_entries.push(manifest_key(&dst)?);
         n += 1;
     }
     if !new_entries.is_empty() {
@@ -396,70 +414,90 @@ pub(crate) fn sync_saves_for_cloud(
     Ok(n)
 }
 
-/// The provenance line for a synced file: name, size and mtime seconds - enough
-/// to recognise our own copy later, cheap enough to record for every sync.
-pub(crate) fn manifest_key(name: &std::ffi::OsStr, meta: Option<(u64, u64)>) -> String {
-    let (len, secs) = meta.unwrap_or((0, 0));
-    format!("{}\t{len}\t{secs}", name.to_string_lossy())
+/// Content provenance: matching sizes and second-resolution mtimes cannot prove
+/// the prefix still holds our previous copy. A stdlib hash change merely causes
+/// a conservative rescue on the first sync after an upgrade.
+fn manifest_key(path: &std::path::Path) -> std::io::Result<String> {
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    std::fs::read(path)?.hash(&mut hash);
+    Ok(format!(
+        "{}\t{:016x}",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        hash.finish()
+    ))
 }
 
-pub(crate) fn meta_of(p: &std::path::Path) -> Option<(u64, u64)> {
-    let m = std::fs::metadata(p).ok()?;
-    let secs = m
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs();
-    Some((m.len(), secs))
-}
-
-/// Rescue a prefix save the profile has no copy of, before the cloud sync
-/// overwrites it (see the caller). "No copy" = no profile file with the same
-/// size and mtime; the rescue keeps the `.ess` extension so the game (and the
-/// Saves tab) can still load it.
+/// Preserve an unknown prefix save and all same-stem save data before replacing
+/// either half. Existing rescue names must match bytes; a collision is an error.
 pub(crate) fn preserve_diverged_save(
     dst: &std::path::Path,
     dst_mtime: std::time::SystemTime,
     prof_saves: &std::path::Path,
-) {
-    let (Ok(meta), Some(name)) = (std::fs::metadata(dst), dst.file_name()) else {
-        return;
-    };
-    // "Known" comes in two shapes: an exact (size, mtime) twin anywhere in the
-    // profile, or the profile's SAME-NAME file with the same size - the latter
-    // because the original seeding used a copy that did not preserve mtimes, so
-    // an adopted save's profile twin carries a fresher timestamp. Without the
-    // second test, the first sync after adoption "rescued" duplicates of saves
-    // the profile already owned.
-    let same_name_same_size = std::fs::metadata(prof_saves.join(name))
-        .is_ok_and(|m| m.len() == meta.len())
-        // Same length is a hint, not proof: settle it on the bytes. Saves are a
-        // few MB and this runs once per divergence, not per session.
-        && std::fs::read(dst).ok() == std::fs::read(prof_saves.join(name)).ok();
-    let known = same_name_same_size
-        || std::fs::read_dir(prof_saves)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .any(|e| {
-                e.metadata()
-                    .is_ok_and(|m| m.len() == meta.len() && m.modified().ok() == Some(dst_mtime))
-            });
-    if known {
-        return;
+) -> std::io::Result<()> {
+    use std::io::Write;
+    let parent = dst
+        .parent()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let stem = dst.file_stem().unwrap_or_default().to_string_lossy();
+    let mut group = Vec::new();
+    for entry in std::fs::read_dir(parent)? {
+        let path = entry?.path();
+        if path
+            .file_stem()
+            .is_some_and(|s| s.to_string_lossy().eq_ignore_ascii_case(&stem))
+            && eidos_instance::is_save_data(&path.file_name().unwrap_or_default().to_string_lossy())
+        {
+            group.push((path.clone(), std::fs::read(&path)?));
+        }
     }
-    let secs = dst_mtime
+    // Anchor the rescue name on the save, even when the co-save was newer and
+    // therefore reached the sync first. Their mtimes need not be identical.
+    let anchor = group
+        .iter()
+        .find(|(p, _)| eidos_instance::is_save_listing(&p.to_string_lossy()))
+        .or_else(|| group.first())
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+    for entry in std::fs::read_dir(prof_saves)? {
+        let candidate = entry?.path();
+        if candidate.extension() == anchor.0.extension()
+            && group.iter().all(|(path, bytes)| {
+                std::fs::read(candidate.with_extension(path.extension().unwrap_or_default()))
+                    .is_ok_and(|known| known == *bytes)
+            })
+        {
+            return Ok(());
+        }
+    }
+    let secs = std::fs::metadata(&anchor.0)?
+        .modified()
+        .unwrap_or(dst_mtime)
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    let orphan = prof_saves.join(format!("orphan-{secs}-{}", name.to_string_lossy()));
-    if !orphan.exists() && std::fs::copy(dst, &orphan).is_ok() {
-        eidos_log::info!(
-            "eidos: rescued a save the profile had never seen into {}",
-            orphan.display()
-        );
+        .unwrap_or_default()
+        .as_secs();
+    for (path, bytes) in group {
+        let orphan = prof_saves.join(format!(
+            "orphan-{secs}-{}",
+            path.file_name().unwrap().to_string_lossy()
+        ));
+        match std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(&orphan)
+        {
+            Ok(mut file) => {
+                if let Err(error) = file.write_all(&bytes).and_then(|_| file.sync_all()) {
+                    let _ = std::fs::remove_file(&orphan);
+                    return Err(error);
+                }
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::AlreadyExists
+                    && std::fs::read(&orphan).is_ok_and(|known| known == bytes) => {}
+            Err(error) => return Err(error),
+        }
     }
+    Ok(())
 }
 
 /// What `prepare_inis` leaves for the post-run capture.
@@ -494,4 +532,179 @@ pub(crate) fn prepare_saves(
         }
     }
     Some((prof.saves_dir(), prefix_saves))
+}
+
+#[cfg(test)]
+mod rescue_tests {
+    use super::*;
+    use std::{
+        fs,
+        time::{Duration, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn launch_preparation_reports_corrupt_plugins_and_winning_dlls() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-launch-preflight-{}", std::process::id()));
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        let path = inst.mods_dir().join("Broken");
+        fs::create_dir_all(path.join("SKSE/Plugins")).unwrap();
+        fs::write(path.join("Broken.esp"), b"TES4").unwrap();
+        fs::write(path.join("SKSE/Plugins/Crash.dll"), b"invalid PE").unwrap();
+        inst.save_modlist(&[ModEntry {
+            name: "Broken".into(),
+            enabled: true,
+            path: path.clone(),
+            unmanaged: false,
+        }])
+        .unwrap();
+        let spec = eidos_plugins::GameSpec::for_id("skyrimse").unwrap();
+        let list = eidos_plugins::PluginList::discover(&[("Broken".into(), path)], &spec);
+        assert!(plugin_diagnostic_messages(&list, &spec)
+            .iter()
+            .any(|m| m.contains("plugin_header") && m.contains("Broken.esp")));
+        let def = eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "skyrimse")
+            .unwrap();
+        let game = DetectedGame {
+            def,
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        assert!(runtime_diagnostics(&game, &inst)
+            .iter()
+            .any(|d| d.code == "pe_unverified" && d.origin_mod == "Broken"));
+        fs::create_dir_all(inst.overwrite_dir().join("SKSE/Plugins")).unwrap();
+        fs::write(
+            inst.overwrite_dir().join("SKSE/Plugins/.eidoswh.crash.dll"),
+            [],
+        )
+        .unwrap();
+        assert!(runtime_diagnostics(&game, &inst).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cloud_sync_refuses_unverified_rescue_collisions_before_overwriting() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-rescue-collision-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let profile = root.join("profile");
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&prefix).unwrap();
+        let old = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        for ext in ["ess", "skse"] {
+            let name = format!("quicksave.{ext}");
+            fs::write(profile.join(&name), b"new session").unwrap();
+            fs::write(prefix.join(&name), b"old session").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(prefix.join(&name))
+                .unwrap()
+                .set_modified(old)
+                .unwrap();
+            fs::write(
+                profile.join(format!("orphan-1700000000-{name}")),
+                b"collision!!",
+            )
+            .unwrap();
+        }
+        assert!(sync_saves_for_cloud(&profile, &prefix).is_err());
+        for ext in ["ess", "skse"] {
+            assert_eq!(
+                fs::read(prefix.join(format!("quicksave.{ext}"))).unwrap(),
+                b"old session"
+            );
+        }
+        // A size/mtime twin with different bytes is not a verified backup.
+        fs::write(profile.join("other.ess"), b"not session").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(profile.join("other.ess"))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        for ext in ["ess", "skse"] {
+            fs::remove_file(profile.join(format!("orphan-1700000000-quicksave.{ext}"))).unwrap();
+        }
+        fs::File::options()
+            .write(true)
+            .open(prefix.join("quicksave.skse"))
+            .unwrap()
+            .set_modified(old + Duration::from_secs(2))
+            .unwrap();
+        sync_saves_for_cloud(&profile, &prefix).unwrap();
+        for ext in ["ess", "skse"] {
+            assert_eq!(
+                fs::read(profile.join(format!("orphan-1700000000-quicksave.{ext}"))).unwrap(),
+                b"old session"
+            );
+            assert_eq!(
+                fs::read(prefix.join(format!("quicksave.{ext}"))).unwrap(),
+                b"new session"
+            );
+        }
+        // A prefix rewrite with the same metadata must not impersonate our last sync.
+        let modified = fs::metadata(prefix.join("quicksave.ess"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        fs::write(prefix.join("quicksave.ess"), b"bad session").unwrap();
+        fs::File::options()
+            .write(true)
+            .open(prefix.join("quicksave.ess"))
+            .unwrap()
+            .set_modified(modified)
+            .unwrap();
+        fs::File::options()
+            .write(true)
+            .open(profile.join("quicksave.ess"))
+            .unwrap()
+            .set_modified(modified + Duration::from_secs(2))
+            .unwrap();
+        sync_saves_for_cloud(&profile, &prefix).unwrap();
+        assert!(fs::read_dir(&profile).unwrap().flatten().any(|entry| {
+            entry.file_name().to_string_lossy().starts_with("orphan-")
+                && fs::read(entry.path()).is_ok_and(|bytes| bytes == b"bad session")
+        }));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn failed_rescue_keeps_both_prefix_files_unchanged() {
+        use std::os::unix::fs::PermissionsExt;
+        let root =
+            std::env::temp_dir().join(format!("eidos-rescue-write-error-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let profile = root.join("profile");
+        let prefix = root.join("prefix");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir_all(&prefix).unwrap();
+        for ext in ["ess", "skse"] {
+            fs::write(profile.join(format!("quicksave.{ext}")), b"new session").unwrap();
+            let destination = prefix.join(format!("quicksave.{ext}"));
+            fs::write(&destination, b"old session").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(destination)
+                .unwrap()
+                .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+                .unwrap();
+        }
+        fs::set_permissions(&profile, fs::Permissions::from_mode(0o555)).unwrap();
+        let result = sync_saves_for_cloud(&profile, &prefix);
+        fs::set_permissions(&profile, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(result.is_err());
+        for ext in ["ess", "skse"] {
+            assert_eq!(
+                fs::read(prefix.join(format!("quicksave.{ext}"))).unwrap(),
+                b"old session"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 }

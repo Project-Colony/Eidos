@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Instalace Eidosu
 
@@ -72,8 +72,8 @@ viz [usage.cs.md](usage.md). Kompletní prohlídka je tamtéž.
 
 ## Volitelně: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` zapne jaderný FUSE
-passthrough. Je **ve výchozím stavu vypnutý a téměř jistě to tak chcete
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` uděluje volitelné oprávnění, ale nezapíná passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` je samostatný přepínač při spuštění. Je **ve výchozím stavu vypnutý a téměř jistě to tak chcete
 nechat**: měřeno na Skyrim SE brání hře otevřít vlastní archivy a pluginy, takže
 se módy tiše nenačtou. Přepínač existuje proto, aby šlo mechanismus znovu
 otestovat, ne proto, že by byl doporučen.

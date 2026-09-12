@@ -15,7 +15,7 @@
 //! couldn't load plugin <path> (Error 126)
 //! ```
 //!
-//! Only `loaded correctly` and `no version data` count as success; every other
+//! Only `loaded correctly` counts as success; every other
 //! status is surfaced verbatim, because the extender's own wording ("disabled,
 //! bad version data", "disabled, unsupported version independence method") is
 //! more precise than anything this crate could restate.
@@ -144,7 +144,7 @@ fn info_group(rest: &str) -> Option<(usize, usize)> {
     for (open, _) in rest.match_indices('(') {
         let after = &rest[open + 1..];
         let looks_right = after.len() > 8
-            && after[..8].bytes().all(|b| b.is_ascii_hexdigit())
+            && after.as_bytes()[..8].iter().all(|b| b.is_ascii_hexdigit())
             && after.as_bytes()[8] == b' ';
         if looks_right {
             // NOT the first ')': a plugin's own name may contain one, and one
@@ -219,7 +219,8 @@ fn dll_name(path: &str) -> &str {
 /// `str::strip_prefix`, case-insensitively - the extender's own casing has changed
 /// between versions and is not worth depending on.
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    (s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix))
+    s.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
         .then(|| &s[prefix.len()..])
 }
 
@@ -353,6 +354,18 @@ mod tests {
         assert!(parse_se_log("SKSE64 runtime: initialize\nchecking plugin directory\n").is_empty());
         // A truncated line is skipped, not guessed at.
         assert!(parse_se_log("plugin C:\\a.dll (00000001 Broken").is_empty());
+    }
+
+    #[test]
+    fn unicode_chatter_and_parenthesized_paths_are_safe() {
+        assert!(parse_se_log("汉汉汉汉汉汉汉").is_empty());
+        let got = parse_se_log(
+            "plugin C:/Games/(汉汉汉汉)/例.dll (00000001 Plugin 名 00000100) loaded correctly",
+        );
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].dll, "例.dll");
+        assert_eq!(got[0].name, "Plugin 名");
+        assert!(got[0].loaded);
     }
 
     #[test]

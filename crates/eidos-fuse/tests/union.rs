@@ -366,6 +366,50 @@ fn rename_moves_file_through_mount() {
     assert_eq!(fs::read(mnt.join("save.ess")).unwrap(), b"data");
 }
 
+fn directory_rename_validates_the_merged_destination() {
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "source/conflict.ini", b"source");
+    put(&game, "lower/conflict.ini", b"lower destination");
+    put(&over, "upper/conflict.ini", b"upper destination");
+    put(&game, "plain.txt", b"file");
+    fs::create_dir(game.join("empty")).unwrap();
+    let _s = mounted!(vec![game.clone()], over.clone(), &mnt);
+    for (from, to, errno) in [
+        ("source", "lower", libc::ENOTEMPTY),
+        ("source", "upper", libc::ENOTEMPTY),
+        ("source", "plain.txt", libc::ENOTDIR),
+        ("plain.txt", "source", libc::EISDIR),
+        ("source", "source/child", libc::EINVAL),
+    ] {
+        assert_eq!(
+            fs::rename(mnt.join(from), mnt.join(to))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(errno)
+        );
+        assert_eq!(
+            fs::read(mnt.join("source/conflict.ini")).unwrap(),
+            b"source"
+        );
+        assert_eq!(
+            fs::read(mnt.join("lower/conflict.ini")).unwrap(),
+            b"lower destination"
+        );
+        assert_eq!(
+            fs::read(mnt.join("upper/conflict.ini")).unwrap(),
+            b"upper destination"
+        );
+    }
+    fs::rename(mnt.join("source"), mnt.join("empty")).unwrap();
+    assert_eq!(fs::read(mnt.join("empty/conflict.ini")).unwrap(), b"source");
+    assert!(!mnt.join("source").exists());
+    assert_eq!(
+        fs::read(game.join("source/conflict.ini")).unwrap(),
+        b"source"
+    );
+}
+
 fn renaming_a_file_drops_its_other_cached_spellings() {
     let t = Tmp::new();
     let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
@@ -805,6 +849,11 @@ fn main() {
         (
             "a_root_union_can_carry_a_data_union_inside_it",
             a_root_union_can_carry_a_data_union_inside_it,
+            true,
+        ),
+        (
+            "directory_rename_validates_the_merged_destination",
+            directory_rename_validates_the_merged_destination,
             true,
         ),
         (

@@ -1476,9 +1476,36 @@ impl Nexus {
             return Err(Nexus::status_err(resp.status().as_u16()));
         }
 
-        // 206 Partial Content = the server honoured the range, so append; any other
-        // status (200) means it sent the whole file - restart from byte 0.
-        let resuming = have > 0 && resp.status() == 206;
+        // A 206 alone does not prove it continues this partial. Validate the
+        // range before opening the file, and its complete length before publishing.
+        let range = if resp.status() == 206 {
+            let parsed = resp
+                .headers()
+                .get("Content-Range")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("bytes "))
+                .and_then(|value| value.split_once('/'))
+                .and_then(|(span, total)| {
+                    let (start, end) = span.split_once('-')?;
+                    Some((
+                        start.parse::<u64>().ok()?,
+                        end.parse::<u64>().ok()?,
+                        total.parse::<u64>().ok()?,
+                    ))
+                });
+            match parsed {
+                Some((start, end, total)) if start == have && end >= start && end < total => Some((end - start + 1, total)),
+                _ => return Err("download server returned an invalid or mismatched Content-Range; partial retained".into()),
+            }
+        } else if resp.status() == 200 {
+            None
+        } else {
+            return Err(format!(
+                "unexpected download status {}; partial retained",
+                resp.status()
+            ));
+        };
+        let resuming = have > 0 && range.is_some();
         let mut out = if resuming {
             fs::OpenOptions::new().append(true).open(&tmp)
         } else {
@@ -1489,6 +1516,11 @@ impl Nexus {
         let mut reader = resp.into_body().into_reader();
         let n = copy_stream(&mut reader, &mut out).map_err(|e| e.to_string())?;
         out.flush().map_err(|e| e.to_string())?;
+        if let Some((expected, total)) = range {
+            if n != expected || have.checked_add(n) != Some(total) {
+                return Err("download range is incomplete; partial retained for retry".into());
+            }
+        }
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
         Ok(if resuming { have + n } else { n })
     }
@@ -1507,9 +1539,7 @@ pub struct ModUpdate {
     pub latest: String,
 }
 
-/// The outcome of a GUI-triggered update check across an instance's mods. Mirrors
-/// the CLI summary so the GUI status bar can report the same numbers, plus the
-/// per-mod list of mods now behind.
+/// The outcome of an update check shared by the CLI and GUI.
 #[derive(Debug, Clone, Default)]
 pub struct UpdateCheckResult {
     /// Mods with a Nexus id that were considered.
@@ -1532,10 +1562,12 @@ pub struct UpdateCheckResult {
     /// through a check silently and only be noticed when someone went looking
     /// for its page.
     pub unavailable: Vec<String>,
+    /// Per-mod request failures; these mods were not successfully checked.
+    pub failures: Vec<(String, String)>,
 }
 
-/// Run a Nexus update check across every mod in `inst` (the GUI-callable port of
-/// `eidos nexus update`). `nexus_game` is the game's Nexus domain
+/// Run the shared CLI/GUI Nexus update check across every mod in `inst`.
+/// `nexus_game` is the game's Nexus domain
 /// (`GameDef::nexus_game`, e.g. `skyrimspecialedition`).
 ///
 /// MO2's strategy: one `updated?period=1m` bulk query, then an individual
@@ -1578,7 +1610,7 @@ pub fn check_updates(
 
     let mut result = UpdateCheckResult::default();
     for m in inst.modlist() {
-        let mut meta = inst.mod_meta(&m.name);
+        let meta = inst.mod_meta(&m.name);
         let Some(mod_id) = meta.mod_id() else {
             continue;
         };
@@ -1606,29 +1638,16 @@ pub fn check_updates(
 
         match nexus.mod_info(nexus_game, mod_id) {
             Ok(remote) => {
-                meta.set_newest_version(&remote.version);
-                meta.set_last_nexus_update(now);
-                // Free: the payload this request already returned says whether
-                // Nexus still serves the page. A mod taken down is the one file
-                // status that matters most and the only one obtainable without a
-                // second request per mod.
-                meta.set_nexus_available(remote.available);
-                // Free, from the payload this request already returned. MO2's
-                // own keys, so a shared instance shows the same three columns.
-                // Only written when Nexus actually said something: a blank
-                // answer must not erase what an earlier check learned.
-                if !remote.author.is_empty() {
-                    meta.set_author(&remote.author);
-                }
-                if !remote.uploader.is_empty() {
-                    meta.set_uploader(&remote.uploader, &remote.uploader_url);
-                }
+                let Some(meta) =
+                    apply_mod_update(inst, &m.name, &meta, &remote, now).map_err(|error| {
+                        format!("Could not save update metadata for '{}': {error}", m.name)
+                    })?
+                else {
+                    continue;
+                };
                 if !remote.available {
                     result.unavailable.push(m.name.clone());
                 }
-                // A failed write is not fatal: the in-memory result is still correct,
-                // the GUI just won't see the `^` marker persist across a restart.
-                let _ = meta.write(&inst.meta_path(&m.name));
                 if meta.update_available() {
                     result.updates.push(ModUpdate {
                         name: m.name.clone(),
@@ -1646,8 +1665,8 @@ pub fn check_updates(
                     result.rate_limited = true;
                     break;
                 }
-                // A single mod's failure (deleted page, transient error) must not
-                // abort the whole check - skip it and keep going, like the CLI.
+                // Continue checking other mods, but preserve incomplete results.
+                result.failures.push((m.name.clone(), e));
             }
         }
     }
@@ -1657,6 +1676,33 @@ pub fn check_updates(
     result.hourly_remaining = rl.hourly_remaining;
     result.daily_remaining = rl.daily_remaining;
     Ok(result)
+}
+
+fn apply_mod_update(
+    inst: &eidos_instance::Instance,
+    name: &str,
+    snapshot: &eidos_instance::ModMeta,
+    remote: &RemoteMod,
+    now: u64,
+) -> io::Result<Option<eidos_instance::ModMeta>> {
+    // Network requests run without the instance lock. Only apply their fields
+    // to a fresh, locked copy if the folder still identifies the same mod.
+    let _lock = inst.try_lock("saving Nexus update metadata")?;
+    let mut meta = eidos_instance::ModMeta::read_checked(&inst.meta_path(name))?;
+    if meta.mod_id() != snapshot.mod_id() || meta.game_name() != snapshot.game_name() {
+        return Ok(None);
+    }
+    meta.set_newest_version(&remote.version);
+    meta.set_last_nexus_update(now);
+    meta.set_nexus_available(remote.available);
+    if !remote.author.is_empty() {
+        meta.set_author(&remote.author);
+    }
+    if !remote.uploader.is_empty() {
+        meta.set_uploader(&remote.uploader, &remote.uploader_url);
+    }
+    meta.write(&inst.meta_path(name))?;
+    Ok(Some(meta))
 }
 
 /// MO2 appends `.unfinished` to the FULL archive name (`Mod-1.0.7z.unfinished`),
@@ -2075,7 +2121,10 @@ mod tests {
             ]
         });
         let url = pick_collection_mirror(&body, &[]).unwrap();
-        assert!(url.starts_with("https://supporter-files.nexus-cdn.com/"), "{url}");
+        assert!(
+            url.starts_with("https://supporter-files.nexus-cdn.com/"),
+            "{url}"
+        );
         // The server preference applies here exactly as it does for a mod.
         let two: serde_json::Value = serde_json::json!({
             "download_links": [
@@ -2099,7 +2148,6 @@ mod tests {
             assert!(pick_collection_mirror(&body, &[]).is_err(), "{body}");
         }
     }
-
 
     #[test]
     fn a_mirror_preference_is_an_ordering_not_a_filter() {
@@ -2962,6 +3010,7 @@ mod tests {
         let r = UpdateCheckResult::default();
         assert_eq!((r.checked, r.queried, r.updates_found), (0, 0, 0));
         assert!(r.updates.is_empty());
+        assert!(r.failures.is_empty());
         assert!(!r.rate_limited);
         assert!(r.hourly_remaining.is_none() && r.daily_remaining.is_none());
     }
@@ -3154,5 +3203,145 @@ mod tests {
         ] {
             assert!(api_url(bad).is_none(), "{bad}");
         }
+    }
+}
+
+#[cfg(test)]
+mod download_integrity_tests {
+    use super::*;
+    use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn serve(response: &str) -> (String, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/archive", listener.local_addr().unwrap());
+        let response = response.to_owned();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0];
+            while !request.ends_with(b"\r\n\r\n") {
+                if stream.read(&mut byte).unwrap() == 0 {
+                    break;
+                }
+                request.push(byte[0]);
+            }
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        (url, thread)
+    }
+
+    #[test]
+    fn only_a_complete_matching_range_is_published() {
+        let cases = [
+            (
+                "206 Partial Content",
+                "Content-Range: bytes 0-2/6\r\n",
+                false,
+            ),
+            ("206 Partial Content", "", false),
+            (
+                "206 Partial Content",
+                "Content-Range: bytes 3-5/7\r\n",
+                false,
+            ),
+            (
+                "206 Partial Content",
+                "Content-Range: bytes 3-8/9\r\n",
+                false,
+            ),
+            ("204 No Content", "", false),
+            (
+                "206 Partial Content",
+                "Content-Range: bytes 3-5/6\r\n",
+                true,
+            ),
+            ("200 OK", "", true),
+        ];
+        for (status, range, succeeds) in cases {
+            let root = std::env::temp_dir().join(format!(
+                "eidos-range-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&root).unwrap();
+            let dest = root.join("archive.zip");
+            fs::write(&dest, b"previous complete download").unwrap();
+            fs::write(unfinished_path(&dest), b"ABC").unwrap();
+            let (url, server) = serve(&format!(
+                "HTTP/1.1 {status}\r\n{range}Content-Length: 3\r\nConnection: close\r\n\r\nXYZ"
+            ));
+            let result = Nexus::with_bearer("synthetic-unused").download(&url, &dest);
+            server.join().unwrap();
+            assert_eq!(result.is_ok(), succeeds, "{status} {range}: {result:?}");
+            if succeeds {
+                assert_eq!(
+                    fs::read(&dest).unwrap(),
+                    if status.starts_with("200") {
+                        b"XYZ".as_slice()
+                    } else {
+                        b"ABCXYZ".as_slice()
+                    }
+                );
+                assert!(!unfinished_path(&dest).exists());
+            } else {
+                assert_eq!(fs::read(&dest).unwrap(), b"previous complete download");
+                assert!(unfinished_path(&dest).exists());
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod update_metadata_integrity_tests {
+    use super::*;
+
+    #[test]
+    fn a_network_reply_preserves_newer_edits_and_refuses_a_replaced_mod() {
+        let root = std::env::temp_dir().join(format!("eidos-update-meta-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = eidos_instance::Instance::portable(root.clone());
+        inst.create().unwrap();
+        fs::create_dir_all(inst.mods_dir().join("Personal")).unwrap();
+        let path = inst.meta_path("Personal");
+        fs::write(&path, "[General]\nmodid=42\nversion=1.0\nnotes=before\n").unwrap();
+        let snapshot = inst.mod_meta("Personal");
+        let remote = RemoteMod::from_payload(
+            &serde_json::json!({"mod_id":42,"version":"2.0","available":true,"contains_adult_content":false}),
+            AdultPolicy::Unknown,
+        );
+        // The user edits the same metadata while the remote request is outstanding.
+        let mut current = inst.mod_meta("Personal");
+        current.set_notes("edited during download");
+        current.set_ini_tweaks(&["personal.ini".into()]);
+        current.write(&path).unwrap();
+        apply_mod_update(&inst, "Personal", &snapshot, &remote, 123)
+            .unwrap()
+            .unwrap();
+        let saved = inst.mod_meta("Personal");
+        assert_eq!(saved.notes().as_deref(), Some("edited during download"));
+        assert_eq!(saved.ini_tweaks(), &["personal.ini"]);
+        assert_eq!(saved.newest_version().as_deref(), Some("2.0"));
+        let lock = inst.try_lock("synthetic metadata editor").unwrap();
+        std::thread::scope(|scope| {
+            let error = scope
+                .spawn(|| apply_mod_update(&inst, "Personal", &snapshot, &remote, 124).unwrap_err())
+                .join()
+                .unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        });
+        drop(lock);
+        let replacement = "[General]\nmodid=99\nversion=3.0\nnotes=replacement\n";
+        fs::write(&path, replacement).unwrap();
+        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
+            .unwrap()
+            .is_none());
+        assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
+        fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());
+        assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+        fs::remove_dir_all(root).unwrap();
     }
 }

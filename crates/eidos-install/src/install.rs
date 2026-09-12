@@ -158,6 +158,8 @@ pub enum OverwritePolicy {
     #[default]
     Fail,
     Replace,
+    /// Replace only while the destination still carries this collection reservation.
+    ReplaceOwned(String),
     Merge,
     Rename(String),
 }
