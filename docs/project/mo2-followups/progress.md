@@ -151,5 +151,52 @@ review are now active. The compiled reference remains unchanged for user testing
   evidence: 345 passing / 2 failing before the final guards; 347 passing / 0 failing
   afterward. Tests also cover canceled worker resume and blocked-executor behavior.
 
-Filesystem performance and Root Overwrite recovery work remains in progress; the
-GUI evidence does not claim the entire branch has passed final acceptance.
+### Filesystem and Root Overwrite review completed
+
+- Directory scans now use per-directory slot identities. An unrelated mutation
+  cannot restart a cold scan; same-directory/global invalidation still rejects
+  stale publication, including a removed and recreated cache slot. In the
+  fix-only synthetic comparison, dense-churn median fell from 478.218 ms/305
+  builds to 12.552 ms/8 builds. Quiet and warm controls were comparable. This
+  directly exercises daemon methods, not gameplay or mounted streaming.
+- The root mount no longer recursively indexes the Data subtree covered by its
+  child mount. The directory remains visible through the existing live fallback.
+  Synthetic root indexing fell from 20,151 entries/38.605 ms to 51/0.098 ms;
+  the separate Data index retained all 20,100 entries. Data reads do not traverse
+  two FUSE daemons: the physical Data stash is bound before the root mount.
+- Private root sessions preserve shared whiteouts and opacity. Independent review
+  caught directory recreation and post-session capture defects; both are fixed.
+  Capture applies deletion to shared payloads, records completed opaque cleanup
+  before moving new children, preserves retries, and refuses ambiguous case
+  collisions. Shared opacity never carries the private capture phase marker.
+- Timestamp receipt errors now preserve completed namespace/cache/inode updates
+  and retry dirty order. Normal next-launch capture validates and promotes the
+  newest recovery receipt. Corrupt receipts, missing plugin discovery and failed
+  profile writes leave recovery available. Profile files sync before consuming
+  their receipt. Loss of both writable receipt paths or a kill before persistence
+  remains explicitly non-durable.
+- Evidence after final review: 59 core, 216 instance, 3 launch and 32 CLI tests;
+  30 actual launch sessions across normal/opendir/index-disabled modes; 31 FUSE
+  unit tests and 27 mounted FUSE tests in each directory mode; 53 plugin unit and
+  6 plugin integration tests. Production/all-target checks passed in their
+  respective scopes. The GUI's earlier 347 passing tests predate NIF integration.
+
+The existing empty/missing Root upper with no Root mods still skips the root
+mount; root-level writes in that mode are not captured. This limit was verified
+only with synthetic installations. The user's selected v1.16.0 reference binaries
+remain unchanged. No Skyrim/Proton frame-time test or hardware diagnosis is claimed.
+
+### Continued follow-ups after the performance review
+
+- Store discovery rejects invalid IDs, missing/escaping/root install paths,
+  malformed DLC fields and root Wine prefixes. External identities distinguish
+  different prefixes over the same installed files; legacy keys match only when
+  unambiguous. 17 store tests and all-target Clippy passed. Reinitializing a legacy
+  instance still refuses a literal key mismatch; old noncanonical Steam keys
+  require reselection instead of silently following a retargeted symlink.
+- NIF rendering, provider texture resolution and packaging integration are now
+  active. The existing bounded helper process runner is reused.
+- The OBMM interpreter and the exact known-handler inventory are active in
+  separate ownership areas. Full E2/E3 effects and caller acceptance remain pending.
+
+These slices do not claim complete A–H acceptance or a new release.
