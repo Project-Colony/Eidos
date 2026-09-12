@@ -57,6 +57,16 @@ pub(crate) fn resolve_root_split(
     tmp: &Path,
     split: &RootSplit,
 ) -> Result<RootSources, InstallError> {
+    let archive_root = tmp;
+    let wrapped;
+    let tmp = if split.wrapper_prefix.is_empty() {
+        tmp
+    } else {
+        wrapped = resolve_ci(tmp, &split.wrapper_prefix)
+            .filter(|p| is_real_dir(p) && source_within(archive_root, p))
+            .ok_or_else(|| InstallError::BadSelection("archive wrapper is missing".into()))?;
+        &wrapped
+    };
     let refuse =
         |what: &str| InstallError::BadSelection(format!("cannot lay out this archive: {what}"));
 
@@ -124,6 +134,14 @@ pub(crate) fn resolve_root_split(
     if data.is_none() && root.is_empty() && data_extra.is_empty() {
         return Err(refuse("it contains no installable content"));
     }
+    if data
+        .iter()
+        .chain(data_extra.iter())
+        .chain(root.iter().map(|(_, path)| path))
+        .any(|path| !source_within(archive_root, path))
+    {
+        return Err(refuse("a source escapes the extracted archive"));
+    }
     Ok(RootSources {
         data,
         data_extra,
@@ -152,13 +170,13 @@ pub(crate) fn place_root_split(src: &RootSources, dest: &Path, merging: bool) ->
     if src.root.is_empty() {
         return Ok(());
     }
-    let root_dest = dest.join(ROOT_DIR_NAME);
+    let root_dest = destination_child(dest, std::ffi::OsStr::new(ROOT_DIR_NAME))?;
     // The Data half may have just planted a FILE named `Root` here, and this runs
     // after the Replace wipe, so an EEXIST would take the old mod down with it.
     clear_non_dir(&root_dest)?;
     fs::create_dir_all(&root_dest)?;
     for (rel, from) in &src.root {
-        let to = root_dest.join(rel.trim_matches('/'));
+        let to = checked_destination(dest, &root_dest.join(rel.trim_matches('/')))?;
         // An entry can be nested (`SB/Binaries`), so its parent may not exist yet.
         if let Some(parent) = to.parent() {
             fs::create_dir_all(parent)?;

@@ -62,18 +62,151 @@ pub(crate) fn resolve_ci(root: &Path, rel: &str) -> Option<PathBuf> {
     Some(cur)
 }
 
-pub(crate) fn copy_dir_all(src: &Path, dst: &Path) -> io::Result<()> {
-    fs::create_dir_all(dst)?;
-    for e in fs::read_dir(src)?.flatten() {
-        let from = e.path();
-        let to = dst.join(e.file_name());
-        if from.is_dir() {
-            copy_dir_all(&from, &to)?;
-        } else {
-            fs::copy(&from, &to)?;
+/// Refuse every existing destination link, including leaf files. Checking only
+/// the final parent permits an earlier directory link to redirect a copy outside
+/// the mod. The caller owns the mod directory for the duration of installation.
+pub(crate) fn destination_child(dir: &Path, name: &std::ffi::OsStr) -> io::Result<PathBuf> {
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(dir.join(name)),
+        Err(error) => return Err(error),
+    };
+    let mut found = None;
+    for entry in entries {
+        let entry = entry?;
+        if entry
+            .file_name()
+            .as_encoded_bytes()
+            .eq_ignore_ascii_case(name.as_encoded_bytes())
+        {
+            if found.is_some() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    format!(
+                        "ambiguous case-insensitive install destination: {}",
+                        dir.join(name).display()
+                    ),
+                ));
+            }
+            found = Some(entry.path());
         }
     }
-    Ok(())
+    Ok(found.unwrap_or_else(|| dir.join(name)))
+}
+
+pub(crate) fn checked_destination(root: &Path, path: &Path) -> io::Result<PathBuf> {
+    let relative = path.strip_prefix(root).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "install destination is outside the mod",
+        )
+    })?;
+    let mut current = root.to_path_buf();
+    for component in std::iter::once(None).chain(relative.components().map(Some)) {
+        if let Some(component) = component {
+            if !matches!(
+                component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            ) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "install path escapes the mod",
+                ));
+            }
+            if component != std::path::Component::CurDir {
+                current = destination_child(&current, component.as_os_str())?;
+            }
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!(
+                        "refusing install through destination symlink: {}",
+                        current.display()
+                    ),
+                ))
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(current)
+}
+
+pub(crate) fn source_within(root: &Path, source: &Path) -> bool {
+    fs::canonicalize(root)
+        .ok()
+        .zip(fs::canonicalize(source).ok())
+        .is_some_and(|(root, source)| source.starts_with(root))
+}
+
+/// Copy a FOMOD source within its archive boundary. Internal source links are
+/// allowed, while links escaping the extraction tree and directory cycles fail.
+pub(crate) fn copy_plan_source(
+    archive_root: &Path,
+    src: &Path,
+    mod_root: &Path,
+    dst: &Path,
+    folder: bool,
+) -> io::Result<()> {
+    fn copy(
+        root: &Path,
+        src: &Path,
+        mod_root: &Path,
+        dst: &Path,
+        folder: bool,
+        parents: &mut std::collections::HashSet<PathBuf>,
+    ) -> io::Result<()> {
+        let actual = fs::canonicalize(src)?;
+        if !actual.starts_with(root) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "FOMOD source escapes the extracted archive: {}",
+                    src.display()
+                ),
+            ));
+        }
+        let dst = checked_destination(mod_root, dst)?;
+        if folder {
+            if !parents.insert(actual.clone()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "FOMOD source contains a directory cycle",
+                ));
+            }
+            fs::create_dir_all(&dst)?;
+            for entry in fs::read_dir(src)? {
+                let entry = entry?;
+                let from = entry.path();
+                copy(
+                    root,
+                    &from,
+                    mod_root,
+                    &dst.join(entry.file_name()),
+                    from.is_dir(),
+                    parents,
+                )?;
+            }
+            parents.remove(&actual);
+        } else {
+            if let Some(parent) = dst.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(src, &dst)?;
+        }
+        Ok(())
+    }
+    copy(
+        &fs::canonicalize(archive_root)?,
+        src,
+        mod_root,
+        dst,
+        folder,
+        &mut Default::default(),
+    )
 }
 
 /// Copy every entry of `src` over `dst`, later-wins. Unlike [`copy_dir_all`] this
@@ -88,7 +221,7 @@ pub(crate) fn overlay_dir(src: &Path, dst: &Path) -> io::Result<()> {
     fs::create_dir_all(dst)?;
     for e in fs::read_dir(src)?.flatten() {
         let from = e.path();
-        let to = dst.join(e.file_name());
+        let to = destination_child(dst, &e.file_name())?;
         // Whatever occupies the name loses, unless both sides are directories (which
         // merge). `symlink_metadata` deliberately does not follow: a DANGLING symlink
         // still occupies the name, and - the reason this matters - removing the link
