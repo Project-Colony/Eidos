@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use eidos_fuse::Eidos;
-pub use eidos_fuse::{read_plugin_mtimes, PluginTimestamps};
+pub use eidos_fuse::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
 
 /// What to mount and run.
 pub struct LaunchSpec {

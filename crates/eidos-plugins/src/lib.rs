@@ -1381,8 +1381,10 @@ mod tests {
 
     #[test]
     fn indexes_never_spill_into_reserved_or_overflow_slots() {
-        let mut list = PluginList::default();
-        list.plugins = (0..256).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        let mut list = PluginList {
+            plugins: (0..256).map(|i| p(&format!("Full{i}.esp"), &[])).collect(),
+            ..Default::default()
+        };
         list.plugins.push(p("Light.esl", &[]));
         list.generate_indexes(&se());
         assert_eq!(list.plugins[253].index.as_deref(), Some("FD"));
@@ -1402,8 +1404,10 @@ mod tests {
     #[test]
     fn medium_slots_never_collide_with_full_indexes() {
         let spec = GameSpec::for_id("starfield").unwrap();
-        let mut list = PluginList::default();
-        list.plugins = (0..255).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        let mut list = PluginList {
+            plugins: (0..255).map(|i| p(&format!("Full{i}.esp"), &[])).collect(),
+            ..Default::default()
+        };
         let mut medium = p("Medium.esm", &[]);
         medium.is_medium = true;
         list.plugins.push(medium.clone());

@@ -854,7 +854,7 @@ fn projected_plugin_times_are_mutable_and_preserve_lower_files() {
         .unwrap()
         .contains_key("renamed.esp"));
     put(&mnt, "New.esp", b"new");
-    let status=std::process::Command::new("python3").arg("-c").arg("import os,sys; p=sys.argv[1]; os.utime(p, ns=(42,42)); open(p,'w').close(); assert os.stat(p).st_mtime_ns != 42").arg(mnt.join("New.esp")).status().unwrap();
+    let status=std::process::Command::new("python3").arg("-c").arg("import os,sys; p=sys.argv[1]; os.utime(p, ns=(42,42)); f=open(p,'w'); f.write('updated'); f.close(); assert os.stat(p).st_mtime_ns != 42; assert open(p).read() == 'updated'").arg(mnt.join("New.esp")).status().unwrap();
     assert!(status.success());
     assert!(!read_plugin_mtimes(&receipt)
         .unwrap()
@@ -890,6 +890,220 @@ fn projected_plugin_times_are_mutable_and_preserve_lower_files() {
     drop(second_session);
 }
 
+fn receipt_failures_preserve_completed_namespace_and_retry_order() {
+    use eidos_fuse::{read_plugin_mtimes, PluginTimestamps};
+    use std::{
+        collections::BTreeMap,
+        time::{Duration, UNIX_EPOCH},
+    };
+    let names = |path: &Path| -> Vec<String> {
+        fs::read_dir(path)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    for name in ["A.esp", "B.esp", "Keep.esp"] {
+        put(&game, name, name.as_bytes());
+    }
+    let original = fs::metadata(game.join("A.esp"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let first = UNIX_EPOCH + Duration::from_secs(1000);
+    let receipt = t.0.join("profile/times");
+    let session = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: ["a.esp", "b.esp", "keep.esp", "created.esp"]
+                .into_iter()
+                .map(|name| (name.to_owned(), first))
+                .collect(),
+            state_path: receipt.clone(),
+        })
+        .unwrap()
+        .spawn(&mnt)
+        .expect("receipt fault fixture must mount");
+    // Populate the daemon listing, exact negative dentry, and both rename inodes.
+    assert_eq!(names(&mnt).len(), 3);
+    assert!(!mnt.join("Created.esp").exists());
+    let held_a = fs::File::open(mnt.join("A.esp")).unwrap();
+    let held_b = fs::File::open(mnt.join("B.esp")).unwrap();
+    let inode_a = held_a.metadata().unwrap().ino();
+    assert_eq!(fs::read(mnt.join("B.esp")).unwrap(), b"B.esp");
+    fs::rename(t.0.join("profile"), t.0.join("saved-profile")).unwrap();
+    fs::write(t.0.join("profile"), b"receipt parent fault").unwrap();
+
+    assert!(fs::rename(mnt.join("A.esp"), mnt.join("B.esp")).is_err());
+    assert_eq!(fs::read(over.join("B.esp")).unwrap(), b"A.esp");
+    assert!(settle(|| (!mnt.join("A.esp").exists()).then_some(())).is_some());
+    assert!(settle(|| fs::metadata(mnt.join("B.esp"))
+        .ok()
+        .filter(|m| m.ino() == inode_a))
+    .is_some());
+    assert_eq!(held_a.metadata().unwrap().ino(), inode_a);
+    assert!(settle(
+        || (fs::read(mnt.join("B.esp")).ok().as_deref() == Some(b"A.esp")).then_some(())
+    )
+    .is_some());
+    assert!(settle(|| (!names(&mnt).contains(&"A.esp".to_owned())).then_some(())).is_some());
+
+    assert!(fs::remove_file(mnt.join("B.esp")).is_err());
+    assert!(!over.join("B.esp").exists());
+    assert!(settle(|| (!mnt.join("B.esp").exists()).then_some(())).is_some());
+    assert!(settle(|| (!names(&mnt).contains(&"B.esp".to_owned())).then_some(())).is_some());
+
+    assert!(fs::File::create(mnt.join("Created.esp")).is_err());
+    assert_eq!(fs::metadata(over.join("Created.esp")).unwrap().len(), 0);
+    assert!(settle(|| mnt.join("Created.esp").exists().then_some(())).is_some());
+    assert!(settle(|| names(&mnt)
+        .contains(&"Created.esp".to_owned())
+        .then_some(()))
+    .is_some());
+    assert!(fs::File::open(mnt.join("Keep.esp"))
+        .unwrap()
+        .sync_all()
+        .is_err());
+    fs::remove_file(t.0.join("profile")).unwrap();
+    fs::rename(t.0.join("saved-profile"), t.0.join("profile")).unwrap();
+    fs::File::open(mnt.join("Created.esp"))
+        .unwrap()
+        .sync_all()
+        .unwrap();
+    assert_eq!(
+        read_plugin_mtimes(&receipt).unwrap(),
+        BTreeMap::from([("keep.esp".into(), first)])
+    );
+    for name in ["A.esp", "B.esp", "Keep.esp"] {
+        assert_eq!(fs::read(game.join(name)).unwrap(), name.as_bytes());
+    }
+    assert_eq!(
+        fs::metadata(game.join("A.esp"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        original
+    );
+    drop(held_a);
+    drop(held_b);
+    drop(session);
+}
+
+fn receipt_failures_after_payload_changes_recover_on_unmount() {
+    use eidos_fuse::{read_plugin_mtimes, PluginTimestamps};
+    use std::{
+        collections::BTreeMap,
+        io::Write,
+        time::{Duration, UNIX_EPOCH},
+    };
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    let first = UNIX_EPOCH + Duration::from_secs(1000);
+    let receipt = t.0.join("profile/times");
+    let pending = t.0.join("profile/times.pending");
+    let mut source_mtimes = BTreeMap::new();
+    for name in ["Write.esp", "Truncate.esp", "Size.esp", "Time.esp"] {
+        put(&game, name, b"payload");
+        source_mtimes.insert(
+            name,
+            fs::metadata(game.join(name)).unwrap().modified().unwrap(),
+        );
+    }
+    let session = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: source_mtimes
+                .keys()
+                .map(|name| (name.to_ascii_lowercase(), first))
+                .collect(),
+            state_path: receipt.clone(),
+        })
+        .unwrap()
+        .spawn(&mnt)
+        .expect("payload receipt fault fixture must mount");
+    for name in source_mtimes.keys() {
+        assert_eq!(fs::read(mnt.join(name)).unwrap(), b"payload");
+        assert_eq!(
+            fs::metadata(mnt.join(name)).unwrap().modified().unwrap(),
+            first
+        );
+    }
+    let mut writer = fs::OpenOptions::new()
+        .write(true)
+        .open(mnt.join("Write.esp"))
+        .unwrap();
+    let sized = fs::OpenOptions::new()
+        .write(true)
+        .open(mnt.join("Size.esp"))
+        .unwrap();
+    let timed = fs::File::open(mnt.join("Time.esp")).unwrap();
+    fs::rename(&receipt, t.0.join("old-times")).unwrap();
+    fs::create_dir(&receipt).unwrap();
+    assert!(writer.write_all(b"changed").is_err());
+    assert_eq!(fs::read(over.join("Write.esp")).unwrap(), b"changed");
+    assert!(settle(
+        || (fs::read(mnt.join("Write.esp")).ok().as_deref() == Some(b"changed")).then_some(())
+    )
+    .is_some());
+    assert!(fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(mnt.join("Truncate.esp"))
+        .is_err());
+    assert_eq!(fs::metadata(over.join("Truncate.esp")).unwrap().len(), 0);
+    assert!(
+        settle(|| (fs::metadata(mnt.join("Truncate.esp")).ok()?.len() == 0).then_some(()))
+            .is_some()
+    );
+    assert!(sized.set_len(1).is_err());
+    assert_eq!(fs::read(over.join("Size.esp")).unwrap(), b"p");
+    assert!(
+        settle(|| (fs::metadata(mnt.join("Size.esp")).ok()?.len() == 1).then_some(())).is_some()
+    );
+    assert!(timed
+        .set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH))
+        .is_err());
+    assert_eq!(timed.metadata().unwrap().modified().unwrap(), first);
+    assert!(!over.join("Time.esp").exists());
+    for name in ["Write.esp", "Truncate.esp", "Size.esp"] {
+        assert!(settle(
+            || (fs::metadata(mnt.join(name)).ok()?.modified().ok()? != first).then_some(())
+        )
+        .is_some());
+    }
+    drop(writer);
+    drop(sized);
+    drop(timed);
+    drop(session);
+    // Real FUSE destroy persists pending state when the primary remains blocked.
+    assert!(settle(|| pending.exists().then_some(())).is_some());
+    let recovered = read_plugin_mtimes(&pending).unwrap();
+    assert_eq!(recovered, BTreeMap::from([("time.esp".into(), first)]));
+    fs::remove_dir(&receipt).unwrap();
+    fs::rename(t.0.join("old-times"), &receipt).unwrap();
+    assert!(read_plugin_mtimes(&receipt).is_err());
+    let restarted = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: recovered.clone(),
+            state_path: receipt.clone(),
+        })
+        .unwrap()
+        .spawn(&mnt)
+        .unwrap();
+    assert_eq!(read_plugin_mtimes(&receipt).unwrap(), recovered);
+    assert!(!pending.exists());
+    assert_eq!(fs::read(mnt.join("Write.esp")).unwrap(), b"changed");
+    assert_eq!(fs::read(mnt.join("Truncate.esp")).unwrap(), b"");
+    assert_eq!(fs::read(mnt.join("Size.esp")).unwrap(), b"p");
+    for (name, mtime) in source_mtimes {
+        assert_eq!(fs::read(game.join(name)).unwrap(), b"payload");
+        assert_eq!(
+            fs::metadata(game.join(name)).unwrap().modified().unwrap(),
+            mtime
+        );
+    }
+    drop(restarted);
+}
+
 fn main() {
     // Enter the private namespace first, single-threaded, so the mounts are
     // isolated from host services. Best-effort: if it fails (userns disabled),
@@ -907,6 +1121,16 @@ fn main() {
 
     // (name, test fn, needs an isolated namespace to be deterministic)
     let tests: &[(&str, fn(), bool)] = &[
+        (
+            "receipt_failures_after_payload_changes_recover_on_unmount",
+            receipt_failures_after_payload_changes_recover_on_unmount,
+            true,
+        ),
+        (
+            "receipt_failures_preserve_completed_namespace_and_retry_order",
+            receipt_failures_preserve_completed_namespace_and_retry_order,
+            true,
+        ),
         (
             "projected_plugin_times_are_mutable_and_preserve_lower_files",
             projected_plugin_times_are_mutable_and_preserve_lower_files,

@@ -8,7 +8,7 @@
 //! against a real MO2-generated Skyrim SE load order.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::{GameSpec, LoadOrderMechanism, PluginList};
@@ -396,9 +396,8 @@ fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Atomically replace `path`: write a sibling `.tmp` then rename over it (atomic
-/// within one filesystem), so a crash mid-write cannot leave a partial plugins.txt
-/// that the game would load with half the mods off.
+/// Sync a unique sibling before atomic replacement, then sync the directory.
+/// Callers can consume their capture receipt only after publication succeeds.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     // Unique per PROCESS and per call. A fixed name is not atomic against a
     // second WRITER: two processes share the one temp path, their bytes
@@ -410,14 +409,25 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         std::process::id(),
         SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    fs::write(&tmp, bytes)?;
-    match fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = fs::remove_file(&tmp);
-            Err(e)
-        }
+    // A create_new collision is not our file to remove or truncate.
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)?;
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&tmp, path)?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        fs::File::open(parent)?.sync_all()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
+    result
 }
 
 /// Read a plugin-list file. `plugins.txt` is the Windows ANSI codepage (MO2's
@@ -450,6 +460,30 @@ mod tests {
         let d = std::env::temp_dir().join(format!("eidos-lo-{}-{}", std::process::id(), n));
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn failed_atomic_publication_preserves_destination_and_cleans_temporary_file() {
+        let dir = tmp_dir();
+        let blocked = dir.join("loadorder.txt");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("sentinel"), b"existing destination").unwrap();
+        assert!(write_atomic(&blocked, b"new order").is_err());
+        assert_eq!(
+            fs::read(blocked.join("sentinel")).unwrap(),
+            b"existing destination"
+        );
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            1,
+            "failed publication must remove its temporary file"
+        );
+        fs::remove_dir_all(&blocked).unwrap();
+        write_atomic(&blocked, b"old order").unwrap();
+        write_atomic(&blocked, b"new order").unwrap();
+        assert_eq!(fs::read(&blocked).unwrap(), b"new order");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     fn pl(name: &str, enabled: bool) -> Plugin {

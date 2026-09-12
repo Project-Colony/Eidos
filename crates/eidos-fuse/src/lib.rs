@@ -39,7 +39,7 @@ use eidos_core::LayerStack;
 use fuser::{BackgroundSession, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
 
 mod timestamps;
-pub use timestamps::{read_plugin_mtimes, PluginTimestamps};
+pub use timestamps::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
 
 mod config;
 mod inodes;
@@ -130,7 +130,7 @@ impl DirCache {
 /// The Eidos union filesystem over a [`LayerStack`].
 pub struct Eidos {
     stack: LayerStack,
-    plugin_timestamps: Option<Mutex<PluginTimestamps>>,
+    plugin_timestamps: Option<Mutex<timestamps::ProjectionState>>,
     plugin_atimes: Mutex<std::collections::BTreeMap<String, std::time::SystemTime>>,
     inodes: Mutex<Inodes>,
     uid: u32,

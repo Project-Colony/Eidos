@@ -218,7 +218,7 @@ pub(crate) fn recover_timestamp_order(
     prof: &eidos_instance::Profile,
 ) -> std::io::Result<()> {
     let receipt = prof.dir().join("plugin-times.pending");
-    let times = match eidos_launch::read_plugin_mtimes(&receipt) {
+    let times = match eidos_launch::recover_plugin_mtimes(&receipt) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e),
@@ -234,6 +234,11 @@ pub(crate) fn recover_timestamp_order(
     let mut list = inst
         .plugin_list_for_profile(&game.data_path, id, None, prof)
         .ok_or_else(|| std::io::Error::other("No plugin list for timestamp capture"))?;
+    if !times.is_empty() && list.plugins.is_empty() {
+        return Err(std::io::Error::other(
+            "No plugins discovered for nonempty timestamp capture; retaining receipt",
+        ));
+    }
     list.apply_mtime_order(&times, &spec);
     list.write_load_order(&prof.plugins_state_dir(), &spec)?;
     std::fs::remove_file(receipt)
@@ -921,6 +926,59 @@ mod rescue_tests {
             .unwrap()
             .unwrap();
         assert!(projected.times["b.esp"] < projected.times["a.esp"]);
+
+        // A failed daemon receipt has a newer recovery sibling. The normal
+        // next-launch capture must never import the stale primary instead.
+        let recovery = a.dir().join("plugin-times.pending.pending");
+        let stale = "Eidos plugin timestamps v1\n1000000000\toblivion.esm\n9000000000\ta.esp\n2000000000\tb.esp\n";
+        let newest = "Eidos plugin timestamps v1\n1000000000\toblivion.esm\n2000000000\ta.esp\n9000000000\tb.esp\n";
+        fs::write(&pending, stale).unwrap();
+        fs::write(&recovery, "broken recovery").unwrap();
+        let order_before = fs::read(a.loadorder_txt_path()).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(fs::read_to_string(&pending).unwrap(), stale);
+        assert_eq!(fs::read_to_string(&recovery).unwrap(), "broken recovery");
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        fs::write(&recovery, newest).unwrap();
+        fs::remove_file(&pending).unwrap();
+        fs::create_dir(&pending).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(fs::read_to_string(&recovery).unwrap(), newest);
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        fs::remove_dir(&pending).unwrap();
+        fs::write(&pending, stale).unwrap();
+
+        // Promotion succeeds, but the profile's final order cannot be saved.
+        // Keep the newest primary until a subsequent healthy capture succeeds.
+        fs::remove_file(a.loadorder_txt_path()).unwrap();
+        fs::create_dir(a.loadorder_txt_path()).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert!(!recovery.exists());
+        let retained = eidos_launch::read_plugin_mtimes(&pending).unwrap();
+        assert!(retained["a.esp"] < retained["b.esp"]);
+        fs::remove_dir(a.loadorder_txt_path()).unwrap();
+        fs::write(a.loadorder_txt_path(), &order_before).unwrap();
+        let activation_before = fs::read(a.plugins_txt_path()).unwrap();
+        // Empty discovery can mean temporarily unavailable Data. The writer's
+        // empty-list no-op must not count as capturing a nonempty receipt.
+        let missing_data = root.join("unavailable-data");
+        fs::rename(&game.data_path, &missing_data).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(
+            eidos_launch::read_plugin_mtimes(&pending).unwrap(),
+            retained
+        );
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), activation_before);
+        fs::rename(missing_data, &game.data_path).unwrap();
+        recover_timestamp_order("oblivion", &game, &inst, &a).unwrap();
+        assert!(!pending.exists());
+        assert!(!recovery.exists());
+        let projected = prepare_plugin_timestamps("oblivion", &game, &inst, &a)
+            .unwrap()
+            .unwrap();
+        assert!(projected.times["a.esp"] < projected.times["b.esp"]);
+        assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), other_before);
         fs::write(&pending, "broken receipt").unwrap();
         assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
         assert!(pending.exists());
