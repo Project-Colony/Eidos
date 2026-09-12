@@ -77,25 +77,48 @@ impl<'a> Timed<'a> {
     }
 }
 
-/// A generation prevents a scan started before a mutation from refilling the cache.
+/// A slot's identity prevents invalidated scans from refilling the cache. Slots
+/// are created by reads only; mutations never leave per-path tombstones behind.
 #[derive(Default)]
 struct DirCache {
-    generation: u64,
-    entries: HashMap<String, Listing>,
+    entries: HashMap<String, DirCacheEntry>,
+}
+
+struct DirCacheEntry {
+    scan: Arc<()>,
+    children: Option<Listing>,
 }
 
 impl DirCache {
-    fn publish(&mut self, vpath: &str, generation: u64, children: Listing) -> Option<Listing> {
-        if generation != self.generation {
+    /// Return a cache hit, or share the identity of this directory's current scan.
+    fn get_or_start(&mut self, vpath: &str) -> Result<Listing, Arc<()>> {
+        if let Some(entry) = self.entries.get(vpath) {
+            return match &entry.children {
+                Some(hit) => Ok(Arc::clone(hit)),
+                None => Err(Arc::clone(&entry.scan)),
+            };
+        }
+        let scan = Arc::new(());
+        self.entries.insert(
+            vpath.to_string(),
+            DirCacheEntry {
+                scan: Arc::clone(&scan),
+                children: None,
+            },
+        );
+        Err(scan)
+    }
+
+    fn publish(&mut self, vpath: &str, scan: &Arc<()>, children: Listing) -> Option<Listing> {
+        let entry = self.entries.get_mut(vpath)?;
+        if !Arc::ptr_eq(&entry.scan, scan) {
             return None;
         }
-        Some(Arc::clone(
-            self.entries.entry(vpath.to_string()).or_insert(children),
-        ))
+        // Concurrent scans of the same slot retain the first completed listing.
+        Some(Arc::clone(entry.children.get_or_insert(children)))
     }
 
     fn invalidate(&mut self, vpath: Option<&str>) {
-        self.generation = self.generation.wrapping_add(1);
         if let Some(vpath) = vpath {
             self.entries.remove(vpath);
         } else {
@@ -511,17 +534,16 @@ impl Eidos {
     /// The merged child list for `vpath`, from [`Self::dir_cache`] when it is
     /// already there.
     ///
-    /// Scans run outside the cache lock. A mutation invalidates their generation,
-    /// so an older scan must retry instead of publishing stale children.
+    /// Scans run outside the cache lock. Removing their slot rejects stale
+    /// publication without retrying scans of unrelated directories.
     fn merged_children(&self, vpath: &str) -> Listing {
         loop {
-            let generation = {
-                let cache = self.dir_cache.lock_recover();
-                if let Some(hit) = cache.entries.get(vpath) {
+            let scan = match self.dir_cache.lock_recover().get_or_start(vpath) {
+                Ok(hit) => {
                     Stats::bump(&self.stats.dir_hit);
-                    return Arc::clone(hit);
+                    return hit;
                 }
-                cache.generation
+                Err(scan) => scan,
             };
             Stats::bump(&self.stats.snapshot);
             let children: Listing = Arc::new(
@@ -534,7 +556,7 @@ impl Eidos {
             if let Some(children) = self
                 .dir_cache
                 .lock_recover()
-                .publish(vpath, generation, children)
+                .publish(vpath, &scan, children)
             {
                 return children;
             }

@@ -410,6 +410,41 @@ fn the_peak_points_at_a_slot_that_saw_reads() {
 }
 
 #[test]
+fn an_unrelated_mutation_does_not_discard_a_directory_scan() {
+    let root = std::env::temp_dir().join(format!("eidos-cache-unrelated-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("lower/dir")).unwrap();
+    std::fs::create_dir_all(root.join("overwrite/noise")).unwrap();
+    std::fs::write(root.join("lower/dir/kept.ess"), b"save").unwrap();
+    let fs = Eidos::new(vec![root.join("lower")], root.join("overwrite"));
+    let parent = fs.inodes.lock_recover().intern("noise");
+    // Force the race order without relying on thread scheduling or sleeps.
+    let scan = fs.dir_cache.lock_recover().get_or_start("dir").unwrap_err();
+    let scanned: Listing = Arc::new(
+        fs.stack
+            .list_dir_typed("dir")
+            .into_iter()
+            .map(|(name, _, ft)| (name, kind_of_type(&ft.unwrap())))
+            .collect(),
+    );
+    drop(fs.stack.create_truncated("noise/tick.tmp").unwrap());
+    fs.dir_changed(parent, "tick.tmp");
+    fs.stack.rename("noise/tick.tmp", "noise/tick.dat").unwrap();
+    fs.dir_changed(parent, "tick.tmp");
+    fs.dir_changed(parent, "tick.dat");
+    let published = fs
+        .dir_cache
+        .lock_recover()
+        .publish("dir", &scan, Arc::clone(&scanned));
+    assert!(
+        published.is_some(),
+        "unrelated writes must not repeat this scan"
+    );
+    assert!(Arc::ptr_eq(&fs.merged_children("dir"), &scanned));
+    assert_eq!(fs.stats.snapshot.load(Ordering::Relaxed), 0);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn a_scan_cannot_publish_after_directory_invalidation() {
     let root = std::env::temp_dir().join(format!("eidos-cache-race-{}", std::process::id()));
     for renamed in [false, true] {
@@ -419,7 +454,7 @@ fn a_scan_cannot_publish_after_directory_invalidation() {
         let fs = Eidos::new(vec![root.join("lower")], root.join("overwrite"));
         let parent = fs.inodes.lock_recover().intern("dir");
         // Pause a cache miss after a real scan, complete the mutation, then resume publication.
-        let generation = fs.dir_cache.lock_recover().generation;
+        let scan = fs.dir_cache.lock_recover().get_or_start("dir").unwrap_err();
         let scanned: Listing = Arc::new(
             fs.stack
                 .list_dir_typed("dir")
@@ -438,7 +473,7 @@ fn a_scan_cannot_publish_after_directory_invalidation() {
         assert!(fs
             .dir_cache
             .lock_recover()
-            .publish("dir", generation, scanned)
+            .publish("dir", &scan, scanned)
             .is_none());
         assert!(fs.merged_children("dir").is_empty());
         if renamed {
@@ -446,4 +481,57 @@ fn a_scan_cannot_publish_after_directory_invalidation() {
         }
     }
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_old_scan_cannot_publish_into_a_recreated_slot() {
+    for global in [false, true] {
+        let mut cache = DirCache::default();
+        let old_scan = cache.get_or_start("dir").unwrap_err();
+        let other_scan = cache.get_or_start("other").unwrap_err();
+        cache.invalidate(if global { None } else { Some("dir") });
+        let fresh_scan = cache.get_or_start("dir").unwrap_err();
+        assert!(!Arc::ptr_eq(&old_scan, &fresh_scan));
+        let stale: Listing = Arc::new(vec![("stale".into(), FileType::RegularFile)]);
+        assert!(cache
+            .publish("dir", &old_scan, Arc::clone(&stale))
+            .is_none());
+        let fresh: Listing = Arc::new(vec![("fresh".into(), FileType::RegularFile)]);
+        cache
+            .publish("dir", &fresh_scan, Arc::clone(&fresh))
+            .unwrap();
+        assert!(cache
+            .publish("dir", &old_scan, Arc::clone(&stale))
+            .is_none());
+        assert!(Arc::ptr_eq(&cache.get_or_start("dir").unwrap(), &fresh));
+        assert_eq!(cache.publish("other", &other_scan, stale).is_none(), global);
+    }
+}
+
+#[test]
+fn concurrent_directory_scans_keep_the_first_published_listing() {
+    let mut cache = DirCache::default();
+    let first = cache.get_or_start("dir").unwrap_err();
+    let second = cache.get_or_start("dir").unwrap_err();
+    assert!(Arc::ptr_eq(&first, &second));
+    let winner: Listing = Arc::new(vec![("winner".into(), FileType::RegularFile)]);
+    cache.publish("dir", &first, Arc::clone(&winner)).unwrap();
+    let later: Listing = Arc::new(vec![]);
+    assert!(Arc::ptr_eq(
+        &cache.publish("dir", &second, later).unwrap(),
+        &winner
+    ));
+}
+
+#[test]
+fn invalidating_unread_directories_keeps_no_per_path_state() {
+    let mut cache = DirCache::default();
+    let scan = cache.get_or_start("listed").unwrap_err();
+    for i in 0..10_000 {
+        cache.invalidate(Some(&format!("unread/{i}")));
+    }
+    assert_eq!(cache.entries.len(), 1);
+    assert!(cache.publish("listed", &scan, Arc::new(vec![])).is_some());
+    cache.invalidate(Some("listed"));
+    assert!(cache.entries.is_empty());
 }
