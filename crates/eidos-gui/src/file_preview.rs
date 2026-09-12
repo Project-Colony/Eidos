@@ -15,9 +15,16 @@ const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tg
 pub(crate) struct Pending {
     pub id: u64,
     path: PathBuf,
+    snapshot: Snapshot,
+    cancel: Arc<AtomicBool>,
+}
+
+/// Provenance of decoded bytes, retained when a control reuses cached content.
+#[derive(Debug, Clone)]
+pub(crate) struct Snapshot {
     target: Option<CollectionTarget>,
     identity: Option<eidos_conflicts::ArchiveIdentity>,
-    cancel: Arc<AtomicBool>,
+    epoch: u64,
 }
 impl Drop for Pending {
     fn drop(&mut self) {
@@ -168,6 +175,7 @@ fn dds(
     };
     Preview::Dds {
         path: path.into(),
+        provenance: None,
         bytes,
         info,
         selection,
@@ -187,14 +195,35 @@ pub(crate) fn start(
     app.preview_pending.take();
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let cancel = Arc::new(AtomicBool::new(false));
+    let old = app.preview.clone();
+    // Cached pixels keep the identity of the bytes originally decoded. A new
+    // mip/channel request must not relabel old bytes with a replacement's identity.
+    let snapshot = if selection.is_some() {
+        old.as_ref()
+            .and_then(cached_snapshot)
+            .cloned()
+            .unwrap_or(Snapshot {
+                target: target(app),
+                epoch: app.archive_epoch.get(),
+                identity: None,
+            })
+    } else {
+        Snapshot {
+            target: target(app),
+            epoch: app.archive_epoch.get(),
+            identity: archive
+                .as_ref()
+                .map(|s| s.identity.clone())
+                .or_else(|| eidos_conflicts::archive_identity(&path).ok()),
+        }
+    };
+    let identity = snapshot.identity.clone();
     app.preview_pending = Some(Pending {
         id,
         path: path.clone(),
-        target: target(app),
-        identity: eidos_conflicts::archive_identity(&path).ok(),
+        snapshot,
         cancel: cancel.clone(),
     });
-    let old = app.preview.clone();
     if selection.is_none() {
         app.preview = Some(unsupported(&path, "Reading…"));
     }
@@ -204,7 +233,7 @@ pub(crate) fn start(
         .map(|g| g.def.id.to_string())
         .unwrap_or_default();
     Task::perform(
-        async move {
+        crate::background_work::run(move || {
             if cancel.load(Ordering::Relaxed) {
                 return unsupported(&path, "Cancelled");
             }
@@ -228,6 +257,9 @@ pub(crate) fn start(
                 };
             }
             if let (Some(selection), Some(old)) = (selection, old) {
+                if identity.is_none() || identity != eidos_conflicts::archive_identity(&path).ok() {
+                    return unsupported(&path, "The preview source changed. Open it again.");
+                }
                 return match old {
                     Preview::Dds { bytes, info, .. } => dds(&path, bytes, info, selection),
                     Preview::Archive { source, content } => match *content {
@@ -246,18 +278,36 @@ pub(crate) fn start(
                 };
             }
             crate::build_preview(&path)
-        },
+        }),
         move |preview| Message::PreviewReady(id, preview),
     )
 }
 
-pub(crate) fn complete(app: &mut App, id: u64, preview: Preview) {
+fn cached_snapshot(preview: &Preview) -> Option<&Snapshot> {
+    match preview {
+        Preview::Dds { provenance, .. } => provenance.as_ref(),
+        Preview::Archive { content, .. } => cached_snapshot(content),
+        _ => None,
+    }
+}
+
+fn retain_snapshot(preview: &mut Preview, snapshot: &Snapshot) {
+    match preview {
+        Preview::Dds { provenance, .. } => *provenance = Some(snapshot.clone()),
+        Preview::Archive { content, .. } => retain_snapshot(content, snapshot),
+        _ => {}
+    }
+}
+
+pub(crate) fn complete(app: &mut App, id: u64, mut preview: Preview) {
     let Some(pending) = app.preview_pending.as_ref().filter(|p| p.id == id) else {
         return;
     };
-    let current = pending.target == target(app)
+    let current = pending.snapshot.target == target(app)
+        && pending.snapshot.epoch == app.archive_epoch.get()
         && pending.path == preview.path()
-        && pending.identity == eidos_conflicts::archive_identity(&pending.path).ok();
+        && pending.snapshot.identity == eidos_conflicts::archive_identity(&pending.path).ok();
+    retain_snapshot(&mut preview, &pending.snapshot);
     app.preview_pending.take();
     if current {
         app.preview = Some(preview);

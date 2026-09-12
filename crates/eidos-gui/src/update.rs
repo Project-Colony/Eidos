@@ -49,7 +49,12 @@ fn spawn_open(
     let outcome = Arc::new(Mutex::new(None));
     let done = Arc::new(AtomicBool::new(false));
     let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
-    let (a, m, n, g) = (archive.clone(), mods_dir.clone(), name.clone(), game_id.clone());
+    let (a, m, n, g) = (
+        archive.clone(),
+        mods_dir.clone(),
+        name.clone(),
+        game_id.clone(),
+    );
     std::thread::spawn(move || {
         let r = eidos_install::open_archive_with(&a, &m, &n, &g, |pct| {
             p.store(pct, Ordering::SeqCst);
@@ -151,7 +156,12 @@ fn pack_on_worker(
         .map_err(|e| e.to_string())?;
     let ratio = report
         .percent_of_source()
-        .map(|p| format!(", {p:.0}% of {}", eidos_transfer::human_bytes(report.source_bytes)))
+        .map(|p| {
+            format!(
+                ", {p:.0}% of {}",
+                eidos_transfer::human_bytes(report.source_bytes)
+            )
+        })
         .unwrap_or_default();
     let head = format!(
         "Packed {} entries into {} ({}{ratio}) in {}.",
@@ -172,30 +182,47 @@ fn pack_on_worker(
     ))
 }
 
-fn collection_runtime_on_worker(inst: &Instance, game: &eidos_games::DetectedGame, link: &str)
-    -> Result<eidos_collections::recipe::RuntimeCheck, String>
-{
+fn collection_runtime_on_worker(
+    inst: &Instance,
+    game: &eidos_games::DetectedGame,
+    link: &str,
+) -> Result<eidos_collections::recipe::RuntimeCheck, String> {
     let nexus = eidos_nexus::Nexus::connect()?;
     let want = match eidos_nexus::NxmLink::parse(link) {
         Ok(eidos_nexus::NxmLink::Collection(value)) => value,
         _ => return Err("That is not a collection link.".into()),
     };
     let revision = nexus.collection_revision(&want)?;
-    if !revision.visible() { return Err("This collection is not visible to this account.".into()); }
-    if !revision.game_domain.eq_ignore_ascii_case(game.def.nexus_game) {
+    if !revision.visible() {
+        return Err("This collection is not visible to this account.".into());
+    }
+    if !revision
+        .game_domain
+        .eq_ignore_ascii_case(game.def.nexus_game)
+    {
         return Err("The collection belongs to another game.".into());
     }
-    let _lock = inst.try_lock("checking a collection recipe").map_err(|e| e.to_string())?;
-    let dir = eidos_collections::state::revision_dir(&inst.root, &revision.slug, revision.revision_number);
+    let _lock = inst
+        .try_lock("checking a collection recipe")
+        .map_err(|e| e.to_string())?;
+    let dir = eidos_collections::state::revision_dir(
+        &inst.root,
+        &revision.slug,
+        revision.revision_number,
+    );
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &revision, &dir)?;
     let read = eidos_collections::read(&manifest)?;
-    Ok(eidos_collections::recipe::runtime_check(&read.collection, game))
+    Ok(eidos_collections::recipe::runtime_check(
+        &read.collection,
+        game,
+    ))
 }
 
 fn collection_target(app: &App) -> Option<CollectionTarget> {
     let instance = app.created.as_ref()?;
     Some(CollectionTarget {
-        instance: instance.root.clone(), profile: instance.active_profile(),
+        instance: instance.root.clone(),
+        profile: instance.active_profile(),
         installation: selected_game(app)?.selection_id(),
     })
 }
@@ -221,7 +248,15 @@ fn spawn_collection(
     let target = inst.root.clone();
     let profile = inst.active_profile();
     std::thread::spawn(move || {
-        let r = collection_on_worker(&inst, &game, &game_id, &link, &profile, approved.as_ref(), &p);
+        let r = collection_on_worker(
+            &inst,
+            &game,
+            &game_id,
+            &link,
+            &profile,
+            approved.as_ref(),
+            &p,
+        );
         if let Ok(mut slot) = o.lock() {
             *slot = Some(r);
         }
@@ -263,8 +298,7 @@ fn collection_on_worker(
     if inst.active_profile() != profile {
         return Err("The active profile changed before collection installation started; retry from that profile.".into());
     }
-    let dir =
-        eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
+    let dir = eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
     let mut read = eidos_collections::read(&manifest)?;
     if read.collection.info.domain_name.trim().is_empty() {
@@ -296,7 +330,8 @@ fn collection_on_worker(
         game,
         game_id: game_id.to_string(),
         payload_root: dir.clone(),
-        allow_runtime_mismatch: approved == Some(&eidos_collections::recipe::runtime_check(c, game)),
+        allow_runtime_mismatch: approved
+            == Some(&eidos_collections::recipe::runtime_check(c, game)),
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
@@ -352,11 +387,23 @@ struct CountingHooks<'a> {
 }
 
 impl eidos_collections::install::Hooks for CountingHooks<'_> {
-    fn validate_recipe(&mut self, c: &eidos_collections::Collection) -> Result<(), String> { self.inner.validate_recipe(c) }
-    fn runtime_check(&mut self, c: &eidos_collections::Collection) -> eidos_collections::recipe::RuntimeCheck { self.inner.runtime_check(c) }
-    fn allow_runtime_mismatch(&self) -> bool { self.inner.allow_runtime_mismatch() }
+    fn validate_recipe(&mut self, c: &eidos_collections::Collection) -> Result<(), String> {
+        self.inner.validate_recipe(c)
+    }
+    fn runtime_check(
+        &mut self,
+        c: &eidos_collections::Collection,
+    ) -> eidos_collections::recipe::RuntimeCheck {
+        self.inner.runtime_check(c)
+    }
+    fn allow_runtime_mismatch(&self) -> bool {
+        self.inner.allow_runtime_mismatch()
+    }
 
-    fn obtain(&mut self, m: &eidos_collections::manifest::Mod) -> eidos_collections::install::Obtained {
+    fn obtain(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+    ) -> eidos_collections::install::Obtained {
         self.inner.obtain(m)
     }
     fn reserve(
@@ -538,17 +585,40 @@ fn finish_open(
 ) {
     match result {
         Ok(eidos_install::Opened::Omod(session)) => {
-            let Some(inst)=app.created.clone() else{return};
-            let guard=match inst.try_lock("installing an OMOD") {Ok(lock)=>lock,Err(e)=>{app.status=Some(e.to_string());return}};
-            let result=eidos_install::install_omod(&session,&mods_dir,&name,&gid,eidos_install::OverwritePolicy::Fail);
+            let Some(inst) = app.created.clone() else {
+                return;
+            };
+            let guard = match inst.try_lock("installing an OMOD") {
+                Ok(lock) => lock,
+                Err(e) => {
+                    app.status = Some(e.to_string());
+                    return;
+                }
+            };
+            let result = eidos_install::install_omod(
+                &session,
+                &mods_dir,
+                &name,
+                &gid,
+                eidos_install::OverwritePolicy::Fail,
+            );
             drop(guard);
             match result {
-                Ok(report)=>after_install_report(app,report,&path),
-                Err(eidos_install::InstallError::Exists(_))=>{
-                    app.collision=Some(CollisionPrompt {backup:app.prefs.retain_install_backup,rename_to:suggest_free_name(&mods_dir,&name),archive:path,name:name.clone(),game_id:gid,fomod:false,tree:None,pick:None});
-                    app.status=Some(format!("'{name}' already exists - choose how to install."));
+                Ok(report) => after_install_report(app, report, &path),
+                Err(eidos_install::InstallError::Exists(_)) => {
+                    app.collision = Some(CollisionPrompt {
+                        backup: app.prefs.retain_install_backup,
+                        rename_to: suggest_free_name(&mods_dir, &name),
+                        archive: path,
+                        name: name.clone(),
+                        game_id: gid,
+                        fomod: false,
+                        tree: None,
+                        pick: None,
+                    });
+                    app.status = Some(format!("'{name}' already exists - choose how to install."));
                 }
-                Err(error)=>app.status=Some(format!("Cannot install OMOD: {error}")),
+                Err(error) => app.status = Some(format!("Cannot install OMOD: {error}")),
             }
         }
         Ok(eidos_install::Opened::Fomod(session)) => {
@@ -743,6 +813,7 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // shorten a confirmation's life, it would end it before the finger
         // came back down.
         | Message::AnimationTick
+        | Message::ArchivePoll
         // Reached from that same tick, at the same rate, for the same reason.
         | Message::InstallPoll
         // And its twin for a pack or an unpack, which runs for twenty minutes -
@@ -939,11 +1010,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     match inst.create() {
                         Ok(()) => {
                             if let Some(id) = &game_id {
-                                let selection = selected_game(app).expect("selected game").selection_id();
-                                let saved = inst.try_lock("selecting a game installation")
-                                    .and_then(|_lock| inst.ensure_installation(id, kind, &selection));
+                                let selection =
+                                    selected_game(app).expect("selected game").selection_id();
+                                let saved =
+                                    inst.try_lock("selecting a game installation").and_then(
+                                        |_lock| inst.ensure_installation(id, kind, &selection),
+                                    );
                                 if let Err(e) = saved {
-                                    app.error = Some(format!("Could not save the instance identity: {e}"));
+                                    app.error =
+                                        Some(format!("Could not save the instance identity: {e}"));
                                     return Task::none();
                                 }
                                 // Into the registry BEFORE opening: a portable
@@ -1441,7 +1516,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 } else {
                     app.status = Some("Create or open an instance first.".to_string());
                 }
-            } else if selected_game(app).is_some_and(|g| !g.is_steam()) && app.launch_command.is_empty() {
+            } else if selected_game(app).is_some_and(|g| !g.is_steam())
+                && app.launch_command.is_empty()
+            {
                 app.status = Some("This installation needs a manual launch command. Add a native tool with the correct Heroic/Legendary runner and prefix, or use eidos play <instance> -- <runner> <game>. Eidos does not infer a Steam command for this copy.".into());
             } else if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
@@ -2445,7 +2522,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .map(|i| i.active())
                 .filter(|p| p.has_plugin_state())
                 .map(|p| p.plugins_state_dir())
-                .unwrap_or_else(|| eidos_plugins::plugin_state_dir(&prefix,&install,&spec));
+                .unwrap_or_else(|| eidos_plugins::plugin_state_dir(&prefix, &install, &spec));
             let cache = app
                 .created
                 .as_ref()
@@ -3797,7 +3874,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.filters_open = false;
                 return Task::none();
             }
-            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILTERS_ANCHOR)).map(Message::FiltersAt);
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(
+                crate::view::FILTERS_ANCHOR,
+            ))
+            .map(Message::FiltersAt);
         }
         Message::ClearFilters => {
             app.filters = ModFilters::default();
@@ -4270,8 +4350,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 if state.args_editor.text().trim().is_empty() {
                     let seeded = eidos_instance::default_args(&s).join("\n");
                     if !seeded.is_empty() {
-                        state.args_editor =
-                            iced::widget::text_editor::Content::with_text(&seeded);
+                        state.args_editor = iced::widget::text_editor::Content::with_text(&seeded);
                     }
                 }
                 state.title = s;
@@ -4700,7 +4779,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CloseAbout => app.about_open = false,
         Message::OpenViewMenu => {
             app.file_menu_open = false;
-            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::VIEW_MENU_ANCHOR)).map(Message::ViewMenuAt);
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(
+                crate::view::VIEW_MENU_ANCHOR,
+            ))
+            .map(Message::ViewMenuAt);
         }
         Message::CloseViewMenu => app.view_menu_open = false,
         Message::OverwriteSyncToMods => {
@@ -5210,7 +5292,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Opened by `FileMenuAt`, not here: the menu hangs from where the
             // button actually is, and that is a question only iced can answer.
             // One frame, and no wrong position ever drawn.
-            return crate::widgets::measure(crate::widgets::menu_anchor_id(crate::view::FILE_MENU_ANCHOR)).map(Message::FileMenuAt);
+            return crate::widgets::measure(crate::widgets::menu_anchor_id(
+                crate::view::FILE_MENU_ANCHOR,
+            ))
+            .map(Message::FileMenuAt);
         }
         Message::FileMenuAt(at) => {
             if at.is_some() {
@@ -6015,30 +6100,65 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             return update(app, Message::ShowModInfo(i));
         }
         Message::PreviewFile(path) => {
-            return crate::file_preview::start(app,path,None,None,None);
+            return crate::file_preview::start(app, path, None, None, None);
         }
-        Message::ArchiveProviderAction{epoch,member,provider,export}=>return crate::archive_conflicts::provider_action(app,epoch,member,provider,export),
-        Message::ArchiveFilterChanged(filter)=>{app.archive_filter=filter;app.archive_page=0;},
-        Message::ArchivePage(page)=>app.archive_page=page,
-        Message::ArchiveExportDestination(id,path)=>return crate::archive_conflicts::export_destination(app,id,path),
-        Message::ArchiveExportFinished(id,result)=>crate::archive_conflicts::export_finished(app,id,result),
-        Message::RunFileExtension(operation,path) => {
-            return crate::file_preview::start(app,path,Some(operation),None,None);
+        Message::ArchiveProviderAction {
+            epoch,
+            member,
+            provider,
+            export,
+        } => {
+            return crate::archive_conflicts::provider_action(app, epoch, member, provider, export)
         }
-        Message::ChooseExtensionFile(operation)=>return Task::perform(rfd::AsyncFileDialog::new().set_title("Choose a file for an extension").pick_file(),move|file|Message::ExtensionFilePicked(operation,file.map(|f|f.path().to_path_buf()))),
-        Message::ExtensionFilePicked(operation,path)=>{
-            if let Some(path)=path {app.addons_open=false;return crate::file_preview::start(app,path,Some(operation),None,None);}
+        Message::ArchiveFilterChanged(filter) => {
+            app.archive_filter = filter;
+            app.archive_page = 0;
         }
-        Message::PreviewReady(id,preview) => crate::file_preview::complete(app,id,preview),
+        Message::ArchivePage(page) => app.archive_page = page,
+        Message::ArchiveExportDestination(id, path) => {
+            return crate::archive_conflicts::export_destination(app, id, path)
+        }
+        Message::ArchiveExportFinished(id, result) => {
+            crate::archive_conflicts::export_finished(app, id, result)
+        }
+        Message::RunFileExtension(operation, path) => {
+            return crate::file_preview::start(app, path, Some(operation), None, None);
+        }
+        Message::ChooseExtensionFile(operation) => {
+            return Task::perform(
+                rfd::AsyncFileDialog::new()
+                    .set_title("Choose a file for an extension")
+                    .pick_file(),
+                move |file| {
+                    Message::ExtensionFilePicked(operation, file.map(|f| f.path().to_path_buf()))
+                },
+            )
+        }
+        Message::ExtensionFilePicked(operation, path) => {
+            if let Some(path) = path {
+                app.addons_open = false;
+                return crate::file_preview::start(app, path, Some(operation), None, None);
+            }
+        }
+        Message::PreviewReady(id, preview) => crate::file_preview::complete(app, id, preview),
         Message::PreviewDdsSelection(selection) => {
             if app.preview_pending.is_none() {
-                if let Some(preview)=&app.preview {
-                    let path=preview.path();
-                    return crate::file_preview::start(app,path.to_path_buf(),None,Some(selection),None);
+                if let Some(preview) = &app.preview {
+                    let path = preview.path();
+                    return crate::file_preview::start(
+                        app,
+                        path.to_path_buf(),
+                        None,
+                        Some(selection),
+                        None,
+                    );
                 }
             }
         }
-        Message::ClosePreview => { app.preview_pending.take(); app.preview = None; },
+        Message::ClosePreview => {
+            app.preview_pending.take();
+            app.preview = None;
+        }
         Message::ToolArgsAction(action) => {
             app.typing = true;
             if let Some(state) = app.executables.as_mut() {
@@ -6101,7 +6221,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             let src = m.path.clone();
             let name = m.name.clone();
-            let copied = inst.try_lock("backing up a mod")
+            let copied = inst
+                .try_lock("backing up a mod")
                 .and_then(|_lock| eidos_instance::backup_mod(&src));
             match copied {
                 Ok(dest) => {
@@ -7184,8 +7305,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // Nothing to store. Every animated value is a function of the instant
         // its phase began, so a frame's whole job is to have arrived: reaching
         // `update` is what makes iced call `view` again.
+        Message::ArchivePoll => poll_archive_conflicts(app),
         Message::AnimationTick => {
-            poll_archive_conflicts(app);
             // The same 60 Hz tick drives every worker-thread dialog, and it has
             // to reach ALL of them. An early return on the first was fine while
             // there was only one; with two, a pack finishing while an extraction
@@ -7216,7 +7337,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             match result {
                 Some(r) => finish_open(app, r, job.archive, job.name, job.mods_dir, job.game_id),
                 None => {
-                    app.status = Some(format!("Install failed: the worker opening '{}' stopped without a result.", job.name))
+                    app.status = Some(format!(
+                        "Install failed: the worker opening '{}' stopped without a result.",
+                        job.name
+                    ))
                 }
             }
         }
@@ -7386,10 +7510,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // the field is empty, so this is unreachable by clicking - and a
             // handler that loses what the user typed on a path nobody can take
             // is still a handler that loses it.
-            let empty = app
-                .pack
-                .as_ref()
-                .is_none_or(|d| d.dest.trim().is_empty());
+            let empty = app.pack.as_ref().is_none_or(|d| d.dest.trim().is_empty());
             if empty {
                 app.status = Some("Give the backup a file name first.".to_string());
                 return Task::none();
@@ -7519,15 +7640,28 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some("Something is already running on this instance.".into());
                 return Task::none();
             }
-            let (Some(inst), Some(game), Some(target)) = (app.created.clone(), selected_game(app).cloned(), collection_target(app)) else {
+            let (Some(inst), Some(game), Some(target)) = (
+                app.created.clone(),
+                selected_game(app).cloned(),
+                collection_target(app),
+            ) else {
                 app.status = Some("Open a game instance first.".into());
                 return Task::none();
             };
-            let Some(c) = app.collection.as_mut() else { return Task::none() };
-            if c.loading { return Task::none() }
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            if c.loading {
+                return Task::none();
+            }
             let link = c.link.clone();
             if let Some((checked_target, checked)) = &c.runtime {
-                if checked_target == &target && matches!(checked, eidos_collections::recipe::RuntimeCheck::Mismatch { .. }) {
+                if checked_target == &target
+                    && matches!(
+                        checked,
+                        eidos_collections::recipe::RuntimeCheck::Mismatch { .. }
+                    )
+                {
                     let approved = Some(checked.clone());
                     app.collection = None;
                     let id = game.def.id.to_owned();
@@ -7544,15 +7678,29 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let worker_link = link.clone();
             return Task::perform(
                 async move { collection_runtime_on_worker(&inst, &game, &worker_link) },
-                move |result| Message::CollectionInstallChecked { request, target: target.clone(), link: link.clone(), result },
+                move |result| Message::CollectionInstallChecked {
+                    request,
+                    target: target.clone(),
+                    link: link.clone(),
+                    result,
+                },
             );
         }
-        Message::CollectionInstallChecked { request, target, link, result } => {
+        Message::CollectionInstallChecked {
+            request,
+            target,
+            link,
+            result,
+        } => {
             if collection_target(app).as_ref() != Some(&target) || app.transfer_job.is_some() {
                 return Task::none();
             }
-            let Some(c) = app.collection.as_mut() else { return Task::none() };
-            if c.install_check != Some(request) || c.link != link { return Task::none() }
+            let Some(c) = app.collection.as_mut() else {
+                return Task::none();
+            };
+            if c.install_check != Some(request) || c.link != link {
+                return Task::none();
+            }
             c.install_check = None;
             c.loading = false;
             match result {
@@ -7563,7 +7711,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 }
                 Ok(check) => {
                     app.status = Some(check.message());
-                    let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned()) else { return Task::none() };
+                    let (Some(inst), Some(game)) =
+                        (app.created.clone(), selected_game(app).cloned())
+                    else {
+                        return Task::none();
+                    };
                     app.collection = None;
                     let id = game.def.id.to_owned();
                     app.transfer_job = Some(spawn_collection(inst, game, id, link, None));
@@ -7588,9 +7740,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|mut o| o.take())
                 // A poisoned mutex means the worker panicked. Say so: the user
                 // is watching a dialog that would otherwise never finish.
-                .unwrap_or_else(|| {
-                    Err("The worker stopped without a result.".to_string())
-                });
+                .unwrap_or_else(|| Err("The worker stopped without a result.".to_string()));
             if kind == crate::TransferKind::Unpack {
                 if let Ok(summary) = &mut result {
                     if let Some(note) = open_unpacked(app, &target) {

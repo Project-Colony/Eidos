@@ -131,3 +131,25 @@ on v1.17.1. Quiescent and warm-cache controls were comparable. This was direct
 daemon-method execution, not a mounted FUSE or game/FPS benchmark.
 The narrowly scoped cache fix, independent Root Overwrite review and GUI worker
 review are now active. The compiled reference remains unchanged for user testing.
+
+### GUI performance and snapshot corrections
+
+- Preview/export blocking operations now run through the existing smol blocking
+  pool with one asynchronous global permit retained until the actual work ends,
+  including when the awaiting future is canceled. No new dependency version was
+  introduced; the GUI now declares the smol dependency already used by iced.
+- Archive analysis defers during tracked game/tool runs and cooperatively cancels
+  old epochs between phases. Completion polling is 100 ms rather than a 16 ms
+  animation timer. Automatic diagnostics preserve dirty flags until the run ends.
+  Cancellation is not claimed immediate inside a filesystem index or parser call.
+- Archive source identities are validated at worker completion and GUI publication.
+  A failed/changed scan clears old archive providers and waits for explicit refresh.
+- Cached DDS controls retain the original instance/profile/view epoch and physical
+  source identity, including archive members; replacement files or changed views
+  cannot relabel old pixels as current.
+- Independent review resolved both remaining stale-state findings. Regression
+  evidence: 345 passing / 2 failing before the final guards; 347 passing / 0 failing
+  afterward. Tests also cover canceled worker resume and blocked-executor behavior.
+
+Filesystem performance and Root Overwrite recovery work remains in progress; the
+GUI evidence does not claim the entire branch has passed final acceptance.

@@ -143,7 +143,11 @@ pub(crate) fn known_instances(games: &[DetectedGame]) -> Vec<KnownInstance> {
 }
 
 /// A saved source key wins over catalog order. Missing saved copies stay unavailable.
-pub(crate) fn instance_game_index(games: &[DetectedGame], inst: &Instance, id: &str) -> Option<usize> {
+pub(crate) fn instance_game_index(
+    games: &[DetectedGame],
+    inst: &Instance,
+    id: &str,
+) -> Option<usize> {
     let manifest = eidos_instance::Manifest::read_checked(&inst.manifest_path()).ok()?;
     let key = manifest.as_ref().and_then(|m| m.installation.as_deref());
     let selected = eidos_games::select_installation(games, id, key)?;
@@ -163,7 +167,11 @@ pub(crate) fn known_instances_from(
         if instance_game_index(games, &inst, games[game_index].def.id) != Some(game_index) {
             return;
         }
-        let name = format!("{} ({})", games[game_index].def.name, games[game_index].source_name());
+        let name = format!(
+            "{} ({})",
+            games[game_index].def.name,
+            games[game_index].source_name()
+        );
         let label = if portable {
             format!("{name}  -  {}", inst.root.display())
         } else {
@@ -272,7 +280,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         conflicts: None,
         archive_epoch: std::cell::Cell::new(1),
         archive_completed_epoch: None,
-        archive_sources:HashMap::new(),
+        archive_sources: HashMap::new(),
         archive_job: None,
         archive_plan: None,
         archive_warnings: Vec::new(),
@@ -351,9 +359,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_restore: None,
         preview: None,
         preview_pending: None,
-        archive_filter:String::new(),
-        archive_page:0,
-        archive_export:None,
+        archive_filter: String::new(),
+        archive_page: 0,
+        archive_export: None,
         dl_filter: String::new(),
         dl_sort: DownloadSort::default(),
         dl_show_hidden: false,
@@ -519,7 +527,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         let found = reg
             .candidates_for(app.games[i].def.id)
             .into_iter()
-            .find(|c| c.exists() && instance_game_index(&app.games, c, app.games[i].def.id) == Some(i));
+            .find(|c| {
+                c.exists() && instance_game_index(&app.games, c, app.games[i].def.id) == Some(i)
+            });
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
             app.status =
@@ -2294,6 +2304,11 @@ pub(crate) fn bump_views(app: &App) {
 /// at the end of `update()`, so a message that changes ten things still pays for
 /// one scan - and a message that changes nothing pays for none.
 pub(crate) fn refresh_diagnostics(app: &mut App) {
+    // Retain dirty flags and refresh after the child exits; automatic indexing
+    // and trusted diagnostic processes should not compete with a running game.
+    if app.running.is_some() {
+        return;
+    }
     if !app.diag_stale.get() && !app.diag_dirty {
         return;
     }
@@ -2401,9 +2416,8 @@ fn run_addon_capture_inner(
     ctx: &eidos_addons::Context,
     timeout: std::time::Duration,
 ) -> Result<String, String> {
-    let output = eidos_addons::capture(
-        a, ctx, timeout, &std::sync::atomic::AtomicBool::new(false),
-    )?;
+    let output =
+        eidos_addons::capture(a, ctx, timeout, &std::sync::atomic::AtomicBool::new(false))?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if !output.status.success() && stdout.is_empty() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2430,14 +2444,21 @@ mod addon_capture_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("one.dds");
         let mut dds = ddsfile::Dds::new_dxgi(ddsfile::NewDxgiParams {
-            width: 1, height: 1, depth: None,
+            width: 1,
+            height: 1,
+            depth: None,
             format: ddsfile::DxgiFormat::R8G8B8A8_UNorm,
-            mipmap_levels: None, array_layers: None, caps2: None,
-            is_cubemap: false, resource_dimension: ddsfile::D3D10ResourceDimension::Texture2D,
+            mipmap_levels: None,
+            array_layers: None,
+            caps2: None,
+            is_cubemap: false,
+            resource_dimension: ddsfile::D3D10ResourceDimension::Texture2D,
             alpha_mode: ddsfile::AlphaMode::Straight,
-        }).unwrap();
+        })
+        .unwrap();
         dds.data = vec![255, 0, 0, 128];
-        dds.write(&mut std::fs::File::create(&path).unwrap()).unwrap();
+        dds.write(&mut std::fs::File::create(&path).unwrap())
+            .unwrap();
         assert!(!matches!(build_preview(&path), Preview::Unsupported { .. }));
     }
 
@@ -2446,7 +2467,8 @@ mod addon_capture_tests {
         let addon = eidos_addons::parse_addon(
             "id='pipe-holder'\nkind='diagnose'\nexec='/bin/sh'\nargs=['-c', 'sleep 0.8 & exit 0']",
             Path::new("/tmp/pipe-holder.toml"),
-        ).unwrap();
+        )
+        .unwrap();
         let started = std::time::Instant::now();
         let result = run_addon_capture_inner(
             &addon,
@@ -2454,7 +2476,10 @@ mod addon_capture_tests {
             std::time::Duration::from_millis(80),
         );
         assert!(started.elapsed() < std::time::Duration::from_millis(500));
-        assert!(result.is_err(), "a helper retaining output must hit its deadline");
+        assert!(
+            result.is_err(),
+            "a helper retaining output must hit its deadline"
+        );
     }
 }
 

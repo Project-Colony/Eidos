@@ -36,9 +36,10 @@ use eidos_plugins::{GameSpec, MovableRange, PluginList};
 // the measure of the split: nothing at the root draws anything any more.
 mod anim;
 mod archive_conflicts;
+mod background_work;
 mod dds_preview;
-mod file_preview;
 mod dialogs;
+mod file_preview;
 mod fomod;
 mod health;
 mod modinfo;
@@ -49,10 +50,10 @@ mod view;
 mod widgets;
 mod wizard;
 
+use archive_conflicts::*;
 use dialogs::*;
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
 use modinfo::*;
-use archive_conflicts::*;
 use state::*;
 use theme::pal;
 use update::*;
@@ -282,14 +283,19 @@ enum Message {
     PreviewFile(PathBuf),
     RunFileExtension(eidos_addons::protocol::Operation, PathBuf),
     ChooseExtensionFile(eidos_addons::protocol::Operation),
-    ExtensionFilePicked(eidos_addons::protocol::Operation,Option<PathBuf>),
+    ExtensionFilePicked(eidos_addons::protocol::Operation, Option<PathBuf>),
     PreviewReady(u64, Preview),
     PreviewDdsSelection(dds_preview::Selection),
-    ArchiveProviderAction { epoch:u64, member:String, provider:eidos_conflicts::AssetProvider, export:bool },
+    ArchiveProviderAction {
+        epoch: u64,
+        member: String,
+        provider: eidos_conflicts::AssetProvider,
+        export: bool,
+    },
     ArchiveFilterChanged(String),
     ArchivePage(usize),
-    ArchiveExportDestination(u64,Option<PathBuf>),
-    ArchiveExportFinished(u64,Result<PathBuf,String>),
+    ArchiveExportDestination(u64, Option<PathBuf>),
+    ArchiveExportFinished(u64, Result<PathBuf, String>),
     ClosePreview,
     /// Executables editor: the AppID field, the two flags, and the shortcut.
     ExecAppIdChanged(String),
@@ -758,6 +764,7 @@ enum Message {
     ///
     /// Only subscribed while something is actually moving - see `subscription`.
     AnimationTick,
+    ArchivePoll,
     /// A frame while an archive extracts: check whether the worker finished.
     InstallPoll,
     WindowResized(iced::Size),
@@ -1263,13 +1270,17 @@ enum PickerChoice {
 /// Decoded content and its physical source for Reveal.
 #[derive(Debug, Clone)]
 pub(crate) enum Preview {
-    Archive { source:archive_conflicts::MemberSource, content:Box<Preview> },
+    Archive {
+        source: archive_conflicts::MemberSource,
+        content: Box<Preview>,
+    },
     Image {
         path: PathBuf,
         handle: iced::widget::image::Handle,
     },
     Dds {
         path: PathBuf,
+        provenance: Option<file_preview::Snapshot>,
         bytes: std::sync::Arc<Vec<u8>>,
         info: dds_preview::DdsInfo,
         selection: dds_preview::Selection,
@@ -1289,7 +1300,7 @@ pub(crate) enum Preview {
 impl Preview {
     pub(crate) fn path(&self) -> &Path {
         match self {
-            Preview::Archive {source,..}=>&source.path,
+            Preview::Archive { source, .. } => &source.path,
             Preview::Image { path, .. }
             | Preview::Dds { path, .. }
             | Preview::Text { path, .. }
@@ -1720,7 +1731,7 @@ struct App {
     conflicts: Option<ConflictMap>,
     archive_epoch: std::cell::Cell<u64>,
     archive_completed_epoch: Option<u64>,
-    archive_sources:HashMap<PathBuf,eidos_conflicts::ArchiveIdentity>,
+    archive_sources: HashMap<PathBuf, eidos_conflicts::ArchiveIdentity>,
     archive_job: Option<ArchiveWorker>,
     archive_plan: Option<eidos_gamefeatures::archives::ArchivePlan>,
     archive_warnings: Vec<String>,
@@ -1904,9 +1915,9 @@ struct App {
     /// The file being previewed, and what could be made of it.
     preview: Option<Preview>,
     preview_pending: Option<file_preview::Pending>,
-    archive_filter:String,
-    archive_page:usize,
-    archive_export:Option<archive_conflicts::ExportRequest>,
+    archive_filter: String,
+    archive_page: usize,
+    archive_export: Option<archive_conflicts::ExportRequest>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
     /// shown, and the two-click guard on the bulk purge.
     dl_filter: String,
@@ -2300,7 +2311,9 @@ struct InstallJob {
     /// 7-Zip's own percentage, written by the worker as it reads them.
     percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
     /// The worker's result, stored just before `done` flips.
-    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<eidos_install::Opened, eidos_install::InstallError>>>>,
+    outcome: std::sync::Arc<
+        std::sync::Mutex<Option<Result<eidos_install::Opened, eidos_install::InstallError>>>,
+    >,
     /// Flipped to `true` by the worker once `outcome` is filled.
     done: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -2587,7 +2600,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // so the tick always carries `AnimationTick` and the handler forwards to
     // `InstallPoll` when there is a job - which also keeps that message
     // separately testable.
-    let frames = (anim::needs_frames(app) || app.archive_job.is_some()).then(|| {
+    let frames = anim::needs_frames(app).then(|| {
         iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
     });
 
@@ -2723,6 +2736,12 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     });
 
     let mut subs = vec![track, pointer];
+    // Archive analysis only reports completion; it does not animate at frame rate.
+    if app.archive_job.is_some() {
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::ArchivePoll),
+        );
+    }
     if app.screen == Screen::Main
         && app.fomod.is_none()
         && app.rename.is_none()
@@ -3123,6 +3142,40 @@ mod tests {
     }
 
     #[test]
+    fn archive_analysis_defers_during_runs_and_restarts_cancelled_work() {
+        let (mut app, root) = data_app(&[("example.txt", "data")], &[]);
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        assert!(
+            app.archive_job.is_none(),
+            "started an archive scan during a run"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        assert!(app.archive_job.is_some());
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert!(
+            app.archive_completed_epoch.is_none(),
+            "published cancelled analysis"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert_eq!(app.archive_completed_epoch, Some(app.archive_epoch.get()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn archive_worker_uses_plugin_order_ini_registration_and_cached_members() {
         let (mut app, root) = data_app(&[("A.esp", "plugin")], &[]);
         let a = app.mods[0].path.clone();
@@ -3172,9 +3225,19 @@ mod tests {
             Some("A.esp")
         );
         fs::write(a.join("A.bsa"), b"broken").unwrap();
-        let epoch=app.archive_epoch.get();
-        let provider=app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"].winner.clone();
-        let _=update_inner(&mut app,Message::ArchiveProviderAction {epoch,member:"textures/shared.dds".into(),provider,export:false});
+        let epoch = app.archive_epoch.get();
+        let provider = app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+            .winner
+            .clone();
+        let _ = update_inner(
+            &mut app,
+            Message::ArchiveProviderAction {
+                epoch,
+                member: "textures/shared.dds".into(),
+                provider,
+                export: false,
+            },
+        );
         assert!(app.preview_pending.is_none());
         assert!(app.status.as_deref().unwrap().contains("changed since"));
         schedule_archive_conflicts(&mut app);
@@ -3784,18 +3847,35 @@ mod tests {
         let mut gog = app.games[0].clone();
         gog.install_path = PathBuf::from("/different/skyrim");
         gog.source = eidos_games::GameSource::External {
-            store: eidos_games::Store::Gog, app_id: "1711230643".into(), prefix: None, heroic: true,
+            store: eidos_games::Store::Gog,
+            app_id: "1711230643".into(),
+            prefix: None,
+            heroic: true,
         };
         app.games.push(gog);
         let root = temp_portable("skyrimse");
         let inst = Instance::portable(root.clone());
-        inst.ensure_installation("skyrimse", InstanceKind::Portable, &app.games[1].selection_id()).unwrap();
+        inst.ensure_installation(
+            "skyrimse",
+            InstanceKind::Portable,
+            &app.games[1].selection_id(),
+        )
+        .unwrap();
         let mut registry = eidos_instance::Registry::default();
         registry.set_last(eidos_instance::InstanceRef::Portable(root.clone()));
         let known = known_instances_from(&registry, &app.games);
-        assert_eq!(known.iter().find(|k| k.inst.root == root).unwrap().game_index, 1);
+        assert_eq!(
+            known
+                .iter()
+                .find(|k| k.inst.root == root)
+                .unwrap()
+                .game_index,
+            1
+        );
         app.games.pop();
-        assert!(known_instances_from(&registry, &app.games).iter().all(|k| k.inst.root != root));
+        assert!(known_instances_from(&registry, &app.games)
+            .iter()
+            .all(|k| k.inst.root != root));
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -4503,7 +4583,10 @@ mod tests {
             game_has_plugins(&mw),
             "Morrowind has .esp files and a load order"
         );
-        assert!(game_manages_plugins(&mw), "Morrowind order is projected by Eidos");
+        assert!(
+            game_manages_plugins(&mw),
+            "Morrowind order is projected by Eidos"
+        );
 
         let sb = app_for_game("stellarblade");
         assert!(!game_has_plugins(&sb) && !game_manages_plugins(&sb));
@@ -6143,15 +6226,12 @@ mod tests {
 
         // (1) A mod id from ANOTHER game's page is not this member. Nexus ids
         //     are per game, so a bare id is ambiguous across them.
-        let (mut app, root) = collection_app_with(
-            &[("Elsewhere", first, "gameName=Skyrim\n")],
-            &[],
-            &[second],
-        );
+        let (mut app, root) =
+            collection_app_with(&[("Elsewhere", first, "gameName=Skyrim\n")], &[], &[second]);
         let state = |app: &mut App| {
             app.collection = Some(CollectionState {
-            install_check: None,
-            runtime: None,
+                install_check: None,
+                runtime: None,
                 link: String::new(),
                 revision: Some(captured_revision()),
                 states: Vec::new(),
@@ -6619,26 +6699,107 @@ mod tests {
 
     #[test]
     fn preview_results_cannot_replace_a_newer_selection_or_changed_file() {
-        let (mut app,root)=data_app(&[("old.txt","old"),("new.txt","new")],&[]);
-        let old=app.mods[0].path.join("old.txt");
-        let new=app.mods[0].path.join("new.txt");
-        let _=update_inner(&mut app,Message::PreviewFile(old.clone()));
-        let first=app.preview_pending.as_ref().unwrap().id;
-        let _=update_inner(&mut app,Message::PreviewFile(new.clone()));
-        let second=app.preview_pending.as_ref().unwrap().id;
-        let _=update_inner(&mut app,Message::PreviewReady(first,build_preview(&old)));
-        assert_eq!(app.preview_pending.as_ref().unwrap().id,second);
-        assert_eq!(app.preview.as_ref().unwrap().path(),new);
-        let decoded=build_preview(&new);
-        fs::write(&new,"changed after decoding").unwrap();
-        let _=update_inner(&mut app,Message::PreviewReady(second,decoded));
+        let (mut app, root) = data_app(&[("old.txt", "old"), ("new.txt", "new")], &[]);
+        let old = app.mods[0].path.join("old.txt");
+        let new = app.mods[0].path.join("new.txt");
+        let _ = update_inner(&mut app, Message::PreviewFile(old.clone()));
+        let first = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::PreviewFile(new.clone()));
+        let second = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::PreviewReady(first, build_preview(&old)));
+        assert_eq!(app.preview_pending.as_ref().unwrap().id, second);
+        assert_eq!(app.preview.as_ref().unwrap().path(), new);
+        let decoded = build_preview(&new);
+        fs::write(&new, "changed after decoding").unwrap();
+        let _ = update_inner(&mut app, Message::PreviewReady(second, decoded));
         assert!(app.preview.is_none());
         assert!(app.status.as_deref().unwrap().contains("changed"));
-        let _=update_inner(&mut app,Message::PreviewFile(old.clone()));
-        let third=app.preview_pending.as_ref().unwrap().id;
-        let _=update_inner(&mut app,Message::ClosePreview);
-        let _=update_inner(&mut app,Message::PreviewReady(third,build_preview(&old)));
+        let _ = update_inner(&mut app, Message::PreviewFile(old.clone()));
+        let third = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::ClosePreview);
+        let _ = update_inner(&mut app, Message::PreviewReady(third, build_preview(&old)));
         assert!(app.preview.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_dds_selection_rejects_replaced_loose_files_and_archives() {
+        let (mut app, root) = data_app(&[], &[]);
+        let mut bytes = vec![0; 152];
+        bytes[..4].copy_from_slice(b"DDS ");
+        for (at, value) in [
+            (4, 124u32),
+            (8, 0x21007),
+            (12, 1),
+            (16, 1),
+            (28, 1),
+            (76, 32),
+            (80, 4),
+            (84, u32::from_le_bytes(*b"DX10")),
+            (108, 0x401008),
+            (128, 28),
+            (132, 3),
+            (140, 1),
+        ] {
+            bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[148..].copy_from_slice(&[255, 0, 0, 255]);
+        for (archived, change_view) in [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let path = root.join(if archived {
+                "textures.bsa"
+            } else {
+                "texture.dds"
+            });
+            fs::write(&path, &bytes).unwrap();
+            let content = file_preview::from_bytes(
+                if archived {
+                    Path::new("texture.dds")
+                } else {
+                    &path
+                },
+                bytes.clone(),
+                false,
+            );
+            assert!(matches!(content, Preview::Dds { .. }));
+            let decoded = if archived {
+                Preview::Archive {
+                    source: archive_conflicts::MemberSource {
+                        path: path.clone(),
+                        member: "texture.dds".into(),
+                        identity: eidos_conflicts::archive_identity(&path).unwrap(),
+                    },
+                    content: Box::new(content),
+                }
+            } else {
+                content
+            };
+            let _ = update_inner(&mut app, Message::PreviewFile(path.clone()));
+            let id = app.preview_pending.as_ref().unwrap().id;
+            file_preview::complete(&mut app, id, decoded);
+            let cached = app.preview.clone().unwrap();
+            // The cached pixels belong to the old source, even if a new control
+            // request starts after its replacement has already finished.
+            if change_view {
+                bump_views(&app);
+            } else {
+                fs::write(&path, b"replacement source").unwrap();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::PreviewDdsSelection(dds_preview::Selection {
+                    channel: dds_preview::Channel::Alpha,
+                    ..Default::default()
+                }),
+            );
+            let id = app.preview_pending.as_ref().unwrap().id;
+            file_preview::complete(&mut app, id, cached);
+            assert!(
+                app.preview.is_none(),
+                "accepted stale DDS pixels; archived={archived}"
+            );
+            assert!(app.status.as_deref().unwrap().contains("changed"));
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -8076,6 +8237,7 @@ mod tests {
             // treating it as an action would not shorten a confirmation's life,
             // it would end it between the two clicks every time.
             Message::AnimationTick,
+            Message::ArchivePoll,
             // Reached from that same tick and at the same rate, for a job that
             // runs for twenty minutes - long enough that a confirmation
             // disarmed sixty times a second reads as a broken window.
@@ -8922,10 +9084,7 @@ mod tests {
     /// A pack or unpack with no worker behind it. `outcome` decides whether it
     /// reads as finished, so the whole state machine can be driven without
     /// 7-Zip, which CI does not have.
-    fn fake_transfer(
-        kind: TransferKind,
-        outcome: Option<Result<String, String>>,
-    ) -> TransferJob {
+    fn fake_transfer(kind: TransferKind, outcome: Option<Result<String, String>>) -> TransferJob {
         use std::sync::atomic::{AtomicBool, AtomicU8};
         use std::sync::{Arc, Mutex};
         let done = outcome.is_some();
@@ -9014,7 +9173,10 @@ mod tests {
     fn a_collection_install_uses_the_same_single_job_slot() {
         let mut app = nav_app(&[]);
         app.transfer_job = Some(fake_transfer(TransferKind::Collection, None));
-        assert!(anim::needs_frames(&app), "it must get frames like the others");
+        assert!(
+            anim::needs_frames(&app),
+            "it must get frames like the others"
+        );
         // And nothing else may start beside it.
         let _ = update_inner(&mut app, Message::ShowUnpackDialog);
         assert!(app.unpack.is_none());
@@ -9030,34 +9192,72 @@ mod tests {
     fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
         let (mut app, root) = collection_app(&[], &[]);
         let target = CollectionTarget {
-            instance: root.clone(), profile: app.created.as_ref().unwrap().active_profile(),
+            instance: root.clone(),
+            profile: app.created.as_ref().unwrap().active_profile(),
             installation: app.games[0].selection_id(),
         };
         app.collection = Some(CollectionState {
-            install_check: Some(7), runtime: None, link: "request".into(),
-            revision: Some(captured_revision()), states: Vec::new(), loading: true,
-            error: None, confirm_fetch: false, asked: Default::default(),
+            install_check: Some(7),
+            runtime: None,
+            link: "request".into(),
+            revision: Some(captured_revision()),
+            states: Vec::new(),
+            loading: true,
+            error: None,
+            confirm_fetch: false,
+            asked: Default::default(),
         });
         let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
-            observed: "1.7.104.0".into(), expected: vec!["1.6.1170.0".into()],
+            observed: "1.7.104.0".into(),
+            expected: vec!["1.6.1170.0".into()],
         };
         for (request, changed) in [(6, false), (7, true)] {
             let mut stale = target.clone();
-            if changed { stale.profile = "another profile".into(); }
-            let _ = update_inner(&mut app, Message::CollectionInstallChecked {
-                request, target: stale, link: "request".into(), result: Ok(mismatch.clone()),
-            });
+            if changed {
+                stale.profile = "another profile".into();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::CollectionInstallChecked {
+                    request,
+                    target: stale,
+                    link: "request".into(),
+                    result: Ok(mismatch.clone()),
+                },
+            );
             assert!(app.collection.as_ref().unwrap().runtime.is_none());
             assert!(app.transfer_job.is_none());
         }
-        let _ = update_inner(&mut app, Message::CollectionInstallChecked {
-            request: 7, target, link: "request".into(), result: Ok(mismatch),
-        });
-        assert!(app.transfer_job.is_none(), "checking an incompatible recipe installs nothing");
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionInstallChecked {
+                request: 7,
+                target,
+                link: "request".into(),
+                result: Ok(mismatch),
+            },
+        );
+        assert!(
+            app.transfer_job.is_none(),
+            "checking an incompatible recipe installs nothing"
+        );
         assert!(app.collection.as_ref().unwrap().runtime.is_some());
-        assert!(app.collection.as_ref().unwrap().error.as_ref().unwrap().contains("1.7.104.0"));
-        let _ = update_inner(&mut app, Message::CollectionLinkChanged("other recipe".into()));
-        assert!(app.collection.as_ref().unwrap().runtime.is_none(), "a changed recipe needs its own decision");
+        assert!(app
+            .collection
+            .as_ref()
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("1.7.104.0"));
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionLinkChanged("other recipe".into()),
+        );
+        assert!(
+            app.collection.as_ref().unwrap().runtime.is_none(),
+            "a changed recipe needs its own decision"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -9073,18 +9273,53 @@ mod tests {
             let archive = root.join("reinstall.zip");
             fs::write(&archive, include_bytes!("../tests/fixtures/reinstall.zip")).unwrap();
             app.collision = Some(CollisionPrompt {
-                backup: false, archive, name: "Existing".into(), game_id: "skyrimse".into(),
-                rename_to: "Existing2".into(), fomod: false, tree: None, pick: None,
+                backup: false,
+                archive,
+                name: "Existing".into(),
+                game_id: "skyrimse".into(),
+                rename_to: "Existing2".into(),
+                fomod: false,
+                tree: None,
+                pick: None,
             });
             let _ = update_inner(&mut app, Message::CollisionBackupChanged(true));
             assert!(app.prefs.retain_install_backup);
             assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).retain_install_backup);
-            let _ = update_inner(&mut app, if merge { Message::CollisionMerge } else { Message::CollisionReplace });
-            assert_eq!(fs::read(root.join("mods/Existing/chosen.esp")).unwrap(), b"new payload", "{:?}", app.status);
-            assert_eq!(fs::read(root.join("mods/Existing_backup/chosen.esp")).unwrap(), b"old payload");
-            assert_eq!(fs::read(root.join("mods/Existing_backup/meta.ini")).unwrap(), old_meta);
-            assert!(!inst.modlist().iter().find(|m| m.name == "Existing").unwrap().enabled);
-            assert!(inst.modlist().iter().filter(|m| m.is_backup()).all(|m| !m.is_active()));
+            let _ = update_inner(
+                &mut app,
+                if merge {
+                    Message::CollisionMerge
+                } else {
+                    Message::CollisionReplace
+                },
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing/chosen.esp")).unwrap(),
+                b"new payload",
+                "{:?}",
+                app.status
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing_backup/chosen.esp")).unwrap(),
+                b"old payload"
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing_backup/meta.ini")).unwrap(),
+                old_meta
+            );
+            assert!(
+                !inst
+                    .modlist()
+                    .iter()
+                    .find(|m| m.name == "Existing")
+                    .unwrap()
+                    .enabled
+            );
+            assert!(inst
+                .modlist()
+                .iter()
+                .filter(|m| m.is_backup())
+                .all(|m| !m.is_active()));
             assert!(app.status.as_ref().unwrap().contains("Backup retained"));
             fs::remove_dir_all(root).unwrap();
         }
@@ -9131,9 +9366,9 @@ mod tests {
     #[test]
     fn a_finished_job_reports_its_failure_and_clears_itself() {
         let mut app = nav_app(&[]);
-        app.install_job = Some(fake_job(Some(Err(
-            eidos_install::InstallError::Extract("Cannot open the file as archive".into()),
-        ))));
+        app.install_job = Some(fake_job(Some(Err(eidos_install::InstallError::Extract(
+            "Cannot open the file as archive".into(),
+        )))));
         let _ = update_inner(&mut app, Message::InstallPoll);
         assert!(app.install_job.is_none(), "the finished job is taken");
         let s = app.status.clone().unwrap_or_default();
@@ -9156,8 +9391,14 @@ mod tests {
         };
         let line = failed_plugin_line(&p);
         assert!(line.starts_with("Save & Load Accelerator"), "{line}");
-        assert!(!line.contains("!!!"), "the sort-first trick is not a name: {line}");
-        assert!(line.contains("incompatible"), "and it still says what happened");
+        assert!(
+            !line.contains("!!!"),
+            "the sort-first trick is not a name: {line}"
+        );
+        assert!(
+            line.contains("incompatible"),
+            "and it still says what happened"
+        );
     }
 
     /// A plugin that declared nothing has no name to fall back on but its file,
@@ -9436,7 +9677,10 @@ mod tests {
 
     /// An App with a real portable instance, one mod, and a game Data dir - the
     /// minimum the Data tab needs to build a real `LayerStack`.
-    fn data_app(mod_files: &[(&str, &str)], overwrite: &[(&str, &str)]) -> (App, PathBuf) {
+    pub(super) fn data_app(
+        mod_files: &[(&str, &str)],
+        overwrite: &[(&str, &str)],
+    ) -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
         let game = root.join("game/Data");
         fs::create_dir_all(&game).unwrap();

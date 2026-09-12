@@ -1105,8 +1105,12 @@ pub(crate) fn save_details<'a>(
     let mut col = Column::new()
         .spacing(4)
         .push(text(save.filename.clone()).size(13.0))
-        .push(button(text("Extension details").size(11.0))
-            .on_press(Message::RunFileExtension(eidos_addons::protocol::Operation::SaveInfo,save.path.clone())));
+        .push(
+            button(text("Extension details").size(11.0)).on_press(Message::RunFileExtension(
+                eidos_addons::protocol::Operation::SaveInfo,
+                save.path.clone(),
+            )),
+        );
 
     let info = match app.save_info.as_ref().filter(|(p, _)| *p == save.path) {
         Some((_, Ok(info))) => info,
@@ -2277,7 +2281,9 @@ pub(crate) fn active_plugin_names(app: &App, game_id: &str) -> Option<Vec<String
             .map(|p| p.name.clone())
             .collect(),
         None => {
-            let spec = selected_game(app).filter(|g| g.def.id == game_id)?.plugin_spec()?;
+            let spec = selected_game(app)
+                .filter(|g| g.def.id == game_id)?
+                .plugin_spec()?;
             let prof = inst.active();
             let dir = if prof.has_plugin_state() {
                 prof.plugins_state_dir()
@@ -4141,7 +4147,7 @@ pub(crate) fn run_picker_install(app: &mut App) {
             let Some(p) = app.picker.take() else { return };
             let rename_to = suggest_free_name(&mods_dir, &name);
             app.collision = Some(CollisionPrompt {
-                        backup: app.prefs.retain_install_backup,
+                backup: app.prefs.retain_install_backup,
                 archive: p.archive,
                 name: name.clone(),
                 game_id: p.game_id,
@@ -4189,7 +4195,11 @@ pub(crate) fn remember_bain_options(app: &App, mod_name: &str, choice: &PickerCh
     }
 }
 
-pub(crate) fn after_install_report(app: &mut App, report: eidos_install::InstallReport, archive: &std::path::Path) {
+pub(crate) fn after_install_report(
+    app: &mut App,
+    report: eidos_install::InstallReport,
+    archive: &std::path::Path,
+) {
     after_install(app, &report.name, report.dest, report.fomod, Some(archive));
     if let Some(backup) = report.backup {
         let status = app.status.get_or_insert_with(String::new);
@@ -4202,11 +4212,17 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         return;
     };
     let policy = match (c.backup, policy) {
-        (true, eidos_install::OverwritePolicy::Merge) => eidos_install::OverwritePolicy::MergeWithBackup,
-        (true, eidos_install::OverwritePolicy::Replace) => eidos_install::OverwritePolicy::ReplaceWithBackup,
+        (true, eidos_install::OverwritePolicy::Merge) => {
+            eidos_install::OverwritePolicy::MergeWithBackup
+        }
+        (true, eidos_install::OverwritePolicy::Replace) => {
+            eidos_install::OverwritePolicy::ReplaceWithBackup
+        }
         (_, policy) => policy,
     };
-    let Some(instance) = app.created.clone() else { return };
+    let Some(instance) = app.created.clone() else {
+        return;
+    };
     let _lock = match instance.try_lock("installing over an existing mod") {
         Ok(lock) => lock,
         Err(error) => {
@@ -4719,7 +4735,10 @@ pub(crate) fn after_install(
 /// percentage, and says so plainly at 100%, when the remaining work (finding
 /// the data root, healing NTFS case collisions) no longer moves the bar.
 pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a, Message> {
-    let pct = job.percent.load(std::sync::atomic::Ordering::SeqCst).min(100);
+    let pct = job
+        .percent
+        .load(std::sync::atomic::Ordering::SeqCst)
+        .min(100);
     let card = Column::new()
         .spacing(10)
         .push(text(format!("Extracting \"{}\"", job.name)).size(15.0))

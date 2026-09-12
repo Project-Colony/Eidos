@@ -339,12 +339,23 @@ pub(crate) fn set_hidden(path: &Path, hide: bool) -> std::io::Result<PathBuf> {
     };
     // Never let a hide silently swallow an existing file: unhiding onto a name the
     // mod already carries would destroy the live copy.
-    let parent = target.parent().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing parent"))?;
-    let target_name = target.file_name().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing file name"))?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing parent"))?;
+    let target_name = target
+        .file_name()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing file name"))?;
     for entry in fs::read_dir(parent)? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().eq_ignore_ascii_case(&target_name.to_string_lossy()) {
-            return Err(Error::new(ErrorKind::AlreadyExists, format!("{} already exists", entry.path().display())));
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&target_name.to_string_lossy())
+        {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                format!("{} already exists", entry.path().display()),
+            ));
         }
     }
     fs::rename(path, &target)?;

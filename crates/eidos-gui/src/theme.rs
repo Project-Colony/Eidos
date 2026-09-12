@@ -15,7 +15,6 @@
 //! **A literal hex outside this file is a bug.** It will be right on one palette
 //! and wrong on the other fifty-seven.
 
-
 use colony_ui::{hex, ThemePalette};
 use iced::widget::container;
 use iced::{Background, Border, Color, Element, Length, Theme};

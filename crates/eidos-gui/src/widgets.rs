@@ -677,8 +677,7 @@ pub(crate) fn dropdown_under<'a>(
     // rather than allowed to run off - and the scrollable gives that squeeze
     // somewhere to go instead of clipping the last items away.
     let room = (win.height - anchor.y - anchor.height - 8.0).max(80.0);
-    let body: Element<'a, Message> =
-        iced::widget::scrollable(card).height(Length::Shrink).into();
+    let body: Element<'a, Message> = iced::widget::scrollable(card).height(Length::Shrink).into();
     let pinned = iced::widget::pin(body)
         .x(anchor.x)
         .y(anchor.y + anchor.height);
