@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Instalar o Eidos
 
@@ -73,8 +73,8 @@ está lá.
 
 ## Opcional: passthrough do FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` liga o passthrough FUSE do
-kernel. Ele está **desligado por padrão e você quase certamente quer que
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` concede a capacidade opcional, mas não ativa o passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` é a opção separada para ativá-lo durante a execução. Ele está **desligado por padrão e você quase certamente quer que
 continue assim**: medido no Skyrim SE, ele impede o jogo de abrir os próprios
 arquivos e plugins, de modo que os mods silenciosamente não carregam. A chave
 existe para retestar o mecanismo, não porque seja recomendada.

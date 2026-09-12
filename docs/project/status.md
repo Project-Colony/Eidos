@@ -3,6 +3,13 @@
 The full done/remaining ledger, kept as the project's development history. The
 README carries only the short version; this is the receipts.
 
+The September 2026 audit adds replacement staging, exact collection ownership
+and Nexus file identity, bounded plugin/SKSE preflight checks, archive member
+conflicts, generated-output receipts, and filesystem/save regressions. See
+[integrity.md](../internals/integrity.md) for behavior and verification limits.
+The historical in-game claims below refer to the earlier builds they describe;
+they do not certify the audit branch in gameplay.
+
 ## Roadmap
 
 - [x] Validate the under-Wine virtualization thesis (PoC)
@@ -308,9 +315,10 @@ Since then, and all measured on a real 50-layer instance rather than a benchmark
   generator needs, and the Executables dialog now says whether each prerequisite
   is actually present instead of only what was typed.
 
-Next up: casing normalization at import, more game families proven in-game, and
-packaging - plus the open `plugins.txt` question in troubleshooting.md, which is
-the one thing standing between a working mount and a working playthrough.
+Remaining validation includes more game families proven in-game and packaging.
+The earlier `plugins.txt` launch investigation is historical; the current
+preflight checks and capture protections are documented in the usage guide and
+[integrity.md](../internals/integrity.md).
 
 ## On reviewing this work
 

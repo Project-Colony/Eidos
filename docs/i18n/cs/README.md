@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -80,14 +80,7 @@ každý profil. Uložené pozice se rozeberou, porovnají s vašimi současnými
 pluginy - s tlačítkem, které zapne to, co daná pozice potřebuje - a po každém
 sezení se synchronizují zpět pro Steam Cloud.
 
-**Nexus.** Připojte účet a tlačítko „Mod Manager Download" na webu přistane
-rovnou ve vaší instanci, spolu s kontrolou aktualizací proti tomu, co máte
-nainstalováno, s tím, kdo který mód vytvořil, a s odkazem na jeho profil. Odkaz
-na **kolekci** vypíše její členy spárované s vaší instancí - nainstalováno,
-staženo, chybí - což je čtení kolekce, ne její instalace, a panel řekne proč.
-Karta Downloads je knihovna archivů: filtrovat, řadit, skrýt bez mazání a
-vyčistit ty, které už jsou nainstalované. Přepínač **offline** to všechno
-zastaví.
+**Nexus.** Připojte účet pro přijímání odkazů „Mod Manager Download“, kontrolu aktualizací a zobrazení autorů a jejich profilů. Kolekce se instalují podle svých receptů, s obnovitelným průběhem a výslovnými zprávami o nepodporovaných krocích. Porovnání ověřuje přesné zdrojové soubory; neúplná starší metadata zůstávají neověřená. Karta stahování umožňuje archivy filtrovat, řadit, skrývat a odstraňovat. Přepínač **offline** zastaví přístup k Nexusu.
 
 **Nástroje.** xEdit, BodySlide, DynDOLOD a spol. běží *skrz sloučený pohled*
 uvnitř Proton prefixu dané hry - vidí vaše módy, jejich výstup přistane
@@ -111,6 +104,8 @@ doplňků, které jste napsali - a logy pod `~/.local/state/Colony/Eidos/`.
 Rozvržení, které používá každý program z rodiny Colony. Starší Eidos je držel
 v `~/.config/eidos/`; první spuštění po aktualizaci je zkopíruje, napíše to do
 logu a starý adresář nechá přesně tak, jak byl.
+
+[Kontroly integrity a vygenerované soubory](../../../docs/internals/integrity.md) (anglicky) popisují ochranu při nahrazování, konflikty souborů v BSA/BA2, statickou diagnostiku SKSE a záznamy generování včetně jejich omezení.
 
 ## Jak si stojí ve srovnání
 

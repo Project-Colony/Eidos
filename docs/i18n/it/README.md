@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -84,14 +84,7 @@ salvataggi vengono letti, confrontati con i tuoi plugin attuali - con un
 pulsante che abilita ciò che un salvataggio richiede - e risincronizzati per
 Steam Cloud dopo ogni sessione.
 
-**Nexus.** Collega un account e il pulsante "Mod Manager Download" del sito
-atterra direttamente nella tua istanza, con il controllo degli aggiornamenti
-rispetto a ciò che hai installato, chi ha fatto ogni mod e un link al suo
-profilo. Il link a una **collezione** elenca i suoi membri incrociati con la tua
-istanza - installati, scaricati, mancanti - il che è leggere una collezione, non
-installarla, e il pannello dice perché. La scheda Downloads è una biblioteca di
-archivi: filtra, ordina, nascondi senza eliminare, e ripulisci quelli già
-installati. Un interruttore **offline** ferma tutto questo.
+**Nexus.** Collega un account per ricevere i link «Mod Manager Download», controllare gli aggiornamenti e vedere gli autori e i loro profili. Le collezioni vengono installate dalle rispettive ricette, con avanzamento ripristinabile e rapporti espliciti sui passaggi non supportati. Il confronto verifica gli esatti file di origine; i vecchi metadati incompleti restano non verificati. La scheda Download permette di filtrare, ordinare, nascondere ed eliminare gli archivi. L'interruttore **offline** blocca l'accesso a Nexus.
 
 **Strumenti.** xEdit, BodySlide, DynDOLOD e compagnia girano *attraverso la
 vista unita* dentro il prefisso Proton del gioco - vedono le tue mod, il loro
@@ -115,6 +108,8 @@ giochi e add-on che hai scritto - con i log sotto
 Colony. Un Eidos più vecchio li teneva in `~/.config/eidos/`; il primo avvio
 dopo l'aggiornamento li copia, lo scrive nel log, e lascia la vecchia cartella
 esattamente com'era.
+
+Consulta [Controlli di integrità e file generati](../../../docs/internals/integrity.md) (in inglese) per la protezione delle sostituzioni, i conflitti fra file BSA/BA2, la diagnostica statica SKSE e i registri di generazione, inclusi i loro limiti.
 
 ## Come si confronta
 

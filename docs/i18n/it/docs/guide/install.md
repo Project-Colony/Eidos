@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Installare Eidos
 
@@ -72,8 +72,8 @@ un'istanza portatile - vedi [usage.it.md](usage.md). Il giro completo è lì.
 
 ## Facoltativo: passthrough FUSE
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` abilita il passthrough FUSE
-del kernel. È **disattivato per impostazione predefinita e quasi certamente lo
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` assegna la capability facoltativa, ma non attiva il passthrough.
+`EIDOS_FUSE_PASSTHROUGH=1` è il comando separato per attivarlo durante l’esecuzione. È **disattivato per impostazione predefinita e quasi certamente lo
 vuoi così**: misurato su Skyrim SE, impedisce al gioco di aprire i propri archivi
 e plugin, così le mod silenziosamente non si caricano. L'interruttore esiste per
 ricollaudare il meccanismo, non perché sia consigliato.

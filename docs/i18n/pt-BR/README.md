@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -80,14 +80,7 @@ saves são lidos, comparados com seus plugins atuais - com um botão que ativa o
 que um save precisa - e sincronizados de volta para o Steam Cloud depois de cada
 sessão.
 
-**Nexus.** Conecte uma conta e o botão "Mod Manager Download" do site cai direto
-na sua instância, com verificações de atualização contra o que você tem
-instalado, quem fez cada mod e um link para o perfil dele. O link de uma
-**coleção** lista os membros dela cruzados com a sua instância - instalados,
-baixados, faltando - o que é ler uma coleção em vez de instalar uma, e o painel
-diz isso. A aba Downloads é uma biblioteca de arquivos: filtre, ordene, esconda
-sem apagar, e purgue os que já estão instalados. Uma chave **offline** interrompe tudo
-isso.
+**Nexus.** Conecte uma conta para receber links de “Mod Manager Download”, verificar atualizações e consultar autores e seus perfis. As coleções são instaladas a partir de suas receitas, com progresso retomável e relatórios explícitos sobre etapas não suportadas. A comparação verifica os arquivos de origem exatos; metadados antigos incompletos continuam não verificados. A aba Downloads permite filtrar, ordenar, ocultar e remover arquivos. Um botão **offline** interrompe o acesso ao Nexus.
 
 **Ferramentas.** xEdit, BodySlide, DynDOLOD e afins rodam *através da visão
 combinada* dentro do prefixo Proton do jogo - eles enxergam seus mods, a saída
@@ -111,6 +104,8 @@ definições de jogos e de add-ons que você escreveu - com os logs em
 usa. Um Eidos mais antigo guardava isso em `~/.config/eidos/`; o primeiro início
 depois da atualização copia tudo para o lugar novo, diz isso no log, e deixa o
 diretório antigo exatamente como estava.
+
+Consulte [Verificações de integridade e arquivos gerados](../../../docs/internals/integrity.md) (em inglês) para saber sobre a proteção nas substituições, conflitos entre arquivos BSA/BA2, diagnósticos estáticos do SKSE e registros de geração, incluindo suas limitações.
 
 ## Como ele se compara
 

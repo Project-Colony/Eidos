@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Eidos installeren
 
@@ -72,8 +72,8 @@ instantie - zie [usage.nl.md](usage.md). De volledige rondleiding staat daar.
 
 ## Optioneel: FUSE-passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` schakelt kernel-FUSE-
-passthrough in. Het staat **standaard uit en dat wil je vrijwel zeker zo laten**:
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` verleent de optionele capability, maar schakelt passthrough niet in.
+`EIDOS_FUSE_PASSTHROUGH=1` is de afzonderlijke schakelaar tijdens het uitvoeren. Het staat **standaard uit en dat wil je vrijwel zeker zo laten**:
 gemeten op Skyrim SE belet het het spel zijn eigen archieven en plugins te
 openen, zodat mods stilzwijgend niet laden. De schakelaar bestaat om het
 mechanisme opnieuw te testen, niet omdat hij aanbevolen wordt.

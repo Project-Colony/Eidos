@@ -72,13 +72,12 @@ Details in [usage.md](docs/guide/usage.md#instances-global-and-portable).
 parsed, diffed against your current plugins - with a button that enables what a
 save needs - and synced back for Steam Cloud after every session.
 
-**Nexus.** Connect an account and the site's "Mod Manager Download" button lands
-straight in your instance, with update checks against what you have installed,
-who made each mod and a link to their profile. A **collection** link lists its
-members joined against your instance - installed, downloaded, missing - which is
-reading a collection rather than installing one, and the pane says why. The
-Downloads tab is an archive library: filter, sort, hide without deleting, and
-purge the ones already installed. An **offline** switch stops all of it.
+**Nexus.** Connect an account to receive Mod Manager Download links, check
+updates and see authors and their profiles. Collections install from their
+recipes with resumable progress and explicit reports for unsupported steps.
+Matching checks exact source files; incomplete older metadata remains
+unverified. The Downloads tab filters, sorts, hides and removes archives.
+An **offline** switch stops Nexus access.
 
 **Tools.** xEdit, BodySlide, DynDOLOD and friends run *through the merged view*
 inside the game's Proton prefix - they see your mods, their output lands in
@@ -101,6 +100,10 @@ definitions you wrote - with logs under `~/.local/state/Colony/Eidos/`. The
 layout every program in the Colony family uses. An older Eidos kept these in
 `~/.config/eidos/`; the first launch after upgrading copies them across, says so
 in the log, and leaves the old directory exactly as it was.
+
+See [Integrity checks and generated output](docs/internals/integrity.md) for
+replacement protection, BSA/BA2 member conflicts, static SKSE diagnostics and
+generator receipts, including their limits.
 
 ## How it compares
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # 安裝 Eidos
 
@@ -67,7 +67,8 @@ eidos play skyrimse -- %command%  # 讓任何程式穿過合併檢視執行
 
 ## 選用:FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 會開啟核心 FUSE passthrough。
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` 僅授予選用權限，不會開啟 passthrough。
+執行時需另行設定 `EIDOS_FUSE_PASSTHROUGH=1` 才會啟用。
 它**預設關閉,而且你幾乎肯定應該讓它保持關閉**:在 Skyrim SE 上實測,它會讓遊戲
 打不開自己的封裝檔與外掛,於是模組靜悄悄地不載入。這個開關的存在是為了重新測試
 該機制,而不是因為推薦使用。

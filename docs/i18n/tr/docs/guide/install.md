@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=62a0541b21c7e98ce19d35d4780b65daef317b4a -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
 
 # Eidos kurulumu
 
@@ -72,8 +72,8 @@ bkz. [usage.tr.md](usage.md). Tam gezinti de oradadır.
 
 ## İsteğe bağlı: FUSE passthrough
 
-`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` çekirdek FUSE
-passthrough'unu açar. **Öntanımlı olarak kapalıdır ve neredeyse kesinlikle öyle
+`sudo setcap cap_sys_admin+ep "$(command -v eidos)"` isteğe bağlı yetkiyi verir, ancak passthrough özelliğini etkinleştirmez.
+`EIDOS_FUSE_PASSTHROUGH=1`, çalışma zamanında kullanılan ayrı anahtardır. **Öntanımlı olarak kapalıdır ve neredeyse kesinlikle öyle
 kalmasını istersiniz**: Skyrim SE üzerinde ölçüldüğünde oyunun kendi arşivlerini
 ve eklentilerini açmasını engelliyor, böylece modlar sessizce yüklenmiyor. Bu
 anahtar, düzeneği yeniden sınamak için var; önerildiği için değil.

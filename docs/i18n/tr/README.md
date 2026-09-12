@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=5d3404acdd61e5f220389c0eb702ff7511f58aa2 -->
+<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
 
 <div align="center">
 
@@ -81,14 +81,7 @@ Kayıtlar ayrıştırılır, geçerli eklentilerinizle karşılaştırılır - b
 gerektirdiğini etkinleştiren bir düğmeyle birlikte - ve her oturumdan sonra
 Steam Cloud için geri eşitlenir.
 
-**Nexus.** Bir hesap bağlayın; sitenin "Mod Manager Download" düğmesi doğrudan
-örneğinize iner, kurduklarınıza karşı güncelleme denetimleri, her modu kimin
-yaptığı ve profiline bir bağlantı ile birlikte. Bir **collection** bağlantısı,
-üyelerini örneğinizle eşleştirerek listeler - kurulu, indirilmiş, eksik - ki bu
-bir collection'ı kurmak değil okumaktır ve bölme bunun nedenini söyler.
-Downloads sekmesi bir arşiv kitaplığıdır: süzün, sıralayın, silmeden gizleyin ve
-zaten kurulmuş olanları temizleyin. Bir **çevrimdışı** anahtarı bunların tümünü
-durdurur.
+**Nexus.** Mod Manager Download bağlantılarını almak, güncellemeleri denetlemek ve yapımcılarla profillerini görmek için bir hesap bağlayın. Koleksiyonlar kendi tariflerinden, kaldığı yerden devam edebilen ilerleme ve desteklenmeyen adımlara ilişkin açık raporlarla kurulur. Eşleştirme tam kaynak dosyalarını denetler; eksik eski meta veriler doğrulanmamış kalır. İndirmeler sekmesi arşivleri filtreler, sıralar, gizler ve kaldırır. **Çevrimdışı** anahtarı Nexus erişimini durdurur.
 
 **Araçlar.** xEdit, BodySlide, DynDOLOD ve arkadaşları oyunun Proton önekinin
 içinde *birleşik görünüm üzerinden* çalışır - modlarınızı görürler, çıktıları
@@ -113,6 +106,8 @@ yazdığınız oyun ve eklenti tanımları - günlükler ise
 kullandığı düzen. Daha eski bir Eidos bunları `~/.config/eidos/` içinde
 tutuyordu; yükseltmeden sonraki ilk başlatma onları kopyalar, bunu günlükte
 söyler ve eski klasörü tam olarak eskisi gibi bırakır.
+
+Değiştirme koruması, BSA/BA2 içindeki dosya çakışmaları, statik SKSE tanılamaları ve üretim kayıtları ile bunların sınırları için [Bütünlük denetimleri ve üretilen dosyalar](../../../docs/internals/integrity.md) sayfasına bakın (İngilizce).
 
 ## Nasıl kıyaslanıyor
 
