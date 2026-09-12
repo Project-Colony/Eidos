@@ -117,3 +117,17 @@ links for the next Steam launch. The previously selected 1.15.0 binaries are
 preserved separately with their hashes and a tested restoration helper.
 No real game/profile/mod files or original checkout files were changed.
 The already-open GUI retains its old executable until the user closes it.
+
+## Continuing performance review
+
+The user clarified that the reported frame-time spikes already occurred with
+v1.15.0 and asked to continue reviewing the code and Root Overwrite behavior.
+No claim is made that the release or hardware caused those observed spikes.
+
+An exact-tag synthetic experiment reproduced the v1.17.1 global directory-cache
+generation retry issue: with dense unrelated create/rename churn, eight cold
+listings had median 13.11 ms/8 builds on v1.16.0 versus 541.62 ms/353 builds
+on v1.17.1. Quiescent and warm-cache controls were comparable. This was direct
+daemon-method execution, not a mounted FUSE or game/FPS benchmark.
+The narrowly scoped cache fix, independent Root Overwrite review and GUI worker
+review are now active. The compiled reference remains unchanged for user testing.
