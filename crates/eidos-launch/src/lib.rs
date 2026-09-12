@@ -52,7 +52,8 @@ pub struct LaunchSpec {
     /// This is MO2's Root Builder, and it is what makes a script extender, ENB,
     /// ReShade, `.asi` loaders and Engine Fixes manageable as mods instead of
     /// files the user copies into their game by hand. An empty list skips the
-    /// second mount only when root Overwrite is also empty.
+    /// second mount only when root Overwrite is also empty and no read-only
+    /// shared Overwrite was requested.
     ///
     /// Other managers deploy these by copying into the real game directory and
     /// restoring afterwards, with a journal so a crash can be cleaned up. Eidos
@@ -65,6 +66,10 @@ pub struct LaunchSpec {
     /// (it has no instance to put one in); `eidos` passes the instance's single
     /// Overwrite so everything the user can write ends up in one place.
     pub root_overwrite: Option<PathBuf>,
+    /// Shared Root output below a profile-owned root upper. Unlike an ordinary
+    /// mod layer, its deletion and opacity markers still mask lower providers.
+    /// Its payloads are read in place; every session write uses `root_overwrite`.
+    pub root_readonly_overwrite: Option<PathBuf>,
     /// `(game_root, stash)` for the root union, mirroring [`Self::base_bind`]:
     /// the bind captures the pristine game root so the daemon can still read it
     /// once the union covers that same path.
@@ -239,7 +244,15 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
         Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
         _ => false,
     };
-    let _root_session = if spec.root_layers.is_empty() && !root_overwrite_present {
+    if let Some(shared) = &spec.root_readonly_overwrite {
+        // A missing or unreadable shared output store must not silently expose
+        // vanilla files that its deletion metadata was supposed to hide.
+        std::fs::read_dir(shared)?;
+    }
+    let _root_session = if spec.root_layers.is_empty()
+        && !root_overwrite_present
+        && spec.root_readonly_overwrite.is_none()
+    {
         None
     } else {
         let Some((root_src, root_stash)) = spec.root_base_bind.as_ref() else {
@@ -266,7 +279,20 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
             "eidos: {} mod(s) provide root-level files; mounting a union over the game root",
             spec.root_layers.len()
         );
-        Some(Eidos::new(root_layers, root_overwrite).spawn(root_src)?)
+        // Data was captured into its physical stash before this root mount and
+        // gets its own index below. Keep its mountpoint visible in the root
+        // index without walking the same payload a second time. Queries below
+        // it still work through the ordinary layer walk until Data is mounted.
+        let data_subtree = spec.mountpoint.strip_prefix(root_src).ok();
+        Some(
+            Eidos::new_with_readonly_overwrite(
+                root_layers,
+                root_overwrite,
+                data_subtree,
+                spec.root_readonly_overwrite.clone(),
+            )
+            .spawn(root_src)?,
+        )
     };
 
     std::fs::create_dir_all(&spec.mountpoint)?;

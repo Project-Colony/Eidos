@@ -456,6 +456,46 @@ impl Profile {
     /// INIs stay profile-owned. A blocked file is left in place and fails visibly;
     /// retrying is safe because each completed rename removes only its source.
     pub fn merge_runtime_root_outputs(&self, shared: &Path, retained: &[&str]) -> io::Result<()> {
+        use eidos_core::{OPAQUE_MARKER, WHITEOUT_PREFIX};
+        // Private-only capture phase. Shared opacity markers always have an
+        // empty body, so a later session cannot inherit this transaction state.
+        // Once durable, cleanup must never repeat: children may already have
+        // moved out of the private directory before a later error or crash.
+        const OPACITY_APPLIED: &[u8] = b"eidos-private-root-opacity-applied-v1\n";
+
+        fn retained_name(name: &str, retained: &[&str], top: bool) -> bool {
+            top && retained.iter().any(|f| {
+                name.eq_ignore_ascii_case(f)
+                    || name
+                        .strip_prefix(WHITEOUT_PREFIX)
+                        .is_some_and(|target| target.eq_ignore_ascii_case(f))
+            })
+        }
+        fn matches(dir: &Path, name: &std::ffi::OsStr) -> io::Result<Vec<PathBuf>> {
+            Ok(fs::read_dir(dir)?
+                .collect::<io::Result<Vec<_>>>()?
+                .into_iter()
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&name.to_string_lossy())
+                })
+                .map(|e| e.path())
+                .collect())
+        }
+        fn remove_entry(path: &Path) -> io::Result<()> {
+            match fs::symlink_metadata(path) {
+                Ok(m) if m.is_dir() => fs::remove_dir_all(path),
+                Ok(_) => fs::remove_file(path),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+        fn durable_marker(path: &Path, body: &[u8]) -> io::Result<()> {
+            crate::write_atomic(path, body)?;
+            fs::File::open(path)?.sync_all()?;
+            fs::File::open(path.parent().unwrap())?.sync_all()
+        }
         fn directory(path: &Path) -> io::Result<()> {
             match fs::symlink_metadata(path) {
                 Ok(m) if m.is_dir() => Ok(()),
@@ -468,28 +508,63 @@ impl Profile {
             }
         }
         fn merge(src: &Path, dst: &Path, retained: &[&str], top: bool) -> io::Result<()> {
+            directory(src)?;
             directory(dst)?;
             let mut entries = fs::read_dir(src)?.collect::<io::Result<Vec<_>>>()?;
             entries.sort_by_key(|e| e.file_name());
+            let mut names = std::collections::HashSet::new();
+            for entry in &entries {
+                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                if !retained_name(&name, retained, top) && !names.insert(name) {
+                    return Err(io::Error::other(format!(
+                        "Ambiguous case variants in private root output: {}",
+                        src.display()
+                    )));
+                }
+            }
+            let opacity = src.join(OPAQUE_MARKER);
+            let opaque = entries.iter().any(|e| e.file_name() == OPAQUE_MARKER);
+            if opaque {
+                if !fs::symlink_metadata(&opacity)?.is_file() {
+                    return Err(io::Error::other(
+                        "Private opacity marker is not a regular file",
+                    ));
+                }
+                // Publish opacity before removing old shared payloads: a failed
+                // cleanup must not expose vanilla children in their place.
+                durable_marker(&dst.join(OPAQUE_MARKER), b"")?;
+                if fs::read(&opacity)? != OPACITY_APPLIED {
+                    for entry in fs::read_dir(dst)?.collect::<io::Result<Vec<_>>>()? {
+                        let name = entry.file_name();
+                        if name != OPAQUE_MARKER
+                            && !retained_name(&name.to_string_lossy(), retained, top)
+                        {
+                            remove_entry(&entry.path())?;
+                        }
+                    }
+                    fs::File::open(dst)?.sync_all()?;
+                    // No new child moves until both cleanup and its private
+                    // phase record are durable. Retry then merges only the
+                    // remaining source children, preserving completed moves.
+                    durable_marker(&opacity, OPACITY_APPLIED)?;
+                }
+            }
             for entry in entries {
                 let name = entry.file_name();
-                let lower = name.to_string_lossy().to_ascii_lowercase();
-                if top
-                    && retained.iter().any(|f| {
-                        lower == f.to_ascii_lowercase()
-                            || lower == format!(".eidoswh.{}", f.to_ascii_lowercase())
-                    })
-                {
+                let text = name.to_string_lossy();
+                let lower = text.to_ascii_lowercase();
+                if name == OPAQUE_MARKER || retained_name(&text, retained, top) {
                     continue;
                 }
-                let destination = fs::read_dir(dst)?
-                    .filter_map(Result::ok)
-                    .find(|e| {
-                        e.file_name()
-                            .to_string_lossy()
-                            .eq_ignore_ascii_case(&name.to_string_lossy())
-                    })
-                    .map(|e| e.path())
+                let destinations = matches(dst, &name)?;
+                if destinations.len() > 1 {
+                    return Err(io::Error::other(format!(
+                        "Ambiguous case variants for root output {} in {}; private output was retained", name.to_string_lossy(), dst.display()
+                    )));
+                }
+                let destination = destinations
+                    .into_iter()
+                    .next()
                     .unwrap_or_else(|| dst.join(&name));
                 let kind = entry.file_type()?;
                 if kind.is_dir() {
@@ -504,16 +579,36 @@ impl Profile {
                             )));
                         }
                     }
-                    // A regular new file supersedes a prior deletion marker.
-                    if !lower.starts_with(".eidoswh.") {
-                        let marker = dst.join(format!(".eidoswh.{lower}"));
-                        match fs::remove_file(marker) {
-                            Ok(()) => {}
-                            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-                            Err(e) => return Err(e),
+                    if let Some(target) = text.strip_prefix(WHITEOUT_PREFIX) {
+                        if target.is_empty()
+                            || !matches!(
+                                Path::new(target).components().next(),
+                                Some(std::path::Component::Normal(_))
+                            )
+                        {
+                            return Err(io::Error::other("Invalid root output whiteout target"));
+                        }
+                        // A marker cannot hide a payload in its own Overwrite.
+                        // Keep the private marker until the shared deletion is
+                        // durable, so any partial failure remains retryable.
+                        durable_marker(&destination, b"")?;
+                        for old in matches(dst, std::ffi::OsStr::new(target))? {
+                            remove_entry(&old)?;
+                        }
+                        fs::File::open(dst)?.sync_all()?;
+                        fs::remove_file(entry.path())?;
+                    } else {
+                        // Publishing first keeps the prior deletion effective
+                        // when rename fails. The new same-upper payload wins
+                        // even if removing an obsolete marker then fails.
+                        fs::rename(entry.path(), &destination)?;
+                        for marker in matches(
+                            dst,
+                            std::ffi::OsStr::new(&format!("{WHITEOUT_PREFIX}{lower}")),
+                        )? {
+                            fs::remove_file(marker)?;
                         }
                     }
-                    fs::rename(entry.path(), &destination)?;
                 } else {
                     return Err(io::Error::other(format!(
                         "Unsupported runtime output type: {}",
@@ -521,11 +616,16 @@ impl Profile {
                     )));
                 }
             }
+            if opaque {
+                fs::remove_file(opacity)?;
+            }
             Ok(())
         }
         let runtime = self.dir().join("runtime-root");
-        if !runtime.exists() {
-            return Ok(());
+        match fs::symlink_metadata(&runtime) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+            Ok(_) => {}
         }
         if let Some(parent) = shared.parent() {
             fs::create_dir_all(parent)?;

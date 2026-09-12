@@ -782,6 +782,61 @@ mod rescue_tests {
     }
 
     #[test]
+    fn shared_root_capture_retains_deletion_metadata_and_recovers_failed_output() {
+        let root = std::env::temp_dir().join(format!("eidos-root-capture-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let prof = inst.active();
+        let game = root.join("game");
+        let shared = inst.root_overwrite_dir();
+        let runtime = prof.dir().join("runtime-root");
+        for dir in [game.join("Cache"), shared.join("Cache"), runtime.clone()] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(game.join("hidden.dll"), "original").unwrap();
+        fs::write(game.join("Cache/base.dll"), "base").unwrap();
+        fs::write(shared.join(".eidoswh.hidden.dll"), []).unwrap();
+        fs::write(shared.join("Cache/.eidoswh_opaque"), []).unwrap();
+        fs::write(shared.join("Cache/shared.dll"), "shared").unwrap();
+        fs::write(runtime.join("Morrowind.ini"), "[General]\nValue=1\n").unwrap();
+        prof.record_ini_session(&runtime, &["Morrowind.ini"], &[])
+            .unwrap();
+        // The mounted launch suite verifies these are the only writes that
+        // land here; this test covers their existing capture/retry boundary.
+        fs::create_dir_all(runtime.join("Cache")).unwrap();
+        fs::write(runtime.join("Cache/shared.dll"), "new shared").unwrap();
+        fs::write(runtime.join("generated.log"), [0; 16]).unwrap();
+        fs::create_dir_all(shared.join("generated.log")).unwrap();
+        assert!(prof
+            .merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+            .is_err());
+        assert!(runtime.join("generated.log").is_file());
+        assert!(prof.dir().join("runtime-inis.pending").is_file());
+        fs::remove_dir(shared.join("generated.log")).unwrap();
+        prof.merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+            .unwrap();
+        prof.recover_ini_session().unwrap();
+        assert!(!prof.dir().join("runtime-inis.pending").exists());
+        assert!(!runtime.join("generated.log").exists());
+        assert_eq!(
+            fs::metadata(shared.join("generated.log")).unwrap().len(),
+            16
+        );
+        assert_eq!(
+            fs::read(shared.join("Cache/shared.dll")).unwrap(),
+            b"new shared"
+        );
+        assert!(!shared.join("Cache/.eidoswh.base.dll").exists());
+        assert!(!runtime.join("Cache/.eidoswh.base.dll").exists());
+        assert!(shared.join(".eidoswh.hidden.dll").is_file());
+        assert!(shared.join("Cache/.eidoswh_opaque").is_file());
+        assert_eq!(fs::read(game.join("hidden.dll")).unwrap(), b"original");
+        assert_eq!(fs::read(game.join("Cache/base.dll")).unwrap(), b"base");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn oblivion_root_and_appdata_preparation_never_write_activation_to_game() {
         let root =
             std::env::temp_dir().join(format!("eidos-oblivion-prepare-{}", std::process::id()));

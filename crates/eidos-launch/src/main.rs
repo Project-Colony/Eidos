@@ -57,6 +57,7 @@ fn main() {
     });
 
     let spec = LaunchSpec {
+        root_readonly_overwrite: None,
         plugin_timestamps: None,
         layers,
         overwrite,

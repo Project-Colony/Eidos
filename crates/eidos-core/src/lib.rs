@@ -93,6 +93,9 @@ pub struct LayerStack {
     /// behaviour that existed before this field, kept reachable because it is
     /// the one that is never wrong.
     lower: Option<std::sync::Arc<LowerIndex>>,
+    /// A shared Overwrite, read-only for this session, below the private upper.
+    /// Reuse its deletion rules without copying payloads or translating markers.
+    readonly_overwrite: Option<Box<LayerStack>>,
     /// The overwrite membership index; `None` means dirty, rebuilt on next use.
     /// `Arc<Mutex<..>>` for the same reason as the locks and the stats above: a
     /// cloned stack describes the SAME mount, so a mutation noted through one
@@ -112,7 +115,7 @@ pub struct LayerStack {
 ///
 /// The index answers "no layer provides this" as confidently as it answers
 /// "layer 7 does", and that is only sound if the build was COMPLETE. So the
-/// build is all-or-nothing with no exemptions: any unreadable directory, any
+/// build is all-or-nothing outside an explicitly unindexed subtree: any unreadable directory, any
 /// surprise, and the whole index is discarded and every query walks the layers
 /// as before. Slow is a cost; a mod file that silently is not there is a
 /// corruption, and this filesystem exists to prevent exactly that.
@@ -142,6 +145,9 @@ struct LowerIndex {
     /// slot, so a lower layer's copy of the file a hidden one shadowed becomes
     /// the winner - which is the point of hiding one mod's stray override.
     dirs: HashMap<Box<[u8]>, Box<[DirEntryInfo]>>,
+    /// A child mount will cover this directory. Keep the directory indexed but
+    /// resolve its contents by walking, including before that mount is ready.
+    unindexed_subtree: Option<Box<[u8]>>,
 }
 
 /// One entry of a merged listing: the name as the winning layer spells it, where
@@ -179,7 +185,10 @@ const MAX_INDEX_DEPTH: usize = 64;
 const MAX_INDEX_ENTRIES: usize = 4_000_000;
 
 impl LowerIndex {
-    fn build(layers: &[PathBuf]) -> Option<std::sync::Arc<LowerIndex>> {
+    fn build(
+        layers: &[PathBuf],
+        unindexed_subtree: Option<Box<[u8]>>,
+    ) -> Option<std::sync::Arc<LowerIndex>> {
         if std::env::var("EIDOS_NO_INDEX").is_ok_and(|v| v != "0") {
             return None;
         }
@@ -187,7 +196,13 @@ impl LowerIndex {
         // Highest priority first, and `or_insert` keeps the first writer - the
         // same winner `layers.iter().find_map(..)` picks.
         for layer in layers {
-            walk_layer(layer, &mut Vec::new(), 0, &mut build)?;
+            walk_layer(
+                layer,
+                &mut Vec::new(),
+                0,
+                &mut build,
+                unindexed_subtree.as_deref(),
+            )?;
         }
         let dirs = build
             .dirs
@@ -197,6 +212,7 @@ impl LowerIndex {
         Some(std::sync::Arc::new(LowerIndex {
             entries: build.entries,
             dirs,
+            unindexed_subtree,
         }))
     }
 
@@ -205,13 +221,28 @@ impl LowerIndex {
     /// `None` means no layer provides that directory - which, from a complete
     /// index, is a real answer and not a shrug: the caller adds nothing rather
     /// than falling back to a walk that would find nothing either.
-    fn children(&self, folded: &[u8]) -> Option<&[DirEntryInfo]> {
-        self.dirs.get(folded).map(|v| &**v)
+    /// `Err(())` delegates an intentionally unindexed subtree to the layer walk.
+    fn children(&self, folded: &[u8]) -> Result<Option<&[DirEntryInfo]>, ()> {
+        if self.unindexed_subtree.as_deref() == Some(folded) || self.unindexed_descendant(folded) {
+            return Err(());
+        }
+        Ok(self.dirs.get(folded).map(|v| &**v))
+    }
+
+    fn unindexed_descendant(&self, folded: &[u8]) -> bool {
+        self.unindexed_subtree.as_deref().is_some_and(|boundary| {
+            folded
+                .strip_prefix(boundary)
+                .is_some_and(|tail| tail.starts_with(b"/"))
+        })
     }
 
     /// The real path for `vpath`, or `None` when no layer provides it.
     /// `Err(())` means the index cannot answer and the caller must walk.
     fn get(&self, folded: &[u8]) -> Result<Option<&PathBuf>, ()> {
+        if self.unindexed_descendant(folded) {
+            return Err(());
+        }
         match self.entries.get(folded) {
             Some(Resolved::One(p)) => Ok(Some(p)),
             Some(Resolved::Ambiguous) => Err(()),
@@ -224,7 +255,16 @@ impl LowerIndex {
 ///
 /// Returns `None` on ANY doubt - an unreadable directory, a name that is not
 /// UTF-8, a tree too deep or too large. The caller discards the whole index.
-fn walk_layer(dir: &Path, rel: &mut Vec<u8>, depth: usize, build: &mut IndexBuild) -> Option<()> {
+fn walk_layer(
+    dir: &Path,
+    rel: &mut Vec<u8>,
+    depth: usize,
+    build: &mut IndexBuild,
+    unindexed_subtree: Option<&[u8]>,
+) -> Option<()> {
+    if unindexed_subtree == Some(rel.as_slice()) {
+        return Some(());
+    }
     if depth > MAX_INDEX_DEPTH || build.entries.len() > MAX_INDEX_ENTRIES {
         return None;
     }
@@ -290,7 +330,7 @@ fn walk_layer(dir: &Path, rel: &mut Vec<u8>, depth: usize, build: &mut IndexBuil
         // Asked once and reused: it is a syscall, and this runs per entry over
         // every layer.
         if real.is_dir() {
-            walk_layer(&real, rel, depth + 1, build)?;
+            walk_layer(&real, rel, depth + 1, build, unindexed_subtree)?;
         }
         rel.truncate(mark);
     }
@@ -321,13 +361,57 @@ impl LayerStack {
     /// Build a stack from mod layers (highest priority first) and the writable
     /// overwrite layer.
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
+        Self::new_with_unindexed_subtree(layers, overwrite, None)
+    }
+
+    /// Avoid indexing the descendants of a directory that a child mount will
+    /// cover. This is an index boundary, not a visibility boundary: reads and
+    /// listings there retain the normal live layer walk. Invalid or empty
+    /// relative paths leave the complete index enabled.
+    pub fn new_with_unindexed_subtree(
+        layers: Vec<PathBuf>,
+        overwrite: PathBuf,
+        unindexed_subtree: Option<&Path>,
+    ) -> Self {
+        Self::new_with_readonly_overwrite(layers, overwrite, unindexed_subtree, None)
+    }
+
+    /// Place a read-only shared Overwrite between the writable private upper and
+    /// the ordinary lower layers. Its whiteouts and opacity mask those lower
+    /// layers only. There is still one lower index and one filesystem mount.
+    pub fn new_with_readonly_overwrite(
+        mut layers: Vec<PathBuf>,
+        overwrite: PathBuf,
+        unindexed_subtree: Option<&Path>,
+        readonly_overwrite: Option<PathBuf>,
+    ) -> Self {
+        let readonly_overwrite = readonly_overwrite.map(|shared| {
+            Box::new(Self::new_with_unindexed_subtree(
+                std::mem::take(&mut layers),
+                shared,
+                unindexed_subtree,
+            ))
+        });
+        let unindexed_subtree = unindexed_subtree
+            .filter(|path| {
+                !path.as_os_str().is_empty()
+                    && path
+                        .components()
+                        .all(|c| matches!(c, std::path::Component::Normal(_)))
+            })
+            .and_then(Path::to_str)
+            .map(|path| fold_vpath(path).into_boxed_slice());
         let path_locks: std::sync::Arc<[std::sync::Mutex<()>]> = (0..PATH_LOCK_SHARDS)
             .map(|_| std::sync::Mutex::new(()))
             .collect();
         // Built here, synchronously, so "is the index ready" is never a question
         // any caller can ask. `None` is a complete answer: it means every query
         // walks the layers exactly as it did before this existed.
-        let lower = LowerIndex::build(&layers);
+        let lower = if readonly_overwrite.is_some() {
+            None
+        } else {
+            LowerIndex::build(&layers, unindexed_subtree)
+        };
         Self {
             layers,
             overwrite,
@@ -335,6 +419,7 @@ impl LayerStack {
             rename_lock: Default::default(),
             resolve: Default::default(),
             lower,
+            readonly_overwrite,
             ow: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -425,6 +510,9 @@ impl LayerStack {
     fn overwrite_hides(&self, vpath: &str) -> bool {
         let norm = normalize(vpath);
         let comps: Vec<_> = norm.components().collect();
+        if !comps.is_empty() && self.overwrite.join(OPAQUE_MARKER).exists() {
+            return true;
+        }
         let mut dir = self.overwrite.clone();
         for (i, comp) in comps.iter().enumerate() {
             let want = comp.as_os_str().to_string_lossy().to_ascii_lowercase();
@@ -705,7 +793,7 @@ impl LayerStack {
             if folded.is_empty() {
                 return self.resolve_read_walk(vpath);
             }
-            if ow.ambiguous.contains(&folded) {
+            if ow.ambiguous.contains(&folded) || ow.walk_below(&folded) {
                 // Case-colliding overwrite entries: only the walk's backtracking
                 // can pick correctly. Rare to the point of theoretical - our own
                 // write path reuses existing casing - but refusing is free.
@@ -727,33 +815,35 @@ impl LayerStack {
             // The overwrite provably has nothing at this path: go straight to
             // the layers, skipping the walk that used to cost every resolve its
             // probes and scans.
-            let lower = match self.lower.as_ref().map(|i| i.get(&folded)) {
-                Some(Ok(Some(path))) => {
-                    self.resolve
-                        .idx_hits
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    path.clone()
-                }
-                Some(Ok(None)) => {
-                    self.resolve
-                        .idx_negatives
-                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return None;
-                }
-                verdict @ (Some(Err(())) | None) => {
-                    match verdict {
-                        Some(Err(())) => self
-                            .resolve
-                            .idx_fallbacks
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                        _ => self
-                            .resolve
-                            .idx_absent
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                    };
-                    self.layers
-                        .iter()
-                        .find_map(|layer| self.ci_lookup(layer, vpath))?
+            let lower = if let Some(shared) = &self.readonly_overwrite {
+                shared.resolve_read(vpath)?
+            } else {
+                match self.lower.as_ref().map(|i| i.get(&folded)) {
+                    Some(Ok(Some(path))) => {
+                        self.resolve
+                            .idx_hits
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        path.clone()
+                    }
+                    Some(Ok(None)) => {
+                        self.resolve
+                            .idx_negatives
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        return None;
+                    }
+                    verdict @ (Some(Err(())) | None) => {
+                        match verdict {
+                            Some(Err(())) => self
+                                .resolve
+                                .idx_fallbacks
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                            _ => self
+                                .resolve
+                                .idx_absent
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+                        };
+                        self.read_lower(vpath)?
+                    }
                 }
             };
             if ow.hides(&folded) {
@@ -795,44 +885,56 @@ impl LayerStack {
         // The index answers from memory when it can, and hands the question back
         // when it cannot - an ambiguous key, or no index at all. Both fall to the
         // walk, which is the code this replaces and is never wrong.
-        let lower = match self.lower.as_ref().map(|i| i.get(&fold_vpath(vpath))) {
-            Some(Ok(Some(path))) => {
-                self.resolve.idx_hits.fetch_add(1, Relaxed);
-                path.clone()
-            }
-            // A complete index saying "nothing has it" is as good as the walk
-            // saying so, and this is the commonest answer by far: Wine probes
-            // far more paths than exist.
-            Some(Ok(None)) => {
-                self.resolve.idx_negatives.fetch_add(1, Relaxed);
-                return None;
-            }
-            verdict @ (Some(Err(())) | None) => {
-                match verdict {
-                    Some(Err(())) => self.resolve.idx_fallbacks.fetch_add(1, Relaxed),
-                    _ => self.resolve.idx_absent.fetch_add(1, Relaxed),
-                };
-                let (p0, s0) = (
-                    self.resolve.probes.load(Relaxed),
-                    self.resolve.scans.load(Relaxed),
-                );
-                let found = self
-                    .layers
-                    .iter()
-                    .find_map(|layer| self.ci_lookup(layer, vpath));
-                self.resolve
-                    .walk_probes
-                    .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
-                self.resolve
-                    .walk_scans
-                    .fetch_add(self.resolve.scans.load(Relaxed).wrapping_sub(s0), Relaxed);
-                found?
+        let lower = if let Some(shared) = &self.readonly_overwrite {
+            shared.resolve_read(vpath)?
+        } else {
+            match self.lower.as_ref().map(|i| i.get(&fold_vpath(vpath))) {
+                Some(Ok(Some(path))) => {
+                    self.resolve.idx_hits.fetch_add(1, Relaxed);
+                    path.clone()
+                }
+                // A complete index saying "nothing has it" is as good as the walk
+                // saying so, and this is the commonest answer by far: Wine probes
+                // far more paths than exist.
+                Some(Ok(None)) => {
+                    self.resolve.idx_negatives.fetch_add(1, Relaxed);
+                    return None;
+                }
+                verdict @ (Some(Err(())) | None) => {
+                    match verdict {
+                        Some(Err(())) => self.resolve.idx_fallbacks.fetch_add(1, Relaxed),
+                        _ => self.resolve.idx_absent.fetch_add(1, Relaxed),
+                    };
+                    let (p0, s0) = (
+                        self.resolve.probes.load(Relaxed),
+                        self.resolve.scans.load(Relaxed),
+                    );
+                    let found = self.read_lower(vpath);
+                    self.resolve
+                        .walk_probes
+                        .fetch_add(self.resolve.probes.load(Relaxed).wrapping_sub(p0), Relaxed);
+                    self.resolve
+                        .walk_scans
+                        .fetch_add(self.resolve.scans.load(Relaxed).wrapping_sub(s0), Relaxed);
+                    found?
+                }
             }
         };
         if self.overwrite_hides(vpath) {
             return None;
         }
         Some(lower)
+    }
+
+    /// Read the lower view, retaining shared Overwrite deletion semantics.
+    fn read_lower(&self, vpath: &str) -> Option<PathBuf> {
+        if let Some(shared) = &self.readonly_overwrite {
+            shared.resolve_read(vpath)
+        } else {
+            self.layers
+                .iter()
+                .find_map(|layer| self.ci_lookup(layer, vpath))
+        }
     }
 
     /// The overwrite layer's root directory (for statfs / free-space queries).
@@ -872,11 +974,7 @@ impl LayerStack {
     /// Whether a write to `vpath` needs a copy-up first: it exists in a lower
     /// layer but not yet in the overwrite layer.
     pub fn needs_copy_up(&self, vpath: &str) -> bool {
-        self.ci_lookup(&self.overwrite, vpath).is_none()
-            && self
-                .layers
-                .iter()
-                .any(|l| self.ci_lookup(l, vpath).is_some())
+        self.ci_lookup(&self.overwrite, vpath).is_none() && self.read_lower(vpath).is_some()
     }
 
     /// Ensure `vpath` is writable in the overwrite layer and return the real
@@ -898,7 +996,7 @@ impl LayerStack {
         // Writing a path un-deletes it: drop any stale whiteout.
         self.clear_whiteout(vpath);
         if !dest.exists() {
-            if let Some(src) = self.layers.iter().find_map(|l| self.ci_lookup(l, vpath)) {
+            if let Some(src) = self.read_lower(vpath) {
                 // A DIRECTORY that lives only in a lower layer is materialised,
                 // not skipped. It used to fall through both arms: nothing was
                 // created, yet the path was recorded in the overwrite index as if
@@ -942,11 +1040,7 @@ impl LayerStack {
                     clone_metadata(&src, &dest);
                 }
             }
-        } else if self
-            .layers
-            .iter()
-            .any(|l| self.ci_lookup(l, vpath).is_some())
-        {
+        } else if self.read_lower(vpath).is_some() {
             // A destination that already exists AND is shadowing a lower layer is
             // an orphaned copy-up from an earlier run, which may carry that run's
             // 0444. Heal it - but only in that case: a file living solely in the
@@ -975,11 +1069,9 @@ impl LayerStack {
         // resolve_read honour to keep the lower files hidden.
         let was_deleted = self.find_whiteout(vpath).is_some();
         fs::create_dir_all(&dest)?;
-        let needs_opacity = was_deleted
-            && self
-                .layers
-                .iter()
-                .any(|l| self.ci_lookup(l, vpath).is_some_and(|p| p.is_dir()));
+        // A visible lower file can itself cover another layer's directory.
+        // Replacing that deleted file with a directory must stay empty too.
+        let needs_opacity = was_deleted && self.read_lower(vpath).is_some();
 
         // ORDER IS THE WHOLE POINT: opacity goes down while the whiteout is still
         // standing, so a failure here leaves the delete intact.
@@ -1048,7 +1140,9 @@ impl LayerStack {
         // this name is theirs.
         let _ = fs::remove_file(&dest);
         std::os::unix::fs::symlink(target, &dest)?;
-        self.ow_note_created(vpath, &dest);
+        // Rebuild the symlink boundary as well as its entry. Its descendants
+        // must use live lookup rather than indexing through the link target.
+        self.ow_dirty();
         Ok(dest)
     }
 
@@ -1087,12 +1181,7 @@ impl LayerStack {
         // EACCES even though we are about to replace the contents wholesale. Only
         // for a path a lower layer also provides, so a user-set read-only mode on
         // their own Overwrite file is not silently undone.
-        if dest.exists()
-            && self
-                .layers
-                .iter()
-                .any(|l| self.ci_lookup(l, vpath).is_some())
-        {
+        if dest.exists() && self.read_lower(vpath).is_some() {
             ensure_owner_writable(&dest);
         }
         Ok(dest)
@@ -1108,11 +1197,7 @@ impl LayerStack {
         } else if dest.exists() {
             fs::remove_file(&dest)?;
         }
-        if self
-            .layers
-            .iter()
-            .any(|l| self.ci_lookup(l, vpath).is_some())
-        {
+        if self.read_lower(vpath).is_some() {
             let wh = self.whiteout_path(vpath);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -1174,11 +1259,7 @@ impl LayerStack {
         }
         fs::rename(&src, &dst)?;
         self.clear_whiteout(to);
-        if self
-            .layers
-            .iter()
-            .any(|l| self.ci_lookup(l, from).is_some())
-        {
+        if self.read_lower(from).is_some() {
             let wh = self.whiteout_path(from);
             if let Some(parent) = wh.parent() {
                 fs::create_dir_all(parent)?;
@@ -1259,7 +1340,7 @@ impl LayerStack {
         // If this directory was itself deleted and then re-created in the overwrite
         // layer it is opaque (a whiteout on it, or an opaque marker inside it): its
         // lower-layer contents stay hidden.
-        if opaque || self.find_whiteout(vpath).is_some() {
+        if opaque || !self.lower_path_visible(vpath) {
             return out;
         }
 
@@ -1269,8 +1350,15 @@ impl LayerStack {
         // hidden names dropped - so this is one hash lookup instead of one
         // case-folding walk per layer. Whiteouts stay here: they live in the
         // overwrite, which changes, and the index only ever knew the layers.
-        match self.lower.as_ref().map(|i| i.children(&fold_vpath(vpath))) {
-            Some(merged) => {
+        let inherited;
+        let merged = if let Some(shared) = &self.readonly_overwrite {
+            inherited = shared.list_dir_typed(vpath);
+            Some(Ok(Some(inherited.as_slice())))
+        } else {
+            self.lower.as_ref().map(|i| i.children(&fold_vpath(vpath)))
+        };
+        match merged {
+            Some(Ok(merged)) => {
                 // `None` from a complete index means no layer has this directory,
                 // which is an answer: add nothing.
                 for (name, real, kind) in merged.unwrap_or(&[]) {
@@ -1283,8 +1371,8 @@ impl LayerStack {
                     }
                 }
             }
-            // No index: the walk this replaces, which is never wrong.
-            None => {
+            // No index, or an intentionally unindexed child mount: walk.
+            None | Some(Err(())) => {
                 // Every fold-equal directory, not just the winner: a layer with
                 // both `meshes/` and `Meshes/` shows ONE directory here, holding
                 // the union of the two.
@@ -1427,6 +1515,9 @@ struct OwIndex {
     /// index refuses these and the walk (with its backtracking) answers, the
     /// same contract as the layer index's ambiguous keys.
     ambiguous: HashSet<Vec<u8>>,
+    /// Directory symlinks are indexed as links, never recursively followed.
+    /// Descendant queries walk so this does not become a false negative.
+    symlinks: HashSet<Vec<u8>>,
     /// Folded vpaths hidden by a whiteout marker: the name itself and below.
     wh: HashSet<Vec<u8>>,
     /// Folded vpaths of opaque directories: lower content STRICTLY below is
@@ -1466,10 +1557,12 @@ impl OwIndex {
                         v.insert(real.clone());
                     }
                     std::collections::hash_map::Entry::Occupied(_) => {
-                        out.ambiguous.insert(key);
+                        out.ambiguous.insert(key.clone());
                     }
                 }
-                if real.is_dir() {
+                if e.file_type().is_ok_and(|kind| kind.is_symlink()) {
+                    out.symlinks.insert(key);
+                } else if real.is_dir() {
                     walk(&real, &vpath, out);
                 }
             }
@@ -1479,12 +1572,23 @@ impl OwIndex {
         out
     }
 
+    fn walk_below(&self, folded: &[u8]) -> bool {
+        !self.symlinks.is_empty()
+            && folded
+                .iter()
+                .enumerate()
+                .any(|(i, b)| *b == b'/' && self.symlinks.contains(&folded[..i]))
+    }
+
     /// Whether a LOWER result at `vpath` is hidden - the indexed twin of
     /// [`LayerStack::overwrite_hides`]: a whiteout hides the name and below, an
     /// opaque directory hides proper descendants only.
     fn hides(&self, folded: &[u8]) -> bool {
         if self.wh.is_empty() && self.opaque.is_empty() {
             return false;
+        }
+        if !folded.is_empty() && self.opaque.contains(b"".as_slice()) {
+            return true;
         }
         let mut from = 0usize;
         loop {
@@ -1683,6 +1787,454 @@ mod tests {
         let times = [ts, ts];
         let c = std::ffi::CString::new(p.as_os_str().as_bytes()).unwrap();
         unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0) };
+    }
+
+    #[test]
+    fn unindexed_mount_subtree_preserves_lookup_listing_and_writes() {
+        let t = TempTree::new();
+        let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
+        put(&high, "Content/Data/winner.esm", "high");
+        put(&low, "content/data/winner.esm", "low");
+        put(&low, "content/data/base.esm", "base");
+        put(&low, "content/data/hidden.esm", "hidden");
+        put(&low, "content/database/keep.txt", "sibling");
+        put(&low, "loader.exe", "loader");
+        put(&over, "content/data/.eidoswh.hidden.esm", "");
+        let layers = vec![high.clone(), low.clone()];
+        let stack = LayerStack::new_with_unindexed_subtree(
+            layers.clone(),
+            over.clone(),
+            Some(Path::new("CONTENT/dAtA")),
+        );
+        let index = stack.lower.as_ref().expect("rest of root remains indexed");
+        assert!(index.entries.contains_key(b"content/data".as_slice()));
+        assert!(!index
+            .entries
+            .contains_key(b"content/data/base.esm".as_slice()));
+        assert!(index
+            .entries
+            .contains_key(b"content/database/keep.txt".as_slice()));
+        let mut reference = LayerStack::new(layers, over.clone());
+        reference.lower = None;
+        for path in [
+            "",
+            "CONTENT",
+            "content/DATA",
+            "content/data/winner.esm",
+            "CONTENT/DATA/BASE.ESM",
+            "content/data/hidden.esm",
+            "content/data/missing.esm",
+            "content/database/keep.txt",
+            "loader.exe",
+        ] {
+            assert_eq!(
+                stack.resolve_read(path),
+                reference.resolve_read(path),
+                "{path}"
+            );
+            assert_eq!(stack.list_dir(path), reference.list_dir(path), "{path}");
+        }
+        stack
+            .rename("content/data/base.esm", "content/data/moved.esm")
+            .unwrap();
+        assert_eq!(
+            read(&stack.resolve_read("CONTENT/DATA/MOVED.ESM").unwrap()),
+            "base"
+        );
+        assert!(stack.resolve_read("content/data/base.esm").is_none());
+        assert_eq!(read(&low.join("content/data/base.esm")), "base");
+        assert_eq!(read(&stack.resolve_read("loader.exe").unwrap()), "loader");
+    }
+
+    #[test]
+    fn unindexed_mount_subtree_keeps_missing_and_empty_mountpoints_usable() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "loader.exe", "loader");
+        let stack = LayerStack::new_with_unindexed_subtree(
+            vec![game.clone()],
+            over.clone(),
+            Some(Path::new("Content/Data")),
+        );
+        assert!(stack.resolve_read("Content/Data").is_none());
+        assert!(stack.list_dir("Content/Data").is_empty());
+        stack.make_dir("Content").unwrap();
+        stack.make_dir("Content/Data").unwrap();
+        assert!(stack.resolve_read("content/data").unwrap().is_dir());
+        assert!(!game.join("Content").exists());
+        fs::create_dir_all(game.join("Data")).unwrap();
+        let empty = LayerStack::new_with_unindexed_subtree(
+            vec![game.clone()],
+            over.clone(),
+            Some(Path::new("Data")),
+        );
+        assert!(empty.resolve_read("data").unwrap().is_dir());
+        assert!(empty.list_dir("data").is_empty());
+        for invalid in ["", ".", "../Data", "/Data"] {
+            let full = LayerStack::new_with_unindexed_subtree(
+                vec![game.clone()],
+                over.clone(),
+                Some(Path::new(invalid)),
+            );
+            assert!(full
+                .lower
+                .as_ref()
+                .unwrap()
+                .entries
+                .contains_key(b"loader.exe".as_slice()));
+        }
+    }
+
+    #[test]
+    fn unindexed_subtree_does_not_discard_the_other_root_entries() {
+        use std::os::unix::ffi::OsStringExt;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        put(&game, "Data/base.esm", "base");
+        put(&game, "loader.exe", "loader");
+        fs::write(
+            game.join("Data")
+                .join(std::ffi::OsString::from_vec(vec![0xff])),
+            "odd name",
+        )
+        .unwrap();
+        assert!(LayerStack::new(vec![game.clone()], over.clone())
+            .lower
+            .is_none());
+        let stack =
+            LayerStack::new_with_unindexed_subtree(vec![game], over, Some(Path::new("Data")));
+        assert_eq!(stack.lower.as_ref().unwrap().entries.len(), 2);
+        assert_eq!(read(&stack.resolve_read("DATA/BASE.ESM").unwrap()), "base");
+        assert_eq!(read(&stack.resolve_read("LOADER.EXE").unwrap()), "loader");
+        assert_eq!(stack.list_dir("Data").len(), 2);
+    }
+
+    #[test]
+    fn readonly_overwrite_preserves_deletions_payloads_and_private_mutations() {
+        let t = TempTree::new();
+        let (game, shared, private) = (t.sub("game"), t.sub("shared"), t.sub("private"));
+        put(&game, "Hidden.dll", "original");
+        put(&game, "opaque/base.dll", "hidden by opacity");
+        put(
+            &game,
+            "opaque/nested/base.dll",
+            "hidden by ancestor opacity",
+        );
+        put(&shared, ".eidoswh.HIDDEN.dll", "");
+        put(&shared, "Opaque/.eidoswh_opaque", "");
+        put(&shared, "Opaque/shared.dll", "shared");
+        put(&shared, "Opaque/nested/shared.dll", "nested shared");
+        put(&private, "Opaque/private.dll", "private");
+        let stack = LayerStack::new_with_readonly_overwrite(
+            vec![game.clone()],
+            private.clone(),
+            None,
+            Some(shared.clone()),
+        );
+        assert!(stack.resolve_read("hidden.DLL").is_none());
+        assert!(stack.resolve_read("opaque/BASE.dll").is_none());
+        assert!(stack.resolve_read("opaque/nested/base.dll").is_none());
+        assert_eq!(
+            stack
+                .list_dir("OPAQUE")
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
+            ["nested", "private.dll", "shared.dll"]
+        );
+        assert_eq!(
+            stack
+                .list_dir("opaque/NESTED")
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>(),
+            ["shared.dll"]
+        );
+        assert_eq!(
+            read(&stack.resolve_read("opaque/SHARED.dll").unwrap()),
+            "shared"
+        );
+        fs::write(
+            stack.open_for_write("opaque/shared.dll").unwrap(),
+            "changed",
+        )
+        .unwrap();
+        assert_eq!(read(&shared.join("Opaque/shared.dll")), "shared");
+        stack
+            .rename("opaque/shared.dll", "opaque/moved.dll")
+            .unwrap();
+        assert!(stack.resolve_read("opaque/shared.dll").is_none());
+        assert_eq!(
+            read(&stack.resolve_read("opaque/moved.dll").unwrap()),
+            "changed"
+        );
+        let (_, mut file) = stack.create_truncated("hidden.dll").unwrap();
+        use std::io::Write;
+        file.write_all(b"private recreation").unwrap();
+        assert_eq!(
+            read(&stack.resolve_read("HIDDEN.DLL").unwrap()),
+            "private recreation"
+        );
+        stack.remove("hidden.dll").unwrap();
+        assert!(stack.resolve_read("HIDDEN.DLL").is_none());
+        assert_eq!(read(&game.join("Hidden.dll")), "original");
+        assert!(shared.join(".eidoswh.HIDDEN.dll").exists());
+        assert!(shared.join("Opaque/.eidoswh_opaque").exists());
+        assert!(!private.join("Opaque/.eidoswh_opaque").exists());
+        assert!(!private.join("Opaque/.eidoswh.base.dll").exists());
+        let restart = LayerStack::new_with_readonly_overwrite(
+            vec![game.clone()],
+            private.clone(),
+            None,
+            Some(shared.clone()),
+        );
+        assert!(restart.resolve_read("hidden.dll").is_none());
+        assert!(restart.resolve_read("opaque/base.dll").is_none());
+        assert_eq!(
+            read(&restart.resolve_read("opaque/moved.dll").unwrap()),
+            "changed"
+        );
+        fs::remove_file(shared.join("Opaque/.eidoswh_opaque")).unwrap();
+        let without_opacity =
+            LayerStack::new_with_readonly_overwrite(vec![game], private, None, Some(shared));
+        assert_eq!(
+            read(&without_opacity.resolve_read("opaque/base.dll").unwrap()),
+            "hidden by opacity"
+        );
+    }
+
+    #[test]
+    fn root_opacity_masks_only_lower_payloads_in_index_and_walk() {
+        let t = TempTree::new();
+        let (game, shared, private) = (t.sub("game"), t.sub("shared"), t.sub("private"));
+        put(&game, "base.txt", "lower");
+        put(&shared, OPAQUE_MARKER, "");
+        put(&shared, "shared.txt", "shared");
+        put(&private, "private.txt", "private");
+        let view = LayerStack::new_with_readonly_overwrite(vec![game], private, None, Some(shared));
+        assert!(view.resolve_read("base.txt").is_none());
+        assert!(view
+            .readonly_overwrite
+            .as_ref()
+            .unwrap()
+            .resolve_read_walk("base.txt")
+            .is_none());
+        assert_eq!(read(&view.resolve_read("shared.txt").unwrap()), "shared");
+        assert_eq!(read(&view.resolve_read("private.txt").unwrap()), "private");
+        assert_eq!(view.list_dir("").len(), 2);
+    }
+
+    #[test]
+    fn directory_recreated_over_a_deleted_file_does_not_expose_deeper_layers() {
+        let t = TempTree::new();
+        let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
+        put(&high, "Replaced", "higher file");
+        put(&low, "Replaced/old.txt", "lower directory child");
+        let stack = LayerStack::new(vec![high.clone(), low.clone()], over);
+        stack.remove("Replaced").unwrap();
+        stack.make_dir("Replaced").unwrap();
+        assert!(stack.list_dir("Replaced").is_empty());
+        assert!(stack.resolve_read("Replaced/old.txt").is_none());
+        assert_eq!(read(&high.join("Replaced")), "higher file");
+        assert_eq!(read(&low.join("Replaced/old.txt")), "lower directory child");
+    }
+
+    #[test]
+    fn readonly_directory_recreation_stays_empty_with_index_and_fallback() {
+        for fallback in [false, true] {
+            let t = TempTree::new();
+            let (game, shared, private) = (t.sub("game"), t.sub("shared"), t.sub("private"));
+            put(&game, "Tree/game.txt", "game source");
+            put(&shared, "tree/shared.txt", "shared source");
+            put(&game, "GameOnly/original.txt", "game only");
+            put(&shared, "SharedOnly/original.txt", "shared only");
+            let mut stack = LayerStack::new_with_readonly_overwrite(
+                vec![game.clone()],
+                private.clone(),
+                None,
+                Some(shared.clone()),
+            );
+            if fallback {
+                stack.lower = None;
+                stack.readonly_overwrite.as_mut().unwrap().lower = None;
+            }
+            for directory in ["TREE", "GameOnly", "SharedOnly"] {
+                assert!(!stack.list_dir(directory).is_empty());
+                stack.remove(directory).unwrap();
+                assert!(stack.resolve_read(directory).is_none());
+                let created = stack.make_dir(directory).unwrap();
+                assert!(
+                    stack.list_dir(directory).is_empty(),
+                    "{directory}, fallback={fallback}"
+                );
+                assert!(created.join(OPAQUE_MARKER).is_file());
+                assert!(stack
+                    .resolve_read(&format!("{directory}/original.txt"))
+                    .is_none());
+                let _ = stack
+                    .create_truncated(&format!("{directory}/new.txt"))
+                    .unwrap();
+                assert_eq!(stack.list_dir(directory).len(), 1);
+            }
+            assert!(stack.resolve_read("tree/game.txt").is_none());
+            assert!(stack.resolve_read("tree/shared.txt").is_none());
+            assert_eq!(read(&game.join("Tree/game.txt")), "game source");
+            assert_eq!(read(&shared.join("tree/shared.txt")), "shared source");
+            assert_eq!(read(&game.join("GameOnly/original.txt")), "game only");
+            assert_eq!(read(&shared.join("SharedOnly/original.txt")), "shared only");
+        }
+    }
+
+    #[test]
+    fn readonly_overwrite_symlinks_and_case_collisions_keep_sources_unchanged() {
+        let t = TempTree::new();
+        let (game, shared, private, target) = (
+            t.sub("game"),
+            t.sub("shared"),
+            t.sub("private"),
+            t.sub("target"),
+        );
+        put(&target, "payload.txt", "outside payload");
+        put(&shared, "case.dll", "lowercase");
+        put(&shared, "Case.dll", "uppercase");
+        std::os::unix::fs::symlink(&target, shared.join("link")).unwrap();
+        std::os::unix::fs::symlink(".", shared.join("cycle")).unwrap();
+        let stack = LayerStack::new_with_readonly_overwrite(
+            vec![game],
+            private.clone(),
+            None,
+            Some(shared.clone()),
+        );
+        let shared_index = stack
+            .readonly_overwrite
+            .as_ref()
+            .unwrap()
+            .ow_snapshot()
+            .unwrap();
+        assert!(
+            !shared_index
+                .entries
+                .contains_key(b"link/payload.txt".as_slice()),
+            "do not recursively index a shared directory symlink"
+        );
+        assert_eq!(
+            read(&stack.resolve_read("link/payload.txt").unwrap()),
+            "outside payload"
+        );
+        assert_eq!(
+            read(&stack.resolve_read("cycle/case.dll").unwrap()),
+            "lowercase"
+        );
+        assert_eq!(read(&stack.resolve_read("case.dll").unwrap()), "lowercase");
+        assert_eq!(read(&stack.resolve_read("Case.dll").unwrap()), "uppercase");
+        stack.rename("link", "moved-link").unwrap();
+        assert!(fs::symlink_metadata(private.join("moved-link"))
+            .unwrap()
+            .is_symlink());
+        assert!(!stack.needs_copy_up("moved-link"));
+        assert!(stack.resolve_read("link").is_none());
+        assert_eq!(read(&target.join("payload.txt")), "outside payload");
+        assert!(fs::symlink_metadata(shared.join("link"))
+            .unwrap()
+            .is_symlink());
+    }
+
+    #[test]
+    #[ignore = "explicit synthetic index timing; run alone with --release --nocapture"]
+    fn root_index_build_measurement() {
+        use std::time::Instant;
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        for n in 0..50 {
+            put(&game, &format!("root-{n}.dll"), "root");
+        }
+        for dir in 0..100 {
+            for file in 0..200 {
+                put(&game, &format!("Data/dir-{dir}/file-{file}.nif"), "mesh");
+            }
+        }
+        // Alternate construction order so neither variant always benefits from
+        // the other's filesystem cache warming. These are warm-cache samples.
+        let mut full_times = Vec::new();
+        let mut pruned_times = Vec::new();
+        for round in 0..10 {
+            for pruned in [round % 2 == 0, round % 2 != 0] {
+                let start = Instant::now();
+                let stack = LayerStack::new_with_unindexed_subtree(
+                    vec![game.clone()],
+                    over.clone(),
+                    pruned.then_some(Path::new("Data")),
+                );
+                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                let index = stack.lower.as_ref().unwrap();
+                assert_eq!(index.entries.len(), if pruned { 51 } else { 20_151 });
+                assert_eq!(index.dirs.len(), if pruned { 1 } else { 102 });
+                if pruned {
+                    pruned_times.push(elapsed);
+                } else {
+                    full_times.push(elapsed);
+                }
+                if round == 9 {
+                    let start = Instant::now();
+                    for _ in 0..10_000 {
+                        assert!(std::hint::black_box(stack.resolve_read("root-1.dll")).is_some());
+                    }
+                    println!("root lookup pruned={pruned}: 10000 warm resolves {:.3} ms; indexed entries={} dirs={}", start.elapsed().as_secs_f64()*1000.0, index.entries.len(), index.dirs.len());
+                }
+            }
+        }
+        full_times.sort_by(f64::total_cmp);
+        pruned_times.sort_by(f64::total_cmp);
+        println!("root index build, 20000 Data payloads + 50 root files, 10 alternating warm samples: full median {:.3} ms, unindexed Data median {:.3} ms", (full_times[4]+full_times[5])/2.0, (pruned_times[4]+pruned_times[5])/2.0);
+        let data = LayerStack::new(vec![game.join("Data")], over);
+        assert_eq!(data.lower.as_ref().unwrap().entries.len(), 20_100);
+        println!(
+            "Data index unchanged: {} entries",
+            data.lower.as_ref().unwrap().entries.len()
+        );
+        let shared = t.sub("shared");
+        let private = t.sub("private");
+        put(&shared, "shared.dll", "shared payload");
+        put(&shared, ".eidoswh.root-0.dll", "");
+        put(&private, "Morrowind.ini", "private settings");
+        let mut flat = Vec::new();
+        let mut inherited = Vec::new();
+        for round in 0..10 {
+            for readonly in [round % 2 == 0, round % 2 != 0] {
+                let stack = if readonly {
+                    LayerStack::new_with_readonly_overwrite(
+                        vec![game.clone()],
+                        private.clone(),
+                        Some(Path::new("Data")),
+                        Some(shared.clone()),
+                    )
+                } else {
+                    LayerStack::new_with_unindexed_subtree(
+                        vec![shared.clone(), game.clone()],
+                        private.clone(),
+                        Some(Path::new("Data")),
+                    )
+                };
+                for path in ["root-1.dll", "shared.dll", "Morrowind.ini"] {
+                    assert!(stack.resolve_read(path).is_some());
+                }
+                let start = Instant::now();
+                for _ in 0..10_000 {
+                    for path in ["root-1.dll", "shared.dll", "Morrowind.ini"] {
+                        assert!(std::hint::black_box(stack.resolve_read(path)).is_some());
+                    }
+                }
+                let elapsed = start.elapsed().as_secs_f64() * 1000.0;
+                if readonly {
+                    inherited.push(elapsed);
+                } else {
+                    flat.push(elapsed);
+                }
+            }
+        }
+        flat.sort_by(f64::total_cmp);
+        inherited.sort_by(f64::total_cmp);
+        println!("private root, 30000 warm resolves (10000 vanilla, shared and private each), 10 alternating samples: old flat median {:.3} ms; inherited deletion semantics median {:.3} ms",(flat[4]+flat[5])/2.0,(inherited[4]+inherited[5])/2.0);
     }
 
     #[test]

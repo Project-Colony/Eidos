@@ -226,10 +226,35 @@ impl Eidos {
     /// Build a union over the given layers (highest priority first) and a
     /// writable overwrite layer.
     pub fn new(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
+        Self::new_with_unindexed_subtree(layers, overwrite, None)
+    }
+
+    /// Leave a subtree unindexed when another mount will cover it. Reads still
+    /// fall back to the layers, including before that covering mount is ready.
+    pub fn new_with_unindexed_subtree(
+        layers: Vec<PathBuf>,
+        overwrite: PathBuf,
+        unindexed_subtree: Option<&Path>,
+    ) -> Self {
+        Self::new_with_readonly_overwrite(layers, overwrite, unindexed_subtree, None)
+    }
+
+    /// Place an inherited Overwrite below this session's writable Overwrite.
+    pub fn new_with_readonly_overwrite(
+        layers: Vec<PathBuf>,
+        overwrite: PathBuf,
+        unindexed_subtree: Option<&Path>,
+        readonly_overwrite: Option<PathBuf>,
+    ) -> Self {
         // SAFETY: getuid/getgid always succeed with no preconditions.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
         Self {
-            stack: LayerStack::new(layers, overwrite),
+            stack: LayerStack::new_with_readonly_overwrite(
+                layers,
+                overwrite,
+                unindexed_subtree,
+                readonly_overwrite,
+            ),
             plugin_timestamps: None,
             plugin_atimes: Mutex::new(Default::default()),
             inodes: Mutex::new(Inodes::new()),

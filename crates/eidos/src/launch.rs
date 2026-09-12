@@ -445,13 +445,12 @@ pub(crate) fn run_through_view(
         env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
     }
 
-    let mut root_layers = inst.root_layers();
+    let root_layers = inst.root_layers();
     if runtime_root.is_some() {
         std::fs::create_dir_all(inst.root_overwrite_dir()).unwrap_or_else(|e| {
             eidos_log::warn!("eidos: cannot create root output directory: {e}");
             exit(1)
         });
-        root_layers.insert(0, inst.root_overwrite_dir());
     }
     if !root_layers.is_empty() {
         eidos_log::info!("eidos: {} root file layer(s)", root_layers.len());
@@ -501,8 +500,8 @@ pub(crate) fn run_through_view(
         // MO2's Root Builder: a mod's `Root/` is projected onto the GAME INSTALL
         // ROOT rather than into Data/, which is how a script extender, ENB,
         // ReShade or Engine Fixes becomes a real, orderable, per-profile mod
-        // instead of files copied into the game by hand. Empty for a load order
-        // that uses none, in which case no second mount happens.
+        // instead of files copied into the game by hand. The second mount is
+        // skipped only when both this list and root Overwrite are empty.
         root_layers,
         root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
         // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
@@ -511,6 +510,7 @@ pub(crate) fn run_through_view(
                 .clone()
                 .unwrap_or_else(|| inst.root_overwrite_dir()),
         ),
+        root_readonly_overwrite: runtime_root.as_ref().map(|_| inst.root_overwrite_dir()),
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
