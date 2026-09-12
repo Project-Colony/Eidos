@@ -17,6 +17,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod stores;
+pub use stores::{select_installation, GameSource, Store};
 mod proton;
 pub use proton::{is_flatpak_steam, library_path, proton_command, steam_root, ProtonRun};
 
@@ -42,6 +44,7 @@ pub struct InstalledApp {
 #[derive(Debug, Clone)]
 pub struct DetectedGame {
     pub def: &'static GameDef,
+    pub source: GameSource,
     /// `.../steamapps/common/<install_dir>`.
     pub install_path: PathBuf,
     /// The mod-deploy root, `install_path/<data_dir>`.
@@ -153,7 +156,7 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
 
 /// Installed games that we support, with their on-disk paths resolved.
 pub fn detect(home: &Path) -> Vec<DetectedGame> {
-    scan_installed(home)
+    let mut games: Vec<_> = scan_installed(home)
         .into_iter()
         .filter_map(|app| {
             let def = catalog().iter().find(|d| d.steam_app_id == app.app_id)?;
@@ -165,13 +168,16 @@ pub fn detect(home: &Path) -> Vec<DetectedGame> {
                 .join(app.app_id.to_string());
             Some(DetectedGame {
                 def,
+                source: GameSource::Steam,
                 install_path,
                 data_path,
                 compatdata: compat.is_dir().then_some(compat),
                 steam_name: app.name,
             })
         })
-        .collect()
+        .collect();
+    games.extend(stores::detect_stores(home));
+    games
 }
 
 /// Add a library path if it holds a `steamapps` dir and is not already present
@@ -313,6 +319,32 @@ mod tests {
             g.compatdata,
             Some(lib2c.join("steamapps/compatdata/489830"))
         );
+    }
+
+    #[test]
+    fn heroic_and_legendary_copies_remain_distinct_from_steam() {
+        let t = Tmp::new();
+        let steam = "home/.local/share/Steam";
+        t.write(&format!("{steam}/steamapps/appmanifest_489830.acf"),
+            &acf(489830, "Skyrim SE", "Skyrim"));
+        t.mkdir(&format!("{steam}/steamapps/common/Skyrim/Data"));
+        let gog = t.0.join("games/gog");
+        let epic = t.0.join("games/epic");
+        for path in [&gog, &epic] {
+            fs::create_dir_all(path.join("Data")).unwrap();
+            fs::write(path.join("SkyrimSE.exe"), b"fixture").unwrap();
+        }
+        t.write("home/.config/heroic/gog_store/installed.json", &serde_json::json!({
+            "installed": [{"appName":"1711230643", "install_path":gog, "platform":"windows"}]
+        }).to_string());
+        t.write("home/.var/app/com.heroicgameslauncher.hgl/config/legendary/installed.json", &serde_json::json!({
+            "ac82db5035584c7f8a2c548d98c86b2c": {"app_name":"ac82db5035584c7f8a2c548d98c86b2c", "install_path":epic, "title":"Skyrim SE"},
+            "unknown": {"app_name":"unknown", "install_path":gog, "title":"Skyrim SE"}
+        }).to_string());
+        let games = detect(&t.0.join("home"));
+        assert_eq!(games.len(), 3, "all supported installations, never title-only matches");
+        assert!(games.iter().all(|g| g.def.id == "skyrimse"));
+        assert!(games.iter().all(|g| g.compatdata.is_none()), "no invented Steam prefixes");
     }
 
     #[test]

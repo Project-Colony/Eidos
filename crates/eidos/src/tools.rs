@@ -109,7 +109,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
         exit(2);
     };
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -252,7 +252,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             });
             let Some(compat) = game.compatdata.as_ref() else {
                 eidos_log::info!(
-                    "No Proton prefix for {id} - launch the game once through Steam first."
+                    "No Steam Proton prefix for {id}. For a Heroic/Legendary copy, configure a native tool with its actual runner and prefix."
                 );
                 exit(1);
             };

@@ -49,7 +49,7 @@ impl Filesystem for Eidos {
         // put it there: with it on, Skyrim SE fails to open every archive and plugin
         // it needs. Don't negotiate what we won't use, so a run with it off is a
         // clean baseline rather than the capability sitting there unused.
-        if passthrough_enabled() {
+        if passthrough_enabled() && self.plugin_timestamps.is_none() {
             let _ = config.add_capabilities(InitFlags::FUSE_PASSTHROUGH);
             let _ = config.set_max_stack_depth(1);
         }
@@ -167,7 +167,10 @@ impl Filesystem for Eidos {
         // other creation; the remaining opens here only ever touch a name that
         // already exists.
         if truncating {
-            match self.stack.create_truncated(&vpath) {
+            match self.stack.create_truncated(&vpath).and_then(|created| {
+                self.remove_projected_time(&vpath)?;
+                Ok(created)
+            }) {
                 Ok(_) => {}
                 Err(e) => {
                     reply.error(e.into());
@@ -602,6 +605,7 @@ impl Filesystem for Eidos {
         // resurrect the old bytes of a deleted mod/game file into the "new" file.
         let opened = (|| -> std::io::Result<(PathBuf, File, Metadata)> {
             let (dest, file) = self.stack.create_truncated(&vpath)?;
+            self.remove_projected_time(&vpath)?;
             let meta = fs::symlink_metadata(&dest)?;
             Ok((dest, file, meta))
         })();
@@ -617,7 +621,7 @@ impl Filesystem for Eidos {
         let ino = self.inodes.lock_recover().lookup(&vpath);
         let attr = self.attr(ino, &meta);
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if passthrough_enabled() {
+        let backing = if passthrough_enabled() && self.plugin_timestamps.is_none() {
             reply.open_backing(file.as_fd()).ok()
         } else {
             None
@@ -670,7 +674,14 @@ impl Filesystem for Eidos {
             .get(&fh.0)
             .map(|o| o.file.clone());
         if let Some(file) = cached {
-            match write_all_at(&file, data, offset) {
+            let result = write_all_at(&file, data, offset).and_then(|_| {
+                self.inodes
+                    .lock_recover()
+                    .path(ino.0)
+                    .map(|p| self.remove_projected_time(&p))
+                    .unwrap_or(Ok(()))
+            });
+            match result {
                 Ok(()) => reply.written(data.len() as u32),
                 Err(e) => reply.error(e.into()),
             }
@@ -690,7 +701,7 @@ impl Filesystem for Eidos {
             let f = OpenOptions::new().write(true).open(&dest)?;
             write_all_at(&f, data, offset)
         })();
-        match written {
+        match written.and_then(|_| self.remove_projected_time(&vpath)) {
             Ok(()) => reply.written(data.len() as u32),
             Err(e) => reply.error(e.into()),
         }
@@ -784,6 +795,26 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         }
+        if mode.is_none() && size.is_none() && (atime.is_some() || mtime.is_some()) {
+            match self.set_projected_times(&vpath, atime, mtime) {
+                Ok(true) => {
+                    match self
+                        .stack
+                        .resolve_read(&vpath)
+                        .and_then(|p| fs::symlink_metadata(p).ok())
+                    {
+                        Some(meta) => reply.attr(&TTL, &self.attr(ino.0, &meta)),
+                        None => reply.error(Errno::ENOENT),
+                    }
+                    return;
+                }
+                Err(error) => {
+                    reply.error(error.into());
+                    return;
+                }
+                Ok(false) => {}
+            }
+        }
         // Any change must land in the Overwrite layer, so copy up first if the
         // path still lives only in a lower layer. We apply truncate, mode, and
         // timestamps; ownership is intentionally ignored (the game runs as us).
@@ -805,7 +836,7 @@ impl Filesystem for Eidos {
                 }
                 Ok(())
             })();
-            if let Err(e) = r {
+            if let Err(e) = r.and_then(|_| self.remove_projected_time(&vpath)) {
                 reply.error(e.into());
                 return;
             }
@@ -863,7 +894,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::ENOENT);
             return;
         }
-        match self.stack.remove(&vpath) {
+        match self
+            .stack
+            .remove(&vpath)
+            .and_then(|_| self.remove_projected_time(&vpath))
+        {
             Ok(()) => {
                 self.dir_changed(parent.0, &name.to_string_lossy());
                 reply.ok()
@@ -928,7 +963,11 @@ impl Filesystem for Eidos {
             reply.error(Errno::from_i32(libc::ENOSYS));
             return;
         }
-        match self.stack.rename(&from, &to) {
+        match self
+            .stack
+            .rename(&from, &to)
+            .and_then(|_| self.rename_projected_time(&from, &to))
+        {
             Ok(()) => {
                 let (moved, clobbered) = self.inodes.lock_recover().rename(&from, &to);
                 // The clobbered inodes' side-table entries die with them: their

@@ -106,8 +106,9 @@ pub fn install_bain(
 /// The root is NOT required to look valid: MO2 warns and installs anyway if the user
 /// insists, so a front end should call
 /// [`ArchiveTree::root_looks_valid`](crate::ArchiveTree::root_looks_valid) to show the
-/// warning and leave the decision to the user. Like [`install_bain`], a successful
-/// install may consume `tree`.
+/// warning and leave the decision to the user. Folder-unit games keep a selected
+/// named unit and refuse a bare marker at the archive root. Like [`install_bain`],
+/// a successful install may consume `tree`.
 pub fn install_manual(
     tree: &ExtractedTree,
     data_root: &str,
@@ -118,6 +119,13 @@ pub fn install_manual(
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
     let src = resolve_manual_root(tree.path(), data_root)?;
+    let rules = LayoutRules::for_game(game_id);
+    if src == tree.path()
+        && rules.mod_unit == eidos_gamedef::ModUnit::Folder
+        && ArchiveTree::from_dir(&src)?.has_mod_markers(rules)
+    {
+        return Err(folder_layout_error());
+    }
     let stripped = if data_root.is_empty() {
         String::new()
     } else {

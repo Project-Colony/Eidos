@@ -9,3 +9,6 @@ repository.workspace = true
 eidos-paths = { path = "../eidos-paths" }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+serde_json = "1"
+rustix = { version = "1", features = ["fs", "process"] }
+tempfile = "3"

@@ -1,0 +1,8 @@
+id = "example-json-save"
+name = "Example JSON save information"
+kind = "save_info"
+protocol = 1
+exec = "/usr/bin/python3"
+args = ["{addon_dir}/inspect-file.py", "{request}"]
+extensions = ["json"]
+version = "1"

@@ -17,6 +17,8 @@
 
 use std::collections::BTreeMap;
 
+use eidos_gamedef::ModUnit;
+
 /// One listed archive entry.
 #[derive(Debug, Clone)]
 pub struct ArchiveEntry {
@@ -139,15 +141,21 @@ impl ArchiveTree {
         }
     }
 
-    /// MO2's DataText layer: exactly one directory named `Data` (case-insensitive),
-    /// every other top-level entry a loose documentation file. The `Data` dir is the
-    /// real mod root to descend into (the sibling docs are dropped on the simple
-    /// path). Without this, a `Data/ + readme.txt` archive is rejected as NotSimple.
-    fn data_text_subdir(&self) -> Option<(&str, &ArchiveTree)> {
+    /// MO2's DataText layer: one `Data` directory, or the declared deployment
+    /// directory for a folder-unit game, matched case-insensitively.
+    /// Every sibling must be a loose documentation file, dropped on the simple
+    /// path. Without this, a `Data/ + readme.txt` archive is rejected as NotSimple.
+    fn data_text_subdir(&self, rules: LayoutRules) -> Option<(&str, &ArchiveTree)> {
         let mut data: Option<(&str, &ArchiveTree)> = None;
         for node in self.entries.values() {
             match node {
-                TreeNode::Dir { name, tree } if name.eq_ignore_ascii_case("data") => {
+                TreeNode::Dir { name, tree }
+                    if name.eq_ignore_ascii_case(if rules.mod_unit == ModUnit::Folder {
+                        rules.data_dir
+                    } else {
+                        "data"
+                    }) =>
+                {
                     if data.is_some() {
                         return None; // a second directory: not this pattern
                     }
@@ -240,6 +248,9 @@ impl ArchiveTree {
     /// while a dropped `.dll` is a mod that silently does nothing - the failure
     /// this whole path exists to prevent.
     pub fn root_builder_split(&self, rules: LayoutRules) -> Option<RootSplit> {
+        if rules.mod_unit == ModUnit::Folder {
+            return None;
+        }
         let mut tree = self;
         let mut wrapper_prefix = String::new();
         for _ in 0..=MAX_TREE_DEPTH {
@@ -406,27 +417,59 @@ impl ArchiveTree {
         })
     }
 
-    /// MO2's `ModDataChecker::dataLooksValid`: this level is a valid mod root if a
-    /// top-level entry is one of the game's data folders, or a file carrying one of
-    /// its data extensions.
+    /// MO2's `ModDataChecker::dataLooksValid`: match the game's folder, extension,
+    /// or exact-file markers. Folder units match their child directories instead
+    /// so the directory carrying each marker survives installation.
     ///
     /// `rules` is the whole of what makes this per-game; see [`LayoutRules`], whose
     /// default is the Gamebryo list this used to read directly.
     pub fn data_looks_valid(&self, rules: LayoutRules) -> CheckReturn {
+        if rules.mod_unit == ModUnit::Folder {
+            // A unit may bundle other units; its own marker still requires
+            // preserving this folder, never flattening it to the deployment root.
+            if self.has_mod_markers(rules) {
+                return CheckReturn::Invalid;
+            }
+            return if self.entries.values().any(|node| {
+                matches!(node,
+                    TreeNode::Dir { tree, .. } if tree.has_mod_markers(rules)
+                )
+            }) {
+                CheckReturn::Valid
+            } else {
+                CheckReturn::Invalid
+            };
+        }
+        if self.has_mod_markers(rules) {
+            CheckReturn::Valid
+        } else {
+            CheckReturn::Invalid
+        }
+    }
+
+    /// Markers on this level, independent of whether its directory must survive.
+    pub(crate) fn has_mod_markers(&self, rules: LayoutRules) -> bool {
         for (key, node) in &self.entries {
             match node {
-                TreeNode::Dir { .. } if rules.folder_matches(key) => return CheckReturn::Valid,
+                TreeNode::Dir { .. } if rules.folder_matches(key) => return true,
                 TreeNode::File { .. } => {
+                    if rules
+                        .files
+                        .iter()
+                        .any(|name| name.eq_ignore_ascii_case(key))
+                    {
+                        return true;
+                    }
                     if let Some(ext) = key.rsplit_once('.').map(|(_, e)| e) {
                         if rules.suffix_matches(ext) {
-                            return CheckReturn::Valid;
+                            return true;
                         }
                     }
                 }
                 _ => {}
             }
         }
-        CheckReturn::Invalid
+        false
     }
 
     /// MO2's `getSimpleArchiveBase`: descend while there is exactly one wrapper
@@ -445,7 +488,7 @@ impl ArchiveTree {
             }
             // MO2's DataText layer: a sole `Data` dir beside loose docs - descend
             // into Data (the docs are not mod content and are dropped here).
-            if let Some((name, sub)) = tree.data_text_subdir() {
+            if let Some((name, sub)) = tree.data_text_subdir(rules) {
                 prefix.push_str(name);
                 prefix.push('/');
                 return rec(sub, prefix, rules);
@@ -616,10 +659,13 @@ pub fn bain_default_selection(subpackages: &[String], previous: &[String]) -> Ve
 
 mod install;
 pub use install::{
-    collision_name, extract_to_temp, extract_to_temp_with, finish_fomod, fomod_context, fomod_context_for_instance,
-    fomod_context_with_plugins, install_archive, install_archive_with_policy, install_bain,
-    install_extracted, install_manual, mod_name_for, open_archive, open_archive_with,
-    ExtractedTree, FomodSession, InstallError, InstallReport, Opened, OverwritePolicy,
+    collision_name, extract_to_temp, extract_to_temp_with, finish_fomod, finish_fomod_with_finish,
+    fomod_context, fomod_context_for_instance, fomod_context_with_plugins, install_archive,
+    install_archive_with_policy, install_bain, install_destination, install_extracted,
+    install_extracted_with_finish, install_manual, install_omod, install_omod_with_finish,
+    mod_name_for, open_archive, open_archive_with, open_omod_with, try_open_omod, ExtractedTree,
+    FomodSession, InstallError, InstallReport, OmodCompression, OmodCreationTime, OmodFileKind,
+    OmodMember, OmodMetadata, OmodScript, OmodScriptKind, OmodSession, Opened, OverwritePolicy,
 };
 
 /// The same check as [`ArchiveTree::data_looks_valid`], against a directory that
@@ -676,15 +722,8 @@ pub fn folder_looks_valid(dir: &std::path::Path, rules: LayoutRules) -> bool {
 
 /// What makes a directory level a valid mod root, for one game.
 ///
-/// This is MO2's per-game `ModDataChecker` reduced to the two lists it actually
-/// consults. It exists as a value rather than a pair of consts because the check
-/// is the one piece of the installer that is not game-agnostic: a Stardew mod is a
-/// folder holding `manifest.json`, a BepInEx mod is a `BepInEx/` tree, and neither
-/// has ever resolved here because the Gamebryo vocabulary was the only vocabulary.
-///
-/// [`Default`] is that Gamebryo vocabulary, unchanged and still the answer for
-/// every game that does not ask for another one - so a caller with no game in hand
-/// classifies exactly as this module did when the lists were read from a const.
+/// The marker vocabulary and installation unit for MO2-style data checking.
+/// [`Default`] retains the Gamebryo rules for games declaring no vocabulary.
 ///
 /// Matching is case-insensitive, so a game may spell its rules however its own
 /// documentation does (`BepInEx`, not `bepinex`).
@@ -694,6 +733,10 @@ pub struct LayoutRules {
     pub folders: &'static [&'static str],
     /// File extensions, without the dot, that mark this level as a mod root.
     pub suffixes: &'static [&'static str],
+    /// Exact marker filenames, without a directory prefix.
+    pub files: &'static [&'static str],
+    /// Folder units retain the directory carrying the markers.
+    pub mod_unit: ModUnit,
     /// The game's mod-merge root relative to its install directory, exactly as the
     /// game declares it (`Data`, `SB/Content/Paks`). Empty in the default rules,
     /// which belong to no game.
@@ -709,6 +752,8 @@ impl Default for LayoutRules {
         LayoutRules {
             folders: GAMEBRYO_FOLDERS,
             suffixes: GAMEBRYO_SUFFIXES,
+            files: &[],
+            mod_unit: ModUnit::Files,
             data_dir: "",
         }
     }
@@ -729,7 +774,7 @@ impl LayoutRules {
         }
     }
 
-    /// The rules for an Eidos game id (`skyrimse`, `stardew`, ...). An unknown id,
+    /// The rules for an Eidos game id (`skyrimse`, `stardewvalley`, ...). An unknown id,
     /// or a game that declares no vocabulary of its own, gets [`Default`].
     pub fn for_game(game_id: &str) -> LayoutRules {
         eidos_gamedef::GameDef::for_id(game_id)
@@ -749,30 +794,19 @@ impl LayoutRules {
 }
 
 impl From<&eidos_gamedef::GameDef> for LayoutRules {
-    /// An empty list on the descriptor means "the Gamebryo vocabulary", NOT "no
-    /// vocabulary".
-    ///
-    /// This distinction is the single load-bearing line in the whole per-game
-    /// checker. Taken literally, an empty list makes [`ArchiveTree::data_looks_valid`]
-    /// return `Invalid` for every level of every archive, which makes
-    /// `simple_archive_base` return `None`, which sends every install of every
-    /// game - Skyrim included, since no built-in game declares these fields - to
-    /// the manual picker. `every_builtin_game_keeps_the_default_vocabulary` exists
-    /// to make that mistake impossible to merge.
-    /// A game declares its vocabulary as a WHOLE, not list by list. Naming even one
-    /// rule means the Gamebryo lists do not apply to that game at all.
-    ///
-    /// Falling back per-list would be worse than useless for the games this exists
-    /// for: Stellar Blade's mods are `.pak`/`.ucas`/`.utoc` and nothing else, and a
-    /// per-list fallback would leave it inheriting `textures/`, `meshes/` and
-    /// `.esp`. An archive shipping a stray `textures` folder would then read as a
-    /// valid mod root and install to the wrong place, silently.
+    /// All marker lists empty with file units preserves the Gamebryo default.
+    /// Declaring any marker or folder units replaces the vocabulary as a whole,
+    /// so a manifest-only game cannot accidentally inherit Bethesda folders.
     fn from(def: &eidos_gamedef::GameDef) -> Self {
         // `data_dir` is not part of the vocabulary and is always carried through:
         // where a game's mods deploy is a fact about the game, not a dialect it
         // opts into.
         let d = LayoutRules::default();
-        let (folders, suffixes) = if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
+        let (folders, suffixes) = if def.valid_folders.is_empty()
+            && def.valid_suffixes.is_empty()
+            && def.valid_files.is_empty()
+            && def.mod_unit == ModUnit::Files
+        {
             (d.folders, d.suffixes)
         } else {
             (def.valid_folders, def.valid_suffixes)
@@ -780,6 +814,8 @@ impl From<&eidos_gamedef::GameDef> for LayoutRules {
         LayoutRules {
             folders,
             suffixes,
+            files: def.valid_files,
+            mod_unit: def.mod_unit,
             data_dir: def.data_dir,
         }
     }
@@ -1019,6 +1055,56 @@ mod tests {
         LayoutRules::default()
     }
 
+    #[test]
+    fn folder_units_stop_above_the_marker_and_do_not_inherit_bethesda() {
+        let def = eidos_gamedef::parse_game(
+            r#"
+            id = "folder-fixture"
+            name = "Folder fixture"
+            data_dir = "Mods"
+            valid_files = ["manifest.json"]
+            mod_unit = "folder"
+        "#,
+        )
+        .unwrap();
+        let r = LayoutRules::from(&def);
+        for (paths, base) in [
+            (
+                vec![
+                    "ContentPatcher/manifest.json",
+                    "ContentPatcher/content.json",
+                ],
+                "",
+            ),
+            (
+                vec!["Download-1915/ContentPatcher/manifest.json"],
+                "Download-1915/",
+            ),
+            (
+                vec!["Mods/ContentPatcher/manifest.json", "README.txt"],
+                "Mods/",
+            ),
+            (vec!["One/MANIFEST.JSON", "Two/manifest.json"], ""),
+        ] {
+            assert_eq!(tree(&paths).simple_archive_base(r).as_deref(), Some(base));
+        }
+        for paths in [
+            vec!["manifest.json"],
+            vec!["manifest.json", "Nested/manifest.json"],
+            vec!["Textures/a.dds"],
+            vec!["Unit/manifest.json/readme.txt"],
+        ] {
+            assert_eq!(tree(&paths).simple_archive_base(r), None, "{paths:?}");
+        }
+        let t = tree(&[
+            "00 Core/ContentPatcher/manifest.json",
+            "01 Extra/Other/manifest.json",
+        ]);
+        assert_eq!(t.bain_subpackages(r).0, ["00 Core", "01 Extra"]);
+        assert!(!t.root_looks_valid("00 Core/ContentPatcher", r));
+        assert!(t.root_looks_valid("00 Core", r));
+    }
+
     /// A game that declares nothing must classify with the Gamebryo vocabulary.
     ///
     /// This guards the one line that could break every existing install at once.
@@ -1083,7 +1169,11 @@ mod tests {
                 "{} disagrees via for_game",
                 def.id
             );
-            if def.valid_folders.is_empty() && def.valid_suffixes.is_empty() {
+            if def.valid_folders.is_empty()
+                && def.valid_suffixes.is_empty()
+                && def.valid_files.is_empty()
+                && def.mod_unit == ModUnit::Files
+            {
                 inheriting += 1;
                 assert_eq!(
                     vocabulary(rules),

@@ -8,3 +8,5 @@ edition.workspace = true
 
 [dependencies]
 eidos-gamedef = { path = "../eidos-gamedef" }
+serde_json = "1"
+eidos-plugins = { path = "../eidos-plugins" }

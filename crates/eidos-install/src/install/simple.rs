@@ -57,6 +57,9 @@ pub fn install_archive_with_policy(
             return Err(InstallError::Exists(mods_dir.join(n)));
         }
     }
+    if let Some(session) = try_open_omod(archive, mods_dir, |_| {})? {
+        return install_omod(&session, mods_dir, name, game_id, policy);
+    }
     let tree = extract_to_temp(archive, mods_dir)?;
     install_extracted(&tree, archive, mods_dir, name, game_id, policy, ctx)
 }
@@ -74,56 +77,132 @@ pub fn install_extracted(
     policy: OverwritePolicy,
     ctx: &eidos_fomod::Context,
 ) -> Result<InstallReport, InstallError> {
-    install_destination(archive, mods_dir, name, game_id, policy, |dest, merging| {
-        let tmp = tree.path();
-        // Match the interactive classifier: the scripted installer owns selection.
-        if let Some(root) = find_fomod_root(tmp) {
-            let config = parse_fomod_at(&root)?;
-            if let Some(req) = eidos_fomod::unmet_module_dependencies(&config, ctx) {
-                return Err(InstallError::UnmetDependency(req));
+    install_extracted_inner(
+        tree,
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        policy,
+        ctx,
+        None::<fn(&Path) -> Result<(), InstallError>>,
+    )
+}
+
+/// Finish the placed payload in private staging before metadata and publication.
+/// Merge policies return [`InstallError::BadSelection`] before any installation
+/// write or callback; use [`install_extracted`] for an ordinary live Merge.
+#[allow(clippy::too_many_arguments)]
+pub fn install_extracted_with_finish(
+    tree: &ExtractedTree,
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    policy: OverwritePolicy,
+    ctx: &eidos_fomod::Context,
+    finish: impl FnOnce(&Path) -> Result<(), InstallError>,
+) -> Result<InstallReport, InstallError> {
+    install_extracted_inner(
+        tree,
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        policy,
+        ctx,
+        Some(finish),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_extracted_inner(
+    tree: &ExtractedTree,
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    policy: OverwritePolicy,
+    ctx: &eidos_fomod::Context,
+    finish: Option<impl FnOnce(&Path) -> Result<(), InstallError>>,
+) -> Result<InstallReport, InstallError> {
+    install_destination_inner(
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        policy,
+        finish.is_some(),
+        |dest, merging| {
+            let result = (|| {
+                let tmp = tree.path();
+                // Match the interactive classifier: the scripted installer owns selection.
+                if let Some(root) = find_fomod_root(tmp) {
+                    let config = parse_fomod_at(&root)?;
+                    if let Some(req) = eidos_fomod::unmet_module_dependencies(&config, ctx) {
+                        return Err(InstallError::UnmetDependency(req));
+                    }
+                    let plan = eidos_fomod::build_default_plan(&config, ctx);
+                    return Ok((
+                        String::new(),
+                        true,
+                        apply_plan_for_game(&root, &plan, dest, LayoutRules::for_game(game_id))?,
+                    ));
+                }
+                let rules = LayoutRules::for_game(game_id);
+                let layout = ArchiveTree::from_dir(tmp)?;
+                if let Some(base) = layout.simple_archive_base(rules) {
+                    let src = tmp.join(base.trim_end_matches('/'));
+                    if !source_within(tmp, &src) {
+                        return Err(InstallError::BadSelection(
+                            "The selected data directory escapes the extracted archive".into(),
+                        ));
+                    }
+                    place_game_sources(&[src], dest, merging, rules)?;
+                    return Ok((base, false, Vec::new()));
+                }
+                if rules.mod_unit == eidos_gamedef::ModUnit::Folder && layout.has_mod_markers(rules)
+                {
+                    return Err(folder_layout_error());
+                }
+                let (subpackages, _) = layout.bain_subpackages(rules);
+                if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
+                    let picks = bain_default_selection(&subpackages, &[]);
+                    let chosen: Vec<_> = subpackages
+                        .into_iter()
+                        .zip(picks)
+                        .filter_map(|(name, on)| on.then_some(name))
+                        .collect();
+                    if !chosen.is_empty() {
+                        place_game_sources(
+                            &resolve_bain_sources(tmp, &chosen)?,
+                            dest,
+                            merging,
+                            rules,
+                        )?;
+                        return Ok((String::new(), false, Vec::new()));
+                    }
+                }
+                if let Some(split) = layout.root_builder_split(rules) {
+                    place_root_split(&resolve_root_split(tmp, &split)?, dest, merging)?;
+                    return Ok((
+                        format!(
+                            "{}{}",
+                            split.wrapper_prefix,
+                            split.data_prefix.unwrap_or_default()
+                        ),
+                        false,
+                        Vec::new(),
+                    ));
+                }
+                Err(InstallError::NotSimple)
+            })()?;
+            if let Some(finish) = finish {
+                finish(dest)?;
             }
-            let plan = eidos_fomod::build_default_plan(&config, ctx);
-            return Ok((String::new(), true, apply_plan(&root, &plan, dest)?));
-        }
-        let rules = LayoutRules::for_game(game_id);
-        let layout = ArchiveTree::from_dir(tmp)?;
-        if let Some(base) = layout.simple_archive_base(rules) {
-            let src = tmp.join(base.trim_end_matches('/'));
-            if !source_within(tmp, &src) {
-                return Err(InstallError::BadSelection(
-                    "The selected data directory escapes the extracted archive".into(),
-                ));
-            }
-            place_sources(&[src], dest, merging)?;
-            return Ok((base, false, Vec::new()));
-        }
-        let (subpackages, _) = layout.bain_subpackages(rules);
-        if subpackages.len() >= BAIN_MIN_SUBPACKAGES {
-            let picks = bain_default_selection(&subpackages, &[]);
-            let chosen: Vec<_> = subpackages
-                .into_iter()
-                .zip(picks)
-                .filter_map(|(name, on)| on.then_some(name))
-                .collect();
-            if !chosen.is_empty() {
-                place_sources(&resolve_bain_sources(tmp, &chosen)?, dest, merging)?;
-                return Ok((String::new(), false, Vec::new()));
-            }
-        }
-        if let Some(split) = layout.root_builder_split(rules) {
-            place_root_split(&resolve_root_split(tmp, &split)?, dest, merging)?;
-            return Ok((
-                format!(
-                    "{}{}",
-                    split.wrapper_prefix,
-                    split.data_prefix.unwrap_or_default()
-                ),
-                false,
-                Vec::new(),
-            ));
-        }
-        Err(InstallError::NotSimple)
-    })
+            Ok(result)
+        },
+    )
 }
 
 /// Put `sources` (existing directories inside the extraction temp) into `dest`, in
@@ -140,6 +219,66 @@ pub(crate) fn place_sources(sources: &[PathBuf], dest: &Path, merging: bool) -> 
     Ok(())
 }
 
+/// Preserve an explicitly selected loader unit, including its original spelling.
+/// Folder payloads are copied into validation staging so a rejected install can retry.
+fn place_game_sources(
+    sources: &[PathBuf],
+    dest: &Path,
+    merging: bool,
+    rules: LayoutRules,
+) -> Result<(), InstallError> {
+    if rules.mod_unit != eidos_gamedef::ModUnit::Folder {
+        return Ok(place_sources(sources, dest, merging)?);
+    }
+    for src in sources {
+        let target = if ArchiveTree::from_dir(src)?.has_mod_markers(rules) {
+            destination_child(dest, src.file_name().ok_or_else(folder_layout_error)?)?
+        } else {
+            dest.to_path_buf()
+        };
+        overlay_dir(src, &target)?;
+    }
+    Ok(())
+}
+
+pub(super) fn folder_layout_error() -> InstallError {
+    InstallError::BadSelection(
+        "This game requires named mod folders containing its marker file; select the parent of the mod folder, or package the bare files inside a named folder".into(),
+    )
+}
+
+/// Check the owned output before a Merge checkpoint, backup, or live payload write.
+fn validate_folder_payload(root: &Path, rules: LayoutRules) -> Result<(), InstallError> {
+    fn check_entries(dir: &Path, depth: usize) -> io::Result<()> {
+        if depth > crate::MAX_TREE_DEPTH {
+            return Err(io::Error::other(
+                "Mod folder nesting exceeds the installation limit",
+            ));
+        }
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let kind = entry.file_type()?;
+            if kind.is_symlink() || !(kind.is_dir() || kind.is_file()) {
+                return Err(io::Error::other(format!(
+                    "Named mod folders require regular files and directories: {}",
+                    entry.path().display()
+                )));
+            }
+            if kind.is_dir() {
+                check_entries(&entry.path(), depth + 1)?;
+            }
+        }
+        Ok(())
+    }
+    check_entries(root, 0)?;
+    normalize_case_collisions(root)?;
+    let tree = ArchiveTree::from_dir(root)?;
+    if tree.data_looks_valid(rules) != crate::CheckReturn::Valid {
+        return Err(folder_layout_error());
+    }
+    Ok(())
+}
+
 /// Install already-resolved BAIN/manual sources through the shared publication path.
 pub(crate) fn install_sources(
     sources: &[PathBuf],
@@ -150,20 +289,92 @@ pub(crate) fn install_sources(
     policy: OverwritePolicy,
     stripped: String,
 ) -> Result<InstallReport, InstallError> {
-    install_destination(archive, mods_dir, name, game_id, policy, |dest, merging| {
-        place_sources(sources, dest, merging)?;
-        Ok((stripped, false, Vec::new()))
-    })
+    install_destination_inner(
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        policy,
+        false,
+        |dest, merging| {
+            place_game_sources(sources, dest, merging, LayoutRules::for_game(game_id))?;
+            Ok((stripped, false, Vec::new()))
+        },
+    )
 }
 
-/// Stage fresh installs and replacements on the destination filesystem. Merge
-/// retains its existing overlay semantics; metadata always starts from the user copy.
-pub(crate) fn install_destination(
+/// Stage fresh installs and replacements on the destination filesystem.
+/// The caller must hold the instance mutation lock. `place` receives a private
+/// staging directory and `false` for merging. Merge policies return
+/// [`InstallError::BadSelection`] before any installation write or callback.
+/// It must finish every payload transformation before returning successfully.
+pub fn install_destination(
     archive: &Path,
     mods_dir: &Path,
     name: &str,
     game_id: &str,
     policy: OverwritePolicy,
+    place: impl FnOnce(&Path, bool) -> Result<(String, bool, Vec<String>), InstallError>,
+) -> Result<InstallReport, InstallError> {
+    install_destination_inner(archive, mods_dir, name, game_id, policy, true, place)
+}
+
+/// Ordinary installers allow live overlays; exported transform callbacks require staging.
+pub(super) fn install_destination_inner(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    policy: OverwritePolicy,
+    staging_only: bool,
+    place: impl FnOnce(&Path, bool) -> Result<(String, bool, Vec<String>), InstallError>,
+) -> Result<InstallReport, InstallError> {
+    if staging_only
+        && matches!(
+            policy,
+            OverwritePolicy::Merge | OverwritePolicy::MergeWithBackup
+        )
+    {
+        return Err(InstallError::BadSelection(
+            "Payload transformations require private staging; Merge policies are not supported"
+                .into(),
+        ));
+    }
+    let rules = LayoutRules::for_game(game_id);
+    if rules.mod_unit == eidos_gamedef::ModUnit::Folder {
+        fs::create_dir_all(mods_dir)?;
+        let tmp = mods_dir.join(format!(
+            ".eidos-install-stage-folder-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        fs::create_dir(&tmp)?;
+        let prepared = ExtractedTree { tmp };
+        let result = place(prepared.path(), false)?;
+        validate_folder_payload(prepared.path(), rules)?;
+        return install_destination_ready(
+            archive,
+            mods_dir,
+            name,
+            game_id,
+            policy,
+            &[],
+            |dest, merging| {
+                place_sources(&[prepared.path().to_path_buf()], dest, merging)?;
+                Ok(result)
+            },
+        );
+    }
+    install_destination_ready(archive, mods_dir, name, game_id, policy, &[], place)
+}
+
+pub(super) fn install_destination_ready(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    policy: OverwritePolicy,
+    archive_facts: &[(String, String)],
     place: impl FnOnce(&Path, bool) -> Result<(String, bool, Vec<String>), InstallError>,
 ) -> Result<InstallReport, InstallError> {
     let mut name = resolved_mod_name(mods_dir, name)?;
@@ -189,7 +400,9 @@ pub(crate) fn install_destination(
         .exists()
         .then(|| ModMeta::read_checked(&dest.join("meta.ini")))
         .transpose()?;
-    if let OverwritePolicy::ReplaceOwned(owner) = &policy {
+    if let OverwritePolicy::ReplaceOwned(owner) | OverwritePolicy::ReplaceOwnedWithBackup(owner) =
+        &policy
+    {
         if owner.is_empty()
             || owner.contains(['\r', '\n'])
             || preserved.as_ref().and_then(ModMeta::collection_owner) != Some(owner)
@@ -200,122 +413,172 @@ pub(crate) fn install_destination(
         }
     }
 
-    let merging = policy == OverwritePolicy::Merge;
-    fs::create_dir_all(mods_dir)?;
-    let stage = if merging {
-        None
-    } else {
-        let tmp = mods_dir.join(format!(
-            ".eidos-install-stage-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        fs::create_dir(&tmp)?;
-        Some(ExtractedTree { tmp })
-    };
-    let target = stage
-        .as_ref()
-        .map(|s| s.path().join("payload"))
-        .unwrap_or_else(|| dest.clone());
-    fs::create_dir_all(&target)?;
-    // Merge changes the live directory. Persist its uncertain identity before the
-    // first payload write, so a failed or interrupted overlay cannot authorize a
-    // collection replacement or claim that the old exact source is still intact.
-    let merge_checkpoint = if merging {
-        let mut meta = preserved.clone().unwrap_or_default();
-        meta.set("eidosCollectionOwner", "");
-        meta.set_installed_files(&[]);
-        meta.set("fileID", "0");
-        meta.set_install_warning(
-            format!(
-                "{} Merge did not complete; installed content is unverified.",
-                meta.install_warning().unwrap_or_default()
-            )
-            .trim(),
-        );
-        meta.write(&target.join("meta.ini"))?;
-        Some(meta)
+    let merging = matches!(
+        policy,
+        OverwritePolicy::Merge | OverwritePolicy::MergeWithBackup
+    );
+    let retain = matches!(
+        policy,
+        OverwritePolicy::ReplaceWithBackup
+            | OverwritePolicy::MergeWithBackup
+            | OverwritePolicy::ReplaceOwnedWithBackup(_)
+    );
+    // The checkpoint is a live write too, so the snapshot must precede it.
+    let mut backup = if merging && retain && dest.exists() {
+        Some(eidos_instance::backup_mod(&dest)?)
     } else {
         None
     };
-    let installed = (|| -> Result<_, InstallError> {
-        let (stripped, fomod, missing) = place(&target, merging)?;
-        let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
-        write_meta_preserving(archive, &target, game_id, guessed_id, preserved, merging)?;
-        let meta_path = target.join("meta.ini");
-        let mut meta = ModMeta::read(&meta_path);
-        if let OverwritePolicy::ReplaceOwned(owner) = &policy {
-            meta.set("eidosCollectionOwner", owner);
-        }
-
-        let warning = if missing.is_empty() {
-            if merging {
-                meta.install_warning().unwrap_or_default()
-            } else {
-                String::new()
-            }
+    let result = (|| {
+        fs::create_dir_all(mods_dir)?;
+        let stage = if merging {
+            None
         } else {
-            let previous = if merging {
-                meta.install_warning().unwrap_or_default()
-            } else {
-                String::new()
-            };
-            format!("{previous} Missing archive sources: {}", missing.join(", "))
-                .trim()
-                .to_string()
+            let tmp = mods_dir.join(format!(
+                ".eidos-install-stage-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            fs::create_dir(&tmp)?;
+            Some(ExtractedTree { tmp })
         };
-        meta.set_install_warning(&warning);
-        meta.write(&meta_path)?;
-        Ok((stripped, fomod, missing))
-    })();
-    let (stripped, fomod, missing) = match installed {
-        Ok(result) => result,
-        Err(error) => {
-            // A payload can contain meta.ini too; restore the checkpoint on failure.
-            if let Some(meta) = merge_checkpoint {
-                if let Err(checkpoint_error) = meta.write(&target.join("meta.ini")) {
-                    return Err(io::Error::other(format!(
-                        "{error}; cannot persist incomplete Merge warning: {checkpoint_error}"
-                    ))
-                    .into());
-                }
+        let target = stage
+            .as_ref()
+            .map(|s| s.path().join("payload"))
+            .unwrap_or_else(|| dest.clone());
+        fs::create_dir_all(&target)?;
+        // Merge changes the live directory. Persist its uncertain identity before the
+        // first payload write, so a failed or interrupted overlay cannot authorize a
+        // collection replacement or claim that the old exact source is still intact.
+        let merge_checkpoint = if merging {
+            let mut meta = preserved.clone().unwrap_or_default();
+            meta.set("eidosCollectionOwner", "");
+            meta.set_installed_files(&[]);
+            meta.set("fileID", "0");
+            meta.set_install_warning(
+                format!(
+                    "{} Merge did not complete; installed content is unverified.",
+                    meta.install_warning().unwrap_or_default()
+                )
+                .trim(),
+            );
+            meta.write(&target.join("meta.ini"))?;
+            Some(meta)
+        } else {
+            None
+        };
+        let installed = (|| -> Result<_, InstallError> {
+            let (stripped, fomod, missing) = place(&target, merging)?;
+            let (_, guessed_id) = guess_mod_name_and_id(&archive.to_string_lossy());
+            write_meta_preserving(archive, &target, game_id, guessed_id, preserved, merging)?;
+            let meta_path = target.join("meta.ini");
+            let mut meta = ModMeta::read(&meta_path);
+            for (key, value) in archive_facts {
+                meta.set(key, value);
             }
-            return Err(error);
+            if let OverwritePolicy::ReplaceOwned(owner)
+            | OverwritePolicy::ReplaceOwnedWithBackup(owner) = &policy
+            {
+                meta.set("eidosCollectionOwner", owner);
+            }
+
+            let warning = if missing.is_empty() {
+                if merging {
+                    meta.install_warning().unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            } else {
+                let previous = if merging {
+                    meta.install_warning().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                format!("{previous} Missing archive sources: {}", missing.join(", "))
+                    .trim()
+                    .to_string()
+            };
+            meta.set_install_warning(&warning);
+            meta.write(&meta_path)?;
+            Ok((stripped, fomod, missing))
+        })();
+        let (stripped, fomod, missing) = match installed {
+            Ok(result) => result,
+            Err(error) => {
+                // A payload can contain meta.ini too; restore the checkpoint on failure.
+                if let Some(meta) = merge_checkpoint {
+                    if let Err(checkpoint_error) = meta.write(&target.join("meta.ini")) {
+                        return Err(io::Error::other(format!(
+                            "{error}; cannot persist incomplete Merge warning: {checkpoint_error}"
+                        ))
+                        .into());
+                    }
+                }
+                return Err(error);
+            }
+        };
+        if let Some(stage) = stage {
+            backup = publish_install_with(stage, &target, &dest, retain, |from, to| {
+                fs::rename(from, to)
+            })?;
         }
-    };
-    if let Some(stage) = stage {
-        publish_install(stage, &target, &dest)?;
-    }
-    Ok(InstallReport {
-        name,
-        stripped,
-        fomod,
-        missing,
-        dest,
+        Ok(InstallReport {
+            name,
+            stripped,
+            fomod,
+            missing,
+            dest,
+            backup: backup.clone(),
+        })
+    })();
+    result.map_err(|error: InstallError| match backup {
+        Some(path) => io::Error::other(format!(
+            "{error}; previous mod preserved at {}",
+            path.display()
+        ))
+        .into(),
+        None => error,
     })
 }
 
 /// Keep the previous mod recoverable until its replacement is published. If a
 /// rollback fails too, disarm cleanup and include the recovery path in the error.
+#[cfg(test)]
 pub(crate) fn publish_install(stage: ExtractedTree, payload: &Path, dest: &Path) -> io::Result<()> {
-    publish_install_with(stage, payload, dest, |from, to| fs::rename(from, to))
+    publish_install_with(stage, payload, dest, false, |from, to| fs::rename(from, to)).map(|_| ())
 }
 
 fn publish_install_with(
     stage: ExtractedTree,
     payload: &Path,
     dest: &Path,
+    retain: bool,
     mut rename: impl FnMut(&Path, &Path) -> io::Result<()>,
-) -> io::Result<()> {
-    let backup = stage.path().join("previous");
+) -> io::Result<Option<PathBuf>> {
     let had_previous = dest.exists();
+    let retained = if had_previous && retain {
+        Some(eidos_instance::reserve_mod_backup(dest)?)
+    } else {
+        None
+    };
+    let backup = retained
+        .clone()
+        .unwrap_or_else(|| stage.path().join("previous"));
     if had_previous {
-        rename(dest, &backup)?;
+        if let Err(error) = rename(dest, &backup) {
+            // Only an empty reservation is ours to remove on this failure.
+            if retained.is_some() {
+                let _ = fs::remove_dir(&backup);
+            }
+            return Err(error);
+        }
     }
     if let Err(error) = rename(payload, dest) {
         if had_previous {
             if let Err(rollback) = rename(&backup, dest) {
-                std::mem::forget(stage);
+                if retained.is_none() {
+                    std::mem::forget(stage);
+                }
                 return Err(io::Error::new(error.kind(), format!(
                     "cannot publish install: {error}; rollback failed: {rollback}; previous mod preserved at {}",
                     backup.display())));
@@ -323,7 +586,7 @@ fn publish_install_with(
         }
         return Err(error);
     }
-    Ok(())
+    Ok(retained)
 }
 
 /// The sanitized destination folder name for `raw`, if installing it into
@@ -418,6 +681,7 @@ mod publication_tests {
             ExtractedTree { tmp: stage.clone() },
             &stage.join("payload"),
             &dest,
+            false,
             |from, to| {
                 calls += 1;
                 if calls == 1 {
@@ -438,5 +702,56 @@ mod publication_tests {
             fs::read(backup.join("meta.ini")).unwrap(),
             b"original metadata"
         );
+    }
+
+    #[test]
+    fn retained_publication_failures_preserve_original_or_explicit_recovery() {
+        for failure in [1, 2, 3] {
+            let temp = std::env::temp_dir().join(format!(
+                "eidos-retained-rollback-{}-{}",
+                std::process::id(),
+                COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            fs::create_dir(&temp).unwrap();
+            let _cleanup = ExtractedTree { tmp: temp.clone() };
+            let dest = temp.join("Old");
+            fs::create_dir(&dest).unwrap();
+            fs::write(dest.join("precious.esp"), b"original").unwrap();
+            let stage = temp.join("stage");
+            fs::create_dir_all(stage.join("payload")).unwrap();
+            fs::write(stage.join("payload/new.esp"), b"replacement").unwrap();
+            let mut calls = 0;
+            let error = publish_install_with(
+                ExtractedTree { tmp: stage.clone() },
+                &stage.join("payload"),
+                &dest,
+                true,
+                |from, to| {
+                    calls += 1;
+                    if calls == failure || failure == 3 && calls == 2 {
+                        Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "injected rename failure",
+                        ))
+                    } else {
+                        fs::rename(from, to)
+                    }
+                },
+            )
+            .unwrap_err();
+            let backup = temp.join("Old_backup");
+            if failure == 3 {
+                assert!(!dest.exists());
+                assert_eq!(fs::read(backup.join("precious.esp")).unwrap(), b"original");
+                assert!(error.to_string().contains(&backup.display().to_string()));
+            } else {
+                assert_eq!(fs::read(dest.join("precious.esp")).unwrap(), b"original");
+                assert!(!backup.exists());
+            }
+            assert!(
+                !stage.exists(),
+                "a retained recovery tree is outside staging"
+            );
+        }
     }
 }

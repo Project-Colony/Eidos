@@ -46,7 +46,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     };
     let install = args.iter().any(|a| a == "--install");
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -213,7 +213,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         return;
     }
     let Some(compat) = game.compatdata.as_ref() else {
-        eidos_log::warn!("No Proton prefix for {id} - launch the game once through Steam first.");
+        eidos_log::warn!("No Steam Proton prefix for {id}. For a Heroic/Legendary copy, configure a native tool with its actual runner and prefix.");
         exit(1);
     };
     let win = compat.join("pfx").join("drive_c").join("windows");

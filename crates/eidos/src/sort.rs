@@ -20,25 +20,22 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let target = resolve(id);
     let id = &target.game_id;
     if !eidos_loot::is_supported(id) {
-        eidos_log::info!(
-            "LOOT sorting is not supported for '{id}' (timestamp-ordered or unmanaged game)."
-        );
+        eidos_log::info!("LOOT sorting is not supported for '{id}' (unmanaged game).");
         exit(1);
     }
-    let Some(game) = find_game(id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!("Game '{id}' is not detected. Run `eidos games`.");
         exit(1);
     };
-    let Some(spec) = eidos_plugins::GameSpec::for_id(id) else {
+    let Some(spec) = game.plugin_spec() else {
         eidos_log::info!("No plugin support for '{id}'.");
         exit(1);
     };
-    let Some(compatdata) = game.compatdata.as_ref() else {
-        eidos_log::info!("No Proton prefix found for '{id}'. Launch it once through Steam first.");
+    let Some(prefix) = game.prefix() else {
+        eidos_log::info!("No usable prefix found for '{id}'. Check the selected installation's Steam or Heroic prefix.");
         exit(1);
     };
-    let prefix = compatdata.join("pfx");
-    let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    let local_dir = eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec);
 
     let inst = target.inst;
     let _ = inst.ensure_profiles();
@@ -60,7 +57,8 @@ pub(crate) fn cmd_sort(args: &[String]) {
     let state_dir = prof.plugins_state_dir();
 
     // Share launch discovery, including whiteouts, profile state and pins.
-    let Some(mut list) = inst.plugin_list(&game.data_path, id, Some(&state_dir)) else {
+    let Some(mut list) = inst.plugin_list_for_profile(&game.data_path, id, Some(&state_dir), &prof)
+    else {
         eidos_log::warn!("Plugin load order is unavailable for '{id}'.");
         exit(1);
     };
@@ -142,7 +140,9 @@ pub(crate) fn cmd_sort(args: &[String]) {
     match list.write_load_order(&state_dir, &spec) {
         Ok(_) => {
             // Shadow for external tools reading the prefix; never fatal.
-            let _ = list.write_load_order(&local_dir, &spec);
+            if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+                let _ = list.write_load_order(&local_dir, &spec);
+            }
             println!(
                 "Sorted {} plugins ({active} active) and wrote the load order.",
                 sorted.len()

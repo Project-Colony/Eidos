@@ -12,7 +12,7 @@ pub(crate) fn cmd_install(args: &[String]) {
         exit(2);
     };
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -34,10 +34,11 @@ pub(crate) fn cmd_install(args: &[String]) {
     }
 
     // Optional overwrite policy; the positional name is the first non-flag arg.
+    let backup = args.iter().any(|a| a == "--backup");
     let policy = if args.iter().any(|a| a == "--replace") {
-        eidos_install::OverwritePolicy::Replace
+        if backup { eidos_install::OverwritePolicy::ReplaceWithBackup } else { eidos_install::OverwritePolicy::Replace }
     } else if args.iter().any(|a| a == "--merge") {
-        eidos_install::OverwritePolicy::Merge
+        if backup { eidos_install::OverwritePolicy::MergeWithBackup } else { eidos_install::OverwritePolicy::Merge }
     } else {
         eidos_install::OverwritePolicy::Fail
     };
@@ -47,9 +48,9 @@ pub(crate) fn cmd_install(args: &[String]) {
         .find(|a| !a.starts_with("--"))
         .cloned()
         .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
-    let fallback = game.compatdata.as_ref().and_then(|cd| {
-        eidos_plugins::GameSpec::for_id(&target.game_id)
-            .map(|spec| eidos_plugins::plugins_txt_dir(&cd.join("pfx"), &spec))
+    let fallback = game.prefix().and_then(|prefix| {
+        game.plugin_spec()
+            .map(|spec| eidos_plugins::plugins_txt_dir(&prefix, &spec))
     });
     let ctx = eidos_install::fomod_context_for_instance(
         &inst,
@@ -83,6 +84,7 @@ pub(crate) fn cmd_install(args: &[String]) {
             }
             println!();
             println!("  -> {}", r.dest.display());
+            if let Some(backup) = r.backup { println!("  backup: {}", backup.display()); }
             if !r.missing.is_empty() {
                 eidos_log::warn!(
                     "  note: {} file(s) the installer expected were not in the archive:",

@@ -1104,7 +1104,9 @@ pub(crate) fn save_details<'a>(
 ) -> Element<'a, Message> {
     let mut col = Column::new()
         .spacing(4)
-        .push(text(save.filename.clone()).size(13.0));
+        .push(text(save.filename.clone()).size(13.0))
+        .push(button(text("Extension details").size(11.0))
+            .on_press(Message::RunFileExtension(eidos_addons::protocol::Operation::SaveInfo,save.path.clone())));
 
     let info = match app.save_info.as_ref().filter(|(p, _)| *p == save.path) {
         Some((_, Ok(info))) => info,
@@ -2141,7 +2143,15 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 });
             }
         }
-        if game.compatdata.is_none() {
+        if !game.is_steam() {
+            out.push(Diagnostic {
+                level: DiagLevel::Advice,
+                title: format!("{} installation: manual launch", game.source_name()),
+                detail: "Use a native tool entry with the installation's runner and prefix, or eidos play <instance> -- <runner> <game>. Automatic Steam/Proton tool setup does not apply to this copy.".into(),
+                actions: Vec::new(),
+            });
+        }
+        if game.prefix().is_none() && game.is_steam() {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
                 title: "No Proton prefix found".to_string(),
@@ -2178,8 +2188,8 @@ pub(crate) fn failed_plugin_line(p: &eidos_gamefeatures::SePluginLoad) -> String
 }
 
 pub(crate) fn script_extender_diagnostic(game: &DetectedGame) -> Option<Diagnostic> {
-    let spec = GameSpec::for_id(game.def.id)?;
-    let prefix = game.compatdata.as_ref()?.join("pfx");
+    let spec = game.plugin_spec()?;
+    let prefix = game.prefix()?;
     let docs = eidos_plugins::documents_my_games_dir(&prefix, &spec);
     let path = eidos_gamefeatures::se_log_path(game.def.id, &docs, &game.install_path)?;
 
@@ -2267,12 +2277,12 @@ pub(crate) fn active_plugin_names(app: &App, game_id: &str) -> Option<Vec<String
             .map(|p| p.name.clone())
             .collect(),
         None => {
-            let spec = GameSpec::for_id(game_id)?;
+            let spec = selected_game(app).filter(|g| g.def.id == game_id)?.plugin_spec()?;
             let prof = inst.active();
             let dir = if prof.has_plugin_state() {
                 prof.plugins_state_dir()
             } else {
-                plugins_txt_dir(&selected_game(app)?.compatdata.clone()?.join("pfx"), &spec)
+                selected_game(app)?.plugin_state_dir()?
             };
             PluginList::read_active(&dir, &spec)
                 .into_iter()
@@ -2505,9 +2515,7 @@ pub(crate) fn current_fomod_context(app: &App) -> eidos_fomod::Context {
     let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
         return eidos_fomod::Context::default();
     };
-    let fallback = game.compatdata.as_ref().and_then(|cd| {
-        GameSpec::for_id(game.def.id).map(|spec| plugins_txt_dir(&cd.join("pfx"), &spec))
-    });
+    let fallback = game.plugin_state_dir();
     eidos_install::fomod_context_for_instance(
         inst,
         &game.data_path,
@@ -2521,7 +2529,7 @@ pub(crate) fn current_fomod_context(app: &App) -> eidos_fomod::Context {
 /// validate. `None` if there is no game with a plugin system.
 pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let game = selected_game(app)?;
-    let spec = GameSpec::for_id(game.def.id)?;
+    let spec = game.plugin_spec()?;
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
     // app.mods is MO2 display order (lowest priority first) = the ascending order
     // plugin discovery wants, so feed it through as-is.
@@ -2565,8 +2573,7 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     match profile_state {
         Some(dir) => list.apply_prefix_state(&dir, &spec),
         None => {
-            if let Some(cd) = game.compatdata.as_ref() {
-                let dir = plugins_txt_dir(&cd.join("pfx"), &spec);
+            if let Some(dir) = game.plugin_state_dir() {
                 list.apply_prefix_state(&dir, &spec);
             }
         }
@@ -2660,6 +2667,8 @@ pub(crate) fn write_plugin_state(
     list: &PluginList,
     spec: &GameSpec,
 ) -> std::io::Result<()> {
+    let selected_spec = selected_game(app).and_then(|game| game.plugin_spec());
+    let spec = selected_spec.as_ref().unwrap_or(spec);
     // Cross-process lock: a running session owns these files (the plugins dir is
     // bind-mounted into it); a mid-game reorder must refuse, not corrupt.
     let _lock = app
@@ -2680,8 +2689,10 @@ pub(crate) fn write_plugin_state(
             let _ = prof.snapshot_plugin_state();
         }
     }
-    if let Some(cd) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
-        list.write_load_order(&plugins_txt_dir(&cd.join("pfx"), spec), spec)?;
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
+            list.write_load_order(&dir, spec)?;
+        }
     }
     Ok(())
 }
@@ -4130,6 +4141,7 @@ pub(crate) fn run_picker_install(app: &mut App) {
             let Some(p) = app.picker.take() else { return };
             let rename_to = suggest_free_name(&mods_dir, &name);
             app.collision = Some(CollisionPrompt {
+                        backup: app.prefs.retain_install_backup,
                 archive: p.archive,
                 name: name.clone(),
                 game_id: p.game_id,
@@ -4177,9 +4189,31 @@ pub(crate) fn remember_bain_options(app: &App, mod_name: &str, choice: &PickerCh
     }
 }
 
+pub(crate) fn after_install_report(app: &mut App, report: eidos_install::InstallReport, archive: &std::path::Path) {
+    after_install(app, &report.name, report.dest, report.fomod, Some(archive));
+    if let Some(backup) = report.backup {
+        let status = app.status.get_or_insert_with(String::new);
+        status.push_str(&format!(" Backup retained at {}.", backup.display()));
+    }
+}
+
 pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::OverwritePolicy) {
     let Some(c) = app.collision.take() else {
         return;
+    };
+    let policy = match (c.backup, policy) {
+        (true, eidos_install::OverwritePolicy::Merge) => eidos_install::OverwritePolicy::MergeWithBackup,
+        (true, eidos_install::OverwritePolicy::Replace) => eidos_install::OverwritePolicy::ReplaceWithBackup,
+        (_, policy) => policy,
+    };
+    let Some(instance) = app.created.clone() else { return };
+    let _lock = match instance.try_lock("installing over an existing mod") {
+        Ok(lock) => lock,
+        Err(error) => {
+            app.status = Some(format!("Cannot install now: {error}"));
+            app.collision = Some(c);
+            return;
+        }
     };
     // A FOMOD reinstall: the wizard (with the user's choices) is still open in
     // app.fomod - resolve through finish_fomod, never by re-extracting with
@@ -4207,7 +4241,7 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
             &w.ctx,
             policy,
         ) {
-            Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
+            Ok(r) => after_install_report(app, r, &archive),
             Err(e) => app.status = Some(format!("Install failed: {e}")),
         }
         return;
@@ -4228,7 +4262,7 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         ) {
             Ok(r) => {
                 remember_bain_options(app, &r.name, choice);
-                after_install(app, &r.name, r.dest, r.fomod, Some(&archive));
+                after_install_report(app, r, &archive);
             }
             Err(eidos_install::InstallError::Exists(_)) => {
                 app.status = Some("That name also exists - pick another.".to_string());
@@ -4249,7 +4283,7 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         ),
     };
     match result {
-        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&archive)),
+        Ok(r) => after_install_report(app, r, &archive),
         Err(eidos_install::InstallError::Exists(_)) => {
             // A Rename target that also exists: keep the prompt open for another try.
             app.status = Some("That name also exists - pick another.".to_string());
@@ -4751,6 +4785,8 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
         .spacing(10)
         .push(text(format!("\"{}\" already exists", c.name)).size(15.0))
         .push(text("A mod with this name is already installed. Choose how to install it:").size(12.0))
+        .push(checkbox(c.backup).label("Keep a backup of the existing mod")
+            .on_toggle(Message::CollisionBackupChanged).text_size(12.0))
         .push(buttons)
         .push(
             text("Merge installs over the existing files. Replace wipes the mod and reinstalls (your endorsement and category are kept).")

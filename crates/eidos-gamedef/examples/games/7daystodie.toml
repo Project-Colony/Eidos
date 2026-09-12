@@ -1,0 +1,21 @@
+# Install-local layout: Mods/ExampleMod/ModInfo.xml beside 7DaysToDie.exe.
+# This definition covers that layout only. The developer recommends UserDataFolder/Mods;
+# its native Linux default is ~/.local/share/7DaysToDie/Mods. Automatic projection
+# into that separate location is not supplied by this descriptor.
+# Location: https://community.thefunpimps.com/threads/v1-x-developer-diary.35064/page-177
+# Steam ID: https://store.steampowered.com/app/251570/7_Days_to_Die/
+# Marker: https://7daystodie.wiki.gg/wiki/Mod_Interface
+id = "7daystodie"
+name = "7 Days to Die"
+short_name = "7daystodie"
+nexus_game = "7daystodie"
+steam_app_id = 251570
+gog_ids = []
+epic_ids = []
+data_dir = "Mods"
+valid_folders = []
+valid_suffixes = []
+valid_files = ["ModInfo.xml"]
+mod_unit = "folder"
+load_order = "None"
+game_binary = "7DaysToDie.exe"

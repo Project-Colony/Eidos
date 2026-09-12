@@ -47,12 +47,8 @@ pub struct Report {
     /// Members installed under a different folder name because a mod that is
     /// not this collection's already had that one.
     pub renamed: Vec<Note>,
-    /// Parts of a member this build parses and does not yet apply: binary
-    /// patches, file overrides.
-    ///
-    /// Kept separate from `approximate` because the member itself installed
-    /// fine - but the collection asked for something more, and a report that
-    /// leaves it out is claiming an install it did not perform.
+    /// Unverified requirements and remaining collection-wide choices, including
+    /// unknown runtime evidence, an approved runtime mismatch, and INI selection.
     pub deferred: Vec<Note>,
 }
 
@@ -107,7 +103,11 @@ impl Report {
             "Installed, but NOT the way the collection asks - the files on disk differ:",
             &self.approximate,
         );
-        section(&mut out, "You need to fetch these yourself:", &self.needs_you);
+        section(
+            &mut out,
+            "You need to fetch these yourself:",
+            &self.needs_you,
+        );
         section(&mut out, "Failed:", &self.failed);
         section(&mut out, "Skipped:", &self.skipped);
         section(
@@ -132,8 +132,7 @@ impl Report {
         section(&mut out, "Load order:", &self.loot_notes);
         section(
             &mut out,
-            "Installed, but this version of Eidos does not apply everything the \
-             collection asked for:",
+            "Collection differences and unverified requirements:",
             &self.deferred,
         );
         section(
@@ -196,7 +195,10 @@ mod tests {
             ..Report::default()
         };
         assert!(!r.is_faithful());
-        assert!(r.is_complete(), "nothing is left TO DO, it is just not faithful");
+        assert!(
+            r.is_complete(),
+            "nothing is left TO DO, it is just not faithful"
+        );
         assert!(r.render().contains("files on disk differ"));
     }
 

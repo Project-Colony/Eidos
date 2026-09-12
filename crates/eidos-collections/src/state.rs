@@ -88,6 +88,8 @@ pub struct InstallState {
     pub members: BTreeMap<String, Status>,
     /// Exact folders reserved before extraction. Download state never confers ownership.
     pub folders: BTreeMap<String, String>,
+    /// An explicit continuation, valid only for these exact runtime references.
+    pub runtime_decision: Option<crate::recipe::RuntimeCheck>,
 }
 
 /// What identifies a member across runs.
@@ -225,13 +227,18 @@ impl InstallState {
         std::fs::write(&tmp, self.to_json())?;
         std::fs::File::open(&tmp)?.sync_all()?;
         std::fs::rename(&tmp, path)?;
-        if let Some(parent) = path.parent() { std::fs::File::open(parent)?.sync_all()?; }
+        if let Some(parent) = path.parent() {
+            std::fs::File::open(parent)?.sync_all()?;
+        }
         Ok(())
     }
 
     /// Refuse a state file belonging to another revision, including sanitized slug collisions.
     pub fn validate_revision(&self, slug: &str, revision: u32, domain: &str) -> Result<(), String> {
-        if self.slug != slug || self.revision != revision || !self.game_domain.eq_ignore_ascii_case(domain) {
+        if self.slug != slug
+            || self.revision != revision
+            || !self.game_domain.eq_ignore_ascii_case(domain)
+        {
             return Err("The saved collection state belongs to another revision or game; nothing was installed".into());
         }
         Ok(())
@@ -272,6 +279,7 @@ impl InstallState {
             "gameDomain": self.game_domain,
             "members": members,
             "folders": self.folders,
+            "runtimeDecision": self.runtime_decision,
         });
         serde_json::to_string_pretty(&doc).unwrap_or_default()
     }
@@ -289,8 +297,18 @@ impl InstallState {
                 .iter()
                 .map(|(k, v)| Some((k.clone(), status_from_json(v)?)))
                 .collect::<Option<_>>()?,
-            folders: serde_json::from_value(v.get("folders").cloned()
-                .unwrap_or_else(|| serde_json::json!({}))).ok()?,
+            runtime_decision: serde_json::from_value(
+                v.get("runtimeDecision")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null),
+            )
+            .ok()?,
+            folders: serde_json::from_value(
+                v.get("folders")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({})),
+            )
+            .ok()?,
         })
     }
 }
@@ -382,7 +400,10 @@ mod tests {
     fn the_key_survives_a_revision_that_gains_or_loses_a_member() {
         // Keyed by index, member 147's recorded status would land on member 146
         // the moment a revision dropped a mod.
-        assert_eq!(member_key("skyrimspecialedition", Some(9), Some(3), "X"), "file:skyrimspecialedition:9");
+        assert_eq!(
+            member_key("skyrimspecialedition", Some(9), Some(3), "X"),
+            "file:skyrimspecialedition:9"
+        );
         assert_eq!(member_key("skyrim", None, Some(3), "X"), "mod:skyrim:3");
         assert_eq!(member_key("", None, None, " A Mod "), "name:a mod");
         // The same numeric id on two Nexus pages is two members.
@@ -432,10 +453,27 @@ mod tests {
 
     #[test]
     fn invalid_bookkeeping_cannot_drop_members_or_change_collection_identity() {
-        let state = InstallState { slug: "one".into(), revision: 1, game_domain: "skyrimspecialedition".into(), ..Default::default() };
-        assert!(state.validate_revision("one", 1, "SkyrimSpecialEdition").is_ok());
-        assert!(state.validate_revision("two", 1, "skyrimspecialedition").is_err());
-        assert!(state.validate_revision("one", 2, "skyrimspecialedition").is_err());
+        let state = InstallState {
+            slug: "one".into(),
+            revision: 1,
+            game_domain: "skyrimspecialedition".into(),
+            ..Default::default()
+        };
+        assert!(
+            state
+                .validate_revision("one", 1, "SkyrimSpecialEdition")
+                .is_ok()
+        );
+        assert!(
+            state
+                .validate_revision("two", 1, "skyrimspecialedition")
+                .is_err()
+        );
+        assert!(
+            state
+                .validate_revision("one", 2, "skyrimspecialedition")
+                .is_err()
+        );
         for (key, invalid) in [
             ("members", serde_json::json!({"file:1": {}})),
             ("folders", serde_json::json!({"file:1": 9})),
@@ -444,7 +482,10 @@ mod tests {
         ] {
             let mut value: serde_json::Value = serde_json::from_str(&state.to_json()).unwrap();
             value[key] = invalid;
-            assert!(InstallState::from_json(&value.to_string()).is_none(), "{key}");
+            assert!(
+                InstallState::from_json(&value.to_string()).is_none(),
+                "{key}"
+            );
         }
     }
 
@@ -501,7 +542,11 @@ mod tests {
         std::fs::write(&p, "half a fi").unwrap();
         let e = InstallState::load(&p).unwrap_err();
         assert!(e.contains("cannot be read"), "{e}");
-        assert!(InstallState::load(&dir.join("nope.json")).unwrap().is_none());
+        assert!(
+            InstallState::load(&dir.join("nope.json"))
+                .unwrap()
+                .is_none()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

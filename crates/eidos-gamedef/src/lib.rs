@@ -53,6 +53,15 @@ pub struct ScriptExtender {
     pub loader: &'static str,
 }
 
+/// Whether installed payloads are loose files or named loader folders.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModUnit {
+    #[default]
+    Files,
+    Folder,
+}
+
 /// One game Eidos can manage: every per-game knob in one place.
 #[derive(Debug, Clone)]
 pub struct GameDef {
@@ -67,21 +76,27 @@ pub struct GameDef {
     pub nexus_game: &'static str,
     /// Steam application id, used to locate the install via the Steam library.
     pub steam_app_id: u32,
+    /// Exact GOG product IDs accepted from installed manifests.
+    pub gog_ids: &'static [&'static str],
+    /// Exact Epic/Legendary app names accepted from installed manifests.
+    pub epic_ids: &'static [&'static str],
     /// The data directory under the game install (`Data`, or `Data Files` for
     /// Morrowind).
     pub data_dir: &'static str,
     /// Top-level directory names that mark a level inside an archive as this
     /// game's mod root - MO2's per-game `ModDataChecker::possibleFolderNames`.
     ///
-    /// **Empty means the Gamebryo vocabulary**, which is what every built-in game
-    /// here uses and why they all leave this unset. It does NOT mean "nothing is a
-    /// mod root": an empty list taken literally would reject every archive and send
-    /// every install to the manual picker.
+    /// All three marker lists empty with `mod_unit = "files"` means the
+    /// Gamebryo vocabulary. Declaring any marker replaces the whole vocabulary.
     pub valid_folders: &'static [&'static str],
     /// File extensions, without the dot, that mark a level as this game's mod root
     /// (`esp`, `esm`, ... for Gamebryo; `pak` for Unreal; `archive` for Cyberpunk).
-    /// Empty means the Gamebryo set, with the same caveat as [`Self::valid_folders`].
+    /// Defaults with the other marker lists; see [`Self::valid_folders`].
     pub valid_suffixes: &'static [&'static str],
+    /// Exact filenames that identify mod content, matched case-insensitively.
+    pub valid_files: &'static [&'static str],
+    /// Folder units keep the directory containing the markers under `data_dir`.
+    pub mod_unit: ModUnit,
     /// The game's folder under the prefix `Documents/My Games` and
     /// `AppData/Local`, e.g. `Skyrim Special Edition`. Empty for games that keep
     /// their config in the install dir (Morrowind).
@@ -161,11 +176,18 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrimse",
         name: "Skyrim Special Edition",
         steam_app_id: 489830,
+        gog_ids: &["1162721350", "1711230643"],
+        epic_ids: &[
+            "ac82db5035584c7f8a2c548d98c86b2c",
+            "5d600e4f59974aeba0259c7734134e27",
+        ],
         short_name: "SkyrimSE",
         nexus_game: "skyrimspecialedition",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Skyrim Special Edition",
         ini_files: &["Skyrim.ini", "SkyrimPrefs.ini", "SkyrimCustom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -182,11 +204,15 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrimvr",
         name: "Skyrim VR",
         steam_app_id: 611670,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "SkyrimVR",
         nexus_game: "skyrimspecialedition",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Skyrim VR",
         ini_files: &["SkyrimVR.ini", "SkyrimPrefs.ini"],
         load_order: LoadOrder::Asterisk,
@@ -203,11 +229,15 @@ pub static GAMES: &[GameDef] = &[
         id: "skyrim",
         name: "Skyrim",
         steam_app_id: 72850,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Skyrim",
         nexus_game: "skyrim",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Skyrim",
         // The gamebryo engine reads SkyrimCustom.ini in LE too (MO2 manages it as a
         // per-profile INI, same as SkyrimSE), so include it in the per-profile set.
@@ -226,15 +256,27 @@ pub static GAMES: &[GameDef] = &[
         id: "enderalse",
         name: "Enderal: Special Edition",
         steam_app_id: 976620,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "EnderalSE",
         nexus_game: "enderalspecialedition",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Enderal Special Edition",
         ini_files: &["Enderal.ini", "EnderalPrefs.ini"],
         load_order: LoadOrder::Asterisk,
-        primary_plugins: SKYRIM_SE_MASTERS,
+        primary_plugins: &[
+            "Skyrim.esm",
+            "Update.esm",
+            "Dawnguard.esm",
+            "HearthFires.esm",
+            "Dragonborn.esm",
+            "Enderal - Forgotten Stories.esm",
+            "SkyUI_SE.esp",
+        ],
         game_binary: "SkyrimSE.exe",
         registry_name: "",
         // Enderal SE ships as a Skyrim SE reskin and uses SKSE64 unchanged.
@@ -248,11 +290,15 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout4",
         name: "Fallout 4",
         steam_app_id: 377160,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Fallout4",
         nexus_game: "fallout4",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Fallout4",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -269,11 +315,15 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout4vr",
         name: "Fallout 4 VR",
         steam_app_id: 611660,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Fallout4VR",
         nexus_game: "fallout4",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Fallout4VR",
         ini_files: &["Fallout4.ini", "Fallout4Prefs.ini", "Fallout4Custom.ini"],
         load_order: LoadOrder::Asterisk,
@@ -290,14 +340,18 @@ pub static GAMES: &[GameDef] = &[
         id: "falloutnv",
         name: "Fallout: New Vegas",
         steam_app_id: 22380,
+        gog_ids: &[],
+        epic_ids: &["5daeb974a22a435988892319b3a4f476"],
         short_name: "FalloutNV",
         nexus_game: "newvegas",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "FalloutNV",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
-        load_order: LoadOrder::PlainList,
+        load_order: LoadOrder::FileTime,
         primary_plugins: &["FalloutNV.esm"],
         game_binary: "FalloutNV.exe",
         registry_name: "FalloutNV",
@@ -311,14 +365,18 @@ pub static GAMES: &[GameDef] = &[
         id: "fallout3",
         name: "Fallout 3 (GOTY)",
         steam_app_id: 22370,
+        gog_ids: &[],
+        epic_ids: &["adeae8bbfc94427db57c7dfecce3f1d4"],
         short_name: "Fallout3",
         nexus_game: "fallout3",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Fallout3",
         ini_files: &["Fallout.ini", "FalloutPrefs.ini", "FalloutCustom.ini"],
-        load_order: LoadOrder::PlainList,
+        load_order: LoadOrder::FileTime,
         primary_plugins: &["Fallout3.esm"],
         game_binary: "Fallout3.exe",
         registry_name: "Fallout3",
@@ -332,11 +390,15 @@ pub static GAMES: &[GameDef] = &[
         id: "oblivion",
         name: "Oblivion",
         steam_app_id: 22330,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Oblivion",
         nexus_game: "oblivion",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Oblivion",
         ini_files: &["Oblivion.ini", "OblivionPrefs.ini"],
         load_order: LoadOrder::FileTime,
@@ -353,11 +415,15 @@ pub static GAMES: &[GameDef] = &[
         id: "morrowind",
         name: "Morrowind",
         steam_app_id: 22320,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Morrowind",
         nexus_game: "morrowind",
         data_dir: "Data Files",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         // Morrowind keeps Morrowind.ini in the install directory, not My Games; the
         // per-profile INI machinery is pointed there by game id (see prepare_inis).
         documents_dir: "",
@@ -373,11 +439,15 @@ pub static GAMES: &[GameDef] = &[
         id: "starfield",
         name: "Starfield",
         steam_app_id: 1716740,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "Starfield",
         nexus_game: "starfield",
         data_dir: "Data",
         valid_folders: &[],
         valid_suffixes: &[],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "Starfield",
         ini_files: &["StarfieldCustom.ini", "StarfieldPrefs.ini"],
         load_order: LoadOrder::Asterisk,
@@ -429,11 +499,15 @@ pub static GAMES: &[GameDef] = &[
         id: "stellarblade",
         name: "Stellar Blade",
         steam_app_id: 3489700,
+        gog_ids: &[],
+        epic_ids: &[],
         short_name: "StellarBlade",
         nexus_game: "stellarblade",
         data_dir: "SB/Content/Paks/~mods",
         valid_folders: &[],
         valid_suffixes: &["pak", "utoc", "ucas"],
+        valid_files: &[],
+        mod_unit: ModUnit::Files,
         documents_dir: "",
         ini_files: &[],
         load_order: LoadOrder::None,
@@ -443,9 +517,68 @@ pub static GAMES: &[GameDef] = &[
         script_extender: None,
         known_tools: &[],
     },
+    // SMAPI discovers each named mod folder by its manifest.json.
+    GameDef {
+        id: "stardewvalley",
+        name: "Stardew Valley",
+        short_name: "stardewvalley",
+        nexus_game: "stardewvalley",
+        steam_app_id: 413150,
+        gog_ids: &["1453375253"],
+        epic_ids: &[],
+        data_dir: "Mods",
+        valid_folders: &[],
+        valid_suffixes: &[],
+        valid_files: &["manifest.json"],
+        mod_unit: ModUnit::Folder,
+        documents_dir: "",
+        ini_files: &[],
+        load_order: LoadOrder::None,
+        primary_plugins: &[],
+        game_binary: "Stardew Valley.exe",
+        registry_name: "",
+        script_extender: Some(ScriptExtender {
+            launcher: "Stardew Valley.exe",
+            loader: "StardewModdingAPI.exe",
+        }),
+        known_tools: &[("StardewModdingAPI.exe", "SMAPI")],
+    },
+    // Install-local modlets: Mods/<unit>/ModInfo.xml, beside 7DaysToDie.exe.
+    GameDef {
+        id: "7daystodie",
+        name: "7 Days to Die",
+        short_name: "7daystodie",
+        nexus_game: "7daystodie",
+        steam_app_id: 251570,
+        gog_ids: &[],
+        epic_ids: &[],
+        data_dir: "Mods",
+        valid_folders: &[],
+        valid_suffixes: &[],
+        valid_files: &["ModInfo.xml"],
+        mod_unit: ModUnit::Folder,
+        documents_dir: "",
+        ini_files: &[],
+        load_order: LoadOrder::None,
+        primary_plugins: &[],
+        game_binary: "7DaysToDie.exe",
+        registry_name: "",
+        script_extender: None,
+        known_tools: &[],
+    },
 ];
 
 impl GameDef {
+    /// Pinned primary plugins that the engine loads without an activation entry.
+    /// Enderal's own master and SkyUI are required but must be explicitly active.
+    pub fn implicit_plugins(&self) -> &'static [&'static str] {
+        if self.id == "enderalse" {
+            SKYRIM_SE_MASTERS
+        } else {
+            self.primary_plugins
+        }
+    }
+
     /// The definition for an Eidos game id (built-in or user TOML), or `None`.
     pub fn for_id(id: &str) -> Option<&'static GameDef> {
         all().iter().find(|g| g.id.eq_ignore_ascii_case(id))
@@ -513,12 +646,21 @@ struct RawGameDef {
     short_name: String,
     #[serde(default)]
     nexus_game: String,
+    #[serde(default)]
     steam_app_id: u32,
+    #[serde(default)]
+    gog_ids: Vec<String>,
+    #[serde(default)]
+    epic_ids: Vec<String>,
     data_dir: String,
     #[serde(default)]
     valid_folders: Vec<String>,
     #[serde(default)]
     valid_suffixes: Vec<String>,
+    #[serde(default)]
+    valid_files: Vec<String>,
+    #[serde(default)]
+    mod_unit: ModUnit,
     #[serde(default)]
     documents_dir: String,
     #[serde(default)]
@@ -570,9 +712,13 @@ impl RawGameDef {
             short_name: leak(self.short_name),
             nexus_game: leak(self.nexus_game),
             steam_app_id: self.steam_app_id,
+            gog_ids: leak_vec(self.gog_ids),
+            epic_ids: leak_vec(self.epic_ids),
             data_dir: leak(self.data_dir),
             valid_folders: leak_vec(self.valid_folders),
             valid_suffixes: leak_vec(self.valid_suffixes),
+            valid_files: leak_vec(self.valid_files),
+            mod_unit: self.mod_unit,
             documents_dir: leak(self.documents_dir),
             ini_files: leak_vec(self.ini_files),
             load_order: parse_load_order(&self.load_order),
@@ -654,6 +800,39 @@ fn leak_tools(v: Vec<RawKnownTool>) -> &'static [(&'static str, &'static str)] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn folder_game_examples_match_the_complete_builtin_layouts() {
+        for text in [
+            include_str!("../examples/games/stardewvalley.toml"),
+            include_str!("../examples/games/7daystodie.toml"),
+        ] {
+            let game = parse_game(text).expect("complete folder-game example");
+            let builtin = GameDef::for_id(game.id).unwrap();
+            assert_eq!(game.steam_app_id, builtin.steam_app_id);
+            assert_eq!(game.gog_ids, builtin.gog_ids);
+            assert_eq!(game.epic_ids, builtin.epic_ids);
+            assert_eq!(game.data_dir, builtin.data_dir);
+            assert_eq!(game.valid_files, builtin.valid_files);
+            assert_eq!(game.mod_unit, ModUnit::Folder);
+            assert!(game.valid_folders.is_empty() && game.valid_suffixes.is_empty());
+            assert_eq!(game.load_order, LoadOrder::None);
+            assert_eq!(game.game_binary, builtin.game_binary);
+            assert_eq!(game.script_extender, builtin.script_extender);
+            assert_eq!(game.known_tools, builtin.known_tools);
+        }
+        let legacy = parse_game("id = \"legacy\"\nname = \"Legacy\"\ndata_dir = \"Data\"").unwrap();
+        assert_eq!(legacy.mod_unit, ModUnit::Files);
+        assert!(legacy.valid_files.is_empty());
+    }
+
+    #[test]
+    fn folder_game_schema_rejects_misspelled_units() {
+        let base = "id = \"custom\"\nname = \"Custom\"\ndata_dir = \"Mods\"\nvalid_files = [\"manifest.json\"]\n";
+        assert!(parse_game(&format!("{base}mod_unit = \"folders\"\n")).is_none());
+        assert!(parse_game(&format!("{base}mod_unit = \"folder\"\n")).is_some());
+        assert!(parse_game(&format!("{base}mod_unit = \"files\"\n")).is_some());
+    }
 
     #[test]
     fn lookup_by_id() {

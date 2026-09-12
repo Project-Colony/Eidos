@@ -21,3 +21,7 @@ eidos-loot = { path = "../eidos-loot" }
 eidos-plugins = { path = "../eidos-plugins" }
 eidos-games = { path = "../eidos-games" }
 eidos-sevenzip = { path = "../eidos-sevenzip" }
+crc32fast = "1"
+qbsdiff = { version = "=1.4.4", default-features = false }
+eidos-gamefeatures = { path = "../eidos-gamefeatures" }
+bzip2 = "0.6"

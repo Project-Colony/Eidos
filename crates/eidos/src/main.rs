@@ -117,7 +117,7 @@ fn cmd_nexus(args: &[String]) {
                 exit(2);
             };
             let target = resolve(id);
-            let Some(game) = find_game(&target.game_id) else {
+            let Some(game) = find_instance_game(&target) else {
                 eidos_log::info!(
                     "Game '{}' is not detected. Run `eidos games`.",
                     target.game_id
@@ -248,7 +248,19 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("games") => cmd_games(),
         Some("init") => match args.get(1) {
-            Some(id) => cmd_init(id, args.get(2).map(String::as_str)),
+            Some(id) => {
+                let mut folder = None;
+                let mut game_path = None;
+                let mut rest = args.iter().skip(2);
+                while let Some(arg) = rest.next() {
+                    if arg == "--game-path" {
+                        game_path = rest.next().map(String::as_str);
+                        if game_path.is_none() { eidos_log::info!("--game-path needs a folder"); exit(2); }
+                    } else if folder.is_none() && !arg.starts_with("--") { folder = Some(arg.as_str()); }
+                    else { eidos_log::info!("Unexpected init argument: {arg}"); exit(2); }
+                }
+                cmd_init(id, folder, game_path)
+            },
             None => usage(),
         },
         Some("play") => cmd_play(&args[1..]),

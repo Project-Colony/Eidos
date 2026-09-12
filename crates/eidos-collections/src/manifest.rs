@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 
 /// Anything that is present but the wrong shape becomes the default.
 ///
@@ -59,9 +59,12 @@ fn loose_u64(v: &serde_json::Value) -> Option<u64> {
             .or_else(|| n.as_f64().filter(|f| *f >= 0.0).map(|f| f as u64)),
         serde_json::Value::String(s) => {
             let t = s.trim();
-            t.parse::<u64>()
-                .ok()
-                .or_else(|| t.parse::<f64>().ok().filter(|f| *f >= 0.0).map(|f| f as u64))
+            t.parse::<u64>().ok().or_else(|| {
+                t.parse::<f64>()
+                    .ok()
+                    .filter(|f| *f >= 0.0)
+                    .map(|f| f as u64)
+            })
         }
         _ => None,
     }
@@ -137,7 +140,7 @@ where
 }
 
 /// A whole `collection.json`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Collection {
     #[serde(deserialize_with = "lenient")]
@@ -167,7 +170,7 @@ pub struct Collection {
 }
 
 /// A tool a collection expects the user to already have.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Tool {
     #[serde(deserialize_with = "lenient_str")]
@@ -177,7 +180,7 @@ pub struct Tool {
 }
 
 /// What the collection says about itself.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Info {
     #[serde(deserialize_with = "lenient_str")]
@@ -204,7 +207,7 @@ pub struct Info {
 /// Five types, and only one of them is a Nexus file. A reader that assumes
 /// otherwise drops four fifths of the vocabulary on the floor - which is what
 /// Eidos did, and then told the user the member was "no longer on Nexus".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SourceType {
     /// A file on a Nexus mod page: `modId` + `fileId`.
@@ -226,7 +229,7 @@ pub enum SourceType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Source {
     #[serde(rename = "type", deserialize_with = "lenient_source_type")]
@@ -256,13 +259,13 @@ pub struct Source {
     #[serde(deserialize_with = "lenient_str")]
     pub tag: String,
     /// Nexus's own OpenAPI calls this kilobytes and every writer in Vortex puts
-    /// raw bytes in it. Kept as given; nothing here does arithmetic on it.
+    /// raw bytes in it: archive bytes, or total uncompressed bundle-tree bytes.
     #[serde(deserialize_with = "lenient_id")]
     pub file_size: Option<u64>,
 }
 
 /// One member of the collection.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Mod {
     /// The author's display name for it. Load-bearing: a mod rule with no other
@@ -285,14 +288,14 @@ pub struct Mod {
     /// The answers the author gave to this mod's scripted installer.
     #[serde(deserialize_with = "lenient")]
     pub choices: Option<Choices>,
-    /// `path -> CRC32 of the patched file`, with the patch bytes shipped at
+    /// `path -> CRC32 of the original installed file`, with the patch bytes shipped at
     /// `patches/<name>/<path>.diff`.
     #[serde(deserialize_with = "lenient")]
     pub patches: BTreeMap<String, String>,
-    /// Paths this mod provides whatever the deployment order says.
+    /// Installed paths excluded from this provider so another provider can win.
     #[serde(deserialize_with = "lenient")]
     pub file_overrides: Vec<String>,
-    /// A per-file list, used when the author pinned exact contents.
+    /// Clone instructions: select archive bytes by digest and rename to each path.
     #[serde(deserialize_with = "lenient")]
     pub hashes: Vec<FileHash>,
     /// The author's note for this member.
@@ -302,7 +305,7 @@ pub struct Mod {
     pub author: String,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FileHash {
     #[serde(deserialize_with = "lenient_str")]
@@ -312,7 +315,7 @@ pub struct FileHash {
 }
 
 /// Replayed installer answers.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Choices {
     /// `"fomod"` in practice. Kept so a future installer kind is visible rather
@@ -324,7 +327,7 @@ pub struct Choices {
     pub options: Option<Vec<ChoiceStep>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChoiceStep {
     #[serde(deserialize_with = "lenient_str")]
@@ -333,7 +336,7 @@ pub struct ChoiceStep {
     pub groups: Vec<ChoiceGroup>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChoiceGroup {
     #[serde(deserialize_with = "lenient_str")]
@@ -344,7 +347,7 @@ pub struct ChoiceGroup {
     pub choices: Vec<ChoiceOption>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChoiceOption {
     #[serde(deserialize_with = "lenient_str")]
@@ -362,7 +365,7 @@ pub struct ChoiceOption {
 /// mod happened to carry, and its fallback is the mod's display name in
 /// `file_expression`. So resolving a rule means matching these against the
 /// collection's own members - see [`Collection::resolve`].
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ModReference {
     #[serde(deserialize_with = "lenient_str")]
@@ -384,7 +387,7 @@ pub struct ModReference {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleType {
     /// The source must deploy BEFORE the reference, so the reference wins their
@@ -401,7 +404,7 @@ pub enum RuleType {
     Unknown,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModRule {
     #[serde(deserialize_with = "lenient")]
@@ -412,7 +415,7 @@ pub struct ModRule {
     pub reference: ModReference,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Plugin {
     #[serde(deserialize_with = "lenient_str")]
@@ -430,7 +433,7 @@ fn yes() -> bool {
 /// Kept as raw JSON values rather than modelled: they are LOOT's schema, not
 /// this crate's, and they are handed to the LOOT layer verbatim. Modelling them
 /// here would be a second, drifting copy of somebody else's format.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PluginRules {
     #[serde(deserialize_with = "lenient")]
@@ -511,10 +514,79 @@ pub struct Read {
     pub unknown_sections: Vec<String>,
 }
 
+// Tolerance must not silently discard a present security-sensitive recipe field.
+fn validate_recipe_shapes(raw: &serde_json::Value) -> Result<(), String> {
+    use serde_json::Value;
+    let list = |value: Option<&Value>, name: &str| -> Result<(), String> {
+        if value.is_some_and(|v| {
+            !v.is_null()
+                && v.as_array()
+                    .is_none_or(|a| a.iter().any(|x| !x.is_string()))
+        }) {
+            return Err(format!(
+                "Malformed collection {name}: expected a list of strings"
+            ));
+        }
+        Ok(())
+    };
+    list(
+        raw.get("info").and_then(|v| v.get("gameVersions")),
+        "gameVersions",
+    )?;
+    for m in raw
+        .get("mods")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let src = m.get("source");
+        if src
+            .and_then(|v| v.get("md5"))
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+        {
+            return Err("Malformed source.md5: expected a digest string".into());
+        }
+        if let Some(size) = src.and_then(|v| v.get("fileSize")).filter(|v| !v.is_null()) {
+            if size
+                .as_u64()
+                .or_else(|| size.as_str()?.parse::<u64>().ok())
+                .is_none()
+            {
+                return Err(
+                    "Malformed source.fileSize: expected unsigned archive/tree bytes".into(),
+                );
+            }
+        }
+        list(m.get("fileOverrides"), "fileOverrides")?;
+        if let Some(patches) = m.get("patches").filter(|v| !v.is_null()) {
+            if patches
+                .as_object()
+                .is_none_or(|p| p.values().any(|v| !v.is_string()))
+            {
+                return Err(
+                    "Malformed patches: expected paths mapped to original CRC32 strings".into(),
+                );
+            }
+        }
+        if let Some(hashes) = m.get("hashes").filter(|v| !v.is_null()) {
+            if hashes.as_array().is_none_or(|a| {
+                a.iter().any(|h| {
+                    h.get("path").is_none_or(|v| !v.is_string())
+                        || h.get("md5").is_none_or(|v| !v.is_string())
+                })
+            }) {
+                return Err("Malformed hashes: expected path and MD5 strings".into());
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Parse a `collection.json`.
 pub fn read(text: &str) -> Result<Read, String> {
-    let raw: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| format!("collection.json is not valid JSON: {e}"))?;
+    let raw: serde_json::Value = serde_json::from_str(text)
+        .map_err(|e| format!("collection.json is not valid JSON: {e}"))?;
+    validate_recipe_shapes(&raw)?;
     let Some(obj) = raw.as_object() else {
         return Err("collection.json is not a JSON object".to_string());
     };
@@ -527,20 +599,26 @@ pub fn read(text: &str) -> Result<Read, String> {
     // fileOverrides are all member keys it grew - so stopping at the six
     // sections would let exactly the additions that change behaviour pass in
     // silence.
-    let member_keys = |v: &serde_json::Value, known: &[&str], prefix: &str, out: &mut Vec<String>| {
-        if let Some(o) = v.as_object() {
-            for k in o.keys() {
-                if !known.contains(&k.as_str()) {
-                    out.push(format!("{prefix}{k}"));
+    let member_keys =
+        |v: &serde_json::Value, known: &[&str], prefix: &str, out: &mut Vec<String>| {
+            if let Some(o) = v.as_object() {
+                for k in o.keys() {
+                    if !known.contains(&k.as_str()) {
+                        out.push(format!("{prefix}{k}"));
+                    }
                 }
             }
-        }
-    };
+        };
     if let Some(mods) = obj.get("mods").and_then(|m| m.as_array()) {
         for m in mods {
             member_keys(m, KNOWN_MOD_KEYS, "mods[].", &mut unknown_sections);
             if let Some(src) = m.get("source") {
-                member_keys(src, KNOWN_SOURCE_KEYS, "mods[].source.", &mut unknown_sections);
+                member_keys(
+                    src,
+                    KNOWN_SOURCE_KEYS,
+                    "mods[].source.",
+                    &mut unknown_sections,
+                );
             }
         }
     }
@@ -566,7 +644,9 @@ pub fn read(text: &str) -> Result<Read, String> {
             "not a list" => {
                 "collection.json has a \"mods\" that is not a list of members".to_string()
             }
-            "a list" => "collection.json lists members this build could not read at all".to_string(),
+            "a list" => {
+                "collection.json lists members this build could not read at all".to_string()
+            }
             _ => "collection.json lists no mods".to_string(),
         });
     }

@@ -1,12 +1,13 @@
 //! Cached archive analysis on a worker; UI frames only consume completed maps.
 use crate::*;
-use eidos_gamefeatures::archives::{ArchivePlan, archive_plan};
+use eidos_gamefeatures::archives::{archive_plan, ArchivePlan};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+type Sources = HashMap<PathBuf, eidos_conflicts::ArchiveIdentity>;
 
 type Parts = Vec<(Layer, (Vec<String>, bool))>;
 pub(crate) struct ArchiveWorker {
     epoch: u64,
-    receiver: Receiver<(ConflictMap, ArchivePlan, Vec<String>)>,
+    receiver: Receiver<(ConflictMap, ArchivePlan, Vec<String>, Sources)>,
 }
 
 /// A single worker is allowed at a time. Changes during a scan invalidate its
@@ -49,7 +50,7 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             inst.overwrite_dir(),
         );
         let parts = visible_conflict_parts(parts, &stack);
-        let spec = GameSpec::for_id(game.def.id);
+        let spec = game.plugin_spec();
         let mut plugins = plugins.or_else(|| {
             spec.as_ref().map(|spec| {
                 let sources: Vec<_> = parts
@@ -61,8 +62,8 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 let profile = inst.active();
                 if profile.has_plugin_state() {
                     list.apply_prefix_state(&profile.plugins_state_dir(), spec)
-                } else if let Some(cd) = &game.compatdata {
-                    list.apply_prefix_state(&plugins_txt_dir(&cd.join("pfx"), spec), spec)
+                } else if let Some(dir) = game.plugin_state_dir() {
+                    list.apply_prefix_state(&dir, spec)
                 }
                 list.locked = profile.read_locked_order();
                 list.refresh(spec);
@@ -114,14 +115,34 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 order_uncertain: a.order_uncertain,
             })
             .collect();
+        let mut sources: Sources = parts
+            .iter()
+            .flat_map(|(layer, (files, _))| {
+                files
+                    .iter()
+                    .filter(|name| {
+                        name.to_ascii_lowercase().ends_with(".bsa")
+                            || name.to_ascii_lowercase().ends_with(".ba2")
+                    })
+                    .map(|name| layer.root.join(name))
+            })
+            .filter_map(|path| {
+                eidos_conflicts::archive_identity(&path)
+                    .ok()
+                    .map(|identity| (path, identity))
+            })
+            .collect();
         let map = ConflictMap::build_with_archives_from(&parts, &active);
+        sources.retain(|path, identity| {
+            eidos_conflicts::archive_identity(path).is_ok_and(|current| current == *identity)
+        });
         warnings.extend(plan.diagnostics.iter().cloned());
         warnings.extend(
             map.archive_diagnostics
                 .iter()
                 .map(|d| format!("{}: {}", d.archive, d.error)),
         );
-        let _ = sender.send((map, plan, warnings));
+        let _ = sender.send((map, plan, warnings, sources));
     });
 }
 
@@ -140,10 +161,11 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
     }
     app.archive_completed_epoch = Some(epoch);
     match result {
-        Ok((map, plan, warnings)) => {
+        Ok((map, plan, warnings, sources)) => {
             app.conflicts = Some(map);
             app.archive_plan = Some(plan);
             app.archive_warnings = warnings;
+            app.archive_sources = sources;
         }
         Err(()) => {
             app.archive_warnings =
@@ -194,9 +216,9 @@ pub(crate) fn archive_ini_texts(
             }
         }
     }
-    let docs = game.compatdata.as_ref().and_then(|cd| {
-        GameSpec::for_id(game.def.id)
-            .map(|s| eidos_plugins::documents_my_games_dir(&cd.join("pfx"), &s))
+    let docs = game.prefix().and_then(|prefix| {
+        game.plugin_spec()
+            .map(|s| eidos_plugins::documents_my_games_dir(&prefix, &s))
     });
     for name in eidos_gamefeatures::ini_files_for(game.def.id) {
         let profile = inst.active().ini_path(name);
@@ -244,50 +266,239 @@ pub(crate) fn archive_member_rows<'a>(
         .get(&origin)
         .map(Vec::as_slice)
         .unwrap_or_default();
+    let filter = app.archive_filter.to_ascii_lowercase();
+    let paths: Vec<_> = paths.iter().filter(|path| path.contains(&filter)).collect();
     let count = paths.len();
-    let mut rows = Column::new().spacing(4);
-    for n in paths
+    let pages = count.div_ceil(limit.max(1)).max(1);
+    let page = app.archive_page.min(pages - 1);
+    let mut rows = Column::new().spacing(8);
+    for node in paths
         .iter()
+        .skip(page * limit)
         .take(limit)
-        .filter_map(|key| map.asset_files.get(key))
+        .filter_map(|key| map.asset_files.get(*key))
     {
-        let providers = || std::iter::once(&n.winner).chain(&n.alternatives);
-        let verdict = if n.precedence_uncertain {
-            format!(
-                "Winner unresolved: {}",
-                providers()
-                    .map(|p| provider_label(map, p))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        } else {
-            format!(
-                "Winner: {}; alternatives: {}",
-                provider_label(map, &n.winner),
-                n.alternatives
-                    .iter()
-                    .map(|p| provider_label(map, p))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        };
-        rows = rows
-            .push(text(n.display_path.clone()).size(11.0))
-            .push(text(verdict).size(10.0));
+        let mut row = Column::new()
+            .spacing(3)
+            .push(text(node.display_path.clone()).size(11.0));
+        for (index, provider) in std::iter::once(&node.winner)
+            .chain(&node.alternatives)
+            .enumerate()
+        {
+            let label = if node.precedence_uncertain {
+                "Unresolved"
+            } else if index == 0 {
+                "Winner"
+            } else {
+                "Alternative"
+            };
+            let action = |export| Message::ArchiveProviderAction {
+                epoch: app.archive_completed_epoch.unwrap_or_default(),
+                member: node.display_path.clone(),
+                provider: provider.clone(),
+                export,
+            };
+            let active = app.archive_completed_epoch == Some(app.archive_epoch.get());
+            row = row.push(
+                Row::new()
+                    .spacing(6)
+                    .push(
+                        text(format!("{label}: {}", provider_label(map, provider)))
+                            .size(10.0)
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        button(text("Preview").size(10.0))
+                            .on_press_maybe(active.then(|| action(false))),
+                    )
+                    .push(button(text("Export").size(10.0)).on_press_maybe(
+                        (active && provider.archive.is_some()).then(|| action(true)),
+                    )),
+            );
+        }
+        rows = rows.push(row);
     }
-    let pending = if app.archive_job.is_some() {
-        " (updating)"
-    } else {
-        ""
-    };
-    Column::new()
-        .spacing(4)
+    let header = Row::new()
+        .spacing(6)
         .push(
             text(format!(
-                "Archive member conflicts: {count}{pending} (showing up to {limit})"
+                "Archive member conflicts: {count} · page {}/{}",
+                page + 1,
+                pages
             ))
             .size(12.0),
         )
+        .push(
+            button(text("Previous")).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
+        )
+        .push(
+            button(text("Next"))
+                .on_press_maybe((page + 1 < pages).then_some(Message::ArchivePage(page + 1))),
+        );
+    Column::new()
+        .spacing(4)
+        .push(header)
+        .push(
+            text_input("Filter archive member paths", &app.archive_filter)
+                .on_input(Message::ArchiveFilterChanged),
+        )
         .push(scrollable(rows).height(Length::Fill))
         .into()
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MemberSource {
+    pub path: PathBuf,
+    pub member: String,
+    pub identity: eidos_conflicts::ArchiveIdentity,
+}
+
+pub(crate) struct ExportRequest {
+    id: u64,
+    target: Option<CollectionTarget>,
+    source: MemberSource,
+}
+
+fn current_target(app: &App) -> Option<CollectionTarget> {
+    let inst = app.created.as_ref()?;
+    Some(CollectionTarget {
+        instance: inst.root.clone(),
+        profile: inst.active_profile(),
+        installation: selected_game(app)?.selection_id(),
+    })
+}
+
+pub(crate) fn provider_action(
+    app: &mut App,
+    epoch: u64,
+    member: String,
+    provider: eidos_conflicts::AssetProvider,
+    export: bool,
+) -> Task<Message> {
+    let valid = app.archive_completed_epoch == Some(epoch)
+        && epoch == app.archive_epoch.get()
+        && app
+            .conflicts
+            .as_ref()
+            .and_then(|m| m.asset_files.get(&member.to_ascii_lowercase()))
+            .is_some_and(|node| node.winner == provider || node.alternatives.contains(&provider));
+    if !valid {
+        app.status = Some("Archive analysis changed. Refresh before selecting a provider.".into());
+        return Task::none();
+    }
+    let Some(layer) = conflict_layers(app)
+        .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
+    else {
+        return Task::none();
+    };
+    let relative = provider.archive.as_deref().unwrap_or(&member);
+    let actual = app
+        .files_cache
+        .borrow()
+        .get(&layer.name)
+        .and_then(|(files, _)| {
+            files
+                .iter()
+                .find(|name| name.eq_ignore_ascii_case(relative))
+                .cloned()
+        });
+    let actual = actual
+        .or_else(|| {
+            app.archive_sources.keys().find_map(|path| {
+                let tail = path.strip_prefix(&layer.root).ok()?.to_str()?;
+                tail.eq_ignore_ascii_case(relative)
+                    .then(|| tail.to_string())
+            })
+        })
+        .unwrap_or_else(|| relative.to_string());
+    let Some(path) = resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file()) else {
+        app.status =
+            Some("The selected provider is no longer present. Refresh the file list.".into());
+        return Task::none();
+    };
+    if provider.archive.is_none() {
+        return crate::file_preview::start(app, path, None, None, None);
+    }
+    let Some(identity) =
+        app.archive_sources.get(&path).cloned().filter(|i| {
+            eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i)
+        })
+    else {
+        app.status =
+            Some("The archive changed since it was scanned. Refresh before reading it.".into());
+        return Task::none();
+    };
+    let source = MemberSource {
+        path,
+        member,
+        identity,
+    };
+    if !export {
+        return crate::file_preview::start(app, source.path.clone(), None, None, Some(source));
+    }
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = Path::new(&source.member)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    app.archive_export = Some(ExportRequest {
+        id,
+        target: current_target(app),
+        source,
+    });
+    Task::perform(
+        rfd::AsyncFileDialog::new()
+            .set_title("Export archive member")
+            .set_file_name(name)
+            .save_file(),
+        move |picked| Message::ArchiveExportDestination(id, picked.map(|h| h.path().to_path_buf())),
+    )
+}
+
+pub(crate) fn export_destination(
+    app: &mut App,
+    id: u64,
+    destination: Option<PathBuf>,
+) -> Task<Message> {
+    let Some(request) = app.archive_export.as_ref().filter(|r| r.id == id) else {
+        return Task::none();
+    };
+    if request.target != current_target(app) {
+        app.archive_export = None;
+        app.status =
+            Some("Export cancelled because the active profile or installation changed.".into());
+        return Task::none();
+    }
+    let Some(destination) = destination else {
+        app.archive_export = None;
+        return Task::none();
+    };
+    let source = request.source.clone();
+    Task::perform(
+        async move {
+            eidos_conflicts::export_archive_member_checked(
+                &source.path,
+                &source.member,
+                &destination,
+                16 * 1024 * 1024 * 1024,
+                Some(&source.identity),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(destination)
+        },
+        move |result| Message::ArchiveExportFinished(id, result),
+    )
+}
+
+pub(crate) fn export_finished(app: &mut App, id: u64, result: Result<PathBuf, String>) {
+    if app.archive_export.as_ref().is_none_or(|r| r.id != id) {
+        return;
+    }
+    app.archive_export = None;
+    app.status = Some(match result {
+        Ok(path) => format!("Archive member exported to {}", path.display()),
+        Err(error) => format!("Archive export failed: {error}"),
+    });
 }

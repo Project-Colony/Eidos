@@ -14,9 +14,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use eidos_fuse::Eidos;
+pub use eidos_fuse::{read_plugin_mtimes, PluginTimestamps};
 
 /// What to mount and run.
 pub struct LaunchSpec {
+    /// Optional profile-owned projection and capture for timestamp-ordered engines.
+    pub plugin_timestamps: Option<PluginTimestamps>,
     /// Mod layers, highest priority first.
     pub layers: Vec<PathBuf>,
     /// Writable Overwrite layer.
@@ -267,7 +270,21 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
     };
 
     std::fs::create_dir_all(&spec.mountpoint)?;
-    let session = Eidos::new(layers, spec.overwrite.clone()).spawn(&spec.mountpoint)?;
+    let mut filesystem = Eidos::new(layers, spec.overwrite.clone());
+    if let Some(projection) = &spec.plugin_timestamps {
+        if projection.state_path.starts_with(&spec.mountpoint)
+            || spec
+                .root_base_bind
+                .as_ref()
+                .is_some_and(|(root, _)| projection.state_path.starts_with(root))
+        {
+            return Err(std::io::Error::other(
+                "Plugin timestamp receipt must be outside the mount",
+            ));
+        }
+        filesystem = filesystem.with_plugin_timestamps(projection.clone())?;
+    }
+    let session = filesystem.spawn(&spec.mountpoint)?;
 
     // Run from the game root (the directory that contains Data), exactly like MO2
     // (modorganizer processrunner sets the child's CWD to the game's base dir).

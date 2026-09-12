@@ -16,6 +16,8 @@ pub mod rules;
 pub mod state;
 
 pub use manifest::{
-    read, ChoiceGroup, ChoiceOption, ChoiceStep, Choices, Collection, FileHash, Info, Mod,
-    ModReference, ModRule, Plugin, PluginRules, Read, RuleType, Source, SourceType, Tool,
+    ChoiceGroup, ChoiceOption, ChoiceStep, Choices, Collection, FileHash, Info, Mod, ModReference,
+    ModRule, Plugin, PluginRules, Read, RuleType, Source, SourceType, Tool, read,
 };
+
+pub mod recipe;

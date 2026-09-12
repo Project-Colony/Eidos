@@ -23,22 +23,74 @@ pub fn fetch_manifest(
     rev: &eidos_nexus::collections::CollectionRevision,
     dir: &Path,
 ) -> Result<String, String> {
-    let manifest = dir.join("collection.json");
-    if manifest.is_file() {
-        return std::fs::read_to_string(&manifest).map_err(|e| e.to_string());
+    if let Some(manifest) = cached_manifest(dir)? {
+        return Ok(manifest);
     }
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let parent = dir.parent().ok_or("Collection cache has no parent")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let url = nexus.collection_archive_url(&rev.download_link)?;
-    let archive = dir.join("collection.7z");
-    println!("fetching the collection's recipe...");
-    nexus.download(&url, &archive)?;
-    let bin = eidos_sevenzip::find_7z().ok_or_else(|| {
-        "7-Zip is not installed (looked for 7z, 7zz and 7za on PATH)".to_string()
-    })?;
-    eidos_sevenzip::extract_all_with(bin, &archive, dir, |_| {})
-        .map_err(|e| format!("could not open the collection archive: {e}"))?;
-    std::fs::read_to_string(&manifest)
-        .map_err(|_| "that archive has no collection.json in it".to_string())
+    let archive = dir.with_extension("download.7z");
+    (|| -> Result<String, String> {
+        nexus.download(&url, &archive)?;
+        let extracted =
+            eidos_install::extract_to_temp(&archive, parent).map_err(|e| e.to_string())?;
+        let manifest_path = extracted.path().join("collection.json");
+        let text = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| format!("Collection archive has no readable collection.json: {e}"))?;
+        crate::read(&text)?;
+        let hash = eidos_nexus::md5_file(&manifest_path).map_err(|e| e.to_string())?;
+        let marker = cache_marker(dir);
+        if marker.exists() {
+            std::fs::remove_file(&marker).map_err(|e| e.to_string())?;
+        }
+        if dir.exists() || dir.is_symlink() {
+            // Keep an interrupted/legacy cache instead of deleting unknown contents.
+            let stale = parent.join(eidos_nexus::unique_download_name(
+                parent,
+                &format!("{}.incomplete", dir.file_name().unwrap().to_string_lossy()),
+            ));
+            std::fs::rename(dir, stale).map_err(|e| e.to_string())?;
+        }
+        std::fs::rename(extracted.path(), dir).map_err(|e| e.to_string())?;
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&marker)
+            .map_err(|e| e.to_string())?;
+        use std::io::Write;
+        output
+            .write_all(hash.as_bytes())
+            .and_then(|_| output.sync_all())
+            .map_err(|e| e.to_string())?;
+        std::fs::File::open(parent)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| e.to_string())?;
+        Ok(text)
+    })()
+}
+
+fn cache_marker(dir: &Path) -> PathBuf {
+    dir.with_extension("payload-complete")
+}
+
+fn cached_manifest(dir: &Path) -> Result<Option<String>, String> {
+    let marker = cache_marker(dir);
+    if !std::fs::symlink_metadata(&marker).is_ok_and(|m| m.file_type().is_file())
+        || !std::fs::symlink_metadata(dir).is_ok_and(|m| m.file_type().is_dir())
+    {
+        return Ok(None);
+    }
+    let manifest = dir.join("collection.json");
+    if !std::fs::symlink_metadata(&manifest).is_ok_and(|m| m.file_type().is_file()) {
+        return Ok(None);
+    }
+    let expected = std::fs::read_to_string(marker).map_err(|e| e.to_string())?;
+    if eidos_nexus::md5_file(&manifest).map_err(|e| e.to_string())? != expected {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(manifest).map_err(|e| e.to_string())?;
+    crate::read(&text)?;
+    Ok(Some(text))
 }
 
 /// Everything the engine needs from the outside world.
@@ -56,21 +108,32 @@ pub struct RealHooks<'a> {
     pub owner: String,
     /// Members installed under a name that was free, and what it was.
     pub renamed: Vec<(String, String)>,
-
+    pub payload_root: PathBuf,
+    pub allow_runtime_mismatch: bool,
 }
 
 impl RealHooks<'_> {
     fn owner_marker(&self, m: &Mod) -> String {
-        serde_json::to_string(&[self.owner.as_str(), &crate::state::key_for(m, &self.collection_domain)])
-            .expect("strings serialize")
+        serde_json::to_string(&[
+            self.owner.as_str(),
+            &crate::state::key_for(m, &self.collection_domain),
+        ])
+        .expect("strings serialize")
     }
 
     fn owns(&self, folder: &Path, m: &Mod) -> bool {
         owns_folder(folder, &self.owner_marker(m))
     }
     /// Record the successful install without changing existing profile decisions.
-    fn register(&mut self, name: &str, member: &str, renamed_to: &Option<String>) -> Result<(), String> {
-        self.inst.register_installed_mod(name).map_err(|e| e.to_string())?;
+    fn register(
+        &mut self,
+        name: &str,
+        member: &str,
+        renamed_to: &Option<String>,
+    ) -> Result<(), String> {
+        self.inst
+            .register_installed_mod(name)
+            .map_err(|e| e.to_string())?;
         if let Some(folder) = renamed_to {
             self.renamed.push((member.to_string(), folder.clone()));
         }
@@ -81,8 +144,16 @@ impl RealHooks<'_> {
     fn already_here(&self, m: &Mod) -> Option<PathBuf> {
         let want = m.source.file_id?;
         let mod_id = m.source.mod_id?;
-        let domain = if m.domain_name.is_empty() { &self.collection_domain } else { &m.domain_name };
-        let short = eidos_games::catalog().iter().find(|g| g.nexus_game.eq_ignore_ascii_case(domain)).map(|g| g.short_name).unwrap_or(domain);
+        let domain = if m.domain_name.is_empty() {
+            &self.collection_domain
+        } else {
+            &m.domain_name
+        };
+        let short = eidos_games::catalog()
+            .iter()
+            .find(|g| g.nexus_game.eq_ignore_ascii_case(domain))
+            .map(|g| g.short_name)
+            .unwrap_or(domain);
         let dl = self.inst.downloads_dir();
         std::fs::read_dir(&dl)
             .ok()?
@@ -92,68 +163,130 @@ impl RealHooks<'_> {
             .find_map(|p| {
                 let meta = eidos_instance::ModMeta::read(&p);
                 let archive = p.with_extension("");
-                (meta.file_id()? == want && meta.mod_id()? == mod_id
-                    && meta.game_name().is_some_and(|game| game.eq_ignore_ascii_case(short) || game.eq_ignore_ascii_case(domain))
-                    && archive.is_file() && !PathBuf::from(format!("{}.unfinished", archive.display())).exists())
-                    .then_some(archive)
+                (meta.file_id()? == want
+                    && meta.mod_id()? == mod_id
+                    && meta.game_name().is_some_and(|game| {
+                        game.eq_ignore_ascii_case(short) || game.eq_ignore_ascii_case(domain)
+                    })
+                    && archive.is_file()
+                    && !PathBuf::from(format!("{}.unfinished", archive.display())).exists())
+                .then_some(archive)
             })
     }
 }
 
 fn owns_folder(folder: &Path, marker: &str) -> bool {
     std::fs::symlink_metadata(folder).is_ok_and(|meta| meta.file_type().is_dir())
-        && eidos_instance::ModMeta::read(&folder.join("meta.ini")).collection_owner() == Some(marker)
+        && eidos_instance::ModMeta::read(&folder.join("meta.ini")).collection_owner()
+            == Some(marker)
 }
 
-fn reserve_folder(inst: &Instance, wanted: &str, marker: &str, previous: Option<&str>) -> Result<String, String> {
+fn reserve_folder(
+    inst: &Instance,
+    wanted: &str,
+    marker: &str,
+    previous: Option<&str>,
+) -> Result<String, String> {
     let mods = inst.mods_dir();
-        if let Some(previous) = previous {
-            if eidos_install::fix_directory_name(previous).as_deref() != Some(previous) {
-                return Err("The recorded collection folder is not a safe mod name".into());
-            }
-            let path = mods.join(previous);
-            if path.exists() || path.is_symlink() {
-                return if owns_folder(&path, marker) { Ok(previous.to_string()) } else {
-                    Err(format!("The reserved folder '{previous}' is no longer owned by this collection; it was left untouched"))
-                };
-            }
+    if let Some(previous) = previous {
+        if eidos_install::fix_directory_name(previous).as_deref() != Some(previous) {
+            return Err("The recorded collection folder is not a safe mod name".into());
         }
-        let mut name = previous.unwrap_or(wanted).to_string();
-        loop {
-            // Linux permits names differing only by case; the game's merged view does not.
-            let collision = std::fs::read_dir(&mods).map_err(|e| e.to_string())?
-                .filter_map(Result::ok).any(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(&name));
-            if collision {
+        let path = mods.join(previous);
+        if path.exists() || path.is_symlink() {
+            return if owns_folder(&path, marker) {
+                Ok(previous.to_string())
+            } else {
+                Err(format!(
+                    "The reserved folder '{previous}' is no longer owned by this collection; it was left untouched"
+                ))
+            };
+        }
+    }
+    let mut name = previous.unwrap_or(wanted).to_string();
+    loop {
+        // Linux permits names differing only by case; the game's merged view does not.
+        let collision = std::fs::read_dir(&mods)
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .any(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(&name));
+        if collision {
+            name = free_name(&mods, wanted);
+            continue;
+        }
+        let path = mods.join(&name);
+        match std::fs::create_dir(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 name = free_name(&mods, wanted);
                 continue;
             }
-            let path = mods.join(&name);
-            match std::fs::create_dir(&path) {
-                Ok(()) => {},
-                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => { name = free_name(&mods, wanted); continue; },
-                Err(e) => return Err(e.to_string()),
-            }
-            let mut meta = eidos_instance::ModMeta::default();
-            meta.set("eidosCollectionOwner", marker);
-            meta.write(&path.join("meta.ini")).map_err(|e| e.to_string())?;
-            std::fs::File::open(path.join("meta.ini")).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
-            std::fs::File::open(&path).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
-            std::fs::File::open(&mods).and_then(|f| f.sync_all()).map_err(|e| e.to_string())?;
-            return Ok(name);
+            Err(e) => return Err(e.to_string()),
         }
+        let mut meta = eidos_instance::ModMeta::default();
+        meta.set("eidosCollectionOwner", marker);
+        meta.write(&path.join("meta.ini"))
+            .map_err(|e| e.to_string())?;
+        std::fs::File::open(path.join("meta.ini"))
+            .and_then(|f| f.sync_all())
+            .map_err(|e| e.to_string())?;
+        std::fs::File::open(&path)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| e.to_string())?;
+        std::fs::File::open(&mods)
+            .and_then(|f| f.sync_all())
+            .map_err(|e| e.to_string())?;
+        return Ok(name);
     }
+}
 
 impl Hooks for RealHooks<'_> {
+    fn validate_recipe(&mut self, c: &Collection) -> Result<(), String> {
+        for m in &c.mods {
+            crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path)?;
+        }
+        Ok(())
+    }
+    fn runtime_check(&mut self, c: &Collection) -> crate::recipe::RuntimeCheck {
+        crate::recipe::runtime_check(c, self.game)
+    }
+    fn allow_runtime_mismatch(&self) -> bool {
+        self.allow_runtime_mismatch
+    }
+
     fn verify_installed(&mut self, m: &Mod, folder: &str) -> Result<bool, String> {
         if eidos_install::fix_directory_name(folder).as_deref() != Some(folder) {
             return Err("The saved collection folder is not a safe mod name".into());
         }
         let path = self.inst.mods_dir().join(folder);
-        if !path.exists() && !path.is_symlink() { return Ok(false); }
-        if !self.owns(&path, m) {
-            return Err(format!("The recorded folder '{folder}' cannot be verified as this collection's output; it was left untouched"));
+        if !path.exists() && !path.is_symlink() {
+            return Ok(false);
         }
-        Ok(true)
+        if !self.owns(&path, m) {
+            return Err(format!(
+                "The recorded folder '{folder}' cannot be verified as this collection's output; it was left untouched"
+            ));
+        }
+        let mapped =
+            crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path)?;
+        crate::recipe::verify_receipt(&mapped, &self.payload_root, &path, &self.owner_marker(m))
+    }
+
+    fn recover_installed(&mut self, m: &Mod, folder: &str) -> Result<Option<Installed>, String> {
+        if !self.verify_installed(m, folder)? {
+            return Ok(None);
+        }
+        let renamed = (folder != safe(&m.name)).then(|| folder.to_string());
+        self.register(folder, &m.name, &renamed)?;
+        Ok(Some(
+            if m.source.kind == SourceType::Bundle || !m.hashes.is_empty() {
+                Installed::Ok(folder.into())
+            } else {
+                // Placement diagnostics are returned after the finishing callback. Their
+                // lost status checkpoint cannot be reconstructed from content alone.
+                Installed::Approximate(folder.into(), vec!["Recovered a verified completed recipe after an interrupted status save; installer replay diagnostics were not saved".into()])
+            },
+        ))
     }
 
     fn reserve(&mut self, m: &Mod, previous: Option<&str>) -> Result<String, String> {
@@ -161,8 +294,20 @@ impl Hooks for RealHooks<'_> {
     }
 
     fn obtain(&mut self, m: &Mod) -> Obtained {
+        let mapped =
+            match crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path) {
+                Ok(m) => m,
+                Err(e) => return Obtained::Failed(e),
+            };
+        let m = &mapped;
+        if m.source.kind == SourceType::Bundle {
+            return match crate::recipe::bundle_source(m, &self.payload_root) {
+                Ok(p) => Obtained::Ready(p),
+                Err(e) => Obtained::Failed(e),
+            };
+        }
         if let Some(p) = self.already_here(m) {
-            return Obtained::Ready(p);
+            return checked_archive(m, p);
         }
         match m.source.kind {
             SourceType::Nexus => {
@@ -216,7 +361,7 @@ impl Hooks for RealHooks<'_> {
                                         &dest, domain, &nxm, &url, &file, &remote,
                                     );
                                 }
-                                Obtained::Ready(dest)
+                                checked_archive(m, dest)
                             }
                             Err(e) => Obtained::Failed(e),
                         }
@@ -240,7 +385,7 @@ impl Hooks for RealHooks<'_> {
                     &format!("{}.archive", safe(&m.name)),
                 ));
                 match self.nexus.download(&m.source.url, &dest) {
-                    Ok(_) => Obtained::Ready(dest),
+                    Ok(_) => checked_archive(m, dest),
                     Err(e) => Obtained::Failed(e),
                 }
             }
@@ -249,11 +394,6 @@ impl Hooks for RealHooks<'_> {
             } else {
                 format!("fetch it yourself from {}", m.source.url)
             }),
-            SourceType::Bundle => Obtained::Unavailable(
-                "this member travels inside the collection archive, which this version does \
-                 not unpack yet"
-                    .into(),
-            ),
             _ => Obtained::Unavailable("no usable source".into()),
         }
     }
@@ -261,58 +401,139 @@ impl Hooks for RealHooks<'_> {
     fn install(&mut self, m: &Mod, archive: &Path, folder: &str) -> Installed {
         let mods_dir = self.inst.mods_dir();
         if eidos_install::fix_directory_name(folder).as_deref() != Some(folder)
-            || !self.owns(&mods_dir.join(folder), m) {
+            || !self.owns(&mods_dir.join(folder), m)
+        {
             return Installed::Failed("Refusing to replace an unowned collection folder".into());
         }
-        let fallback = self.game.compatdata.as_ref().and_then(|cd| {
-            eidos_plugins::GameSpec::for_id(&self.game_id)
-                .map(|spec| eidos_plugins::plugins_txt_dir(&cd.join("pfx"), &spec))
+        let fallback = self.game.prefix().and_then(|prefix| {
+            self.game
+                .plugin_spec()
+                .map(|spec| eidos_plugins::plugins_txt_dir(&prefix, &spec))
         });
-        let ctx = eidos_install::fomod_context_for_instance(self.inst, &self.game.data_path, &self.game_id, fallback.as_deref());
+        let ctx = eidos_install::fomod_context_for_instance(
+            self.inst,
+            &self.game.data_path,
+            &self.game_id,
+            fallback.as_deref(),
+        );
         let name = folder.to_string();
         let renamed_to = (name != safe(&m.name)).then(|| name.clone());
 
-        match eidos_install::open_archive_with(archive, &mods_dir, &name, &self.game_id, |_| {}) {
-            Ok(eidos_install::Opened::Fomod(session)) => {
-                let recorded = recorded_answers(m);
-                let r = eidos_fomod::replay(&session.config, &ctx, &recorded);
-                let mut unmatched = r.unmatched.clone();
-                match eidos_install::finish_fomod(
-                    *session,
-                    &r.selection,
-                    &mods_dir,
-                    &self.game_id,
-                    &ctx,
-                    eidos_install::OverwritePolicy::ReplaceOwned(self.owner_marker(m)),
-                ) {
-                    Ok(rep) => {
-                        if let Err(error) = self.register(&rep.name, &m.name, &renamed_to) { return Installed::Failed(error); }
-                        unmatched.extend(rep.missing.iter().map(|p| format!("Missing archive source: {p}")));
-                        if unmatched.is_empty() {
-                            Installed::Ok(rep.name)
-                        } else {
-                            Installed::Approximate(rep.name, unmatched)
-                        }
-                    }
-                    Err(e) => Installed::Failed(e.to_string()),
+        let mapped =
+            match crate::recipe::map_exclusions(m, &self.game.install_path, &self.game.data_path) {
+                Ok(m) => m,
+                Err(e) => return Installed::Failed(e),
+            };
+        let marker = self.owner_marker(m);
+        let policy = eidos_install::OverwritePolicy::ReplaceOwned(marker.clone());
+        let finish = |stage: &Path| {
+            crate::recipe::finish(&mapped, &self.payload_root, stage, &marker)
+                .map_err(eidos_install::InstallError::BadSelection)
+        };
+        let mut unmatched = Vec::new();
+        let result = if mapped.source.kind == SourceType::Bundle || !mapped.hashes.is_empty() {
+            let extracted;
+            let omod;
+            let omod_payload;
+            let source = if mapped.source.kind == SourceType::Bundle {
+                archive
+            } else {
+                if let Err(e) = crate::recipe::validate_archive(&mapped, archive) {
+                    return Installed::Failed(e);
                 }
-            }
-            Ok(_) => match eidos_install::install_archive_with_policy(
+                omod = match eidos_install::try_open_omod(archive, &mods_dir, |_| {}) {
+                    Ok(session) => session,
+                    Err(e) => return Installed::Failed(e.to_string()),
+                };
+                if let Some(session) = &omod {
+                    if session.script.is_some() {
+                        return Installed::Failed("This OMOD has an installer script; explicit script evaluation is required before collection installation".into());
+                    }
+                    omod_payload = session.payload_root();
+                    &omod_payload
+                } else {
+                    extracted = match eidos_install::extract_to_temp(archive, &mods_dir) {
+                        Ok(t) => t,
+                        Err(e) => return Installed::Failed(e.to_string()),
+                    };
+                    extracted.path()
+                }
+            };
+            eidos_install::install_destination(
                 archive,
                 &mods_dir,
                 &name,
                 &self.game_id,
-                eidos_install::OverwritePolicy::ReplaceOwned(self.owner_marker(m)),
-                &ctx,
-            ) {
-                Ok(rep) => {
-                    if let Err(error) = self.register(&rep.name, &m.name, &renamed_to) { return Installed::Failed(error); }
-                    if rep.missing.is_empty() { Installed::Ok(rep.name) } else {
-                        Installed::Approximate(rep.name, rep.missing.iter().map(|p| format!("Missing archive source: {p}")).collect())
-                    }
+                policy,
+                |stage, _| {
+                    crate::recipe::populate(&mapped, source, stage)
+                        .map_err(eidos_install::InstallError::BadSelection)?;
+                    finish(stage)?;
+                    Ok((String::new(), false, Vec::new()))
+                },
+            )
+        } else {
+            if let Err(e) = crate::recipe::validate_archive(&mapped, archive) {
+                return Installed::Failed(e);
+            }
+            match eidos_install::open_archive_with(archive, &mods_dir, &name, &self.game_id, |_| {})
+            {
+                Ok(eidos_install::Opened::Omod(session)) => {
+                    eidos_install::install_omod_with_finish(
+                        &session,
+                        &mods_dir,
+                        &name,
+                        &self.game_id,
+                        policy,
+                        finish,
+                    )
                 }
-                Err(e) => Installed::Failed(e.to_string()),
-            },
+                Ok(eidos_install::Opened::Fomod(session)) => {
+                    let r = eidos_fomod::replay(&session.config, &ctx, &recorded_answers(&mapped));
+                    unmatched = r.unmatched;
+                    eidos_install::finish_fomod_with_finish(
+                        *session,
+                        &r.selection,
+                        &mods_dir,
+                        &self.game_id,
+                        &ctx,
+                        policy,
+                        finish,
+                    )
+                }
+                Ok(
+                    eidos_install::Opened::Simple(tree)
+                    | eidos_install::Opened::Manual(tree)
+                    | eidos_install::Opened::Bain { tree, .. },
+                ) => eidos_install::install_extracted_with_finish(
+                    &tree,
+                    archive,
+                    &mods_dir,
+                    &name,
+                    &self.game_id,
+                    policy,
+                    &ctx,
+                    finish,
+                ),
+                Err(e) => Err(e),
+            }
+        };
+        match result {
+            Ok(rep) => {
+                if let Err(e) = self.register(&rep.name, &m.name, &renamed_to) {
+                    return Installed::Failed(e);
+                }
+                unmatched.extend(
+                    rep.missing
+                        .iter()
+                        .map(|p| format!("Missing archive source: {p}")),
+                );
+                if unmatched.is_empty() {
+                    Installed::Ok(rep.name)
+                } else {
+                    Installed::Approximate(rep.name, unmatched)
+                }
+            }
             Err(e) => Installed::Failed(e.to_string()),
         }
     }
@@ -322,10 +543,21 @@ impl Hooks for RealHooks<'_> {
     }
 }
 
+fn checked_archive(m: &Mod, archive: PathBuf) -> Obtained {
+    match crate::recipe::validate_archive(m, &archive) {
+        Ok(()) => Obtained::Ready(archive),
+        Err(error) => Obtained::Failed(error),
+    }
+}
+
 /// A folder name under `mods/` that nothing is using yet.
 fn free_name(mods_dir: &Path, wanted: &str) -> String {
-    let names: std::collections::HashSet<_> = std::fs::read_dir(mods_dir).into_iter().flatten()
-        .filter_map(Result::ok).map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()).collect();
+    let names: std::collections::HashSet<_> = std::fs::read_dir(mods_dir)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().to_ascii_lowercase())
+        .collect();
     for n in 2u64.. {
         let candidate = format!("{wanted} ({n})");
         if !names.contains(&candidate.to_ascii_lowercase()) {
@@ -378,12 +610,7 @@ pub fn recorded_answers(m: &Mod) -> Vec<eidos_fomod::RecordedStep> {
 }
 
 /// Put the collection's members in the order its rules ask for.
-pub fn apply_ordering(
-    inst: &Instance,
-    c: &Collection,
-    state: &InstallState,
-    report: &mut Report,
-) {
+pub fn apply_ordering(inst: &Instance, c: &Collection, state: &InstallState, report: &mut Report) {
     let (edges, lost) = crate::rules::edges(c);
     for u in lost {
         report.rules_lost.push(Note {
@@ -420,10 +647,18 @@ pub fn apply_ordering(
     after.sort();
     if reordered.len() == list.len() && before == after {
         if let Err(error) = inst.save_modlist(&reordered) {
-            report.failed.push(Note { subject: "mod order".into(), detail: format!("Could not save the collection's mod order: {error}") });
+            report.failed.push(Note {
+                subject: "mod order".into(),
+                detail: format!("Could not save the collection's mod order: {error}"),
+            });
         }
     } else {
-        report.failed.push(Note { subject: "mod order".into(), detail: "The collection order was not a valid permutation; the previous order was retained".into() });
+        report.failed.push(Note {
+            subject: "mod order".into(),
+            detail:
+                "The collection order was not a valid permutation; the previous order was retained"
+                    .into(),
+        });
     }
 }
 
@@ -445,21 +680,21 @@ pub fn apply_plugin_states(
     if c.plugins.is_empty() {
         return;
     }
-    let Some(spec) = eidos_plugins::GameSpec::for_id(game.def.id) else {
+    let Some(spec) = game.plugin_spec() else {
         return;
     };
-    let Some(compatdata) = game.compatdata.as_ref() else {
+    let Some(prefix) = game.prefix() else {
         report.loot_notes.push(Note {
             subject: "plugins".into(),
             detail: format!(
-                "no Proton prefix yet, so the {} plugin(s) the collection names were not \
+                "no Wine prefix yet, so the {} plugin(s) the collection names were not \
                  switched on",
                 c.plugins.len()
             ),
         });
         return;
     };
-    let local_dir = eidos_plugins::plugins_txt_dir(&compatdata.join("pfx"), &spec);
+    let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
     let _ = inst.ensure_profiles();
     let prof = inst.active();
     if prof.seed_plugin_state(&local_dir, &spec).is_err() {
@@ -546,10 +781,7 @@ pub fn apply_plugin_rules(
                             .collect()
                     })
                     .unwrap_or_default(),
-                group: p
-                    .get("group")
-                    .and_then(|g| g.as_str())
-                    .map(str::to_string),
+                group: p.get("group").and_then(|g| g.as_str()).map(str::to_string),
             })
         })
         .collect();
@@ -575,10 +807,10 @@ pub fn apply_plugin_rules(
     if rules.is_empty() && groups.is_empty() {
         return;
     }
-    let Some(compatdata) = game.compatdata.as_ref() else {
+    let Some(prefix) = game.prefix() else {
         report.loot_notes.push(Note {
             subject: "load order".into(),
-            detail: "no Proton prefix yet, so the collection's LOOT rules were not merged".into(),
+            detail: "no Wine prefix yet, so the collection's LOOT rules were not merged".into(),
         });
         return;
     };
@@ -594,8 +826,7 @@ pub fn apply_plugin_rules(
         return;
     };
     let userlist = cache.join("userlist.yaml");
-    let prefix = compatdata.join("pfx");
-    let Some(spec) = eidos_plugins::GameSpec::for_id(game.def.id) else {
+    let Some(spec) = game.plugin_spec() else {
         return;
     };
     let local = eidos_plugins::plugins_txt_dir(&prefix, &spec);
@@ -657,27 +888,46 @@ pub fn apply_ini_tweaks(
     let result = (|| -> Result<(), String> {
         let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
         let src = entries.filter_map(Result::ok).map(|e| e.path()).find(|p| {
-            p.is_dir() && p.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
+            p.is_dir()
+                && p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
         });
-        let Some(src) = src else { return Ok(()); };
+        let Some(src) = src else {
+            return Ok(());
+        };
         let root = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
-        let files: Vec<_> = std::fs::read_dir(&src).map_err(|e| e.to_string())?.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())?;
+        let files: Vec<_> = std::fs::read_dir(&src)
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
         for file in &files {
             let path = file.path();
-            if !std::fs::canonicalize(&path).map_err(|e| e.to_string())?.starts_with(&root) {
+            if !std::fs::canonicalize(&path)
+                .map_err(|e| e.to_string())?
+                .starts_with(&root)
+            {
                 return Err("An INI source escapes the extracted collection directory".into());
             }
         }
-        if !files.iter().any(|f| f.path().is_file()) { return Ok(()); }
+        if !files.iter().any(|f| f.path().is_file()) {
+            return Ok(());
+        }
         let key = "aux:ini-tweaks";
         let owner = format!("{}:{}:{}", state.game_domain, state.slug, state.revision);
         let marker = serde_json::to_string(&[owner.as_str(), key]).expect("strings serialize");
         let wanted = safe(&format!("{} - INI Tweaks", c.info.name));
-        let name = reserve_folder(inst, &wanted, &marker, state.folders.get(key).map(String::as_str))?;
+        let name = reserve_folder(
+            inst,
+            &wanted,
+            &marker,
+            state.folders.get(key).map(String::as_str),
+        )?;
         state.folders.insert(key.into(), name.clone());
         if let Err(error) = save(state) {
             report.aborted = true;
-            return Err(format!("Could not save the INI output reservation; copying stopped: {error}"));
+            return Err(format!(
+                "Could not save the INI output reservation; copying stopped: {error}"
+            ));
         }
         let dest = inst.mods_dir().join(&name).join("Ini Tweaks");
         // A replaced subdirectory must not redirect writes out of the owned mod.
@@ -687,27 +937,64 @@ pub fn apply_ini_tweaks(
         std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
         let mut n = 0;
         for file in files {
-            if !file.path().is_file() { continue; }
+            if !file.path().is_file() {
+                continue;
+            }
             let target = dest.join(file.file_name());
             let tmp = dest.join(format!(".eidos-copy-{}-{n}", std::process::id()));
             let copy = (|| -> std::io::Result<()> {
-                let mut output = std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp)?;
+                let mut output = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&tmp)?;
                 std::io::copy(&mut std::fs::File::open(file.path())?, &mut output)?;
                 output.sync_all()?;
                 std::fs::rename(&tmp, &target)
             })();
             if let Err(error) = copy {
                 // Only remove the temporary file if this operation created it.
-                if error.kind() != std::io::ErrorKind::AlreadyExists { let _ = std::fs::remove_file(&tmp); }
-                return Err(format!("Could not install {}: {error}", file.path().display()));
+                if error.kind() != std::io::ErrorKind::AlreadyExists {
+                    let _ = std::fs::remove_file(&tmp);
+                }
+                return Err(format!(
+                    "Could not install {}: {error}",
+                    file.path().display()
+                ));
             }
             n += 1;
         }
-        inst.register_installed_mod(&name).map_err(|e| e.to_string())?;
+        inst.register_installed_mod(&name)
+            .map_err(|e| e.to_string())?;
         report.deferred.push(Note { subject: "INI tweaks".into(), detail: format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab") });
         Ok(())
     })();
     if let Err(error) = result {
-        report.failed.push(Note { subject: "INI tweaks".into(), detail: error });
+        report.failed.push(Note {
+            subject: "INI tweaks".into(),
+            detail: error,
+        });
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    #[test]
+    fn collection_json_alone_never_completes_a_payload_cache() {
+        let root = std::env::temp_dir().join(format!("eidos-payload-cache-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("collection-1");
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = r#"{"mods":[{"name":"Member"}]}"#;
+        std::fs::write(dir.join("collection.json"), text).unwrap();
+        assert!(cached_manifest(&dir).unwrap().is_none());
+        std::fs::write(cache_marker(&dir), "partial marker").unwrap();
+        assert!(cached_manifest(&dir).unwrap().is_none());
+        let hash = eidos_nexus::md5_file(&dir.join("collection.json")).unwrap();
+        std::fs::write(cache_marker(&dir), hash).unwrap();
+        assert_eq!(cached_manifest(&dir).unwrap(), Some(text.into()));
+        std::fs::write(dir.join("collection.json"), "changed recipe").unwrap();
+        assert!(cached_manifest(&dir).unwrap().is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

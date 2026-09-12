@@ -14,6 +14,7 @@ mod extract;
 mod fomod;
 mod fsops;
 mod meta;
+mod omod;
 mod picker;
 mod root;
 mod simple;
@@ -24,6 +25,7 @@ pub use extract::*;
 pub use fomod::*;
 use fsops::*;
 pub use meta::*;
+pub use omod::*;
 pub use picker::*;
 use root::*;
 pub use simple::*;
@@ -97,6 +99,8 @@ pub struct InstallReport {
     /// FOMOD plan sources the archive did not actually contain (skipped, non-fatal).
     pub missing: Vec<String>,
     pub dest: PathBuf,
+    /// Complete previous mod retained by an explicit backup policy.
+    pub backup: Option<PathBuf>,
 }
 
 impl ArchiveTree {
@@ -158,9 +162,15 @@ pub enum OverwritePolicy {
     #[default]
     Fail,
     Replace,
+    /// Retain the previous directory under its inert `_backup` name.
+    ReplaceWithBackup,
     /// Replace only while the destination still carries this collection reservation.
     ReplaceOwned(String),
+    /// Collection-owned replacement with an explicit retained-backup policy.
+    ReplaceOwnedWithBackup(String),
     Merge,
+    /// Complete a checked snapshot before the first live Merge write.
+    MergeWithBackup,
     Rename(String),
 }
 
@@ -171,6 +181,8 @@ pub enum OverwritePolicy {
 /// FOMOD/BAIN package must run its scripted installer, and an archive whose option
 /// folders happen to look like sub-packages must not be hijacked from the wizard.
 pub enum Opened {
+    /// An OMOD container; scripted sessions require explicit evaluation.
+    Omod(Box<OmodSession>),
     /// A FOMOD scripted installer: drive the wizard, then [`finish_fomod`].
     Fomod(Box<FomodSession>),
     /// A plain archive, already extracted: install it with [`install_extracted`].
@@ -221,6 +233,10 @@ pub fn open_archive_with(
     game_id: &str,
     on_progress: impl FnMut(u8),
 ) -> Result<Opened, InstallError> {
+    let mut on_progress = on_progress;
+    if let Some(session) = try_open_omod(archive, mods_dir, &mut on_progress)? {
+        return Ok(Opened::Omod(Box::new(session)));
+    }
     let tree = extract_to_temp_with(archive, mods_dir, on_progress)?;
     if let Some(root) = find_fomod_root(&tree.tmp) {
         let config = parse_fomod_at(&root)?;

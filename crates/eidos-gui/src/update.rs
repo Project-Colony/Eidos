@@ -172,6 +172,34 @@ fn pack_on_worker(
     ))
 }
 
+fn collection_runtime_on_worker(inst: &Instance, game: &eidos_games::DetectedGame, link: &str)
+    -> Result<eidos_collections::recipe::RuntimeCheck, String>
+{
+    let nexus = eidos_nexus::Nexus::connect()?;
+    let want = match eidos_nexus::NxmLink::parse(link) {
+        Ok(eidos_nexus::NxmLink::Collection(value)) => value,
+        _ => return Err("That is not a collection link.".into()),
+    };
+    let revision = nexus.collection_revision(&want)?;
+    if !revision.visible() { return Err("This collection is not visible to this account.".into()); }
+    if !revision.game_domain.eq_ignore_ascii_case(game.def.nexus_game) {
+        return Err("The collection belongs to another game.".into());
+    }
+    let _lock = inst.try_lock("checking a collection recipe").map_err(|e| e.to_string())?;
+    let dir = eidos_collections::state::revision_dir(&inst.root, &revision.slug, revision.revision_number);
+    let manifest = eidos_collections::driver::fetch_manifest(&nexus, &revision, &dir)?;
+    let read = eidos_collections::read(&manifest)?;
+    Ok(eidos_collections::recipe::runtime_check(&read.collection, game))
+}
+
+fn collection_target(app: &App) -> Option<CollectionTarget> {
+    let instance = app.created.as_ref()?;
+    Some(CollectionTarget {
+        instance: instance.root.clone(), profile: instance.active_profile(),
+        installation: selected_game(app)?.selection_id(),
+    })
+}
+
 /// Install a Nexus collection on a worker thread.
 ///
 /// The same three-Arc handshake as the other two long jobs, and the same reason:
@@ -182,6 +210,7 @@ fn spawn_collection(
     game: eidos_games::DetectedGame,
     game_id: String,
     link: String,
+    approved: Option<eidos_collections::recipe::RuntimeCheck>,
 ) -> crate::TransferJob {
     use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
     use std::sync::{Arc, Mutex};
@@ -190,8 +219,9 @@ fn spawn_collection(
     let done = Arc::new(AtomicBool::new(false));
     let (p, o, d) = (percent.clone(), outcome.clone(), done.clone());
     let target = inst.root.clone();
+    let profile = inst.active_profile();
     std::thread::spawn(move || {
-        let r = collection_on_worker(&inst, &game, &game_id, &link, &p);
+        let r = collection_on_worker(&inst, &game, &game_id, &link, &profile, approved.as_ref(), &p);
         if let Ok(mut slot) = o.lock() {
             *slot = Some(r);
         }
@@ -213,6 +243,8 @@ fn collection_on_worker(
     game: &eidos_games::DetectedGame,
     game_id: &str,
     link: &str,
+    profile: &str,
+    approved: Option<&eidos_collections::recipe::RuntimeCheck>,
     percent: &std::sync::Arc<std::sync::atomic::AtomicU8>,
 ) -> Result<String, String> {
     use std::sync::atomic::Ordering;
@@ -228,6 +260,9 @@ fn collection_on_worker(
     let _lock = inst
         .try_lock("the Eidos window (installing a collection)")
         .map_err(|e| format!("Cannot install now: {e}."))?;
+    if inst.active_profile() != profile {
+        return Err("The active profile changed before collection installation started; retry from that profile.".into());
+    }
     let dir =
         eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
@@ -260,6 +295,8 @@ fn collection_on_worker(
         inst,
         game,
         game_id: game_id.to_string(),
+        payload_root: dir.clone(),
+        allow_runtime_mismatch: approved == Some(&eidos_collections::recipe::runtime_check(c, game)),
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
@@ -315,6 +352,10 @@ struct CountingHooks<'a> {
 }
 
 impl eidos_collections::install::Hooks for CountingHooks<'_> {
+    fn validate_recipe(&mut self, c: &eidos_collections::Collection) -> Result<(), String> { self.inner.validate_recipe(c) }
+    fn runtime_check(&mut self, c: &eidos_collections::Collection) -> eidos_collections::recipe::RuntimeCheck { self.inner.runtime_check(c) }
+    fn allow_runtime_mismatch(&self) -> bool { self.inner.allow_runtime_mismatch() }
+
     fn obtain(&mut self, m: &eidos_collections::manifest::Mod) -> eidos_collections::install::Obtained {
         self.inner.obtain(m)
     }
@@ -331,6 +372,13 @@ impl eidos_collections::install::Hooks for CountingHooks<'_> {
         folder: &str,
     ) -> Result<bool, String> {
         self.inner.verify_installed(m, folder)
+    }
+    fn recover_installed(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+        folder: &str,
+    ) -> Result<Option<eidos_collections::install::Installed>, String> {
+        self.inner.recover_installed(m, folder)
     }
     fn install(
         &mut self,
@@ -489,6 +537,20 @@ fn finish_open(
     gid: String,
 ) {
     match result {
+        Ok(eidos_install::Opened::Omod(session)) => {
+            let Some(inst)=app.created.clone() else{return};
+            let guard=match inst.try_lock("installing an OMOD") {Ok(lock)=>lock,Err(e)=>{app.status=Some(e.to_string());return}};
+            let result=eidos_install::install_omod(&session,&mods_dir,&name,&gid,eidos_install::OverwritePolicy::Fail);
+            drop(guard);
+            match result {
+                Ok(report)=>after_install_report(app,report,&path),
+                Err(eidos_install::InstallError::Exists(_))=>{
+                    app.collision=Some(CollisionPrompt {backup:app.prefs.retain_install_backup,rename_to:suggest_free_name(&mods_dir,&name),archive:path,name:name.clone(),game_id:gid,fomod:false,tree:None,pick:None});
+                    app.status=Some(format!("'{name}' already exists - choose how to install."));
+                }
+                Err(error)=>app.status=Some(format!("Cannot install OMOD: {error}")),
+            }
+        }
         Ok(eidos_install::Opened::Fomod(session)) => {
             let ctx = current_fomod_context(app);
             let session = *session;
@@ -538,6 +600,7 @@ fn finish_open(
                     // needs no re-extract.
                     let rename_to = suggest_free_name(&mods_dir, &name);
                     app.collision = Some(CollisionPrompt {
+                        backup: app.prefs.retain_install_backup,
                         archive: path,
                         name: name.clone(),
                         game_id: gid,
@@ -686,6 +749,9 @@ pub(crate) fn is_ambient(app: &App, m: &Message) -> bool {
         // long enough that a confirmation disarmed sixty times a second would
         // look like a window that had simply stopped working.
         | Message::TransferPoll
+        | Message::PreviewReady(..)
+        | Message::ArchiveExportFinished(..)
+        | Message::CollectionInstallChecked { .. }
         // And the hover-to-expand timer, which fires only while a drag rests on
         // a collapsed group. Same reason: the program watching a pointer sit
         // still is not the user deciding anything.
@@ -873,9 +939,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     match inst.create() {
                         Ok(()) => {
                             if let Some(id) = &game_id {
-                                if let Err(e) = inst.ensure_manifest(id, kind) {
-                                    app.error =
-                                        Some(format!("Could not save the instance identity: {e}"));
+                                let selection = selected_game(app).expect("selected game").selection_id();
+                                let saved = inst.try_lock("selecting a game installation")
+                                    .and_then(|_lock| inst.ensure_installation(id, kind, &selection));
+                                if let Err(e) = saved {
+                                    app.error = Some(format!("Could not save the instance identity: {e}"));
                                     return Task::none();
                                 }
                                 // Into the registry BEFORE opening: a portable
@@ -1312,6 +1380,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 if let Some(name) = eidos_install::collision_name(&mods_dir, w.session.mod_name()) {
                     let rename_to = suggest_free_name(&mods_dir, &name);
                     app.collision = Some(CollisionPrompt {
+                        backup: app.prefs.retain_install_backup,
                         archive: w.archive.clone(),
                         name: name.clone(),
                         game_id: w.game_id.clone(),
@@ -1372,6 +1441,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 } else {
                     app.status = Some("Create or open an instance first.".to_string());
                 }
+            } else if selected_game(app).is_some_and(|g| !g.is_steam()) && app.launch_command.is_empty() {
+                app.status = Some("This installation needs a manual launch command. Add a native tool with the correct Heroic/Legendary runner and prefix, or use eidos play <instance> -- <runner> <game>. Eidos does not infer a Steam command for this copy.".into());
             } else if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
                 // build the launch environment. Point the user at the option, with
@@ -2350,12 +2421,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("LOOT sorting is not available for {id}."));
                 return Task::none();
             }
-            let Some(spec) = GameSpec::for_id(id) else {
+            let Some(spec) = game.plugin_spec() else {
                 return Task::none();
             };
-            let Some(cd) = game.compatdata.as_ref() else {
+            let Some(prefix) = game.prefix() else {
                 app.status = Some(
-                    "Launch the game once through Steam first so its prefix exists.".to_string(),
+                    "No usable prefix found for this installation. Check its Steam or Heroic configuration.".to_string(),
                 );
                 return Task::none();
             };
@@ -2374,7 +2445,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .map(|i| i.active())
                 .filter(|p| p.has_plugin_state())
                 .map(|p| p.plugins_state_dir())
-                .unwrap_or_else(|| plugins_txt_dir(&cd.join("pfx"), &spec));
+                .unwrap_or_else(|| eidos_plugins::plugin_state_dir(&prefix,&install,&spec));
             let cache = app
                 .created
                 .as_ref()
@@ -2646,6 +2717,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // established mod out of its slot and silently flip every conflict it is
         // in - so the aim is discarded, not consumed. (Rename keeps it: that
         // really does create a new folder.) MO2 guards the same case.
+        Message::CollisionBackupChanged(enabled) => {
+            if let Some(collision) = app.collision.as_mut() {
+                collision.backup = enabled;
+                app.prefs.retain_install_backup = enabled;
+                if let Err(error) = app.prefs.save() {
+                    app.status = Some(format!("Could not remember the backup choice: {error}"));
+                }
+            }
+        }
         Message::CollisionMerge => {
             app.install_at = None;
             run_collision_install(app, eidos_install::OverwritePolicy::Merge)
@@ -4680,6 +4760,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::ShowCollection(link) => {
             app.file_menu_open = false;
             app.collection = Some(CollectionState {
+                install_check: None,
+                runtime: None,
                 link,
                 revision: None,
                 states: Vec::new(),
@@ -4701,6 +4783,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.typing = true;
             if let Some(c) = &mut app.collection {
                 c.link = t;
+                c.install_check = None;
+                c.runtime = None;
                 c.loading = false;
                 c.error = None;
             }
@@ -5931,9 +6015,30 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             return update(app, Message::ShowModInfo(i));
         }
         Message::PreviewFile(path) => {
-            app.preview = Some(build_preview(&path));
+            return crate::file_preview::start(app,path,None,None,None);
         }
-        Message::ClosePreview => app.preview = None,
+        Message::ArchiveProviderAction{epoch,member,provider,export}=>return crate::archive_conflicts::provider_action(app,epoch,member,provider,export),
+        Message::ArchiveFilterChanged(filter)=>{app.archive_filter=filter;app.archive_page=0;},
+        Message::ArchivePage(page)=>app.archive_page=page,
+        Message::ArchiveExportDestination(id,path)=>return crate::archive_conflicts::export_destination(app,id,path),
+        Message::ArchiveExportFinished(id,result)=>crate::archive_conflicts::export_finished(app,id,result),
+        Message::RunFileExtension(operation,path) => {
+            return crate::file_preview::start(app,path,Some(operation),None,None);
+        }
+        Message::ChooseExtensionFile(operation)=>return Task::perform(rfd::AsyncFileDialog::new().set_title("Choose a file for an extension").pick_file(),move|file|Message::ExtensionFilePicked(operation,file.map(|f|f.path().to_path_buf()))),
+        Message::ExtensionFilePicked(operation,path)=>{
+            if let Some(path)=path {app.addons_open=false;return crate::file_preview::start(app,path,Some(operation),None,None);}
+        }
+        Message::PreviewReady(id,preview) => crate::file_preview::complete(app,id,preview),
+        Message::PreviewDdsSelection(selection) => {
+            if app.preview_pending.is_none() {
+                if let Some(preview)=&app.preview {
+                    let path=preview.path();
+                    return crate::file_preview::start(app,path.to_path_buf(),None,Some(selection),None);
+                }
+            }
+        }
+        Message::ClosePreview => { app.preview_pending.take(); app.preview = None; },
         Message::ToolArgsAction(action) => {
             app.typing = true;
             if let Some(state) = app.executables.as_mut() {
@@ -5994,65 +6099,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if m.is_separator() || m.is_backup() || m.unmanaged {
                 return Task::none();
             }
-            let mods_dir = inst.mods_dir();
-            // `<name>_backup`, then `_backup2`, `_backup3`... A backup that
-            // silently replaced the previous one would lose the state somebody
-            // took a backup to keep.
-            let mut dest = mods_dir.join(format!("{}_backup", m.name));
-            let mut n = 2;
-            while dest.exists() {
-                dest = mods_dir.join(format!("{}_backup{n}", m.name));
-                n += 1;
-                if n > 99 {
-                    app.error = Some("Too many backups of that mod already.".to_string());
-                    return Task::none();
-                }
-            }
             let src = m.path.clone();
             let name = m.name.clone();
-            let label = dest
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            // The lock covers the WRITE and nothing else. Held across the
-            // refresh below it would deadlock this very handler: `flock` denies
-            // a second descriptor even to the process that already holds one,
-            // so the plugin refresh inside `reload_mods` would fail against a
-            // lock we are holding ourselves.
-            let copied = {
-                let _lock = match inst.try_lock("the Eidos window") {
-                    Ok(l) => l,
-                    Err(e) => {
-                        app.status = Some(format!("Busy: {e}."));
-                        return Task::none();
-                    }
-                };
-                // Claimed BEFORE the copy, so the cleanup below can only ever
-                // remove a directory this handler brought into existence.
-                // Removing `dest` unconditionally on failure would delete
-                // whatever was already at that name if the loop above raced
-                // another process.
-                if let Err(e) = std::fs::create_dir(&dest) {
-                    app.error = Some(format!("Could not back up {name}: {e}"));
-                    return Task::none();
+            let copied = inst.try_lock("backing up a mod")
+                .and_then(|_lock| eidos_instance::backup_mod(&src));
+            match copied {
+                Ok(dest) => {
+                    reload_mods(app);
+                    refresh_meta_cache(app);
+                    bump_views(app);
+                    app.conflicts = compute_conflicts(app);
+                    app.status = Some(format!("Saved a copy at {}.", dest.display()));
                 }
-                match copy_dir_contents(&src, &dest) {
-                    Ok(()) => true,
-                    Err(e) => {
-                        // Ours, so safe to take back whole.
-                        let _ = std::fs::remove_dir_all(&dest);
-                        app.error = Some(format!("Could not back up {name}: {e}"));
-                        false
-                    }
-                }
-            };
-            if copied {
-                reload_mods(app);
-                refresh_meta_cache(app);
-                bump_views(app);
-                app.conflicts = compute_conflicts(app);
-                app.status = Some(format!("Saved a copy as {label}."));
+                Err(error) => app.error = Some(format!("Could not back up {name}: {error}")),
             }
         }
         Message::ModRestoreBackup(i) => {
@@ -7456,24 +7515,60 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.transfer_job = Some(spawn_unpack(archive, dest, opt));
         }
         Message::CollectionInstall => {
-            // The busy check FIRST. When both are true it is the more specific
-            // answer, and pointing at the instance while a job is running on
-            // that very instance would send somebody the wrong way.
             if app.transfer_job.is_some() {
-                app.status = Some("Something is already running on this instance.".to_string());
+                app.status = Some("Something is already running on this instance.".into());
                 return Task::none();
             }
-            let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned())
-            else {
-                app.status = Some("Open a game instance first.".to_string());
+            let (Some(inst), Some(game), Some(target)) = (app.created.clone(), selected_game(app).cloned(), collection_target(app)) else {
+                app.status = Some("Open a game instance first.".into());
                 return Task::none();
             };
-            let Some(link) = app.collection.as_ref().map(|c| c.link.clone()) else {
+            let Some(c) = app.collection.as_mut() else { return Task::none() };
+            if c.loading { return Task::none() }
+            let link = c.link.clone();
+            if let Some((checked_target, checked)) = &c.runtime {
+                if checked_target == &target && matches!(checked, eidos_collections::recipe::RuntimeCheck::Mismatch { .. }) {
+                    let approved = Some(checked.clone());
+                    app.collection = None;
+                    let id = game.def.id.to_owned();
+                    app.transfer_job = Some(spawn_collection(inst, game, id, link, approved));
+                    return Task::none();
+                }
+            }
+            static REQUEST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            let request = REQUEST.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            c.install_check = Some(request);
+            c.runtime = None;
+            c.loading = true;
+            c.error = None;
+            let worker_link = link.clone();
+            return Task::perform(
+                async move { collection_runtime_on_worker(&inst, &game, &worker_link) },
+                move |result| Message::CollectionInstallChecked { request, target: target.clone(), link: link.clone(), result },
+            );
+        }
+        Message::CollectionInstallChecked { request, target, link, result } => {
+            if collection_target(app).as_ref() != Some(&target) || app.transfer_job.is_some() {
                 return Task::none();
-            };
-            let game_id = game.def.id.to_string();
-            app.collection = None;
-            app.transfer_job = Some(spawn_collection(inst, game, game_id, link));
+            }
+            let Some(c) = app.collection.as_mut() else { return Task::none() };
+            if c.install_check != Some(request) || c.link != link { return Task::none() }
+            c.install_check = None;
+            c.loading = false;
+            match result {
+                Err(error) => c.error = Some(error),
+                Ok(check @ eidos_collections::recipe::RuntimeCheck::Mismatch { .. }) => {
+                    c.error = Some(check.message());
+                    c.runtime = Some((target, check));
+                }
+                Ok(check) => {
+                    app.status = Some(check.message());
+                    let (Some(inst), Some(game)) = (app.created.clone(), selected_game(app).cloned()) else { return Task::none() };
+                    app.collection = None;
+                    let id = game.def.id.to_owned();
+                    app.transfer_job = Some(spawn_collection(inst, game, id, link, None));
+                }
+            }
         }
         Message::TransferPoll => {
             let Some(job) = app.transfer_job.as_ref() else {

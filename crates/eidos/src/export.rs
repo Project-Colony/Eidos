@@ -20,7 +20,7 @@ pub(crate) fn cmd_export(args: &[String]) {
         .and_then(|i| args.get(i + 1))
         .cloned();
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id

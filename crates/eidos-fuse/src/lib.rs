@@ -38,6 +38,9 @@ use std::time::UNIX_EPOCH;
 use eidos_core::LayerStack;
 use fuser::{BackgroundSession, FileAttr, FileType, Generation, INodeNo, ReplyEntry};
 
+mod timestamps;
+pub use timestamps::{read_plugin_mtimes, PluginTimestamps};
+
 mod config;
 mod inodes;
 mod ops;
@@ -104,6 +107,8 @@ impl DirCache {
 /// The Eidos union filesystem over a [`LayerStack`].
 pub struct Eidos {
     stack: LayerStack,
+    plugin_timestamps: Option<Mutex<PluginTimestamps>>,
+    plugin_atimes: Mutex<std::collections::BTreeMap<String, std::time::SystemTime>>,
     inodes: Mutex<Inodes>,
     uid: u32,
     gid: u32,
@@ -202,6 +207,8 @@ impl Eidos {
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
         Self {
             stack: LayerStack::new(layers, overwrite),
+            plugin_timestamps: None,
+            plugin_atimes: Mutex::new(Default::default()),
             inodes: Mutex::new(Inodes::new()),
             uid,
             gid,
@@ -407,8 +414,18 @@ impl Eidos {
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
     /// user (the game runs as us under Proton).
     fn attr(&self, ino: u64, meta: &Metadata) -> FileAttr {
-        let mtime = meta.modified().unwrap_or(UNIX_EPOCH);
-        let atime = meta.accessed().unwrap_or(mtime);
+        let projected = self
+            .inodes
+            .lock_recover()
+            .path(ino)
+            .map(|p| self.projected_times(&p))
+            .unwrap_or_default();
+        let mtime = projected
+            .0
+            .unwrap_or_else(|| meta.modified().unwrap_or(UNIX_EPOCH));
+        let atime = projected
+            .1
+            .unwrap_or_else(|| meta.accessed().unwrap_or(mtime));
         FileAttr {
             ino: INodeNo(ino),
             size: meta.len(),

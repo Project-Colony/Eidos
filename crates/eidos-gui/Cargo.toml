@@ -46,6 +46,11 @@ eidos-gamedef = { path = "../eidos-gamedef" }
 # does; a second copy of it here is how this workspace got three find_7z.
 eidos-collections = { path = "../eidos-collections" }
 rfd = "0.17"
+# Pure Rust block decoding; no encoder or native toolchain is needed for previews.
+bcdec_rs = "=0.2.0"
+ddsfile = "0.5"
+tempfile = "3"
+image-decoder = { package = "image", version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "ico", "tga"] }
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from
 # the design tokens in Project-Colony-Resources rather than copied here.

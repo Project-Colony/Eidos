@@ -769,6 +769,127 @@ fn writable_mmap_persists_and_keeps_source_pristine() {
     assert_eq!(fs::read(over.join("patch.dat")).unwrap(), b"ZAAAAAAZ"); // change in overwrite
 }
 
+fn projected_plugin_times_are_mutable_and_preserve_lower_files() {
+    use eidos_fuse::{read_plugin_mtimes, PluginTimestamps};
+    use std::{
+        collections::BTreeMap,
+        time::{Duration, UNIX_EPOCH},
+    };
+    let t = Tmp::new();
+    let (game, over, mnt) = (t.sub("game"), t.sub("over"), t.sub("mnt"));
+    put(&game, "A.esp", b"original A");
+    put(&game, "B.esp", b"original B");
+    put(&game, "ordinary.txt", b"ordinary");
+    let original = fs::metadata(game.join("A.esp"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let ordinary = fs::metadata(game.join("ordinary.txt"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    let first = UNIX_EPOCH + Duration::new(1000, 123);
+    let second = first + Duration::from_secs(60);
+    let receipt = t.0.join("profile/times");
+    let fsys = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: BTreeMap::from([("a.esp".into(), first), ("b.esp".into(), second)]),
+            state_path: receipt.clone(),
+        })
+        .unwrap();
+    let session = fsys.spawn(&mnt).expect("timestamp fixture must mount");
+    let file = fs::File::open(mnt.join("A.esp")).unwrap();
+    assert_eq!(
+        fs::metadata(mnt.join("a.ESP")).unwrap().modified().unwrap(),
+        first
+    );
+    assert_eq!(file.metadata().unwrap().modified().unwrap(), first);
+    assert_eq!(
+        fs::metadata(mnt.join("ordinary.txt"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        ordinary
+    );
+    // A child process uses utimensat through the real kernel/FUSE path.
+    let changed = UNIX_EPOCH + Duration::from_secs(900);
+    let status = std::process::Command::new("python3")
+        .arg("-c")
+        .arg("import os,sys; os.utime(sys.argv[1], ns=(900000000000,900000000000))")
+        .arg(mnt.join("A.esp"))
+        .status()
+        .unwrap();
+    assert!(status.success());
+    assert_eq!(
+        fs::metadata(mnt.join("A.esp")).unwrap().modified().unwrap(),
+        changed
+    );
+    assert_eq!(file.metadata().unwrap().modified().unwrap(), changed);
+    assert!(!over.join("A.esp").exists());
+    assert_eq!(
+        fs::metadata(game.join("A.esp"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        original
+    );
+    fs::rename(mnt.join("A.esp"), mnt.join("Renamed.esp")).unwrap();
+    assert_eq!(
+        fs::metadata(mnt.join("Renamed.esp"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        changed
+    );
+    fs::remove_file(mnt.join("B.esp")).unwrap();
+    let times = read_plugin_mtimes(&receipt).unwrap();
+    assert_eq!(times.get("renamed.esp"), Some(&changed));
+    assert!(!times.contains_key("a.esp"));
+    assert!(!times.contains_key("b.esp"));
+    // Replacement and truncation discard the old projection, including a newly
+    // created plugin that is timestamped and then opened with O_TRUNC.
+    put(&mnt, "replace.tmp", b"replacement");
+    fs::rename(mnt.join("replace.tmp"), mnt.join("Renamed.esp")).unwrap();
+    assert!(!read_plugin_mtimes(&receipt)
+        .unwrap()
+        .contains_key("renamed.esp"));
+    put(&mnt, "New.esp", b"new");
+    let status=std::process::Command::new("python3").arg("-c").arg("import os,sys; p=sys.argv[1]; os.utime(p, ns=(42,42)); open(p,'w').close(); assert os.stat(p).st_mtime_ns != 42").arg(mnt.join("New.esp")).status().unwrap();
+    assert!(status.success());
+    assert!(!read_plugin_mtimes(&receipt)
+        .unwrap()
+        .contains_key("new.esp"));
+    drop(file);
+    drop(session);
+    // A metadata-only projection never creates stale payload copies on a rerun.
+    put(&game, "Fresh.esp", b"before");
+    let first_session = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: BTreeMap::from([("fresh.esp".into(), first)]),
+            state_path: receipt.clone(),
+        })
+        .unwrap()
+        .spawn(&mnt)
+        .unwrap();
+    assert_eq!(fs::read(mnt.join("Fresh.esp")).unwrap(), b"before");
+    drop(first_session);
+    put(&game, "Fresh.esp", b"new source bytes");
+    let second_session = Eidos::new(vec![game.clone()], over.clone())
+        .with_plugin_timestamps(PluginTimestamps {
+            times: read_plugin_mtimes(&receipt).unwrap(),
+            state_path: receipt,
+        })
+        .unwrap()
+        .spawn(&mnt)
+        .unwrap();
+    assert_eq!(
+        fs::read(mnt.join("Fresh.esp")).unwrap(),
+        b"new source bytes"
+    );
+    assert!(!over.join("Fresh.esp").exists());
+    drop(second_session);
+}
+
 fn main() {
     // Enter the private namespace first, single-threaded, so the mounts are
     // isolated from host services. Best-effort: if it fails (userns disabled),
@@ -786,6 +907,11 @@ fn main() {
 
     // (name, test fn, needs an isolated namespace to be deterministic)
     let tests: &[(&str, fn(), bool)] = &[
+        (
+            "projected_plugin_times_are_mutable_and_preserve_lower_files",
+            projected_plugin_times_are_mutable_and_preserve_lower_files,
+            true,
+        ),
         (
             "mod_shadows_game_and_falls_through",
             mod_shadows_game_and_falls_through,

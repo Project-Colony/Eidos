@@ -1270,3 +1270,68 @@ fn an_unreadable_modlist_is_suspect_but_an_absent_one_is_not() {
 
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn morrowind_profiles_share_ini_activation_authority_and_restore_snapshots() {
+    let root = inst_with_mods(&[]);
+    let a = prof(&root, "A");
+    let b = prof(&root, "B");
+    let spec = eidos_plugins::GameSpec::for_id("morrowind").unwrap();
+    for (p, name) in [(&a, "Café.esp"), (&b, "Other.esp")] {
+        fs::create_dir_all(p.plugins_state_dir()).unwrap();
+        let body = format!(
+            "[General]\nValue=1\n[Archives]\nArchive 0=Base.bsa\n[Game Files]\nGameFile0={name}\n"
+        );
+        write_text(&p.ini_path("Morrowind.ini"), &body, true).unwrap();
+        p.snapshot_plugin_state().unwrap();
+    }
+    let before = fs::read(b.ini_path("Morrowind.ini")).unwrap();
+    fs::write(a.ini_path("Morrowind.ini"), "[Game Files]\n").unwrap();
+    assert!(a.plugin_loss_since_snapshot(&spec).is_some());
+    a.restore_plugin_snapshot().unwrap();
+    assert_eq!(
+        eidos_plugins::PluginList::read_active(&a.plugins_state_dir(), &spec),
+        [("Café.esp".into(), true)]
+    );
+    assert_eq!(fs::read(b.ini_path("Morrowind.ini")).unwrap(), before);
+    let runtime = a.dir().join("runtime-root");
+    a.deploy_inis(&runtime, &["Morrowind.ini"]).unwrap();
+    a.record_ini_session(&runtime, &["Morrowind.ini"], &[])
+        .unwrap();
+    fs::write(runtime.join("Morrowind.ini"), []).unwrap();
+    assert!(
+        a.recover_ini_session().is_err(),
+        "a destroyed runtime INI must preserve the pending receipt"
+    );
+    assert!(a.dir().join("runtime-inis.pending").is_file());
+    fs::copy(a.ini_path("Morrowind.ini"), runtime.join("Morrowind.ini")).unwrap();
+    a.recover_ini_session().unwrap();
+    assert!(!a.dir().join("runtime-inis.pending").exists());
+    fs::create_dir_all(root.join("overwrite/Root")).unwrap();
+    fs::write(root.join("overwrite/Root/conflict"), b"existing file").unwrap();
+    fs::create_dir_all(runtime.join("conflict")).unwrap();
+    fs::write(runtime.join("conflict/new.log"), b"new output").unwrap();
+    assert!(a
+        .merge_runtime_root_outputs(&root.join("overwrite/Root"), &["Morrowind.ini"])
+        .is_err());
+    assert_eq!(
+        fs::read(runtime.join("conflict/new.log")).unwrap(),
+        b"new output"
+    );
+    assert_eq!(
+        fs::read(root.join("overwrite/Root/conflict")).unwrap(),
+        b"existing file"
+    );
+    fs::rename(
+        root.join("overwrite/Root/conflict"),
+        root.join("overwrite/Root/rescued"),
+    )
+    .unwrap();
+    a.merge_runtime_root_outputs(&root.join("overwrite/Root"), &["Morrowind.ini"])
+        .unwrap();
+    assert_eq!(
+        fs::read(root.join("overwrite/Root/conflict/new.log")).unwrap(),
+        b"new output"
+    );
+    fs::remove_dir_all(root).unwrap();
+}

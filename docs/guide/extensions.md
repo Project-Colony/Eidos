@@ -16,8 +16,9 @@ set of a shared dependency - is undefined behaviour rather than a version
 mismatch. And Eidos's widgets are compile-time generic, so a library could not
 build one to hand back even if the ABI were stable.
 
-So an extension is a program Eidos *runs*. It cannot crash the window, cannot
-corrupt a mod list, and keeps working across Eidos updates.
+An extension is a program Eidos runs with your account's filesystem access.
+Install only helpers you trust. Process isolation and checked replies do not
+provide an operating-system sandbox.
 
 ## A tool
 

@@ -570,8 +570,8 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
     // The profile's INIs are the ones Eidos owns; the prefix copy is what the
     // game reads. Both are worth reaching, and only one of them is guessable.
     let prefix_inis = game.and_then(|g| {
-        let spec = GameSpec::for_id(g.def.id)?;
-        let prefix = g.compatdata.as_ref()?.join("pfx");
+        let spec = g.plugin_spec()?;
+        let prefix = g.prefix()?;
         Some(eidos_plugins::documents_my_games_dir(&prefix, &spec))
     });
 

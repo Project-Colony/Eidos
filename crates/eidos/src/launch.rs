@@ -22,7 +22,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     };
 
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -331,9 +331,76 @@ pub(crate) fn run_through_view(
         exit(1);
     }
 
-    let inis = prepare_inis(game_id, game, inst, &prof);
-    let plugin_bind = prepare_plugins(game_id, game, inst, &prof);
-    let save_bind = prepare_saves(game_id, game, &prof);
+    // Recover the selected profile before any preparation can replace runtime
+    // files from an interrupted session. Completed output moves are idempotent.
+    const ROOT_CONTROL_FILES: &[&str] = &[
+        "Morrowind.ini",
+        "Oblivion.ini",
+        "OblivionPrefs.ini",
+        "plugins.txt",
+    ];
+    let recovery = prof
+        .recover_ini_session()
+        .and_then(|()| {
+            prof.merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
+        })
+        .and_then(|()| recover_timestamp_order(game_id, game, inst, &prof));
+    if let Err(e) = recovery {
+        eidos_log::warn!("eidos: refusing to launch: pending profile capture failed: {e}");
+        exit(1);
+    }
+    let mut plugin_bind = prepare_plugins(game_id, game, inst, &prof);
+    if game
+        .plugin_spec()
+        .is_some_and(|s| s.mechanism == eidos_plugins::LoadOrderMechanism::Timestamp)
+        && plugin_bind.is_none()
+    {
+        eidos_log::warn!("eidos: refusing to launch: timestamp plugin state could not be prepared");
+        exit(1);
+    }
+    let inis = prepare_inis(game_id, game, inst, &prof).unwrap_or_else(|e| {
+        eidos_log::warn!("eidos: refusing to launch: INI preparation failed: {e}");
+        exit(1)
+    });
+    let runtime_root = inis
+        .as_ref()
+        .filter(|p| p.root_mode)
+        .map(|p| p.docs.clone());
+    if let Some(prepared) = inis.as_ref().filter(|p| p.root_mode) {
+        let mut files = prepared.ini_files.to_vec();
+        if plugin_bind
+            .as_ref()
+            .is_some_and(|(_, dst)| *dst == game.install_path)
+        {
+            let active = game.plugin_spec().unwrap().active_file();
+            if !files.contains(&active) {
+                files.push(active);
+                if let Err(e) =
+                    stage_root_activation(&prof, &prepared.docs, &game.plugin_spec().unwrap())
+                {
+                    eidos_log::warn!(
+                        "eidos: refusing to launch: root activation preparation failed: {e}"
+                    );
+                    exit(1);
+                }
+            }
+            // The root union carries selected files; binding the state DIRECTORY
+            // here would hide the game executable and all its other resources.
+            plugin_bind = None;
+        }
+        if let Err(e) = prof.record_ini_session(&prepared.docs, &files, &prepared.tweaked) {
+            eidos_log::warn!(
+                "eidos: refusing to launch: could not persist INI capture receipt: {e}"
+            );
+            exit(1);
+        }
+    }
+    let plugin_timestamps =
+        prepare_plugin_timestamps(game_id, game, inst, &prof).unwrap_or_else(|e| {
+            eidos_log::warn!("eidos: refusing to launch: timestamp projection failed: {e}");
+            exit(1)
+        });
+    let save_bind = prepare_saves(game, &prof);
 
     // Soft advisory: an ENB (game root, outside the Data mount) and Community
     // Shaders (an enabled SKSE-plugin mod) both inject into the D3D11 pipeline.
@@ -378,12 +445,16 @@ pub(crate) fn run_through_view(
         env.push(("PROTON_USE_XALIA".to_string(), "0".to_string()));
     }
 
-    let root_layers = inst.root_layers();
+    let mut root_layers = inst.root_layers();
+    if runtime_root.is_some() {
+        std::fs::create_dir_all(inst.root_overwrite_dir()).unwrap_or_else(|e| {
+            eidos_log::warn!("eidos: cannot create root output directory: {e}");
+            exit(1)
+        });
+        root_layers.insert(0, inst.root_overwrite_dir());
+    }
     if !root_layers.is_empty() {
-        eidos_log::info!(
-            "eidos: {} mod(s) provide root-level files",
-            root_layers.len()
-        );
+        eidos_log::info!("eidos: {} root file layer(s)", root_layers.len());
     }
 
     // The mount point has to exist before anything can be mounted over it, and for
@@ -412,6 +483,7 @@ pub(crate) fn run_through_view(
     }
 
     let spec = LaunchSpec {
+        plugin_timestamps,
         layers: inst.load_order(),
         overwrite: inst.overwrite_dir(),
         mountpoint: game.data_path.clone(),
@@ -434,7 +506,11 @@ pub(crate) fn run_through_view(
         root_layers,
         root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
         // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
-        root_overwrite: Some(inst.root_overwrite_dir()),
+        root_overwrite: Some(
+            runtime_root
+                .clone()
+                .unwrap_or_else(|| inst.root_overwrite_dir()),
+        ),
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
@@ -466,7 +542,29 @@ pub(crate) fn run_through_view(
             .unwrap_or_else(|| inst.overwrite_snapshot())
     });
     let result = launch(spec);
-    let provenance_failed = tool_run.is_some_and(|run| match inst.finish_tool_run(run) {
+    let root_capture_failed = runtime_root.is_some()
+        && match prof
+            .merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
+            .and_then(|()| prof.recover_ini_session())
+        {
+            Ok(()) => false,
+            Err(e) => {
+                eidos_log::warn!("eidos: root capture failed: {e}; files remain in {} for retry before the next launch",prof.dir().join("runtime-root").display());
+                true
+            }
+        };
+    let timestamp_capture_failed = if root_capture_failed {
+        true
+    } else {
+        match recover_timestamp_order(game_id, game, inst, &prof) {
+            Ok(()) => false,
+            Err(e) => {
+                eidos_log::warn!("eidos: timestamp capture failed: {e}; the profile receipt is retained for retry");
+                true
+            }
+        }
+    };
+    let provenance_failed = root_capture_failed || tool_run.is_some_and(|run| match inst.finish_tool_run(run) {
         Ok(_) => false,
         Err(error) => {
             eidos_log::warn!("eidos: could not persist generated output receipts: {error}; output remains in Overwrite");
@@ -494,7 +592,7 @@ pub(crate) fn run_through_view(
     // The command has exited: capture any INI changes back into the profile.
     // (`prof`, not a fresh `inst.active()`: the captures belong to the profile
     // that was PLAYED, whatever the GUI switched to since.)
-    if let Some(prepared) = inis {
+    if let Some(prepared) = inis.filter(|p| !p.root_mode) {
         if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
                 eidos_log::info!(
@@ -567,7 +665,7 @@ pub(crate) fn run_through_view(
         }
     }
 
-    if provenance_failed {
+    if provenance_failed || timestamp_capture_failed {
         exit(1);
     }
     match result {

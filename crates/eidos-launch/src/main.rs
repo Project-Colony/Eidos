@@ -57,6 +57,7 @@ fn main() {
     });
 
     let spec = LaunchSpec {
+        plugin_timestamps: None,
         layers,
         overwrite,
         mountpoint,
