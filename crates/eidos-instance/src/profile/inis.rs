@@ -283,7 +283,7 @@ impl Profile {
                 // that DEFEAT the heuristic are deterministic wrecks (same-point
                 // exit crashes). Stash what the acceptance displaces, so being
                 // wrong costs a restore instead of the only intact copy.
-                let _ = copy_atomic(&dst, &self.dir().join(format!("{f}.pre-accept")));
+                copy_atomic(&dst, &self.dir().join(format!("{f}.pre-accept")))?;
                 eprintln!(
                     "eidos: accepting {f}'s stable compact rewrite into profile '{}'; the \
                      displaced copy is kept as {f}.pre-accept in the profile folder",

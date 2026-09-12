@@ -19,19 +19,20 @@ use crate::ModEntry;
 use super::*;
 
 /// Recursively copy a directory tree, skipping symlinks (matching MO2's `copyDir`
-/// NoSymLinks). Best-effort per entry.
+/// NoSymLinks). A partial copy must be reported to the caller.
 pub(crate) fn copy_dir_recursive(from: &Path, to: &Path) -> io::Result<()> {
     fs::create_dir_all(to)?;
-    for e in fs::read_dir(from)?.flatten() {
-        let Ok(meta) = e.metadata() else { continue };
+    for e in fs::read_dir(from)? {
+        let e = e?;
+        let meta = e.metadata()?;
         if meta.file_type().is_symlink() {
             continue;
         }
         let dst = to.join(e.file_name());
         if meta.is_dir() {
-            let _ = copy_dir_recursive(&e.path(), &dst);
+            copy_dir_recursive(&e.path(), &dst)?;
         } else {
-            let _ = fs::copy(e.path(), &dst);
+            fs::copy(e.path(), &dst)?;
         }
     }
     Ok(())
@@ -129,21 +130,7 @@ impl Profile {
     /// fully recursive; copying `saves/` means the new profile starts from this
     /// profile's saves rather than later adopting the stale prefix saves.
     pub fn create_from(&self, other: &Profile) -> io::Result<()> {
-        fs::create_dir_all(self.dir())?;
-        // Propagate per-file failures: silently skipping files would report a
-        // successful copy while producing a profile missing its modlist or INIs.
-        if let Ok(rd) = fs::read_dir(other.dir()) {
-            for e in rd.flatten() {
-                let from = e.path();
-                let to = self.dir().join(e.file_name());
-                if from.is_file() {
-                    fs::copy(&from, &to)?;
-                } else if from.is_dir() {
-                    copy_dir_recursive(&from, &to)?;
-                }
-            }
-        }
-        Ok(())
+        copy_dir_recursive(&other.dir(), &self.dir())
     }
 
     pub fn rename(&self, new_name: &str) -> io::Result<Profile> {
@@ -278,6 +265,7 @@ impl Profile {
                 }
             }
         }
+        let kept = out.len();
         // A folder nobody listed: a mod dropped in by hand. MO2 appends it at the
         // highest priority and leaves it DISABLED - it has no idea where in the
         // conflict order it belongs, and enabling it silently could overwrite half
@@ -299,7 +287,7 @@ impl Profile {
                     .to_string(),
             )
         } else {
-            ListTrust::judge(readable, listed, out.len())
+            ListTrust::judge(readable, listed, kept)
         };
         // `out` is built highest-priority-first (file order). MO2 DISPLAYS the list
         // the other way up - lowest priority at the top - so reverse for the return.
@@ -362,6 +350,40 @@ impl Profile {
         crate::write_atomic(&target, s.as_bytes())
     }
 
+    /// Register new content without changing a previously listed mod's priority or activation.
+    pub(crate) fn register_installed_mod(&self, name: &str) -> io::Result<()> {
+        if !crate::tools::is_mod_folder_name(name) || !self.mods_dir().join(name).is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid installed mod folder",
+            ));
+        }
+        let saved = match fs::read_to_string(self.modlist_source()) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(error),
+        };
+        let listed = saved
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix(['+', '-']))
+            .any(|listed| listed.eq_ignore_ascii_case(name));
+        if listed {
+            return Ok(());
+        }
+        let (mut mods, trust) = self.modlist_checked();
+        if let Some(reason) = trust.reason() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, reason));
+        }
+        mods.retain(|m| !m.name.eq_ignore_ascii_case(name));
+        mods.push(ModEntry {
+            name: name.to_string(),
+            enabled: true,
+            path: self.mods_dir().join(name),
+            unmanaged: false,
+        });
+        self.save_modlist(&mods)
+    }
+
     /// Why writing `modlist.txt` right now would destroy the curated order rather
     /// than record an edit, or `None` when it is safe.
     ///
@@ -378,36 +400,6 @@ impl Profile {
     /// protection (`if (m_ModStatus.empty()) return;`) cannot fire because the
     /// synthetic overwrite entry always makes the count non-zero.
     fn unsafe_to_persist(&self) -> Option<String> {
-        let listed = match fs::read_to_string(self.modlist_source()) {
-            Ok(text) => text
-                .lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty() && !l.starts_with('#'))
-                .count(),
-            // No list yet: nothing to lose, and this is how a fresh instance starts.
-            Err(_) => return None,
-        };
-        if listed == 0 {
-            return None;
-        }
-        match fs::read_dir(self.mods_dir()) {
-            Err(e) => Some(format!(
-                "the mods folder could not be read ({e}); refusing to overwrite a list of \
-                 {listed} mod(s). Is the drive it lives on mounted?"
-            )),
-            Ok(rd) => {
-                let any = rd
-                    .flatten()
-                    .any(|e| e.file_type().is_ok_and(|t| t.is_dir() || t.is_symlink()));
-                (!any).then(|| {
-                    format!(
-                        "the mods folder is empty while the saved list has {listed} mod(s); \
-                         refusing to overwrite it. If the mods really are gone, delete \
-                         {} to start over.",
-                        self.modlist_path().display()
-                    )
-                })
-            }
-        }
+        self.modlist_checked().1.reason().map(str::to_string)
     }
 }

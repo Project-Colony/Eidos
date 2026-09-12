@@ -36,7 +36,16 @@ impl Manifest {
     /// Parse a manifest file. Returns `None` if absent, unreadable, or missing the
     /// required `game_id`.
     pub fn read(path: &Path) -> Option<Manifest> {
-        let text = fs::read_to_string(path).ok()?;
+        Self::read_checked(path).ok().flatten()
+    }
+
+    /// Read without treating a damaged or unreadable manifest as a new instance.
+    pub fn read_checked(path: &Path) -> io::Result<Option<Manifest>> {
+        let text = match fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
         let mut game_id: Option<String> = None;
         let mut schema_version = SCHEMA_VERSION;
         let mut kind = InstanceKind::Global;
@@ -65,12 +74,17 @@ impl Manifest {
                 _ => {}
             }
         }
-        Some(Manifest {
+        Ok(Some(Manifest {
             schema_version,
-            game_id: game_id?,
+            game_id: game_id.filter(|id| !id.is_empty()).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "instance manifest is missing game_id",
+                )
+            })?,
             kind,
             selected_profile,
-        })
+        }))
     }
 
     pub fn write(&self, path: &Path) -> io::Result<()> {

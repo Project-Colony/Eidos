@@ -1073,6 +1073,9 @@ dependencies = [
 [[package]]
 name = "eidos-conflicts"
 version = "1.16.0"
+dependencies = [
+ "encoding_rs",
+]
 
 [[package]]
 name = "eidos-core"
@@ -1110,6 +1113,8 @@ dependencies = [
 name = "eidos-gamefeatures"
 version = "1.16.0"
 dependencies = [
+ "eidos-conflicts",
+ "eidos-core",
  "eidos-gamedef",
  "eidos-ini",
  "eidos-paths",
@@ -1161,6 +1166,7 @@ version = "1.16.0"
 name = "eidos-install"
 version = "1.16.0"
 dependencies = [
+ "eidos-core",
  "eidos-fomod",
  "eidos-gamedef",
  "eidos-instance",
@@ -1178,6 +1184,8 @@ dependencies = [
  "eidos-plugins",
  "encoding_rs",
  "libc",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

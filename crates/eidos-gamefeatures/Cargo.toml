@@ -7,6 +7,7 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+eidos-core = { path = "../eidos-core" }
 eidos-paths = { path = "../eidos-paths" }
 eidos-gamedef = { path = "../eidos-gamedef" }
 eidos-ini = { path = "../eidos-ini" }
@@ -24,3 +25,6 @@ flate2 = "1"
 # workspace via eidos-nexus and eidos-loot, so this is a line here and no new
 # build.
 ureq = "3"
+
+[dev-dependencies]
+eidos-conflicts = { path = "../eidos-conflicts" }

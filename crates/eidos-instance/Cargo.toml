@@ -23,3 +23,7 @@ libc = "0.2"
 # Game INIs are Windows ANSI (CP1252) as often as UTF-8; reading them as strict
 # UTF-8 turned one accented byte into "the file is empty" in three places.
 encoding_rs = "0.8"
+
+# Durable generated-output receipts; the workspace already uses this JSON stack.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
