@@ -95,7 +95,7 @@ exposes v2.5.2, while development repositories can include later work.
 | Area | Eidos status / useful next step | Primary reference |
 |---|---|---|
 | Bethesda archive contents | Conflict directory analysis works; member extraction and preview are separate future features. | [BSA extractor](https://github.com/ModOrganizer2/modorganizer-bsa_extractor) |
-| File preview | Common image/text previews exist; DDS/NIF preview is missing. | [Preview plugins](https://github.com/ModOrganizer2/modorganizer-preview_base) |
+| File preview | Common image/text previews exist; DDS preview is missing. NIF rendering is a separate proposed Eidos enhancement; native MO2 parity was not verified. | [DDS preview plugin](https://github.com/ModOrganizer2/modorganizer-preview_dds) |
 | Installer extensions | Built-in Simple/FOMOD/BAIN/manual flows exist; OMOD execution and custom installer hooks are missing. | [OMOD installer](https://github.com/ModOrganizer2/modorganizer-installer_omod) |
 | Retained reinstall backup | Manual backups and temporary rollback exist; the collision dialog has no retained-backup option. | [Installation manager](https://github.com/ModOrganizer2/modorganizer/blob/master/src/installationmanager.cpp) |
 | Older games / sorting | Morrowind/Oblivion timestamp plugin ordering is not implemented; Enderal SE LOOT mapping remains unsupported. | [Gamebryo support](https://github.com/ModOrganizer2/modorganizer-game_gamebryo) |
