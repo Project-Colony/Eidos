@@ -37,8 +37,27 @@ pub enum GameSource {
 }
 
 impl DetectedGame {
-    /// Stable source and install identity for an instance; duplicate copies stay distinct.
+    /// Stable source and install identity; external copies also retain their selected prefix.
+    /// Steam keys do not depend on whether its prefix has been created yet.
     pub fn selection_id(&self) -> String {
+        if let GameSource::External {
+            store,
+            app_id,
+            prefix,
+            ..
+        } = &self.source
+        {
+            return serde_json::json!([
+                format!("{}:{app_id}", store.name()),
+                self.install_path.to_string_lossy(),
+                prefix.as_ref().map(|p| p.to_string_lossy()),
+            ])
+            .to_string();
+        }
+        self.legacy_selection_id()
+    }
+
+    fn legacy_selection_id(&self) -> String {
         let store = match &self.source {
             GameSource::Steam => format!("steam:{}", self.def.steam_app_id),
             GameSource::External { store, app_id, .. } => format!("{}:{app_id}", store.name()),
@@ -109,15 +128,17 @@ impl DetectedGame {
     }
 }
 
-/// Select a saved installation exactly. Legacy instances only select unambiguous copies.
+/// Select a saved installation exactly. Legacy source/path keys and instances
+/// without a saved key only select an unambiguous copy.
 pub fn select_installation<'a>(
     games: &'a [DetectedGame],
     game_id: &str,
     saved: Option<&str>,
 ) -> Option<&'a DetectedGame> {
-    let mut matches = games
-        .iter()
-        .filter(|g| g.def.id == game_id && saved.is_none_or(|key| g.selection_id() == key));
+    let mut matches = games.iter().filter(|g| {
+        g.def.id == game_id
+            && saved.is_none_or(|key| g.selection_id() == key || g.legacy_selection_id() == key)
+    });
     let selected = matches.next()?;
     matches.next().is_none().then_some(selected)
 }
@@ -155,7 +176,7 @@ fn prefix(root: &Path, id: &str, native: bool) -> Option<PathBuf> {
         "wine" => configured.to_path_buf(),
         _ => return None,
     };
-    path.is_dir().then(|| path.canonicalize().ok()).flatten()
+    crate::canonical_directory(&path)
 }
 
 fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroic: Option<&Path>) {
@@ -176,19 +197,17 @@ fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroi
             .collect(),
     };
     for (id, entry) in entries {
-        if entry
-            .get("is_dlc")
-            .or_else(|| entry.get("isDlc"))
-            .and_then(Value::as_bool)
-            == Some(true)
-        {
+        if ["is_dlc", "isDlc"].iter().any(|key| {
+            entry
+                .get(key)
+                .is_some_and(|value| value.as_bool() != Some(false))
+        }) {
             continue;
         }
         if store == Store::Epic
             && entry
                 .get("app_name")
-                .and_then(Value::as_str)
-                .is_some_and(|name| name != id)
+                .is_some_and(|name| name.as_str() != Some(id.as_str()))
         {
             continue;
         }
@@ -201,11 +220,7 @@ fn append_manifest(out: &mut Vec<DetectedGame>, file: &Path, store: Store, heroi
         let Some(raw) = entry.get("install_path").and_then(Value::as_str) else {
             continue;
         };
-        let path = Path::new(raw);
-        if !path.is_absolute() || !path.is_dir() {
-            continue;
-        }
-        let Ok(install_path) = path.canonicalize() else {
+        let Some(install_path) = crate::canonical_directory(Path::new(raw)) else {
             continue;
         };
         let game = DetectedGame {
