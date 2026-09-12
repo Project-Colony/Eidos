@@ -199,13 +199,10 @@ fn overwrite_is_the_highest_priority_plugin_source() {
         unmanaged: false,
     }];
 
-    let sources = plugin_sources(&game_data, &enabled, &overwrite);
-    // Overwrite must be the final, highest-priority source.
-    assert_eq!(sources.last().unwrap().0, "overwrite");
-    assert_eq!(sources.last().unwrap().1, overwrite);
-
-    let spec = eidos_plugins::GameSpec::for_id("skyrimse").unwrap();
-    let list = eidos_plugins::PluginList::discover(&sources, &spec);
+    let inst = eidos_instance::Instance::portable(t.0.clone());
+    inst.create().unwrap();
+    inst.save_modlist(&enabled).unwrap();
+    let list = inst.plugin_list(&game_data, "skyrimse", None).unwrap();
 
     // The Overwrite-only plugin is discovered (would be dropped without C1).
     let bashed = list
@@ -226,6 +223,16 @@ fn overwrite_is_the_highest_priority_plugin_source() {
         patch.path.starts_with(&overwrite),
         "shadowed plugin should resolve to the Overwrite copy, got {}",
         patch.path.display()
+    );
+    fs::remove_file(overwrite.join("Patch.esp")).unwrap();
+    t.touch("overwrite/.eidoswh.patch.esp");
+    let list = inst.plugin_list(&game_data, "skyrimse", None).unwrap();
+    assert!(
+        !list
+            .plugins
+            .iter()
+            .any(|p| p.name.eq_ignore_ascii_case("Patch.esp")),
+        "sort and launch must both exclude the lower plugin hidden by Overwrite"
     );
 }
 

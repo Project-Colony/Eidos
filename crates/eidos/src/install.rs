@@ -2,7 +2,7 @@
 
 use std::process::exit;
 
-use eidos_instance::{InstanceKind, ModEntry};
+use eidos_instance::InstanceKind;
 
 use crate::*;
 
@@ -20,8 +20,18 @@ pub(crate) fn cmd_install(args: &[String]) {
         exit(1);
     };
     let inst = target.inst;
-    inst.create().ok();
-    let _ = inst.ensure_manifest(&target.game_id, InstanceKind::Global);
+    let _lock = inst.try_lock("eidos install").unwrap_or_else(|error| {
+        eidos_log::warn!("Cannot install now: {error}");
+        exit(1);
+    });
+    if let Err(error) = inst.create() {
+        eidos_log::warn!("Cannot prepare this instance: {error}");
+        exit(1);
+    }
+    if let Err(error) = inst.ensure_manifest(&target.game_id, InstanceKind::Global) {
+        eidos_log::warn!("Cannot prepare this instance: {error}");
+        exit(1);
+    }
 
     // Optional overwrite policy; the positional name is the first non-flag arg.
     let policy = if args.iter().any(|a| a == "--replace") {
@@ -37,21 +47,16 @@ pub(crate) fn cmd_install(args: &[String]) {
         .find(|a| !a.starts_with("--"))
         .cloned()
         .unwrap_or_else(|| eidos_install::mod_name_for(std::path::Path::new(archive)));
-    // FOMOD condition context: plugins in enabled mods read Active, plugins in
-    // disabled mods read Inactive, so a scripted installer's fileDependency /
-    // gameDependency options evaluate correctly (MO2 distinguishes the two).
-    let ml = inst.modlist();
-    let enabled_roots: Vec<std::path::PathBuf> = ml
-        .iter()
-        .filter(|m| m.is_active())
-        .map(|m| m.path.clone())
-        .collect();
-    let disabled_roots: Vec<std::path::PathBuf> = ml
-        .iter()
-        .filter(|m| !m.is_active() && !m.is_separator())
-        .map(|m| m.path.clone())
-        .collect();
-    let ctx = eidos_install::fomod_context(&game.data_path, &enabled_roots, &disabled_roots);
+    let fallback = game.compatdata.as_ref().and_then(|cd| {
+        eidos_plugins::GameSpec::for_id(&target.game_id)
+            .map(|spec| eidos_plugins::plugins_txt_dir(&cd.join("pfx"), &spec))
+    });
+    let ctx = eidos_install::fomod_context_for_instance(
+        &inst,
+        &game.data_path,
+        &target.game_id,
+        fallback.as_deref(),
+    );
     match eidos_install::install_archive_with_policy(
         std::path::Path::new(archive),
         &inst.mods_dir(),
@@ -61,17 +66,10 @@ pub(crate) fn cmd_install(args: &[String]) {
         &ctx,
     ) {
         Ok(r) => {
-            // Give the new mod the highest priority so it wins conflicts by default,
-            // like MO2. modlist() is lowest-priority-first, so highest = the END.
-            let mut ml = inst.modlist();
-            ml.retain(|m| m.name != r.name);
-            ml.push(ModEntry {
-                name: r.name.clone(),
-                enabled: true,
-                path: r.dest.clone(),
-                unmanaged: false,
-            });
-            let _ = inst.save_modlist(&ml);
+            if let Err(error) = inst.register_installed_mod(&r.name) {
+                eidos_log::warn!("Installed '{}', but could not register it: {error}", r.name);
+                exit(1);
+            }
 
             // If this archive came from a Nexus download, flag its .meta installed
             // (MO2's markInstalled); a no-op when there is no sidecar.
@@ -94,7 +92,7 @@ pub(crate) fn cmd_install(args: &[String]) {
                     eidos_log::info!("    - {m}");
                 }
             }
-            println!("  enabled at the top of the load order. `eidos play {id}` to use it.");
+            println!("  Registered in the active profile; an existing mod keeps its priority and enabled state. `eidos play {id}` to use it.");
         }
         Err(e) => {
             eidos_log::warn!("install failed: {e}");

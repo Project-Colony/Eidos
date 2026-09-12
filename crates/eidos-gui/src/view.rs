@@ -339,11 +339,13 @@ pub(crate) fn set_hidden(path: &Path, hide: bool) -> std::io::Result<PathBuf> {
     };
     // Never let a hide silently swallow an existing file: unhiding onto a name the
     // mod already carries would destroy the live copy.
-    if target.symlink_metadata().is_ok() {
-        return Err(Error::new(
-            ErrorKind::AlreadyExists,
-            format!("{} already exists", target.display()),
-        ));
+    let parent = target.parent().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing parent"))?;
+    let target_name = target.file_name().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing file name"))?;
+    for entry in fs::read_dir(parent)? {
+        let entry = entry?;
+        if entry.file_name().to_string_lossy().eq_ignore_ascii_case(&target_name.to_string_lossy()) {
+            return Err(Error::new(ErrorKind::AlreadyExists, format!("{} already exists", entry.path().display())));
+        }
     }
     fs::rename(path, &target)?;
     Ok(target)
@@ -355,32 +357,44 @@ pub(crate) fn set_hidden(path: &Path, hide: bool) -> std::io::Result<PathBuf> {
 /// Deepest first, so renaming a hidden directory never invalidates the paths of
 /// the hidden files collected inside it.
 pub(crate) fn restore_hidden_files(root: &Path) -> std::io::Result<usize> {
-    fn collect(dir: &Path, depth: usize, out: &mut Vec<(usize, PathBuf)>) {
+    fn collect(dir: &Path, depth: usize, out: &mut Vec<(usize, PathBuf)>) -> std::io::Result<()> {
         if depth > 32 {
-            return;
+            return Err(std::io::Error::other(
+                "Hidden-file scan exceeds the supported directory depth",
+            ));
         }
-        let Ok(rd) = fs::read_dir(dir) else { return };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                collect(&p, depth + 1, out);
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            // Links are entries to rename, never directories to traverse.
+            if entry.file_type()?.is_dir() {
+                collect(&path, depth + 1, out)?;
             }
-            if p.file_name()
+            if path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .is_some_and(eidos_core::is_hidden_name)
             {
-                out.push((depth, p));
+                out.push((depth, path));
             }
         }
+        Ok(())
     }
     let mut found = Vec::new();
-    collect(root, 0, &mut found);
+    collect(root, 0, &mut found)?;
     found.sort_by_key(|f| std::cmp::Reverse(f.0));
     let mut done = 0;
-    for (_, p) in found {
-        if set_hidden(&p, false).is_ok() {
-            done += 1;
-        }
+    for (_, path) in found {
+        set_hidden(&path, false).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!(
+                    "Restored {done} entries; could not restore {}: {e}",
+                    path.display()
+                ),
+            )
+        })?;
+        done += 1;
     }
     Ok(done)
 }
@@ -1359,7 +1373,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
         let hidden_icon = if m.enabled {
             app.conflicts
                 .as_ref()
-                .and_then(|c| c.mods.get(&((i + 1) as u32)))
+                .and_then(|c| c.mod_conflicts((i + 1) as u32))
                 .filter(|mc| mc.has_hidden)
                 .map(|_| IC_CONFLICT_HIDDEN)
         } else {
@@ -2053,7 +2067,7 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let has_hidden = app
         .conflicts
         .as_ref()
-        .and_then(|c| c.mods.get(&((i + 1) as u32)))
+        .and_then(|c| c.mod_conflicts((i + 1) as u32))
         .is_some_and(|mc| mc.has_hidden);
     if has_hidden {
         col = col.push(menu_item(

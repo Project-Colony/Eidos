@@ -96,7 +96,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     // the nxm:// handler follow the user here.
     remember_use(&inst, &game_id);
     let mut command = command;
-    swap_script_extender(&game_id, &mut command);
+    swap_script_extender(&game_id, &game.install_path, &inst, &mut command);
     run_through_view(
         &game_id,
         &game,
@@ -184,32 +184,29 @@ pub(crate) fn warn_if_flatpak_proton(run: &eidos_games::ProtonRun) {
     }
 }
 
-/// Swap the vanilla launcher for the game's script-extender loader inside a Steam
-/// `%command%`, when the game has one AND the loader actually exists on disk
-/// (a swap to a missing skse64_loader.exe would make Proton exit with a cryptic
-/// error). Mirrors the GUI's swap, so `eidos play <id> -- %command%` behaves the
-/// same whether or not the GUI is in the middle.
-pub(crate) fn swap_script_extender(id: &str, command: &mut [String]) {
+/// Swap a vanilla launcher argument for the loader visible in the root union.
+pub(crate) fn swap_script_extender(
+    id: &str,
+    install: &Path,
+    inst: &Instance,
+    command: &mut [String],
+) {
     let Some(se) = eidos_games::GameDef::for_id(id).and_then(|g| g.script_extender) else {
         return;
     };
-    for a in command.iter_mut() {
-        if a.contains(se.launcher) {
-            let candidate = a.replace(se.launcher, se.loader);
-            if std::path::Path::new(&candidate).is_file() {
-                eidos_log::info!(
-                    "eidos play: running {} (script extender) instead of {}",
-                    se.loader,
-                    se.launcher
-                );
-                *a = candidate;
-            } else {
-                eidos_log::info!(
-                    "eidos play: {} is not installed - launching the vanilla {} \
-                     (script-extender mods will not load)",
-                    se.loader,
-                    se.launcher
-                );
+    let loader = eidos_instance::root_executable(
+        install,
+        &inst.root_layers(),
+        &inst.root_overwrite_dir(),
+        se.loader,
+    );
+    for argument in command.iter_mut() {
+        if Path::new(argument)
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case(se.launcher))
+        {
+            if let Some(loader) = &loader {
+                *argument = loader.to_string_lossy().into_owned();
             }
         }
     }
@@ -260,6 +257,9 @@ pub(crate) struct ToolOpts<'a> {
     /// A `mods/` folder to capture this run's Overwrite output into (MO2's
     /// "Create files in mod instead of overwrite").
     pub output_mod: Option<&'a str>,
+    /// Only tools produce generator receipts; ordinary game launches do not.
+    pub tool_name: Option<&'a str>,
+    pub executable: Option<&'a Path>,
 }
 
 pub(crate) fn run_through_view(
@@ -438,8 +438,41 @@ pub(crate) fn run_through_view(
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
-    let ow_before = opts.output_mod.map(|_| inst.overwrite_snapshot());
+    let tool_run = opts
+        .tool_name
+        .map(|name| {
+            let plugins: Vec<_> = inst
+                .plugin_list(&game.data_path, game_id, None)
+                .into_iter()
+                .flat_map(|list| {
+                    list.plugins
+                        .into_iter()
+                        .map(|plugin| (plugin.name, plugin.enabled))
+                })
+                .collect();
+            inst.begin_tool_run(name, opts.executable, &spec.command, &plugins)
+        })
+        .transpose()
+        .unwrap_or_else(|error| {
+            eidos_log::warn!(
+                "eidos: refusing to start tool: could not persist its input receipt: {error}"
+            );
+            exit(1);
+        });
+    let ow_before = opts.output_mod.map(|_| {
+        tool_run
+            .as_ref()
+            .map(|run| run.before.clone())
+            .unwrap_or_else(|| inst.overwrite_snapshot())
+    });
     let result = launch(spec);
+    let provenance_failed = tool_run.is_some_and(|run| match inst.finish_tool_run(run) {
+        Ok(_) => false,
+        Err(error) => {
+            eidos_log::warn!("eidos: could not persist generated output receipts: {error}; output remains in Overwrite");
+            true
+        }
+    });
 
     // The tool asked for its output in a mod. Done here, before anything else
     // touches the Overwrite, and while the instance lock is still held so the
@@ -448,7 +481,7 @@ pub(crate) fn run_through_view(
     // Run regardless of the exit code: a generator can write its output and then
     // fail on the way out, and abandoning the files in the Overwrite would be a
     // worse answer than putting them where they were asked to go.
-    if let (Some(name), Some(before)) = (opts.output_mod, &ow_before) {
+    if let (false, Some(name), Some(before)) = (provenance_failed, opts.output_mod, &ow_before) {
         match inst.capture_overwrite_into_mod(name, before) {
             Ok(0) => {
                 eidos_log::info!("eidos: '{name}' asked for the output but the run wrote nothing")
@@ -534,6 +567,9 @@ pub(crate) fn run_through_view(
         }
     }
 
+    if provenance_failed {
+        exit(1);
+    }
     match result {
         // Propagate the child's real status. On Unix `code()` is `None` when the
         // child was killed by a signal, so fall back to the shell convention
@@ -693,4 +729,46 @@ pub(crate) fn forced_dll_overrides(
     let value =
         eidos_launch::wine_dll_overrides(&stems, std::env::var("WINEDLLOVERRIDES").ok().as_deref());
     Some(("WINEDLLOVERRIDES".to_string(), value))
+}
+
+#[cfg(test)]
+mod extender_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_swap_uses_only_active_root_mods_and_root_overwrite() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-cli-root-loader-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let game = root.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let mut entry = instance.create_empty_mod("SKSE").unwrap();
+        std::fs::create_dir(entry.path.join("Root")).unwrap();
+        std::fs::write(entry.path.join("Root/skse64_loader.exe"), b"loader").unwrap();
+        instance.save_modlist(&[entry.clone()]).unwrap();
+        let launcher = game
+            .join("SkyrimSELauncher.exe")
+            .to_string_lossy()
+            .into_owned();
+        let mut command = vec![launcher.clone(), "--config=SkyrimSELauncher.exe".into()];
+        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        assert_eq!(Path::new(&command[0]), game.join("skse64_loader.exe"));
+        assert_eq!(command[1], "--config=SkyrimSELauncher.exe");
+        entry.enabled = false;
+        instance.save_modlist(&[entry]).unwrap();
+        command[0] = launcher.clone();
+        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        assert_eq!(command[0], launcher);
+        std::fs::create_dir_all(instance.root_overwrite_dir()).unwrap();
+        std::fs::write(
+            instance.root_overwrite_dir().join("skse64_loader.exe"),
+            b"loader",
+        )
+        .unwrap();
+        swap_script_extender("skyrimse", &game, &instance, &mut command);
+        assert_eq!(Path::new(&command[0]), game.join("skse64_loader.exe"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

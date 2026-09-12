@@ -231,7 +231,10 @@ fn collection_on_worker(
     let dir =
         eidos_collections::state::revision_dir(&inst.root, &rev.slug, rev.revision_number);
     let manifest = eidos_collections::driver::fetch_manifest(&nexus, &rev, &dir)?;
-    let read = eidos_collections::read(&manifest)?;
+    let mut read = eidos_collections::read(&manifest)?;
+    if read.collection.info.domain_name.trim().is_empty() {
+        read.collection.info.domain_name = rev.game_domain.clone();
+    }
     let c = &read.collection;
 
     let state_path =
@@ -248,6 +251,8 @@ fn collection_on_worker(
         },
     };
 
+    state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain)?;
+
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
     let mut hooks = eidos_collections::driver::RealHooks {
@@ -257,9 +262,8 @@ fn collection_on_worker(
         game_id: game_id.to_string(),
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
-        known_members: state.members.keys().cloned().collect(),
+        owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
         renamed: Vec::new(),
-        installed_now: Vec::new(),
     };
     // The bar counts members reached, which is the only honest measure here: a
     // collection that is half skipped still moves, and 7-Zip's own percentage
@@ -271,9 +275,8 @@ fn collection_on_worker(
         total,
         percent,
     };
-    let mut save = |s: &eidos_collections::state::InstallState| {
-        let _ = s.save(&state_path);
-    };
+    let mut save =
+        |s: &eidos_collections::state::InstallState| s.save(&state_path).map_err(|e| e.to_string());
     let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
     for (member, folder) in std::mem::take(&mut hooks.renamed) {
@@ -284,10 +287,13 @@ fn collection_on_worker(
             ),
         });
     }
+    if report.aborted {
+        return Err(report.render());
+    }
     eidos_collections::driver::apply_ordering(inst, c, &state, &mut report);
     eidos_collections::driver::apply_plugin_states(inst, game, c, &mut report);
     eidos_collections::driver::apply_plugin_rules(inst, game, c, &mut report);
-    eidos_collections::driver::apply_ini_tweaks(inst, &dir, c, &mut report);
+    eidos_collections::driver::apply_ini_tweaks(inst, &dir, c, &mut state, &mut save, &mut report);
     percent.store(100, Ordering::SeqCst);
 
     let text = report.render();
@@ -312,12 +318,27 @@ impl eidos_collections::install::Hooks for CountingHooks<'_> {
     fn obtain(&mut self, m: &eidos_collections::manifest::Mod) -> eidos_collections::install::Obtained {
         self.inner.obtain(m)
     }
+    fn reserve(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+        previous: Option<&str>,
+    ) -> Result<String, String> {
+        self.inner.reserve(m, previous)
+    }
+    fn verify_installed(
+        &mut self,
+        m: &eidos_collections::manifest::Mod,
+        folder: &str,
+    ) -> Result<bool, String> {
+        self.inner.verify_installed(m, folder)
+    }
     fn install(
         &mut self,
         m: &eidos_collections::manifest::Mod,
         a: &std::path::Path,
+        folder: &str,
     ) -> eidos_collections::install::Installed {
-        self.inner.install(m, a)
+        self.inner.install(m, a, folder)
     }
     fn progress(&mut self, done: usize, total: usize, member: &str) {
         use std::sync::atomic::Ordering;
@@ -468,144 +489,123 @@ fn finish_open(
     gid: String,
 ) {
     match result {
-
-                Ok(eidos_install::Opened::Fomod(session)) => {
-                    let enabled_roots: Vec<std::path::PathBuf> = app
-                        .mods
-                        .iter()
-                        .filter(|m| m.is_active())
-                        .map(|m| m.path.clone())
-                        .collect();
-                    let disabled_roots: Vec<std::path::PathBuf> = app
-                        .mods
-                        .iter()
-                        .filter(|m| !m.is_active() && !m.is_separator())
-                        .map(|m| m.path.clone())
-                        .collect();
-                    let ctx = match selected_game(app) {
-                        Some(g) => eidos_install::fomod_context(
-                            &g.data_path,
-                            &enabled_roots,
-                            &disabled_roots,
-                        ),
-                        None => eidos_fomod::Context::default(),
-                    };
-                    let session = *session;
-                    // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
-                    // showing the wizard - tell the user what is missing and stop.
-                    if let Some(req) = session.unmet_dependencies(&ctx) {
-                        app.status = Some(format!("Cannot install: this mod requires {req}."));
-                    } else {
-                        let selection = eidos_fomod::default_selection(&session.config, &ctx);
-                        // Open on the first step that is actually shown. Next/Back
-                        // already skip invisible steps and build_plan ignores them,
-                        // but nothing seeked at open: a FOMOD whose first step is
-                        // conditional rendered that page fully interactive, and
-                        // every choice made on it was thrown away at install time.
-                        let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
-                            .iter()
-                            .position(|v| *v)
-                            .unwrap_or(0);
-                        app.fomod = Some(FomodWizard {
-                            session,
-                            step: first,
-                            selection,
-                            game_id: gid,
-                            archive: path,
-                            ctx,
-                            hover: None,
-                        });
-                        app.status =
-                            Some("FOMOD installer: choose your options, then Install.".to_string());
-                    }
-                }
-                Ok(eidos_install::Opened::Simple(tree)) => {
-                    let ctx = eidos_fomod::Context::default();
-                    match eidos_install::install_extracted(
-                        &tree,
-                        &path,
-                        &mods_dir,
-                        &name,
-                        &gid,
-                        eidos_install::OverwritePolicy::Fail,
-                        &ctx,
-                    ) {
-                        Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
-                        Err(eidos_install::InstallError::Exists(_)) => {
-                            // MO2's QueryOverwriteDialog: let the user Merge/Replace/
-                            // Rename. The extracted tree rides along so resolving it
-                            // needs no re-extract.
-                            let rename_to = suggest_free_name(&mods_dir, &name);
-                            app.collision = Some(CollisionPrompt {
-                                archive: path,
-                                name: name.clone(),
-                                game_id: gid,
-                                rename_to,
-                                fomod: false,
-                                tree: Some(tree),
-                                pick: None,
-                            });
-                            app.status =
-                                Some(format!("'{name}' already exists - choose how to install."));
-                        }
-                        Err(e) => app.status = Some(format!("Install failed: {e}")),
-                    }
-                }
-                // Wrye Bash complex package: let the user tick sub-packages. MO2
-                // pre-ticks the `00`-prefixed ones plus whatever the last install
-                // of this mod used, which its meta.ini remembers.
-                Ok(eidos_install::Opened::Bain {
-                    tree,
-                    subpackages,
-                    invalid,
-                }) => {
-                    let previous = app
-                        .created
-                        .as_ref()
-                        .map(|i| i.mod_meta(&name).bain_options().to_vec())
-                        .unwrap_or_default();
-                    let picked = eidos_install::bain_default_selection(&subpackages, &previous);
-                    app.status = Some(if invalid > 0 {
-                        format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
-                    } else {
-                        format!("BAIN installer: choose the sub-packages to install for '{name}'.")
-                    });
-                    let archive_tree = parsed_tree(&tree);
-                    app.picker = Some(InstallPicker {
-                        rows: archive_tree.flatten(),
-                        archive_tree,
+        Ok(eidos_install::Opened::Fomod(session)) => {
+            let ctx = current_fomod_context(app);
+            let session = *session;
+            // MO2 refuses a FOMOD whose <moduleDependencies> are unmet before
+            // showing the wizard - tell the user what is missing and stop.
+            if let Some(req) = session.unmet_dependencies(&ctx) {
+                app.status = Some(format!("Cannot install: this mod requires {req}."));
+            } else {
+                let selection = eidos_fomod::default_selection(&session.config, &ctx);
+                // Open on the first step that is actually shown. Next/Back
+                // already skip invisible steps and build_plan ignores them,
+                // but nothing seeked at open: a FOMOD whose first step is
+                // conditional rendered that page fully interactive, and
+                // every choice made on it was thrown away at install time.
+                let first = eidos_fomod::visible_steps(&session.config, &selection, &ctx)
+                    .iter()
+                    .position(|v| *v)
+                    .unwrap_or(0);
+                app.fomod = Some(FomodWizard {
+                    session,
+                    step: first,
+                    selection,
+                    game_id: gid,
+                    archive: path,
+                    ctx,
+                    hover: None,
+                });
+                app.status =
+                    Some("FOMOD installer: choose your options, then Install.".to_string());
+            }
+        }
+        Ok(eidos_install::Opened::Simple(tree)) => {
+            let ctx = eidos_fomod::Context::default();
+            match eidos_install::install_extracted(
+                &tree,
+                &path,
+                &mods_dir,
+                &name,
+                &gid,
+                eidos_install::OverwritePolicy::Fail,
+                &ctx,
+            ) {
+                Ok(r) => after_install(app, &r.name, r.dest, r.fomod, Some(&path)),
+                Err(eidos_install::InstallError::Exists(_)) => {
+                    // MO2's QueryOverwriteDialog: let the user Merge/Replace/
+                    // Rename. The extracted tree rides along so resolving it
+                    // needs no re-extract.
+                    let rename_to = suggest_free_name(&mods_dir, &name);
+                    app.collision = Some(CollisionPrompt {
                         archive: path,
-                        name,
+                        name: name.clone(),
                         game_id: gid,
-                        tree,
-                        // `invalid` folders are MO2's cue to ASK rather than assume.
-                        mode: PickerMode::Bain {
-                            subpackages,
-                            picked,
-                            asking: invalid > 0,
-                        },
+                        rename_to,
+                        fomod: false,
+                        tree: Some(tree),
+                        pick: None,
                     });
-                }
-                // No heuristic recognised the layout. Rather than refuse the
-                // archive, show its tree and let the user point at the data root.
-                Ok(eidos_install::Opened::Manual(tree)) => {
-                    app.status = Some(format!(
-                        "'{name}': pick the folder that holds the game data."
-                    ));
-                    let archive_tree = parsed_tree(&tree);
-                    app.picker = Some(InstallPicker {
-                        rows: archive_tree.flatten(),
-                        archive_tree,
-                        archive: path,
-                        name,
-                        game_id: gid,
-                        tree,
-                        mode: PickerMode::Manual {
-                            root: String::new(),
-                        },
-                    });
+                    app.status = Some(format!("'{name}' already exists - choose how to install."));
                 }
                 Err(e) => app.status = Some(format!("Install failed: {e}")),
+            }
+        }
+        // Wrye Bash complex package: let the user tick sub-packages. MO2
+        // pre-ticks the `00`-prefixed ones plus whatever the last install
+        // of this mod used, which its meta.ini remembers.
+        Ok(eidos_install::Opened::Bain {
+            tree,
+            subpackages,
+            invalid,
+        }) => {
+            let previous = app
+                .created
+                .as_ref()
+                .map(|i| i.mod_meta(&name).bain_options().to_vec())
+                .unwrap_or_default();
+            let picked = eidos_install::bain_default_selection(&subpackages, &previous);
+            app.status = Some(if invalid > 0 {
+                format!("'{name}' may be a BAIN installer - {invalid} folder(s) do not look like sub-packages.")
+            } else {
+                format!("BAIN installer: choose the sub-packages to install for '{name}'.")
+            });
+            let archive_tree = parsed_tree(&tree);
+            app.picker = Some(InstallPicker {
+                rows: archive_tree.flatten(),
+                archive_tree,
+                archive: path,
+                name,
+                game_id: gid,
+                tree,
+                // `invalid` folders are MO2's cue to ASK rather than assume.
+                mode: PickerMode::Bain {
+                    subpackages,
+                    picked,
+                    asking: invalid > 0,
+                },
+            });
+        }
+        // No heuristic recognised the layout. Rather than refuse the
+        // archive, show its tree and let the user point at the data root.
+        Ok(eidos_install::Opened::Manual(tree)) => {
+            app.status = Some(format!(
+                "'{name}': pick the folder that holds the game data."
+            ));
+            let archive_tree = parsed_tree(&tree);
+            app.picker = Some(InstallPicker {
+                rows: archive_tree.flatten(),
+                archive_tree,
+                archive: path,
+                name,
+                game_id: gid,
+                tree,
+                mode: PickerMode::Manual {
+                    root: String::new(),
+                },
+            });
+        }
+        Err(e) => app.status = Some(format!("Install failed: {e}")),
     }
 }
 
@@ -614,6 +614,7 @@ pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // popped the last item must not re-arm itself off its own empty queue.
     let draining = !app.dropped.is_empty();
     let task = update_inner(app, message);
+    schedule_archive_conflicts(app);
     refresh_diagnostics(app);
     // A new status message fades in. Detected by comparison HERE rather than by
     // starting the phase at each assignment: `app.status` is written from about
@@ -872,7 +873,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     match inst.create() {
                         Ok(()) => {
                             if let Some(id) = &game_id {
-                                let _ = inst.ensure_manifest(id, kind);
+                                if let Err(e) = inst.ensure_manifest(id, kind) {
+                                    app.error =
+                                        Some(format!("Could not save the instance identity: {e}"));
+                                    return Task::none();
+                                }
                                 // Into the registry BEFORE opening: a portable
                                 // root that is never recorded is orphaned at
                                 // the next start - the original portable bug.
@@ -1401,7 +1406,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 let inst_arg = instance_arg(app).unwrap_or_else(|| id.to_string());
                 // `game`/`inst` are no longer used below; their borrows end here so
                 // `start_run` can take `&mut app`.
-                let (cmd, se_warning) = play_command(id, &inst_arg, &app.launch_command);
+                let (cmd, se_warning) =
+                    play_command(id, &inst_arg, &game.install_path, inst, &app.launch_command);
                 start_run(app, game_name, cmd);
                 // Prepend advisories to whatever status start_run set.
                 for note in [se_warning, both_active.then(|| {
@@ -1463,7 +1469,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if let Some(map) = app.conflicts.as_ref() {
                 for &t in &targets {
                     let origin = (t + 1) as u32;
-                    if let Some(mc) = map.mods.get(&origin) {
+                    if let Some(mc) = map.mod_conflicts(origin) {
                         let set = if first {
                             &mc.overwrites
                         } else {
@@ -2201,15 +2207,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 // mod in meta.ini and cached for every row; only the picker was
                 // withheld. Unmanaged rows stay out: Eidos never writes into the
                 // game's own Data.
-                (Some(m), Some(inst)) if !m.is_unmanaged() => {
-                    let mut meta = inst.mod_meta(&m.name);
-                    meta.set_color(rgb);
-                    Some((
-                        m.name.clone(),
-                        m.display_name().to_string(),
-                        meta.write(&inst.meta_path(&m.name)),
-                    ))
-                }
+                (Some(m), Some(inst)) if !m.is_unmanaged() => Some((
+                    m.name.clone(),
+                    m.display_name().to_string(),
+                    edit_mod_meta(inst, &m.name, |meta| meta.set_color(rgb)),
+                )),
                 // Refused, and said out loud: a menu entry that does nothing at
                 // all reads as a bug, not as a rule.
                 (Some(m), _) if m.is_unmanaged() => {
@@ -2398,6 +2400,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .collect();
             // What this answer will be checked against when it comes back.
             let fingerprint = SortFingerprint {
+                instance: app.created.as_ref().map(|i| i.root.clone()),
+                epoch: app.archive_epoch.get(),
                 game: id.clone(),
                 profile: app
                     .created
@@ -2431,15 +2435,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // for, pointing at the real file, and nothing else.
                     let bridge_dir = cache.join("case-bridge");
                     let mut mod_dirs = mod_dirs;
-                    match eidos_loot::build_case_bridge(&ml, &mod_dirs, &install, &bridge_dir) {
+                    match eidos_loot::add_case_bridge(&ml, &mut mod_dirs, &install, &bridge_dir) {
                         Ok(bridged) if !bridged.is_empty() => {
                             eprintln!(
                                 "eidos: LOOT case bridge: {} path(s) spelled differently on disk ({})",
                                 bridged.len(),
                                 bridged.join(", ")
                             );
-                            // LAST, so a real file always answers before a link.
-                            mod_dirs.push(eidos_loot::case_bridge_data_dir(&bridge_dir));
                         }
                         Ok(_) => {}
                         // Never fatal: a sort with the old blind spot beats no sort.
@@ -2481,9 +2483,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
-            // A Refresh while LOOT ran drops the cached list. Rebuild it BEFORE
-            // fingerprinting, or a harmless refresh would look like a changed
-            // list and throw away a sort that is still perfectly valid.
+            // Rebuild a dropped cache before comparing the input snapshot.
+            // A refresh invalidates the result too: the same names can now
+            // refer to different files, flags or active states.
             if app.plugins.is_none() {
                 app.plugins = compute_plugins(app);
             }
@@ -2493,6 +2495,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // or disabled, a mod installed - it silently rearranges plugins
             // nobody asked about, and everything downstream reports a clean sort.
             let now = SortFingerprint {
+                instance: app.created.as_ref().map(|i| i.root.clone()),
+                epoch: app.archive_epoch.get(),
                 game: selected_game(app)
                     .map(|g| g.def.id.to_string())
                     .unwrap_or_default(),
@@ -2627,8 +2631,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // outlive the dialog; the dialog keeps the rest.
                     app.loot_meta = Some(std::mem::take(&mut report.plugin_meta));
                     app.loot_report = Some(report);
+                    app.diag_dirty = true;
                 }
                 Err(e) => {
+                    app.loot_meta = None;
+                    app.diag_dirty = true;
                     let base = app.status.take().unwrap_or_default();
                     app.status = Some(format!("{base} (LOOT report unavailable: {e})"));
                 }
@@ -2738,6 +2745,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if let Some((notes, url)) = seeded {
                 app.notes_edit = notes;
                 app.url_edit = url;
+                app.info_provenance = app
+                    .mods
+                    .get(i)
+                    .map(|m| generated_summary(app, &m.name))
+                    .unwrap_or_default();
                 app.info_mod = Some(i);
                 app.info_tab = InfoTab::General;
             }
@@ -2784,9 +2796,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             let result = match (app.info_mod, app.created.as_ref()) {
                 (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
-                    let mut meta = inst.mod_meta(&m.name);
-                    meta.set_url(&typed);
-                    (m.name.clone(), meta.write(&inst.meta_path(&m.name)))
+                    (
+                        m.name.clone(),
+                        edit_mod_meta(inst, &m.name, |meta| meta.set_url(&typed)),
+                    )
                 }),
                 _ => None,
             };
@@ -2810,9 +2823,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             let result = match (app.info_mod, app.created.as_ref()) {
                 (Some(i), Some(inst)) => app.mods.get(i).map(|m| {
-                    let mut meta = inst.mod_meta(&m.name);
-                    meta.set_notes(&app.notes_edit);
-                    (m.name.clone(), meta.write(&inst.meta_path(&m.name)))
+                    (
+                        m.name.clone(),
+                        edit_mod_meta(inst, &m.name, |meta| meta.set_notes(&app.notes_edit)),
+                    )
                 }),
                 _ => None,
             };
@@ -3067,6 +3081,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     ed.original = ed.content.text();
                     ed.dirty = false;
                     ed.missing = false;
+                    app.archive_epoch
+                        .set(app.archive_epoch.get().wrapping_add(1));
                     app.status = Some(format!(
                         "Saved {} into profile '{}'. It is deployed at the next launch.",
                         ed.current,
@@ -3218,25 +3234,27 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
                 return Task::none();
             };
-            let mut meta = inst.mod_meta(&m.name);
-            let mut list: Vec<String> = meta.ini_tweaks().to_vec();
-            let was_on = list.iter().any(|e| e.eq_ignore_ascii_case(&name));
-            // Order is application order, so enabling appends rather than inserting:
-            // the fragment a user just ticked should win over the ones already on.
-            if was_on {
-                list.retain(|e| !e.eq_ignore_ascii_case(&name));
-            } else {
-                list.push(name.clone());
-            }
-            meta.set_ini_tweaks(&list);
-            match meta.write(&inst.meta_path(&m.name)) {
-                Ok(()) => {
+            let result = edit_mod_meta(inst, &m.name, |meta| {
+                let mut list = meta.ini_tweaks().to_vec();
+                let was_on = list.iter().any(|e| e.eq_ignore_ascii_case(&name));
+                if was_on {
+                    list.retain(|e| !e.eq_ignore_ascii_case(&name));
+                } else {
+                    list.push(name.clone());
+                }
+                meta.set_ini_tweaks(&list);
+                was_on
+            });
+            match result {
+                Ok(was_on) => {
                     let verb = if was_on { "Disabled" } else { "Enabled" };
                     app.status = Some(format!("{verb} INI tweak '{name}' for '{}'.", m.name));
+                    bump_views(app);
                 }
                 Err(e) => app.status = Some(format!("Could not save the tweak list: {e}")),
             }
         }
+
         Message::RestoreHiddenFiles(i) => {
             app.menu_mod = None;
             let Some(m) = app.mods.get(i).cloned() else {
@@ -3264,7 +3282,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // worst: a restored .esp changes the load order.
                     after_hidden_change(app, &m.name, "restored.esp");
                 }
-                Err(e) => app.status = Some(format!("Could not unhide files: {e}")),
+                Err(e) => {
+                    app.status = Some(format!("Could not unhide files: {e}"));
+                    after_hidden_change(app, &m.name, "restored.esp");
+                }
             }
         }
         // ---- Settings / Preferences ------------------------------------------
@@ -4005,9 +4026,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let mut written = 0usize;
             let mut failed: Vec<String> = Vec::new();
             for name in &d.names {
-                let mut meta = inst.mod_meta(name);
-                meta.set_categories(primary, others);
-                match meta.write(&inst.meta_path(name)) {
+                match edit_mod_meta(&inst, name, |meta| meta.set_categories(primary, others)) {
                     Ok(()) => written += 1,
                     Err(e) => failed.push(format!("{name}: {e}")),
                 }
@@ -4082,8 +4101,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     // Both lists are read from disk again: the restore changed
                     // them underneath every cache the window holds.
                     reload_mods(app);
-                    app.plugins = None;
-                    app.conflicts = compute_conflicts(app);
+                    refresh_after_tree_change(app);
                     recompute_counts(app);
                 }
                 Err(e) => app.status = Some(format!("Could not restore the {}: {e}", kind.label())),
@@ -4307,6 +4325,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             // Toggle: endorse when not yet endorsed, abstain when already endorsed.
+            let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
             let endorse = !endorsed;
             app.endorsing = Some(i);
             app.status = Some(if endorse {
@@ -4318,10 +4339,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 async move {
                     eidos_nexus::Nexus::connect()?.set_endorsed(&domain, mod_id, &version, endorse)
                 },
-                move |r| Message::ModEndorsed(folder.clone(), r),
+                move |r| Message::ModEndorsed(instance.clone(), folder.clone(), mod_id, r),
             );
         }
-        Message::ModEndorsed(folder, result) => {
+        Message::ModEndorsed(instance, folder, mod_id, result) => {
+            if app.created.as_ref().is_none_or(|i| i.root != instance) {
+                return Task::none();
+            }
             app.endorsing = None;
             match result {
                 Ok(now_endorsed) => {
@@ -4331,9 +4355,32 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         app.created.as_ref(),
                         app.mods.iter().find(|m| m.name == folder),
                     ) {
-                        let mut meta = inst.mod_meta(&m.name);
+                        let _lock = match inst.try_lock("saving a Nexus endorsement") {
+                            Ok(lock) => lock,
+                            Err(e) => {
+                                app.status = Some(format!(
+                                    "Endorsement saved on Nexus, but local metadata is busy: {e}"
+                                ));
+                                return Task::none();
+                            }
+                        };
+                        let Ok(mut meta) =
+                            eidos_instance::ModMeta::read_checked(&inst.meta_path(&m.name))
+                        else {
+                            app.status = Some(
+                                "Endorsement saved on Nexus, but local metadata could not be read."
+                                    .into(),
+                            );
+                            return Task::none();
+                        };
+                        if meta.mod_id() != Some(mod_id) {
+                            return Task::none();
+                        }
                         meta.set("endorsed", if now_endorsed { "1" } else { "0" });
-                        let _ = meta.write(&inst.meta_path(&m.name));
+                        if let Err(e) = meta.write(&inst.meta_path(&m.name)) {
+                            app.status = Some(format!("Endorsement saved on Nexus, but local metadata could not be saved: {e}"));
+                            return Task::none();
+                        }
                         app.status = Some(format!(
                             "{} '{}' on Nexus.",
                             if now_endorsed {
@@ -4354,10 +4401,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
                 if !m.is_separator() {
-                    let mut meta = inst.mod_meta(&m.name);
-                    let now = !meta.tracked();
-                    meta.set_tracked(now);
-                    let _ = meta.write(&inst.meta_path(&m.name));
+                    let result = edit_mod_meta(inst, &m.name, |meta| {
+                        let now = !meta.tracked();
+                        meta.set_tracked(now);
+                        now
+                    });
+                    let now = match result {
+                        Ok(now) => now,
+                        Err(e) => {
+                            app.status = Some(format!("Could not save mod metadata: {e}"));
+                            return Task::none();
+                        }
+                    };
                     app.status = Some(format!(
                         "{} '{}'.",
                         if now { "Tracking" } else { "Untracked" },
@@ -4370,10 +4425,18 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             if let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) {
                 if !m.is_separator() {
-                    let mut meta = inst.mod_meta(&m.name);
-                    let now = !meta.ignore_update();
-                    meta.set_ignore_update(now);
-                    let _ = meta.write(&inst.meta_path(&m.name));
+                    let result = edit_mod_meta(inst, &m.name, |meta| {
+                        let now = !meta.ignore_update();
+                        meta.set_ignore_update(now);
+                        now
+                    });
+                    let now = match result {
+                        Ok(now) => now,
+                        Err(e) => {
+                            app.status = Some(format!("Could not save mod metadata: {e}"));
+                            return Task::none();
+                        }
+                    };
                     app.status = Some(format!(
                         "{} updates for '{}'.",
                         if now { "Ignoring" } else { "Checking" },
@@ -4629,6 +4692,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             app.typing = true;
             if let Some(c) = &mut app.collection {
                 c.link = t;
+                c.loading = false;
                 c.error = None;
             }
         }
@@ -4687,18 +4751,28 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // A different revision is a different member list; what the previous
             // one asked for says nothing about this one.
             c.asked.clear();
+            let request_link = c.link.clone();
+            let Some(instance) = app.created.as_ref().map(|i| i.root.clone()) else {
+                return Task::none();
+            };
             return Task::perform(
                 async move {
                     let nexus = eidos_nexus::Nexus::connect()?;
                     nexus.collection_revision(&parsed)
                 },
-                Message::CollectionFetched,
+                move |r| Message::CollectionFetched(instance.clone(), request_link.clone(), r),
             );
         }
-        Message::CollectionFetched(result) => {
+        Message::CollectionFetched(instance, request_link, result) => {
+            if app.created.as_ref().is_none_or(|i| i.root != instance) {
+                return Task::none();
+            }
             let Some(c) = &mut app.collection else {
                 return Task::none();
             };
+            if c.link != request_link {
+                return Task::none();
+            }
             c.loading = false;
             match result {
                 Ok(rev) => {
@@ -6042,10 +6116,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             if restored {
                 reload_mods(app);
                 refresh_meta_cache(app);
-                bump_views(app);
-                // The restored mod's files are different ones now.
-                app.conflicts = compute_conflicts(app);
-                app.plugins = None;
+                refresh_after_tree_change(app);
                 app.status = Some(format!("{orig} restored from its backup."));
             }
         }
@@ -6426,10 +6497,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let (Some(inst), Some(m)) = (app.created.as_ref(), app.mods.get(i)) else {
                 return Task::none();
             };
-            let mut meta = inst.mod_meta(&m.name);
-            meta.set_validated(true);
             let name = m.name.clone();
-            match meta.write(&inst.meta_path(&name)) {
+            match edit_mod_meta(inst, &name, |meta| meta.set_validated(true)) {
                 // MO2's own key, so this silences the mod over there too.
                 Ok(()) => {
                     invalidate_meta(app, &name);
@@ -7048,6 +7117,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         // its phase began, so a frame's whole job is to have arrived: reaching
         // `update` is what makes iced call `view` again.
         Message::AnimationTick => {
+            poll_archive_conflicts(app);
             // The same 60 Hz tick drives every worker-thread dialog, and it has
             // to reach ALL of them. An early return on the first was fine while
             // there was only one; with two, a pack finishing while an extraction
@@ -7499,9 +7569,9 @@ fn nexus_category_of(inst: &eidos_instance::Instance, mod_name: &str) -> Option<
 /// inside a locked block deadlocks the handler against itself - which is
 /// exactly what happened, and what the flake in `a_backup_is_inert...` was.
 fn refresh_after_tree_change(app: &mut App) {
-    bump_views(app);
+    drop_files_cache(app, None);
+    invalidate_plugins(app);
     app.conflicts = compute_conflicts(app);
-    app.plugins = None;
 }
 
 fn forget_hidden_rows(app: &mut App) {
@@ -7635,6 +7705,8 @@ pub(crate) fn open_instance(app: &mut App, inst: Instance) {
     app.created = Some(inst);
     // Another instance's LOOT verdicts must not decorate this one's plugins.
     app.loot_meta = None;
+    app.endorsing = None;
+    app.collection = None;
     reload_mods(app);
     app.tab = Tab::Data;
     app.error = None;
@@ -7900,67 +7972,73 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
             .find(|d| d.nexus_game.eq_ignore_ascii_case(domain))
             .map(|d| d.short_name)
     };
-    // Installed mods by Nexus id, with the game and version they record. Both
-    // are OPTIONAL in a `meta.ini` and frequently absent - MO2 omits them all
-    // the time - so an absent one means "unknown", never "no". Only a value that
-    // is present and different rules a match out.
-    let installed: std::collections::HashMap<u64, (Option<String>, Option<String>)> = app
-        .meta_cache
-        .values()
-        .filter_map(|r| Some((r.mod_id?, (r.game_name.clone(), r.version.clone()))))
+    let downloaded: Vec<_> = app
+        .created
+        .as_ref()
+        .into_iter()
+        .flat_map(|inst| {
+            std::fs::read_dir(inst.downloads_dir())
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "meta"))
+        .filter(|p| {
+            let archive = p.with_extension("");
+            archive.is_file()
+                && !PathBuf::from(format!("{}.unfinished", archive.display())).exists()
+        })
+        .map(|p| eidos_instance::ModMeta::read(&p))
         .collect();
 
-    // A member counts as downloaded when the ARCHIVE is there and whole. The
-    // sidecar alone proves nothing: `eidos nxm` writes it before the first byte
-    // and deliberately leaves it behind after a failure, so a member flipped to
-    // "downloaded" instantly and stayed there after a download that died at 2%.
-    let downloaded: std::collections::HashSet<u64> = match app.created.as_ref() {
-        Some(inst) => std::fs::read_dir(inst.downloads_dir())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "meta"))
-            .filter_map(|p| {
-                let id = eidos_instance::ModMeta::read(&p).file_id()?;
-                let archive = p.with_extension("");
-                let partial = std::path::PathBuf::from(format!("{}.unfinished", archive.display()));
-                (archive.is_file() && !partial.exists()).then_some(id)
-            })
-            .collect(),
-        None => std::collections::HashSet::new(),
-    };
-
-    let states: Vec<MemberState> = rev
+    let states = rev
         .mods
         .iter()
         .map(|m| {
-            // The member's own game, as `meta.ini` would spell it.
-            let want = short_for_domain(&m.domain);
-            let hit = installed.get(&m.mod_id).filter(|(have_game, _)| {
-                match (have_game.as_deref().filter(|g| !g.is_empty()), want) {
-                    // Both known: they must agree. This is the case that used to
-                    // report an LE-hosted member "installed" because an SE mod
-                    // happened to share its id.
-                    (Some(have), Some(want)) => have.eq_ignore_ascii_case(want),
-                    // Either side silent: not evidence of a mismatch.
-                    _ => true,
-                }
-            });
-            match hit {
-                // An empty version on either side is not a mismatch either:
-                // plenty of mods carry none, and inventing a warning out of a
-                // blank field is the same class of lie this pass is removing.
-                Some((_, have)) => {
-                    let have = have.clone().unwrap_or_default();
-                    if have.is_empty() || m.version.is_empty() || have == m.version {
-                        MemberState::Installed
-                    } else {
-                        MemberState::OtherVersion
-                    }
-                }
-                None if downloaded.contains(&m.file_id) => MemberState::Downloaded,
-                None => MemberState::Missing,
+            let want = short_for_domain(&m.domain).unwrap_or(&m.domain);
+            let game_matches = |have: Option<&str>| {
+                have.is_some_and(|have| {
+                    have.eq_ignore_ascii_case(want) || have.eq_ignore_ascii_case(&m.domain)
+                })
+            };
+            let candidates: Vec<_> = app
+                .meta_cache
+                .values()
+                .filter(|r| {
+                    (r.mod_id == Some(m.mod_id)
+                        || r.installed_files.iter().any(|(id, _)| *id == m.mod_id))
+                        && r.game_name
+                            .as_deref()
+                            .is_none_or(|have| game_matches(Some(have)))
+                })
+                .collect();
+            if candidates.iter().any(|r| {
+                game_matches(r.game_name.as_deref())
+                    && r.install_warning.is_none()
+                    && r.installed_files.contains(&(m.mod_id, m.file_id))
+            }) {
+                MemberState::Installed
+            } else if downloaded.iter().any(|meta| {
+                meta.mod_id() == Some(m.mod_id)
+                    && meta.file_id() == Some(m.file_id)
+                    && game_matches(meta.game_name().as_deref())
+            }) {
+                MemberState::Downloaded
+            } else if candidates.iter().any(|r| {
+                r.installed_files.is_empty()
+                    && (r.version.as_deref().is_none_or(|have| {
+                        have.is_empty() || m.version.is_empty() || have == m.version
+                    }))
+            }) || candidates
+                .iter()
+                .any(|r| r.game_name.is_none() || r.install_warning.is_some())
+            {
+                MemberState::Unverified
+            } else if !candidates.is_empty() {
+                MemberState::OtherVersion
+            } else {
+                MemberState::Missing
             }
         })
         .collect();

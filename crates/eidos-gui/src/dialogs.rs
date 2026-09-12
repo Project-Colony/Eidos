@@ -2431,6 +2431,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .iter()
             .filter(|s| **s == MemberState::Missing)
             .count();
+        let unverified = state.states.iter().filter(|s| **s == MemberState::Unverified).count();
         let other_version = state
             .states
             .iter()
@@ -2452,19 +2453,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .spacing(10)
             .align_y(iced::Alignment::Center)
             .push(
-                // Every member is in exactly one of these, so the four add up to
-                // the member count. They did not before: an outdated copy
-                // counted as installed.
-                text(if other_version > 0 {
-                    format!(
-                        "{installed} installed  ·  {other_version} at another version  ·  \
-                         {downloaded} downloaded  ·  {missing} missing"
-                    )
-                } else {
-                    format!(
-                        "{installed} installed  ·  {downloaded} downloaded  ·  {missing} missing"
-                    )
-                })
+                text(format!("{installed} installed  ·  {other_version} other file/version  ·  {unverified} unverified  ·  {downloaded} downloaded  ·  {missing} missing"))
                 .size(12.0)
                 .width(Length::Fill),
             );
@@ -2514,9 +2503,10 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         for (i, (m, st)) in rev.mods.iter().zip(&state.states).enumerate() {
             let (label, colour) = match st {
                 MemberState::Installed => ("installed", Some(conflict_wins_fg())),
+                MemberState::Unverified => ("file unverified", Some(pal().warning)),
                 // Its own word, and its own colour: the mod is there but not the
                 // version the collection was built against.
-                MemberState::OtherVersion => ("other version", Some(pal().warning)),
+                MemberState::OtherVersion => ("other file/version", Some(pal().warning)),
                 MemberState::Downloaded => ("downloaded", None),
                 MemberState::Missing => ("missing", Some(conflict_loses_fg())),
             };

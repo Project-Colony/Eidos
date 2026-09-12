@@ -257,7 +257,7 @@ pub(crate) fn floating_at<'a>(
 /// focused.
 pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
     let focus = app.selected_mod?;
-    let me = app.conflicts.as_ref()?.mods.get(&((focus + 1) as u32))?;
+    let me = app.conflicts.as_ref()?.mod_conflicts((focus + 1) as u32)?;
     // Origin 0 is the game's own data and u32::MAX is the Overwrite layer;
     // neither is a row, so neither is counted here.
     let rows = |set: &std::collections::BTreeSet<u32>| {
@@ -322,7 +322,7 @@ pub(crate) fn conflict_tint(app: &App, i: usize) -> Option<Color> {
     }
     let map = app.conflicts.as_ref()?;
     // Origins are `index + 1`; 0 is the game's own data.
-    let me = map.mods.get(&((focus + 1) as u32))?;
+    let me = map.mod_conflicts((focus + 1) as u32)?;
     let other = (i + 1) as u32;
     if me.overwrites.contains(&other) {
         Some(conflict_wins_bg())

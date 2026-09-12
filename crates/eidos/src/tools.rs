@@ -1,5 +1,6 @@
 //! `eidos tool`: run a modding tool through the mounted view.
 
+use std::path::{Path, PathBuf};
 use std::process::exit;
 
 use eidos_gamefeatures::RegistryOutcome;
@@ -24,7 +25,13 @@ pub(crate) fn default_tools_for(
         inst.map(|i| i.mods_dir()).as_deref(),
         prefs.tools_dir.as_deref(),
     );
-    eidos_instance::default_tools_in(game_executables(game), &game.install_path, &roots, &extra)
+    eidos_instance::default_tools_in_view(
+        game_executables(game),
+        &game.install_path,
+        &roots,
+        &extra,
+        inst.map(|i| i.root_overwrite_dir()).as_deref(),
+    )
 }
 
 /// The auto-detectable executables for a game, from its `GameDef`.
@@ -41,6 +48,55 @@ pub(crate) fn game_executables(game: &DetectedGame) -> eidos_instance::GameExecu
 /// `eidos tool <game-id> [list | add <title> <exe> [args...] | rm <title> |
 /// run <title> [--print] [-- extra...]]` - manage and run tools (xEdit, FNIS,
 /// BodySlide) through the merged view, inside the game's Proton prefix.
+/// A command uses the projected path, while existence and provenance use its
+/// real backing file. Root-only tools do not exist in the game directory yet.
+fn tool_executable(
+    inst: &Instance,
+    install: &Path,
+    data: &Path,
+    executable: &Path,
+) -> Option<(PathBuf, PathBuf)> {
+    let projected = if executable.is_absolute() {
+        executable.to_path_buf()
+    } else {
+        install.join(executable)
+    };
+    let layers = inst.load_order();
+    let data_command = virtualize_under_data(&projected, &layers, data)
+        .or_else(|| {
+            projected
+                .strip_prefix(inst.overwrite_dir())
+                .ok()
+                .map(|p| data.join(p))
+        })
+        .unwrap_or_else(|| projected.clone());
+    if let Ok(relative) = data_command.strip_prefix(data) {
+        let source = eidos_instance::root_executable_source(
+            data,
+            &layers,
+            &inst.overwrite_dir(),
+            relative.to_str()?,
+        )?;
+        return Some((source, data_command));
+    }
+    if let Ok(relative) = projected.strip_prefix(install) {
+        let source = eidos_instance::root_executable_source(
+            install,
+            &inst.root_layers(),
+            &inst.root_overwrite_dir(),
+            relative.to_str()?,
+        )?;
+        let command_path = if source.starts_with(install) {
+            source.clone()
+        } else {
+            projected
+        };
+        Some((source, command_path))
+    } else {
+        projected.is_file().then(|| (projected.clone(), projected))
+    }
+}
+
 pub(crate) fn cmd_tool(args: &[String]) {
     let Some(id) = args.first() else {
         eidos_log::info!(
@@ -168,18 +224,15 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 eidos_log::info!("No tool named '{title}'. List them: eidos tool {id}");
                 exit(1);
             };
-            let exe = if tool.exe.is_absolute() {
-                tool.exe.clone()
-            } else {
-                game.install_path.join(&tool.exe)
-            };
-            // Existence is checked on the REAL path, before any rewriting: the
-            // virtual path deliberately does not exist yet, it only appears once
-            // the union is mounted.
-            if !exe.is_file() {
-                eidos_log::warn!("Tool executable not found: {}", exe.display());
+            let Some((source_exe, exe)) =
+                tool_executable(&inst, &game.install_path, &game.data_path, &tool.exe)
+            else {
+                eidos_log::warn!(
+                    "Tool executable not found in the active view: {}",
+                    tool.exe.display()
+                );
                 exit(1);
-            }
+            };
             // `load_order`, NOT `root_layers`: the latter is the Root Builder list
             // (mods with a `root/` subdir, destined for the game's install folder)
             // and would have matched almost nothing.
@@ -390,6 +443,8 @@ pub(crate) fn cmd_tool(args: &[String]) {
                 crate::launch::ToolOpts {
                     prereqs: &prereqs,
                     output_mod: output_mod.as_deref(),
+                    tool_name: Some(title),
+                    executable: Some(&source_exe),
                 },
             );
         }
@@ -397,5 +452,114 @@ pub(crate) fn cmd_tool(args: &[String]) {
             eidos_log::warn!("unknown tool subcommand '{other}' (list | add | rm | run)");
             exit(2);
         }
+    }
+}
+
+#[cfg(test)]
+mod root_tool_tests {
+    use super::*;
+
+    #[test]
+    fn data_tools_resolve_the_winning_source_before_fingerprinting() {
+        let root = std::env::temp_dir().join(format!("eidos-data-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let game = root.join("game");
+        let data = game.join("Data");
+        std::fs::create_dir_all(&data).unwrap();
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let low = instance.create_empty_mod("Low").unwrap();
+        let high = instance.create_empty_mod("High").unwrap();
+        let relative = "Tools/generator.exe";
+        for entry in [&low, &high] {
+            std::fs::create_dir_all(entry.path.join("Tools")).unwrap();
+            std::fs::write(entry.path.join(relative), entry.name.as_bytes()).unwrap();
+        }
+        instance.save_modlist(&[low.clone(), high.clone()]).unwrap();
+        let projected = data.join(relative);
+        let expected = Some((high.path.join(relative), projected.clone()));
+        assert_eq!(
+            tool_executable(
+                &instance,
+                &game,
+                &game.join("Data"),
+                &low.path.join(relative)
+            ),
+            expected
+        );
+        assert_eq!(
+            tool_executable(&instance, &game, &game.join("Data"), &projected),
+            expected
+        );
+        let overwrite = instance.overwrite_dir().join(relative);
+        std::fs::create_dir_all(overwrite.parent().unwrap()).unwrap();
+        std::fs::write(&overwrite, b"overwrite").unwrap();
+        assert_eq!(
+            tool_executable(&instance, &game, &game.join("Data"), &projected),
+            Some((overwrite, projected.clone()))
+        );
+        std::fs::remove_file(instance.overwrite_dir().join(relative)).unwrap();
+        std::fs::write(
+            instance
+                .overwrite_dir()
+                .join("Tools/.eidoswh.generator.exe"),
+            b"",
+        )
+        .unwrap();
+        assert!(tool_executable(
+            &instance,
+            &game,
+            &game.join("Data"),
+            &low.path.join(relative)
+        )
+        .is_none());
+        assert!(tool_executable(&instance, &game, &game.join("Data"), &projected).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_root_only_tool_has_a_backing_fingerprint_and_a_projected_command() {
+        let root = std::env::temp_dir().join(format!("eidos-root-tool-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let game = root.join("game");
+        std::fs::create_dir_all(&game).unwrap();
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let mut entry = instance.create_empty_mod("SKSE").unwrap();
+        let source = entry.path.join("Root/skse64_loader.exe");
+        std::fs::create_dir(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"loader").unwrap();
+        instance.save_modlist(&[entry.clone()]).unwrap();
+        assert_eq!(
+            tool_executable(
+                &instance,
+                &game,
+                &game.join("Data"),
+                Path::new("skse64_loader.exe")
+            ),
+            Some((source, game.join("skse64_loader.exe")))
+        );
+        entry.enabled = false;
+        instance.save_modlist(&[entry]).unwrap();
+        assert!(tool_executable(
+            &instance,
+            &game,
+            &game.join("Data"),
+            Path::new("skse64_loader.exe")
+        )
+        .is_none());
+        let source = instance.root_overwrite_dir().join("skse64_loader.exe");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::write(&source, b"overwrite loader").unwrap();
+        assert_eq!(
+            tool_executable(
+                &instance,
+                &game,
+                &game.join("Data"),
+                Path::new("skse64_loader.exe")
+            ),
+            Some((source, game.join("skse64_loader.exe")))
+        );
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
