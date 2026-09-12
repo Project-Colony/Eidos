@@ -1072,6 +1072,7 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 name = "eidos"
 version = "1.17.1"
 dependencies = [
+ "eidos-addons",
  "eidos-collections",
  "eidos-fomod",
  "eidos-gamefeatures",
@@ -1086,6 +1087,8 @@ dependencies = [
  "eidos-plugins",
  "eidos-sevenzip",
  "eidos-transfer",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1216,6 +1219,8 @@ dependencies = [
  "image",
  "libc",
  "rfd",
+ "serde",
+ "serde_json",
  "smol",
  "tempfile",
 ]
@@ -1229,12 +1234,19 @@ name = "eidos-install"
 version = "1.17.1"
 dependencies = [
  "crc32fast",
+ "eidos-addons",
+ "eidos-conflicts",
  "eidos-core",
  "eidos-fomod",
  "eidos-gamedef",
+ "eidos-ini",
  "eidos-instance",
  "eidos-log",
+ "eidos-plugins",
  "eidos-sevenzip",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

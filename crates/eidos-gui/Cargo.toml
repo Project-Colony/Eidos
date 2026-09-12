@@ -52,6 +52,9 @@ ddsfile = "0.5"
 tempfile = "3"
 # Already used by iced; offload blocking preview work from its async executor.
 smol = "2"
+# Decode the bundled NIF helper's bounded geometry reply.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 image-decoder = { package = "image", version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "ico", "tga"] }
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from

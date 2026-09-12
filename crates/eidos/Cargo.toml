@@ -11,6 +11,9 @@ name = "eidos"
 path = "src/main.rs"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+eidos-addons = { path = "../eidos-addons" }
 eidos-paths = { path = "../eidos-paths" }
 # Session logs: a launch started from Steam has no terminal, so the file is the
 # only record of what happened - and the GUI's Log pane reads exactly these.
