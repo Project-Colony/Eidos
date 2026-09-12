@@ -954,7 +954,7 @@ impl Filesystem for Eidos {
                 // listing costs one merge, and a stale one is a directory the game
                 // sees wrongly for the life of the mount.
                 if self.stack.resolve_read(&to).is_some_and(|p| p.is_dir()) {
-                    self.dir_cache.lock_recover().clear();
+                    self.dir_cache.lock_recover().invalidate(None);
                 }
                 reply.ok();
             }

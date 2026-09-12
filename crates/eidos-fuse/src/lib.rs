@@ -74,6 +74,33 @@ impl<'a> Timed<'a> {
     }
 }
 
+/// A generation prevents a scan started before a mutation from refilling the cache.
+#[derive(Default)]
+struct DirCache {
+    generation: u64,
+    entries: HashMap<String, Listing>,
+}
+
+impl DirCache {
+    fn publish(&mut self, vpath: &str, generation: u64, children: Listing) -> Option<Listing> {
+        if generation != self.generation {
+            return None;
+        }
+        Some(Arc::clone(
+            self.entries.entry(vpath.to_string()).or_insert(children),
+        ))
+    }
+
+    fn invalidate(&mut self, vpath: Option<&str>) {
+        self.generation = self.generation.wrapping_add(1);
+        if let Some(vpath) = vpath {
+            self.entries.remove(vpath);
+        } else {
+            self.entries.clear();
+        }
+    }
+}
+
 /// The Eidos union filesystem over a [`LayerStack`].
 pub struct Eidos {
     stack: LayerStack,
@@ -98,7 +125,7 @@ pub struct Eidos {
     /// path mints a FRESH number - so a cached entry list would hand out inodes the
     /// daemon no longer knows. Interning is a hashmap hit against real disk I/O, so
     /// re-interning per enumeration costs almost nothing and is always correct.
-    dir_cache: Mutex<HashMap<String, Listing>>,
+    dir_cache: Mutex<DirCache>,
     next_fh: AtomicU64,
     stats: Stats,
     /// Negative dentries handed to the kernel, as `(parent_ino, exact name)`.
@@ -180,7 +207,7 @@ impl Eidos {
             gid,
             open_files: Mutex::new(HashMap::new()),
             open_dirs: Mutex::new(HashMap::new()),
-            dir_cache: Mutex::new(HashMap::new()),
+            dir_cache: Mutex::new(DirCache::default()),
             next_fh: AtomicU64::new(1),
             no_opendir: AtomicBool::new(false),
             enumerations: Mutex::new(HashMap::new()),
@@ -467,31 +494,39 @@ impl Eidos {
     /// The merged child list for `vpath`, from [`Self::dir_cache`] when it is
     /// already there.
     ///
-    /// The merge itself runs WITHOUT the cache locked: it does real disk I/O across
-    /// every layer, and holding the lock across it would serialise every other
-    /// directory in the daemon. Two threads racing the same path both do the work
-    /// and the first one to finish wins - wasteful once, never wrong.
+    /// Scans run outside the cache lock. A mutation invalidates their generation,
+    /// so an older scan must retry instead of publishing stale children.
     fn merged_children(&self, vpath: &str) -> Listing {
-        if let Some(hit) = self.dir_cache.lock_recover().get(vpath) {
-            Stats::bump(&self.stats.dir_hit);
-            return Arc::clone(hit);
+        loop {
+            let generation = {
+                let cache = self.dir_cache.lock_recover();
+                if let Some(hit) = cache.entries.get(vpath) {
+                    Stats::bump(&self.stats.dir_hit);
+                    return Arc::clone(hit);
+                }
+                cache.generation
+            };
+            Stats::bump(&self.stats.snapshot);
+            let children: Listing = Arc::new(
+                self.stack
+                    .list_dir_typed(vpath)
+                    .into_iter()
+                    .filter_map(|(name, _real, ft)| Some((name, kind_of_type(&ft?))))
+                    .collect(),
+            );
+            if let Some(children) = self
+                .dir_cache
+                .lock_recover()
+                .publish(vpath, generation, children)
+            {
+                return children;
+            }
         }
-        Stats::bump(&self.stats.snapshot);
-        let children: Listing = Arc::new(
-            self.stack
-                .list_dir_typed(vpath)
-                .into_iter()
-                .filter_map(|(name, _real, ft)| Some((name, kind_of_type(&ft?))))
-                .collect(),
-        );
-        let mut cache = self.dir_cache.lock_recover();
-        Arc::clone(cache.entry(vpath.to_string()).or_insert(children))
     }
 
-    /// Drop the cached listing for a directory, by vpath. Called from every handler
-    /// that adds or removes a name.
+    /// Drop a listing and reject scans that started before this mutation.
     fn invalidate_dir_cache(&self, vpath: &str) {
-        self.dir_cache.lock_recover().remove(vpath);
+        self.dir_cache.lock_recover().invalidate(Some(vpath));
     }
 
     /// Drop the cached listing of `parent_ino`'s directory: the form the mutating

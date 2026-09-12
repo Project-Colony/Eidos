@@ -75,7 +75,7 @@ fn main() {
     let stack = LayerStack::new(layers, overwrite);
     let st = stack.resolve_stats();
 
-    let mut report = |label: &str, work: &[String]| {
+    let report = |label: &str, work: &[String]| {
         let snap = || {
             [
                 st.probes.load(Relaxed),

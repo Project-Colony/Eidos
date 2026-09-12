@@ -408,3 +408,42 @@ fn the_peak_points_at_a_slot_that_saw_reads() {
     );
     assert!(out.contains("busiest 1000 reads"), "{out}");
 }
+
+#[test]
+fn a_scan_cannot_publish_after_directory_invalidation() {
+    let root = std::env::temp_dir().join(format!("eidos-cache-race-{}", std::process::id()));
+    for renamed in [false, true] {
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("lower/dir")).unwrap();
+        std::fs::write(root.join("lower/dir/removed.ess"), b"save").unwrap();
+        let fs = Eidos::new(vec![root.join("lower")], root.join("overwrite"));
+        let parent = fs.inodes.lock_recover().intern("dir");
+        // Pause a cache miss after a real scan, complete the mutation, then resume publication.
+        let generation = fs.dir_cache.lock_recover().generation;
+        let scanned: Listing = Arc::new(
+            fs.stack
+                .list_dir_typed("dir")
+                .into_iter()
+                .map(|(name, _, ft)| (name, kind_of_type(&ft.unwrap())))
+                .collect(),
+        );
+        assert_eq!(scanned.len(), 1);
+        if renamed {
+            fs.stack.rename("dir", "moved").unwrap();
+            fs.dir_cache.lock_recover().invalidate(None);
+        } else {
+            fs.stack.remove("dir/removed.ess").unwrap();
+            fs.dir_changed(parent, "removed.ess");
+        }
+        assert!(fs
+            .dir_cache
+            .lock_recover()
+            .publish("dir", generation, scanned)
+            .is_none());
+        assert!(fs.merged_children("dir").is_empty());
+        if renamed {
+            assert_eq!(fs.merged_children("moved").len(), 1);
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
