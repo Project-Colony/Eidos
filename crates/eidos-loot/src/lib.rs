@@ -10,8 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use libloot::metadata::{
-    select_message_content, MessageContent, MessageType as LootMessageType, PluginCleaningData,
-    PluginMetadata,
+    MessageContent, MessageType as LootMessageType, PluginCleaningData, PluginMetadata,
+    select_message_content,
 };
 use libloot::{EvalMode, Game, GameType, MergeMode};
 
@@ -385,9 +385,8 @@ pub fn merge_user_rules(
             if after.is_empty() {
                 continue;
             }
-            user_groups.push(
-                libloot::metadata::Group::new(g.name.clone()).with_after_groups(after),
-            );
+            user_groups
+                .push(libloot::metadata::Group::new(g.name.clone()).with_after_groups(after));
             out.groups_extended.push(g.name.clone());
             continue;
         }
@@ -445,7 +444,8 @@ pub fn merge_user_rules(
             } else {
                 // Assigning it would make LOOT refuse to sort AT ALL, and the
                 // symptom is an empty load order with no explanation.
-                out.dangling_groups.push(format!("{} -> {group}", rule.plugin));
+                out.dangling_groups
+                    .push(format!("{} -> {group}", rule.plugin));
             }
         }
 
@@ -554,6 +554,8 @@ pub struct PluginMetadataBundle {
     pub bash_tags: Vec<String>,
     pub dirty_info: Vec<LootDirtyInfo>,
     pub crc: Option<u32>,
+    /// Whole-record scale checks: None means unverified (or not applicable).
+    pub record_validity: Option<bool>,
 }
 
 impl PluginMetadataBundle {
@@ -563,6 +565,7 @@ impl PluginMetadataBundle {
             && self.bash_tags.is_empty()
             && self.dirty_info.is_empty()
             && self.crc.is_none()
+            && self.record_validity.is_none()
     }
 
     /// Whether LOOT flagged this plugin as dirty (needs cleaning).
@@ -649,7 +652,43 @@ fn bundle_from_metadata(metadata: &PluginMetadata, crc: Option<u32>) -> PluginMe
         bash_tags: collect_bash_tags(metadata),
         dirty_info: metadata.dirty_info().iter().map(convert_dirty).collect(),
         crc,
+        record_validity: None,
     }
+}
+
+fn record_validity(plugin: &libloot::Plugin) -> (Option<bool>, Vec<LootMessage>) {
+    let mut checks = Vec::new();
+    if plugin.is_light_plugin() {
+        checks.push(("light", plugin.is_valid_as_light_plugin()));
+    }
+    if plugin.is_medium_plugin() {
+        checks.push(("medium", plugin.is_valid_as_medium_plugin()));
+    }
+    if plugin.is_update_plugin() {
+        checks.push(("update", plugin.is_valid_as_update_plugin()));
+    }
+    let mut valid = (!checks.is_empty()).then_some(true);
+    let mut messages = Vec::new();
+    for (kind, result) in checks {
+        match result {
+            Ok(true) => {}
+            Ok(false) => {
+                valid = valid.map(|_| false);
+                messages.push(LootMessage {
+                    kind: MessageType::Error,
+                    text: format!("Invalid {kind} plugin records: new FormIDs do not satisfy the declared plugin type's limits. Inspect the plugin in xEdit before enabling it."),
+                });
+            }
+            Err(e) => {
+                valid = None;
+                messages.push(LootMessage {
+                    kind: MessageType::Warn,
+                    text: format!("Unverified {kind} plugin records: {e}."),
+                });
+            }
+        }
+    }
+    (valid, messages)
 }
 
 /// One plugin's entry in a [`LootReport`]: the problems LOOT found worth showing
@@ -821,10 +860,14 @@ pub fn report(
         if !enabled_lower.contains(&name.to_ascii_lowercase()) {
             continue;
         }
-        let missing_masters = game
-            .plugin(name)
-            .and_then(|p| p.masters().ok())
-            .unwrap_or_default()
+        let plugin = game.plugin(name).ok_or_else(|| {
+            LootError::Loot(format!(
+                "Unverified plugin {name}: unavailable after loading"
+            ))
+        })?;
+        let missing_masters = plugin
+            .masters()
+            .map_err(|e| LootError::Loot(format!("Unverified masters for {name}: {e}")))?
             .into_iter()
             .filter(|m| !present.contains(&m.to_ascii_lowercase()))
             .collect::<Vec<_>>();
@@ -838,7 +881,7 @@ pub fn report(
                 .map_err(|e| LootError::Loot(e.to_string()))?
         };
 
-        let (messages, dirty) = match &evaluated {
+        let (mut messages, dirty) = match &evaluated {
             Some(meta) => (
                 convert_messages(meta.messages()),
                 meta.dirty_info().iter().map(convert_dirty).collect(),
@@ -849,14 +892,18 @@ pub fn report(
         // The Plugins-tab bundle, from the SAME evaluated metadata as the report
         // row: bash tags on top of the messages/dirty above, plus the CRC libloot
         // computed while loading the header.
-        let crc = game.plugin(name).and_then(|p| p.crc());
-        let bundle = match &evaluated {
+        let crc = plugin.crc();
+        let mut bundle = match &evaluated {
             Some(meta) => bundle_from_metadata(meta, crc),
             None => PluginMetadataBundle {
                 crc,
                 ..PluginMetadataBundle::default()
             },
         };
+        let (validity, findings) = record_validity(&plugin);
+        bundle.record_validity = validity;
+        bundle.messages.extend(findings.clone());
+        messages.extend(findings);
         if !bundle.is_empty() {
             plugin_meta.insert(name.to_ascii_lowercase(), bundle);
         }
@@ -887,6 +934,95 @@ mod tests {
         Message, MessageType as LootMessageType, PluginCleaningData, PluginMetadata, Tag,
         TagSuggestion,
     };
+
+    fn record_fixture(flags: u32, form_id: u32, version: f32) -> Vec<u8> {
+        let mut b = vec![0; 42 + 48];
+        b[..4].copy_from_slice(b"TES4");
+        b[4..8].copy_from_slice(&18u32.to_le_bytes());
+        b[8..12].copy_from_slice(&flags.to_le_bytes());
+        b[20..22].copy_from_slice(&44u16.to_le_bytes());
+        b[24..28].copy_from_slice(b"HEDR");
+        b[28..30].copy_from_slice(&12u16.to_le_bytes());
+        b[30..34].copy_from_slice(&version.to_le_bytes());
+        b[34..38].copy_from_slice(&1u32.to_le_bytes());
+        b[42..46].copy_from_slice(b"GRUP");
+        b[46..50].copy_from_slice(&48u32.to_le_bytes());
+        b[50..54].copy_from_slice(b"STAT");
+        b[66..70].copy_from_slice(b"STAT");
+        b[78..82].copy_from_slice(&form_id.to_le_bytes());
+        b
+    }
+
+    #[test]
+    fn whole_report_checks_light_medium_and_update_records() {
+        for (id, flags, form, version, kind) in [
+            ("skyrimse", 0x200, 0x1000, 1.7, "light"),
+            ("starfield", 0x400, 0x800, 0.96, "medium"),
+            ("starfield", 0x200, 0x01000800, 0.96, "update"),
+        ] {
+            let root = std::env::temp_dir()
+                .join(format!("eidos-loot-records-{}-{kind}", std::process::id()));
+            fs::create_dir_all(root.join("Data")).unwrap();
+            fs::create_dir_all(root.join("local")).unwrap();
+            let plugin = root.join("Data/Test.esp");
+            let make = |form| {
+                let mut b = record_fixture(flags, form, version);
+                if kind == "update" {
+                    let mut master = b"MAST".to_vec();
+                    master.extend(11u16.to_le_bytes());
+                    master.extend(b"Master.esm\0");
+                    master.extend(b"DATA");
+                    master.extend(8u16.to_le_bytes());
+                    master.extend([0; 8]);
+                    b[4..8].copy_from_slice(&(18u32 + master.len() as u32).to_le_bytes());
+                    b.splice(42..42, master);
+                }
+                b
+            };
+            fs::write(&plugin, make(form)).unwrap();
+            let masterlist = root.join("masterlist.yaml");
+            let prelude = root.join("prelude.yaml");
+            fs::write(&masterlist, "plugins: []\n").unwrap();
+            fs::write(&prelude, "plugins: []\n").unwrap();
+            let mut plugins = vec![("Test.esp".into(), plugin)];
+            if kind == "update" {
+                let master = root.join("Data/Master.esm");
+                fs::write(&master, record_fixture(1, 0x800, version)).unwrap();
+                plugins.push(("Master.esm".into(), master));
+            }
+            let local = root.join("local");
+            let view = GameView {
+                game_id: id,
+                plugins: &plugins,
+                game_path: &root,
+                local_path: &local,
+                mod_dirs: &[],
+                masterlist: &masterlist,
+                prelude: &prelude,
+                userlist: None,
+            };
+            let enabled = std::collections::HashSet::from(["test.esp".into(), "master.esm".into()]);
+            let report = report(&view, &enabled).unwrap();
+            let expected_valid = kind == "medium";
+            assert_eq!(
+                report.plugins.iter().any(|p| p
+                    .messages
+                    .iter()
+                    .any(|m| m.kind == MessageType::Error && m.text.contains(kind))),
+                !expected_valid,
+                "{kind}: {report:?}"
+            );
+            assert_eq!(
+                report.plugin_meta["test.esp"].record_validity,
+                Some(expected_valid)
+            );
+            fs::write(&plugins[0].1, make(0x800)).unwrap();
+            let checked = super::report(&view, &enabled).unwrap();
+            assert_eq!(checked.plugin_meta["test.esp"].record_validity, Some(true));
+            assert_eq!(checked.error_count(), 0);
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 
     #[test]
     fn game_support_mapping() {
@@ -971,7 +1107,7 @@ mod tests {
         ]);
         meta.set_tags(vec![Tag::new("Relev".into(), TagSuggestion::Addition)]);
         meta.set_dirty_info(vec![
-            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3)
+            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3),
         ]);
 
         let bundle = bundle_from_metadata(&meta, Some(0x1234_5678));
@@ -1127,14 +1263,22 @@ pub fn build_case_bridge(
         } else {
             vec![search_root]
         };
-        // Already correct somewhere? Then there is nothing to bridge, and adding
-        // a link would only create a second answer to the same question.
-        if roots.iter().any(|b| b.join(&tail).exists()) {
-            continue;
-        }
-        let Some(real) = roots.iter().find_map(|b| resolve_ignoring_case(b, &tail)) else {
+        // Resolve each layer in priority order. A lower layer with exact casing
+        // must not replace the higher layer's differently spelled winning file.
+        let Some((real, exact)) = roots.iter().find_map(|b| {
+            let exact = b.join(&tail);
+            let real = if exact.exists() {
+                Some(exact.clone())
+            } else {
+                resolve_ignoring_case(b, &tail)
+            }?;
+            Some((real, exact))
+        }) else {
             continue;
         };
+        if real == exact {
+            continue;
+        }
         let link = link_dir.join(&tail);
         if let Some(parent) = link.parent() {
             fs::create_dir_all(parent)?;
@@ -1147,8 +1291,24 @@ pub fn build_case_bridge(
 }
 
 /// Where the caller should point libloot, given a bridge built at `out`.
+/// Prepend this directory before mod roots so lower exact-case files cannot
+/// shadow a bridge to a higher-priority winner.
 pub fn case_bridge_data_dir(out: &Path) -> PathBuf {
     out.join("data")
+}
+
+/// Build the case bridge and put its winning paths first in LOOT's search order.
+pub fn add_case_bridge(
+    masterlist: &Path,
+    bases: &mut Vec<PathBuf>,
+    game_path: &Path,
+    out: &Path,
+) -> std::io::Result<Vec<String>> {
+    let bridged = build_case_bridge(masterlist, bases, game_path, out)?;
+    if !bridged.is_empty() {
+        bases.insert(0, case_bridge_data_dir(out));
+    }
+    Ok(bridged)
 }
 
 /// Every literal path a masterlist condition names. Patterns containing regex
@@ -1274,9 +1434,11 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out)
-            .unwrap()
-            .is_empty());
+        assert!(
+            build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out)
+                .unwrap()
+                .is_empty()
+        );
         assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
     }
 
@@ -1309,12 +1471,47 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/nothere.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out)
-            .unwrap()
-            .is_empty());
-        assert!(!case_bridge_data_dir(&out)
-            .join("scripts/nothere.pex")
-            .exists());
+        assert!(
+            build_case_bridge(&ml, &[root.clone()], &root, &out)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            !case_bridge_data_dir(&out)
+                .join("scripts/nothere.pex")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn the_case_bridge_preserves_priority_in_evaluated_loot_conditions() {
+        let root = tmp("priority");
+        let high = root.join("high");
+        let low = root.join("low");
+        for dir in [&high, &low, &root.join("Data"), &root.join("local")] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(high.join("SCRIPT.PEX"), b"x").unwrap();
+        fs::write(low.join("script.pex"), b"y").unwrap();
+        let masterlist = root.join("masterlist.yaml");
+        let prelude = root.join("prelude.yaml");
+        fs::write(&masterlist,
+            "globals:\n  - type: say\n    content: Winning mod was inspected\n    condition: 'checksum(\"script.pex\", 8CDC1683)'\n",
+        ).unwrap();
+        fs::write(&prelude, "plugins: []\n").unwrap();
+        let out = root.join("bridge");
+        let mut dirs = vec![high, low];
+        let bridged = add_case_bridge(&masterlist, &mut dirs, &root, &out).unwrap();
+        assert_eq!(bridged, ["script.pex"]);
+        let view = GameView {
+            game_id: "skyrimse", game_path: &root, local_path: &root.join("local"),
+            plugins: &[], mod_dirs: &dirs, masterlist: &masterlist, prelude: &prelude,
+            userlist: None,
+        };
+        let result = report(&view, &Default::default()).unwrap();
+        assert_eq!(result.general.len(), 1, "LOOT must inspect the union's winning file");
+        assert_eq!(result.general[0].text, "Winning mod was inspected");
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

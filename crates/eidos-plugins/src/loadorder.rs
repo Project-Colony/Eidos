@@ -431,6 +431,10 @@ mod tests {
             is_master: name.to_ascii_lowercase().ends_with(".esm"),
             is_light: false,
             is_medium: false,
+            header_error: None,
+            form_version: None,
+            is_blueprint: false,
+            is_update: false,
             masters: Vec::new(),
             priority: -1,
             index: None,
@@ -488,10 +492,14 @@ mod tests {
         let prefix = Path::new("/steam/compatdata/489830/pfx");
         assert_eq!(
             plugins_txt_dir(prefix, &spec),
-            Path::new("/steam/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition")
+            Path::new(
+                "/steam/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition"
+            )
         );
-        assert!(documents_my_games_dir(prefix, &spec)
-            .ends_with("Documents/My Games/Skyrim Special Edition"));
+        assert!(
+            documents_my_games_dir(prefix, &spec)
+                .ends_with("Documents/My Games/Skyrim Special Edition")
+        );
     }
 
     #[test]
@@ -677,6 +685,10 @@ mod tests {
             is_master: false,
             is_light: false,
             is_medium: false,
+            header_error: None,
+            form_version: None,
+            is_blueprint: false,
+            is_update: false,
             masters: vec![],
             priority: 0,
             index: None,
@@ -693,9 +705,11 @@ mod tests {
             vec!["Plugins.txt".to_string()],
             "must not create a second variant"
         );
-        assert!(read_decoded(&dir.join("Plugins.txt"))
-            .unwrap()
-            .contains("Written.esp"));
+        assert!(
+            read_decoded(&dir.join("Plugins.txt"))
+                .unwrap()
+                .contains("Written.esp")
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -729,6 +743,10 @@ mod tests {
                 is_master: false,
                 is_light: false,
                 is_medium: false,
+                header_error: None,
+                form_version: None,
+                is_blueprint: false,
+                is_update: false,
                 masters: vec![],
                 priority: 0,
                 index: None,
@@ -931,7 +949,7 @@ mod tests {
     fn plainlist_disabled_plugin_stays_disabled_via_loadorder() {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
-                                                        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
+        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
         PluginList {
             plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)],
             implicit: Default::default(),

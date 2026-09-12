@@ -557,8 +557,11 @@ fn default_load_order() -> String {
 
 impl RawGameDef {
     fn into_gamedef(self) -> GameDef {
-        // Resolved before `self.id` is consumed below.
-        let inherited_tools = GameDef::for_id(&self.id)
+        // Registry initialization parses these rows, so inheritance must only
+        // consult built-ins rather than re-entering the registry's OnceLock.
+        let inherited_tools = GAMES
+            .iter()
+            .find(|g| g.id.eq_ignore_ascii_case(&self.id))
             .map(|g| g.known_tools)
             .unwrap_or(&[]);
         GameDef {
