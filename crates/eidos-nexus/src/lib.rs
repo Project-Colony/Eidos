@@ -304,7 +304,9 @@ impl HiddenReason {
             HiddenReason::AdultUnknown => {
                 "Hidden: Eidos could not confirm your Nexus content settings. Sign in again to retry."
             }
-            HiddenReason::RatingUnknown => "Hidden: Eidos could not confirm this mod's content rating.",
+            HiddenReason::RatingUnknown => {
+                "Hidden: Eidos could not confirm this mod's content rating."
+            }
             HiddenReason::Unavailable => "This mod is no longer available on Nexus Mods.",
         }
     }
@@ -701,11 +703,7 @@ fn adult_flag(v: &serde_json::Value) -> Option<bool> {
 /// tolerates a placeholder for mods with no recorded version).
 fn endorse_version(version: &str) -> &str {
     let v = version.trim();
-    if v.is_empty() {
-        "1.0"
-    } else {
-        v
-    }
+    if v.is_empty() { "1.0" } else { v }
 }
 
 impl Nexus {
@@ -1453,38 +1451,58 @@ impl Nexus {
 
     /// Stream a (non-API) CDN URL to `dest`. Returns the total byte count.
     ///
-    /// Resumes an interrupted download: if a `<dest>.unfinished` partial is present
-    /// it sends `Range: bytes=<len>-` and appends (MO2 Range-resumes the same
-    /// marker). A server that ignores the range answers `200` instead of `206`, so
-    /// the partial is truncated and the download restarts cleanly.
+    /// Resume only when a strong ETag ties the saved partial to the same URL.
+    /// Missing, weak or changed validators restart a complete GET.
     pub fn download(&self, url: &str, dest: &Path) -> Result<u64, String> {
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        let tmp = unfinished_path(dest); // MO2's in-progress marker (appended, keeps ext)
-        let have = fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
-
-        let mut req = self.agent.get(url);
-        if have > 0 {
-            req = req.header("Range", format!("bytes={have}-"));
+        let tmp = unfinished_path(dest);
+        let identity_path = PathBuf::from(format!("{}.identity.json", tmp.display()));
+        for path in [&tmp, &identity_path] {
+            if fs::symlink_metadata(path).is_ok_and(|m| !m.file_type().is_file()) {
+                return Err(
+                    "Download partial or identity is not a regular file; left untouched".into(),
+                );
+            }
         }
-        let resp = req.call().map_err(|e| e.to_string())?;
-        // With http_status_as_error off, a rejection arrives here as a response;
-        // downloading an HTML error page into the .unfinished file would look
-        // like a resumable partial on the next attempt.
+        let have = fs::metadata(&tmp).map(|m| m.len()).unwrap_or(0);
+        let mut saved = fs::read_to_string(&identity_path)
+            .ok()
+            .and_then(|s| DownloadIdentity::read(&s))
+            .filter(|v| {
+                v.url == url
+                    && strong_etag(&v.etag)
+                    && have > 0
+                    && v.total.is_none_or(|total| have < total)
+            });
+        let mut req = self.agent.get(url);
+        if let Some(identity) = &saved {
+            req = req
+                .header("Range", format!("bytes={have}-"))
+                .header("If-Range", &identity.etag);
+        }
+        let mut resp = req.call().map_err(|e| e.to_string())?;
+        if saved.as_ref().is_some_and(|identity| {
+            resp.status() == 416
+                || resp.status() == 206
+                    && resp.headers().get("ETag").and_then(|h| h.to_str().ok())
+                        != Some(identity.etag.as_str())
+        }) {
+            // Never splice an unvalidated response onto a previous object's bytes.
+            saved = None;
+            resp = self.agent.get(url).call().map_err(|e| e.to_string())?;
+        }
         if !resp.status().is_success() {
             return Err(Nexus::status_err(resp.status().as_u16()));
         }
-
-        // A 206 alone does not prove it continues this partial. Validate the
-        // range before opening the file, and its complete length before publishing.
         let range = if resp.status() == 206 {
             let parsed = resp
                 .headers()
                 .get("Content-Range")
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.strip_prefix("bytes "))
-                .and_then(|value| value.split_once('/'))
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("bytes "))
+                .and_then(|v| v.split_once('/'))
                 .and_then(|(span, total)| {
                     let (start, end) = span.split_once('-')?;
                     Some((
@@ -1494,8 +1512,8 @@ impl Nexus {
                     ))
                 });
             match parsed {
-                Some((start, end, total)) if start == have && end >= start && end < total => Some((end - start + 1, total)),
-                _ => return Err("download server returned an invalid or mismatched Content-Range; partial retained".into()),
+                Some((start,end,total)) if saved.as_ref().is_some_and(|v|v.total.is_none_or(|n|n==total)) && start==have && end>=start && end<total => Some((end-start+1,total)),
+                _=>return Err("download server returned an invalid or mismatched Content-Range; partial retained".into()),
             }
         } else if resp.status() == 200 {
             None
@@ -1505,25 +1523,95 @@ impl Nexus {
                 resp.status()
             ));
         };
-        let resuming = have > 0 && range.is_some();
-        let mut out = if resuming {
+        let content_length = resp
+            .headers()
+            .get("Content-Length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<u64>().ok());
+        let identity = resp
+            .headers()
+            .get("ETag")
+            .and_then(|h| h.to_str().ok())
+            .filter(|etag| strong_etag(etag))
+            .map(|etag| DownloadIdentity {
+                url: url.into(),
+                etag: etag.into(),
+                total: range.map(|(_, n)| n).or(content_length),
+            });
+        let mut out = if range.is_some() {
             fs::OpenOptions::new().append(true).open(&tmp)
         } else {
             fs::File::create(&tmp)
         }
         .map_err(|e| e.to_string())?;
-
-        let mut reader = resp.into_body().into_reader();
-        let n = copy_stream(&mut reader, &mut out).map_err(|e| e.to_string())?;
-        out.flush().map_err(|e| e.to_string())?;
-        if let Some((expected, total)) = range {
-            if n != expected || have.checked_add(n) != Some(total) {
-                return Err("download range is incomplete; partial retained for retry".into());
-            }
+        // Persist a restart's truncation before its new validator; otherwise a crash
+        // could pair old object bytes with the new object's ETag.
+        out.sync_all().map_err(|e| e.to_string())?;
+        if let Some(identity) = identity {
+            fs::write(
+                &identity_path,
+                serde_json::json!({"url":identity.url,"etag":identity.etag,"total":identity.total})
+                    .to_string(),
+            )
+            .map_err(|e| e.to_string())?;
+            fs::File::open(&identity_path)
+                .and_then(|f| f.sync_all())
+                .map_err(|e| e.to_string())?;
+        } else if identity_path.exists() {
+            fs::remove_file(&identity_path).map_err(|e| e.to_string())?;
+        }
+        if let Some(parent) = tmp.parent().filter(|p| !p.as_os_str().is_empty()) {
+            fs::File::open(parent)
+                .and_then(|f| f.sync_all())
+                .map_err(|e| e.to_string())?;
+        }
+        let n = copy_stream(&mut resp.into_body().into_reader(), &mut out)
+            .map_err(|e| e.to_string())?;
+        out.flush()
+            .and_then(|_| out.sync_all())
+            .map_err(|e| e.to_string())?;
+        if content_length.is_some_and(|expected| expected != n)
+            || range.is_some_and(|(expected, total)| {
+                n != expected || have.checked_add(n) != Some(total)
+            })
+        {
+            return Err("download range or body is incomplete; partial retained for retry".into());
         }
         fs::rename(&tmp, dest).map_err(|e| e.to_string())?;
-        Ok(if resuming { have + n } else { n })
+        if identity_path.exists() {
+            let _ = fs::remove_file(&identity_path);
+        }
+        Ok(if range.is_some() { have + n } else { n })
     }
+}
+
+struct DownloadIdentity {
+    url: String,
+    etag: String,
+    total: Option<u64>,
+}
+impl DownloadIdentity {
+    fn read(text: &str) -> Option<Self> {
+        let v: serde_json::Value = serde_json::from_str(text).ok()?;
+        Some(Self {
+            url: v.get("url")?.as_str()?.into(),
+            etag: v.get("etag")?.as_str()?.into(),
+            total: match v.get("total")? {
+                serde_json::Value::Null => None,
+                n => Some(n.as_u64()?),
+            },
+        })
+    }
+}
+
+fn strong_etag(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() >= 2
+        && bytes[0] == b'"'
+        && bytes[bytes.len() - 1] == b'"'
+        && bytes[1..bytes.len() - 1]
+            .iter()
+            .all(|&b| b == 0x21 || (0x23..=0x7e).contains(&b))
 }
 
 /// One mod whose installed version is behind the latest seen on Nexus, surfaced by
@@ -1597,7 +1685,7 @@ pub fn check_updates(
             return Ok(UpdateCheckResult {
                 rate_limited: true,
                 ..Default::default()
-            })
+            });
         }
         Err(e) => return Err(e),
     };
@@ -2548,9 +2636,11 @@ mod tests {
 
     #[test]
     fn the_denied_explanation_points_at_the_setting_that_fixes_it() {
-        assert!(HiddenReason::AdultDenied
-            .message()
-            .contains("next.nexusmods.com/settings/content-blocking"));
+        assert!(
+            HiddenReason::AdultDenied
+                .message()
+                .contains("next.nexusmods.com/settings/content-blocking")
+        );
     }
 
     #[test]
@@ -2944,7 +3034,9 @@ mod tests {
     #[test]
     fn cdn_uri_file_name() {
         assert_eq!(
-            file_name_from_uri("https://cf-files.nexus-cdn.com/1704/107676/Dynamic%20String%20Distributor-107676.7z?md5=x&expires=1"),
+            file_name_from_uri(
+                "https://cf-files.nexus-cdn.com/1704/107676/Dynamic%20String%20Distributor-107676.7z?md5=x&expires=1"
+            ),
             Some("Dynamic String Distributor-107676.7z".to_string())
         );
         assert_eq!(file_name_from_uri("https://host/"), None);
@@ -3032,7 +3124,7 @@ mod tests {
         assert!(t.contains("installed=true"));
         assert!(t.contains("uninstalled=false"));
         assert!(t.contains("modID=1")); // other keys preserved
-                                        // No sidecar = silent no-op, not an error.
+        // No sidecar = silent no-op, not an error.
         mark_installed(&dir.join("absent.7z")).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
@@ -3233,6 +3325,155 @@ mod download_integrity_tests {
     }
 
     #[test]
+    fn missing_weak_or_foreign_validators_restart_without_a_range() {
+        for validator in [None, Some("W/\"old\""), Some("invalid"), Some("\"old\"")] {
+            let root = std::env::temp_dir().join(format!(
+                "eidos-validator-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            let dest = root.join("member.zip");
+            fs::write(unfinished_path(&dest), b"OLD").unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}/member", listener.local_addr().unwrap());
+            if let Some(etag) = validator {
+                let saved_url = if etag == "\"old\"" {
+                    "http://different-object/"
+                } else {
+                    &url
+                };
+                fs::write(
+                    format!("{}.identity.json", unfinished_path(&dest).display()),
+                    serde_json::json!({"url":saved_url, "etag":etag,"total":6}).to_string(),
+                )
+                .unwrap();
+            }
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut req = Vec::new();
+                let mut b = [0];
+                while !req.ends_with(b"\r\n\r\n") {
+                    stream.read_exact(&mut b).unwrap();
+                    req.push(b[0]);
+                }
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\nNEW",
+                    )
+                    .unwrap();
+                String::from_utf8(req).unwrap()
+            });
+            Nexus::with_bearer("synthetic")
+                .download(&url, &dest)
+                .unwrap();
+            assert!(
+                !server
+                    .join()
+                    .unwrap()
+                    .to_ascii_lowercase()
+                    .contains("range:"),
+                "unverified partial must restart"
+            );
+            assert_eq!(fs::read(&dest).unwrap(), b"NEW");
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn interrupted_downloads_resume_with_if_range_or_restart_changed_objects() {
+        for (status, etag) in [
+            ("206 Partial Content", "ETag: \"stable\"\r\n"),
+            ("206 Partial Content", ""),
+            ("206 Partial Content", "ETag: W/\"stable\"\r\n"),
+            ("206 Partial Content", "ETag: \"changed\"\r\n"),
+            ("416 Range Not Satisfiable", ""),
+            ("200 OK", "ETag: \"changed\"\r\n"),
+        ] {
+            let root = std::env::temp_dir().join(format!(
+                "eidos-resume-object-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            let dest = root.join("archive");
+            fs::write(&dest, b"personal complete").unwrap();
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let url = format!("http://{}/archive", listener.local_addr().unwrap());
+            let stable = status.starts_with("206") && etag == "ETag: \"stable\"\r\n";
+            let restarts = !stable && status != "200 OK";
+            let mut replies=vec!["HTTP/1.1 200 OK\r\nContent-Length: 6\r\nETag: \"stable\"\r\nConnection: close\r\n\r\nABC".to_string(),format!("HTTP/1.1 {status}\r\n{etag}Content-Range: bytes 3-5/6\r\nContent-Length: 3\r\nConnection: close\r\n\r\nNEW")];
+            if restarts {
+                replies.push("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nETag: \"new\"\r\nConnection: close\r\n\r\nNEW".into());
+            }
+            let server = std::thread::spawn(move || {
+                let mut requests = Vec::new();
+                for reply in replies {
+                    let started = std::time::Instant::now();
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((s, _)) => break s,
+                            Err(e)
+                                if e.kind() == std::io::ErrorKind::WouldBlock
+                                    && started.elapsed() < std::time::Duration::from_secs(3) =>
+                            {
+                                std::thread::sleep(std::time::Duration::from_millis(2))
+                            }
+                            Err(_) => return requests,
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                        .unwrap();
+                    let mut req = Vec::new();
+                    let mut b = [0];
+                    while !req.ends_with(b"\r\n\r\n") {
+                        stream.read_exact(&mut b).unwrap();
+                        req.push(b[0]);
+                    }
+                    requests.push(String::from_utf8(req).unwrap());
+                    stream.write_all(reply.as_bytes()).unwrap();
+                }
+                requests
+            });
+            let nexus = Nexus::with_bearer("synthetic");
+            assert!(nexus.download(&url, &dest).is_err());
+            assert_eq!(fs::read(&dest).unwrap(), b"personal complete");
+            assert_eq!(fs::read(unfinished_path(&dest)).unwrap(), b"ABC");
+            let result = nexus.download(&url, &dest);
+            let requests = server.join().unwrap();
+            assert!(result.is_ok(), "{status} {etag}: {result:?}");
+            assert_eq!(
+                fs::read(&dest).unwrap(),
+                if stable {
+                    b"ABCNEW".as_slice()
+                } else {
+                    b"NEW".as_slice()
+                }
+            );
+            assert!(!requests[0].to_ascii_lowercase().contains("range:"));
+            assert!(requests[1].to_ascii_lowercase().contains("range: bytes=3-"));
+            assert!(
+                requests[1]
+                    .to_ascii_lowercase()
+                    .contains("if-range: \"stable\"")
+            );
+            if restarts {
+                assert!(!requests[2].to_ascii_lowercase().contains("range:"));
+            }
+            assert!(
+                !PathBuf::from(format!(
+                    "{}.identity.json",
+                    unfinished_path(&dest).display()
+                ))
+                .exists()
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
     fn only_a_complete_matching_range_is_published() {
         let cases = [
             (
@@ -3270,8 +3511,13 @@ mod download_integrity_tests {
             fs::write(&dest, b"previous complete download").unwrap();
             fs::write(unfinished_path(&dest), b"ABC").unwrap();
             let (url, server) = serve(&format!(
-                "HTTP/1.1 {status}\r\n{range}Content-Length: 3\r\nConnection: close\r\n\r\nXYZ"
+                "HTTP/1.1 {status}\r\n{range}ETag: \"stable\"\r\nContent-Length: 3\r\nConnection: close\r\n\r\nXYZ"
             ));
+            fs::write(
+                format!("{}.identity.json", unfinished_path(&dest).display()),
+                serde_json::json!({"url":url,"etag":"\"stable\"","total":6}).to_string(),
+            )
+            .unwrap();
             let result = Nexus::with_bearer("synthetic-unused").download(&url, &dest);
             server.join().unwrap();
             assert_eq!(result.is_ok(), succeeds, "{status} {range}: {result:?}");
@@ -3335,9 +3581,11 @@ mod update_metadata_integrity_tests {
         drop(lock);
         let replacement = "[General]\nmodid=99\nversion=3.0\nnotes=replacement\n";
         fs::write(&path, replacement).unwrap();
-        assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
-            .unwrap()
-            .is_none());
+        assert!(
+            apply_mod_update(&inst, "Personal", &snapshot, &remote, 124)
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(fs::read_to_string(&path).unwrap(), replacement);
         fs::write(&path, [0xff, 0xfe]).unwrap();
         assert!(apply_mod_update(&inst, "Personal", &snapshot, &remote, 125).is_err());

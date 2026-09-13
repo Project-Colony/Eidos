@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -115,8 +115,8 @@ Cell 切換是即時的。這份收益來自少問你的模組幾個問題:以�
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 接著把你遊戲的 Steam 啟動選項設成 `~/.local/bin/eidos-gui %command%`,然後按下
@@ -232,4 +232,4 @@ Fallout 4(+ VR)、Starfield、Oblivion 與 Morrowind(最後兩款會掛載並管
 
 ## 授權
 
-GPL-3.0-or-later。模組管理屬於所有人。
+Eidos 的原創程式碼採用 GPL-3.0-or-later 授權。隨附的 OMOD 轉譯程式碼採用 GPL-3.0-only 授權；請參閱其[上游作者致謝](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)。NIF 輔助程式保留其[元件授權與作者致謝](../../../native/eidos-nif-preview/UPSTREAM.md)。模組管理屬於所有人。

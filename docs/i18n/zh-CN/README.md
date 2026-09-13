@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -112,8 +112,8 @@ Nexus 会话、你的实例列表、你写的游戏与附加定义 - 日志在 `
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 然后把你游戏的 Steam 启动选项设为 `~/.local/bin/eidos-gui %command%`,按下开始游戏。
@@ -228,4 +228,4 @@ Fallout 4(+ VR)、Starfield、Oblivion 和 Morrowind(后两者能挂载并管理
 
 ## 许可
 
-GPL-3.0-or-later。模组管理属于所有人。
+Eidos 的原创代码采用 GPL-3.0-or-later 许可证。随附的 OMOD 转译代码采用 GPL-3.0-only 许可证；请参阅其[上游作者致谢](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)。NIF 辅助程序保留其[组件许可证和作者致谢](../../../native/eidos-nif-preview/UPSTREAM.md)。模组管理属于所有人。

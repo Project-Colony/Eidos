@@ -339,12 +339,23 @@ pub(crate) fn set_hidden(path: &Path, hide: bool) -> std::io::Result<PathBuf> {
     };
     // Never let a hide silently swallow an existing file: unhiding onto a name the
     // mod already carries would destroy the live copy.
-    let parent = target.parent().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing parent"))?;
-    let target_name = target.file_name().ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing file name"))?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing parent"))?;
+    let target_name = target
+        .file_name()
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "missing file name"))?;
     for entry in fs::read_dir(parent)? {
         let entry = entry?;
-        if entry.file_name().to_string_lossy().eq_ignore_ascii_case(&target_name.to_string_lossy()) {
-            return Err(Error::new(ErrorKind::AlreadyExists, format!("{} already exists", entry.path().display())));
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&target_name.to_string_lossy())
+        {
+            return Err(Error::new(
+                ErrorKind::AlreadyExists,
+                format!("{} already exists", entry.path().display()),
+            ));
         }
     }
     fs::rename(path, &target)?;
@@ -570,8 +581,8 @@ pub(crate) fn file_menu_card<'a>(app: &App) -> Element<'a, Message> {
     // The profile's INIs are the ones Eidos owns; the prefix copy is what the
     // game reads. Both are worth reaching, and only one of them is guessable.
     let prefix_inis = game.and_then(|g| {
-        let spec = GameSpec::for_id(g.def.id)?;
-        let prefix = g.compatdata.as_ref()?.join("pfx");
+        let spec = g.plugin_spec()?;
+        let prefix = g.prefix()?;
         Some(eidos_plugins::documents_my_games_dir(&prefix, &spec))
     });
 
@@ -2092,6 +2103,10 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         ))
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
+        .push(menu_item(
+            "Reinstall with new choices",
+            Message::ModReinstallFresh(i),
+        ))
         .push(menu_item("Rename", Message::RenameStart(i)))
         .push(menu_item("Add separator above", Message::AddSeparator(i)))
         .push(menu_sep())

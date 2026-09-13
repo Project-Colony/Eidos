@@ -22,7 +22,7 @@ pub(crate) fn cmd_play(args: &[String]) {
     };
 
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -45,8 +45,13 @@ pub(crate) fn cmd_play(args: &[String]) {
 
     let game_id = target.game_id;
     let inst = target.inst;
-    inst.create().ok();
-    let _ = inst.ensure_manifest(&game_id, InstanceKind::Global);
+    if let Err(error) = inst
+        .create()
+        .and_then(|()| inst.ensure_manifest(&game_id, InstanceKind::Global))
+    {
+        eidos_log::warn!("Cannot prepare this instance: {error}");
+        exit(1);
+    }
 
     if command.is_empty() {
         let layers = inst.load_order();
@@ -298,11 +303,31 @@ pub(crate) fn run_through_view(
             }
         }
     };
+    if let Err(error) = crate::games::validate_selected_game(
+        inst,
+        game_id,
+        game,
+        &eidos_games::detect(&eidos_games::home()),
+    ) {
+        eidos_log::warn!("eidos: refusing to launch: {error}");
+        exit(1);
+    }
     // The profile is resolved ONCE and threaded through every prepare and every
     // post-run step. Re-reading `inst.active()` after the game exits re-reads the
     // manifest - and a profile switched in the GUI mid-game then received the
     // PLAYED profile's captures, corrupting a profile that was never run.
     let prof = inst.active();
+    let mut launch_game = game.clone();
+    launch_game.data_path = game
+        .mod_data_path_for_launch(&eidos_games::home(), &command)
+        .unwrap_or_else(|error| {
+            eidos_log::warn!(
+                "eidos: refusing to launch: cannot resolve the game's mod directory: {error}"
+            );
+            exit(1);
+        });
+    let game = &launch_game;
+    let cwd = cwd.or_else(|| Some(game.install_path.clone()));
 
     // The mod list is JUDGED before anything is prepared, and a bad verdict stops
     // the launch here.
@@ -331,9 +356,79 @@ pub(crate) fn run_through_view(
         exit(1);
     }
 
-    let inis = prepare_inis(game_id, game, inst, &prof);
-    let plugin_bind = prepare_plugins(game_id, game, inst, &prof);
-    let save_bind = prepare_saves(game_id, game, &prof);
+    // Recover the selected profile before any preparation can replace runtime
+    // files from an interrupted session. Completed output moves are idempotent.
+    const ROOT_CONTROL_FILES: &[&str] = &[
+        "Morrowind.ini",
+        "Oblivion.ini",
+        "OblivionPrefs.ini",
+        "plugins.txt",
+    ];
+    let recovery = prof
+        .recover_ini_session()
+        .and_then(|()| {
+            prof.merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
+        })
+        .and_then(|()| recover_timestamp_order(game_id, game, inst, &prof));
+    if let Err(e) = recovery {
+        eidos_log::warn!("eidos: refusing to launch: pending profile capture failed: {e}");
+        exit(1);
+    }
+    let mut plugin_bind = prepare_plugins(game_id, game, inst, &prof);
+    if game
+        .plugin_spec()
+        .is_some_and(|s| s.mechanism == eidos_plugins::LoadOrderMechanism::Timestamp)
+        && plugin_bind.is_none()
+    {
+        eidos_log::warn!("eidos: refusing to launch: timestamp plugin state could not be prepared");
+        exit(1);
+    }
+    let inis = prepare_inis(game_id, game, inst, &prof).unwrap_or_else(|e| {
+        eidos_log::warn!("eidos: refusing to launch: INI preparation failed: {e}");
+        exit(1)
+    });
+    let runtime_root = inis
+        .as_ref()
+        .filter(|p| p.root_mode)
+        .map(|p| p.docs.clone());
+    if let Some(prepared) = inis.as_ref().filter(|p| p.root_mode) {
+        let mut files = prepared.ini_files.to_vec();
+        if plugin_bind
+            .as_ref()
+            .is_some_and(|(_, dst)| *dst == game.install_path)
+        {
+            let active = game.plugin_spec().unwrap().active_file();
+            if !files.contains(&active) {
+                files.push(active);
+                if let Err(e) =
+                    stage_root_activation(&prof, &prepared.docs, &game.plugin_spec().unwrap())
+                {
+                    eidos_log::warn!(
+                        "eidos: refusing to launch: root activation preparation failed: {e}"
+                    );
+                    exit(1);
+                }
+            }
+            // The root union carries selected files; binding the state DIRECTORY
+            // here would hide the game executable and all its other resources.
+            plugin_bind = None;
+        }
+        if let Err(e) = prof.record_ini_session(&prepared.docs, &files, &prepared.tweaked) {
+            eidos_log::warn!(
+                "eidos: refusing to launch: could not persist INI capture receipt: {e}"
+            );
+            exit(1);
+        }
+    }
+    let plugin_timestamps =
+        prepare_plugin_timestamps(game_id, game, inst, &prof).unwrap_or_else(|e| {
+            eidos_log::warn!("eidos: refusing to launch: timestamp projection failed: {e}");
+            exit(1)
+        });
+    let save_bind = prepare_saves(game, &prof).unwrap_or_else(|error| {
+        eidos_log::warn!("eidos: refusing to launch: could not prepare profile saves: {error}");
+        exit(1);
+    });
 
     // Soft advisory: an ENB (game root, outside the Data mount) and Community
     // Shaders (an enabled SKSE-plugin mod) both inject into the D3D11 pipeline.
@@ -379,11 +474,14 @@ pub(crate) fn run_through_view(
     }
 
     let root_layers = inst.root_layers();
+    if runtime_root.is_some() {
+        std::fs::create_dir_all(inst.root_overwrite_dir()).unwrap_or_else(|e| {
+            eidos_log::warn!("eidos: cannot create root output directory: {e}");
+            exit(1)
+        });
+    }
     if !root_layers.is_empty() {
-        eidos_log::info!(
-            "eidos: {} mod(s) provide root-level files",
-            root_layers.len()
-        );
+        eidos_log::info!("eidos: {} root file layer(s)", root_layers.len());
     }
 
     // The mount point has to exist before anything can be mounted over it, and for
@@ -411,8 +509,18 @@ pub(crate) fn run_through_view(
         );
     }
 
+    let shader_cancel = std::sync::atomic::AtomicBool::new(false);
+    let shader_session =
+        prepare_omod_shaders(game, inst, &prof, &shader_cancel).unwrap_or_else(|error| {
+            eidos_log::warn!("eidos: refusing to launch: OMOD shader preparation failed: {error}");
+            exit(1);
+        });
     let spec = LaunchSpec {
-        layers: inst.load_order(),
+        readonly_data_binds: shader_session
+            .as_ref()
+            .map_or_else(Vec::new, |s| s.mappings().to_vec()),
+        plugin_timestamps,
+        layers: prof.load_order(),
         overwrite: inst.overwrite_dir(),
         mountpoint: game.data_path.clone(),
         command,
@@ -429,12 +537,17 @@ pub(crate) fn run_through_view(
         // MO2's Root Builder: a mod's `Root/` is projected onto the GAME INSTALL
         // ROOT rather than into Data/, which is how a script extender, ENB,
         // ReShade or Engine Fixes becomes a real, orderable, per-profile mod
-        // instead of files copied into the game by hand. Empty for a load order
-        // that uses none, in which case no second mount happens.
+        // instead of files copied into the game by hand. The second mount is
+        // skipped only when both this list and root Overwrite are empty.
         root_layers,
         root_base_bind: Some((game.install_path.clone(), inst.base_root_dir())),
         // ONE Overwrite, as in MO2: game-root writes go to its `Root/` subdir.
-        root_overwrite: Some(inst.root_overwrite_dir()),
+        root_overwrite: Some(
+            runtime_root
+                .clone()
+                .unwrap_or_else(|| inst.root_overwrite_dir()),
+        ),
+        root_readonly_overwrite: runtime_root.as_ref().map(|_| inst.root_overwrite_dir()),
     };
     // Taken immediately before the run so the capture below can tell what THIS
     // run produced from what was already in the Overwrite.
@@ -465,8 +578,42 @@ pub(crate) fn run_through_view(
             .map(|run| run.before.clone())
             .unwrap_or_else(|| inst.overwrite_snapshot())
     });
+    if let Some(session) = &shader_session {
+        if let Err(error) = session.validate_sources(&shader_cancel) {
+            eidos_log::warn!("eidos: refusing to launch: shader sources changed: {error}");
+            drop(shader_session);
+            exit(1);
+        }
+    }
     let result = launch(spec);
-    let provenance_failed = tool_run.is_some_and(|run| match inst.finish_tool_run(run) {
+    if let Some(session) = shader_session {
+        if let Err(error) = session.cleanup() {
+            eidos_log::warn!("eidos: could not remove session-owned shader files: {error}");
+        }
+    }
+    let root_capture_failed = runtime_root.is_some()
+        && match prof
+            .merge_runtime_root_outputs(&inst.root_overwrite_dir(), ROOT_CONTROL_FILES)
+            .and_then(|()| prof.recover_ini_session())
+        {
+            Ok(()) => false,
+            Err(e) => {
+                eidos_log::warn!("eidos: root capture failed: {e}; files remain in {} for retry before the next launch",prof.dir().join("runtime-root").display());
+                true
+            }
+        };
+    let timestamp_capture_failed = if root_capture_failed {
+        true
+    } else {
+        match recover_timestamp_order(game_id, game, inst, &prof) {
+            Ok(()) => false,
+            Err(e) => {
+                eidos_log::warn!("eidos: timestamp capture failed: {e}; the profile receipt is retained for retry");
+                true
+            }
+        }
+    };
+    let provenance_failed = root_capture_failed || tool_run.is_some_and(|run| match inst.finish_tool_run(run) {
         Ok(_) => false,
         Err(error) => {
             eidos_log::warn!("eidos: could not persist generated output receipts: {error}; output remains in Overwrite");
@@ -494,7 +641,7 @@ pub(crate) fn run_through_view(
     // The command has exited: capture any INI changes back into the profile.
     // (`prof`, not a fresh `inst.active()`: the captures belong to the profile
     // that was PLAYED, whatever the GUI switched to since.)
-    if let Some(prepared) = inis {
+    if let Some(prepared) = inis.filter(|p| !p.root_mode) {
         if let Ok(n) = prof.capture_inis(&prepared.docs, prepared.ini_files) {
             if n > 0 {
                 eidos_log::info!(
@@ -555,7 +702,10 @@ pub(crate) fn run_through_view(
     // session: without this sync the cloud backs up a save set frozen at the
     // pre-Eidos era (observed: two saves from 2024, nothing since). One-way,
     // never deleting - the prefix is a backup target, not an authority.
-    if let Some((prof_saves, prefix_saves)) = &save_bind {
+    if let Some((prof_saves, prefix_saves)) = save_bind
+        .as_ref()
+        .filter(|(_, destination)| steam_cloud_save_target(game, destination))
+    {
         match sync_saves_for_cloud(prof_saves, prefix_saves) {
             Ok(n) if n > 0 => {
                 eidos_log::info!("eidos: synced {n} save file(s) into the prefix for Steam Cloud")
@@ -567,7 +717,7 @@ pub(crate) fn run_through_view(
         }
     }
 
-    if provenance_failed {
+    if provenance_failed || timestamp_capture_failed {
         exit(1);
     }
     match result {
@@ -685,10 +835,7 @@ pub(crate) fn forced_dll_overrides(
     let mut stems = shipped_shadow_stems(&scan, SHIPPED_SHADOWS);
 
     // The prefix's windows dir, where bundled native DLLs get deployed.
-    let win = game
-        .compatdata
-        .as_ref()
-        .map(|cd| cd.join("pfx").join("drive_c").join("windows"));
+    let win = game.prefix().map(|prefix| prefix.join("drive_c/windows"));
 
     // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
@@ -731,9 +878,92 @@ pub(crate) fn forced_dll_overrides(
     Some(("WINEDLLOVERRIDES".to_string(), value))
 }
 
+fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
+    if !game.is_steam() {
+        return false;
+    }
+    let Some(prefix) = game.prefix() else {
+        return false;
+    };
+    let (Ok(prefix), Ok(destination), Ok(install)) = (
+        prefix.canonicalize(),
+        destination.canonicalize(),
+        game.install_path.canonicalize(),
+    ) else {
+        return false;
+    };
+    destination != prefix && destination.starts_with(prefix) && !destination.starts_with(install)
+}
+
 #[cfg(test)]
 mod extender_tests {
     use super::*;
+
+    #[test]
+    fn tier_one_launch_dlls_use_the_selected_external_prefix() {
+        let root = std::env::temp_dir().join(format!("eidos-launch-prefix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let instance = Instance::portable(root.join("instance"));
+        instance.create().unwrap();
+        let prefix = root.join("heroic-prefix");
+        let game = DetectedGame {
+            def: eidos_games::GameDef::for_id("oblivion").unwrap(),
+            source: eidos_games::GameSource::External {
+                store: eidos_games::Store::Gog,
+                app_id: "synthetic".into(),
+                prefix: Some(prefix.clone()),
+                heroic: true,
+            },
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: Some(root.join("unselected-steam-prefix")),
+            steam_name: String::new(),
+        };
+        let overrides = forced_dll_overrides(&game, &instance, &["d3dx9_43".into()]).unwrap();
+        assert!(overrides.1.contains("d3dx9_43=n,b"));
+        assert!(prefix
+            .join("drive_c/windows/system32/d3dx9_43.dll")
+            .is_file());
+        assert!(!game.compatdata.unwrap().exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cloud_sync_accepts_only_a_steam_prefix_save_directory() {
+        let root = std::env::temp_dir().join(format!("eidos-cloud-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut game = DetectedGame {
+            def: eidos_games::GameDef::for_id("morrowind").unwrap(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data Files"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        let saves = game
+            .prefix()
+            .unwrap()
+            .join("drive_c/users/steamuser/Documents/Saves");
+        std::fs::create_dir_all(&saves).unwrap();
+        std::fs::create_dir_all(game.install_path.join("Saves")).unwrap();
+        assert!(steam_cloud_save_target(&game, &saves));
+        assert!(!steam_cloud_save_target(&game, &game.prefix().unwrap()));
+        assert!(!steam_cloud_save_target(
+            &game,
+            &game.install_path.join("Saves")
+        ));
+        let link = game.prefix().unwrap().join("escaped-saves");
+        std::os::unix::fs::symlink(game.install_path.join("Saves"), &link).unwrap();
+        assert!(!steam_cloud_save_target(&game, &link));
+        game.source = eidos_games::GameSource::External {
+            store: eidos_games::Store::Gog,
+            app_id: "synthetic".into(),
+            prefix: game.prefix(),
+            heroic: true,
+        };
+        assert!(!steam_cloud_save_target(&game, &saves));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn automatic_swap_uses_only_active_root_mods_and_root_overwrite() {

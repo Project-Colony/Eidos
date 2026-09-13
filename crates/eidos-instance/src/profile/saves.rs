@@ -19,7 +19,7 @@ use super::*;
 pub(crate) const SAVE_EXTS: &[&str] = &["ess", "fos", "sfs"];
 
 /// Script-extender co-saves that travel WITH a save: same stem, own extension.
-pub(crate) const COSAVE_EXTS: &[&str] = &["skse", "f4se", "nvse", "fose", "sfse", "obse"];
+pub(crate) const COSAVE_EXTS: &[&str] = &["skse", "f4se", "nvse", "fose", "sfse", "obse", "mwse"];
 
 pub(crate) fn ext_of(name: &str) -> String {
     name.rsplit_once('.')
@@ -242,5 +242,33 @@ impl Profile {
             .collect();
         out.sort_by_key(|s| std::cmp::Reverse(s.mtime));
         out
+    }
+}
+
+#[cfg(test)]
+mod morrowind_cosave_tests {
+    use super::*;
+
+    #[test]
+    fn mwse_cosaves_seed_and_travel_with_their_save() {
+        let root = std::env::temp_dir().join(format!("eidos-mwse-saves-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let source = root.join("game/Saves");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("Slot.ess"), b"save").unwrap();
+        fs::write(source.join("slot.MWSE"), b"cosave").unwrap();
+        let profile = Profile {
+            instance_root: root.join("instance"),
+            name: "Default".into(),
+        };
+        assert_eq!(profile.seed_saves(&source).unwrap(), 2);
+        assert!(is_save_data("slot.MWSE"));
+        assert!(!is_save_listing("slot.MWSE"));
+        assert_eq!(
+            cosave_siblings(&profile.saves_dir().join("Slot.ess")),
+            vec![profile.saves_dir().join("slot.MWSE")]
+        );
+        assert_eq!(fs::read(source.join("slot.MWSE")).unwrap(), b"cosave");
+        fs::remove_dir_all(root).unwrap();
     }
 }

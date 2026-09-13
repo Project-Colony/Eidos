@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -138,8 +138,8 @@ een echte instantie die normaal gespeeld werd, niet op een benchmark.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Zet daarna de Steam-opstartoptie van je spel op
@@ -265,4 +265,4 @@ Een familie toevoegen is één descriptorregel:
 
 ## Licentie
 
-GPL-3.0-or-later. Modbeheer is van iedereen.
+De oorspronkelijke code van Eidos valt onder GPL-3.0-or-later. De meegeleverde vertalingen van OMOD-code vallen onder GPL-3.0-only; zie de [vermelding van de oorspronkelijke auteurs](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). Het NIF-hulpprogramma behoudt de [licenties en auteursvermeldingen van zijn onderdelen](../../../native/eidos-nif-preview/UPSTREAM.md). Modbeheer is van iedereen.

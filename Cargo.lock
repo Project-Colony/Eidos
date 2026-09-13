@@ -393,6 +393,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
+name = "bcdec_rs"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f09c37bc0e9f0924b7dae9988265ef3c76c88538f41a3b06caf4bed07cee5226"
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -513,6 +519,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -523,6 +535,15 @@ name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
+
+[[package]]
+name = "bzip2"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3a53fac24f34a81bc9954b5d6cfce0c21e18ec6959f44f56e8e90e4bb7c346c"
+dependencies = [
+ "libbz2-rs-sys",
+]
 
 [[package]]
 name = "calloop"
@@ -585,6 +606,16 @@ dependencies = [
  "jobserver",
  "libc",
  "shlex",
+]
+
+[[package]]
+name = "cdivsufsort"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edefce019197609da416762da75bb000bbd2224b2d89a7e722c2296cbff79b8c"
+dependencies = [
+ "cc",
+ "sacabase",
 ]
 
 [[package]]
@@ -915,6 +946,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "ddsfile"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "479dfe1e6737aa9e96c6ac7b69689dc4c32da8383f2c12744739d76afa8b66c4"
+dependencies = [
+ "bitflags 2.13.1",
+ "byteorder",
+ "enum-primitive-derive",
+ "num-traits",
+]
+
+[[package]]
 name = "deranged"
 version = "0.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1027,8 +1070,9 @@ checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
 
 [[package]]
 name = "eidos"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
+ "eidos-addons",
  "eidos-collections",
  "eidos-fomod",
  "eidos-gamefeatures",
@@ -1043,22 +1087,31 @@ dependencies = [
  "eidos-plugins",
  "eidos-sevenzip",
  "eidos-transfer",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "eidos-addons"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-paths",
+ "rustix 1.1.4",
  "serde",
+ "serde_json",
+ "tempfile",
  "toml",
 ]
 
 [[package]]
 name = "eidos-collections"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
+ "bzip2",
+ "crc32fast",
+ "eidos-addons",
  "eidos-fomod",
+ "eidos-gamefeatures",
  "eidos-games",
  "eidos-install",
  "eidos-instance",
@@ -1066,34 +1119,40 @@ dependencies = [
  "eidos-nexus",
  "eidos-plugins",
  "eidos-sevenzip",
+ "qbsdiff",
  "serde",
  "serde_json",
 ]
 
 [[package]]
 name = "eidos-conflicts"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
+ "ddsfile",
  "encoding_rs",
+ "flate2",
+ "lz4_flex",
+ "rustix 1.1.4",
+ "tempfile",
 ]
 
 [[package]]
 name = "eidos-core"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "eidos-fomod"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "roxmltree 0.21.1",
 ]
 
 [[package]]
 name = "eidos-fuse"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-core",
  "fuser",
@@ -1102,7 +1161,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-gamedef"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-paths",
  "serde",
@@ -1111,7 +1170,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-gamefeatures"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-conflicts",
  "eidos-core",
@@ -1120,22 +1179,29 @@ dependencies = [
  "eidos-paths",
  "eidos-sevenzip",
  "flate2",
+ "libc",
  "object",
+ "sha2",
  "ureq",
 ]
 
 [[package]]
 name = "eidos-games"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-gamedef",
+ "eidos-plugins",
+ "quick-xml",
+ "serde_json",
 ]
 
 [[package]]
 name = "eidos-gui"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
+ "bcdec_rs",
  "colony-ui",
+ "ddsfile",
  "eidos-addons",
  "eidos-collections",
  "eidos-conflicts",
@@ -1154,29 +1220,46 @@ dependencies = [
  "eidos-plugins",
  "eidos-transfer",
  "iced",
+ "iced_runtime",
+ "iced_tiny_skia",
+ "image",
  "libc",
  "rfd",
+ "serde",
+ "serde_json",
+ "smol",
+ "tempfile",
 ]
 
 [[package]]
 name = "eidos-ini"
-version = "1.17.1"
+version = "1.18.0"
 
 [[package]]
 name = "eidos-install"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
+ "crc32fast",
+ "eidos-addons",
+ "eidos-conflicts",
  "eidos-core",
  "eidos-fomod",
  "eidos-gamedef",
+ "eidos-ini",
  "eidos-instance",
  "eidos-log",
+ "eidos-plugins",
  "eidos-sevenzip",
+ "encoding_rs",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]
 name = "eidos-instance"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-core",
  "eidos-ini",
@@ -1190,15 +1273,16 @@ dependencies = [
 
 [[package]]
 name = "eidos-launch"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-fuse",
+ "eidos-gamefeatures",
  "libc",
 ]
 
 [[package]]
 name = "eidos-log"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-paths",
  "libc",
@@ -1206,7 +1290,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-loot"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-plugins",
  "libloot",
@@ -1215,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "eidos-nexus"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "base64",
  "eidos-instance",
@@ -1229,24 +1313,25 @@ dependencies = [
 
 [[package]]
 name = "eidos-paths"
-version = "1.17.1"
+version = "1.18.0"
 
 [[package]]
 name = "eidos-plugins"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-gamedef",
  "encoding_rs",
  "esplugin",
+ "libloadorder",
 ]
 
 [[package]]
 name = "eidos-sevenzip"
-version = "1.17.1"
+version = "1.18.0"
 
 [[package]]
 name = "eidos-transfer"
-version = "1.17.1"
+version = "1.18.0"
 dependencies = [
  "eidos-ini",
  "eidos-instance",
@@ -1274,6 +1359,17 @@ name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66b7e2430c6dff6a955451e2cfc438f09cea1965a9d6f87f7e3b90decc014099"
+
+[[package]]
+name = "enum-primitive-derive"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c375b9c5eadb68d0a6efee2999fef292f45854c3444c86f09d8ab086ba942b0e"
+dependencies = [
+ "num-traits",
+ "quote",
+ "syn 1.0.109",
+]
 
 [[package]]
 name = "enumflags2"
@@ -2420,6 +2516,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
+name = "libbz2-rs-sys"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34b357333733e8260735ba5894eb928c02ecc69c78715f01a8019e7fa7f2db4c"
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2581,6 +2683,15 @@ name = "lru"
 version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
+
+[[package]]
+name = "lz4_flex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecbdfe44b1bd960b68170b417450a628c43f7cf56bb3c5317e61cb230ee7f226"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "malloc_buf"
@@ -3596,6 +3707,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "qbsdiff"
+version = "1.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdc7f24528be166f08f2c7becaca5618865499b6ded2565d5afcd795cc0d7596"
+dependencies = [
+ "byteorder",
+ "bzip2",
+ "rayon",
+ "suffix_array",
+]
+
+[[package]]
 name = "qoi"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4059,6 +4182,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "sacabase"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9883fc3d6ce3d78bb54d908602f8bc1f7b5f983afe601dabe083009d86267a84"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4444,6 +4576,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
+name = "suffix_array"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "907d9ca9637a22e3a7d7c7818f6105a7898857359e187ad3325d986684b9ec3f"
+dependencies = [
+ "cdivsufsort",
+]
+
+[[package]]
 name = "svg_fmt"
 version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4458,6 +4599,17 @@ dependencies = [
  "skrifa 0.44.0",
  "yazi",
  "zeno",
+]
+
+[[package]]
+name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -4771,6 +4923,12 @@ checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
 ]
+
+[[package]]
+name = "twox-hash"
+version = "2.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5283634e518fe9e82c7b20520bb4bc209009fd16c82077c802f8111ecbb0117a"
 
 [[package]]
 name = "typenum"

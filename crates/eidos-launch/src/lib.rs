@@ -14,9 +14,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
 use eidos_fuse::Eidos;
+pub use eidos_fuse::{read_plugin_mtimes, recover_plugin_mtimes, PluginTimestamps};
 
 /// What to mount and run.
 pub struct LaunchSpec {
+    /// Session-generated regular files projected read-only after the Data mount.
+    /// Destinations must be existing, strictly relative Data files.
+    pub readonly_data_binds: Vec<(PathBuf, PathBuf)>,
+    /// Optional profile-owned projection and capture for timestamp-ordered engines.
+    pub plugin_timestamps: Option<PluginTimestamps>,
     /// Mod layers, highest priority first.
     pub layers: Vec<PathBuf>,
     /// Writable Overwrite layer.
@@ -34,7 +40,8 @@ pub struct LaunchSpec {
     /// `stash` so the daemon can still read them once the union covers `src`.
     pub base_bind: Option<(PathBuf, PathBuf)>,
     /// Extra `(src, dst)` bind mounts set up in the namespace before launch, each
-    /// making `dst` show `src` for the duration of the run only. Used to redirect
+    /// making `dst` show `src` for the duration of the run only. Targets inside `root_base_bind.0` are deferred until after the Root/Data
+    /// unions and force a Root mount; other targets are bound beforehand. Used to redirect
     /// the game's save directory to the active profile's saves (the Linux-native
     /// equivalent of MO2's usvfs save mapping) without ever modifying the prefix.
     pub binds: Vec<(PathBuf, PathBuf)>,
@@ -49,7 +56,8 @@ pub struct LaunchSpec {
     /// This is MO2's Root Builder, and it is what makes a script extender, ENB,
     /// ReShade, `.asi` loaders and Engine Fixes manageable as mods instead of
     /// files the user copies into their game by hand. An empty list skips the
-    /// second mount only when root Overwrite is also empty.
+    /// second mount only when root Overwrite is also empty and no read-only
+    /// shared Overwrite was requested.
     ///
     /// Other managers deploy these by copying into the real game directory and
     /// restoring afterwards, with a journal so a crash can be cleaned up. Eidos
@@ -62,6 +70,10 @@ pub struct LaunchSpec {
     /// (it has no instance to put one in); `eidos` passes the instance's single
     /// Overwrite so everything the user can write ends up in one place.
     pub root_overwrite: Option<PathBuf>,
+    /// Shared Root output below a profile-owned root upper. Unlike an ordinary
+    /// mod layer, its deletion and opacity markers still mask lower providers.
+    /// Its payloads are read in place; every session write uses `root_overwrite`.
+    pub root_readonly_overwrite: Option<PathBuf>,
     /// `(game_root, stash)` for the root union, mirroring [`Self::base_bind`]:
     /// the bind captures the pristine game root so the daemon can still read it
     /// once the union covers that same path.
@@ -93,6 +105,257 @@ fn bind_mount(src: &Path, dst: &Path) -> std::io::Result<()> {
             std::ptr::null(),
         )
     })
+}
+
+/// Pin each component without following symlinks, including parent directories.
+fn open_regular_nofollow(path: &Path) -> std::io::Result<std::fs::File> {
+    open_projection_path(path, false)
+}
+
+fn open_projection_path(path: &Path, directory: bool) -> std::io::Result<std::fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "expected an absolute regular path without symlinks or parent components",
+        )
+    };
+    if !path.is_absolute() {
+        return Err(invalid());
+    }
+    let mut parent = std::fs::File::open("/")?;
+    let parts: Vec<_> = path.components().skip(1).collect();
+    if parts.is_empty() {
+        return Err(invalid());
+    }
+    for (index, part) in parts.iter().enumerate() {
+        let std::path::Component::Normal(name) = part else {
+            return Err(invalid());
+        };
+        let name = CString::new(name.as_bytes()).map_err(|_| invalid())?;
+        let last = index + 1 == parts.len();
+        let flags = libc::O_PATH
+            | libc::O_NOFOLLOW
+            | libc::O_CLOEXEC
+            | if last && !directory {
+                0
+            } else {
+                libc::O_DIRECTORY
+            };
+        // SAFETY: the directory FD and component string stay alive for openat.
+        let fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // SAFETY: openat returned a new owned descriptor.
+        parent = unsafe { std::fs::File::from_raw_fd(fd) };
+    }
+    let metadata = parent.metadata()?;
+    if (directory && !metadata.is_dir()) || (!directory && !metadata.is_file()) {
+        return Err(invalid());
+    }
+    Ok(parent)
+}
+
+#[derive(Default)]
+struct MountedBinds(Vec<std::fs::File>);
+
+impl MountedBinds {
+    fn readonly_data(data: &Path, mappings: &[(PathBuf, PathBuf)]) -> std::io::Result<Self> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::MetadataExt;
+        let fd_path =
+            |file: &std::fs::File| PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+        let mut mounted = Self::default();
+        let mut targets = std::collections::HashSet::new();
+        for (source, relative) in mappings {
+            if relative.as_os_str().is_empty()
+                || !relative
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                || !targets.insert(relative.to_string_lossy().to_lowercase())
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "invalid or duplicate read-only Data projection",
+                ));
+            }
+            let destination = data.join(relative);
+            let source = open_regular_nofollow(source)?;
+            let target = open_regular_nofollow(&destination)?;
+            let expected = source.metadata()?;
+            bind_mount(&fd_path(&source), &fd_path(&target))?;
+            // Open the new mount, not the old inode pinned before the bind.
+            // If anything replaced the target, remove our just-created bind.
+            let projected = match open_regular_nofollow(&destination) {
+                Ok(file) => file,
+                Err(error) => {
+                    if let Err(cleanup) = unmount_detach(&destination) {
+                        return Err(std::io::Error::other(format!(
+                            "Projection open failed ({error}); detach also failed ({cleanup})"
+                        )));
+                    }
+                    return Err(error);
+                }
+            };
+            mounted.0.push(projected);
+            let actual = mounted.0.last().unwrap().metadata()?;
+            if (actual.dev(), actual.ino()) != (expected.dev(), expected.ino()) {
+                return Err(std::io::Error::other(
+                    "Data projection target changed during mounting",
+                ));
+            }
+            let dest = cstring(&fd_path(mounted.0.last().unwrap()))?;
+            let mut filesystem = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+            // SAFETY: statvfs initializes the output on success, and dest is a C string.
+            check(unsafe { libc::statvfs(dest.as_ptr(), filesystem.as_mut_ptr()) })?;
+            // SAFETY: statvfs succeeded above. Preserve flags locked by user namespaces.
+            let flags = unsafe { filesystem.assume_init() }.f_flag
+                & (libc::MS_NOSUID
+                    | libc::MS_NODEV
+                    | libc::MS_NOEXEC
+                    | libc::MS_NOATIME
+                    | libc::MS_NODIRATIME
+                    | libc::MS_RELATIME);
+            // SAFETY: remount just the new bind, without changing its source mount.
+            check(unsafe {
+                libc::mount(
+                    std::ptr::null(),
+                    dest.as_ptr(),
+                    std::ptr::null(),
+                    libc::MS_BIND | libc::MS_REMOUNT | libc::MS_RDONLY | flags,
+                    std::ptr::null(),
+                )
+            })?;
+        }
+        Ok(mounted)
+    }
+
+    /// Game-root redirects must be mounted after the parent Root/Data unions;
+    /// otherwise Root can hide them and writes escape into shared output.
+    fn root_directories(spec: &LaunchSpec) -> std::io::Result<Self> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::MetadataExt;
+        let mut mounted = Self::default();
+        let mut seen = std::collections::HashSet::new();
+        for (src, dst) in spec
+            .binds
+            .iter()
+            .filter(|(_, dst)| root_redirect(spec, dst))
+        {
+            let root = &spec.root_base_bind.as_ref().unwrap().0;
+            let relative = dst.strip_prefix(root).unwrap();
+            if relative.as_os_str().is_empty()
+                || !relative
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                || relative.as_os_str().as_bytes().contains(&b'\\')
+                || src.starts_with(root)
+                || src.starts_with(&spec.mountpoint)
+                || !seen.insert(relative.as_os_str().as_bytes().to_ascii_lowercase())
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Invalid game-root profile directory redirect",
+                ));
+            }
+            let source = open_projection_path(src, true)?;
+            let target = create_root_directory(root, relative)?;
+            let expected = source.metadata()?;
+            let fd_path =
+                |f: &std::fs::File| PathBuf::from(format!("/proc/self/fd/{}", f.as_raw_fd()));
+            bind_mount(&fd_path(&source), &fd_path(&target))?;
+            let projected = match open_projection_path(dst, true) {
+                Ok(file) => file,
+                Err(error) => {
+                    if let Err(cleanup) = unmount_detach(dst) {
+                        return Err(std::io::Error::other(format!(
+                            "Profile bind open failed ({error}); detach also failed ({cleanup})"
+                        )));
+                    }
+                    return Err(error);
+                }
+            };
+            mounted.0.push(projected);
+            let actual = mounted.0.last().unwrap().metadata()?;
+            if (actual.dev(), actual.ino()) != (expected.dev(), expected.ino()) {
+                return Err(std::io::Error::other(
+                    "Profile bind target changed during mounting",
+                ));
+            }
+        }
+        Ok(mounted)
+    }
+
+    fn cleanup(mut self) -> std::io::Result<()> {
+        self.detach()
+    }
+
+    fn detach(&mut self) -> std::io::Result<()> {
+        use std::os::fd::AsRawFd;
+        let mut first_error = None;
+        for file in self.0.drain(..).rev() {
+            if let Err(error) = unmount_detach(&PathBuf::from(format!(
+                "/proc/self/fd/{}",
+                file.as_raw_fd()
+            ))) {
+                first_error.get_or_insert(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+}
+
+impl Drop for MountedBinds {
+    fn drop(&mut self) {
+        if let Err(error) = self.detach() {
+            eprintln!("eidos: could not detach a session projection: {error}");
+        }
+    }
+}
+
+fn root_redirect(spec: &LaunchSpec, target: &Path) -> bool {
+    spec.root_base_bind
+        .as_ref()
+        .is_some_and(|(root, _)| target.starts_with(root))
+}
+
+/// Only called after Root is mounted. New mountpoint directories are therefore
+/// created in its owned upper, through held FDs, never in the original install.
+fn create_root_directory(root: &Path, relative: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let mut parent = open_projection_path(root, true)?;
+    for component in relative.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Invalid profile bind target",
+            ));
+        };
+        let name = CString::new(name.as_bytes()).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "NUL in bind path")
+        })?;
+        // SAFETY: the root union directory and one component are pinned/alive.
+        let rc = unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o755) };
+        if rc != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.kind() != std::io::ErrorKind::AlreadyExists {
+                return Err(error);
+            }
+        }
+        let fd = unsafe {
+            libc::openat(
+                parent.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        parent = unsafe { std::fs::File::from_raw_fd(fd) };
+    }
+    Ok(parent)
 }
 
 /// Stop mounts in this namespace from propagating back to the host.
@@ -164,7 +427,11 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // recoverable; a forked save history is not. (This warned-and-continued
     // once; the audit found the orphaned sessions it produced.)
     let mut mounted_binds: Vec<&PathBuf> = Vec::new();
-    for (src, dst) in &spec.binds {
+    for (src, dst) in spec
+        .binds
+        .iter()
+        .filter(|(_, dst)| !root_redirect(&spec, dst))
+    {
         let result = std::fs::create_dir_all(src)
             .and_then(|()| std::fs::create_dir_all(dst))
             .and_then(|()| bind_mount(src, dst));
@@ -208,7 +475,7 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     // turns that sync back into a lie. This runs whether `launch_mounted`
     // succeeded or not - a failed mount is exactly when a stranded bind would
     // lie the longest.
-    for (_src, dst) in &spec.binds {
+    for dst in mounted_binds.into_iter().rev() {
         if let Err(e) = unmount_detach(dst) {
             eprintln!(
                 "eidos: WARNING - could not unmount {} after the run ({e}); \
@@ -236,7 +503,16 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
         Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
         _ => false,
     };
-    let _root_session = if spec.root_layers.is_empty() && !root_overwrite_present {
+    if let Some(shared) = &spec.root_readonly_overwrite {
+        // A missing or unreadable shared output store must not silently expose
+        // vanilla files that its deletion metadata was supposed to hide.
+        std::fs::read_dir(shared)?;
+    }
+    let _root_session = if spec.root_layers.is_empty()
+        && !root_overwrite_present
+        && spec.root_readonly_overwrite.is_none()
+        && !spec.binds.iter().any(|(_, dst)| root_redirect(spec, dst))
+    {
         None
     } else {
         let Some((root_src, root_stash)) = spec.root_base_bind.as_ref() else {
@@ -263,11 +539,40 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
             "eidos: {} mod(s) provide root-level files; mounting a union over the game root",
             spec.root_layers.len()
         );
-        Some(Eidos::new(root_layers, root_overwrite).spawn(root_src)?)
+        // Data was captured into its physical stash before this root mount and
+        // gets its own index below. Keep its mountpoint visible in the root
+        // index without walking the same payload a second time. Queries below
+        // it still work through the ordinary layer walk until Data is mounted.
+        let data_subtree = spec.mountpoint.strip_prefix(root_src).ok();
+        Some(
+            Eidos::new_with_readonly_overwrite(
+                root_layers,
+                root_overwrite,
+                data_subtree,
+                spec.root_readonly_overwrite.clone(),
+            )
+            .spawn(root_src)?,
+        )
     };
 
     std::fs::create_dir_all(&spec.mountpoint)?;
-    let session = Eidos::new(layers, spec.overwrite.clone()).spawn(&spec.mountpoint)?;
+    let mut filesystem = Eidos::new(layers, spec.overwrite.clone());
+    if let Some(projection) = &spec.plugin_timestamps {
+        if projection.state_path.starts_with(&spec.mountpoint)
+            || spec
+                .root_base_bind
+                .as_ref()
+                .is_some_and(|(root, _)| projection.state_path.starts_with(root))
+        {
+            return Err(std::io::Error::other(
+                "Plugin timestamp receipt must be outside the mount",
+            ));
+        }
+        filesystem = filesystem.with_plugin_timestamps(projection.clone())?;
+    }
+    let session = filesystem.spawn(&spec.mountpoint)?;
+    let root_binds = MountedBinds::root_directories(spec)?;
+    let projections = MountedBinds::readonly_data(&spec.mountpoint, &spec.readonly_data_binds)?;
 
     // Run from the game root (the directory that contains Data), exactly like MO2
     // (modorganizer processrunner sets the child's CWD to the game's base dir).
@@ -305,7 +610,11 @@ fn launch_mounted(spec: &LaunchSpec, layers: Vec<PathBuf>) -> std::io::Result<Ex
     // child has already been reaped by `Command::status`.
     reap_descendants();
 
-    drop(session); // unmount
+    let cleanup = projections.cleanup();
+    let root_cleanup = root_binds.cleanup();
+    drop(session); // unmount only after every file/directory projection is detached
+    cleanup?;
+    root_cleanup?;
     status
 }
 

@@ -285,7 +285,9 @@ mod tests {
         // Where it is, and BOTH places it may legitimately be.
         assert!(d[0].detail.contains("/mnt/OldDisk/SteamLibrary"));
         assert!(d[0].detail.contains("/mnt/Jeux/SteamLibrary  for a tool"));
-        assert!(d[0].detail.contains("/mnt/Jeux/SteamLibrary/steamapps  for"));
+        assert!(d[0]
+            .detail
+            .contains("/mnt/Jeux/SteamLibrary/steamapps  for"));
     }
 
     #[test]

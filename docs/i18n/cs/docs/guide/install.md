@@ -1,10 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # Instalace Eidosu
 
-Tři cesty dovnitř. Všechny dají tytéž dva spustitelné soubory - `eidos`
-(příkazová řádka) a `eidos-gui` - plus obsluhu `nxm://`, díky které tlačítko
-„Mod Manager Download" na Nexusu přistane ve vaší instanci.
+Tři cesty dovnitř. Všechny dají `eidos` (příkazovou řádku), `eidos-gui` a pomocný program pro statický náhled NIF, plus obsluhu `nxm://`, díky které tlačítko „Mod Manager Download“ na Nexusu přistane ve vaší instanci.
 
 ## Co potřebujete nejdřív
 
@@ -38,9 +36,11 @@ způsob aktualizace.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+Sestavení ze zdrojů vyžaduje Rust, `just`, CMake 3.20+, překladač C++17 a Python 3 pro testy nativního pomocného programu. Příkazy bez `just` najdete v [pokynech k nativnímu pomocnému programu](../../../../../native/eidos-nif-preview/README.md). Rust sestavte pomocí `cargo build --release --locked`, pomocný program zkopírujte do `target/release` a poté spusťte `packaging/install.sh --from target/release`.
 
 ## Potom: nasměrovat na něj Steam
 

@@ -192,10 +192,20 @@ pub(crate) fn escapes_root(rel: &str) -> bool {
     })
 }
 
+#[cfg(test)]
 pub(crate) fn apply_plan(
     root: &Path,
     plan: &[eidos_fomod::FileItem],
     dest: &Path,
+) -> Result<Vec<String>, InstallError> {
+    apply_plan_for_game(root, plan, dest, LayoutRules::default())
+}
+
+pub(crate) fn apply_plan_for_game(
+    root: &Path,
+    plan: &[eidos_fomod::FileItem],
+    dest: &Path,
+    rules: LayoutRules,
 ) -> Result<Vec<String>, InstallError> {
     let mut missing = Vec::new();
     for item in plan {
@@ -224,6 +234,19 @@ pub(crate) fn apply_plan(
             return Err(InstallError::Fomod(format!(
                 "refusing install path that escapes the mod folder: '{destination}'"
             )));
+        }
+        // An empty folder destination normally flattens its source. Loader mods
+        // need the actual unit name; an explicit nonempty destination still wins.
+        if rules.mod_unit == eidos_gamedef::ModUnit::Folder
+            && item.is_folder
+            && (destination.is_empty() || destination == ".")
+            && ArchiveTree::from_dir(&src)?.has_mod_markers(rules)
+        {
+            destination = src
+                .file_name()
+                .ok_or_else(folder_layout_error)?
+                .to_string_lossy()
+                .into_owned();
         }
         let dst = dest.join(&destination);
         copy_plan_source(root, &src, dest, &dst, item.is_folder)?;
@@ -279,17 +302,70 @@ pub fn finish_fomod(
     ctx: &eidos_fomod::Context,
     policy: OverwritePolicy,
 ) -> Result<InstallReport, InstallError> {
+    finish_fomod_inner(
+        session,
+        selection,
+        mods_dir,
+        game_id,
+        ctx,
+        policy,
+        None::<fn(&Path) -> Result<(), InstallError>>,
+    )
+}
+
+/// Apply the exact FOMOD selection, then finish its payload in private staging
+/// before metadata and publication. Merge policies return
+/// [`InstallError::BadSelection`] before any installation write or callback;
+/// use [`finish_fomod`] for an ordinary live Merge.
+pub fn finish_fomod_with_finish(
+    session: FomodSession,
+    selection: &eidos_fomod::Selection,
+    mods_dir: &Path,
+    game_id: &str,
+    ctx: &eidos_fomod::Context,
+    policy: OverwritePolicy,
+    finish: impl FnOnce(&Path) -> Result<(), InstallError>,
+) -> Result<InstallReport, InstallError> {
+    finish_fomod_inner(
+        session,
+        selection,
+        mods_dir,
+        game_id,
+        ctx,
+        policy,
+        Some(finish),
+    )
+}
+
+fn finish_fomod_inner(
+    session: FomodSession,
+    selection: &eidos_fomod::Selection,
+    mods_dir: &Path,
+    game_id: &str,
+    ctx: &eidos_fomod::Context,
+    policy: OverwritePolicy,
+    finish: Option<impl FnOnce(&Path) -> Result<(), InstallError>>,
+) -> Result<InstallReport, InstallError> {
     if let Some(req) = session.unmet_dependencies(ctx) {
         return Err(InstallError::UnmetDependency(req));
     }
     let plan = eidos_fomod::build_plan(&session.config, selection, ctx);
-    install_destination(
+    install_destination_inner(
         &session.archive,
         mods_dir,
         &session.name,
         game_id,
         policy,
-        |dest, _| Ok((String::new(), true, apply_plan(&session.root, &plan, dest)?)),
+        finish.is_some(),
+        |dest, _| {
+            let missing =
+                apply_plan_for_game(&session.root, &plan, dest, LayoutRules::for_game(game_id))?;
+            reject_installer_receipts(dest)?;
+            if let Some(finish) = finish {
+                finish(dest)?;
+            }
+            Ok((String::new(), true, missing))
+        },
     )
 }
 

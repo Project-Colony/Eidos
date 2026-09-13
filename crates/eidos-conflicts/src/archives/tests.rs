@@ -382,3 +382,5 @@ fn incomplete_archive_scans_cannot_prove_redundancy_or_a_lower_archive_winner() 
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+include!("payload_tests.rs");

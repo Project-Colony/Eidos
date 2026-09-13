@@ -8,6 +8,24 @@ use eidos_instance::Instance;
 #[cfg(test)]
 use eidos_instance::ModEntry;
 
+/// Compose installed OMOD shader requests for the selected Oblivion profile.
+/// The returned owner must outlive the launch's read-only Data file mappings.
+/// An existing profile directory owns the temporary files; game Data and mod
+/// providers are only read. Other engines never enter the SDP path.
+pub(crate) fn prepare_omod_shaders(
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> std::io::Result<Option<eidos_gamefeatures::omod_shaders::ShaderSession>> {
+    if game.def.id != "oblivion" {
+        return Ok(None);
+    }
+    let mut layers = prof.load_order();
+    layers.push(game.data_path.clone());
+    eidos_gamefeatures::omod_shaders::prepare(layers, inst.overwrite_dir(), &prof.dir(), cancel)
+}
+
 fn runtime_diagnostics(
     game: &DetectedGame,
     inst: &Instance,
@@ -86,13 +104,12 @@ pub(crate) fn prepare_plugins(
             d.detail
         );
     }
-    let spec = eidos_plugins::GameSpec::for_id(id)?;
-    let Some(compatdata) = game.compatdata.as_ref() else {
+    let spec = game.plugin_spec()?;
+    let Some(prefix) = game.prefix() else {
         eidos_log::info!("eidos play: no Proton prefix found, skipping plugins.txt");
         return None;
     };
-    let prefix = compatdata.join("pfx");
-    let prefix_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    let prefix_dir = eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec);
 
     // First run: adopt the prefix's existing state (plugins.txt, loadorder.txt,
     // and the sidecars the game keeps next to them) into the profile, so the
@@ -131,7 +148,7 @@ pub(crate) fn prepare_plugins(
 
     // The shared merged view preserves profile order, enabled state and pins,
     // and removes plugins hidden by the launcher's whiteouts.
-    let list = inst.plugin_list(&game.data_path, id, Some(&state_dir))?;
+    let list = inst.plugin_list_for_profile(&game.data_path, id, Some(&state_dir), prof)?;
 
     for message in plugin_diagnostic_messages(&list, &spec) {
         eidos_log::warn!("eidos play: {message}");
@@ -163,7 +180,9 @@ pub(crate) fn prepare_plugins(
     // copy of anything. External tools (LOOT, xEdit run outside Eidos) read the
     // prefix, and if the bind ever fails the game reads exactly what a pre-bind
     // session would have. Never fatal.
-    let _ = list.write_load_order(&prefix_dir, &spec);
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        let _ = list.write_load_order(&prefix_dir, &spec);
+    }
 
     // Pre-session snapshot: with the game writing the profile file directly,
     // this is the reference the post-run loss check compares against. KEPT, not
@@ -185,67 +204,142 @@ pub(crate) fn prepare_plugins(
     Some((state_dir, prefix_dir))
 }
 
-/// Before launch: give the active profile its own INIs in the prefix. Seed the
-/// profile from the prefix on first run (adopting an existing setup, losing
-/// nothing), deploy the profile's INIs into the prefix Documents, then enable BSA
-/// invalidation on the deployed copy. Returns the prefix Documents dir + the
-/// game's INI set, so the caller can capture in-game changes back afterwards.
+/// Prepare a root-mode activation file without letting a previous case variant
+/// or deletion marker mask the selected profile's state.
+pub(crate) fn stage_root_activation(
+    prof: &eidos_instance::Profile,
+    runtime: &std::path::Path,
+    spec: &eidos_plugins::GameSpec,
+) -> std::io::Result<()> {
+    let active = spec.active_file();
+    let source = eidos_plugins::newest_variant(&prof.plugins_state_dir(), active)
+        .ok_or_else(|| std::io::Error::other("Missing root activation state"))?;
+    let bytes = std::fs::read(source)?;
+    for entry in std::fs::read_dir(runtime)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+        if name == active.to_ascii_lowercase()
+            || name == format!(".eidoswh.{}", active.to_ascii_lowercase())
+        {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    eidos_instance::write_atomic(&runtime.join(active), &bytes)
+}
+
+/// Apply a tool's last virtual timestamps to durable profile order, then consume
+/// the receipt. Keeping it until the write succeeds also covers a killed launcher.
+pub(crate) fn recover_timestamp_order(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+) -> std::io::Result<()> {
+    let receipt = prof.dir().join("plugin-times.pending");
+    let times = match eidos_launch::recover_plugin_mtimes(&receipt) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    let spec = game
+        .plugin_spec()
+        .ok_or_else(|| std::io::Error::other("No plugin specification for timestamp capture"))?;
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        return Err(std::io::Error::other(
+            "Unexpected timestamp receipt for this game",
+        ));
+    }
+    let mut list = inst
+        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .ok_or_else(|| std::io::Error::other("No plugin list for timestamp capture"))?;
+    if !times.is_empty() && list.plugins.is_empty() {
+        return Err(std::io::Error::other(
+            "No plugins discovered for nonempty timestamp capture; retaining receipt",
+        ));
+    }
+    list.apply_mtime_order(&times, &spec);
+    list.write_load_order(&prof.plugins_state_dir(), &spec)?;
+    std::fs::remove_file(receipt)
+}
+
+pub(crate) fn prepare_plugin_timestamps(
+    id: &str,
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+) -> std::io::Result<Option<eidos_launch::PluginTimestamps>> {
+    let Some(spec) = game.plugin_spec() else {
+        return Ok(None);
+    };
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        return Ok(None);
+    }
+    let list = inst
+        .plugin_list_for_profile(&game.data_path, id, None, prof)
+        .ok_or_else(|| std::io::Error::other("No plugin list for timestamp projection"))?;
+    Ok(Some(eidos_launch::PluginTimestamps {
+        times: list.virtual_mtimes(&spec)?,
+        state_path: prof.dir().join("plugin-times.pending"),
+    }))
+}
+
+/// Seed profile INIs once, then prepare the runtime copy. Install-root INIs use
+/// the profile's private root upper; ordinary Documents INIs keep their prefix
+/// path. Activation is prepared first so Morrowind uses one INI throughout.
 pub(crate) fn prepare_inis(
     id: &str,
     game: &DetectedGame,
     inst: &Instance,
     prof: &eidos_instance::Profile,
-) -> Option<PreparedInis> {
-    let spec = eidos_plugins::GameSpec::for_id(id)?;
-    let compatdata = game.compatdata.as_ref()?;
+) -> std::io::Result<Option<PreparedInis>> {
+    let Some(spec) = game.plugin_spec() else {
+        return Ok(None);
+    };
+    let Some(prefix) = game.prefix() else {
+        return Ok(None);
+    };
     let ini_files = eidos_gamefeatures::ini_files_for(id);
     if ini_files.is_empty() {
-        return None;
+        return Ok(None);
     }
-    let docs = if id == "morrowind" {
-        // Morrowind keeps Morrowind.ini in the install dir (MO2 manages it there),
-        // not My Games, so the per-profile INI cycle is pointed at the game dir.
+    let root_mode =
+        eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec) == game.install_path;
+    let source = if root_mode {
         game.install_path.clone()
     } else {
-        eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec)
+        eidos_plugins::documents_my_games_dir(&prefix, &spec)
     };
-
-    match prof.seed_inis(&docs, ini_files) {
-        Ok(n) if n > 0 => {
-            eidos_log::info!(
-                "eidos play: seeded {n} INI(s) into profile '{}' from the prefix",
-                prof.name
-            )
-        }
-        Ok(_) => {}
-        Err(e) => eidos_log::warn!("eidos play: WARNING - could not seed profile INIs: {e}"),
-    }
-    // If the deploy fails, the prefix keeps its OLD INIs; capturing those back
-    // after the run would clobber the profile's copies with stale content. So a
-    // failed deploy disables this run's capture (see the return below).
-    let deploy_ok = match prof.deploy_inis(&docs, ini_files) {
-        Ok(n) => {
-            if n > 0 {
-                eidos_log::info!("eidos play: deployed {n} profile INI(s) into the prefix");
+    let docs = if root_mode {
+        prof.dir().join("runtime-root")
+    } else {
+        source.clone()
+    };
+    prof.seed_inis(&source, ini_files)?;
+    if root_mode {
+        std::fs::create_dir_all(&docs)?;
+        // A prior launcher may have atomically replaced or removed a case variant.
+        // Preparation happens only after the pending capture was recovered.
+        for entry in std::fs::read_dir(&docs)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if ini_files.iter().any(|f| {
+                name == f.to_ascii_lowercase()
+                    || name == format!(".eidoswh.{}", f.to_ascii_lowercase())
+            }) {
+                std::fs::remove_file(entry.path())?;
             }
-            true
         }
-        Err(e) => {
-            eidos_log::warn!(
-                "eidos play: WARNING - could not deploy profile INIs into the prefix ({e}); \
-                 the game runs with the prefix's own INIs and they will NOT be captured back"
-            );
-            false
-        }
-    };
+    }
+    prof.deploy_inis(&docs, ini_files)?;
+
     // Mod-shipped INI Tweaks, merged into the DEPLOYED copies in priority order
     // (lowest first, so a higher-priority mod's fragment wins), with the profile's
     // own tweak file last. What each write displaced comes back so the capture can
     // undo it - otherwise a tweak becomes indistinguishable from a setting the
     // user chose, and disabling the fragment would change nothing.
     let mut tweaked: Vec<(String, Vec<eidos_instance::TweakedKey>)> = Vec::new();
-    if deploy_ok {
-        let fragments = inst.enabled_ini_tweaks(&inst.modlist());
+    {
+        let fragments = inst.enabled_ini_tweaks(&prof.modlist());
         // The profile's own file counts even when no mod contributes one.
         if !fragments.is_empty() || prof.tweaks_path().is_file() {
             // First run against a fresh prefix: nothing seeded, nothing owned,
@@ -281,6 +375,17 @@ pub(crate) fn prepare_inis(
         }
     }
 
+    if root_mode && id == "oblivion" {
+        // The install-root selector decides this session's paths. A profile INI
+        // adopted in ordinary mode must not silently switch them back at runtime.
+        eidos_gamefeatures::set_ini_key(
+            &docs.join("Oblivion.ini"),
+            "General",
+            "bUseMyGamesDirectory",
+            "0",
+        )?;
+    }
+
     // Loose files must win over the vanilla BSAs, and the Bethesda launcher must not
     // reset the plugin selection (both written into the deployed profile INIs).
     match eidos_gamefeatures::enable_bsa_invalidation(&docs, &inst.overwrite_dir(), id) {
@@ -290,7 +395,7 @@ pub(crate) fn prepare_inis(
     if id == "morrowind" {
         // Morrowind only loads a BSA listed in its numbered [Archives] section;
         // register every enabled mod's top-level .bsa so BSA-shipping mods work.
-        let mod_bsas: Vec<String> = inst
+        let mod_bsas: Vec<String> = prof
             .modlist()
             .into_iter()
             .filter(|m| m.is_active())
@@ -313,13 +418,12 @@ pub(crate) fn prepare_inis(
             eidos_log::warn!("eidos play: could not enable launcher file selection: {e}");
         }
     }
-    // No capture cycle when the deploy failed: the prefix INIs are not this
-    // profile's state and must not overwrite it after the run.
-    deploy_ok.then_some(PreparedInis {
+    Ok(Some(PreparedInis {
         docs,
         ini_files,
         tweaked,
-    })
+        root_mode,
+    }))
 }
 
 /// One-way sync of the profile's save files into the REAL prefix Saves dir,
@@ -502,7 +606,8 @@ pub(crate) fn preserve_diverged_save(
 
 /// What `prepare_inis` leaves for the post-run capture.
 pub(crate) struct PreparedInis {
-    /// The prefix directory the INIs were deployed into.
+    pub(crate) root_mode: bool,
+    /// The runtime directory the INIs were deployed into.
     pub(crate) docs: std::path::PathBuf,
     pub(crate) ini_files: &'static [&'static str],
     /// Per INI file, the keys an INI tweak overwrote, so the capture can put the
@@ -515,23 +620,20 @@ pub(crate) struct PreparedInis {
 /// return the `(profile_saves, prefix_saves)` bind so the launcher redirects the
 /// game's save dir to this profile for the run - the prefix is never modified.
 pub(crate) fn prepare_saves(
-    id: &str,
     game: &DetectedGame,
     prof: &eidos_instance::Profile,
-) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-    let spec = eidos_plugins::GameSpec::for_id(id)?;
-    let compatdata = game.compatdata.as_ref()?;
-    let docs = eidos_plugins::documents_my_games_dir(&compatdata.join("pfx"), &spec);
-    let prefix_saves = docs.join("Saves");
-    if let Ok(n) = prof.seed_saves(&prefix_saves) {
-        if n > 0 {
-            eidos_log::info!(
-                "eidos play: adopted {n} existing save(s) into profile '{}'",
-                prof.name
-            );
-        }
+) -> std::io::Result<Option<(std::path::PathBuf, std::path::PathBuf)>> {
+    let Some(source) = game.saves_path() else {
+        return Ok(None);
+    };
+    let n = prof.seed_saves(&source)?;
+    if n > 0 {
+        eidos_log::info!(
+            "eidos play: adopted {n} existing save(s) into profile '{}'",
+            prof.name
+        );
     }
-    Some((prof.saves_dir(), prefix_saves))
+    Ok(Some((prof.saves_dir(), source)))
 }
 
 #[cfg(test)]
@@ -573,6 +675,7 @@ mod rescue_tests {
             install_path: root.join("game"),
             data_path: root.join("game/Data"),
             compatdata: None,
+            source: Default::default(),
             steam_name: String::new(),
         };
         assert!(runtime_diagnostics(&game, &inst)
@@ -585,6 +688,374 @@ mod rescue_tests {
         )
         .unwrap();
         assert!(runtime_diagnostics(&game, &inst).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    fn engine_plugin(path: &std::path::Path, morrowind: bool) {
+        let mut body = b"HEDR".to_vec();
+        if morrowind {
+            body.extend(300u32.to_le_bytes());
+            body.extend(1.3f32.to_le_bytes());
+            body.extend(1u32.to_le_bytes());
+            body.extend([0; 292]);
+        } else {
+            body.extend(12u16.to_le_bytes());
+            body.extend(1.0f32.to_le_bytes());
+            body.extend([0; 8]);
+        }
+        let mut header = vec![0; if morrowind { 16 } else { 20 }];
+        header[..4].copy_from_slice(if morrowind { b"TES3" } else { b"TES4" });
+        header[4..8].copy_from_slice(&(body.len() as u32).to_le_bytes());
+        if !morrowind {
+            header[8] = 1;
+        }
+        header.extend(body);
+        fs::write(path, header).unwrap();
+    }
+
+    #[test]
+    fn timestamp_root_preparation_is_private_and_recovers_profile_settings() {
+        let root = std::env::temp_dir().join(format!("eidos-root-prepare-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let def = eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "morrowind")
+            .unwrap();
+        let game = DetectedGame {
+            def,
+            install_path: root.join("game"),
+            data_path: root.join("game/Data Files"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(&game.data_path).unwrap();
+        fs::create_dir_all(game.compatdata.as_ref().unwrap().join("pfx")).unwrap();
+        let original=b"[General]\r\nLanguage=Fran\xe7ais\r\nValue=1\r\n[Archives]\r\nArchive 0=Morrowind.bsa\r\n[Game Files]\r\nGameFile0=Morrowind.esm\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), original).unwrap();
+        fs::write(game.install_path.join("Morrowind.exe"), b"game").unwrap();
+        engine_plugin(&game.data_path.join("Morrowind.esm"), true);
+        let moddir = inst.mods_dir().join("Archive");
+        fs::create_dir_all(&moddir).unwrap();
+        fs::write(moddir.join("Extra.bsa"), b"archive").unwrap();
+        inst.save_modlist(&[ModEntry {
+            name: "Archive".into(),
+            path: moddir,
+            enabled: true,
+            unmanaged: false,
+        }])
+        .unwrap();
+        let prof = inst.active();
+        fs::write(prof.tweaks_path(), "[General]\nValue=2\n").unwrap();
+        let binding = prepare_plugins("morrowind", &game, &inst, &prof).unwrap();
+        assert_eq!(binding.1, game.install_path);
+        let prepared = prepare_inis("morrowind", &game, &inst, &prof)
+            .unwrap()
+            .unwrap();
+        assert_eq!(prepared.docs, prof.dir().join("runtime-root"));
+        let text = eidos_plugins::read_decoded(&prepared.docs.join("Morrowind.ini")).unwrap();
+        assert!(text.contains("Extra.bsa") && text.contains("GameFile0=Morrowind.esm"));
+        assert!(text.contains("Français"));
+        assert!(text.contains("Value=2"));
+        assert_eq!(
+            prof.ini_path("Morrowind.ini"),
+            prof.plugins_state_dir().join("Morrowind.ini")
+        );
+        assert_eq!(
+            fs::read(game.install_path.join("Morrowind.ini")).unwrap(),
+            original
+        );
+        prof.record_ini_session(&prepared.docs, prepared.ini_files, &prepared.tweaked)
+            .unwrap();
+        fs::write(prepared.docs.join("generated.log"), b"output").unwrap();
+        fs::create_dir_all(inst.root_overwrite_dir()).unwrap();
+        fs::write(
+            inst.root_overwrite_dir().join("Morrowind.ini"),
+            b"stale shared ini",
+        )
+        .unwrap();
+        prof.recover_ini_session().unwrap();
+        prof.merge_runtime_root_outputs(&inst.root_overwrite_dir(), &["Morrowind.ini"])
+            .unwrap();
+        let captured = eidos_plugins::read_decoded(&prof.ini_path("Morrowind.ini")).unwrap();
+        assert!(captured.contains("Value=1") && captured.contains("Extra.bsa"));
+        assert_eq!(
+            fs::read(inst.root_overwrite_dir().join("generated.log")).unwrap(),
+            b"output"
+        );
+        assert!(!prepared.docs.join("generated.log").exists());
+        assert_eq!(
+            fs::read(inst.root_overwrite_dir().join("Morrowind.ini")).unwrap(),
+            b"stale shared ini"
+        );
+        assert_eq!(
+            fs::read(game.install_path.join("Morrowind.ini")).unwrap(),
+            original
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn shared_root_capture_retains_deletion_metadata_and_recovers_failed_output() {
+        let root = std::env::temp_dir().join(format!("eidos-root-capture-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let prof = inst.active();
+        let game = root.join("game");
+        let shared = inst.root_overwrite_dir();
+        let runtime = prof.dir().join("runtime-root");
+        for dir in [game.join("Cache"), shared.join("Cache"), runtime.clone()] {
+            fs::create_dir_all(dir).unwrap();
+        }
+        fs::write(game.join("hidden.dll"), "original").unwrap();
+        fs::write(game.join("Cache/base.dll"), "base").unwrap();
+        fs::write(shared.join(".eidoswh.hidden.dll"), []).unwrap();
+        fs::write(shared.join("Cache/.eidoswh_opaque"), []).unwrap();
+        fs::write(shared.join("Cache/shared.dll"), "shared").unwrap();
+        fs::write(runtime.join("Morrowind.ini"), "[General]\nValue=1\n").unwrap();
+        prof.record_ini_session(&runtime, &["Morrowind.ini"], &[])
+            .unwrap();
+        // The mounted launch suite verifies these are the only writes that
+        // land here; this test covers their existing capture/retry boundary.
+        fs::create_dir_all(runtime.join("Cache")).unwrap();
+        fs::write(runtime.join("Cache/shared.dll"), "new shared").unwrap();
+        fs::write(runtime.join("generated.log"), [0; 16]).unwrap();
+        fs::create_dir_all(shared.join("generated.log")).unwrap();
+        assert!(prof
+            .merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+            .is_err());
+        assert!(runtime.join("generated.log").is_file());
+        assert!(prof.dir().join("runtime-inis.pending").is_file());
+        fs::remove_dir(shared.join("generated.log")).unwrap();
+        prof.merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+            .unwrap();
+        prof.recover_ini_session().unwrap();
+        assert!(!prof.dir().join("runtime-inis.pending").exists());
+        assert!(!runtime.join("generated.log").exists());
+        assert_eq!(
+            fs::metadata(shared.join("generated.log")).unwrap().len(),
+            16
+        );
+        assert_eq!(
+            fs::read(shared.join("Cache/shared.dll")).unwrap(),
+            b"new shared"
+        );
+        assert!(!shared.join("Cache/.eidoswh.base.dll").exists());
+        assert!(!runtime.join("Cache/.eidoswh.base.dll").exists());
+        assert!(shared.join(".eidoswh.hidden.dll").is_file());
+        assert!(shared.join("Cache/.eidoswh_opaque").is_file());
+        assert_eq!(fs::read(game.join("hidden.dll")).unwrap(), b"original");
+        assert_eq!(fs::read(game.join("Cache/base.dll")).unwrap(), b"base");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn oblivion_root_and_appdata_preparation_never_write_activation_to_game() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-oblivion-prepare-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let def = eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "oblivion")
+            .unwrap();
+        let game = DetectedGame {
+            def,
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: Some(root.join("compatdata")),
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(&game.data_path).unwrap();
+        fs::create_dir_all(game.compatdata.as_ref().unwrap().join("pfx")).unwrap();
+        engine_plugin(&game.data_path.join("Oblivion.esm"), false);
+        let spec = game.plugin_spec().unwrap();
+        let prefix = game.prefix().unwrap();
+        let local = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+        fs::create_dir_all(&local).unwrap();
+        fs::write(local.join("Plugins.txt"), "Oblivion.esm\n").unwrap();
+        for root_mode in [false, true] {
+            let ini = format!(
+                "[General]\nbUseMyGamesDirectory={}\n[Display]\nValue=1\n",
+                if root_mode { 0 } else { 1 }
+            );
+            fs::write(game.install_path.join("Oblivion.ini"), &ini).unwrap();
+            fs::write(
+                game.install_path.join("Plugins.txt"),
+                "# root original\nOblivion.esm\n",
+            )
+            .unwrap();
+            let profile = inst.profile(if root_mode { "Root" } else { "Documents" });
+            fs::create_dir_all(profile.dir()).unwrap();
+            let bind = prepare_plugins("oblivion", &game, &inst, &profile).unwrap();
+            assert_eq!(
+                bind.1,
+                if root_mode {
+                    game.install_path.clone()
+                } else {
+                    local.clone()
+                }
+            );
+            let prepared = prepare_inis("oblivion", &game, &inst, &profile)
+                .unwrap()
+                .unwrap();
+            assert_eq!(prepared.root_mode, root_mode);
+            assert_ne!(prepared.docs, game.install_path);
+            if root_mode {
+                fs::write(prepared.docs.join("Plugins.txt"), b"stale case variant").unwrap();
+                fs::write(prepared.docs.join(".eidoswh.plugins.txt"), []).unwrap();
+                stage_root_activation(&profile, &prepared.docs, &spec).unwrap();
+                assert!(!prepared.docs.join("Plugins.txt").exists());
+                assert!(!prepared.docs.join(".eidoswh.plugins.txt").exists());
+                assert_eq!(
+                    fs::read(prepared.docs.join("plugins.txt")).unwrap(),
+                    fs::read(profile.plugins_txt_path()).unwrap()
+                );
+            }
+            assert_eq!(
+                fs::read_to_string(game.install_path.join("Oblivion.ini")).unwrap(),
+                ini
+            );
+            assert_eq!(
+                fs::read_to_string(game.install_path.join("Plugins.txt")).unwrap(),
+                "# root original\nOblivion.esm\n"
+            );
+            assert_eq!(
+                fs::read_to_string(local.join("Plugins.txt")).unwrap(),
+                "Oblivion.esm\n"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn timestamp_capture_persists_the_selected_profile_and_consumes_only_good_receipts() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-timestamp-capture-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let def = eidos_games::catalog()
+            .iter()
+            .find(|g| g.id == "oblivion")
+            .unwrap();
+        let game = DetectedGame {
+            def,
+            install_path: root.join("game"),
+            data_path: root.join("game/Data"),
+            compatdata: None,
+            source: Default::default(),
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["Oblivion.esm", "A.esp", "B.esp"] {
+            engine_plugin(&game.data_path.join(name), false);
+        }
+        let a = inst.active();
+        let b = inst.profile("Other");
+        fs::create_dir_all(b.plugins_state_dir()).unwrap();
+        fs::write(b.plugins_txt_path(), b"Oblivion.esm\nA.esp\n").unwrap();
+        fs::write(a.plugins_txt_path(), b"Oblivion.esm\nB.esp\n").unwrap();
+        fs::write(a.loadorder_txt_path(), b"Oblivion.esm\nA.esp\nB.esp\n").unwrap();
+        let other_before = fs::read(b.plugins_txt_path()).unwrap();
+        let sources_before = fs::read_dir(&game.data_path)
+            .unwrap()
+            .map(|e| {
+                let e = e.unwrap();
+                (e.path(), e.metadata().unwrap().modified().unwrap())
+            })
+            .collect::<Vec<_>>();
+        let pending = a.dir().join("plugin-times.pending");
+        fs::write(&pending,"Eidos plugin timestamps v1\n1000000000\toblivion.esm\n9000000000\ta.esp\n2000000000\tb.esp\n").unwrap();
+        recover_timestamp_order("oblivion", &game, &inst, &a).unwrap();
+        assert!(!pending.exists());
+        let list = inst
+            .plugin_list_for_profile(&game.data_path, "oblivion", None, &a)
+            .unwrap();
+        assert_eq!(
+            list.plugins
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Oblivion.esm", "B.esp", "A.esp"]
+        );
+        assert!(
+            !list
+                .plugins
+                .iter()
+                .find(|p| p.name == "A.esp")
+                .unwrap()
+                .enabled
+        );
+        assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), other_before);
+        let projected = prepare_plugin_timestamps("oblivion", &game, &inst, &a)
+            .unwrap()
+            .unwrap();
+        assert!(projected.times["b.esp"] < projected.times["a.esp"]);
+
+        // A failed daemon receipt has a newer recovery sibling. The normal
+        // next-launch capture must never import the stale primary instead.
+        let recovery = a.dir().join("plugin-times.pending.pending");
+        let stale = "Eidos plugin timestamps v1\n1000000000\toblivion.esm\n9000000000\ta.esp\n2000000000\tb.esp\n";
+        let newest = "Eidos plugin timestamps v1\n1000000000\toblivion.esm\n2000000000\ta.esp\n9000000000\tb.esp\n";
+        fs::write(&pending, stale).unwrap();
+        fs::write(&recovery, "broken recovery").unwrap();
+        let order_before = fs::read(a.loadorder_txt_path()).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(fs::read_to_string(&pending).unwrap(), stale);
+        assert_eq!(fs::read_to_string(&recovery).unwrap(), "broken recovery");
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        fs::write(&recovery, newest).unwrap();
+        fs::remove_file(&pending).unwrap();
+        fs::create_dir(&pending).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(fs::read_to_string(&recovery).unwrap(), newest);
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        fs::remove_dir(&pending).unwrap();
+        fs::write(&pending, stale).unwrap();
+
+        // Promotion succeeds, but the profile's final order cannot be saved.
+        // Keep the newest primary until a subsequent healthy capture succeeds.
+        fs::remove_file(a.loadorder_txt_path()).unwrap();
+        fs::create_dir(a.loadorder_txt_path()).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert!(!recovery.exists());
+        let retained = eidos_launch::read_plugin_mtimes(&pending).unwrap();
+        assert!(retained["a.esp"] < retained["b.esp"]);
+        fs::remove_dir(a.loadorder_txt_path()).unwrap();
+        fs::write(a.loadorder_txt_path(), &order_before).unwrap();
+        let activation_before = fs::read(a.plugins_txt_path()).unwrap();
+        // Empty discovery can mean temporarily unavailable Data. The writer's
+        // empty-list no-op must not count as capturing a nonempty receipt.
+        let missing_data = root.join("unavailable-data");
+        fs::rename(&game.data_path, &missing_data).unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert_eq!(
+            eidos_launch::read_plugin_mtimes(&pending).unwrap(),
+            retained
+        );
+        assert_eq!(fs::read(a.loadorder_txt_path()).unwrap(), order_before);
+        assert_eq!(fs::read(a.plugins_txt_path()).unwrap(), activation_before);
+        fs::rename(missing_data, &game.data_path).unwrap();
+        recover_timestamp_order("oblivion", &game, &inst, &a).unwrap();
+        assert!(!pending.exists());
+        assert!(!recovery.exists());
+        let projected = prepare_plugin_timestamps("oblivion", &game, &inst, &a)
+            .unwrap()
+            .unwrap();
+        assert!(projected.times["a.esp"] < projected.times["b.esp"]);
+        assert_eq!(fs::read(b.plugins_txt_path()).unwrap(), other_before);
+        fs::write(&pending, "broken receipt").unwrap();
+        assert!(recover_timestamp_order("oblivion", &game, &inst, &a).is_err());
+        assert!(pending.exists());
+        for (path, time) in sources_before {
+            assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), time);
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -705,6 +1176,53 @@ mod rescue_tests {
                 b"old session"
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod saves_routing_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn morrowind_adopts_install_saves_and_refuses_failed_profile_seed() {
+        let root = std::env::temp_dir().join(format!("eidos-prepare-saves-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::catalog()
+                .iter()
+                .find(|g| g.id == "morrowind")
+                .unwrap(),
+            source: Default::default(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data Files"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(game.install_path.join("Saves")).unwrap();
+        fs::write(game.install_path.join("Saves/Slot.ess"), b"save").unwrap();
+        fs::write(game.install_path.join("Saves/Slot.mwse"), b"cosave").unwrap();
+        let prof = inst.active();
+        let bind = prepare_saves(&game, &prof).unwrap().unwrap();
+        assert_eq!(bind, (prof.saves_dir(), game.install_path.join("Saves")));
+        assert_eq!(
+            fs::read(prof.saves_dir().join("Slot.ess")).unwrap(),
+            b"save"
+        );
+        assert_eq!(
+            fs::read(prof.saves_dir().join("Slot.mwse")).unwrap(),
+            b"cosave"
+        );
+        fs::remove_dir_all(prof.saves_dir()).unwrap();
+        fs::write(prof.saves_dir(), b"obstruction").unwrap();
+        assert!(prepare_saves(&game, &prof).is_err());
+        assert_eq!(
+            fs::read(game.install_path.join("Saves/Slot.ess")).unwrap(),
+            b"save"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

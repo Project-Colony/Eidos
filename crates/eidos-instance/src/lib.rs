@@ -28,6 +28,7 @@ mod categories;
 mod export;
 mod manifest;
 mod meta;
+mod mod_backup;
 mod profile;
 mod provenance;
 mod registry;
@@ -39,6 +40,7 @@ pub use categories::{
 pub use export::{csv_quote, fmt_mtime, mod_list_csv, Column, ExportScope};
 pub use manifest::Manifest;
 pub use meta::ModMeta;
+pub use mod_backup::{backup_mod, reserve_mod_backup};
 pub use profile::{
     cosave_siblings, format_stamp, is_save_data, is_save_listing, read_text_lossy, untweak_ini,
     write_text, Backup, BackupKind, ListTrust, Profile, SaveEntry, TweakedKey,
@@ -531,6 +533,22 @@ impl Instance {
         Manifest::new(game_id, kind).write(&self.manifest_path())
     }
 
+    /// Bind a new/legacy instance to a selected installation without switching an
+    /// existing binding. The caller holds the instance mutation lock.
+    pub fn ensure_installation(&self, game_id: &str, kind: InstanceKind, selection: &str) -> std::io::Result<()> {
+        let mut manifest = Manifest::read_checked(&self.manifest_path())?
+            .unwrap_or_else(|| Manifest::new(game_id, kind));
+        if manifest.game_id != game_id || manifest.installation.as_deref().is_some_and(|old| old != selection) {
+            return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists,
+                "this instance belongs to another game installation; choose another instance folder"));
+        }
+        if manifest.installation.is_none() {
+            manifest.installation = Some(selection.to_owned());
+            manifest.write(&self.manifest_path())?;
+        }
+        Ok(())
+    }
+
     /// Whether a prospective instance root lives inside (or is) a game's
     /// install directory - the one place an instance must never live, however
     /// natural it feels to MO2 veterans. Two reasons, both fatal:
@@ -990,10 +1008,21 @@ impl Instance {
         game_id: &str,
         fallback_state: Option<&Path>,
     ) -> Option<eidos_plugins::PluginList> {
+        self.plugin_list_for_profile(game_data, game_id, fallback_state, &self.active())
+    }
+
+    /// The same merged list, tied to the profile selected at session start.
+    pub fn plugin_list_for_profile(
+        &self,
+        game_data: &Path,
+        game_id: &str,
+        fallback_state: Option<&Path>,
+        profile: &Profile,
+    ) -> Option<eidos_plugins::PluginList> {
         let spec = eidos_plugins::GameSpec::for_id(game_id)?;
         let mut sources = vec![(String::new(), game_data.to_path_buf())];
         sources.extend(
-            self.modlist()
+            profile.modlist()
                 .into_iter()
                 .filter(|m| m.is_active())
                 .map(|m| (m.name, m.path)),
@@ -1014,7 +1043,6 @@ impl Instance {
                 .resolve_read(&plugin.name)
                 .is_some_and(|path| path.is_file())
         });
-        let profile = self.active();
         if profile.has_plugin_state() {
             list.apply_prefix_state(&profile.plugins_state_dir(), &spec);
         } else if let Some(path) = fallback_state {

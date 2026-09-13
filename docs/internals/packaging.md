@@ -11,7 +11,8 @@ Normal operation uses rootless FUSE and does not require a file capability.
 | Tarball | `./install.sh` | None for the default user installation |
 | From source | `just build`, then `just install` | None for the default user installation |
 
-The installer keeps `eidos` and `eidos-gui` together, registers the Nexus download
+The installer keeps `eidos`, `eidos-gui` and the bundled `eidos-nif-preview`
+helper together, registers the Nexus download
 handler and desktop entry, and installs bundled icons. Use `--bindir DIR` for a
 custom destination or `--system` for `/usr/local/bin`. A system destination may
 require sudo. Release packaging copies this same tracked installer; there is no
@@ -33,7 +34,7 @@ panel reports this mode and missing prerequisites.
 File capabilities are ignored on `nosuid` mounts and may be lost when a binary
 is replaced. Only reapply one when deliberately using the optional mode.
 
-## Why Flatpak is impossible
+## Flatpak integration remains unverified
 
 The earlier title is retained for existing links, but its original absolute
 claim was incorrect. Flatpak support has not been implemented or verified.
@@ -41,7 +42,7 @@ Sandbox access to game files, Steam/Proton, FUSE and mount namespaces would need
 an integration design. Its restrictions on file capabilities alone do not prove
 that Eidos's default rootless mode is impossible.
 
-## Why AppImage is a trap
+## AppImage integration remains unverified
 
 AppImage support is also unimplemented and unverified. An image mounted with
 `nosuid` cannot grant a file capability, but normal rootless operation does not
@@ -78,3 +79,9 @@ just install      # build and install for the current user
 
 The binaries must remain together because the GUI finds its CLI launcher beside
 its own executable before falling back to PATH.
+
+Complete source builds require CMake 3.20+, a C++17 compiler and Python 3 for
+native tests. The NIF helper uses the vendored, pinned nifly source; no model
+assets are downloaded. Release archives and Arch packages carry its upstream
+and dependency notices. A Rust-only development build remains usable but reports
+NIF previews unavailable until the helper is placed beside the GUI or on PATH.

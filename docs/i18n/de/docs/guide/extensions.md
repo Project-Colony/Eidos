@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Erweiterungen
 
@@ -21,9 +21,7 @@ Versionsabweichung. Und die Widgets von Eidos sind zur Übersetzungszeit generis
 sodass eine Bibliothek nicht einmal eines zum Zurückgeben bauen könnte, selbst
 wenn das ABI stabil wäre.
 
-Eine Erweiterung ist also ein Programm, das Eidos *ausführt*. Sie kann das Fenster
-nicht zum Absturz bringen, keine Modliste beschädigen und funktioniert über
-Eidos-Aktualisierungen hinweg weiter.
+Eine Erweiterung ist ein Programm, das Eidos mit den Dateisystemrechten Ihres Kontos ausführt. Installieren Sie nur Hilfsprogramme, denen Sie vertrauen. Prozessisolierung und geprüfte Antworten bieten keine Sandbox des Betriebssystems.
 
 ## Ein Werkzeug
 
@@ -93,9 +91,4 @@ sagt, welche fehlen.
 
 ## Was eine Erweiterung nicht kann
 
-Sie bekommt Werte und läuft; sie kann nicht in Eidos zurückrufen, die Modliste
-nicht ändern und nichts im Fenster zeichnen. Das ist Absicht. Wofür MO2 Plugins
-benutzt und was tatsächlich nach innen greifen MUSS - Spielunterstützung,
-Installer, die Konflikt-Engine - ist hier eingebaut statt angeschraubt: eine
-Spieldefinition ist ihr eigenes TOML in `~/.config/Colony/Eidos/games/`, und die
-FOMOD- und BAIN-Installer sind nativ.
+Eine Erweiterung kann Eidos nicht zurückrufen, sich nicht aus einem Archiv registrieren und keine eigenen Widgets zeichnen. Strukturierte Installer mit Protokoll 1 können geprüfte Dateipläne und Auswahldialoge zurückgeben; Prüfung, Vorbereitung im temporären Verzeichnis und Veröffentlichung übernimmt Eidos. FOMOD und BAIN bleiben native Installer. Vorschau- und Spielstandinfo-Erweiterungen verwenden denselben Host mit begrenzten Antworten. Die [Protokollspezifikation mit ausführbaren Beispielen](../../../../examples/extensions/README.md) erläutert die Zuordnungspriorität, gespeicherte CLI-Antworten, Grenzen und Identitätsprüfungen beim Wiederholen.

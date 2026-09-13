@@ -48,7 +48,7 @@ pub(crate) fn cmd_collection(args: &[String]) {
     let no_optional = args.iter().any(|a| a == "--no-optional");
 
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -191,6 +191,8 @@ pub(crate) fn cmd_collection(args: &[String]) {
         inst: &inst,
         game: &game,
         game_id: target.game_id.clone(),
+        payload_root: dir.clone(),
+        allow_runtime_mismatch: args.iter().any(|arg| arg == "--allow-runtime-mismatch"),
         say: &mut say,
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),

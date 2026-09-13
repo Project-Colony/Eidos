@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -126,8 +126,8 @@ Steam AppID를 주고, Eidos를 전혀 열지 않고도 병합된 뷰를 통해 
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 그다음 게임의 Steam 실행 옵션을 `~/.local/bin/eidos-gui %command%`로 설정하고
@@ -247,4 +247,4 @@ Fallout 4 (+ VR), Starfield, Oblivion, Morrowind (뒤의 둘은 마운트하고 
 
 ## 라이선스
 
-GPL-3.0-or-later. 모드 관리는 모두의 것입니다.
+Eidos의 원본 코드는 GPL-3.0-or-later입니다. 포함된 OMOD 이식 코드는 GPL-3.0-only이며, [원저자 표기](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md)를 참고하세요. NIF 도우미는 [구성 요소의 라이선스와 저작자 표기](../../../native/eidos-nif-preview/UPSTREAM.md)를 유지합니다. 모드 관리는 모두의 것입니다.

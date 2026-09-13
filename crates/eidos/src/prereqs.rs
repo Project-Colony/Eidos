@@ -7,32 +7,13 @@ use eidos_instance::{Instance, InstanceKind};
 
 use crate::*;
 
-/// The Tier-2 prereq verbs already installed into the prefix (the `prereqs.done`
-/// sentinel in the instance dir), so a re-run is a no-op and the tool warning is quiet.
-pub(crate) fn satisfied_prereqs(inst: &Instance) -> std::collections::BTreeSet<String> {
-    std::fs::read_to_string(inst.root.join("prereqs.done"))
-        .map(|s| {
-            s.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// What this machine already has, from BOTH records: Eidos's own, and the
-/// prefix's. winetricks appends every verb it installs to `winetricks.log`
-/// inside the prefix, and protontricks is winetricks - so a user who set a
-/// runtime up years ago is not asked to download it again.
+/// Successful verbs for the selected actual Wine prefix, including its own
+/// winetricks log and Eidos's prefix-bound instance receipt.
 pub(crate) fn satisfied_prereqs_in(
     inst: &Instance,
-    compatdata: Option<&std::path::PathBuf>,
+    prefix: Option<&std::path::Path>,
 ) -> std::collections::BTreeSet<String> {
-    let mut done = satisfied_prereqs(inst);
-    if let Some(c) = compatdata {
-        done.extend(eidos_gamefeatures::verbs_in_prefix(&c.join("pfx")));
-    }
-    done
+    eidos_gamefeatures::satisfied_prereqs_in(&inst.root, prefix)
 }
 
 /// `eidos prereqs <game-id> [--install]`: show, or install, the runtime
@@ -46,7 +27,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     };
     let install = args.iter().any(|a| a == "--install");
     let target = resolve(id);
-    let Some(game) = find_game(&target.game_id) else {
+    let Some(game) = find_instance_game(&target) else {
         eidos_log::info!(
             "Game '{}' is not detected. Run `eidos games`.",
             target.game_id
@@ -98,7 +79,8 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         })
         .cloned()
         .collect();
-    let satisfied = satisfied_prereqs_in(&inst, game.compatdata.as_ref());
+    let prefix = game.prefix();
+    let satisfied = satisfied_prereqs_in(&inst, prefix.as_deref());
     let pending2: Vec<String> = tier2
         .iter()
         .filter(|v| !satisfied.contains(*v))
@@ -187,8 +169,12 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         exit(1);
     }
     // Inspect the prefix before changing any bundled DLL or launching winetricks.
-    if let Some(compat) = game.compatdata.as_ref() {
-        let busy = eidos_gamefeatures::prefix_busy(&compat.join("pfx"), compat);
+    if let Some(prefix) = prefix.as_deref() {
+        let compat = game
+            .is_steam()
+            .then_some(game.compatdata.as_deref())
+            .flatten();
+        let busy = eidos_gamefeatures::prefix_busy_at(prefix, compat);
         if !busy.is_empty() {
             eidos_log::warn!("The prefix is still in use by {} process(es); close the game and its tools before installing prerequisites.", busy.len());
             exit(1);
@@ -212,11 +198,11 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         }
         return;
     }
-    let Some(compat) = game.compatdata.as_ref() else {
-        eidos_log::warn!("No Proton prefix for {id} - launch the game once through Steam first.");
+    let Some(prefix) = prefix.as_deref() else {
+        eidos_log::warn!("No Wine prefix is configured for {id}. Launch the game with its selected runner or configure its actual prefix first.");
         exit(1);
     };
-    let win = compat.join("pfx").join("drive_c").join("windows");
+    let win = prefix.join("drive_c").join("windows");
     for v in &tier1 {
         match eidos_gamefeatures::ensure_native_dll(&win, v) {
             Ok(true) => println!("provisioned {v} (bundled)"),
@@ -237,6 +223,14 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     if failed {
         exit(1);
     }
+    if !game.is_steam() {
+        eidos_log::warn!("Bundled DLLs were handled in the selected prefix. Installing Tier-2 prerequisites for an external copy requires its actual Wine runner; use that runner's winetricks integration. Eidos will read its winetricks.log on the next check.");
+        exit(1);
+    }
+    let Some(compat) = game.compatdata.as_ref() else {
+        eidos_log::warn!("No Steam Proton compatdata is configured for {id}.");
+        exit(1);
+    };
     let Some(run) =
         eidos_games::proton_command(&home(), game.def.steam_app_id, compat, &game.install_path)
     else {
@@ -247,7 +241,6 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     if !eidos_gamefeatures::cabextract_available() {
         eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
-    let prefix = compat.join("pfx");
     println!(
         "Installing {} via winetricks (downloads from Microsoft).",
         pending2.join(", ")
@@ -258,11 +251,10 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     let mut failed: Option<(String, String)> = None;
     for v in &pending2 {
         println!("  installing {v}...");
-        match eidos_gamefeatures::install_tier2_verb(&run.proton, &prefix, &run.env, v) {
+        match eidos_gamefeatures::install_tier2_verb(&run.proton, prefix, &run.env, v) {
             Ok(()) => {
                 done.insert(v.clone());
-                let body: String = done.iter().map(|x| format!("{x}\n")).collect();
-                if let Err(e) = std::fs::write(inst.root.join("prereqs.done"), body) {
+                if let Err(e) = eidos_gamefeatures::record_prereqs(&inst.root, prefix, &done) {
                     eidos_log::warn!("Installed {v}, but could not record it: {e}");
                     exit(1);
                 }

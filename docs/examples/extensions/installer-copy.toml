@@ -1,0 +1,10 @@
+id = "example-file-installer"
+name = "Example marked file installer"
+kind = "installer"
+protocol = 1
+exec = "/usr/bin/python3"
+args = ["{addon_dir}/inspect-file.py", "{request}"]
+extensions = ["zip"]
+markers = ["eidos-example.txt"]
+priority = 1
+version = "1"

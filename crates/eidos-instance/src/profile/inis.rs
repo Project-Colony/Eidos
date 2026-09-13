@@ -70,7 +70,7 @@ pub fn write_text(path: &Path, text: &str, cp1252: bool) -> io::Result<()> {
 /// deployed INI, `capture_inis` copies that file back into the profile, and by
 /// the second launch the tweak is indistinguishable from a setting the user
 /// chose. Disabling the fragment would then change nothing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TweakedKey {
     pub section: String,
     pub key: String,
@@ -178,7 +178,18 @@ impl Profile {
     /// This profile's stored copy of a game INI (e.g. `Skyrim.ini`). The profile
     /// owns its INIs; they are deployed into the Proton prefix at launch.
     pub fn ini_path(&self, ini_file: &str) -> PathBuf {
-        self.dir().join(ini_file)
+        if ini_file.eq_ignore_ascii_case("Morrowind.ini")
+            || ini_file.eq_ignore_ascii_case("plugins.txt")
+        {
+            self.plugins_state_dir()
+                .join(if ini_file.eq_ignore_ascii_case("Morrowind.ini") {
+                    "Morrowind.ini"
+                } else {
+                    "plugins.txt"
+                })
+        } else {
+            self.dir().join(ini_file)
+        }
     }
 
     /// One-time migration: copy the user's existing prefix INIs (`src_dir` = the
@@ -228,8 +239,15 @@ impl Profile {
         fs::create_dir_all(self.dir())?;
         let mut n = 0;
         for f in ini_files {
-            let src = src_dir.join(f);
+            let src = eidos_plugins::newest_variant(src_dir, f).unwrap_or_else(|| src_dir.join(f));
             if !src.is_file() {
+                continue;
+            }
+            if f.eq_ignore_ascii_case("plugins.txt") {
+                // Empty activation is valid. The active-set snapshot diagnoses a
+                // destructive rewrite without treating it as an invalid INI.
+                copy_atomic(&src, &self.plugins_txt_path())?;
+                n += 1;
                 continue;
             }
             // The same skepticism the plugin capture has had all along, at last
@@ -348,5 +366,270 @@ impl Profile {
             write_text(deployed_ini, &text, cp1252)?;
         }
         Ok(record)
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct IniSession {
+    files: Vec<String>,
+    tweaks: Vec<(String, Vec<TweakedKey>)>,
+}
+
+impl Profile {
+    /// Persist capture instructions before launching through the private root.
+    pub fn record_ini_session(
+        &self,
+        directory: &Path,
+        files: &[&str],
+        tweaks: &[(String, Vec<TweakedKey>)],
+    ) -> io::Result<()> {
+        if directory != self.dir().join("runtime-root") {
+            return Err(io::Error::other(
+                "INI receipt must describe the profile runtime root",
+            ));
+        }
+        let session = IniSession {
+            files: files.iter().map(|f| f.to_string()).collect(),
+            tweaks: tweaks.to_vec(),
+        };
+        let body = serde_json::to_vec(&session).map_err(io::Error::other)?;
+        copy_atomic_bytes(&self.dir().join("runtime-inis.pending"), &body)
+    }
+
+    /// Recover a finished or interrupted private-root session before reseeding it.
+    /// On failure the receipt and runtime files remain available for a retry.
+    pub fn recover_ini_session(&self) -> io::Result<()> {
+        let receipt = self.dir().join("runtime-inis.pending");
+        let body = match fs::read(&receipt) {
+            Ok(b) => b,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let session: IniSession = serde_json::from_slice(&body).map_err(io::Error::other)?;
+        if session.files.iter().any(|f| {
+            !matches!(
+                f.to_ascii_lowercase().as_str(),
+                "morrowind.ini" | "oblivion.ini" | "oblivionprefs.ini" | "plugins.txt"
+            )
+        }) {
+            return Err(io::Error::other("Invalid private-root INI receipt"));
+        }
+        let directory = self.dir().join("runtime-root");
+        for (file, record) in &session.tweaks {
+            if !session.files.contains(file) {
+                return Err(io::Error::other("Unexpected INI tweak file in receipt"));
+            }
+            let path = eidos_plugins::newest_variant(&directory, file)
+                .unwrap_or_else(|| directory.join(file));
+            if let Some((text, cp1252)) = read_text_lossy(&path) {
+                let restored = untweak_ini(&text, record);
+                if restored != text {
+                    write_text(&path, &restored, cp1252)?;
+                }
+            }
+        }
+        let files: Vec<_> = session.files.iter().map(String::as_str).collect();
+        let expected = files
+            .iter()
+            .filter(|f| {
+                eidos_plugins::newest_variant(&directory, f)
+                    .unwrap_or_else(|| directory.join(f))
+                    .metadata()
+                    .is_ok_and(|m| m.is_file() && m.len() > 0)
+                    || self
+                        .ini_path(f)
+                        .metadata()
+                        .is_ok_and(|m| m.is_file() && m.len() > 0)
+            })
+            .count();
+        let captured = self.capture_inis(&directory, &files)?;
+        if (captured as usize) < expected {
+            return Err(io::Error::other(format!(
+                "Incomplete INI capture; preserved {} and its receipt for retry",
+                directory.display()
+            )));
+        }
+        fs::remove_file(receipt)
+    }
+
+    /// Move only newly written runtime-root output to shared Overwrite/Root.
+    /// INIs stay profile-owned. A blocked file is left in place and fails visibly;
+    /// retrying is safe because each completed rename removes only its source.
+    pub fn merge_runtime_root_outputs(&self, shared: &Path, retained: &[&str]) -> io::Result<()> {
+        use eidos_core::{OPAQUE_MARKER, WHITEOUT_PREFIX};
+        // Private-only capture phase. Shared opacity markers always have an
+        // empty body, so a later session cannot inherit this transaction state.
+        // Once durable, cleanup must never repeat: children may already have
+        // moved out of the private directory before a later error or crash.
+        const OPACITY_APPLIED: &[u8] = b"eidos-private-root-opacity-applied-v1\n";
+
+        fn retained_name(name: &str, retained: &[&str], top: bool) -> bool {
+            top && retained.iter().any(|f| {
+                name.eq_ignore_ascii_case(f)
+                    || name
+                        .strip_prefix(WHITEOUT_PREFIX)
+                        .is_some_and(|target| target.eq_ignore_ascii_case(f))
+            })
+        }
+        fn matches(dir: &Path, name: &std::ffi::OsStr) -> io::Result<Vec<PathBuf>> {
+            Ok(fs::read_dir(dir)?
+                .collect::<io::Result<Vec<_>>>()?
+                .into_iter()
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .eq_ignore_ascii_case(&name.to_string_lossy())
+                })
+                .map(|e| e.path())
+                .collect())
+        }
+        fn remove_entry(path: &Path) -> io::Result<()> {
+            match fs::symlink_metadata(path) {
+                Ok(m) if m.is_dir() => fs::remove_dir_all(path),
+                Ok(_) => fs::remove_file(path),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(e),
+            }
+        }
+        fn durable_marker(path: &Path, body: &[u8]) -> io::Result<()> {
+            crate::write_atomic(path, body)?;
+            fs::File::open(path)?.sync_all()?;
+            fs::File::open(path.parent().unwrap())?.sync_all()
+        }
+        fn directory(path: &Path) -> io::Result<()> {
+            match fs::symlink_metadata(path) {
+                Ok(m) if m.is_dir() => Ok(()),
+                Ok(_) => Err(io::Error::other(format!(
+                    "Output parent is not a directory: {}",
+                    path.display()
+                ))),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => fs::create_dir(path),
+                Err(e) => Err(e),
+            }
+        }
+        fn merge(src: &Path, dst: &Path, retained: &[&str], top: bool) -> io::Result<()> {
+            directory(src)?;
+            directory(dst)?;
+            let mut entries = fs::read_dir(src)?.collect::<io::Result<Vec<_>>>()?;
+            entries.sort_by_key(|e| e.file_name());
+            let mut names = std::collections::HashSet::new();
+            for entry in &entries {
+                let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+                if !retained_name(&name, retained, top) && !names.insert(name) {
+                    return Err(io::Error::other(format!(
+                        "Ambiguous case variants in private root output: {}",
+                        src.display()
+                    )));
+                }
+            }
+            let opacity = src.join(OPAQUE_MARKER);
+            let opaque = entries.iter().any(|e| e.file_name() == OPAQUE_MARKER);
+            if opaque {
+                if !fs::symlink_metadata(&opacity)?.is_file() {
+                    return Err(io::Error::other(
+                        "Private opacity marker is not a regular file",
+                    ));
+                }
+                // Publish opacity before removing old shared payloads: a failed
+                // cleanup must not expose vanilla children in their place.
+                durable_marker(&dst.join(OPAQUE_MARKER), b"")?;
+                if fs::read(&opacity)? != OPACITY_APPLIED {
+                    for entry in fs::read_dir(dst)?.collect::<io::Result<Vec<_>>>()? {
+                        let name = entry.file_name();
+                        if name != OPAQUE_MARKER
+                            && !retained_name(&name.to_string_lossy(), retained, top)
+                        {
+                            remove_entry(&entry.path())?;
+                        }
+                    }
+                    fs::File::open(dst)?.sync_all()?;
+                    // No new child moves until both cleanup and its private
+                    // phase record are durable. Retry then merges only the
+                    // remaining source children, preserving completed moves.
+                    durable_marker(&opacity, OPACITY_APPLIED)?;
+                }
+            }
+            for entry in entries {
+                let name = entry.file_name();
+                let text = name.to_string_lossy();
+                let lower = text.to_ascii_lowercase();
+                if name == OPAQUE_MARKER || retained_name(&text, retained, top) {
+                    continue;
+                }
+                let destinations = matches(dst, &name)?;
+                if destinations.len() > 1 {
+                    return Err(io::Error::other(format!(
+                        "Ambiguous case variants for root output {} in {}; private output was retained", name.to_string_lossy(), dst.display()
+                    )));
+                }
+                let destination = destinations
+                    .into_iter()
+                    .next()
+                    .unwrap_or_else(|| dst.join(&name));
+                let kind = entry.file_type()?;
+                if kind.is_dir() {
+                    merge(&entry.path(), &destination, retained, false)?;
+                    fs::remove_dir(entry.path())?;
+                } else if kind.is_file() {
+                    if let Ok(m) = fs::symlink_metadata(&destination) {
+                        if !m.is_file() {
+                            return Err(io::Error::other(format!(
+                                "Output destination is not a regular file: {}",
+                                destination.display()
+                            )));
+                        }
+                    }
+                    if let Some(target) = text.strip_prefix(WHITEOUT_PREFIX) {
+                        if target.is_empty()
+                            || !matches!(
+                                Path::new(target).components().next(),
+                                Some(std::path::Component::Normal(_))
+                            )
+                        {
+                            return Err(io::Error::other("Invalid root output whiteout target"));
+                        }
+                        // A marker cannot hide a payload in its own Overwrite.
+                        // Keep the private marker until the shared deletion is
+                        // durable, so any partial failure remains retryable.
+                        durable_marker(&destination, b"")?;
+                        for old in matches(dst, std::ffi::OsStr::new(target))? {
+                            remove_entry(&old)?;
+                        }
+                        fs::File::open(dst)?.sync_all()?;
+                        fs::remove_file(entry.path())?;
+                    } else {
+                        // Publishing first keeps the prior deletion effective
+                        // when rename fails. The new same-upper payload wins
+                        // even if removing an obsolete marker then fails.
+                        fs::rename(entry.path(), &destination)?;
+                        for marker in matches(
+                            dst,
+                            std::ffi::OsStr::new(&format!("{WHITEOUT_PREFIX}{lower}")),
+                        )? {
+                            fs::remove_file(marker)?;
+                        }
+                    }
+                } else {
+                    return Err(io::Error::other(format!(
+                        "Unsupported runtime output type: {}",
+                        entry.path().display()
+                    )));
+                }
+            }
+            if opaque {
+                fs::remove_file(opacity)?;
+            }
+            Ok(())
+        }
+        let runtime = self.dir().join("runtime-root");
+        match fs::symlink_metadata(&runtime) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+            Ok(_) => {}
+        }
+        if let Some(parent) = shared.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        merge(&runtime, shared, retained, true)
     }
 }

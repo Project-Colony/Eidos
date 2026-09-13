@@ -22,6 +22,7 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
         .find(|g| g.id == "skyrimse")
         .unwrap();
     let game = eidos_games::DetectedGame {
+        source: Default::default(),
         def,
         install_path: root.join("game"),
         data_path: root.join("game/Data"),
@@ -31,6 +32,8 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
     let nexus = eidos_nexus::Nexus::with_bearer("synthetic-unused");
     let mut say = |_: String| {};
     let mut hooks = RealHooks {
+        payload_root: std::path::PathBuf::new(),
+        allow_runtime_mismatch: false,
         nexus: &nexus,
         inst: &inst,
         game: &game,
@@ -66,6 +69,12 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
             source: Source {
                 kind: SourceType::Direct,
                 url,
+                file_size: Some(3),
+                md5: if name == "Sidecar" {
+                    "00000000000000000000000000000000".into()
+                } else {
+                    String::new()
+                },
                 ..Default::default()
             },
             ..Default::default()
@@ -81,6 +90,20 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
             !request.to_lowercase().contains("range:"),
             "unverified bytes must not be resumed"
         );
+        if name == "Sidecar" {
+            assert!(
+                matches!(result, Obtained::Failed(ref error) if error.contains("MD5 mismatch")),
+                "{result:?}"
+            );
+            assert!(
+                fs::read_dir(inst.downloads_dir())
+                    .unwrap()
+                    .any(|e| fs::read(e.unwrap().path()).is_ok_and(|bytes| bytes == b"NEW")),
+                "mismatching downloaded bytes are retained"
+            );
+            assert_eq!(fs::read_dir(inst.mods_dir()).unwrap().count(), 0);
+            continue;
+        }
         let Obtained::Ready(path) = result else {
             panic!("{result:?}")
         };

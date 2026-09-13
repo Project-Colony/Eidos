@@ -1957,6 +1957,16 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(text("Extensions").size(18.0).width(Length::Fill))
+        .push(
+            button(text("Preview file").size(11.0)).on_press(Message::ChooseExtensionFile(
+                eidos_addons::protocol::Operation::Preview,
+            )),
+        )
+        .push(
+            button(text("Read save file").size(11.0)).on_press(Message::ChooseExtensionFile(
+                eidos_addons::protocol::Operation::SaveInfo,
+            )),
+        )
         .push(tool_btn("Open folder", Message::OpenAddonsFolder))
         .push(tool_btn("Reload", Message::ReloadAddons))
         .push(
@@ -1999,6 +2009,9 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         let kind = match a.kind {
             AddonKind::Tool => "tool",
             AddonKind::Diagnose => "check",
+            AddonKind::Installer => "installer",
+            AddonKind::Preview => "preview",
+            AddonKind::SaveInfo => "save information",
         };
         let mut title = Row::new()
             .spacing(6)
@@ -2030,6 +2043,9 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
             }
             (None, AddonKind::Diagnose) => {
                 title = title.push(text("runs on refresh").size(10.0));
+            }
+            (None, _) => {
+                title = title.push(text("runs for matching files").size(10.0));
             }
         }
 
@@ -2307,16 +2323,28 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 /// fetch them - so a progress bar here would stall on the first mod for most
 /// people. What it can do exactly, it does exactly.
 /// The preview pane: one file, shown as far as it can be.
-pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
+pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
     let name = p
         .path()
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let name = match p {
+        Preview::Archive { source, .. } => format!("{} — {}", source.member, name),
+        _ => name,
+    };
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
         .push(text(name).size(15.0).width(Length::Fill))
+        .push(button(text("Extension").size(11.0)).on_press_maybe(
+            (!matches!(p, Preview::Archive { .. })).then(|| {
+                Message::RunFileExtension(
+                    eidos_addons::protocol::Operation::Preview,
+                    p.path().into(),
+                )
+            }),
+        ))
         .push(
             button(text("Reveal").size(11.0))
                 .padding([4, 10])
@@ -2329,7 +2357,150 @@ pub(crate) fn preview_dialog<'a>(p: &Preview) -> Element<'a, Message> {
                 .style(button::secondary)
                 .on_press(Message::ClosePreview),
         );
-    let body: Element<'a, Message> = match p {
+    let content = match p {
+        Preview::Archive { content, .. } => content.as_ref(),
+        _ => p,
+    };
+    let body: Element<'a, Message> = match content {
+        Preview::Archive { .. } => text("Nested archive previews are unsupported").into(),
+        Preview::Dds {
+            info,
+            selection,
+            image,
+            ..
+        } => {
+            let selection = *selection;
+            let mut controls = Row::new().spacing(8).align_y(iced::Alignment::Center);
+            for (label, value, count) in [
+                ("Mip", selection.mip, info.mips),
+                ("Layer", selection.layer, info.layers),
+                ("Face", selection.face, info.faces),
+            ] {
+                let change = |value| {
+                    let mut selected = selection;
+                    match label {
+                        "Mip" => selected.mip = value,
+                        "Layer" => selected.layer = value,
+                        _ => selected.face = value,
+                    };
+                    Message::PreviewDdsSelection(selected)
+                };
+                controls = controls
+                    .push(button(text("−")).on_press_maybe(value.checked_sub(1).map(change)))
+                    .push(text(format!("{label} {value}/{}", count - 1)).size(11.0))
+                    .push(
+                        button(text("+"))
+                            .on_press_maybe((value + 1 < count).then(|| change(value + 1))),
+                    );
+            }
+            let channel = match selection.channel {
+                crate::dds_preview::Channel::Rgba => "RGBA",
+                crate::dds_preview::Channel::Rgb => "RGB",
+                crate::dds_preview::Channel::Alpha => "Alpha",
+            };
+            controls = controls.push(pick_list(
+                ["RGBA", "RGB", "Alpha"],
+                Some(channel),
+                move |channel| {
+                    let mut selected = selection;
+                    selected.channel = match channel {
+                        "RGB" => crate::dds_preview::Channel::Rgb,
+                        "Alpha" => crate::dds_preview::Channel::Alpha,
+                        _ => crate::dds_preview::Channel::Rgba,
+                    };
+                    Message::PreviewDdsSelection(selected)
+                },
+            ));
+            let body: Element<'a, Message> = match image {
+                Ok(handle) => container(
+                    iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
+                )
+                .center(Length::Fill)
+                .into(),
+                Err(error) => container(text(error.clone())).center(Length::Fill).into(),
+            };
+            let note = if info.hdr {
+                " · HDR display uses Reinhard/sRGB; negative values are clipped"
+            } else {
+                ""
+            };
+            Column::new()
+                .spacing(8)
+                .push(controls)
+                .push(
+                    text(format!(
+                        "{} × {} · {}{note}",
+                        info.width, info.height, info.format
+                    ))
+                    .size(10.0),
+                )
+                .push(body)
+                .into()
+        }
+        Preview::Nif { model, .. } => {
+            let view = model.view;
+            let orbit = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Orbit").size(11.0))
+                .push(
+                    slider(
+                        -std::f32::consts::PI..=std::f32::consts::PI,
+                        view.yaw,
+                        move |yaw| Message::PreviewNifView(crate::nif_render::View { yaw, ..view }),
+                    )
+                    .step(0.03)
+                    .width(Length::Fill),
+                )
+                .push(text("Tilt").size(11.0))
+                .push(
+                    slider(-1.5..=1.5, view.pitch, move |pitch| {
+                        Message::PreviewNifView(crate::nif_render::View { pitch, ..view })
+                    })
+                    .step(0.03)
+                    .width(Length::Fill),
+                );
+            let controls = Row::new()
+                .spacing(8)
+                .align_y(iced::Alignment::Center)
+                .push(text("Zoom").size(11.0))
+                .push(
+                    slider(0.1..=10.0, view.zoom, move |zoom| {
+                        Message::PreviewNifView(crate::nif_render::View { zoom, ..view })
+                    })
+                    .step(0.1)
+                    .width(Length::Fill),
+                )
+                .push(
+                    checkbox(view.wireframe)
+                        .label("Wireframe")
+                        .on_toggle(move |wireframe| {
+                            Message::PreviewNifView(crate::nif_render::View { wireframe, ..view })
+                        }),
+                )
+                .push(button(text("Reset")).on_press(Message::PreviewNifView(Default::default())));
+            let image: Element<'a, Message> = match &model.image {
+                Some(Ok(handle)) => container(
+                    iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain),
+                )
+                .center(Length::Fill)
+                .into(),
+                Some(Err(error)) => container(text(error.clone())).center(Length::Fill).into(),
+                None => container(text("Loading model textures…"))
+                    .center(Length::Fill)
+                    .into(),
+            };
+            let mut body = Column::new().spacing(8).push(orbit).push(controls)
+                .push(text(format!("{} static shapes · orthographic view · diffuse textures and approximate lighting", model.scene.meshes.len())).size(10.0))
+                .push(image);
+            if !model.warnings.is_empty() {
+                body = body.push(
+                    scrollable(text(model.warnings.as_ref()).size(10.0))
+                        .height(Length::Fixed(58.0)),
+                );
+            }
+            body.into()
+        }
         Preview::Image { handle, .. } => {
             container(iced::widget::image(handle.clone()).content_fit(iced::ContentFit::Contain))
                 .center(Length::Fill)
@@ -2431,7 +2602,11 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .iter()
             .filter(|s| **s == MemberState::Missing)
             .count();
-        let unverified = state.states.iter().filter(|s| **s == MemberState::Unverified).count();
+        let unverified = state
+            .states
+            .iter()
+            .filter(|s| **s == MemberState::Unverified)
+            .count();
         let other_version = state
             .states
             .iter()
@@ -2460,10 +2635,17 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
         // The real action. It sits ahead of "fetch missing" because fetching is
         // now a step INSIDE it rather than a thing to do instead of it.
         summary = summary.push(
-            button(text("Install this collection").size(11.0))
-                .padding([3, 10])
-                .style(button::primary)
-                .on_press(Message::CollectionInstall),
+            button(
+                text(if state.runtime.is_some() {
+                    "Continue despite this version mismatch"
+                } else {
+                    "Install this collection"
+                })
+                .size(11.0),
+            )
+            .padding([3, 10])
+            .style(button::primary)
+            .on_press_maybe((!state.loading).then_some(Message::CollectionInstall)),
         );
         if missing > 0 {
             let label = if state.confirm_fetch {
@@ -2761,7 +2943,11 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
                 .color(text_muted())
                 .width(Length::Fill),
         )
-        .push(if ready { run.on_press(Message::PackRun) } else { run });
+        .push(if ready {
+            run.on_press(Message::PackRun)
+        } else {
+            run
+        });
 
     let card = Column::new()
         .spacing(11)
@@ -2937,7 +3123,10 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
         .push(text(job.title.clone()).size(15.0));
     match &job.finished {
         None => {
-            let pct = job.percent.load(std::sync::atomic::Ordering::SeqCst).min(100);
+            let pct = job
+                .percent
+                .load(std::sync::atomic::Ordering::SeqCst)
+                .min(100);
             card = card
                 .push(
                     iced::widget::progress_bar(0.0..=100.0, pct as f32)

@@ -1,5 +1,5 @@
-//! Directory-only Bethesda archive inspection. No member payload is read or decompressed.
-use crate::{BASE_ORIGIN, ConflictMap, ConflictState, Layer, ModConflicts, OriginId};
+//! Bethesda archive directories and bounded, on-demand member extraction.
+use crate::{ConflictMap, ConflictState, Layer, ModConflicts, OriginId, BASE_ORIGIN};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
@@ -55,7 +55,7 @@ impl std::error::Error for ArchiveError {}
 impl From<io::Error> for ArchiveError {
     fn from(e: io::Error) -> Self {
         if e.kind() == io::ErrorKind::UnexpectedEof {
-            Self::Corrupt("truncated directory".into())
+            Self::Corrupt("truncated archive data".into())
         } else {
             Self::Io(e.to_string())
         }
@@ -71,6 +71,11 @@ type Result<T> = std::result::Result<T, ArchiveError>;
 const MAX_ENTRIES: u64 = 2_000_000;
 const MAX_DIRECTORY: u64 = 128 * 1024 * 1024;
 const MAX_PATH: usize = 4096;
+mod export;
+mod payload;
+pub use export::*;
+pub use payload::*;
+use payload::{Codec, Payload, Segment, Texture, TextureChunk};
 fn corrupt(s: &str) -> ArchiveError {
     ArchiveError::Corrupt(s.into())
 }
@@ -91,8 +96,19 @@ struct Directory<R> {
     reader: R,
     len: u64,
     budget: u64,
+    requested: Option<String>,
+    selected: Option<(String, Payload)>,
 }
 impl<R: Read + Seek> Directory<R> {
+    fn select(&mut self, name: &str, payload: Payload) {
+        if self
+            .requested
+            .as_deref()
+            .is_some_and(|s| s.eq_ignore_ascii_case(name))
+        {
+            self.selected = Some((name.to_owned(), payload));
+        }
+    }
     fn range(&self, offset: u64, size: u64) -> Result<()> {
         if offset > self.len || size > self.len - offset {
             Err(corrupt("offset or length outside archive"))
@@ -140,12 +156,20 @@ fn path(bytes: &[u8]) -> Result<String> {
 pub fn read_archive_members(path: &Path) -> Result<Vec<String>> {
     read_members(File::open(path)?)
 }
-fn read_members<R: Read + Seek>(mut reader: R) -> Result<Vec<String>> {
+fn read_members<R: Read + Seek>(reader: R) -> Result<Vec<String>> {
+    Ok(parse_directory(reader, None)?.1)
+}
+fn parse_directory<R: Read + Seek>(
+    mut reader: R,
+    requested: Option<&str>,
+) -> Result<(Directory<R>, Vec<String>)> {
     let len = reader.seek(SeekFrom::End(0))?;
     let mut d = Directory {
         reader,
         len,
         budget: MAX_DIRECTORY,
+        requested: requested.map(|s| path(s.as_bytes())).transpose()?,
+        selected: None,
     };
     let magic = d.read(0, 4)?;
     let members = match magic.as_slice() {
@@ -160,7 +184,7 @@ fn read_members<R: Read + Seek>(mut reader: R) -> Result<Vec<String>> {
             return Err(corrupt("duplicate case-insensitive member path"));
         }
     }
-    Ok(members)
+    Ok((d, members))
 }
 fn bsa<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
     let h = d.read(0, 36)?;
@@ -247,11 +271,35 @@ fn bsa<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
             if name.contains('/') {
                 return Err(corrupt("file name contains a directory"));
             }
-            paths.push(if folder.is_empty() {
+            let name = if folder.is_empty() {
                 name
             } else {
                 format!("{folder}/{name}")
-            });
+            };
+            if name.len() > MAX_PATH {
+                return Err(corrupt("oversized member path"));
+            }
+            d.select(
+                &name,
+                Payload::Bsa {
+                    segment: Segment {
+                        offset,
+                        stored: size,
+                        unpacked: size,
+                        codec: if (flags & 4 != 0) != (u32_at(rec, 8) & (1 << 30) != 0) {
+                            if version == 105 {
+                                Codec::Lz4Frame
+                            } else {
+                                Codec::Zlib
+                            }
+                        } else {
+                            Codec::Raw
+                        },
+                    },
+                    prefixed: flags & 0x100 != 0,
+                },
+            );
+            paths.push(name);
         }
     }
     if paths.len() as u64 != files
@@ -284,18 +332,40 @@ fn ba2<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
         _ => 24,
     };
     d.range(0, cursor)?;
-    let mut ranges = Vec::new();
+    let codec = if version == 3 {
+        match u32_at(&d.read(32, 4)?, 0) {
+            0 => Codec::Zlib,
+            3 => Codec::Lz4Block,
+            method if d.requested.is_some() => {
+                return Err(ArchiveError::Unsupported(format!(
+                    "BA2 compression method {method}"
+                )))
+            }
+            _ => Codec::Zlib,
+        }
+    } else {
+        Codec::Zlib
+    };
+    let mut name_cursor = names_offset;
+    let mut paths = Vec::new();
     for _ in 0..n {
-        if kind == b"GNRL" {
+        let length = d.read(name_cursor, 2)?;
+        name_cursor += 2;
+        let length = u16::from_le_bytes(length.try_into().unwrap()) as u64;
+        if length as usize > MAX_PATH {
+            return Err(corrupt("oversized member path"));
+        }
+        paths.push(path(&d.read(name_cursor, length)?)?);
+        name_cursor += length;
+    }
+    let mut ranges = Vec::new();
+    for name in &paths {
+        let payload = if kind == b"GNRL" {
             let r = d.read(cursor, 36)?;
             cursor += 36;
-            ranges.push((
-                u64_at(&r, 16),
-                match u32_at(&r, 24) {
-                    0 => u32_at(&r, 28),
-                    x => x,
-                },
-            ));
+            let segment = Segment::packed(u64_at(&r, 16), u32_at(&r, 24), u32_at(&r, 28), codec);
+            ranges.push((segment.offset, segment.stored));
+            Payload::General(segment)
         } else {
             let r = d.read(cursor, 24)?;
             cursor += 24;
@@ -303,39 +373,40 @@ fn ba2<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
             if chunks == 0 || u16::from_le_bytes([r[14], r[15]]) != 24 {
                 return Err(corrupt("invalid texture chunk directory"));
             }
+            let mut texture = Texture {
+                width: u16::from_le_bytes([r[18], r[19]]),
+                height: u16::from_le_bytes([r[16], r[17]]),
+                mips: r[20],
+                format: r[21],
+                cube: r[22],
+                tile_mode: r[23],
+                chunks: Vec::new(),
+            };
             for _ in 0..chunks {
                 let c = d.read(cursor, 24)?;
                 cursor += 24;
-                if u16::from_le_bytes([c[16], c[17]]) > u16::from_le_bytes([c[18], c[19]]) {
+                let first = u16::from_le_bytes([c[16], c[17]]);
+                let last = u16::from_le_bytes([c[18], c[19]]);
+                if first > last {
                     return Err(corrupt("reversed texture mip range"));
                 }
-                ranges.push((
-                    u64_at(&c, 0),
-                    match u32_at(&c, 8) {
-                        0 => u32_at(&c, 12),
-                        x => x,
-                    },
-                ));
+                let segment = Segment::packed(u64_at(&c, 0), u32_at(&c, 8), u32_at(&c, 12), codec);
+                ranges.push((segment.offset, segment.stored));
+                texture.chunks.push(TextureChunk {
+                    segment,
+                    first,
+                    last,
+                });
             }
-        }
+            Payload::Texture(texture)
+        };
+        d.select(name, payload);
     }
     if names_offset < cursor {
         return Err(corrupt("name table overlaps records"));
     }
     let records_end = cursor;
-    cursor = names_offset;
-    let mut paths = Vec::new();
-    for _ in 0..n {
-        let length = d.read(cursor, 2)?;
-        cursor += 2;
-        let length = u16::from_le_bytes(length.try_into().unwrap()) as u64;
-        if length as usize > MAX_PATH {
-            return Err(corrupt("oversized member path"));
-        }
-        let bytes = d.read(cursor, length)?;
-        cursor += length;
-        paths.push(path(&bytes)?);
-    }
+    cursor = name_cursor;
     for (offset, size) in ranges {
         d.range(offset, size)?;
         if offset < records_end || (offset < cursor && offset + size > names_offset) {
@@ -370,7 +441,17 @@ fn tes3<R: Read + Seek>(d: &mut Directory<R>) -> Result<Vec<String>> {
             .iter()
             .position(|&b| b == 0)
             .ok_or_else(|| corrupt("unterminated TES3 name"))?;
-        paths.push(path(&tail[..end])?);
+        let name = path(&tail[..end])?;
+        d.select(
+            &name,
+            Payload::General(Segment {
+                offset,
+                stored: size,
+                unpacked: size,
+                codec: Codec::Raw,
+            }),
+        );
+        paths.push(name);
     }
     Ok(paths)
 }

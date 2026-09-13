@@ -6,14 +6,132 @@
 //! MO2-compatible `meta.ini`. Like MO2, extraction is delegated to 7-Zip, which
 //! handles `.7z`/`.zip`/`.rar` uniformly.
 
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::io;
+use std::io::{self, Read};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 
 pub(crate) static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+/// Keeps extraction and its receipt attached to one open regular file.
+/// ponytail: a descriptor plus metadata avoids copying whole archives to another staging file.
+#[derive(Debug)]
+pub(crate) struct ArchiveOrigin {
+    file: fs::File,
+    path: PathBuf,
+    stamp: [u64; 7],
+    sha256: String,
+}
+
+fn archive_stamp(meta: &fs::Metadata) -> [u64; 7] {
+    [
+        meta.dev(),
+        meta.ino(),
+        meta.len(),
+        meta.mtime() as u64,
+        meta.mtime_nsec() as u64,
+        meta.ctime() as u64,
+        meta.ctime_nsec() as u64,
+    ]
+}
+
+impl ArchiveOrigin {
+    pub(crate) fn capture(path: &Path, cancel: &AtomicBool) -> Result<Self, InstallError> {
+        Self::capture_bounded(path, cancel, u64::MAX)
+    }
+
+    pub(crate) fn capture_bounded(
+        path: &Path,
+        cancel: &AtomicBool,
+        max_bytes: u64,
+    ) -> Result<Self, InstallError> {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(InstallError::BadSelection(
+                "Archive operation cancelled".into(),
+            ));
+        }
+        let path = path.canonicalize()?;
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(&path)?;
+        let meta = file.metadata()?;
+        if !meta.is_file() || meta.len() > max_bytes {
+            return Err(InstallError::BadSelection(
+                "Archive is not a regular file within the size limit".into(),
+            ));
+        }
+        let mut origin = Self {
+            file: file.try_clone()?,
+            path,
+            stamp: archive_stamp(&meta),
+            sha256: String::new(),
+        };
+        origin.verify_current(cancel)?;
+        let mut hash = Sha256::new();
+        let mut buffer = [0u8; 64 * 1024];
+        let mut remaining = meta.len();
+        while remaining != 0 {
+            origin.verify_cancel(cancel)?;
+            let count = file.read(&mut buffer[..remaining.min(64 * 1024) as usize])?;
+            if count == 0 {
+                return Err(InstallError::BadSelection(
+                    "Archive changed while reading".into(),
+                ));
+            }
+            hash.update(&buffer[..count]);
+            remaining -= count as u64;
+        }
+        origin.verify_current(cancel)?;
+        origin.sha256 = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        Ok(origin)
+    }
+
+    fn verify_cancel(&self, cancel: &AtomicBool) -> Result<(), InstallError> {
+        if cancel.load(Ordering::Relaxed) {
+            Err(InstallError::BadSelection(
+                "Archive operation cancelled".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// The child opens the parent's descriptor; CLOEXEC does not affect this path.
+    pub(crate) fn pinned_path(&self) -> PathBuf {
+        PathBuf::from(format!(
+            "/proc/{}/fd/{}",
+            std::process::id(),
+            self.file.as_raw_fd()
+        ))
+    }
+    pub(crate) fn verify_current(&self, cancel: &AtomicBool) -> Result<(), InstallError> {
+        self.verify_cancel(cancel)?;
+        let held = self.file.metadata()?;
+        let named = fs::symlink_metadata(&self.path)?;
+        if !held.is_file()
+            || !named.is_file()
+            || archive_stamp(&held) != self.stamp
+            || archive_stamp(&named) != self.stamp
+        {
+            return Err(InstallError::BadSelection(
+                "Archive changed; reopen before installing or replaying".into(),
+            ));
+        }
+        Ok(())
+    }
+    pub(crate) fn sha256(&self) -> &str {
+        &self.sha256
+    }
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+}
 
 /// Extract every entry of `archive` into `dest`, reporting 7-Zip's own progress.
 ///
@@ -47,9 +165,13 @@ pub(crate) fn sevenzip_err(e: eidos_sevenzip::SevenZipError) -> InstallError {
 /// is never extracted twice. The temp is removed when this is dropped.
 pub struct ExtractedTree {
     pub(crate) tmp: PathBuf,
+    pub(crate) origin: Option<ArchiveOrigin>,
 }
 
 impl ExtractedTree {
+    pub(crate) fn owned(tmp: PathBuf) -> Self {
+        Self { tmp, origin: None }
+    }
     /// The extracted tree's root on disk.
     pub fn path(&self) -> &Path {
         &self.tmp
@@ -193,15 +315,30 @@ pub fn extract_to_temp_with(
     mods_dir: &Path,
     on_progress: impl FnMut(u8),
 ) -> Result<ExtractedTree, InstallError> {
+    extract_to_temp_cancellable(archive, mods_dir, &AtomicBool::new(false), on_progress)
+}
+
+pub(crate) fn extract_to_temp_cancellable(
+    archive: &Path,
+    mods_dir: &Path,
+    cancel: &AtomicBool,
+    on_progress: impl FnMut(u8),
+) -> Result<ExtractedTree, InstallError> {
     let bin = eidos_sevenzip::find_7z().ok_or(InstallError::No7z)?;
+    let origin = ArchiveOrigin::capture(archive, cancel)?;
     let tmp = mods_dir.join(format!(
         ".eidos-install-{}-{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir_all(&tmp)?;
-    let tree = ExtractedTree { tmp };
-    extract_all_with(bin, archive, &tree.tmp, on_progress)?;
+    let tree = ExtractedTree {
+        tmp,
+        origin: Some(origin),
+    };
+    let origin = tree.origin.as_ref().expect("captured archive");
+    extract_all_with(bin, &origin.pinned_path(), &tree.tmp, on_progress)?;
+    origin.verify_current(cancel)?;
     // Before the case pass, not after: this one CREATES the directories that the
     // case pass then reconciles.
     match unflatten_backslash_paths(&tree.tmp) {
@@ -212,6 +349,7 @@ pub fn extract_to_temp_with(
         Err(e) => eidos_log::warn!("eidos install: could not rebuild the archive's folder tree ({e})"),
     }
     normalize_case_collisions(&tree.tmp)?;
+    origin.verify_current(cancel)?;
     Ok(tree)
 }
 
@@ -227,6 +365,32 @@ mod backslash_tests {
         ));
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn pinned_archive_reads_original_bytes_and_rejects_path_replacement() {
+        let root = ExtractedTree::owned(tmp("origin"));
+        let archive = root.path().join("archive.zip");
+        fs::write(&archive, b"original").unwrap();
+        let cancel = AtomicBool::new(false);
+        let origin = ArchiveOrigin::capture(&archive, &cancel).unwrap();
+        assert_eq!(
+            origin.sha256(),
+            "0682c5f2076f099c34cfdd15a9e063849ed437a49677e6fcc5b4198c76575be5"
+        );
+        fs::rename(&archive, root.path().join("saved.zip")).unwrap();
+        fs::write(&archive, b"replacement").unwrap();
+        assert_eq!(fs::read(origin.pinned_path()).unwrap(), b"original");
+        assert!(origin.verify_current(&cancel).is_err());
+        fs::remove_file(&archive).unwrap();
+        fs::rename(root.path().join("saved.zip"), &archive).unwrap();
+        assert_eq!(fs::read(origin.pinned_path()).unwrap(), b"original");
+        // Even an in-place rewrite restored to the original bytes cannot restore ctime.
+        fs::write(&archive, b"original").unwrap();
+        assert!(origin.verify_current(&cancel).is_err());
+        assert!(ArchiveOrigin::capture_bounded(&archive, &cancel, 1).is_err());
+        assert!(ArchiveOrigin::capture(&archive, &AtomicBool::new(true)).is_err());
+        assert!(ArchiveOrigin::capture(root.path(), &cancel).is_err());
     }
 
     #[test]

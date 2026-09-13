@@ -104,6 +104,17 @@ pub(crate) fn count_actives(
         eidos_plugins::LoadOrderMechanism::Asterisk => lines.filter(|l| l.starts_with('*')).count(),
         // PlainList: every listed plugin IS active.
         eidos_plugins::LoadOrderMechanism::PlainList => lines.count(),
+        eidos_plugins::LoadOrderMechanism::Timestamp => {
+            if path.file_name().is_some_and(|n| {
+                n.to_string_lossy()
+                    .to_ascii_lowercase()
+                    .contains("morrowind.ini")
+            }) {
+                eidos_plugins::morrowind_active(&text).len()
+            } else {
+                lines.count()
+            }
+        }
     })
 }
 
@@ -183,7 +194,7 @@ impl Profile {
     pub fn plugins_state_dir(&self) -> PathBuf {
         let dir = self.dir().join("plugins");
         let _ = fs::create_dir_all(&dir);
-        for name in ["plugins.txt", "loadorder.txt"] {
+        for name in ["plugins.txt", "loadorder.txt", "Morrowind.ini"] {
             let legacy = self.dir().join(name);
             let new = dir.join(name);
             if legacy.is_file() && !new.exists() {
@@ -197,7 +208,9 @@ impl Profile {
     /// load order rather than the prefix's copy). Reads through the case-variant
     /// resolver: the game may have written `Plugins.txt` into the bound dir.
     pub fn has_plugin_state(&self) -> bool {
-        eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt").is_some()
+        ["plugins.txt", "Morrowind.ini", "loadorder.txt"]
+            .iter()
+            .any(|name| eidos_plugins::newest_variant(&self.plugins_state_dir(), name).is_some())
     }
 
     /// One-time migration, mirroring [`Self::seed_inis`]: adopt the prefix's
@@ -217,7 +230,7 @@ impl Profile {
     ) -> io::Result<u32> {
         let dst_dir = self.plugins_state_dir();
         let mut n = 0;
-        for name in ["plugins.txt", "loadorder.txt"] {
+        for name in [spec.active_file(), "loadorder.txt"] {
             let Some(src) = eidos_plugins::newest_variant(src_dir, name) else {
                 continue;
             };
@@ -258,6 +271,13 @@ impl Profile {
                 n += 1;
             }
         }
+        // A root-mode activation source is the game install, not an AppData
+        // settings directory. Never seed its executables/resources into a profile.
+        if spec.active_file() == "Morrowind.ini"
+            || eidos_plugins::newest_variant(src_dir, "Oblivion.ini").is_some()
+        {
+            return Ok(n);
+        }
         let Ok(rd) = fs::read_dir(src_dir) else {
             return Ok(n);
         };
@@ -285,7 +305,16 @@ impl Profile {
     /// Where the pre-session copy of `plugins.txt` lives: NEXT TO the plugins
     /// dir, never inside it - the game must not see it through the bind.
     pub fn plugins_snapshot_path(&self) -> PathBuf {
-        self.dir().join("plugins.txt.pre-session")
+        self.dir()
+            .join(format!("{}.pre-session", self.active_state_filename()))
+    }
+
+    fn active_state_filename(&self) -> &'static str {
+        if eidos_plugins::newest_variant(&self.plugins_state_dir(), "Morrowind.ini").is_some() {
+            "Morrowind.ini"
+        } else {
+            "plugins.txt"
+        }
     }
 
     /// Record the pre-session state of `plugins.txt`, so
@@ -298,7 +327,8 @@ impl Profile {
     /// warn-and-offer-restore, without resurrecting the two-copy design.
     pub fn snapshot_plugin_state(&self) -> io::Result<()> {
         let snap = self.plugins_snapshot_path();
-        match eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt") {
+        match eidos_plugins::newest_variant(&self.plugins_state_dir(), self.active_state_filename())
+        {
             Some(src) => copy_atomic(&src, &snap),
             None => {
                 // No state yet: a stale snapshot would compare a future session
@@ -317,7 +347,8 @@ impl Profile {
         if !snap.is_file() {
             return None;
         }
-        let current = eidos_plugins::newest_variant(&self.plugins_state_dir(), "plugins.txt")?;
+        let current =
+            eidos_plugins::newest_variant(&self.plugins_state_dir(), self.active_state_filename())?;
         active_loss(&snap, &current, spec.mechanism)
     }
 
@@ -333,7 +364,10 @@ impl Profile {
             ));
         }
         let dir = self.plugins_state_dir();
-        copy_atomic(&snap, &eidos_plugins::canonical_path(&dir, "plugins.txt"))
+        copy_atomic(
+            &snap,
+            &eidos_plugins::canonical_path(&dir, self.active_state_filename()),
+        )
     }
 
     /// Enabled mods, highest priority first: the layers to mount at launch.

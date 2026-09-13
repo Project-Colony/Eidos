@@ -24,7 +24,7 @@ use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::settings::Settings;
 use eidos_instance::{ExportScope, Instance, InstanceKind, ModEntry, SaveEntry, Tool};
-use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
+use eidos_plugins::{GameSpec, MovableRange, PluginList};
 
 // The GUI, split by what each half does rather than by what it is about.
 //
@@ -36,10 +36,18 @@ use eidos_plugins::{plugins_txt_dir, GameSpec, MovableRange, PluginList};
 // the measure of the split: nothing at the root draws anything any more.
 mod anim;
 mod archive_conflicts;
+mod background_work;
+mod dds_preview;
 mod dialogs;
+mod file_preview;
 mod fomod;
+#[cfg(test)]
+mod gui_verification;
 mod health;
+mod installers;
 mod modinfo;
+mod nif_preview;
+mod nif_render;
 mod state;
 mod theme;
 mod update;
@@ -47,10 +55,10 @@ mod view;
 mod widgets;
 mod wizard;
 
+use archive_conflicts::*;
 use dialogs::*;
 use fomod::{fomod_ink_faint, fomod_ink_soft, fomod_wizard_view};
 use modinfo::*;
-use archive_conflicts::*;
 use state::*;
 use theme::pal;
 use update::*;
@@ -180,6 +188,7 @@ impl SettingsTab {
 
 #[derive(Debug, Clone)]
 enum Message {
+    Installer(installers::Action),
     Next,
     Back,
     PickKind(InstanceKind),
@@ -198,6 +207,19 @@ enum Message {
     NewProfile,
     InstallMod,
     ModPicked(Option<PathBuf>),
+    InstallerArchiveResolved {
+        request: u64,
+        target: Option<CollectionTarget>,
+        name: String,
+        result: Result<Option<PathBuf>, String>,
+    },
+    ModPickedFor {
+        fresh: bool,
+        request: u64,
+        target: Option<CollectionTarget>,
+        name: Option<String>,
+        path: Option<PathBuf>,
+    },
     FomodToggle(usize, usize),
     FomodNext,
     FomodBack,
@@ -226,6 +248,7 @@ enum Message {
     ModVisitNexus(usize),
     /// Re-run the installer for this mod (MO2 reinstallMod).
     ModReinstall(usize),
+    ModReinstallFresh(usize),
     /// Delete the mod from disk (MO2 removeMods); two-click confirm.
     ModRemove(usize),
     /// Begin renaming a mod (MO2 renameMod); opens an inline editor.
@@ -278,6 +301,28 @@ enum Message {
     ToggleGroupFold(String),
     /// Preview a file from a tree, in a pane over the window.
     PreviewFile(PathBuf),
+    RunFileExtension(eidos_addons::protocol::Operation, PathBuf),
+    ChooseExtensionFile(eidos_addons::protocol::Operation),
+    ExtensionFilePicked {
+        request: u64,
+        target: Option<CollectionTarget>,
+        epoch: u64,
+        operation: eidos_addons::protocol::Operation,
+        path: Option<PathBuf>,
+    },
+    PreviewReady(u64, Preview),
+    PreviewDdsSelection(dds_preview::Selection),
+    PreviewNifView(nif_render::View),
+    ArchiveProviderAction {
+        epoch: u64,
+        member: String,
+        provider: eidos_conflicts::AssetProvider,
+        export: bool,
+    },
+    ArchiveFilterChanged(String),
+    ArchivePage(usize),
+    ArchiveExportDestination(u64, Option<PathBuf>),
+    ArchiveExportFinished(u64, Result<PathBuf, String>),
     ClosePreview,
     /// Executables editor: the AppID field, the two flags, and the shortcut.
     ExecAppIdChanged(String),
@@ -394,6 +439,7 @@ enum Message {
     // ---- install-collision chooser (MO2 QueryOverwriteDialog) ----
     /// Install over the existing mod's files.
     CollisionMerge,
+    CollisionBackupChanged(bool),
     /// Wipe the existing mod and reinstall (keeps its endorsement/category).
     CollisionReplace,
     /// Edit the rename target for the colliding install.
@@ -745,6 +791,7 @@ enum Message {
     ///
     /// Only subscribed while something is actually moving - see `subscription`.
     AnimationTick,
+    ArchivePoll,
     /// A frame while an archive extracts: check whether the worker finished.
     InstallPoll,
     WindowResized(iced::Size),
@@ -878,6 +925,12 @@ enum Message {
     // ---- move an instance to another machine (eidos pack / eidos unpack) ----
     /// Install the collection the pane is showing, on a worker thread.
     CollectionInstall,
+    CollectionInstallChecked {
+        request: u64,
+        target: CollectionTarget,
+        link: String,
+        result: Result<eidos_collections::recipe::RuntimeCheck, String>,
+    },
     /// Open the Pack dialog, which previews what would go into the file.
     ShowPackDialog,
     ClosePackDialog,
@@ -921,6 +974,7 @@ enum Message {
 /// An in-progress FOMOD installer: the extracted+parsed archive, the current step,
 /// and the user's selection so far.
 struct FomodWizard {
+    target: CollectionTarget,
     session: eidos_install::FomodSession,
     step: usize,
     selection: eidos_fomod::Selection,
@@ -1063,8 +1117,17 @@ pub(crate) enum MemberState {
     Missing,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CollectionTarget {
+    instance: PathBuf,
+    profile: String,
+    installation: String,
+}
+
 /// The collection browser.
 struct CollectionState {
+    install_check: Option<u64>,
+    runtime: Option<(CollectionTarget, eidos_collections::recipe::RuntimeCheck)>,
     /// What the user pasted, kept so the field survives a failed fetch.
     link: String,
     /// The fetched revision, once it arrives.
@@ -1164,6 +1227,8 @@ struct IniEditorState {
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
 /// Merge / Replace / Rename / Cancel - MO2's QueryOverwriteDialog.
 struct CollisionPrompt {
+    target: CollectionTarget,
+    backup: bool,
     archive: PathBuf,
     /// The colliding (already sanitized) mod name.
     name: String,
@@ -1186,6 +1251,7 @@ struct CollisionPrompt {
 /// simple and FOMOD heuristics both decline it. Holds the extracted tree so
 /// nothing is unpacked twice, whatever the user picks.
 struct InstallPicker {
+    target: CollectionTarget,
     archive: PathBuf,
     /// The mod name to install under, editable (MO2 lets you rename here).
     name: String,
@@ -1231,19 +1297,29 @@ enum PickerChoice {
     Manual(String),
 }
 
-/// What a preview managed to make of a file.
-///
-/// Images and text, and nothing else - which is a decision rather than a first
-/// step. A DDS is a container for block-compressed data that needs a BC decoder
-/// this tree does not have, and a NIF is a scene graph that needs a renderer;
-/// both are real work, and neither is what somebody opens this for. What they
-/// open it for is "which of these two textures is the one with the seam" and
-/// "what does this config actually say", and those are a PNG and a text file.
+/// Decoded content and its physical source for Reveal.
 #[derive(Debug, Clone)]
 pub(crate) enum Preview {
+    Archive {
+        source: archive_conflicts::MemberSource,
+        content: Box<Preview>,
+    },
     Image {
         path: PathBuf,
         handle: iced::widget::image::Handle,
+    },
+    Dds {
+        path: PathBuf,
+        provenance: Option<file_preview::Snapshot>,
+        bytes: std::sync::Arc<Vec<u8>>,
+        info: dds_preview::DdsInfo,
+        selection: dds_preview::Selection,
+        image: Result<iced::widget::image::Handle, String>,
+    },
+    Nif {
+        path: PathBuf,
+        provenance: Option<file_preview::Snapshot>,
+        model: nif_preview::Model,
     },
     /// The head of a text file, and whether there was more.
     Text {
@@ -1259,7 +1335,10 @@ pub(crate) enum Preview {
 impl Preview {
     pub(crate) fn path(&self) -> &Path {
         match self {
+            Preview::Archive { source, .. } => &source.path,
             Preview::Image { path, .. }
+            | Preview::Dds { path, .. }
+            | Preview::Nif { path, .. }
             | Preview::Text { path, .. }
             | Preview::Unsupported { path, .. } => path,
         }
@@ -1673,6 +1752,8 @@ pub(crate) struct DataRow {
 type CachedListing = (u64, std::rc::Rc<Vec<String>>);
 
 struct App {
+    installer: Option<installers::Wizard>,
+    mod_picker: u64,
     screen: Screen,
     games: Vec<DetectedGame>,
     kind: InstanceKind,
@@ -1688,6 +1769,7 @@ struct App {
     conflicts: Option<ConflictMap>,
     archive_epoch: std::cell::Cell<u64>,
     archive_completed_epoch: Option<u64>,
+    archive_sources: HashMap<PathBuf, eidos_conflicts::ArchiveIdentity>,
     archive_job: Option<ArchiveWorker>,
     archive_plan: Option<eidos_gamefeatures::archives::ArchivePlan>,
     archive_warnings: Vec<String>,
@@ -1870,6 +1952,11 @@ struct App {
     confirm_restore: Option<String>,
     /// The file being previewed, and what could be made of it.
     preview: Option<Preview>,
+    preview_pending: Option<file_preview::Pending>,
+    extension_picker: u64,
+    archive_filter: String,
+    archive_page: usize,
+    archive_export: Option<archive_conflicts::ExportRequest>,
     /// Downloads list: the name filter, the ordering, whether hidden rows are
     /// shown, and the two-click guard on the bulk purge.
     dl_filter: String,
@@ -2251,21 +2338,29 @@ struct CategoriesDialogState {
 /// resize it had sent went unanswered until the extraction finished. The work
 /// is the same; only the thread it runs on changed.
 struct InstallJob {
+    fresh: bool,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    target: Option<CollectionTarget>,
     /// The mod's name, for the dialog text.
     name: String,
     /// The archive being opened. Kept because the result handler needs it and
     /// the worker has moved its own copy away.
     archive: PathBuf,
-    /// The instance's `mods/`, likewise.
-    mods_dir: PathBuf,
-    /// The game the install is for.
-    game_id: String,
     /// 7-Zip's own percentage, written by the worker as it reads them.
     percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
     /// The worker's result, stored just before `done` flips.
-    outcome: std::sync::Arc<std::sync::Mutex<Option<Result<eidos_install::Opened, eidos_install::InstallError>>>>,
+    outcome: std::sync::Arc<
+        std::sync::Mutex<Option<Result<eidos_install::Opened, eidos_install::InstallError>>>,
+    >,
     /// Flipped to `true` by the worker once `outcome` is filled.
     done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for InstallJob {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 // The worker hands `Opened` back across a thread; if that ever stops holding,
@@ -2447,6 +2542,18 @@ impl std::fmt::Display for CategoryChoice {
 }
 
 fn view(app: &App) -> Element<'_, Message> {
+    if let Some(w) = &app.installer {
+        let mut layers = Stack::new().push(installers::view(w));
+        if let Some(preview) = &app.preview {
+            layers = layers
+                .push(
+                    mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                        .on_press(Message::ClosePreview),
+                )
+                .push(container(preview_dialog(preview)).center(Length::Fill));
+        }
+        return layers.into();
+    }
     if let Some(w) = &app.fomod {
         let base = fomod_wizard_view(w);
         // A reinstall collision raised from inside the wizard must be able to
@@ -2550,7 +2657,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     // so the tick always carries `AnimationTick` and the handler forwards to
     // `InstallPoll` when there is a job - which also keeps that message
     // separately testable.
-    let frames = (anim::needs_frames(app) || app.archive_job.is_some()).then(|| {
+    let frames = anim::needs_frames(app).then(|| {
         iced::time::every(std::time::Duration::from_millis(16)).map(|_| Message::AnimationTick)
     });
 
@@ -2686,7 +2793,14 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
     });
 
     let mut subs = vec![track, pointer];
+    // Archive analysis only reports completion; it does not animate at frame rate.
+    if app.archive_job.is_some() {
+        subs.push(
+            iced::time::every(std::time::Duration::from_millis(100)).map(|_| Message::ArchivePoll),
+        );
+    }
     if app.screen == Screen::Main
+        && app.installer.is_none()
         && app.fomod.is_none()
         && app.rename.is_none()
         && !app.settings_open
@@ -2986,24 +3100,16 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         return Space::new().height(Length::Fixed(0.0)).into();
     }
 
-    // Two sources, and both are needed. Eidos records what IT installed in the
-    // instance; the prefix records what winetricks installed in it, by whoever
-    // ran it. Trusting only the first reports a runtime the user set up years ago
-    // as missing and offers to download it again.
-    let mut done: std::collections::HashSet<String> = app
+    let prefix = selected_game(app).and_then(|g| g.prefix());
+    let done: std::collections::HashSet<String> = app
         .created
         .as_ref()
-        .and_then(|i| std::fs::read_to_string(i.root.join("prereqs.done")).ok())
-        .map(|s| {
-            s.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
+        .map(|i| {
+            eidos_gamefeatures::satisfied_prereqs_in(&i.root, prefix.as_deref())
+                .into_iter()
                 .collect()
         })
         .unwrap_or_default();
-    if let Some(prefix) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
-        done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
-    }
 
     let mut col = Column::new()
         .spacing(2)
@@ -3086,6 +3192,40 @@ mod tests {
     }
 
     #[test]
+    fn archive_analysis_defers_during_runs_and_restarts_cancelled_work() {
+        let (mut app, root) = data_app(&[("example.txt", "data")], &[]);
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        assert!(
+            app.archive_job.is_none(),
+            "started an archive scan during a run"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        assert!(app.archive_job.is_some());
+        start_run(
+            &mut app,
+            "test child".into(),
+            std::process::Command::new("/bin/true"),
+        );
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert!(
+            app.archive_completed_epoch.is_none(),
+            "published cancelled analysis"
+        );
+        app.running.take();
+        schedule_archive_conflicts(&mut app);
+        finish_archive_worker(&mut app);
+        assert_eq!(app.archive_completed_epoch, Some(app.archive_epoch.get()));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn archive_worker_uses_plugin_order_ini_registration_and_cached_members() {
         let (mut app, root) = data_app(&[("A.esp", "plugin")], &[]);
         let a = app.mods[0].path.clone();
@@ -3135,6 +3275,21 @@ mod tests {
             Some("A.esp")
         );
         fs::write(a.join("A.bsa"), b"broken").unwrap();
+        let epoch = app.archive_epoch.get();
+        let provider = app.conflicts.as_ref().unwrap().asset_files["textures/shared.dds"]
+            .winner
+            .clone();
+        let _ = update_inner(
+            &mut app,
+            Message::ArchiveProviderAction {
+                epoch,
+                member: "textures/shared.dds".into(),
+                provider,
+                export: false,
+            },
+        );
+        assert!(app.preview_pending.is_none());
+        assert!(app.status.as_deref().unwrap().contains("changed since"));
         schedule_archive_conflicts(&mut app);
         assert!(
             app.archive_job.is_none(),
@@ -3729,10 +3884,155 @@ mod tests {
             install_path: PathBuf::from("/nowhere"),
             data_path: PathBuf::from("/nowhere/data"),
             compatdata: None,
+            source: Default::default(),
             steam_name: id.to_string(),
         }];
         app.selected = Some(0);
         app
+    }
+
+    #[test]
+    fn known_instance_reopens_its_saved_store_copy() {
+        let mut app = app_for_game("skyrimse");
+        let mut gog = app.games[0].clone();
+        gog.install_path = PathBuf::from("/different/skyrim");
+        gog.source = eidos_games::GameSource::External {
+            store: eidos_games::Store::Gog,
+            app_id: "1711230643".into(),
+            prefix: None,
+            heroic: true,
+        };
+        app.games.push(gog);
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.ensure_installation(
+            "skyrimse",
+            InstanceKind::Portable,
+            &app.games[1].selection_id(),
+        )
+        .unwrap();
+        let mut registry = eidos_instance::Registry::default();
+        registry.set_last(eidos_instance::InstanceRef::Portable(root.clone()));
+        let known = known_instances_from(&registry, &app.games);
+        assert_eq!(
+            known
+                .iter()
+                .find(|k| k.inst.root == root)
+                .unwrap()
+                .game_index,
+            1
+        );
+        app.games.pop();
+        assert!(known_instances_from(&registry, &app.games)
+            .iter()
+            .all(|k| k.inst.root != root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn source_selection_matches_whole_install_paths_and_refuses_ambiguous_copies() {
+        let mut app = app_for_game("skyrimse");
+        app.games[0].install_path = "/library/Skyrim".into();
+        app.games[0].data_path = "/library/Skyrim/Data".into();
+        let mut second = app.games[0].clone();
+        second.install_path = "/library/Skyrim Special Edition".into();
+        second.data_path = "/library/Skyrim Special Edition/Data".into();
+        app.games.push(second.clone());
+        let command = vec![
+            "proton".into(),
+            "/library/Skyrim Special Edition/SkyrimSE.exe".into(),
+        ];
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        assert_eq!(
+            identify_game(&app.games, &["/other/library/Skyrim/Skyrim.exe".into()]),
+            None
+        );
+        // Folder-mod games can put their overlay outside the install directory.
+        app.games[1].data_path = "/userdata/Mods".into();
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        app.games.push(second);
+        assert_eq!(identify_game(&app.games, &command), None);
+    }
+
+    #[test]
+    fn source_selection_rechecks_the_known_instances_current_manifest() {
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        let mut second = app.games[0].clone();
+        second.install_path = "/second/skyrim".into();
+        app.games.push(second);
+        let inst = Instance::portable(root.clone());
+        app.known = vec![KnownInstance {
+            label: "portable".into(),
+            inst: inst.clone(),
+            game_index: 0,
+            portable: true,
+        }];
+        inst.ensure_installation(
+            "skyrimse",
+            InstanceKind::Portable,
+            &app.games[1].selection_id(),
+        )
+        .unwrap();
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert_eq!(app.selected, Some(1));
+        eidos_instance::Manifest::new("fallout4", InstanceKind::Portable)
+            .write(&inst.manifest_path())
+            .unwrap();
+        assert_eq!(instance_game_index(&app.games, &inst, "skyrimse"), None);
+        app.created = None;
+        app.screen = Screen::Welcome;
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert!(app.created.is_none());
+        assert_eq!(inst.read_manifest().unwrap().game_id, "fallout4");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extension_picker_rejects_stale_requests_targets_and_views_before_starting_a_helper() {
+        let (mut app, root) = data_app(&[], &[]);
+        let path = root.join("example.txt");
+        fs::write(&path, "example").unwrap();
+        let original = update::collection_target(&app);
+        let epoch = app.archive_epoch.get();
+        for mismatch in 0..3 {
+            app.extension_picker = 7;
+            let mut target = original.clone();
+            if mismatch == 1 {
+                target.as_mut().unwrap().profile = "another profile".into();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::ExtensionFilePicked {
+                    request: if mismatch == 0 { 6 } else { 7 },
+                    target,
+                    epoch: if mismatch == 2 {
+                        epoch.wrapping_sub(1)
+                    } else {
+                        epoch
+                    },
+                    operation: eidos_addons::protocol::Operation::Preview,
+                    path: Some(path.clone()),
+                },
+            );
+            assert!(
+                app.preview_pending.is_none(),
+                "started a stale helper: mismatch {mismatch}"
+            );
+        }
+        let _ = update_inner(
+            &mut app,
+            Message::ExtensionFilePicked {
+                request: 7,
+                target: original,
+                epoch,
+                operation: eidos_addons::protocol::Operation::Preview,
+                path: Some(path),
+            },
+        );
+        assert!(app.preview_pending.is_some());
+        let _ = update_inner(&mut app, Message::ClosePreview);
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// A real portable instance in a temp dir: manifest + the minimum layout.
@@ -4376,9 +4676,10 @@ mod tests {
         // Stellar Blade has no plugin system at all. Offering the tab would open
         // an empty list for a game that will never have one.
         assert!(!game_manages_plugins(&app_for_game("stellarblade")));
-        // Neither does a game whose order is file timestamps, which Eidos does
-        // not manage either - the tab would be just as empty there.
-        assert!(!game_manages_plugins(&app_for_game("morrowind")));
+        // Timestamp engines now use the same profile order through virtual mtimes.
+        for game in ["morrowind", "oblivion", "fallout3", "falloutnv"] {
+            assert!(game_manages_plugins(&app_for_game(game)), "{game}");
+        }
         // And with no game chosen at all there is nothing to manage.
         assert!(!game_manages_plugins(&nav_app(&[])));
     }
@@ -4429,19 +4730,7 @@ mod tests {
 
     #[test]
     fn plugin_advice_is_only_given_to_games_that_have_plugins() {
-        // Two predicates that are easy to confuse, kept apart by the three games
-        // that fall differently between them.
-        //
-        //   Skyrim   : has plugins, Eidos writes the order   -> both true
-        //   Morrowind: has plugins, Eidos does not write it  -> has, not manages
-        //   Stellar Blade: no plugin system at all           -> both false
-        //
-        // Getting this wrong in either direction is visible: gate LOOT advice on
-        // "manages" and Morrowind stops being told that LOOT cannot sort it,
-        // which is the only game the message was written for. Gate it on nothing
-        // and Stellar Blade is told LOOT cannot sort it - true of every game ever
-        // made that is not Bethesda's - and pointed at a Plugins tab it does not
-        // show.
+        // Bethesda engines expose their supported order; folder-only games do not.
         let sky = app_for_game("skyrimse");
         assert!(game_has_plugins(&sky) && game_manages_plugins(&sky));
 
@@ -4450,7 +4739,10 @@ mod tests {
             game_has_plugins(&mw),
             "Morrowind has .esp files and a load order"
         );
-        assert!(!game_manages_plugins(&mw), "Eidos just does not write it");
+        assert!(
+            game_manages_plugins(&mw),
+            "Morrowind order is projected by Eidos"
+        );
 
         let sb = app_for_game("stellarblade");
         assert!(!game_has_plugins(&sb) && !game_manages_plugins(&sb));
@@ -4471,11 +4763,11 @@ mod tests {
                 "Stellar Blade was given plugin advice: {sb:?}"
             );
         }
-        // And Morrowind still is, because for it the advice is true and useful.
+        // Morrowind's newly supported sorter must not retain obsolete warnings.
         let mw = titles(&app_for_game("morrowind"));
         assert!(
-            mw.iter().any(|t| t.contains("LOOT cannot sort")),
-            "Morrowind lost the advice the message exists for: {mw:?}"
+            !mw.iter().any(|t| t.contains("LOOT cannot sort")),
+            "Morrowind retained obsolete sorter advice: {mw:?}"
         );
     }
 
@@ -6052,6 +6344,8 @@ mod tests {
         let (first, second) = (rev.mods[0].mod_id, rev.mods[1].file_id);
         let (mut app, root) = collection_app(&[("Karthwasten", first)], &[second]);
         app.collection = Some(CollectionState {
+            install_check: None,
+            runtime: None,
             link: String::new(),
             revision: Some(rev),
             states: Vec::new(),
@@ -6088,13 +6382,12 @@ mod tests {
 
         // (1) A mod id from ANOTHER game's page is not this member. Nexus ids
         //     are per game, so a bare id is ambiguous across them.
-        let (mut app, root) = collection_app_with(
-            &[("Elsewhere", first, "gameName=Skyrim\n")],
-            &[],
-            &[second],
-        );
+        let (mut app, root) =
+            collection_app_with(&[("Elsewhere", first, "gameName=Skyrim\n")], &[], &[second]);
         let state = |app: &mut App| {
             app.collection = Some(CollectionState {
+                install_check: None,
+                runtime: None,
                 link: String::new(),
                 revision: Some(captured_revision()),
                 states: Vec::new(),
@@ -6350,6 +6643,8 @@ mod tests {
         let extra = format!("gameName=SkyrimSE\nversion=2.1\n[installedFiles]\n1\\modid={id}\n1\\fileid={file}\n2\\modid=999\n2\\fileid=123\nsize=2\n");
         let (mut app, root) = collection_app_with(&[("Merged", id, &extra)], &[], &[]);
         app.collection = Some(CollectionState {
+            install_check: None,
+            runtime: None,
             revision: Some(rev),
             link: String::new(),
             states: Vec::new(),
@@ -6443,6 +6738,8 @@ mod tests {
         let (mut app, root) = collection_app(&[], &[]);
         let rev = captured_revision();
         app.collection = Some(CollectionState {
+            install_check: None,
+            runtime: None,
             link: String::new(),
             revision: Some(rev),
             states: Vec::new(),
@@ -6483,6 +6780,8 @@ mod tests {
         let rev = captured_revision();
         let all: Vec<u64> = rev.mods.iter().map(|m| m.file_id).collect();
         app.collection = Some(CollectionState {
+            install_check: None,
+            runtime: None,
             link: String::new(),
             revision: Some(rev),
             states: Vec::new(),
@@ -6552,6 +6851,112 @@ mod tests {
             Preview::Unsupported { .. }
         ));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn preview_results_cannot_replace_a_newer_selection_or_changed_file() {
+        let (mut app, root) = data_app(&[("old.txt", "old"), ("new.txt", "new")], &[]);
+        let old = app.mods[0].path.join("old.txt");
+        let new = app.mods[0].path.join("new.txt");
+        let _ = update_inner(&mut app, Message::PreviewFile(old.clone()));
+        let first = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::PreviewFile(new.clone()));
+        let second = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::PreviewReady(first, build_preview(&old)));
+        assert_eq!(app.preview_pending.as_ref().unwrap().id, second);
+        assert_eq!(app.preview.as_ref().unwrap().path(), new);
+        let decoded = build_preview(&new);
+        fs::write(&new, "changed after decoding").unwrap();
+        let _ = update_inner(&mut app, Message::PreviewReady(second, decoded));
+        assert!(app.preview.is_none());
+        assert!(app.status.as_deref().unwrap().contains("changed"));
+        let _ = update_inner(&mut app, Message::PreviewFile(old.clone()));
+        let third = app.preview_pending.as_ref().unwrap().id;
+        let _ = update_inner(&mut app, Message::ClosePreview);
+        let _ = update_inner(&mut app, Message::PreviewReady(third, build_preview(&old)));
+        assert!(app.preview.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cached_dds_selection_rejects_replaced_loose_files_and_archives() {
+        let (mut app, root) = data_app(&[], &[]);
+        let mut bytes = vec![0; 152];
+        bytes[..4].copy_from_slice(b"DDS ");
+        for (at, value) in [
+            (4, 124u32),
+            (8, 0x21007),
+            (12, 1),
+            (16, 1),
+            (28, 1),
+            (76, 32),
+            (80, 4),
+            (84, u32::from_le_bytes(*b"DX10")),
+            (108, 0x401008),
+            (128, 28),
+            (132, 3),
+            (140, 1),
+        ] {
+            bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[148..].copy_from_slice(&[255, 0, 0, 255]);
+        for (archived, change_view) in [(false, false), (true, false), (false, true), (true, true)]
+        {
+            let path = root.join(if archived {
+                "textures.bsa"
+            } else {
+                "texture.dds"
+            });
+            fs::write(&path, &bytes).unwrap();
+            let content = file_preview::from_bytes(
+                if archived {
+                    Path::new("texture.dds")
+                } else {
+                    &path
+                },
+                bytes.clone(),
+                false,
+            );
+            assert!(matches!(content, Preview::Dds { .. }));
+            let decoded = if archived {
+                Preview::Archive {
+                    source: archive_conflicts::MemberSource {
+                        path: path.clone(),
+                        member: "texture.dds".into(),
+                        identity: eidos_conflicts::archive_identity(&path).unwrap(),
+                    },
+                    content: Box::new(content),
+                }
+            } else {
+                content
+            };
+            let _ = update_inner(&mut app, Message::PreviewFile(path.clone()));
+            let id = app.preview_pending.as_ref().unwrap().id;
+            file_preview::complete(&mut app, id, decoded);
+            let cached = app.preview.clone().unwrap();
+            // The cached pixels belong to the old source, even if a new control
+            // request starts after its replacement has already finished.
+            if change_view {
+                bump_views(&app);
+            } else {
+                fs::write(&path, b"replacement source").unwrap();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::PreviewDdsSelection(dds_preview::Selection {
+                    channel: dds_preview::Channel::Alpha,
+                    ..Default::default()
+                }),
+            );
+            let id = app.preview_pending.as_ref().unwrap().id;
+            file_preview::complete(&mut app, id, cached);
+            assert!(
+                app.preview.is_none(),
+                "accepted stale DDS pixels; archived={archived}"
+            );
+            assert!(app.status.as_deref().unwrap().contains("changed"));
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -7988,6 +8393,7 @@ mod tests {
             // treating it as an action would not shorten a confirmation's life,
             // it would end it between the two clicks every time.
             Message::AnimationTick,
+            Message::ArchivePoll,
             // Reached from that same tick and at the same rate, for a job that
             // runs for twenty minutes - long enough that a confirmation
             // disarmed sixty times a second reads as a broken window.
@@ -8834,10 +9240,7 @@ mod tests {
     /// A pack or unpack with no worker behind it. `outcome` decides whether it
     /// reads as finished, so the whole state machine can be driven without
     /// 7-Zip, which CI does not have.
-    fn fake_transfer(
-        kind: TransferKind,
-        outcome: Option<Result<String, String>>,
-    ) -> TransferJob {
+    fn fake_transfer(kind: TransferKind, outcome: Option<Result<String, String>>) -> TransferJob {
         use std::sync::atomic::{AtomicBool, AtomicU8};
         use std::sync::{Arc, Mutex};
         let done = outcome.is_some();
@@ -8926,7 +9329,10 @@ mod tests {
     fn a_collection_install_uses_the_same_single_job_slot() {
         let mut app = nav_app(&[]);
         app.transfer_job = Some(fake_transfer(TransferKind::Collection, None));
-        assert!(anim::needs_frames(&app), "it must get frames like the others");
+        assert!(
+            anim::needs_frames(&app),
+            "it must get frames like the others"
+        );
         // And nothing else may start beside it.
         let _ = update_inner(&mut app, Message::ShowUnpackDialog);
         assert!(app.unpack.is_none());
@@ -8936,6 +9342,144 @@ mod tests {
             "{:?}",
             app.status
         );
+    }
+
+    #[test]
+    fn collection_runtime_mismatch_requires_a_current_explicit_continuation() {
+        let (mut app, root) = collection_app(&[], &[]);
+        let target = CollectionTarget {
+            instance: root.clone(),
+            profile: app.created.as_ref().unwrap().active_profile(),
+            installation: app.games[0].selection_id(),
+        };
+        app.collection = Some(CollectionState {
+            install_check: Some(7),
+            runtime: None,
+            link: "request".into(),
+            revision: Some(captured_revision()),
+            states: Vec::new(),
+            loading: true,
+            error: None,
+            confirm_fetch: false,
+            asked: Default::default(),
+        });
+        let mismatch = eidos_collections::recipe::RuntimeCheck::Mismatch {
+            observed: "1.7.104.0".into(),
+            expected: vec!["1.6.1170.0".into()],
+        };
+        for (request, changed) in [(6, false), (7, true)] {
+            let mut stale = target.clone();
+            if changed {
+                stale.profile = "another profile".into();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::CollectionInstallChecked {
+                    request,
+                    target: stale,
+                    link: "request".into(),
+                    result: Ok(mismatch.clone()),
+                },
+            );
+            assert!(app.collection.as_ref().unwrap().runtime.is_none());
+            assert!(app.transfer_job.is_none());
+        }
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionInstallChecked {
+                request: 7,
+                target,
+                link: "request".into(),
+                result: Ok(mismatch),
+            },
+        );
+        assert!(
+            app.transfer_job.is_none(),
+            "checking an incompatible recipe installs nothing"
+        );
+        assert!(app.collection.as_ref().unwrap().runtime.is_some());
+        assert!(app
+            .collection
+            .as_ref()
+            .unwrap()
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("1.7.104.0"));
+        let _ = update_inner(
+            &mut app,
+            Message::CollectionLinkChanged("other recipe".into()),
+        );
+        assert!(
+            app.collection.as_ref().unwrap().runtime.is_none(),
+            "a changed recipe needs its own decision"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn collision_backup_choice_preserves_payload_metadata_and_disabled_state() {
+        for merge in [false, true] {
+            let (mut app, root) = collection_app(&[("Existing", 1)], &[]);
+            let inst = app.created.as_ref().unwrap().clone();
+            fs::write(root.join("mods/Existing/chosen.esp"), b"old payload").unwrap();
+            let old_meta = fs::read(root.join("mods/Existing/meta.ini")).unwrap();
+            app.mods[0].enabled = false;
+            inst.active().save_modlist(&app.mods).unwrap();
+            let archive = root.join("reinstall.zip");
+            fs::write(&archive, include_bytes!("../tests/fixtures/reinstall.zip")).unwrap();
+            app.collision = Some(CollisionPrompt {
+                target: update::collection_target(&app).unwrap(),
+                backup: false,
+                archive,
+                name: "Existing".into(),
+                game_id: "skyrimse".into(),
+                rename_to: "Existing2".into(),
+                fomod: false,
+                tree: None,
+                pick: None,
+            });
+            let _ = update_inner(&mut app, Message::CollisionBackupChanged(true));
+            assert!(app.prefs.retain_install_backup);
+            assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).retain_install_backup);
+            let _ = update_inner(
+                &mut app,
+                if merge {
+                    Message::CollisionMerge
+                } else {
+                    Message::CollisionReplace
+                },
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing/chosen.esp")).unwrap(),
+                b"new payload",
+                "{:?}",
+                app.status
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing_backup/chosen.esp")).unwrap(),
+                b"old payload"
+            );
+            assert_eq!(
+                fs::read(root.join("mods/Existing_backup/meta.ini")).unwrap(),
+                old_meta
+            );
+            assert!(
+                !inst
+                    .modlist()
+                    .iter()
+                    .find(|m| m.name == "Existing")
+                    .unwrap()
+                    .enabled
+            );
+            assert!(inst
+                .modlist()
+                .iter()
+                .filter(|m| m.is_backup())
+                .all(|m| !m.is_active()));
+            assert!(app.status.as_ref().unwrap().contains("Backup retained"));
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     /// Installing a collection acts ON an instance, so with none open it says so
@@ -8979,9 +9523,9 @@ mod tests {
     #[test]
     fn a_finished_job_reports_its_failure_and_clears_itself() {
         let mut app = nav_app(&[]);
-        app.install_job = Some(fake_job(Some(Err(
-            eidos_install::InstallError::Extract("Cannot open the file as archive".into()),
-        ))));
+        app.install_job = Some(fake_job(Some(Err(eidos_install::InstallError::Extract(
+            "Cannot open the file as archive".into(),
+        )))));
         let _ = update_inner(&mut app, Message::InstallPoll);
         assert!(app.install_job.is_none(), "the finished job is taken");
         let s = app.status.clone().unwrap_or_default();
@@ -9004,8 +9548,14 @@ mod tests {
         };
         let line = failed_plugin_line(&p);
         assert!(line.starts_with("Save & Load Accelerator"), "{line}");
-        assert!(!line.contains("!!!"), "the sort-first trick is not a name: {line}");
-        assert!(line.contains("incompatible"), "and it still says what happened");
+        assert!(
+            !line.contains("!!!"),
+            "the sort-first trick is not a name: {line}"
+        );
+        assert!(
+            line.contains("incompatible"),
+            "and it still says what happened"
+        );
     }
 
     /// A plugin that declared nothing has no name to fall back on but its file,
@@ -9053,10 +9603,11 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let done = outcome.is_some();
         InstallJob {
+            fresh: false,
+            cancel: Arc::new(AtomicBool::new(false)),
+            target: None,
             name: "Some Mod".into(),
             archive: PathBuf::from("/tmp/Some Mod.7z"),
-            mods_dir: PathBuf::from("/tmp/mods"),
-            game_id: "skyrimse".into(),
             percent: Arc::new(AtomicU8::new(0)),
             outcome: Arc::new(Mutex::new(outcome)),
             done: Arc::new(AtomicBool::new(done)),
@@ -9284,7 +9835,10 @@ mod tests {
 
     /// An App with a real portable instance, one mod, and a game Data dir - the
     /// minimum the Data tab needs to build a real `LayerStack`.
-    fn data_app(mod_files: &[(&str, &str)], overwrite: &[(&str, &str)]) -> (App, PathBuf) {
+    pub(super) fn data_app(
+        mod_files: &[(&str, &str)],
+        overwrite: &[(&str, &str)],
+    ) -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
         let game = root.join("game/Data");
         fs::create_dir_all(&game).unwrap();

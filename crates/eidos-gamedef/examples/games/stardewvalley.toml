@@ -1,0 +1,24 @@
+# Windows/Proton SMAPI layout: Mods/ContentPatcher/manifest.json.
+# Install SMAPI separately. This descriptor selects its existing Windows loader;
+# it does not install SMAPI or configure a native Linux launch script.
+# IDs/loader: https://github.com/ModOrganizer2/modorganizer-basic_games/blob/master/games/game_stardewvalley.py
+# Packaging: https://github.com/Pathoschild/SMAPI/blob/develop/docs/technical/mod-package.md
+id = "stardewvalley"
+name = "Stardew Valley"
+short_name = "stardewvalley"
+nexus_game = "stardewvalley"
+steam_app_id = 413150
+gog_ids = ["1453375253"]
+epic_ids = []
+data_dir = "Mods"
+valid_folders = []
+valid_suffixes = []
+valid_files = ["manifest.json"]
+mod_unit = "folder"
+load_order = "None"
+game_binary = "Stardew Valley.exe"
+script_extender = { launcher = "Stardew Valley.exe", loader = "StardewModdingAPI.exe" }
+
+[[known_tools]]
+exe = "StardewModdingAPI.exe"
+title = "SMAPI"

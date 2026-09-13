@@ -27,6 +27,10 @@
 //! same word inside the same window would make every sentence about either one
 //! ambiguous.
 
+mod process;
+pub use process::{capture, capture_command};
+pub mod protocol;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -38,6 +42,9 @@ pub enum AddonKind {
     Tool,
     /// A program run on refresh whose output becomes health-check rows.
     Diagnose,
+    Installer,
+    Preview,
+    SaveInfo,
 }
 
 /// One user add-on.
@@ -60,6 +67,14 @@ pub struct Addon {
     pub workdir: String,
     /// Game ids this applies to. Empty = every game.
     pub games: Vec<String>,
+    /// Structured request version. Legacy tool/diagnose manifests use zero.
+    pub protocol: u32,
+    /// Case-insensitive filename extensions, without a leading dot.
+    pub extensions: Vec<String>,
+    /// Optional literal files required in an extracted installer source tree.
+    pub markers: Vec<String>,
+    /// Higher values run first; identifiers break ties deterministically.
+    pub priority: i32,
     /// Where the manifest was read from, for the Extensions list.
     pub source: PathBuf,
 }
@@ -226,7 +241,7 @@ fn why_rejected(text: &str) -> String {
         return "`exec` is empty - there is no program to run".to_string();
     }
     format!(
-        "`kind` is '{}'; it must be 'tool' or 'diagnose'",
+        "unsupported kind or protocol/matching rules for '{}'; structured kinds require protocol=1 and filename extensions",
         raw.kind.trim()
     )
 }
@@ -247,8 +262,32 @@ pub fn parse_addon(text: &str, source: &Path) -> Option<Addon> {
     let kind = match raw.kind.to_ascii_lowercase().as_str() {
         "tool" => AddonKind::Tool,
         "diagnose" => AddonKind::Diagnose,
+        "installer" => AddonKind::Installer,
+        "preview" => AddonKind::Preview,
+        "save_info" => AddonKind::SaveInfo,
         _ => return None,
     };
+    let extensions: Vec<String> = raw
+        .extensions
+        .iter()
+        .map(|s| s.to_ascii_lowercase())
+        .collect();
+    if matches!(
+        kind,
+        AddonKind::Installer | AddonKind::Preview | AddonKind::SaveInfo
+    ) && (raw.protocol != 1
+        || extensions.is_empty()
+        || extensions
+            .iter()
+            .any(|s| s.is_empty() || !s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        || raw
+            .markers
+            .iter()
+            .any(|s| protocol::relative_path(s).is_err())
+        || (kind != AddonKind::Installer && !raw.markers.is_empty()))
+    {
+        return None;
+    }
     let id = raw.id.trim().to_ascii_lowercase();
     // An id is a settings key and a menu identity; a blank or whitespace one
     // cannot be either.
@@ -274,6 +313,10 @@ pub fn parse_addon(text: &str, source: &Path) -> Option<Addon> {
         args: raw.args,
         workdir: raw.workdir.trim().to_string(),
         games: raw.games,
+        protocol: raw.protocol,
+        extensions,
+        markers: raw.markers,
+        priority: raw.priority,
         source: source.to_path_buf(),
     })
 }
@@ -369,6 +412,14 @@ struct RawAddon {
     version: String,
     #[serde(default)]
     games: Vec<String>,
+    #[serde(default)]
+    protocol: u32,
+    #[serde(default)]
+    extensions: Vec<String>,
+    #[serde(default)]
+    markers: Vec<String>,
+    #[serde(default)]
+    priority: i32,
 }
 
 #[cfg(test)]
@@ -408,6 +459,29 @@ games = ["skyrimse"]
         assert!(any.applies_to("anything"));
         // A manifest with no name falls back to the id rather than rendering blank.
         assert_eq!(any.name, "x");
+    }
+
+    #[test]
+    fn structured_extensions_require_a_supported_protocol_and_match_rules() {
+        for kind in ["installer", "preview", "save_info"] {
+            let base = format!("id='structured'\nkind='{kind}'\nexec='/bin/true'\n");
+            assert!(parse_addon(&base, Path::new("/tmp/addon.toml")).is_none());
+            assert!(parse_addon(
+                &(base.clone() + "protocol=1\nextensions=['zip']"),
+                Path::new("/tmp/addon.toml")
+            )
+            .is_some());
+            for invalid in [
+                "protocol=2\nextensions=['zip']",
+                "protocol=1",
+                "protocol=1\nextensions=['../zip']",
+                "protocol=1\nextensions=['zip']\nmarkers=['../outside']",
+            ] {
+                assert!(
+                    parse_addon(&(base.clone() + invalid), Path::new("/tmp/addon.toml")).is_none()
+                );
+            }
+        }
     }
 
     #[test]

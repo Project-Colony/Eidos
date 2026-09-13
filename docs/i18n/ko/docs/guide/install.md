@@ -1,10 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # Eidos 설치
 
-들어오는 길은 셋입니다. 어느 쪽이든 같은 실행 파일 두 개 - `eidos`(명령줄)와
-`eidos-gui` - 그리고 Nexus의 "Mod Manager Download" 버튼이 여러분의 인스턴스로
-떨어지게 해주는 `nxm://` 처리기를 줍니다.
+설치 방법은 세 가지입니다. 모두 `eidos`(명령줄), `eidos-gui`, 정적 NIF 미리 보기 도우미와 함께 Nexus의 "Mod Manager Download" 버튼으로 받은 다운로드를 인스턴스에 전달하는 `nxm://` 처리기를 제공합니다.
 
 ## 먼저 필요한 것
 
@@ -36,9 +34,11 @@ cd packaging && makepkg -si
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+소스 빌드에는 Rust, `just`, CMake 3.20 이상, C++17 컴파일러, 네이티브 도우미 테스트용 Python 3이 필요합니다. `just` 없이 실행할 명령은 [네이티브 도우미 안내](../../../../../native/eidos-nif-preview/README.md)를 참고하세요. `cargo build --release --locked`로 Rust를 빌드하고 도우미를 `target/release`에 복사한 다음 `packaging/install.sh --from target/release`를 실행하세요.
 
 ## 그다음: Steam이 이것을 가리키게 하기
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Extensions
 
@@ -19,9 +19,7 @@ un comportement indéfini, pas une incompatibilité de version. Et les widgets
 d'Eidos sont génériques à la compilation, donc une bibliothèque ne pourrait même
 pas en construire un à rendre, l'ABI fût-elle stable.
 
-Une extension est donc un programme qu'Eidos *exécute*. Elle ne peut pas faire
-planter la fenêtre, ne peut pas corrompre une liste de mods, et continue de
-fonctionner d'une version d'Eidos à l'autre.
+Une extension est un programme qu'Eidos exécute avec les droits d'accès de votre compte au système de fichiers. N'installez que des utilitaires auxquels vous faites confiance. L'isolation des processus et la vérification des réponses ne constituent pas un bac à sable du système d'exploitation.
 
 ## Un outil
 
@@ -90,9 +88,4 @@ pour qu'une faute échoue visiblement au lieu de transformer `--out {typo}` en
 
 ## Ce qu'une extension ne peut pas faire
 
-Elle reçoit des valeurs et s'exécute ; elle ne peut pas rappeler Eidos, changer la
-liste de mods, ni dessiner quoi que ce soit dans la fenêtre. C'est délibéré. Ce
-pour quoi MO2 utilise des greffons et qui DOIT atteindre l'intérieur - la prise en
-charge des jeux, les installateurs, le moteur de conflits - est intégré ici plutôt
-que rapporté : une définition de jeu est son propre TOML dans
-`~/.config/Colony/Eidos/games/`, et les installateurs FOMOD et BAIN sont natifs.
+Une extension ne peut pas rappeler Eidos, s'enregistrer depuis une archive ni dessiner ses propres widgets. Les installateurs structurés du protocole 1 peuvent renvoyer des plans de fichiers vérifiés et des demandes de choix ; Eidos assure la révision, la préparation temporaire et la publication. FOMOD et BAIN restent des installateurs natifs. Les extensions d'aperçu et d'informations sur les sauvegardes utilisent le même hôte aux réponses bornées. Consultez le [contrat du protocole et les exemples exécutables](../../../../examples/extensions/README.md) pour la priorité de correspondance, les réponses CLI enregistrées, les limites et les contrôles d'identité lors de la répétition.

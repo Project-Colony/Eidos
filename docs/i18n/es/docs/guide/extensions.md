@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Extensiones
 
@@ -19,9 +19,7 @@ común - es comportamiento indefinido, no un desajuste de versiones. Y los widge
 de Eidos son genéricos en tiempo de compilación, de modo que una biblioteca no
 podría construir uno para devolverlo aunque la ABI fuese estable.
 
-Así que una extensión es un programa que Eidos *ejecuta*. No puede tirar la
-ventana, no puede corromper una lista de mods, y sigue funcionando a través de las
-actualizaciones de Eidos.
+Una extensión es un programa que Eidos ejecuta con el acceso al sistema de archivos de tu cuenta. Instala solo programas auxiliares en los que confíes. El aislamiento de procesos y la comprobación de respuestas no proporcionan un entorno aislado del sistema operativo.
 
 ## Una herramienta
 
@@ -90,9 +88,4 @@ todos se rechaza, y Eidos dice cuáles faltan.
 
 ## Lo que una extensión no puede hacer
 
-Recibe valores y se ejecuta; no puede llamar de vuelta a Eidos, cambiar la lista
-de mods ni dibujar nada en la ventana. Es deliberado. Aquello para lo que MO2 usa
-complementos y que SÍ necesita llegar dentro - soporte de juegos, instaladores, el
-motor de conflictos - aquí está integrado en vez de atornillado: una definición de
-juego es su propio TOML en `~/.config/Colony/Eidos/games/`, y los instaladores
-FOMOD y BAIN son nativos.
+Una extensión no puede hacer llamadas de vuelta a Eidos, registrarse desde un archivo comprimido ni dibujar sus propios controles. Los instaladores estructurados del protocolo 1 pueden devolver planes de archivos comprobados y preguntas con opciones; Eidos controla la revisión, la preparación temporal y la publicación. FOMOD y BAIN siguen siendo instaladores nativos. Las extensiones de vista previa e información de partidas guardadas usan el mismo anfitrión con respuestas limitadas. Consulta la [especificación del protocolo y los ejemplos ejecutables](../../../../examples/extensions/README.md) para conocer la prioridad de coincidencias, las respuestas CLI registradas, los límites y las comprobaciones de identidad al repetir una instalación.

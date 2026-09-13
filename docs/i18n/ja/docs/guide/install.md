@@ -1,10 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # Eidos のインストール
 
-入口は三つ。どれも同じ二つの実行ファイル - `eidos`(コマンドライン)と
-`eidos-gui` - に加えて、Nexus の「Mod Manager Download」ボタンをあなたの
-インスタンスへ着地させる `nxm://` ハンドラを用意します。
+入口は三つ。どの方法でも `eidos`（コマンドライン）、`eidos-gui`、静的な NIF プレビュー用ヘルパーに加え、Nexus の「Mod Manager Download」ボタンからインスタンスへダウンロードを届ける `nxm://` ハンドラが用意されます。
 
 ## 先に必要なもの
 
@@ -36,9 +34,11 @@ cd packaging && makepkg -si
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+ソースからのビルドには Rust、`just`、CMake 3.20 以降、C++17 コンパイラ、およびネイティブヘルパーのテスト用に Python 3 が必要です。`just` を使わないコマンドは[ネイティブヘルパーの手順](../../../../../native/eidos-nif-preview/README.md)を参照してください。Rust を `cargo build --release --locked` でビルドし、ヘルパーを `target/release` にコピーしてから `packaging/install.sh --from target/release` を実行します。
 
 ## そのあと: Steam をここへ向ける
 

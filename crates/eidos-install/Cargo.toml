@@ -2,11 +2,21 @@
 name = "eidos-install"
 version.workspace = true
 description = "Eidos mod installer: archive tree, ModDataChecker, wrapper-strip (MO2 Simple installer parity)"
-license.workspace = true
+license = "GPL-3.0-or-later AND GPL-3.0-only"
 repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+encoding_rs = "0.8"
+libc = "0.2"
+crc32fast = "1.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.11", default-features = false }
+eidos-conflicts = { path = "../eidos-conflicts" }
+eidos-plugins = { path = "../eidos-plugins" }
+eidos-ini = { path = "../eidos-ini" }
+eidos-addons = { path = "../eidos-addons" }
 eidos-sevenzip = { path = "../eidos-sevenzip" }
 eidos-instance = { path = "../eidos-instance" }
 eidos-fomod = { path = "../eidos-fomod" }

@@ -1270,3 +1270,343 @@ fn an_unreadable_modlist_is_suspect_but_an_absent_one_is_not() {
 
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn morrowind_profiles_share_ini_activation_authority_and_restore_snapshots() {
+    let root = inst_with_mods(&[]);
+    let a = prof(&root, "A");
+    let b = prof(&root, "B");
+    let spec = eidos_plugins::GameSpec::for_id("morrowind").unwrap();
+    for (p, name) in [(&a, "Café.esp"), (&b, "Other.esp")] {
+        fs::create_dir_all(p.plugins_state_dir()).unwrap();
+        let body = format!(
+            "[General]\nValue=1\n[Archives]\nArchive 0=Base.bsa\n[Game Files]\nGameFile0={name}\n"
+        );
+        write_text(&p.ini_path("Morrowind.ini"), &body, true).unwrap();
+        p.snapshot_plugin_state().unwrap();
+    }
+    let before = fs::read(b.ini_path("Morrowind.ini")).unwrap();
+    fs::write(a.ini_path("Morrowind.ini"), "[Game Files]\n").unwrap();
+    assert!(a.plugin_loss_since_snapshot(&spec).is_some());
+    a.restore_plugin_snapshot().unwrap();
+    assert_eq!(
+        eidos_plugins::PluginList::read_active(&a.plugins_state_dir(), &spec),
+        [("Café.esp".into(), true)]
+    );
+    assert_eq!(fs::read(b.ini_path("Morrowind.ini")).unwrap(), before);
+    let runtime = a.dir().join("runtime-root");
+    a.deploy_inis(&runtime, &["Morrowind.ini"]).unwrap();
+    a.record_ini_session(&runtime, &["Morrowind.ini"], &[])
+        .unwrap();
+    fs::write(runtime.join("Morrowind.ini"), []).unwrap();
+    assert!(
+        a.recover_ini_session().is_err(),
+        "a destroyed runtime INI must preserve the pending receipt"
+    );
+    assert!(a.dir().join("runtime-inis.pending").is_file());
+    fs::copy(a.ini_path("Morrowind.ini"), runtime.join("Morrowind.ini")).unwrap();
+    a.recover_ini_session().unwrap();
+    assert!(!a.dir().join("runtime-inis.pending").exists());
+    fs::create_dir_all(root.join("overwrite/Root")).unwrap();
+    fs::write(root.join("overwrite/Root/conflict"), b"existing file").unwrap();
+    fs::create_dir_all(runtime.join("conflict")).unwrap();
+    fs::write(runtime.join("conflict/new.log"), b"new output").unwrap();
+    assert!(a
+        .merge_runtime_root_outputs(&root.join("overwrite/Root"), &["Morrowind.ini"])
+        .is_err());
+    assert_eq!(
+        fs::read(runtime.join("conflict/new.log")).unwrap(),
+        b"new output"
+    );
+    assert_eq!(
+        fs::read(root.join("overwrite/Root/conflict")).unwrap(),
+        b"existing file"
+    );
+    fs::rename(
+        root.join("overwrite/Root/conflict"),
+        root.join("overwrite/Root/rescued"),
+    )
+    .unwrap();
+    a.merge_runtime_root_outputs(&root.join("overwrite/Root"), &["Morrowind.ini"])
+        .unwrap();
+    assert_eq!(
+        fs::read(root.join("overwrite/Root/conflict/new.log")).unwrap(),
+        b"new output"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_applies_private_deletions_and_recreation_across_profiles() {
+    use eidos_core::LayerStack;
+    let root = inst_with_mods(&[]);
+    let game = root.join("game");
+    let shared = root.join("overwrite/Root");
+    for base in [&game, &shared] {
+        fs::create_dir_all(base.join("Directory")).unwrap();
+        fs::write(base.join("Remove.txt"), "remove").unwrap();
+        fs::write(base.join("Rename.txt"), "rename").unwrap();
+        fs::write(base.join("Directory/old.txt"), "old").unwrap();
+    }
+    fs::write(shared.join("Morrowind.ini"), "shared settings").unwrap();
+    fs::write(shared.join("REMOVE.TXT"), "case collision").unwrap();
+    let external = root.join("external");
+    fs::create_dir_all(&external).unwrap();
+    fs::write(external.join("keep.txt"), "external source").unwrap();
+    std::os::unix::fs::symlink(&external, shared.join("Link")).unwrap();
+    let a = prof(&root, "A");
+    let b = prof(&root, "B");
+    for p in [&a, &b] {
+        fs::create_dir_all(p.dir().join("runtime-root")).unwrap();
+        fs::write(p.dir().join("runtime-root/Morrowind.ini"), &p.name).unwrap();
+    }
+    let private_view = |p: &Profile| {
+        LayerStack::new_with_readonly_overwrite(
+            vec![game.clone()],
+            p.dir().join("runtime-root"),
+            None,
+            Some(shared.clone()),
+        )
+    };
+    let av = private_view(&a);
+    av.remove("remove.TXT").unwrap();
+    av.remove("LINK").unwrap();
+    av.rename("rename.TXT", "Renamed.txt").unwrap();
+    av.remove("DIRECTORY").unwrap();
+    av.make_dir("Directory").unwrap();
+    let (new, _) = av.create_truncated("Directory/new.txt").unwrap();
+    fs::write(new, "new").unwrap();
+    a.merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+        .unwrap();
+    assert!(!shared.join("REMOVE.TXT").exists());
+    assert!(fs::symlink_metadata(shared.join("Link")).is_err());
+    assert_eq!(
+        fs::read(external.join("keep.txt")).unwrap(),
+        b"external source"
+    );
+    let ordinary = || LayerStack::new(vec![game.clone()], shared.clone());
+    for view in [ordinary(), private_view(&b)] {
+        for absent in ["Remove.txt", "Rename.txt", "Directory/old.txt"] {
+            assert!(view.resolve_read(absent).is_none(), "resurrected {absent}");
+        }
+        assert_eq!(
+            fs::read(view.resolve_read("Renamed.txt").unwrap()).unwrap(),
+            b"rename"
+        );
+        assert_eq!(
+            fs::read(view.resolve_read("Directory/new.txt").unwrap()).unwrap(),
+            b"new"
+        );
+    }
+    let bv = private_view(&b);
+    let (recreated, _) = bv.create_truncated("REMOVE.txt").unwrap();
+    fs::write(recreated, "profile B").unwrap();
+    bv.rename("Directory/new.txt", "Directory/second.txt")
+        .unwrap();
+    b.merge_runtime_root_outputs(&shared, &["Morrowind.ini"])
+        .unwrap();
+    for view in [ordinary(), private_view(&a)] {
+        assert_eq!(
+            fs::read(view.resolve_read("remove.txt").unwrap()).unwrap(),
+            b"profile B"
+        );
+        assert!(view.resolve_read("Directory/new.txt").is_none());
+        assert_eq!(
+            fs::read(view.resolve_read("Directory/second.txt").unwrap()).unwrap(),
+            b"new"
+        );
+    }
+    assert_eq!(
+        fs::read(a.dir().join("runtime-root/Morrowind.ini")).unwrap(),
+        b"A"
+    );
+    assert_eq!(
+        fs::read(b.dir().join("runtime-root/Morrowind.ini")).unwrap(),
+        b"B"
+    );
+    assert_eq!(
+        fs::read(shared.join("Morrowind.ini")).unwrap(),
+        b"shared settings"
+    );
+    assert_eq!(fs::read(game.join("Remove.txt")).unwrap(), b"remove");
+    assert_eq!(fs::read(game.join("Rename.txt")).unwrap(), b"rename");
+    assert_eq!(fs::read(game.join("Directory/old.txt")).unwrap(), b"old");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_opacity_retry_keeps_already_published_children() {
+    use eidos_core::{LayerStack, OPAQUE_MARKER};
+    let root = inst_with_mods(&[]);
+    let game = root.join("game");
+    let shared = root.join("overwrite/Root");
+    let p = prof(&root, "A");
+    let runtime = p.dir().join("runtime-root");
+    fs::create_dir_all(game.join("Cache")).unwrap();
+    fs::create_dir_all(shared.join("Cache")).unwrap();
+    fs::create_dir_all(&runtime).unwrap();
+    fs::write(game.join("Cache/base.txt"), "base").unwrap();
+    fs::write(shared.join("Cache/old.txt"), "old").unwrap();
+    let view = LayerStack::new_with_readonly_overwrite(
+        vec![game.clone()],
+        runtime.clone(),
+        None,
+        Some(shared.clone()),
+    );
+    view.remove("Cache").unwrap();
+    view.make_dir("Cache").unwrap();
+    let (new, _) = view.create_truncated("Cache/a-new.txt").unwrap();
+    fs::write(new, "new output").unwrap();
+    let outside = root.join("untouched");
+    fs::write(&outside, "outside").unwrap();
+    view.create_symlink("Cache/z-link", &outside).unwrap();
+    assert!(p.merge_runtime_root_outputs(&shared, &[]).is_err());
+    assert_eq!(
+        fs::read(shared.join("Cache/a-new.txt")).unwrap(),
+        b"new output"
+    );
+    assert!(!shared.join("Cache/old.txt").exists());
+    assert!(runtime.join("Cache").join(OPAQUE_MARKER).is_file());
+    assert!(fs::read(shared.join("Cache").join(OPAQUE_MARKER))
+        .unwrap()
+        .is_empty());
+    fs::remove_file(runtime.join("Cache/z-link")).unwrap();
+    p.merge_runtime_root_outputs(&shared, &[]).unwrap();
+    let reopened = LayerStack::new(vec![game.clone()], shared.clone());
+    assert_eq!(
+        fs::read(reopened.resolve_read("Cache/a-new.txt").unwrap()).unwrap(),
+        b"new output"
+    );
+    assert!(reopened.resolve_read("Cache/old.txt").is_none());
+    assert!(reopened.resolve_read("Cache/base.txt").is_none());
+    assert_eq!(fs::read(outside).unwrap(), b"outside");
+    assert_eq!(fs::read(game.join("Cache/base.txt")).unwrap(), b"base");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_failed_publication_keeps_prior_whiteout_effective() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = inst_with_mods(&[]);
+    let p = prof(&root, "A");
+    let runtime = p.dir().join("runtime-root");
+    let shared = root.join("overwrite/Root");
+    let game = root.join("game");
+    for path in [&runtime, &shared, &game] {
+        fs::create_dir_all(path).unwrap();
+    }
+    fs::write(game.join("hidden.txt"), "old lower").unwrap();
+    fs::write(shared.join(".eidoswh.HIDDEN.txt"), []).unwrap();
+    fs::write(runtime.join("hidden.txt"), "new output").unwrap();
+    fs::set_permissions(&runtime, fs::Permissions::from_mode(0o555)).unwrap();
+    let result = p.merge_runtime_root_outputs(&shared, &[]);
+    fs::set_permissions(&runtime, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.is_err(), "source-parent rename must fail");
+    assert!(shared.join(".eidoswh.HIDDEN.txt").is_file());
+    assert_eq!(fs::read(runtime.join("hidden.txt")).unwrap(), b"new output");
+    assert!(
+        eidos_core::LayerStack::new(vec![game.clone()], shared.clone())
+            .resolve_read("hidden.txt")
+            .is_none()
+    );
+    p.merge_runtime_root_outputs(&shared, &[]).unwrap();
+    assert_eq!(fs::read(shared.join("hidden.txt")).unwrap(), b"new output");
+    assert!(!shared.join(".eidoswh.HIDDEN.txt").exists());
+    assert_eq!(fs::read(game.join("hidden.txt")).unwrap(), b"old lower");
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_rejects_opacity_symlinks_before_shared_cleanup() {
+    let root = inst_with_mods(&[]);
+    let p = prof(&root, "A");
+    let runtime = p.dir().join("runtime-root");
+    let shared = root.join("overwrite/Root");
+    fs::create_dir_all(&runtime).unwrap();
+    fs::create_dir_all(&shared).unwrap();
+    fs::write(shared.join("keep.txt"), "keep").unwrap();
+    let external = root.join("external-marker");
+    fs::write(&external, []).unwrap();
+    std::os::unix::fs::symlink(&external, runtime.join(eidos_core::OPAQUE_MARKER)).unwrap();
+    assert!(p.merge_runtime_root_outputs(&shared, &[]).is_err());
+    assert_eq!(fs::read(shared.join("keep.txt")).unwrap(), b"keep");
+    assert!(!shared.join(eidos_core::OPAQUE_MARKER).exists());
+    assert!(fs::read(&external).unwrap().is_empty());
+    fs::remove_dir_all(&runtime).unwrap();
+    std::os::unix::fs::symlink(&shared, &runtime).unwrap();
+    assert!(p.merge_runtime_root_outputs(&shared, &[]).is_err());
+    assert_eq!(fs::read(shared.join("keep.txt")).unwrap(), b"keep");
+    fs::remove_file(runtime).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_top_opacity_preserves_retained_control_files() {
+    let root = inst_with_mods(&[]);
+    let p = prof(&root, "A");
+    let runtime = p.dir().join("runtime-root");
+    let shared = root.join("overwrite/Root");
+    fs::create_dir_all(&runtime).unwrap();
+    fs::create_dir_all(&shared).unwrap();
+    for file in ["Morrowind.ini", "plugins.txt"] {
+        fs::write(runtime.join(file), "private").unwrap();
+        fs::write(shared.join(file), "shared").unwrap();
+    }
+    fs::write(shared.join("old-output.log"), "old").unwrap();
+    fs::write(runtime.join(eidos_core::OPAQUE_MARKER), []).unwrap();
+    fs::write(runtime.join("new-output.log"), "new").unwrap();
+    p.merge_runtime_root_outputs(&shared, &["Morrowind.ini", "plugins.txt"])
+        .unwrap();
+    for file in ["Morrowind.ini", "plugins.txt"] {
+        assert_eq!(fs::read(runtime.join(file)).unwrap(), b"private");
+        assert_eq!(fs::read(shared.join(file)).unwrap(), b"shared");
+    }
+    assert!(!shared.join("old-output.log").exists());
+    assert_eq!(fs::read(shared.join("new-output.log")).unwrap(), b"new");
+    assert!(fs::read(shared.join(eidos_core::OPAQUE_MARKER))
+        .unwrap()
+        .is_empty());
+    assert!(!runtime.join(eidos_core::OPAQUE_MARKER).exists());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn root_capture_rejects_case_collisions_without_losing_any_variant() {
+    for is_dir in [false, true] {
+        let root = inst_with_mods(&[]);
+        let p = prof(&root, "A");
+        let runtime = p.dir().join("runtime-root");
+        let shared = root.join("overwrite/Root");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&shared).unwrap();
+        if is_dir {
+            for name in ["Cache", "CACHE"] {
+                fs::create_dir_all(shared.join(name)).unwrap();
+                fs::write(shared.join(name).join("old.txt"), name).unwrap();
+            }
+            fs::create_dir_all(runtime.join("cache")).unwrap();
+            fs::write(runtime.join("cache").join(eidos_core::OPAQUE_MARKER), []).unwrap();
+            fs::write(runtime.join("cache/new.txt"), "new").unwrap();
+        } else {
+            fs::write(shared.join("Foo.txt"), "mixed").unwrap();
+            fs::write(shared.join("FOO.TXT"), "upper").unwrap();
+            fs::write(runtime.join("foo.txt"), "new").unwrap();
+        }
+        assert!(p.merge_runtime_root_outputs(&shared, &[]).is_err());
+        if is_dir {
+            for name in ["Cache", "CACHE"] {
+                assert_eq!(
+                    fs::read(shared.join(name).join("old.txt")).unwrap(),
+                    name.as_bytes()
+                );
+                assert!(!shared.join(name).join(eidos_core::OPAQUE_MARKER).exists());
+            }
+            assert_eq!(fs::read(runtime.join("cache/new.txt")).unwrap(), b"new");
+        } else {
+            assert_eq!(fs::read(shared.join("Foo.txt")).unwrap(), b"mixed");
+            assert_eq!(fs::read(shared.join("FOO.TXT")).unwrap(), b"upper");
+            assert_eq!(fs::read(runtime.join("foo.txt")).unwrap(), b"new");
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+}

@@ -642,9 +642,7 @@ fn mod_name_for_prefers_sidecar_then_sanitizes() {
 /// post-extraction state without paying for a real 7-Zip run. Dropping it removes
 /// the directory, exactly as a real extraction's would.
 fn extracted(dir: &Path) -> ExtractedTree {
-    ExtractedTree {
-        tmp: dir.to_path_buf(),
-    }
+    ExtractedTree::owned(dir.to_path_buf())
 }
 
 /// A `mods/` dir plus an extraction temp inside it (where a real install puts it).
@@ -1879,7 +1877,7 @@ fn persisted_fomod_context_uses_profile_activation_and_whiteouts() {
     let inst = eidos_instance::Instance::portable(t.path().join("instance"));
     inst.create().unwrap();
     let source = inst.create_empty_mod("Source").unwrap();
-    inst.save_modlist(&[source.clone()]).unwrap();
+    inst.save_modlist(std::slice::from_ref(&source)).unwrap();
     let game = t.path().join("game/Data");
     fs::create_dir_all(&game).unwrap();
     let mut header = [0u8; 24];
@@ -1979,12 +1977,14 @@ fn failed_merge_revokes_exact_identity_and_marks_partial_content() {
     original.set("fileID", "2");
     original.set_installed_files(&[(1, 2)]);
     original.write(&dest.join("meta.ini")).unwrap();
-    let result = install_destination(
+    // Inject at the live publication seam, after native staging validation.
+    let result = install_destination_ready(
         Path::new("Update.7z"),
         mods.path(),
         "Owned",
         "skyrimse",
         OverwritePolicy::Merge,
+        &[],
         |target, _| {
             fs::write(target.join("changed.esp"), b"partial")?;
             Err(io::Error::new(
@@ -2096,12 +2096,13 @@ fn merge_metadata_failure_keeps_incomplete_checkpoint_after_payload() {
     let mods = TempDir::new("merge-metadata-failure");
     let archive = mods.path().join("Update.7z");
     fs::create_dir(archive.with_extension("7z.meta")).unwrap();
-    let result = install_destination(
+    let result = install_destination_inner(
         &archive,
         mods.path(),
         "Mod",
         "skyrimse",
         OverwritePolicy::Merge,
+        false,
         |target, _| {
             fs::write(target.join("changed.esp"), b"partial")?;
             fs::write(
@@ -2183,5 +2184,1623 @@ fn merge_updates_the_case_insensitive_winner_for_plain_and_fomod_content() {
             b"new"
         );
         assert!(!dest.join("textures").exists());
+    }
+}
+
+#[test]
+fn retained_backups_cover_every_installer_route_and_preserve_the_old_tree() {
+    use std::os::unix::fs::MetadataExt;
+    for flow in ["simple", "manual", "bain", "fomod", "default-fomod", "root"] {
+        for policy in [
+            OverwritePolicy::ReplaceWithBackup,
+            OverwritePolicy::MergeWithBackup,
+            OverwritePolicy::Merge,
+        ] {
+            let t = TempDir::new("retained-routes");
+            let mods = t.path().join("mods");
+            let src = t.path().join("source");
+            let archive = t.path().join("Update.7z");
+            let old = mods.join("Old");
+            write_at(&old, "precious.esp", b"original");
+            write_at(&old, ".hidden/state", b"hidden");
+            write_at(
+                &old,
+                "meta.ini",
+                b"[General]\nnotes=precious\n[Unknown]\nraw=keep\n",
+            );
+            let old_inode = fs::metadata(&old).unwrap().ino();
+            let old_meta = fs::read(old.join("meta.ini")).unwrap();
+            let prefix = match flow {
+                "bain" => "00 Core/",
+                "root" => "Data/",
+                _ => "",
+            };
+            write_at(&src, &format!("{prefix}new.esp"), b"replacement");
+            if flow == "bain" {
+                write_at(&src, "10 Optional/omitted.esp", b"not selected");
+            }
+            if flow == "root" {
+                write_at(&src, "d3dx9_42.dll", b"root payload");
+            }
+            if flow.contains("fomod") {
+                write_at(&src, "omitted.esp", b"not selected");
+                write_at(&src, "fomod/ModuleConfig.xml", b"<config><moduleName>Test</moduleName><requiredInstallFiles><file source=\"new.esp\" destination=\"new.esp\"/></requiredInstallFiles></config>");
+            }
+            let tree = extracted(&src);
+            let ctx = eidos_fomod::Context::default();
+            let result = match flow {
+                "manual" => install_manual(
+                    &tree,
+                    "",
+                    &archive,
+                    &mods,
+                    "old",
+                    "skyrimse",
+                    policy.clone(),
+                ),
+                "bain" => install_bain(
+                    &tree,
+                    &["00 Core".into()],
+                    &archive,
+                    &mods,
+                    "old",
+                    "skyrimse",
+                    policy.clone(),
+                ),
+                "fomod" => {
+                    let config = parse_fomod_at(&src).unwrap();
+                    let selection = eidos_fomod::default_selection(&config, &ctx);
+                    finish_fomod(
+                        FomodSession {
+                            config,
+                            root: src,
+                            tree,
+                            name: "old".into(),
+                            archive,
+                        },
+                        &selection,
+                        &mods,
+                        "skyrimse",
+                        &ctx,
+                        policy.clone(),
+                    )
+                }
+                _ => install_extracted(
+                    &tree,
+                    &archive,
+                    &mods,
+                    "old",
+                    "skyrimse",
+                    policy.clone(),
+                    &ctx,
+                ),
+            }
+            .unwrap();
+            if let Some(backup) = result.backup {
+                assert_ne!(policy, OverwritePolicy::Merge);
+                assert_eq!(backup, mods.join("Old_backup"), "{flow}");
+                assert_eq!(fs::read(backup.join("precious.esp")).unwrap(), b"original");
+                assert_eq!(fs::read(backup.join(".hidden/state")).unwrap(), b"hidden");
+                assert_eq!(fs::read(backup.join("meta.ini")).unwrap(), old_meta);
+                assert!(!backup.join("new.esp").exists());
+                if policy == OverwritePolicy::ReplaceWithBackup {
+                    assert_eq!(fs::metadata(backup).unwrap().ino(), old_inode);
+                }
+            } else {
+                assert_eq!(policy, OverwritePolicy::Merge);
+                assert!(!mods.join("Old_backup").exists());
+            }
+            assert_eq!(
+                fs::read(result.dest.join("new.esp")).unwrap(),
+                b"replacement"
+            );
+            assert!(!result.dest.join("omitted.esp").exists());
+        }
+    }
+}
+
+#[test]
+fn failed_merge_backup_prevents_even_the_metadata_checkpoint() {
+    let t = TempDir::new("merge-backup-failed");
+    let old = t.path().join("Old");
+    write_at(&old, "keep.esp", b"precious");
+    write_at(
+        &old,
+        "meta.ini",
+        b"[General]\neidosCollectionOwner=original\n",
+    );
+    let original = fs::read(old.join("meta.ini")).unwrap();
+    let _socket = std::os::unix::net::UnixListener::bind(old.join("unsupported.socket")).unwrap();
+    // Inject at the live publication seam, after native staging validation.
+    let result = install_destination_ready(
+        Path::new("Update.7z"),
+        t.path(),
+        "Old",
+        "skyrimse",
+        OverwritePolicy::MergeWithBackup,
+        &[],
+        |_, _| panic!("backup failure must prevent placement"),
+    );
+    assert!(result.is_err());
+    assert_eq!(fs::read(old.join("meta.ini")).unwrap(), original);
+    assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+    assert!(!t.path().join("Old_backup").exists());
+}
+
+#[test]
+fn failed_merge_retains_and_reports_backup_with_incomplete_warning() {
+    let t = TempDir::new("merge-backup-partial");
+    let old = t.path().join("Old");
+    write_at(&old, "keep.esp", b"precious");
+    // Inject at the live publication seam, after native staging validation.
+    let error = install_destination_ready(
+        Path::new("Update.7z"),
+        t.path(),
+        "Old",
+        "skyrimse",
+        OverwritePolicy::MergeWithBackup,
+        &[],
+        |target, _| {
+            fs::write(target.join("keep.esp"), b"partial")?;
+            Err(InstallError::BadSelection(
+                "injected partial overlay".into(),
+            ))
+        },
+    )
+    .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains(&t.path().join("Old_backup").display().to_string()));
+    assert_eq!(
+        fs::read(t.path().join("Old_backup/keep.esp")).unwrap(),
+        b"precious"
+    );
+    assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"partial");
+    assert!(ModMeta::read(&old.join("meta.ini"))
+        .install_warning()
+        .unwrap()
+        .contains("Merge did not complete"));
+}
+
+#[test]
+fn default_overwrite_policies_do_not_retain_backups() {
+    for policy in [
+        OverwritePolicy::Replace,
+        OverwritePolicy::Merge,
+        OverwritePolicy::Rename("New".into()),
+    ] {
+        let t = TempDir::new("no-retained-backup");
+        write_at(&t.path().join("Old"), "keep.esp", b"precious");
+        let src = t.path().join("source");
+        write_at(&src, "new.esp", b"new");
+        let report = install_extracted(
+            &extracted(&src),
+            Path::new("Update.7z"),
+            t.path(),
+            "Old",
+            "skyrimse",
+            policy,
+            &Default::default(),
+        )
+        .unwrap();
+        assert!(report.backup.is_none());
+        assert!(!t.path().join("Old_backup").exists());
+    }
+}
+
+#[test]
+fn extracted_finish_runs_in_staging_and_its_failure_prevents_replacement() {
+    for fail in [false, true] {
+        let t = TempDir::new("extracted-finish");
+        let src = t.path().join("source");
+        let mods = t.path().join("mods");
+        let old = mods.join("Old");
+        write_at(&old, "keep.esp", b"precious");
+        write_at(&src, "new.esp", b"unpatched");
+        let result = install_extracted_with_finish(
+            &extracted(&src),
+            Path::new("Update.7z"),
+            &mods,
+            "Old",
+            "skyrimse",
+            OverwritePolicy::ReplaceWithBackup,
+            &Default::default(),
+            |target| {
+                assert_ne!(target, old);
+                assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+                fs::write(target.join("new.esp"), b"patched")?;
+                if fail {
+                    Err(InstallError::BadSelection(
+                        "injected transform failure".into(),
+                    ))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        if fail {
+            assert!(result.is_err());
+            assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+            assert!(!old.join("new.esp").exists());
+            assert!(!mods.join("Old_backup").exists());
+        } else {
+            assert_eq!(
+                fs::read(result.unwrap().dest.join("new.esp")).unwrap(),
+                b"patched"
+            );
+        }
+    }
+}
+
+fn assert_transform_merge_rejected(flow: &str, policy: OverwritePolicy) {
+    for game in ["skyrimse", "stardewvalley", "7daystodie"] {
+        for existing in [true, false] {
+            let t = TempDir::new("transform-merge-rejected");
+            let src = t.path().join("source");
+            let mods = t.path().join("mods");
+            let old = mods.join("Old");
+            fs::create_dir(&mods).unwrap();
+            let original_meta = b"; retain raw formatting\r\n[General]\r\neidosCollectionOwner=original\r\nnotes=precious\r\n[Unknown]\r\nraw=keep\r\n";
+            if existing {
+                write_at(&old, "precious.esp", b"original");
+                write_at(&old, ".hidden/state", b"hidden");
+                write_at(&old, "meta.ini", original_meta);
+                set_mtime(&old, "precious.esp", 100);
+                set_mtime(&old, "meta.ini", 100);
+            }
+            let paths_before = rel_paths(&mods);
+            let metadata_before: Vec<_> = paths_before
+                .iter()
+                .map(|path| {
+                    let meta = fs::metadata(mods.join(path)).unwrap();
+                    (meta.permissions(), meta.modified().unwrap())
+                })
+                .collect();
+            write_at(&src, "new.esp", b"new");
+            if flow == "fomod" {
+                write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><requiredInstallFiles><file source="new.esp" destination="new.esp"/></requiredInstallFiles></config>"#);
+            }
+            let tree = extracted(&src);
+            let mut called = false;
+            let mut live_seen = false;
+            let finish = |target: &Path| {
+                called = true;
+                live_seen = target == old;
+                fs::write(target.join("precious.esp"), b"failed transform")?;
+                Err(InstallError::BadSelection(
+                    "transform rejected payload".into(),
+                ))
+            };
+            let result = match flow {
+                "extracted" => install_extracted_with_finish(
+                    &tree,
+                    Path::new("Update.7z"),
+                    &mods,
+                    "old",
+                    game,
+                    policy.clone(),
+                    &Default::default(),
+                    finish,
+                ),
+                "fomod" => finish_fomod_with_finish(
+                    FomodSession {
+                        config: parse_fomod_at(&src).unwrap(),
+                        root: src,
+                        tree,
+                        name: "old".into(),
+                        archive: "Update.7z".into(),
+                    },
+                    &Vec::new(),
+                    &mods,
+                    game,
+                    &Default::default(),
+                    policy.clone(),
+                    finish,
+                ),
+                "destination" => install_destination(
+                    Path::new("Update.7z"),
+                    &mods,
+                    "old",
+                    game,
+                    policy.clone(),
+                    |target, _| {
+                        let mut finish = finish;
+                        finish(target)?;
+                        Ok((String::new(), false, Vec::new()))
+                    },
+                ),
+                _ => unreachable!(),
+            };
+            assert!(
+                !live_seen,
+                "{flow} {policy:?}: callback received the live directory"
+            );
+            assert!(!called, "Merge must be rejected before callback activity");
+            assert!(
+                matches!(result, Err(InstallError::BadSelection(_))),
+                "{result:?}"
+            );
+            assert_eq!(
+                rel_paths(&mods),
+                paths_before,
+                "no payload, backup, or stage may be created"
+            );
+            for (path, (permissions, modified)) in paths_before.iter().zip(metadata_before) {
+                let after = fs::metadata(mods.join(path)).unwrap();
+                assert_eq!(after.permissions(), permissions, "{path}");
+                assert_eq!(after.modified().unwrap(), modified, "{path}");
+            }
+            if existing {
+                assert_eq!(fs::read(old.join("precious.esp")).unwrap(), b"original");
+                assert_eq!(fs::read(old.join(".hidden/state")).unwrap(), b"hidden");
+                assert_eq!(fs::read(old.join("meta.ini")).unwrap(), original_meta);
+            }
+        }
+    }
+}
+
+#[test]
+fn extracted_transform_rejects_merge() {
+    assert_transform_merge_rejected("extracted", OverwritePolicy::Merge);
+}
+
+#[test]
+fn extracted_transform_rejects_merge_with_backup() {
+    assert_transform_merge_rejected("extracted", OverwritePolicy::MergeWithBackup);
+}
+
+#[test]
+fn fomod_transform_rejects_merge() {
+    assert_transform_merge_rejected("fomod", OverwritePolicy::Merge);
+}
+
+#[test]
+fn fomod_transform_rejects_merge_with_backup() {
+    assert_transform_merge_rejected("fomod", OverwritePolicy::MergeWithBackup);
+}
+
+#[test]
+fn destination_transform_rejects_merge() {
+    assert_transform_merge_rejected("destination", OverwritePolicy::Merge);
+}
+
+#[test]
+fn destination_transform_rejects_merge_with_backup() {
+    assert_transform_merge_rejected("destination", OverwritePolicy::MergeWithBackup);
+}
+
+#[test]
+fn failed_backup_reservation_prevents_replace_publication() {
+    let t = TempDir::new("backup-reservation-failed");
+    // The original name fits the filesystem; appending `_backup` cannot fit.
+    let name = "a".repeat(250);
+    let old = t.path().join(&name);
+    write_at(&old, "keep.esp", b"precious");
+    let result = install_destination(
+        Path::new("Update.7z"),
+        t.path(),
+        &name,
+        "skyrimse",
+        OverwritePolicy::ReplaceWithBackup,
+        |target, _| {
+            fs::write(target.join("new.esp"), b"new")?;
+            Ok((String::new(), false, Vec::new()))
+        },
+    );
+    assert!(result.is_err());
+    assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+    assert!(!old.join("new.esp").exists());
+    assert_eq!(fs::read_dir(t.path()).unwrap().count(), 1);
+}
+
+#[test]
+fn owned_backup_policy_requires_the_exact_reservation_and_preserves_it() {
+    let t = TempDir::new("owned-backup");
+    let old = t.path().join("Owned");
+    write_at(
+        &old,
+        "meta.ini",
+        b"[General]\neidosCollectionOwner=collection:member\n",
+    );
+    write_at(&old, "keep.esp", b"precious");
+    assert!(install_destination(
+        Path::new("Update.7z"),
+        t.path(),
+        "Owned",
+        "skyrimse",
+        OverwritePolicy::ReplaceOwnedWithBackup("changed-owner".into()),
+        |_, _| panic!("invalid ownership must prevent placement")
+    )
+    .is_err());
+    assert!(!t.path().join("Owned_backup").exists());
+    let report = install_destination(
+        Path::new("Update.7z"),
+        t.path(),
+        "Owned",
+        "skyrimse",
+        OverwritePolicy::ReplaceOwnedWithBackup("collection:member".into()),
+        |target, _| {
+            fs::write(target.join("new.esp"), b"new")?;
+            Ok((String::new(), false, Vec::new()))
+        },
+    )
+    .unwrap();
+    assert_eq!(report.backup, Some(t.path().join("Owned_backup")));
+    assert_eq!(
+        ModMeta::read(&report.dest.join("meta.ini")).collection_owner(),
+        Some("collection:member")
+    );
+}
+
+#[test]
+fn fomod_finish_preserves_exact_answers_and_aborts_on_transform_failure() {
+    for fail in [false, true] {
+        let t = TempDir::new("fomod-finish");
+        let src = t.path().join("source");
+        let mods = t.path().join("mods");
+        let old = mods.join("Old");
+        write_at(&old, "keep.esp", b"precious");
+        write_at(&src, "default.esp", b"default");
+        write_at(&src, "chosen.esp", b"selected");
+        write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><installSteps order="Explicit"><installStep name="Options"><optionalFileGroups order="Explicit"><group name="Choice" type="SelectExactlyOne"><plugins order="Explicit"><plugin name="Default"><files><file source="default.esp" destination="default.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin><plugin name="Chosen"><files><file source="chosen.esp" destination="chosen.esp"/></files><typeDescriptor><type name="Optional"/></typeDescriptor></plugin></plugins></group></optionalFileGroups></installStep></installSteps></config>"#);
+        let config = parse_fomod_at(&src).unwrap();
+        let session = FomodSession {
+            config,
+            root: src.clone(),
+            tree: extracted(&src),
+            name: "Old".into(),
+            archive: t.path().join("Update.7z"),
+        };
+        let result = finish_fomod_with_finish(
+            session,
+            &vec![vec![vec![false, true]]],
+            &mods,
+            "skyrimse",
+            &Default::default(),
+            OverwritePolicy::ReplaceWithBackup,
+            |target| {
+                assert_ne!(target, old);
+                assert!(!target.join("default.esp").exists());
+                assert_eq!(fs::read(target.join("chosen.esp")).unwrap(), b"selected");
+                assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+                fs::write(target.join("chosen.esp"), b"patched selection")?;
+                if fail {
+                    Err(InstallError::BadSelection("injected recipe failure".into()))
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        if fail {
+            assert!(result.is_err());
+            assert_eq!(fs::read(old.join("keep.esp")).unwrap(), b"precious");
+            assert!(!old.join("chosen.esp").exists());
+        } else {
+            let report = result.unwrap();
+            assert_eq!(
+                fs::read(report.dest.join("chosen.esp")).unwrap(),
+                b"patched selection"
+            );
+            assert!(!report.dest.join("default.esp").exists());
+            assert_eq!(
+                fs::read(report.backup.unwrap().join("keep.esp")).unwrap(),
+                b"precious"
+            );
+        }
+    }
+}
+
+#[test]
+fn folder_mods_preserve_units_across_simple_bain_manual_and_fomod() {
+    for (game, marker) in [
+        ("stardewvalley", "manifest.json"),
+        ("7daystodie", "ModInfo.xml"),
+    ] {
+        for flow in [
+            "simple",
+            "bain",
+            "manual-parent",
+            "manual-unit",
+            "fomod",
+            "fomod-default",
+        ] {
+            let (t, mods, src) = bain_layout("folder-units");
+            let prefix = if flow == "bain" {
+                "00 Core/"
+            } else {
+                "Download-123/"
+            };
+            write_at(&src, &format!("{prefix}ContentPatcher/{marker}"), b"marker");
+            write_at(
+                &src,
+                &format!("{prefix}ContentPatcher/content.json"),
+                b"content",
+            );
+            let archive = t.path().join("Pack.7z");
+            let tree = extracted(&src);
+            if flow.starts_with("fomod") {
+                write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><requiredInstallFiles><folder source="Download-123/ContentPatcher" destination=""/></requiredInstallFiles></config>"#);
+            }
+            let result = match flow {
+                "bain" => install_bain(
+                    &tree,
+                    &["00 Core".into()],
+                    &archive,
+                    &mods,
+                    "Pack",
+                    game,
+                    OverwritePolicy::Fail,
+                ),
+                "manual-parent" => install_manual(
+                    &tree,
+                    "Download-123",
+                    &archive,
+                    &mods,
+                    "Pack",
+                    game,
+                    OverwritePolicy::Fail,
+                ),
+                "manual-unit" => install_manual(
+                    &tree,
+                    "download-123/contentpatcher",
+                    &archive,
+                    &mods,
+                    "Pack",
+                    game,
+                    OverwritePolicy::Fail,
+                ),
+                "fomod" => finish_fomod(
+                    FomodSession {
+                        config: parse_fomod_at(&src).unwrap(),
+                        root: src.clone(),
+                        tree,
+                        name: "Pack".into(),
+                        archive,
+                    },
+                    &Vec::new(),
+                    &mods,
+                    game,
+                    &Default::default(),
+                    OverwritePolicy::Fail,
+                ),
+                _ => install_extracted(
+                    &tree,
+                    &archive,
+                    &mods,
+                    "Pack",
+                    game,
+                    OverwritePolicy::Fail,
+                    &Default::default(),
+                ),
+            };
+            let report = result.unwrap_or_else(|e| panic!("{game} {flow}: {e}"));
+            assert_eq!(
+                fs::read(report.dest.join(format!("ContentPatcher/{marker}"))).unwrap(),
+                b"marker",
+                "{game} {flow}"
+            );
+            let mut expected = vec![
+                "ContentPatcher/".to_string(),
+                format!("ContentPatcher/{marker}"),
+                "ContentPatcher/content.json".into(),
+                "meta.ini".into(),
+            ];
+            expected.sort();
+            assert_eq!(rel_paths(&report.dest), expected, "{game} {flow}");
+        }
+    }
+}
+
+#[test]
+fn folder_mods_reject_bare_markers_before_live_merge_changes() {
+    for game in ["stardewvalley", "7daystodie"] {
+        let marker = if game == "stardewvalley" {
+            "manifest.json"
+        } else {
+            "ModInfo.xml"
+        };
+        for flow in ["simple", "manual", "fomod"] {
+            for policy in [
+                OverwritePolicy::Merge,
+                OverwritePolicy::MergeWithBackup,
+                OverwritePolicy::ReplaceWithBackup,
+            ] {
+                let (t, mods, src) = bain_layout("folder-bare");
+                write_at(&mods, "Pack/Existing/state", b"precious");
+                write_at(&mods, "Pack/meta.ini", b"[General]\nnotes=original\n");
+                write_at(&src, marker, b"marker");
+                if flow == "fomod" {
+                    write_at(&src, "fomod/ModuleConfig.xml", format!("<config><moduleName>Test</moduleName><requiredInstallFiles><file source=\"{marker}\" destination=\"{marker}\"/></requiredInstallFiles></config>").as_bytes());
+                }
+                let tree = extracted(&src);
+                let archive = t.path().join("Pack.7z");
+                let result = match flow {
+                    "manual" => install_manual(&tree, "", &archive, &mods, "Pack", game, policy),
+                    "fomod" => finish_fomod(
+                        FomodSession {
+                            config: parse_fomod_at(&src).unwrap(),
+                            root: src.clone(),
+                            tree,
+                            name: "Pack".into(),
+                            archive,
+                        },
+                        &Vec::new(),
+                        &mods,
+                        game,
+                        &Default::default(),
+                        policy,
+                    ),
+                    _ => install_extracted(
+                        &tree,
+                        &archive,
+                        &mods,
+                        "Pack",
+                        game,
+                        policy,
+                        &Default::default(),
+                    ),
+                };
+                assert!(result.is_err(), "{game} {flow} must reject a bare marker");
+                assert_eq!(
+                    fs::read(mods.join("Pack/meta.ini")).unwrap(),
+                    b"[General]\nnotes=original\n"
+                );
+                assert_eq!(
+                    fs::read(mods.join("Pack/Existing/state")).unwrap(),
+                    b"precious"
+                );
+                assert_eq!(
+                    rel_paths(&mods.join("Pack")),
+                    ["Existing/", "Existing/state", "meta.ini"]
+                );
+                assert!(!mods.join("Pack_backup").exists());
+            }
+        }
+    }
+}
+
+#[test]
+fn folder_mods_check_links_traversal_and_case_before_publication() {
+    for bad in ["dangling", "escape", "cycle", "traversal"] {
+        for flow in ["simple", "bain", "manual", "fomod"] {
+            let (t, mods, src) = bain_layout("folder-safety");
+            write_at(&mods, "Pack/ContentPatcher/manifest.json", b"old marker");
+            write_at(&mods, "Pack/meta.ini", b"[General]\nnotes=original\n");
+            write_at(t.path(), "outside", b"precious");
+            write_at(&src, "00 Core/ContentPatcher/manifest.json", b"new marker");
+            match bad {
+                "dangling" => {
+                    std::os::unix::fs::symlink("missing", src.join("00 Core/ContentPatcher/link"))
+                        .unwrap()
+                }
+                "escape" => std::os::unix::fs::symlink(
+                    t.path().join("outside"),
+                    src.join("00 Core/ContentPatcher/link"),
+                )
+                .unwrap(),
+                "cycle" => std::os::unix::fs::symlink(".", src.join("00 Core/ContentPatcher/link"))
+                    .unwrap(),
+                _ => {}
+            }
+            if flow == "fomod" {
+                let destination = if bad == "traversal" {
+                    "../../outside"
+                } else {
+                    ""
+                };
+                write_at(&src, "fomod/ModuleConfig.xml", format!("<config><moduleName>Test</moduleName><requiredInstallFiles><folder source=\"00 Core/ContentPatcher\" destination=\"{destination}\"/></requiredInstallFiles></config>").as_bytes());
+            }
+            let tree = extracted(&src);
+            let archive = t.path().join("Pack.7z");
+            let result = match flow {
+                "bain" => install_bain(
+                    &tree,
+                    &[if bad == "traversal" {
+                        "../outside"
+                    } else {
+                        "00 Core"
+                    }
+                    .into()],
+                    &archive,
+                    &mods,
+                    "Pack",
+                    "stardewvalley",
+                    OverwritePolicy::MergeWithBackup,
+                ),
+                "manual" => install_manual(
+                    &tree,
+                    if bad == "traversal" {
+                        "../outside"
+                    } else {
+                        "00 Core/ContentPatcher"
+                    },
+                    &archive,
+                    &mods,
+                    "Pack",
+                    "stardewvalley",
+                    OverwritePolicy::MergeWithBackup,
+                ),
+                "fomod" => finish_fomod(
+                    FomodSession {
+                        config: parse_fomod_at(&src).unwrap(),
+                        root: src.clone(),
+                        tree,
+                        name: "Pack".into(),
+                        archive,
+                    },
+                    &Vec::new(),
+                    &mods,
+                    "stardewvalley",
+                    &Default::default(),
+                    OverwritePolicy::MergeWithBackup,
+                ),
+                _ if bad == "traversal" => continue,
+                _ => install_extracted(
+                    &tree,
+                    &archive,
+                    &mods,
+                    "Pack",
+                    "stardewvalley",
+                    OverwritePolicy::MergeWithBackup,
+                    &Default::default(),
+                ),
+            };
+            assert!(result.is_err(), "{bad} {flow}");
+            assert_eq!(
+                fs::read(mods.join("Pack/meta.ini")).unwrap(),
+                b"[General]\nnotes=original\n"
+            );
+            assert_eq!(
+                fs::read(mods.join("Pack/ContentPatcher/manifest.json")).unwrap(),
+                b"old marker"
+            );
+            assert_eq!(fs::read(t.path().join("outside")).unwrap(), b"precious");
+            assert!(!mods.join("Pack_backup").exists());
+        }
+    }
+
+    let (t, mods, src) = bain_layout("folder-case");
+    write_at(&mods, "Pack/ContentPatcher/manifest.json", b"old marker");
+    write_at(&mods, "Pack/ContentPatcher/Config.json", b"old config");
+    write_at(&src, "contentpatcher/MANIFEST.JSON", b"new marker");
+    write_at(&src, "contentpatcher/config.JSON", b"new config");
+    write_at(&src, "SecondMod/manifest.json", b"second marker");
+    let report = install_extracted(
+        &extracted(&src),
+        &t.path().join("Pack.7z"),
+        &mods,
+        "pack",
+        "stardewvalley",
+        OverwritePolicy::MergeWithBackup,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(report.dest, mods.join("Pack"));
+    assert_eq!(
+        fs::read(report.dest.join("ContentPatcher/manifest.json")).unwrap(),
+        b"new marker"
+    );
+    assert_eq!(
+        fs::read(report.dest.join("ContentPatcher/Config.json")).unwrap(),
+        b"new config"
+    );
+    assert!(report.dest.join("SecondMod/manifest.json").is_file());
+    assert!(!report.dest.join("contentpatcher").exists());
+    let backup = report.backup.unwrap();
+    assert_eq!(
+        fs::read(backup.join("ContentPatcher/manifest.json")).unwrap(),
+        b"old marker"
+    );
+    assert_eq!(
+        fs::read(backup.join("ContentPatcher/Config.json")).unwrap(),
+        b"old config"
+    );
+}
+
+#[test]
+fn folder_mods_open_real_archives_and_install_selected_units() {
+    let Some(bin) = eidos_sevenzip::find_7z() else {
+        eprintln!("7-Zip unavailable: folder archive dispatch fixture skipped");
+        return;
+    };
+    for (game, marker) in [
+        ("stardewvalley", "manifest.json"),
+        ("7daystodie", "ModInfo.xml"),
+    ] {
+        for flow in ["simple", "bain", "fomod"] {
+            let t = TempDir::new("folder-archive");
+            let src = t.path().join("source");
+            let prefix = if flow == "bain" { "00 Core" } else { "Mods" };
+            write_at(&src, &format!("{prefix}/ContentPatcher/{marker}"), b"core");
+            if flow == "bain" {
+                write_at(
+                    &src,
+                    &format!("01 Optional/OptionalUnit/{marker}"),
+                    b"optional",
+                );
+            } else if flow == "fomod" {
+                write_at(&src, "fomod/ModuleConfig.xml", br#"<config><moduleName>Test</moduleName><requiredInstallFiles><folder source="Mods/ContentPatcher" destination="ContentPatcher"/></requiredInstallFiles></config>"#);
+            } else {
+                write_at(&src, "README.txt", b"documentation");
+            }
+            let archive = t.path().join("Pack.zip");
+            let output = std::process::Command::new(bin)
+                .args(["a", "-tzip"])
+                .arg(&archive)
+                .arg(".")
+                .current_dir(&src)
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            let before = fs::read(&archive).unwrap();
+            let mods = t.path().join("mods");
+            let opened = open_archive(&archive, &mods, "Pack", game).unwrap();
+            let report = match opened {
+                Opened::Simple(tree) if flow == "simple" => install_extracted(
+                    &tree,
+                    &archive,
+                    &mods,
+                    "Pack",
+                    game,
+                    OverwritePolicy::Fail,
+                    &Default::default(),
+                ),
+                Opened::Bain {
+                    tree, subpackages, ..
+                } if flow == "bain" => {
+                    assert_eq!(subpackages, ["00 Core", "01 Optional"]);
+                    install_bain(
+                        &tree,
+                        &subpackages,
+                        &archive,
+                        &mods,
+                        "Pack",
+                        game,
+                        OverwritePolicy::Fail,
+                    )
+                }
+                Opened::Fomod(session) if flow == "fomod" => finish_fomod(
+                    *session,
+                    &Vec::new(),
+                    &mods,
+                    game,
+                    &Default::default(),
+                    OverwritePolicy::Fail,
+                ),
+                _ => panic!("wrong classifier for {game} {flow}"),
+            }
+            .unwrap();
+            assert_eq!(
+                fs::read(report.dest.join(format!("ContentPatcher/{marker}"))).unwrap(),
+                b"core"
+            );
+            assert!(!report.dest.join(marker).exists());
+            assert!(!report.dest.join("Mods").exists());
+            if flow == "bain" {
+                assert_eq!(
+                    fs::read(report.dest.join(format!("OptionalUnit/{marker}"))).unwrap(),
+                    b"optional"
+                );
+            }
+            assert_eq!(fs::read(&archive).unwrap(), before);
+        }
+    }
+}
+
+pub(super) fn omod_string(out: &mut Vec<u8>, value: &str) {
+    let mut len = value.len();
+    while len >= 128 {
+        out.push((len as u8) | 128);
+        len >>= 7;
+    }
+    out.push(len as u8);
+    out.extend_from_slice(value.as_bytes());
+}
+
+/// A real ZIP with stored regular entries; no external fixture assets.
+pub(super) fn omod_zip(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut directory = Vec::new();
+    for (name, content) in entries {
+        let offset = bytes.len() as u32;
+        let crc = crc32fast::hash(content);
+        bytes.extend_from_slice(&0x04034b50u32.to_le_bytes());
+        bytes.extend_from_slice(&[20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&crc.to_le_bytes());
+        bytes.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+        bytes.extend_from_slice(content);
+        directory.extend_from_slice(&0x02014b50u32.to_le_bytes());
+        directory.extend_from_slice(&[20, 3, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        directory.extend_from_slice(&crc.to_le_bytes());
+        directory.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        directory.extend_from_slice(&(content.len() as u32).to_le_bytes());
+        directory.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        directory.extend_from_slice(&[0; 8]);
+        directory.extend_from_slice(&(0o100644u32 << 16).to_le_bytes());
+        directory.extend_from_slice(&offset.to_le_bytes());
+        directory.extend_from_slice(name.as_bytes());
+    }
+    let offset = bytes.len() as u32;
+    let size = directory.len() as u32;
+    bytes.extend(directory);
+    bytes.extend_from_slice(&0x06054b50u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(&(entries.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(&size.to_le_bytes());
+    bytes.extend_from_slice(&offset.to_le_bytes());
+    bytes.extend_from_slice(&0u16.to_le_bytes());
+    bytes
+}
+
+pub(super) fn omod_config(version: u8, compression: u8) -> Vec<u8> {
+    let mut config = vec![version];
+    omod_string(&mut config, "Fixture Mod");
+    config.extend_from_slice(&1i32.to_le_bytes());
+    config.extend_from_slice(&2i32.to_le_bytes());
+    for s in [
+        "Fixture Author",
+        "author@example.test",
+        "https://example.test/mod",
+        "Synthetic description",
+    ] {
+        omod_string(&mut config, s);
+    }
+    if version >= 2 {
+        config.extend_from_slice(&638000000000000000i64.to_le_bytes());
+    } else {
+        omod_string(&mut config, "12/09/2006 12:30");
+    }
+    config.push(compression);
+    if version >= 1 {
+        config.extend_from_slice(&3i32.to_le_bytes());
+    }
+    config
+}
+
+pub(super) fn omod_crc(files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut records = Vec::new();
+    for (name, bytes) in files {
+        omod_string(&mut records, name);
+        records.extend_from_slice(&crc32fast::hash(bytes).to_le_bytes());
+        records.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+    }
+    records
+}
+
+#[test]
+fn omod_unscripted_data_and_plugins_install_as_payload_not_container_blobs() {
+    if eidos_sevenzip::find_7z().is_none() {
+        return;
+    }
+    let t = TempDir::new("omod-basic");
+    let archive = t.path().join("Example.omod");
+    let data = [
+        ("Textures\\Demo.dds", b"texture".as_slice()),
+        ("empty.txt", b"".as_slice()),
+    ];
+    let plugins = [("Demo.esp", b"plugin".as_slice())];
+    let mut readme = Vec::new();
+    omod_string(&mut readme, "Synthetic readme");
+    fs::write(
+        &archive,
+        omod_zip(&[
+            ("config", omod_config(3, 1)),
+            ("readme", readme),
+            ("data.crc", omod_crc(&data)),
+            ("data", omod_zip(&[("a", b"texture".to_vec())])),
+            ("plugins.crc", omod_crc(&plugins)),
+            ("plugins", omod_zip(&[("a", b"plugin".to_vec())])),
+        ]),
+    )
+    .unwrap();
+    let report = install_archive(&archive, &t.path().join("mods"), "Pack", "oblivion").unwrap();
+    assert_eq!(
+        fs::read(report.dest.join("Textures/Demo.dds")).unwrap(),
+        b"texture"
+    );
+    assert_eq!(fs::read(report.dest.join("Demo.esp")).unwrap(), b"plugin");
+    assert_eq!(fs::read(report.dest.join("empty.txt")).unwrap(), b"");
+    for blob in ["data", "plugins", "config", "data.crc", "plugins.crc"] {
+        assert!(!report.dest.join(blob).exists());
+    }
+    let meta = ModMeta::read(&report.dest.join("meta.ini"));
+    assert_eq!(meta.author().as_deref(), Some("Fixture Author"));
+    assert_eq!(meta.version().as_deref(), Some("1.2.3"));
+}
+
+#[test]
+fn omod_finish_is_private_and_merge_refused_before_writes() {
+    let t = TempDir::new("omod-finish");
+    let archive = t.path().join("pack.omod");
+    fs::write(
+        &archive,
+        omod_zip(&[
+            ("config", omod_config(4, 1)),
+            ("data.crc", omod_crc(&[("Demo.esp", b"new")])),
+            ("data", omod_zip(&[("a", b"new".to_vec())])),
+        ]),
+    )
+    .unwrap();
+    let session = open_omod_with(
+        &archive,
+        &t.path().join("work"),
+        &std::sync::atomic::AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap();
+    let mods = t.path().join("mods");
+    let live = mods.join("Pack");
+    write_at(&live, "Demo.esp", b"old");
+    write_at(&live, "meta.ini", b"[General]\nnotes=precious\n");
+    let before = rel_paths(&mods);
+    for policy in [
+        OverwritePolicy::Merge,
+        OverwritePolicy::MergeWithBackup,
+        OverwritePolicy::Replace,
+    ] {
+        let mut called = false;
+        let result = install_omod_with_finish(
+            &session,
+            &mods,
+            "Pack",
+            "oblivion",
+            policy.clone(),
+            |stage| {
+                called = true;
+                assert_ne!(stage, live);
+                assert_eq!(fs::read(stage.join("Demo.esp")).unwrap(), b"new");
+                fs::write(stage.join("Demo.esp"), b"broken")?;
+                Err(InstallError::BadSelection(
+                    "fixture transform failed".into(),
+                ))
+            },
+        );
+        assert!(result.is_err());
+        assert_eq!(called, matches!(policy, OverwritePolicy::Replace));
+        assert_eq!(fs::read(live.join("Demo.esp")).unwrap(), b"old");
+        assert_eq!(
+            fs::read(live.join("meta.ini")).unwrap(),
+            b"[General]\nnotes=precious\n"
+        );
+        assert_eq!(rel_paths(&mods), before);
+    }
+    let report = install_omod_with_finish(
+        &session,
+        &mods,
+        "Pack",
+        "oblivion",
+        OverwritePolicy::Replace,
+        |stage| {
+            fs::write(stage.join("receipt.txt"), b"complete")?;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(report.dest.join("receipt.txt")).unwrap(),
+        b"complete"
+    );
+    assert_eq!(fs::read(report.dest.join("Demo.esp")).unwrap(), b"new");
+}
+
+fn write_omod(
+    root: &Path,
+    name: &str,
+    config: Vec<u8>,
+    crc: Vec<u8>,
+    data: Vec<u8>,
+    script: Option<&str>,
+) -> PathBuf {
+    let path = root.join(name);
+    let mut entries = vec![("config", config), ("data.crc", crc), ("data", data)];
+    if let Some(source) = script {
+        let mut bytes = Vec::new();
+        omod_string(&mut bytes, source);
+        entries.push(("script", bytes));
+    }
+    fs::write(&path, omod_zip(&entries)).unwrap();
+    path
+}
+
+#[test]
+fn omod_raw_lzma_config_versions_and_exact_member_boundaries() {
+    let t = TempDir::new("omod-lzma");
+    // Python lzma.FORMAT_ALONE, 1 MiB dictionary; omit its eight-byte size.
+    let raw = vec![
+        93, 0, 0, 16, 0, 0, 48, 152, 136, 152, 62, 209, 181, 112, 63, 255, 251, 115, 224, 0,
+    ];
+    for version in 0..=4 {
+        let archive = write_omod(
+            t.path(),
+            &format!("v{version}.omod"),
+            omod_config(version, 0),
+            omod_crc(&[
+                ("empty.txt", b""),
+                ("Textures/a.dds", b"abc"),
+                ("Demo.esp", b"de"),
+                ("last.txt", b""),
+            ]),
+            raw.clone(),
+            None,
+        );
+        let session = open_omod_with(
+            &archive,
+            &t.path().join("work"),
+            &std::sync::atomic::AtomicBool::new(false),
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(session.metadata.format_version, version);
+        assert_eq!(
+            session.metadata.version(),
+            if version == 0 { "1.2" } else { "1.2.3" }
+        );
+        assert_eq!(session.members.len(), 4);
+        assert_eq!(
+            fs::read(session.data_root().join("Textures/a.dds")).unwrap(),
+            b"abc"
+        );
+        assert_eq!(
+            fs::read(session.data_root().join("Demo.esp")).unwrap(),
+            b"de"
+        );
+        assert_eq!(fs::read(session.data_root().join("last.txt")).unwrap(), b"");
+    }
+}
+
+#[test]
+fn omod_scripts_classify_exact_bytes_and_never_default_install() {
+    let t = TempDir::new("omod-scripts");
+    for (i, source, kind, body) in [
+        (
+            0,
+            "Message legacy\r\n",
+            OmodScriptKind::Obmm,
+            "Message legacy\r\n",
+        ),
+        (
+            1,
+            "\0Message typed\r\n",
+            OmodScriptKind::Obmm,
+            "Message typed\r\n",
+        ),
+        (
+            2,
+            "\x01print('hello')",
+            OmodScriptKind::Python,
+            "print('hello')",
+        ),
+        (3, "\x02// C#", OmodScriptKind::CSharp, "// C#"),
+        (
+            4,
+            "\x03' Visual Basic",
+            OmodScriptKind::VisualBasic,
+            "' Visual Basic",
+        ),
+        (5, "", OmodScriptKind::Obmm, ""),
+    ] {
+        let archive = write_omod(
+            t.path(),
+            &format!("script{i}.zip"),
+            omod_config(4, 1),
+            omod_crc(&[("Demo.esp", b"abc")]),
+            omod_zip(&[("a", b"abc".to_vec())]),
+            Some(source),
+        );
+        let mods = t.path().join(format!("mods{i}"));
+        let Opened::Omod(session) =
+            open_archive(&archive, &t.path().join("work"), "Pack", "oblivion").unwrap()
+        else {
+            panic!("OMOD content in ZIP was not recognized")
+        };
+        let script = session.script.as_ref().unwrap();
+        assert_eq!(script.kind, kind);
+        assert_eq!(script.bytes, source.as_bytes());
+        assert_eq!(script.source(), body);
+        let result = install_omod(
+            &session,
+            &mods,
+            "Pack",
+            "oblivion",
+            OverwritePolicy::Replace,
+        );
+        assert!(matches!(result, Err(InstallError::BadSelection(e)) if e.contains("script")));
+        assert!(!mods.exists());
+        assert!(install_archive(&archive, &mods, "Pack", "oblivion").is_err());
+        assert!(fs::read_dir(&mods).unwrap().next().is_none());
+    }
+}
+
+#[test]
+fn omod_corruption_is_rejected_and_decoding_staging_is_removed() {
+    let t = TempDir::new("omod-corruption");
+    let crc = omod_crc(&[("Demo.esp", b"abc")]);
+    let raw = vec![
+        93, 0, 0, 16, 0, 0, 48, 152, 136, 164, 74, 142, 159, 255, 246, 99, 128, 0,
+    ];
+    let mut bad_crc = crc.clone();
+    let n = bad_crc.len();
+    bad_crc[n - 12] ^= 1;
+    let mut negative = crc.clone();
+    negative[n - 8..].copy_from_slice(&u64::MAX.to_le_bytes());
+    let mut bad_props = raw.clone();
+    bad_props[0] = 225;
+    let mut big_dict = raw.clone();
+    big_dict[1..5].copy_from_slice(&(128u32 * 1024 * 1024).to_le_bytes());
+    let mut truncated_crc = crc.clone();
+    truncated_crc.pop();
+    let cases = vec![
+        (
+            "checksum",
+            omod_config(4, 1),
+            bad_crc,
+            omod_zip(&[("a", b"abc".to_vec())]),
+        ),
+        (
+            "negative",
+            omod_config(4, 1),
+            negative,
+            omod_zip(&[("a", b"abc".to_vec())]),
+        ),
+        (
+            "crc-truncated",
+            omod_config(4, 1),
+            truncated_crc,
+            omod_zip(&[("a", b"abc".to_vec())]),
+        ),
+        (
+            "too-long",
+            omod_config(4, 1),
+            crc.clone(),
+            omod_zip(&[("a", b"abcd".to_vec())]),
+        ),
+        (
+            "too-short",
+            omod_config(4, 1),
+            crc.clone(),
+            omod_zip(&[("a", b"ab".to_vec())]),
+        ),
+        (
+            "wrong-member",
+            omod_config(4, 1),
+            crc.clone(),
+            omod_zip(&[("b", b"abc".to_vec())]),
+        ),
+        (
+            "extra-member",
+            omod_config(4, 1),
+            crc.clone(),
+            omod_zip(&[("a", b"abc".to_vec()), ("b", vec![])]),
+        ),
+        ("lzma-properties", omod_config(4, 0), crc.clone(), bad_props),
+        ("lzma-dictionary", omod_config(4, 0), crc.clone(), big_dict),
+        (
+            "lzma-truncated",
+            omod_config(4, 0),
+            crc.clone(),
+            raw[..9].to_vec(),
+        ),
+        (
+            "lzma-too-long",
+            omod_config(4, 0),
+            omod_crc(&[("Demo.esp", b"ab")]),
+            raw.clone(),
+        ),
+        (
+            "lzma-too-short",
+            omod_config(4, 0),
+            omod_crc(&[("Demo.esp", b"abcd")]),
+            raw,
+        ),
+        (
+            "config-version",
+            omod_config(5, 1),
+            crc,
+            omod_zip(&[("a", b"abc".to_vec())]),
+        ),
+    ];
+    let mods = t.path().join("mods");
+    write_at(&mods.join("Pack"), "precious.esp", b"keep");
+    write_at(
+        &mods.join("Pack"),
+        "meta.ini",
+        b"[General]\nnotes=original\n",
+    );
+    let before = rel_paths(&mods);
+    for (name, config, crc, data) in cases {
+        let archive = write_omod(t.path(), &format!("{name}.omod"), config, crc, data, None);
+        let result = install_archive_with_policy(
+            &archive,
+            &mods,
+            "Pack",
+            "oblivion",
+            OverwritePolicy::ReplaceWithBackup,
+            &Default::default(),
+        );
+        assert!(result.is_err(), "accepted {name}");
+        assert_eq!(rel_paths(&mods), before, "left staging behind for {name}");
+        assert_eq!(fs::read(mods.join("Pack/precious.esp")).unwrap(), b"keep");
+        assert_eq!(
+            fs::read(mods.join("Pack/meta.ini")).unwrap(),
+            b"[General]\nnotes=original\n"
+        );
+    }
+}
+
+#[test]
+fn omod_rejects_unsafe_duplicate_and_cross_group_paths() {
+    let t = TempDir::new("omod-paths");
+    for (index, names) in [
+        vec!["../escape.esp"],
+        vec!["/absolute.esp"],
+        vec!["C:\\drive.esp"],
+        vec!["a/../escape"],
+        vec![".eidos-collection.json"],
+        vec!["meta.ini"],
+        vec!["Meta.INI/child"],
+        vec!["root/a.dll"],
+        vec!["omod-readme.txt"],
+        vec!["a//b"],
+        vec!["a. /b"],
+        vec!["a/./b"],
+        vec!["a\nb.esp"],
+        vec!["A.esp", "a.esp"],
+        vec!["a", "a/b"],
+        vec!["a/b", "a"],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let files: Vec<_> = names.iter().map(|s| (*s, b"".as_slice())).collect();
+        let archive = write_omod(
+            t.path(),
+            &format!("bad{index}.omod"),
+            omod_config(4, 1),
+            omod_crc(&files),
+            omod_zip(&[("a", vec![])]),
+            None,
+        );
+        assert!(
+            open_omod_with(
+                &archive,
+                &t.path().join("work"),
+                &std::sync::atomic::AtomicBool::new(false),
+                |_| {}
+            )
+            .is_err(),
+            "accepted {names:?}"
+        );
+        assert!(fs::read_dir(t.path().join("work"))
+            .unwrap()
+            .next()
+            .is_none());
+    }
+    let archive = t.path().join("cross.omod");
+    fs::write(
+        &archive,
+        omod_zip(&[
+            ("config", omod_config(4, 1)),
+            ("data.crc", omod_crc(&[("Demo.esp", b"a")])),
+            ("data", omod_zip(&[("a", b"a".to_vec())])),
+            ("plugins.crc", omod_crc(&[("demo.ESP", b"b")])),
+            ("plugins", omod_zip(&[("a", b"b".to_vec())])),
+        ]),
+    )
+    .unwrap();
+    assert!(open_archive(&archive, &t.path().join("work"), "Pack", "oblivion").is_err());
+}
+
+#[test]
+fn omod_source_changes_and_links_fail_before_live_merge() {
+    let t = TempDir::new("omod-source-change");
+    let archive = write_omod(
+        t.path(),
+        "pack.omod",
+        omod_config(4, 1),
+        omod_crc(&[("Demo.esp", b"abc")]),
+        omod_zip(&[("a", b"abc".to_vec())]),
+        None,
+    );
+    let session = open_omod_with(
+        &archive,
+        &t.path().join("work"),
+        &std::sync::atomic::AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap();
+    let mods = t.path().join("mods");
+    write_at(&mods.join("Pack"), "Demo.esp", b"keep");
+    write_at(&mods.join("Pack"), "meta.ini", b"original");
+    let before = rel_paths(&mods);
+    for content in [b"ab".as_slice(), b"xyz", b"abcd"] {
+        fs::write(session.data_root().join("Demo.esp"), content).unwrap();
+        assert!(install_omod(
+            &session,
+            &mods,
+            "Pack",
+            "oblivion",
+            OverwritePolicy::MergeWithBackup
+        )
+        .is_err());
+        assert_eq!(rel_paths(&mods), before);
+        assert_eq!(fs::read(mods.join("Pack/Demo.esp")).unwrap(), b"keep");
+        assert_eq!(fs::read(mods.join("Pack/meta.ini")).unwrap(), b"original");
+    }
+    fs::remove_file(session.data_root().join("Demo.esp")).unwrap();
+    std::os::unix::fs::symlink(
+        t.path().join("missing"),
+        session.data_root().join("Demo.esp"),
+    )
+    .unwrap();
+    assert!(install_omod(&session, &mods, "Pack", "oblivion", OverwritePolicy::Merge).is_err());
+    assert_eq!(rel_paths(&mods), before);
+    let external = t.path().join("external");
+    write_at(&external, "data/Demo.esp", b"abc");
+    fs::remove_dir_all(session.payload_root()).unwrap();
+    std::os::unix::fs::symlink(&external, session.payload_root()).unwrap();
+    assert!(install_omod(&session, &mods, "Pack", "oblivion", OverwritePolicy::Merge).is_err());
+    assert_eq!(fs::read(mods.join("Pack/Demo.esp")).unwrap(), b"keep");
+    assert_eq!(fs::read(external.join("data/Demo.esp")).unwrap(), b"abc");
+    assert_eq!(rel_paths(&mods), before);
+}
+
+#[test]
+#[ignore = "requires the separately downloaded OMODFramework reference archive"]
+fn omod_upstream_reference_decodes_all_members() {
+    let path =
+        PathBuf::from(std::env::var_os("EIDOS_OMOD_REFERENCE").expect("set EIDOS_OMOD_REFERENCE"));
+    let t = TempDir::new("omod-upstream");
+    let session = open_omod_with(
+        &path,
+        t.path(),
+        &std::sync::atomic::AtomicBool::new(false),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(session.members.len(), 157);
+    assert_eq!(
+        session.members.iter().map(|m| m.size).sum::<u64>(),
+        8_356_025
+    );
+    assert!(session.script.is_some());
+    for m in &session.members {
+        let root = if m.kind == OmodFileKind::Data {
+            session.data_root()
+        } else {
+            session.plugins_root()
+        };
+        let bytes = fs::read(root.join(&m.path)).unwrap();
+        assert_eq!(bytes.len() as u64, m.size);
+        assert_eq!(crc32fast::hash(&bytes), m.crc32);
+    }
+}
+
+#[test]
+fn omod_case_alias_directories_keep_first_spelling_through_publication() {
+    let t = TempDir::new("omod-case");
+    let archive = write_omod(
+        t.path(),
+        "pack.omod",
+        omod_config(4, 1),
+        omod_crc(&[("Textures/A.dds", b"abc"), ("textures/B.dds", b"def")]),
+        omod_zip(&[("a", b"abcdef".to_vec())]),
+        None,
+    );
+    let report = install_archive(&archive, &t.path().join("mods"), "Pack", "oblivion").unwrap();
+    assert_eq!(
+        fs::read(report.dest.join("Textures/A.dds")).unwrap(),
+        b"abc"
+    );
+    assert_eq!(
+        fs::read(report.dest.join("Textures/B.dds")).unwrap(),
+        b"def"
+    );
+    assert!(!report.dest.join("textures").exists());
+}
+
+#[test]
+fn malformed_omod_container_is_not_reclassified_after_renaming_to_zip() {
+    let t = TempDir::new("omod-classify");
+    let archive = t.path().join("pack.zip");
+    fs::write(
+        &archive,
+        omod_zip(&[
+            ("config", omod_config(4, 1)),
+            ("data.crc", omod_crc(&[("Demo.esp", b"abc")])),
+            ("data", omod_zip(&[("a", b"abc".to_vec())])),
+            ("unexpected", b"bad".to_vec()),
+        ]),
+    )
+    .unwrap();
+    assert!(try_open_omod(&archive, &t.path().join("work"), |_| {}).is_err());
+}
+
+#[test]
+fn omod_progress_does_not_restart_between_data_and_plugins() {
+    let t = TempDir::new("omod-progress");
+    let archive = t.path().join("pack.omod");
+    let bytes = vec![1; 131072];
+    fs::write(
+        &archive,
+        omod_zip(&[
+            ("config", omod_config(4, 1)),
+            ("data.crc", omod_crc(&[("Textures/a.dds", &bytes)])),
+            ("data", omod_zip(&[("a", bytes.clone())])),
+            ("plugins.crc", omod_crc(&[("Demo.esp", &bytes)])),
+            ("plugins", omod_zip(&[("a", bytes)])),
+        ]),
+    )
+    .unwrap();
+    let mut progress = Vec::new();
+    let session = open_omod_with(
+        &archive,
+        &t.path().join("work"),
+        &std::sync::atomic::AtomicBool::new(false),
+        |p| progress.push(p),
+    )
+    .unwrap();
+    assert_eq!(session.members.len(), 2);
+    assert_eq!(progress.last(), Some(&100));
+    assert!(progress.windows(2).all(|p| p[0] <= p[1]), "{progress:?}");
+}
+
+#[test]
+fn omod_ordinary_merge_and_replace_retain_existing_backup_contract() {
+    for policy in [
+        OverwritePolicy::MergeWithBackup,
+        OverwritePolicy::ReplaceWithBackup,
+    ] {
+        let t = TempDir::new("omod-backup");
+        let archive = write_omod(
+            t.path(),
+            "pack.omod",
+            omod_config(4, 1),
+            omod_crc(&[("Demo.esp", b"new")]),
+            omod_zip(&[("a", b"new".to_vec())]),
+            None,
+        );
+        let mods = t.path().join("mods");
+        let live = mods.join("Pack");
+        write_at(&live, "demo.ESP", b"old");
+        write_at(&live, ".hidden/state", b"precious");
+        write_at(&live, "meta.ini", b"[General]\nnotes=retain\n");
+        let report = install_archive_with_policy(
+            &archive,
+            &mods,
+            "pack",
+            "oblivion",
+            policy.clone(),
+            &Default::default(),
+        )
+        .unwrap();
+        let backup = report.backup.unwrap();
+        assert_eq!(fs::read(backup.join("demo.ESP")).unwrap(), b"old");
+        assert_eq!(fs::read(backup.join(".hidden/state")).unwrap(), b"precious");
+        assert_eq!(
+            fs::read(backup.join("meta.ini")).unwrap(),
+            b"[General]\nnotes=retain\n"
+        );
+        let merging = matches!(policy, OverwritePolicy::MergeWithBackup);
+        assert_eq!(
+            fs::read(
+                report
+                    .dest
+                    .join(if merging { "demo.ESP" } else { "Demo.esp" })
+            )
+            .unwrap(),
+            b"new"
+        );
+        assert_eq!(report.dest.join(".hidden/state").exists(), merging);
+        assert_eq!(
+            ModMeta::read(&report.dest.join("meta.ini"))
+                .notes()
+                .as_deref(),
+            Some("retain")
+        );
     }
 }

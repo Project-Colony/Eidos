@@ -296,6 +296,8 @@ pub struct Settings {
     /// on by default): the main window is blocked behind an overlay until the
     /// process exits, with an Unlock escape hatch.
     pub lock_gui: bool,
+    /// Remember the explicit collision-dialog choice to retain the old mod.
+    pub retain_install_backup: bool,
     /// Multiplier on how fast the mod list scrolls when a drag rests on one of
     /// its edges. 1.0 is the tuned default; the range a user can pick from is
     /// the GUI's business, this only stores what they picked.
@@ -356,6 +358,7 @@ impl Default for Settings {
             window_size: None,
             // MO2 defaults `lock_gui` to true, and an absent key means "on".
             lock_gui: true,
+            retain_install_backup: false,
             drag_scroll_speed: 1.0,
             split: 0.6,
             motion: true,
@@ -511,6 +514,7 @@ impl Settings {
                         "false" | "0" | "no" | "off"
                     )
                 }
+                "retain_install_backup" => s.retain_install_backup = matches!(v, "true" | "1" | "yes" | "on"),
                 "lock_gui" => {
                     s.lock_gui = !matches!(
                         v.to_ascii_lowercase().as_str(),
@@ -551,6 +555,7 @@ impl Settings {
             self.motion,
             self.remember_window
         );
+        out.push_str(&format!("retain_install_backup={}\n", self.retain_install_backup));
         if let Some(a) = &self.accent {
             out.push_str(&format!("accent={a}\n"));
         }
@@ -851,6 +856,7 @@ mod tests {
             default_game: Some("skyrimse".to_string()),
             window_size: Some((1280, 720)),
             lock_gui: false,
+            retain_install_backup: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
             motion: false,
@@ -1010,6 +1016,7 @@ mod tests {
             default_game: Some("starfield".to_string()),
             window_size: Some((1600, 900)),
             lock_gui: false,
+            retain_install_backup: true,
             drag_scroll_speed: 1.0,
             split: 0.6,
             motion: false,

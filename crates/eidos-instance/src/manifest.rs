@@ -21,6 +21,8 @@ pub struct Manifest {
     pub kind: InstanceKind,
     /// The active profile (reserved for the profiles feature; `None` for now).
     pub selected_profile: Option<String>,
+    /// Exact store/install identity selected when this instance was created.
+    pub installation: Option<String>,
 }
 
 impl Manifest {
@@ -30,6 +32,7 @@ impl Manifest {
             game_id: game_id.to_string(),
             kind,
             selected_profile: None,
+            installation: None,
         }
     }
 
@@ -50,6 +53,7 @@ impl Manifest {
         let mut schema_version = SCHEMA_VERSION;
         let mut kind = InstanceKind::Global;
         let mut selected_profile = None;
+        let mut installation = None;
 
         for line in text.lines() {
             let line = line.trim();
@@ -71,6 +75,7 @@ impl Manifest {
                     }
                 }
                 "selected_profile" if !v.is_empty() => selected_profile = Some(v.to_string()),
+                "installation" if !v.is_empty() => installation = Some(v.to_string()),
                 _ => {}
             }
         }
@@ -84,6 +89,7 @@ impl Manifest {
             })?,
             kind,
             selected_profile,
+            installation,
         }))
     }
 
@@ -99,6 +105,14 @@ impl Manifest {
         if let Some(p) = &self.selected_profile {
             out.push_str("selected_profile=");
             out.push_str(p);
+            out.push('\n');
+        }
+        if let Some(selection) = &self.installation {
+            if selection.contains(['\n', '\r', '\0']) {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid installation identity"));
+            }
+            out.push_str("installation=");
+            out.push_str(selection);
             out.push('\n');
         }
         // Atomic replace (tmp + rename): a crash mid-write must never leave a torn
@@ -145,6 +159,17 @@ mod tests {
         assert_eq!(m.kind, InstanceKind::Portable);
         assert_eq!(m.selected_profile.as_deref(), Some("Ultra"));
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn selected_installation_survives_a_manifest_update() {
+        let p = tmp();
+        fs::write(&p, "[eidos]\ngame_id=skyrimse\ninstallation=[\"GOG:1711230643\",\"/games/Skyrim\"]\n").unwrap();
+        let mut m = Manifest::read_checked(&p).unwrap().unwrap();
+        m.selected_profile = Some("Second".into());
+        m.write(&p).unwrap();
+        assert!(fs::read_to_string(&p).unwrap().contains("installation=[\"GOG:1711230643\",\"/games/Skyrim\"]"));
+        fs::remove_file(p).unwrap();
     }
 
     #[test]

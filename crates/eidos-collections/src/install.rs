@@ -45,11 +45,29 @@ pub enum Installed {
     /// Installed, but the recorded installer answers could not all be replayed,
     /// so the files differ from the author's.
     Approximate(String, Vec<String>),
+    /// The owned reservation and exact receipt remain available for a later answer.
+    NeedsUser(String),
     Failed(String),
 }
 
 /// Everything the engine cannot do itself.
 pub trait Hooks {
+    /// Validate the entire recipe before any member is downloaded or reserved.
+    fn validate_recipe(&mut self, c: &Collection) -> Result<(), String> {
+        for m in &c.mods {
+            crate::recipe::validate_member(m)?;
+        }
+        Ok(())
+    }
+    fn runtime_check(&mut self, c: &Collection) -> crate::recipe::RuntimeCheck {
+        crate::recipe::compare_runtime(
+            &c.info.game_versions,
+            Err("No runtime evidence was provided".into()),
+        )
+    }
+    fn allow_runtime_mismatch(&self) -> bool {
+        false
+    }
     /// Get this member's archive, or say why not.
     fn obtain(&mut self, m: &Mod) -> Obtained;
     /// Reserve an owned destination before the engine persists it and starts extraction.
@@ -57,7 +75,13 @@ pub trait Hooks {
         Ok(previous.unwrap_or(&m.name).to_string())
     }
     /// Check a completed member before trusting a resumed state file.
-    fn verify_installed(&mut self, _m: &Mod, _folder: &str) -> Result<bool, String> { Ok(true) }
+    fn verify_installed(&mut self, _m: &Mod, _folder: &str) -> Result<bool, String> {
+        Ok(true)
+    }
+    /// Recover a published receipt when the final status checkpoint was interrupted.
+    fn recover_installed(&mut self, _m: &Mod, _folder: &str) -> Result<Option<Installed>, String> {
+        Ok(None)
+    }
     /// Install it, replaying `m.choices` where the installer has questions.
     fn install(&mut self, m: &Mod, archive: &std::path::Path, folder: &str) -> Installed;
     /// One member is done. `done` counts every member reached, `total` is all of
@@ -93,6 +117,44 @@ pub fn run(
         revision: state.revision,
         ..Report::default()
     };
+    if let Err(error) = hooks.validate_recipe(c) {
+        report.aborted = true;
+        report.failed.push(Note {
+            subject: "collection recipe".into(),
+            detail: error,
+        });
+        return report;
+    }
+    let runtime = hooks.runtime_check(c);
+    match &runtime {
+        crate::recipe::RuntimeCheck::Mismatch { .. } => {
+            if !hooks.allow_runtime_mismatch() && state.runtime_decision.as_ref() != Some(&runtime)
+            {
+                report.aborted = true;
+                report.needs_you.push(Note {
+                    subject: "game runtime".into(),
+                    detail: runtime.message(),
+                });
+                return report;
+            }
+            if state.runtime_decision.as_ref() != Some(&runtime) {
+                let previous = state.runtime_decision.replace(runtime.clone());
+                if !persist(state, save, &mut report, "runtime continuation") {
+                    state.runtime_decision = previous;
+                    return report;
+                }
+            }
+            report.deferred.push(Note {
+                subject: "game runtime".into(),
+                detail: format!("{}; explicit continuation recorded", runtime.message()),
+            });
+        }
+        crate::recipe::RuntimeCheck::Unknown { .. } => report.deferred.push(Note {
+            subject: "game runtime".into(),
+            detail: runtime.message(),
+        }),
+        _ => {}
+    }
     let order = install_order(c);
     let total = order.len();
 
@@ -111,14 +173,20 @@ pub fn run(
                     Ok(true) => {
                         if let Status::Approximate(_, why) = state.status(&key) {
                             report.approximate.push(note(&why.join("; ")));
-                        } else { report.installed.push(m.name.clone()); }
+                        } else {
+                            report.installed.push(m.name.clone());
+                        }
                         hooks.progress(n + 1, total, &m.name);
                         continue;
                     }
-                    Ok(false) => { state.set(&key, Status::Pending); }
+                    Ok(false) => {
+                        state.set(&key, Status::Pending);
+                    }
                     Err(error) => {
                         state.set(&key, Status::Failed(error.clone()));
-                        if !persist(state, save, &mut report, &m.name) { return report; }
+                        if !persist(state, save, &mut report, &m.name) {
+                            return report;
+                        }
                         report.failed.push(note(&error));
                         hooks.progress(n + 1, total, &m.name);
                         continue;
@@ -145,6 +213,27 @@ pub fn run(
             _ => {}
         }
 
+        let recovered = match state
+            .folders
+            .get(&key)
+            .map(|folder| hooks.recover_installed(m, folder))
+            .transpose()
+        {
+            Ok(outcome) => outcome.flatten(),
+            Err(error) => Some(Installed::Failed(error)),
+        };
+        if let Some(outcome) = recovered {
+            record_install(outcome, m, &key, state, &mut report);
+            if !persist(state, save, &mut report, &m.name) {
+                return report;
+            }
+            hooks.progress(n + 1, total, &m.name);
+            if report.aborted {
+                return report;
+            }
+            continue;
+        }
+
         // A source this build cannot fetch is not a failure to retry forever.
         if m.source.kind == SourceType::Manual {
             let why = if m.source.instructions.is_empty() {
@@ -153,7 +242,9 @@ pub fn run(
                 m.source.instructions.clone()
             };
             state.set(&key, Status::Unavailable(why.clone()));
-            if !persist(state, save, &mut report, &m.name) { return report; }
+            if !persist(state, save, &mut report, &m.name) {
+                return report;
+            }
             report.needs_you.push(note(&why));
             hooks.progress(n + 1, total, &m.name);
             continue;
@@ -162,19 +253,25 @@ pub fn run(
         let archive = match hooks.obtain(m) {
             Obtained::Ready(p) => {
                 state.set(&key, Status::Downloaded);
-                if !persist(state, save, &mut report, &m.name) { return report; }
+                if !persist(state, save, &mut report, &m.name) {
+                    return report;
+                }
                 p
             }
             Obtained::NeedsUser(why) => {
                 state.set(&key, Status::Unavailable(why.clone()));
-                if !persist(state, save, &mut report, &m.name) { return report; }
+                if !persist(state, save, &mut report, &m.name) {
+                    return report;
+                }
                 report.needs_you.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
             }
             Obtained::Unavailable(why) => {
                 state.set(&key, Status::Unavailable(why.clone()));
-                if !persist(state, save, &mut report, &m.name) { return report; }
+                if !persist(state, save, &mut report, &m.name) {
+                    return report;
+                }
                 report.needs_you.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
@@ -183,7 +280,9 @@ pub fn run(
                 // Failed, not unavailable: it is worth another go, and the state
                 // says so, so a re-run picks it up.
                 state.set(&key, Status::Failed(why.clone()));
-                if !persist(state, save, &mut report, &m.name) { return report; }
+                if !persist(state, save, &mut report, &m.name) {
+                    return report;
+                }
                 report.failed.push(note(&why));
                 hooks.progress(n + 1, total, &m.name);
                 continue;
@@ -195,57 +294,31 @@ pub fn run(
             Err(why) => {
                 state.set(&key, Status::Failed(why.clone()));
                 report.failed.push(note(&why));
-                if !persist(state, save, &mut report, &m.name) { return report; }
+                if !persist(state, save, &mut report, &m.name) {
+                    return report;
+                }
                 hooks.progress(n + 1, total, &m.name);
                 continue;
             }
         };
         state.folders.insert(key.clone(), folder.clone());
-        if !persist(state, save, &mut report, &m.name) { return report; }
-
-        match hooks.install(m, &archive, &folder) {
-            Installed::Ok(folder) => {
-                state.set(&key, Status::Installed(folder));
-                report.installed.push(m.name.clone());
-            }
-            Installed::Approximate(folder, why) => {
-                state.set(&key, Status::Approximate(folder, why.clone()));
-                report.approximate.push(note(&why.join("; ")));
-            }
-            Installed::Failed(why) => {
-                state.set(&key, Status::Failed(why.clone()));
-                report.failed.push(note(&why));
-            }
+        if !persist(state, save, &mut report, &m.name) {
+            return report;
         }
-        if !persist(state, save, &mut report, &m.name) { return report; }
+
+        record_install(
+            hooks.install(m, &archive, &folder),
+            m,
+            &key,
+            state,
+            &mut report,
+        );
+        if !persist(state, save, &mut report, &m.name) {
+            return report;
+        }
         hooks.progress(n + 1, total, &m.name);
-    }
-
-    // Parts of a member this build reads and does not apply. The member itself
-    // installed, so it is not approximate and not failed - but the collection
-    // asked for more than what is on disk, and a report that omits it is
-    // claiming an install that did not happen.
-    for &i in &order {
-        let m = &c.mods[i];
-        let key = key_for(m, &c.info.domain_name);
-        if !matches!(
-            state.status(&key),
-            Status::Installed(_) | Status::Approximate(_, _)
-        ) {
-            continue;
-        }
-        let mut parts: Vec<String> = Vec::new();
-        if !m.patches.is_empty() {
-            parts.push(format!("{} binary patch(es)", m.patches.len()));
-        }
-        if !m.file_overrides.is_empty() {
-            parts.push(format!("{} file override(s)", m.file_overrides.len()));
-        }
-        if !parts.is_empty() {
-            report.deferred.push(Note {
-                subject: m.name.clone(),
-                detail: format!("{} this version does not apply", parts.join(" and ")),
-            });
+        if report.aborted {
+            return report;
         }
     }
 
@@ -260,6 +333,43 @@ pub fn run(
         });
     }
     report
+}
+
+fn record_install(
+    outcome: Installed,
+    member: &Mod,
+    key: &str,
+    state: &mut InstallState,
+    report: &mut Report,
+) {
+    match outcome {
+        Installed::Ok(folder) => {
+            state.set(key, Status::Installed(folder));
+            report.installed.push(member.name.clone());
+        }
+        Installed::Approximate(folder, why) => {
+            state.set(key, Status::Approximate(folder, why.clone()));
+            report.approximate.push(Note {
+                subject: member.name.clone(),
+                detail: why.join("; "),
+            });
+        }
+        Installed::NeedsUser(why) => {
+            state.set(key, Status::Unavailable(why.clone()));
+            report.aborted = true;
+            report.needs_you.push(Note {
+                subject: member.name.clone(),
+                detail: why,
+            });
+        }
+        Installed::Failed(why) => {
+            state.set(key, Status::Failed(why.clone()));
+            report.failed.push(Note {
+                subject: member.name.clone(),
+                detail: why,
+            });
+        }
+    }
 }
 
 fn persist(
@@ -349,7 +459,52 @@ mod tests {
         }
     }
 
-    fn noop(_: &InstallState) -> Result<(), String> { Ok(()) }
+    fn noop(_: &InstallState) -> Result<(), String> {
+        Ok(())
+    }
+
+    #[test]
+    fn unanswered_installer_stops_then_resumes_same_reserved_member() {
+        let c = collection(vec![
+            member("First", 0, false, 1),
+            member("Later", 0, false, 2),
+        ]);
+        let mut state = InstallState::default();
+        let mut fake = Fake::default();
+        fake.install.insert(
+            "First".into(),
+            Installed::NeedsUser("exact prompt saved".into()),
+        );
+        let mut saved = None;
+        let report = run(&c, &mut state, &mut fake, &mut |s| {
+            saved = Some(s.clone());
+            Ok(())
+        });
+        assert!(report.aborted);
+        assert_eq!(report.needs_you.len(), 1);
+        assert_eq!(fake.installed_order, ["First"]);
+        let mut restored = saved.unwrap();
+        assert_eq!(
+            restored
+                .folders
+                .get(&key_for(&c.mods[0], ""))
+                .map(String::as_str),
+            Some("First")
+        );
+        assert!(restored.status(&key_for(&c.mods[0], "")).is_open());
+        fake.install.clear();
+        fake.installed_order.clear();
+        let report = run(&c, &mut restored, &mut fake, &mut noop);
+        assert!(!report.aborted);
+        assert_eq!(fake.installed_order, ["First", "Later"]);
+        assert_eq!(
+            restored
+                .folders
+                .get(&key_for(&c.mods[0], ""))
+                .map(String::as_str),
+            Some("First")
+        );
+    }
 
     #[test]
     fn members_install_by_phase_then_by_the_order_the_collection_listed_them() {
@@ -378,9 +533,15 @@ mod tests {
         let c = collection(vec![member("a", 0, false, 1), member("b", 0, false, 2)]);
         let mut state = InstallState::default();
         let mut saves = 0;
-        let mut save = |_: &InstallState| { saves += 1; Ok(()) };
+        let mut save = |_: &InstallState| {
+            saves += 1;
+            Ok(())
+        };
         run(&c, &mut state, &mut Fake::default(), &mut save);
-        assert!(saves >= 4, "downloaded + installed for each member: {saves}");
+        assert!(
+            saves >= 4,
+            "downloaded + installed for each member: {saves}"
+        );
     }
 
     #[test]
@@ -389,7 +550,11 @@ mod tests {
         let mut state = InstallState::default();
         let mut hooks = Fake::default();
         let mut save = |s: &InstallState| {
-            if s.folders.is_empty() { Ok(()) } else { Err("disk full".to_string()) }
+            if s.folders.is_empty() {
+                Ok(())
+            } else {
+                Err("disk full".to_string())
+            }
         };
         let report = run(&c, &mut state, &mut hooks, &mut save);
         assert!(report.aborted);
@@ -417,7 +582,10 @@ mod tests {
         // `browse` source is "fetch it yourself and run this again". A status
         // that skips the member forever makes that instruction impossible to
         // follow, and the collection can never finish.
-        let c = collection(vec![member("gated", 0, false, 1), member("flaky", 0, false, 2)]);
+        let c = collection(vec![
+            member("gated", 0, false, 1),
+            member("flaky", 0, false, 2),
+        ]);
         let mut f = Fake::default();
         f.obtain.insert(
             "gated".into(),
@@ -443,8 +611,10 @@ mod tests {
     fn a_member_that_is_still_unavailable_is_still_reported_as_such() {
         let c = collection(vec![member("bundled", 0, false, 1)]);
         let mut f = Fake::default();
-        f.obtain
-            .insert("bundled".into(), Obtained::Unavailable("no usable source".into()));
+        f.obtain.insert(
+            "bundled".into(),
+            Obtained::Unavailable("no usable source".into()),
+        );
         let mut state = InstallState::default();
         for _ in 0..2 {
             let r = run(&c, &mut state, &mut f, &mut noop);
@@ -455,16 +625,22 @@ mod tests {
     }
 
     #[test]
-    fn what_a_member_asks_for_and_this_build_does_not_do_is_in_the_report() {
+    fn completed_recipe_hooks_are_not_reported_as_deferred() {
         let mut m = member("A Patch", 0, false, 1);
         m.patches.insert("meshes/x.nif".into(), "DEADBEEF".into());
         m.file_overrides.push("textures/win.dds".into());
         let c = collection(vec![m]);
-        let r = run(&c, &mut InstallState::default(), &mut Fake::default(), &mut noop);
+        let r = run(
+            &c,
+            &mut InstallState::default(),
+            &mut Fake::default(),
+            &mut noop,
+        );
         assert_eq!(r.installed, vec!["A Patch".to_string()]);
-        assert_eq!(r.deferred.len(), 1);
-        assert!(r.deferred[0].detail.contains("binary patch"));
-        assert!(!r.is_faithful(), "it installed, but not all of what it asked");
+        assert!(
+            r.deferred.is_empty(),
+            "completed recipe hooks must not be labelled deferred"
+        );
     }
 
     #[test]

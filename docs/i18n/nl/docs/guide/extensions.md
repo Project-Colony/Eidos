@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Uitbreidingen
 
@@ -19,9 +19,7 @@ ongedefinieerd gedrag en geen versieverschil. En de widgets van Eidos zijn
 generiek op compileertijd, dus een bibliotheek zou er niet eens een kunnen bouwen
 om terug te geven, zelfs met een stabiele ABI.
 
-Een uitbreiding is dus een programma dat Eidos *uitvoert*. Ze kan het venster niet
-laten crashen, geen modlijst beschadigen, en blijft werken over updates van Eidos
-heen.
+Een uitbreiding is een programma dat Eidos uitvoert met de bestandssysteemrechten van jouw account. Installeer alleen hulpprogramma's die je vertrouwt. Procesisolatie en gecontroleerde antwoorden bieden geen sandbox van het besturingssysteem.
 
 ## Een gereedschap
 
@@ -90,9 +88,4 @@ plaatshouders op te lossen zijn wordt geweigerd, en Eidos zegt welke ontbreken.
 
 ## Wat een uitbreiding niet kan
 
-Ze krijgt waarden en draait; ze kan niet terugbellen naar Eidos, de modlijst niet
-wijzigen en niets in het venster tekenen. Dat is opzet. Waarvoor MO2 plug-ins
-gebruikt en wat wél naar binnen MOET reiken - spelondersteuning, installers, de
-conflictmotor - is hier ingebouwd in plaats van erop geschroefd: een speldefinitie
-is haar eigen TOML in `~/.config/Colony/Eidos/games/`, en de FOMOD- en
-BAIN-installers zijn ingebouwd.
+Een uitbreiding kan Eidos niet terug aanroepen, zichzelf niet vanuit een archief registreren en geen eigen widgets tekenen. Gestructureerde installatieprogramma's met protocol 1 kunnen gecontroleerde bestandsplannen en keuzevragen teruggeven; Eidos beheert de beoordeling, tijdelijke voorbereiding en publicatie. FOMOD en BAIN blijven native installatieprogramma's. Uitbreidingen voor voorvertoningen en informatie over opgeslagen spellen gebruiken dezelfde host met begrensde antwoorden. Zie de [protocolspecificatie en uitvoerbare voorbeelden](../../../../examples/extensions/README.md) voor de prioriteit van overeenkomsten, vastgelegde CLI-antwoorden, limieten en identiteitscontroles bij herhaling.

@@ -7,6 +7,8 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+sha2 = { version = "0.11", default-features = false }
+libc = "0.2"
 eidos-core = { path = "../eidos-core" }
 eidos-paths = { path = "../eidos-paths" }
 eidos-gamedef = { path = "../eidos-gamedef" }

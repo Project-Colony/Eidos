@@ -17,15 +17,18 @@ use std::path::{Path, PathBuf};
 use esplugin::{GameId, ParseOptions, Plugin as EspPlugin};
 
 mod loadorder;
+mod timestamp;
 pub use loadorder::{
     canonical_path, documents_my_games_dir, newest_variant, plugins_txt_dir, read_decoded,
 };
+pub use timestamp::{morrowind_active, plugin_state_dir};
 
 /// Whether `name` is a plugin file by extension (`.esp`/`.esm`/`.esl`),
 /// case-insensitively - MO2's plugin filter (`*.esp *.esm *.esl`).
 pub fn is_plugin(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    !n.starts_with(".eidoswh.") && (n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl"))
+    !n.starts_with(".eidoswh.")
+        && (n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl"))
 }
 
 /// Whether `name` loads as a master by its extension (`.esm`/`.esl`) - MO2's
@@ -49,6 +52,8 @@ pub enum LoadOrderMechanism {
     /// `plugins.txt` (active set) + `loadorder.txt` (the full order). Skyrim LE,
     /// Fallout 3, Fallout New Vegas.
     PlainList,
+    /// Activation files plus plugin mtimes; loadorder.txt is profile bookkeeping.
+    Timestamp,
 }
 
 /// Per-game plugin handling: identity for esplugin, the on-disk format, and the
@@ -58,6 +63,7 @@ pub struct GameSpec {
     pub esplugin_id: GameId,
     pub mechanism: LoadOrderMechanism,
     pub primary_plugins: Vec<String>,
+    pub implicit_plugins: Vec<String>,
     /// The game's folder name under the prefix's `AppData/Local` and
     /// `Documents/My Games` (e.g. `Skyrim Special Edition`).
     pub local_dir: String,
@@ -67,16 +73,14 @@ impl GameSpec {
     /// Plugin spec for an Eidos game id, or `None` if the game has no (supported)
     /// plugin system. The mechanism, master plugins and My Games folder come from
     /// the shared `eidos-gamedef` descriptor; only the esplugin `GameId` (which
-    /// belongs to the esplugin crate) is mapped here. Timestamp-ordered games
-    /// (Oblivion/Morrowind) return `None` - not managed yet.
+    /// belongs to the esplugin crate) is mapped here.
     pub fn for_id(eidos_game_id: &str) -> Option<GameSpec> {
         let def = eidos_gamedef::GameDef::for_id(eidos_game_id)?;
         let mechanism = match def.load_order {
             eidos_gamedef::LoadOrder::Asterisk => LoadOrderMechanism::Asterisk,
             eidos_gamedef::LoadOrder::PlainList => LoadOrderMechanism::PlainList,
-            // FileTime (Oblivion/Morrowind) and None (generic games) have no Eidos-
-            // managed plugins.txt, so there is no plugin spec to build.
-            eidos_gamedef::LoadOrder::FileTime | eidos_gamedef::LoadOrder::None => return None,
+            eidos_gamedef::LoadOrder::FileTime => LoadOrderMechanism::Timestamp,
+            eidos_gamedef::LoadOrder::None => return None,
         };
         let esplugin_id = match eidos_game_id {
             "skyrimse" | "skyrimvr" | "enderalse" => GameId::SkyrimSE,
@@ -84,6 +88,8 @@ impl GameSpec {
             "fallout4" | "fallout4vr" => GameId::Fallout4,
             "falloutnv" => GameId::FalloutNV,
             "fallout3" => GameId::Fallout3,
+            "morrowind" => GameId::Morrowind,
+            "oblivion" => GameId::Oblivion,
             "starfield" => GameId::Starfield,
             _ => return None,
         };
@@ -91,6 +97,11 @@ impl GameSpec {
             esplugin_id,
             mechanism,
             primary_plugins: def.primary_plugins.iter().map(|s| s.to_string()).collect(),
+            implicit_plugins: def
+                .implicit_plugins()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             local_dir: def.documents_dir.to_string(),
         })
     }
@@ -285,6 +296,25 @@ impl PluginList {
         let mut indexed = self.clone();
         indexed.generate_indexes(spec);
         let mut out = Vec::new();
+        for required in spec
+            .primary_plugins
+            .iter()
+            .filter(|n| !spec.implicit_plugins.contains(n))
+        {
+            if !indexed
+                .plugins
+                .iter()
+                .any(|p| p.name.eq_ignore_ascii_case(required))
+            {
+                out.push(PluginDiagnostic {
+                    code: "missing_primary",
+                    severity: DiagnosticSeverity::Error,
+                    plugin: required.clone(),
+                    origin_mod: String::new(),
+                    detail: format!("Required primary plugin {required} is missing"),
+                });
+            }
+        }
         for p in &indexed.plugins {
             let mut add = |code, severity, detail| {
                 out.push(PluginDiagnostic {
@@ -456,6 +486,17 @@ impl PluginList {
                 }
             }
         }
+        if spec.mechanism == LoadOrderMechanism::Timestamp {
+            plugins.sort_by_cached_key(|p| {
+                (
+                    !p.loads_as_master(),
+                    std::fs::metadata(&p.path)
+                        .and_then(|m| m.modified())
+                        .unwrap_or(std::time::UNIX_EPOCH),
+                    std::cmp::Reverse(p.name.to_uppercase()),
+                )
+            });
+        }
         // Discovery reads the game and the mods; the pins live in the profile and
         // are loaded over the top of this by the caller.
         PluginList {
@@ -468,6 +509,15 @@ impl PluginList {
     /// Re-sort to satisfy the ordering invariants, then assign mod indexes. Call
     /// after any change (enable/disable, reorder, discover).
     pub fn refresh(&mut self, spec: &GameSpec) {
+        for p in &mut self.plugins {
+            if spec
+                .primary_plugins
+                .iter()
+                .any(|n| n.eq_ignore_ascii_case(&p.name))
+            {
+                p.enabled = !p.force_disabled;
+            }
+        }
         self.sort(spec);
         self.apply_locks(spec);
         self.generate_indexes(spec);
@@ -1115,7 +1165,17 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
     // fixed header has a little-endian u16 at byte 20 for these engines.
     let mut bytes = [0u8; 24];
     std::fs::File::open(path)
-        .and_then(|mut f| f.read_exact(&mut bytes))
+        .and_then(|mut f| {
+            f.read_exact(
+                &mut bytes[..if matches!(game_id, GameId::Morrowind) {
+                    16
+                } else if matches!(game_id, GameId::Oblivion) {
+                    20
+                } else {
+                    24
+                }],
+            )
+        })
         .map_err(|e| e.to_string())?;
     Ok(Header {
         is_master: p.is_master_file(),
@@ -1123,7 +1183,8 @@ fn parse_header(path: &Path, game_id: GameId) -> Result<Header, String> {
         is_medium: p.is_medium_plugin(),
         is_blueprint: p.is_blueprint_plugin(),
         is_update: p.is_update_plugin(),
-        form_version: Some(u16::from_le_bytes([bytes[20], bytes[21]])),
+        form_version: (!matches!(game_id, GameId::Morrowind | GameId::Oblivion))
+            .then(|| u16::from_le_bytes([bytes[20], bytes[21]])),
         masters,
     })
 }
@@ -1151,7 +1212,11 @@ fn tier_order(plugins: &[Plugin], spec: &GameSpec) -> (Vec<usize>, Vec<u8>) {
         .iter()
         .map(|p| {
             if p.is_blueprint && spec.esplugin_id == GameId::Starfield {
-                if p.loads_as_master() { 3 } else { 4 }
+                if p.loads_as_master() {
+                    3
+                } else {
+                    4
+                }
             } else if primary_pos(&p.name).is_some() {
                 0
             } else if p.loads_as_master() {
@@ -1286,20 +1351,16 @@ mod tests {
             ..Default::default()
         };
         let diag = list.diagnostics(&se());
-        assert!(
-            diag.iter()
-                .any(|d| d.code == "old_form" && d.severity == DiagnosticSeverity::Warning)
-        );
-        assert!(
-            diag.iter()
-                .any(|d| d.code == "plugin_header" && d.severity == DiagnosticSeverity::Error)
-        );
-        assert!(
-            !list
-                .diagnostics(&GameSpec::for_id("fallout4").unwrap())
-                .iter()
-                .any(|d| d.code == "old_form")
-        );
+        assert!(diag
+            .iter()
+            .any(|d| d.code == "old_form" && d.severity == DiagnosticSeverity::Warning));
+        assert!(diag
+            .iter()
+            .any(|d| d.code == "plugin_header" && d.severity == DiagnosticSeverity::Error));
+        assert!(!list
+            .diagnostics(&GameSpec::for_id("fallout4").unwrap())
+            .iter()
+            .any(|d| d.code == "old_form"));
     }
 
     #[test]
@@ -1320,8 +1381,10 @@ mod tests {
 
     #[test]
     fn indexes_never_spill_into_reserved_or_overflow_slots() {
-        let mut list = PluginList::default();
-        list.plugins = (0..256).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        let mut list = PluginList {
+            plugins: (0..256).map(|i| p(&format!("Full{i}.esp"), &[])).collect(),
+            ..Default::default()
+        };
         list.plugins.push(p("Light.esl", &[]));
         list.generate_indexes(&se());
         assert_eq!(list.plugins[253].index.as_deref(), Some("FD"));
@@ -1341,8 +1404,10 @@ mod tests {
     #[test]
     fn medium_slots_never_collide_with_full_indexes() {
         let spec = GameSpec::for_id("starfield").unwrap();
-        let mut list = PluginList::default();
-        list.plugins = (0..255).map(|i| p(&format!("Full{i}.esp"), &[])).collect();
+        let mut list = PluginList {
+            plugins: (0..255).map(|i| p(&format!("Full{i}.esp"), &[])).collect(),
+            ..Default::default()
+        };
         let mut medium = p("Medium.esm", &[]);
         medium.is_medium = true;
         list.plugins.push(medium.clone());
@@ -1364,11 +1429,10 @@ mod tests {
         list.generate_indexes(&spec);
         assert_eq!(list.plugins[255].index.as_deref(), Some("FD:FF"));
         assert_eq!(list.plugins[256].index, None);
-        assert!(
-            list.diagnostics(&spec)
-                .iter()
-                .any(|d| d.code == "plugin_capacity" && d.plugin == "M256.esm")
-        );
+        assert!(list
+            .diagnostics(&spec)
+            .iter()
+            .any(|d| d.code == "plugin_capacity" && d.plugin == "M256.esm"));
     }
 
     #[test]
@@ -1408,11 +1472,10 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
         assert_eq!(list.plugins.len(), 1);
         assert!(list.plugins[0].header_error.is_some());
-        assert!(
-            list.diagnostics(&se())
-                .iter()
-                .any(|d| d.code == "plugin_header" && d.origin_mod == "Broken mod")
-        );
+        assert!(list
+            .diagnostics(&se())
+            .iter()
+            .any(|d| d.code == "plugin_header" && d.origin_mod == "Broken mod"));
         assert_eq!(
             list.plugins[0].index, None,
             "unknown headers are not verified plugins"
@@ -1529,7 +1592,11 @@ mod tests {
         std::fs::write(dir.join(".eidoswh.Deleted.esp"), b"").unwrap();
         std::fs::create_dir(dir.join("Directory.esp")).unwrap();
         let list = PluginList::discover(&[(String::new(), dir.clone())], &se());
-        assert_eq!(list.plugins.len(), 2, "internal markers and directories are not plugins");
+        assert_eq!(
+            list.plugins.len(),
+            2,
+            "internal markers and directories are not plugins"
+        );
         let esm = list
             .plugins
             .iter()

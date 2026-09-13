@@ -17,6 +17,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod paths;
+mod stores;
+pub use stores::{select_installation, GameSource, Store};
 mod proton;
 pub use proton::{is_flatpak_steam, library_path, proton_command, steam_root, ProtonRun};
 
@@ -42,7 +45,8 @@ pub struct InstalledApp {
 #[derive(Debug, Clone)]
 pub struct DetectedGame {
     pub def: &'static GameDef,
-    /// `.../steamapps/common/<install_dir>`.
+    pub source: GameSource,
+    /// Canonical directory on disk for the selected installation.
     pub install_path: PathBuf,
     /// The mod-deploy root, `install_path/<data_dir>`.
     pub data_path: PathBuf,
@@ -123,18 +127,22 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let is_manifest = path
+            let manifest_id = path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("appmanifest_") && n.ends_with(".acf"));
-            if !is_manifest {
+                .and_then(|n| n.strip_prefix("appmanifest_")?.strip_suffix(".acf"))
+                .and_then(|id| id.parse::<u32>().ok())
+                .filter(|id| *id != 0);
+            let Some(manifest_id) = manifest_id else {
                 continue;
-            }
+            };
             let Ok(content) = fs::read_to_string(&path) else {
                 continue;
             };
             let (Some(app_id), Some(name), Some(install_dir)) = (
-                kv_first(&content, "appid").and_then(|s| s.parse().ok()),
+                kv_first(&content, "appid")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .filter(|id| *id == manifest_id),
                 kv_first(&content, "name"),
                 kv_first(&content, "installdir"),
             ) else {
@@ -153,11 +161,22 @@ pub fn scan_installed(home: &Path) -> Vec<InstalledApp> {
 
 /// Installed games that we support, with their on-disk paths resolved.
 pub fn detect(home: &Path) -> Vec<DetectedGame> {
-    scan_installed(home)
+    let mut games: Vec<_> = scan_installed(home)
         .into_iter()
         .filter_map(|app| {
-            let def = catalog().iter().find(|d| d.steam_app_id == app.app_id)?;
-            let install_path = app.library.join("steamapps/common").join(&app.install_dir);
+            let def = catalog()
+                .iter()
+                .find(|d| d.steam_app_id != 0 && d.steam_app_id == app.app_id)?;
+            let relative = Path::new(&app.install_dir);
+            if relative.as_os_str().is_empty()
+                || !relative
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+            {
+                return None;
+            }
+            let install_path =
+                canonical_directory(&app.library.join("steamapps/common").join(relative))?;
             let data_path = install_path.join(def.data_dir);
             let compat = app
                 .library
@@ -165,13 +184,25 @@ pub fn detect(home: &Path) -> Vec<DetectedGame> {
                 .join(app.app_id.to_string());
             Some(DetectedGame {
                 def,
+                source: GameSource::Steam,
                 install_path,
                 data_path,
                 compatdata: compat.is_dir().then_some(compat),
                 steam_name: app.name,
             })
         })
-        .collect()
+        .collect();
+    games.extend(stores::detect_stores(home));
+    games
+}
+
+/// Store metadata may point through symlinks, but never at the filesystem root.
+fn canonical_directory(path: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let canonical = path.canonicalize().ok()?;
+    (canonical.parent().is_some() && canonical.is_dir()).then_some(canonical)
 }
 
 /// Add a library path if it holds a `steamapps` dir and is not already present
@@ -185,9 +216,12 @@ fn add_lib(libs: &mut Vec<PathBuf>, path: &Path) {
 
 /// The two quoted strings on a Valve KeyValues line, e.g. `"appid" "489830"`.
 pub(crate) fn quoted_pair(line: &str) -> Option<(&str, &str)> {
+    if !line.trim_start().starts_with('"') {
+        return None;
+    }
     let parts: Vec<&str> = line.split('"').collect();
     // Quoted tokens land at odd indices: ["", key, sep, value, ...].
-    (parts.len() >= 4).then(|| (parts[1], parts[3]))
+    (parts.len() >= 5).then(|| (parts[1], parts[3]))
 }
 
 /// First value for `key` in a KeyValues blob (`.acf` / `.vdf`).
@@ -312,6 +346,246 @@ mod tests {
         assert_eq!(
             g.compatdata,
             Some(lib2c.join("steamapps/compatdata/489830"))
+        );
+    }
+
+    #[test]
+    fn heroic_and_legendary_copies_remain_distinct_from_steam() {
+        let t = Tmp::new();
+        let steam = "home/.local/share/Steam";
+        t.write(
+            &format!("{steam}/steamapps/appmanifest_489830.acf"),
+            &acf(489830, "Skyrim SE", "Skyrim"),
+        );
+        t.mkdir(&format!("{steam}/steamapps/common/Skyrim/Data"));
+        let gog = t.0.join("games/gog");
+        let epic = t.0.join("games/epic");
+        for path in [&gog, &epic] {
+            fs::create_dir_all(path.join("Data")).unwrap();
+            fs::write(path.join("SkyrimSE.exe"), b"fixture").unwrap();
+        }
+        t.write(
+            "home/.config/heroic/gog_store/installed.json",
+            &serde_json::json!({
+                "installed": [{"appName":"1711230643", "install_path":gog, "platform":"windows"}]
+            })
+            .to_string(),
+        );
+        t.write("home/.var/app/com.heroicgameslauncher.hgl/config/legendary/installed.json", &serde_json::json!({
+            "ac82db5035584c7f8a2c548d98c86b2c": {"app_name":"ac82db5035584c7f8a2c548d98c86b2c", "install_path":epic, "title":"Skyrim SE"},
+            "unknown": {"app_name":"unknown", "install_path":gog, "title":"Skyrim SE"}
+        }).to_string());
+        let games = detect(&t.0.join("home"));
+        assert_eq!(
+            games.len(),
+            3,
+            "all supported installations, never title-only matches"
+        );
+        assert!(games.iter().all(|g| g.def.id == "skyrimse"));
+        assert!(
+            games.iter().all(|g| g.compatdata.is_none()),
+            "no invented Steam prefixes"
+        );
+    }
+
+    #[test]
+    fn steam_manifests_require_a_nonzero_matching_app_id() {
+        for (filename, declared) in [(0, 0), (489830, 0), (489830, 377160)] {
+            let t = Tmp::new();
+            t.write(
+                &format!("home/.local/share/Steam/steamapps/appmanifest_{filename}.acf"),
+                &acf(declared, "Game", "Game"),
+            );
+            assert!(
+                scan_installed(&t.0.join("home")).is_empty(),
+                "accepted appmanifest_{filename}.acf declaring {declared}"
+            );
+        }
+    }
+
+    #[test]
+    fn steam_manifests_do_not_take_identity_from_comments_or_unclosed_values() {
+        let t = Tmp::new();
+        let manifest = "home/.local/share/Steam/steamapps/appmanifest_489830.acf";
+        for content in [
+            acf(489830, "Skyrim", "Skyrim").replace("\"489830\"", "\"489830"),
+            "// \"appid\" \"489830\"\n\"name\" \"Skyrim\"\n\"installdir\" \"Skyrim\"\n".into(),
+        ] {
+            t.write(manifest, &content);
+            assert!(
+                scan_installed(&t.0.join("home")).is_empty(),
+                "accepted {content}"
+            );
+        }
+    }
+
+    #[test]
+    fn steam_detection_rejects_missing_and_escaping_install_directories() {
+        for install in [
+            "",
+            ".",
+            "..",
+            "../common/Game",
+            "/",
+            "/tmp",
+            "Missing",
+            "RootLink",
+        ] {
+            let t = Tmp::new();
+            let common = "home/.local/share/Steam/steamapps/common";
+            t.mkdir(&format!("{common}/Game"));
+            std::os::unix::fs::symlink("/", t.0.join(format!("{common}/RootLink"))).unwrap();
+            t.write(
+                "home/.local/share/Steam/steamapps/appmanifest_489830.acf",
+                &acf(489830, "Skyrim", install),
+            );
+            assert!(detect(&t.0.join("home")).is_empty(), "accepted {install:?}");
+        }
+    }
+
+    #[test]
+    fn steam_detection_uses_canonical_install_identity() {
+        let t = Tmp::new();
+        t.mkdir("games/Skyrim/Data");
+        t.mkdir("home/.local/share/Steam/steamapps/common");
+        let real = fs::canonicalize(t.0.join("games/Skyrim")).unwrap();
+        std::os::unix::fs::symlink(
+            &real,
+            t.0.join("home/.local/share/Steam/steamapps/common/Skyrim"),
+        )
+        .unwrap();
+        t.write(
+            "home/.local/share/Steam/steamapps/appmanifest_489830.acf",
+            &acf(489830, "Skyrim", "Skyrim"),
+        );
+        let games = detect(&t.0.join("home"));
+        assert_eq!(games.len(), 1);
+        assert_eq!(games[0].install_path, real);
+        assert_eq!(games[0].data_path, real.join("Data"));
+        let saved = games[0].selection_id();
+        t.mkdir("home/.local/share/Steam/steamapps/compatdata/489830/pfx");
+        let later = detect(&t.0.join("home"));
+        assert_eq!(
+            later[0].selection_id(),
+            saved,
+            "creating a Steam prefix must not change identity"
+        );
+        assert!(select_installation(&later, "skyrimse", Some(&saved)).is_some());
+    }
+
+    #[test]
+    fn external_detection_rejects_root_and_malformed_dlc_entries() {
+        let t = Tmp::new();
+        t.mkdir("game/Data");
+        std::os::unix::fs::symlink("/", t.0.join("root-link")).unwrap();
+        let install = t.0.join("game");
+        let id = "ac82db5035584c7f8a2c548d98c86b2c";
+        let entries = [
+            serde_json::json!({"install_path":"/"}),
+            serde_json::json!({"install_path":t.0.join("root-link")}),
+            serde_json::json!({"install_path":install, "app_name":17}),
+            serde_json::json!({"install_path":install, "app_name":"different"}),
+            serde_json::json!({"install_path":install, "is_dlc":false, "isDlc":true}),
+            serde_json::json!({"install_path":install, "is_dlc":"false"}),
+        ];
+        for entry in entries {
+            t.write(
+                "home/.config/legendary/installed.json",
+                &serde_json::json!({id:entry}).to_string(),
+            );
+            assert!(detect(&t.0.join("home")).is_empty(), "accepted {entry}");
+        }
+    }
+
+    #[test]
+    fn same_payload_with_distinct_external_prefixes_remains_selectable() {
+        let t = Tmp::new();
+        t.mkdir("game/Data");
+        let install = fs::canonicalize(t.0.join("game")).unwrap();
+        let roots = [
+            "home/.config/heroic",
+            "home/.var/app/com.heroicgameslauncher.hgl/config/heroic",
+        ];
+        for (i, root) in roots.iter().enumerate() {
+            t.mkdir(&format!("prefix-{i}"));
+            t.write(&format!("{root}/gog_store/installed.json"), &serde_json::json!({
+                "installed":[{"appName":"1711230643", "install_path":install, "platform":"windows"}]
+            }).to_string());
+            t.write(&format!("{root}/GamesConfig/1711230643.json"), &serde_json::json!({
+                "1711230643":{"winePrefix":t.0.join(format!("prefix-{i}")),"wineVersion":{"type":"wine"}}
+            }).to_string());
+        }
+        let games = detect(&t.0.join("home"));
+        assert_eq!(
+            games.len(),
+            2,
+            "different selected prefixes must not collapse"
+        );
+        assert_ne!(games[0].selection_id(), games[1].selection_id());
+        assert_ne!(games[0].prefix(), games[1].prefix());
+        for game in &games {
+            let key = game.selection_id();
+            assert_eq!(
+                select_installation(&games, "skyrimse", Some(&key))
+                    .unwrap()
+                    .prefix(),
+                game.prefix()
+            );
+        }
+        let legacy = serde_json::json!(["GOG:1711230643", install]).to_string();
+        assert!(select_installation(&games, "skyrimse", Some(&legacy)).is_none());
+        assert!(select_installation(&games[..1], "skyrimse", Some(&legacy)).is_some());
+    }
+
+    #[test]
+    fn external_prefix_aliases_collapse_and_filesystem_root_is_never_a_prefix() {
+        let t = Tmp::new();
+        t.mkdir("game/Data");
+        t.mkdir("wine-prefix");
+        let prefix = fs::canonicalize(t.0.join("wine-prefix")).unwrap();
+        let alias = t.0.join("prefix-alias");
+        std::os::unix::fs::symlink(&prefix, &alias).unwrap();
+        let roots = [
+            "home/.config/heroic",
+            "home/.var/app/com.heroicgameslauncher.hgl/config/heroic",
+        ];
+        for (root, configured) in roots.iter().zip([&prefix, &alias]) {
+            t.write(
+                &format!("{root}/gog_store/installed.json"),
+                &serde_json::json!({
+                    "installed":[{"appName":"1711230643", "install_path":t.0.join("game")}]
+                })
+                .to_string(),
+            );
+            t.write(
+                &format!("{root}/GamesConfig/1711230643.json"),
+                &serde_json::json!({
+                    "winePrefix":configured,"wineVersion":{"type":"wine"}
+                })
+                .to_string(),
+            );
+        }
+        let games = detect(&t.0.join("home"));
+        assert_eq!(
+            games.len(),
+            1,
+            "aliases of the same prefix are one installation"
+        );
+        assert_eq!(games[0].prefix(), Some(prefix));
+        for root in roots {
+            t.write(
+                &format!("{root}/GamesConfig/1711230643.json"),
+                &serde_json::json!({
+                    "winePrefix":"/","wineVersion":{"type":"wine"}
+                })
+                .to_string(),
+            );
+        }
+        assert!(
+            detect(&t.0.join("home"))
+                .iter()
+                .all(|game| game.prefix().is_none()),
+            "filesystem root cannot become the Wine prefix"
         );
     }
 

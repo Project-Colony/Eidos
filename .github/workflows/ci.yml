@@ -79,6 +79,13 @@ jobs:
       - name: Build
         run: cargo build --workspace --locked
 
+      - name: Build and test the native NIF helper
+        run: |
+          cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+          cmake --build target/nif-preview --parallel 2
+          ctest --test-dir target/nif-preview --output-on-failure
+          echo "$PWD/target/nif-preview" >> "$GITHUB_PATH"
+
       # Deliberately NOT `--all-targets`. Library and binary targets are clean
       # under `-D warnings` today; the test targets are not yet, and turning
       # those into hard failures here would block unrelated PRs. Add

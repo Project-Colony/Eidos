@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -136,8 +136,8 @@ listelemek de bunu elli kez yapardı. Artık ikisi de yapmıyor. Bir kıyaslama
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Sonra oyununuzun Steam başlatma seçeneğini `~/.local/bin/eidos-gui %command%`
@@ -261,4 +261,4 @@ Bir aile eklemek tek bir tanımlayıcı satırıdır:
 
 ## Lisans
 
-GPL-3.0-or-later. Mod yönetimi herkesindir.
+Eidos'un özgün kodu GPL-3.0-or-later lisanslıdır. Birlikte sunulan OMOD kod çevirileri GPL-3.0-only lisanslıdır; [özgün geliştiricilere verilen atıflara](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md) bakın. NIF yardımcısı, [bileşenlerinin lisanslarını ve geliştirici atıflarını](../../../native/eidos-nif-preview/UPSTREAM.md) korur. Mod yönetimi herkesindir.

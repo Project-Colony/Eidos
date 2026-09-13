@@ -1,7 +1,7 @@
 # Installing Eidos
 
-Three ways in. All of them give you the same two binaries - `eidos` (the CLI) and
-`eidos-gui` - plus the `nxm://` handler that makes the Nexus "Mod Manager
+Three ways in. All of them give you `eidos` (the CLI), `eidos-gui` and the static
+NIF preview helper, plus the `nxm://` handler that makes the Nexus "Mod Manager
 Download" button land in your instance.
 
 ## What you need first
@@ -34,9 +34,15 @@ Installs into `~/.local/bin` by default. `--system` puts it in `/usr/local/bin`,
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+Source builds require Rust, `just`, CMake 3.20+, a C++17 compiler and Python 3
+for the native helper's tests. For commands without `just`, see
+[the native helper instructions](../../native/eidos-nif-preview/README.md),
+build Rust with `cargo build --release --locked`, copy the helper into
+`target/release`, then run `packaging/install.sh --from target/release`.
 
 ## Then: point Steam at it
 

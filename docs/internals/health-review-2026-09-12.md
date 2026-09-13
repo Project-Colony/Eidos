@@ -1,8 +1,9 @@
 # Eidos health review — 2026-09-12
 
 Base: `17e28836cfb0ee71aa43fa41dd80bec90b732dec` (1.16.0).
-Work branch: `codex/eidos-audit-completion`. The package version remains 1.16.0;
-this review does not invent an upstream release.
+Work branch: `eidos-audit-completion`. This is the historical audit of the 1.16.0
+base; its changes shipped in 1.17.1. The subsequent implementation and validation
+are tracked in [the follow-up progress ledger](../project/mo2-followups/progress.md).
 
 ## Implemented scope
 
@@ -87,7 +88,8 @@ third-party DLL, hook, archive payload or savegame.
 
 ## MO2 gaps worth considering
 
-These are identified follow-ups, not unfinished promises from this audit.
+This table records the gaps at the time of this audit. Consult the follow-up
+ledger linked above for their implementation status.
 Current primary repository/release sources were checked; MO2's release page
 exposes v2.5.2, while development repositories can include later work.
 [MO2 releases](https://github.com/ModOrganizer2/modorganizer/releases).

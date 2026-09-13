@@ -16,8 +16,9 @@ set of a shared dependency - is undefined behaviour rather than a version
 mismatch. And Eidos's widgets are compile-time generic, so a library could not
 build one to hand back even if the ABI were stable.
 
-So an extension is a program Eidos *runs*. It cannot crash the window, cannot
-corrupt a mod list, and keeps working across Eidos updates.
+An extension is a program Eidos runs with your account's filesystem access.
+Install only helpers you trust. Process isolation and checked replies do not
+provide an operating-system sandbox.
 
 ## A tool
 
@@ -85,8 +86,9 @@ says which ones are missing.
 
 ## What an extension cannot do
 
-It gets values and runs; it cannot call back into Eidos, change the mod list, or
-draw anything in the window. That is deliberate. The things MO2 uses plugins for
-that DO need to reach inside - game support, installers, the conflict engine -
-are built in here rather than bolted on: a game definition is its own TOML in
-`~/.config/Colony/Eidos/games/`, and FOMOD and BAIN installers are native.
+An extension cannot call back into Eidos, register itself from an archive, or draw
+its own widgets. Structured protocol-1 installers can return checked file plans
+and choice prompts; Eidos owns the review, staging and publication. FOMOD and BAIN
+remain native installers. Preview and save-info extensions use the same bounded
+reply host. See the [protocol contract and runnable examples](../examples/extensions/README.md)
+for matching priority, recorded CLI answers, limits and replay identity checks.

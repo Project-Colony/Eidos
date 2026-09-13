@@ -8,7 +8,7 @@
 //! against a real MO2-generated Skyrim SE load order.
 
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::{GameSpec, LoadOrderMechanism, PluginList};
@@ -37,7 +37,7 @@ impl PluginList {
     /// Asterisk games (Skyrim SE, FO4, Starfield): `plugins.txt` lists every
     /// non-primary plugin in load order, active ones prefixed `*`; the implicit
     /// base masters (`Skyrim.esm` ...) are omitted, exactly as MO2 writes them.
-    /// Plain games (Skyrim LE, FO3, FNV): `plugins.txt` lists just the active
+    /// Plain and timestamp games: the activation file lists just the active
     /// plugins. `loadorder.txt` always holds the full order, unprefixed.
     ///
     /// Returns how many plugins were LISTED in plugins.txt. On a stock
@@ -58,7 +58,7 @@ impl PluginList {
         // primary masters, and the Creation Club content named in the game's
         // `.ccc` (see `implicit_plugins` for what listing those anyway costs).
         let mut primaries: std::collections::HashSet<String> = spec
-            .primary_plugins
+            .implicit_plugins
             .iter()
             .map(|s| s.to_ascii_lowercase())
             .collect();
@@ -82,7 +82,7 @@ impl PluginList {
                     listed += 1;
                 }
             }
-            LoadOrderMechanism::PlainList => {
+            LoadOrderMechanism::PlainList | LoadOrderMechanism::Timestamp => {
                 for p in self.plugins.iter().filter(|p| p.enabled) {
                     plugins.push_str(&p.name);
                     plugins.push_str("\r\n");
@@ -90,8 +90,26 @@ impl PluginList {
                 }
             }
         }
-        let (cp1252, _, _) = encoding_rs::WINDOWS_1252.encode(&plugins);
-        write_atomic(&canonical_path(dir, "plugins.txt"), &cp1252)?;
+        if spec.esplugin_id == esplugin::GameId::Morrowind {
+            let original = newest_variant(dir, "Morrowind.ini")
+                .and_then(|p| read_decoded(&p))
+                .unwrap_or_default();
+            plugins = crate::timestamp::write_morrowind_active(
+                &original,
+                self.plugins
+                    .iter()
+                    .filter(|p| p.enabled)
+                    .map(|p| p.name.as_str()),
+            );
+        }
+        let (cp1252, _, replaced) = encoding_rs::WINDOWS_1252.encode(&plugins);
+        if replaced {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Plugin names cannot be encoded in Windows-1252",
+            ));
+        }
+        write_atomic(&canonical_path(dir, spec.active_file()), &cp1252)?;
 
         let mut order = format!("{HEADER}\r\n");
         for p in &self.plugins {
@@ -106,9 +124,16 @@ impl PluginList {
     /// asterisk games a leading `*` means active; for plain games every listed
     /// plugin is active. A missing/unreadable file yields an empty vec.
     pub fn read_active(dir: &Path, spec: &GameSpec) -> Vec<(String, bool)> {
-        let Some(text) = newest_variant(dir, "plugins.txt").and_then(|p| read_decoded(&p)) else {
+        let Some(text) = newest_variant(dir, spec.active_file()).and_then(|p| read_decoded(&p))
+        else {
             return Vec::new();
         };
+        if spec.esplugin_id == esplugin::GameId::Morrowind {
+            return crate::morrowind_active(&text)
+                .into_iter()
+                .map(|n| (n, true))
+                .collect();
+        }
         let mut out = Vec::new();
         for line in text.lines() {
             let line = line.trim();
@@ -120,7 +145,9 @@ impl PluginList {
                     Some(name) => out.push((name.to_string(), true)),
                     None => out.push((line.to_string(), false)),
                 },
-                LoadOrderMechanism::PlainList => out.push((line.to_string(), true)),
+                LoadOrderMechanism::PlainList | LoadOrderMechanism::Timestamp => {
+                    out.push((line.to_string(), true))
+                }
             }
         }
         out
@@ -214,9 +241,12 @@ impl PluginList {
                     }
                 }
             }
-            LoadOrderMechanism::PlainList => {
+            LoadOrderMechanism::PlainList | LoadOrderMechanism::Timestamp => {
                 let order = Self::read_load_order(dir);
-                if active.is_empty() && order.is_empty() {
+                if active.is_empty()
+                    && order.is_empty()
+                    && newest_variant(dir, spec.active_file()).is_none()
+                {
                     return; // nothing saved yet
                 }
                 let active_set: HashSet<String> =
@@ -228,7 +258,7 @@ impl PluginList {
                     .iter()
                     .map(|s| s.to_ascii_lowercase())
                     .collect();
-                let plugins_txt_present = !active.is_empty();
+                let plugins_txt_present = newest_variant(dir, spec.active_file()).is_some();
                 for p in &mut self.plugins {
                     let lname = p.name.to_ascii_lowercase();
                     if active_set.contains(&lname) {
@@ -236,7 +266,8 @@ impl PluginList {
                         // plugins.txt lists it.
                         p.enabled = !p.force_disabled;
                     } else if plugins_txt_present
-                        && order_set.contains(&lname)
+                        && (spec.mechanism == LoadOrderMechanism::Timestamp
+                            || order_set.contains(&lname))
                         && !primaries.contains(&lname)
                     {
                         // listed in loadorder.txt but not active in plugins.txt
@@ -365,9 +396,8 @@ fn case_variants(dir: &Path, name: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Atomically replace `path`: write a sibling `.tmp` then rename over it (atomic
-/// within one filesystem), so a crash mid-write cannot leave a partial plugins.txt
-/// that the game would load with half the mods off.
+/// Sync a unique sibling before atomic replacement, then sync the directory.
+/// Callers can consume their capture receipt only after publication succeeds.
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     // Unique per PROCESS and per call. A fixed name is not atomic against a
     // second WRITER: two processes share the one temp path, their bytes
@@ -379,14 +409,25 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         std::process::id(),
         SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
-    fs::write(&tmp, bytes)?;
-    match fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = fs::remove_file(&tmp);
-            Err(e)
-        }
+    // A create_new collision is not our file to remove or truncate.
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)?;
+    let result = (|| {
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&tmp, path)?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        fs::File::open(parent)?.sync_all()
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
     }
+    result
 }
 
 /// Read a plugin-list file. `plugins.txt` is the Windows ANSI codepage (MO2's
@@ -419,6 +460,30 @@ mod tests {
         let d = std::env::temp_dir().join(format!("eidos-lo-{}-{}", std::process::id(), n));
         fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn failed_atomic_publication_preserves_destination_and_cleans_temporary_file() {
+        let dir = tmp_dir();
+        let blocked = dir.join("loadorder.txt");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("sentinel"), b"existing destination").unwrap();
+        assert!(write_atomic(&blocked, b"new order").is_err());
+        assert_eq!(
+            fs::read(blocked.join("sentinel")).unwrap(),
+            b"existing destination"
+        );
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            1,
+            "failed publication must remove its temporary file"
+        );
+        fs::remove_dir_all(&blocked).unwrap();
+        write_atomic(&blocked, b"old order").unwrap();
+        write_atomic(&blocked, b"new order").unwrap();
+        assert_eq!(fs::read(&blocked).unwrap(), b"new order");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     fn pl(name: &str, enabled: bool) -> Plugin {
@@ -496,10 +561,8 @@ mod tests {
                 "/steam/compatdata/489830/pfx/drive_c/users/steamuser/AppData/Local/Skyrim Special Edition"
             )
         );
-        assert!(
-            documents_my_games_dir(prefix, &spec)
-                .ends_with("Documents/My Games/Skyrim Special Edition")
-        );
+        assert!(documents_my_games_dir(prefix, &spec)
+            .ends_with("Documents/My Games/Skyrim Special Edition"));
     }
 
     #[test]
@@ -705,11 +768,9 @@ mod tests {
             vec!["Plugins.txt".to_string()],
             "must not create a second variant"
         );
-        assert!(
-            read_decoded(&dir.join("Plugins.txt"))
-                .unwrap()
-                .contains("Written.esp")
-        );
+        assert!(read_decoded(&dir.join("Plugins.txt"))
+            .unwrap()
+            .contains("Written.esp"));
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -949,7 +1010,7 @@ mod tests {
     fn plainlist_disabled_plugin_stays_disabled_via_loadorder() {
         let dir = tmp_dir();
         let spec = GameSpec::for_id("skyrim").unwrap(); // PlainList
-        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
+                                                        // Saved: order = A,B,C; plugins.txt actives only A and C (B is off).
         PluginList {
             plugins: vec![pl("A.esp", true), pl("B.esp", false), pl("C.esp", true)],
             implicit: Default::default(),

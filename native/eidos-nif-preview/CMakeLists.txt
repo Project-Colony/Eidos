@@ -1,0 +1,31 @@
+cmake_minimum_required(VERSION 3.20)
+project(eidos_nif_preview LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  message(FATAL_ERROR "The preview helper currently requires Linux resource limits")
+endif()
+
+set(NIFLY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/vendor/nifly")
+set(NIFLY_SOURCES Animation BasicTypes bhk ExtraData Factory Geometry NifFile NifUtil Nodes Objects Particles Shaders Skin Object3d)
+list(TRANSFORM NIFLY_SOURCES PREPEND "${NIFLY_ROOT}/src/")
+list(TRANSFORM NIFLY_SOURCES APPEND ".cpp")
+add_library(eidos_nifly STATIC ${NIFLY_SOURCES})
+target_include_directories(eidos_nifly SYSTEM PUBLIC "${NIFLY_ROOT}/include" "${NIFLY_ROOT}/external")
+target_compile_features(eidos_nifly PUBLIC cxx_std_17)
+
+add_executable(eidos-nif-preview main.cpp)
+target_link_libraries(eidos-nif-preview PRIVATE eidos_nifly)
+target_compile_options(eidos-nif-preview PRIVATE -Wall -Wextra -Wpedantic -Werror)
+install(TARGETS eidos-nif-preview RUNTIME DESTINATION bin)
+
+include(CTest)
+if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_executable(nif-preview-fixtures tests/fixtures.cpp)
+  target_link_libraries(nif-preview-fixtures PRIVATE eidos_nifly)
+  add_test(NAME nif-preview COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_preview.py"
+    "$<TARGET_FILE:eidos-nif-preview>" "$<TARGET_FILE:nif-preview-fixtures>")
+endif()

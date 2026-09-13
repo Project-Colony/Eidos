@@ -10,7 +10,12 @@
 //! with optional directory-only BSA/BA2 member analysis and archive provenance.
 
 pub mod archives;
-pub use archives::{ActiveArchive, AssetNode, AssetProvider, ArchiveDiagnostic, ArchiveError, read_archive_members};
+pub use archives::{
+    archive_identity, export_archive_member, export_archive_member_checked, read_archive_member,
+    read_archive_member_checked, read_archive_members, write_archive_member, ActiveArchive,
+    ArchiveDiagnostic, ArchiveError, ArchiveIdentity, ArchiveMemberInfo, AssetNode, AssetProvider,
+    MAX_LZ4_BLOCK_BYTES,
+};
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -212,7 +217,12 @@ impl ConflictMap {
             .iter()
             .map(|(l, _)| (l.origin, l.name.clone()))
             .collect();
-        ConflictMap { files, mods, names, ..Default::default() }
+        ConflictMap {
+            files,
+            mods,
+            names,
+            ..Default::default()
+        }
     }
 
     /// The name of an origin (or `?` if unknown).
@@ -222,7 +232,9 @@ impl ConflictMap {
 
     /// Effective asset statistics once archives are available, otherwise loose files.
     pub fn mod_conflicts(&self, origin: OriginId) -> Option<&ModConflicts> {
-        self.asset_mods.get(&origin).or_else(|| self.mods.get(&origin))
+        self.asset_mods
+            .get(&origin)
+            .or_else(|| self.mods.get(&origin))
     }
 
     /// The conflict state of a mod (None if it has no files).

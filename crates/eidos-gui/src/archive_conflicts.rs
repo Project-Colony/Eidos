@@ -1,18 +1,47 @@
 //! Cached archive analysis on a worker; UI frames only consume completed maps.
 use crate::*;
-use eidos_gamefeatures::archives::{ArchivePlan, archive_plan};
+use eidos_gamefeatures::archives::{archive_plan, ArchivePlan};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+type Sources = HashMap<PathBuf, eidos_conflicts::ArchiveIdentity>;
+type Analysis = (ConflictMap, ArchivePlan, Vec<String>, Sources);
+
+fn validate_sources(sources: &Sources) -> Result<(), String> {
+    if sources.iter().any(|(path, identity)| {
+        !eidos_conflicts::archive_identity(path).is_ok_and(|current| current == *identity)
+    }) {
+        Err("Archives changed during analysis. Refresh to retry.".into())
+    } else {
+        Ok(())
+    }
+}
 
 type Parts = Vec<(Layer, (Vec<String>, bool))>;
 pub(crate) struct ArchiveWorker {
     epoch: u64,
-    receiver: Receiver<(ConflictMap, ArchivePlan, Vec<String>)>,
+    receiver: Receiver<Result<Analysis, String>>,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Drop for ArchiveWorker {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+    }
 }
 
 /// A single worker is allowed at a time. Changes during a scan invalidate its
 /// epoch; its result is discarded and the next update starts the latest input.
 pub(crate) fn schedule_archive_conflicts(app: &mut App) {
-    if app.archive_job.is_some() || app.archive_completed_epoch == Some(app.archive_epoch.get()) {
+    if let Some(job) = &app.archive_job {
+        if app.running.is_some() || job.epoch != app.archive_epoch.get() {
+            job.cancel.store(true, Ordering::Relaxed);
+        }
+        return;
+    }
+    if app.running.is_some() || app.archive_completed_epoch == Some(app.archive_epoch.get()) {
         return;
     }
     let (Some(game), Some(inst), Some(layers)) = (
@@ -27,19 +56,28 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
     let plugins = app.plugins.clone();
     let tweaks = inst.enabled_ini_tweaks(&app.mods);
     let (sender, receiver) = mpsc::channel();
-    app.archive_job = Some(ArchiveWorker { epoch, receiver });
+    let cancel = Arc::new(AtomicBool::new(false));
+    app.archive_job = Some(ArchiveWorker {
+        epoch,
+        receiver,
+        cancel: cancel.clone(),
+    });
     app.archive_warnings.clear();
     std::thread::spawn(move || {
-        let parts: Parts = layers
-            .into_iter()
-            .map(|l| {
-                let files = cache
-                    .get(&l.name)
-                    .cloned()
-                    .unwrap_or_else(|| eidos_conflicts::collect_files(&l.root));
-                (l, files)
-            })
-            .collect();
+        let mut parts: Parts = Vec::with_capacity(layers.len());
+        for l in layers {
+            if cancel.load(Ordering::Relaxed) {
+                return;
+            }
+            let files = cache
+                .get(&l.name)
+                .cloned()
+                .unwrap_or_else(|| eidos_conflicts::collect_files(&l.root));
+            parts.push((l, files));
+        }
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let stack = eidos_core::LayerStack::new(
             parts
                 .iter()
@@ -48,8 +86,14 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 .collect(),
             inst.overwrite_dir(),
         );
-        let parts = visible_conflict_parts(parts, &stack);
-        let spec = GameSpec::for_id(game.def.id);
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let parts = visible_conflict_parts(parts, &stack, &cancel);
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        let spec = game.plugin_spec();
         let mut plugins = plugins.or_else(|| {
             spec.as_ref().map(|spec| {
                 let sources: Vec<_> = parts
@@ -61,8 +105,8 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 let profile = inst.active();
                 if profile.has_plugin_state() {
                     list.apply_prefix_state(&profile.plugins_state_dir(), spec)
-                } else if let Some(cd) = &game.compatdata {
-                    list.apply_prefix_state(&plugins_txt_dir(&cd.join("pfx"), spec), spec)
+                } else if let Some(dir) = game.plugin_state_dir() {
+                    list.apply_prefix_state(&dir, spec)
                 }
                 list.locked = profile.read_locked_order();
                 list.refresh(spec);
@@ -98,6 +142,9 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             }
         }
         let loose = ConflictMap::build_from(&parts);
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let available: Vec<_> = loose
             .files
             .iter()
@@ -114,14 +161,41 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
                 order_uncertain: a.order_uncertain,
             })
             .collect();
+        let sources: Sources = parts
+            .iter()
+            .flat_map(|(layer, (files, _))| {
+                files
+                    .iter()
+                    .filter(|name| {
+                        name.to_ascii_lowercase().ends_with(".bsa")
+                            || name.to_ascii_lowercase().ends_with(".ba2")
+                    })
+                    .map(|name| layer.root.join(name))
+            })
+            .filter_map(|path| {
+                eidos_conflicts::archive_identity(&path)
+                    .ok()
+                    .map(|identity| (path, identity))
+            })
+            .collect();
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
         let map = ConflictMap::build_with_archives_from(&parts, &active);
+        if cancel.load(Ordering::Relaxed) {
+            return;
+        }
+        if let Err(error) = validate_sources(&sources) {
+            let _ = sender.send(Err(error));
+            return;
+        }
         warnings.extend(plan.diagnostics.iter().cloned());
         warnings.extend(
             map.archive_diagnostics
                 .iter()
                 .map(|d| format!("{}: {}", d.archive, d.error)),
         );
-        let _ = sender.send((map, plan, warnings));
+        let _ = sender.send(Ok((map, plan, warnings, sources)));
     });
 }
 
@@ -129,25 +203,41 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
     let Some(job) = &app.archive_job else { return };
     let epoch = job.epoch;
     let result = match job.receiver.try_recv() {
-        Ok(v) => Some(Ok(v)),
+        Ok(v) => Some(v),
         Err(TryRecvError::Empty) => None,
-        Err(TryRecvError::Disconnected) => Some(Err(())),
+        Err(TryRecvError::Disconnected) => Some(Err(
+            "Archive analysis worker stopped without a result. Refresh to retry.".into(),
+        )),
     };
     let Some(result) = result else { return };
+    let cancelled = job.cancel.load(Ordering::Relaxed);
     app.archive_job = None;
-    if epoch != app.archive_epoch.get() {
+    if cancelled || epoch != app.archive_epoch.get() {
         return;
     }
+    let result = result.and_then(|analysis| {
+        validate_sources(&analysis.3)?;
+        Ok(analysis)
+    });
     app.archive_completed_epoch = Some(epoch);
     match result {
-        Ok((map, plan, warnings)) => {
+        Ok((map, plan, warnings, sources)) => {
             app.conflicts = Some(map);
             app.archive_plan = Some(plan);
             app.archive_warnings = warnings;
+            app.archive_sources = sources;
         }
-        Err(()) => {
-            app.archive_warnings =
-                vec!["Archive analysis worker stopped without a result. Refresh to retry.".into()]
+        Err(error) => {
+            // A failed new epoch cannot certify providers from an older scan.
+            if let Some(map) = &mut app.conflicts {
+                map.asset_files.clear();
+                map.asset_mods.clear();
+                map.asset_conflicts.clear();
+                map.archive_diagnostics.clear();
+            }
+            app.archive_plan = None;
+            app.archive_sources.clear();
+            app.archive_warnings = vec![error];
         }
     }
     app.archives_cache.borrow_mut().take();
@@ -156,10 +246,20 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
 
 /// Reuse the union's own whiteout/opacity query. Keep lower losing providers
 /// only when they actually survive the writable layer's deletion rules.
-pub(crate) fn visible_conflict_parts(mut parts: Parts, stack: &eidos_core::LayerStack) -> Parts {
+fn visible_conflict_parts(
+    mut parts: Parts,
+    stack: &eidos_core::LayerStack,
+    cancel: &AtomicBool,
+) -> Parts {
     for (layer, (files, _)) in &mut parts {
+        if cancel.load(Ordering::Relaxed) {
+            return Vec::new();
+        }
         let mut seen = HashSet::new();
         files.retain(|p| {
+            if cancel.load(Ordering::Relaxed) {
+                return false;
+            }
             if layer.origin != u32::MAX && !stack.lower_path_visible(p) {
                 return false;
             }
@@ -194,9 +294,9 @@ pub(crate) fn archive_ini_texts(
             }
         }
     }
-    let docs = game.compatdata.as_ref().and_then(|cd| {
-        GameSpec::for_id(game.def.id)
-            .map(|s| eidos_plugins::documents_my_games_dir(&cd.join("pfx"), &s))
+    let docs = game.prefix().and_then(|prefix| {
+        game.plugin_spec()
+            .map(|s| eidos_plugins::documents_my_games_dir(&prefix, &s))
     });
     for name in eidos_gamefeatures::ini_files_for(game.def.id) {
         let profile = inst.active().ini_path(name);
@@ -244,50 +344,332 @@ pub(crate) fn archive_member_rows<'a>(
         .get(&origin)
         .map(Vec::as_slice)
         .unwrap_or_default();
+    let filter = app.archive_filter.to_ascii_lowercase();
+    let paths: Vec<_> = paths.iter().filter(|path| path.contains(&filter)).collect();
     let count = paths.len();
-    let mut rows = Column::new().spacing(4);
-    for n in paths
+    let pages = count.div_ceil(limit.max(1)).max(1);
+    let page = app.archive_page.min(pages - 1);
+    let mut rows = Column::new().spacing(8);
+    for node in paths
         .iter()
+        .skip(page * limit)
         .take(limit)
-        .filter_map(|key| map.asset_files.get(key))
+        .filter_map(|key| map.asset_files.get(*key))
     {
-        let providers = || std::iter::once(&n.winner).chain(&n.alternatives);
-        let verdict = if n.precedence_uncertain {
-            format!(
-                "Winner unresolved: {}",
-                providers()
-                    .map(|p| provider_label(map, p))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        } else {
-            format!(
-                "Winner: {}; alternatives: {}",
-                provider_label(map, &n.winner),
-                n.alternatives
-                    .iter()
-                    .map(|p| provider_label(map, p))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            )
-        };
-        rows = rows
-            .push(text(n.display_path.clone()).size(11.0))
-            .push(text(verdict).size(10.0));
+        let mut row = Column::new()
+            .spacing(3)
+            .push(text(node.display_path.clone()).size(11.0));
+        for (index, provider) in std::iter::once(&node.winner)
+            .chain(&node.alternatives)
+            .enumerate()
+        {
+            let label = if node.precedence_uncertain {
+                "Unresolved"
+            } else if index == 0 {
+                "Winner"
+            } else {
+                "Alternative"
+            };
+            let action = |export| Message::ArchiveProviderAction {
+                epoch: app.archive_completed_epoch.unwrap_or_default(),
+                member: node.display_path.clone(),
+                provider: provider.clone(),
+                export,
+            };
+            let active = app.archive_completed_epoch == Some(app.archive_epoch.get());
+            row = row.push(
+                Row::new()
+                    .spacing(6)
+                    .push(
+                        text(format!("{label}: {}", provider_label(map, provider)))
+                            .size(10.0)
+                            .width(Length::Fill),
+                    )
+                    .push(
+                        button(text("Preview").size(10.0))
+                            .on_press_maybe(active.then(|| action(false))),
+                    )
+                    .push(button(text("Export").size(10.0)).on_press_maybe(
+                        (active && provider.archive.is_some()).then(|| action(true)),
+                    )),
+            );
+        }
+        rows = rows.push(row);
     }
-    let pending = if app.archive_job.is_some() {
-        " (updating)"
-    } else {
-        ""
-    };
-    Column::new()
-        .spacing(4)
+    let header = Row::new()
+        .spacing(6)
         .push(
             text(format!(
-                "Archive member conflicts: {count}{pending} (showing up to {limit})"
+                "Archive member conflicts: {count} · page {}/{}",
+                page + 1,
+                pages
             ))
             .size(12.0),
         )
+        .push(
+            button(text("Previous")).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
+        )
+        .push(
+            button(text("Next"))
+                .on_press_maybe((page + 1 < pages).then_some(Message::ArchivePage(page + 1))),
+        );
+    Column::new()
+        .spacing(4)
+        .push(header)
+        .push(
+            text_input("Filter archive member paths", &app.archive_filter)
+                .on_input(Message::ArchiveFilterChanged),
+        )
         .push(scrollable(rows).height(Length::Fill))
         .into()
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MemberSource {
+    pub path: PathBuf,
+    pub member: String,
+    pub identity: eidos_conflicts::ArchiveIdentity,
+}
+
+pub(crate) struct ExportRequest {
+    id: u64,
+    target: Option<CollectionTarget>,
+    source: MemberSource,
+}
+
+fn current_target(app: &App) -> Option<CollectionTarget> {
+    let inst = app.created.as_ref()?;
+    Some(CollectionTarget {
+        instance: inst.root.clone(),
+        profile: inst.active_profile(),
+        installation: selected_game(app)?.selection_id(),
+    })
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ProviderSource {
+    Loose(PathBuf),
+    Archive(MemberSource),
+}
+
+/// Resolve one already-selected provider without cloning the complete asset map.
+pub(crate) fn resolve_provider(
+    app: &App,
+    member: &str,
+    provider: &eidos_conflicts::AssetProvider,
+) -> Result<ProviderSource, String> {
+    let layer = conflict_layers(app)
+        .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
+        .ok_or("The selected provider is no longer enabled")?;
+    let relative = provider.archive.as_deref().unwrap_or(member);
+    // Winning map paths already retain their physical spelling. Only losing
+    // providers need the cached spelling fallback.
+    let direct = resolve_in_mod(&layer.root, relative).filter(|p| p.is_file());
+    let path = direct
+        .or_else(|| {
+            let actual = app
+                .files_cache
+                .borrow()
+                .get(&layer.name)
+                .and_then(|(files, _)| {
+                    files
+                        .iter()
+                        .find(|name| name.eq_ignore_ascii_case(relative))
+                        .cloned()
+                })
+                .or_else(|| {
+                    app.archive_sources.keys().find_map(|path| {
+                        let tail = path.strip_prefix(&layer.root).ok()?.to_str()?;
+                        tail.eq_ignore_ascii_case(relative)
+                            .then(|| tail.to_string())
+                    })
+                })?;
+            resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file())
+        })
+        .ok_or("The selected provider is no longer present. Refresh the file list.")?;
+    if provider.archive.is_none() {
+        return Ok(ProviderSource::Loose(path));
+    }
+    let identity = app
+        .archive_sources
+        .get(&path)
+        .cloned()
+        .filter(|i| eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i))
+        .ok_or("The archive changed since it was scanned. Refresh before reading it.")?;
+    Ok(ProviderSource::Archive(MemberSource {
+        path,
+        member: member.into(),
+        identity,
+    }))
+}
+
+pub(crate) fn provider_action(
+    app: &mut App,
+    epoch: u64,
+    member: String,
+    provider: eidos_conflicts::AssetProvider,
+    export: bool,
+) -> Task<Message> {
+    let valid = app.archive_completed_epoch == Some(epoch)
+        && epoch == app.archive_epoch.get()
+        && app
+            .conflicts
+            .as_ref()
+            .and_then(|m| m.asset_files.get(&member.to_ascii_lowercase()))
+            .is_some_and(|node| node.winner == provider || node.alternatives.contains(&provider));
+    if !valid {
+        app.status = Some("Archive analysis changed. Refresh before selecting a provider.".into());
+        return Task::none();
+    }
+    let source = match resolve_provider(app, &member, &provider) {
+        Ok(ProviderSource::Loose(path)) => {
+            return crate::file_preview::start(app, path, None, None, None);
+        }
+        Ok(ProviderSource::Archive(source)) => source,
+        Err(error) => {
+            app.status = Some(error);
+            return Task::none();
+        }
+    };
+    if !export {
+        return crate::file_preview::start(app, source.path.clone(), None, None, Some(source));
+    }
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = Path::new(&source.member)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    app.archive_export = Some(ExportRequest {
+        id,
+        target: current_target(app),
+        source,
+    });
+    Task::perform(
+        rfd::AsyncFileDialog::new()
+            .set_title("Export archive member")
+            .set_file_name(name)
+            .save_file(),
+        move |picked| Message::ArchiveExportDestination(id, picked.map(|h| h.path().to_path_buf())),
+    )
+}
+
+pub(crate) fn export_destination(
+    app: &mut App,
+    id: u64,
+    destination: Option<PathBuf>,
+) -> Task<Message> {
+    let Some(request) = app.archive_export.as_ref().filter(|r| r.id == id) else {
+        return Task::none();
+    };
+    if request.target != current_target(app) {
+        app.archive_export = None;
+        app.status =
+            Some("Export cancelled because the active profile or installation changed.".into());
+        return Task::none();
+    }
+    let Some(destination) = destination else {
+        app.archive_export = None;
+        return Task::none();
+    };
+    let source = request.source.clone();
+    Task::perform(
+        crate::background_work::run(move || {
+            eidos_conflicts::export_archive_member_checked(
+                &source.path,
+                &source.member,
+                &destination,
+                16 * 1024 * 1024 * 1024,
+                Some(&source.identity),
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(destination)
+        }),
+        move |result| Message::ArchiveExportFinished(id, result),
+    )
+}
+
+pub(crate) fn export_finished(app: &mut App, id: u64, result: Result<PathBuf, String>) {
+    if app.archive_export.as_ref().is_none_or(|r| r.id != id) {
+        return;
+    }
+    app.archive_export = None;
+    app.status = Some(match result {
+        Ok(path) => format!("Archive member exported to {}", path.display()),
+        Err(error) => format!("Archive export failed: {error}"),
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_scans_do_not_certify_old_archive_providers() {
+        for failure in ["disconnected", "changed_during_scan", "changed_after_send"] {
+            let (mut app, root) = crate::tests::data_app(&[("old.bsa", "archive")], &[]);
+            let mut map = compute_conflicts(&app).unwrap();
+            let loose_count = map.files.len();
+            map.asset_mods = map.mods.clone();
+            map.asset_conflicts.insert(1, vec!["texture.dds".into()]);
+            map.asset_files.insert(
+                "texture.dds".into(),
+                eidos_conflicts::AssetNode {
+                    winner: eidos_conflicts::AssetProvider {
+                        origin: 1,
+                        archive: Some("old.bsa".into()),
+                        plugin: None,
+                    },
+                    alternatives: Vec::new(),
+                    display_path: "texture.dds".into(),
+                    precedence_uncertain: false,
+                },
+            );
+            app.conflicts = Some(map);
+            app.archive_plan = Some(archive_plan("skyrimse", &[], &[], &[], "en"));
+            let source = app.mods[0].path.join("old.bsa");
+            app.archive_sources.insert(
+                source.clone(),
+                eidos_conflicts::archive_identity(&source).unwrap(),
+            );
+            let (sender, receiver) = mpsc::channel();
+            if failure == "changed_during_scan" {
+                sender
+                    .send(Err("Archives changed during analysis".into()))
+                    .unwrap();
+            } else if failure == "changed_after_send" {
+                sender
+                    .send(Ok((
+                        app.conflicts.clone().unwrap(),
+                        app.archive_plan.clone().unwrap(),
+                        Vec::new(),
+                        app.archive_sources.clone(),
+                    )))
+                    .unwrap();
+                fs::write(&source, "replacement archive").unwrap();
+            }
+            drop(sender);
+            app.archive_job = Some(ArchiveWorker {
+                epoch: app.archive_epoch.get(),
+                receiver,
+                cancel: Arc::new(AtomicBool::new(false)),
+            });
+            poll_archive_conflicts(&mut app);
+            let map = app.conflicts.as_ref().unwrap();
+            assert_eq!(map.files.len(), loose_count);
+            assert!(map.asset_files.is_empty());
+            assert!(map.asset_mods.is_empty());
+            assert!(map.asset_conflicts.is_empty());
+            assert!(app.archive_plan.is_none());
+            assert!(app.archive_sources.is_empty());
+            assert!(!app.archive_warnings.is_empty());
+            schedule_archive_conflicts(&mut app);
+            assert!(
+                app.archive_job.is_none(),
+                "failure must wait for explicit refresh"
+            );
+            fs::remove_dir_all(root).unwrap();
+        }
+    }
 }

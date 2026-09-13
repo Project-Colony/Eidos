@@ -84,6 +84,13 @@ jobs:
       - name: Build
         run: cargo build --workspace --release --locked
 
+      - name: Build and test the native NIF helper
+        run: |
+          cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+          cmake --build target/nif-preview --parallel 2
+          ctest --test-dir target/nif-preview --output-on-failure
+          echo "$PWD/target/nif-preview" >> "$GITHUB_PATH"
+
       # The release profile is already compiled, so this reuses those artifacts
       # instead of building the whole tree a second time in dev. A tag that fails
       # its own test suite must not become a download.
@@ -110,7 +117,13 @@ jobs:
           # together means the extracted directory works when run in place, before
           # anything is installed.
           cp target/release/eidos target/release/eidos-gui "dist/${name}/"
+          cp target/nif-preview/eidos-nif-preview "dist/${name}/"
+          for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
+            install -Dm644 "native/eidos-nif-preview/${notice}" "dist/${name}/licenses/nifly/${notice}"
+          done
           cp README.md LICENSE SECURITY.md "dist/${name}/"
+          mkdir -p "dist/${name}/licenses/omod"
+          cp crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "dist/${name}/licenses/omod/"
           # Not stripped on purpose. Cargo's release profile emits no DWARF
           # anyway, so `--strip-all` would only remove the symbol table - which is
           # precisely what turns a user's panic backtrace into something we can
@@ -186,7 +199,7 @@ jobs:
           ./install.sh
           \`\`\`
 
-          The installer copies \`eidos\` and \`eidos-gui\` into \`~/.local/bin\`
+          The installer copies \`eidos\`, \`eidos-gui\` and the NIF preview helper into \`~/.local/bin\`
           (override with \`--bindir DIR\`) and registers the desktop and Nexus
           download handlers. The default user installation needs no sudo.
 
@@ -202,6 +215,7 @@ jobs:
 
           - x86_64 Linux, glibc 2.39 or newer (built on Ubuntu 24.04)
           - A kernel with FUSE, and \`fusermount3\` available
+          - 7-Zip (\`7z\`, \`7zz\` or \`7za\`) for mod archives
 
           ## Verify
 

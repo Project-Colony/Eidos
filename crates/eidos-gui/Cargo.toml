@@ -46,6 +46,16 @@ eidos-gamedef = { path = "../eidos-gamedef" }
 # does; a second copy of it here is how this workspace got three find_7z.
 eidos-collections = { path = "../eidos-collections" }
 rfd = "0.17"
+# Pure Rust block decoding; no encoder or native toolchain is needed for previews.
+bcdec_rs = "=0.2.0"
+ddsfile = "0.5"
+tempfile = "3"
+# Already used by iced; offload blocking preview work from its async executor.
+smol = "2"
+# Decode the bundled NIF helper's bounded geometry reply.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image-decoder = { package = "image", version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp", "ico", "tga"] }
 # The 25 theme families / 57 palettes of the Colony ecosystem, the eight accent
 # overrides, the high-contrast derivation and the shared pickers - generated from
 # the design tokens in Project-Colony-Resources rather than copied here.
@@ -53,3 +63,7 @@ rfd = "0.17"
 # Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
 # to alter this window without a deliberate bump.
 colony-ui = "0.1.5"
+
+[dev-dependencies]
+iced_runtime = "0.14"
+iced_tiny_skia = "0.14"

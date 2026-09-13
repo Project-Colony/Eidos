@@ -92,9 +92,9 @@ and as a possible optimization later, not as the foundation.
 
 ## Target architecture, end to end
 
-1. **Staging.** Mods extracted into per-mod directories. At import, casing is
-   normalized to a canonical scheme and a mapping recorded, so Nexus's
-   mixed-case archives become consistent and the runtime resolver does less work.
+1. **Staging.** Mods are extracted into per-mod directories with their original
+   filename casing. Installation validates case-insensitive collisions; the
+   runtime union resolves names case-insensitively without renaming source files.
 2. **Launch wrapper** (`eidos-launch`). On "Play", it:
    - creates a user namespace (for unprivileged mount) + mount namespace (for
      isolation),

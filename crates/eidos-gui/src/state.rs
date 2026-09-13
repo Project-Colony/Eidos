@@ -142,6 +142,21 @@ pub(crate) fn known_instances(games: &[DetectedGame]) -> Vec<KnownInstance> {
     known_instances_from(&eidos_instance::Registry::load(), games)
 }
 
+/// A saved source key wins over catalog order. Missing saved copies stay unavailable.
+pub(crate) fn instance_game_index(
+    games: &[DetectedGame],
+    inst: &Instance,
+    id: &str,
+) -> Option<usize> {
+    let manifest = eidos_instance::Manifest::read_checked(&inst.manifest_path()).ok()?;
+    if manifest.as_ref().is_some_and(|m| m.game_id != id) {
+        return None;
+    }
+    let key = manifest.as_ref().and_then(|m| m.installation.as_deref());
+    let selected = eidos_games::select_installation(games, id, key)?;
+    games.iter().position(|g| std::ptr::eq(g, selected))
+}
+
 /// The construction behind [`known_instances`], with the registry injected.
 pub(crate) fn known_instances_from(
     reg: &eidos_instance::Registry,
@@ -152,7 +167,14 @@ pub(crate) fn known_instances_from(
         if !inst.exists() || out.iter().any(|k| k.inst.root == inst.root) {
             return;
         }
-        let name = games[game_index].def.name;
+        if instance_game_index(games, &inst, games[game_index].def.id) != Some(game_index) {
+            return;
+        }
+        let name = format!(
+            "{} ({})",
+            games[game_index].def.name,
+            games[game_index].source_name()
+        );
         let label = if portable {
             format!("{name}  -  {}", inst.root.display())
         } else {
@@ -172,7 +194,7 @@ pub(crate) fn known_instances_from(
             eidos_instance::InstanceRef::Global(id) => Some(id.clone()),
             eidos_instance::InstanceRef::Portable(_) => inst.read_manifest().map(|m| m.game_id),
         };
-        if let Some(i) = gid.and_then(|gid| games.iter().position(|g| g.def.id == gid)) {
+        if let Some(i) = gid.and_then(|gid| instance_game_index(games, &inst, &gid)) {
             let portable = matches!(last, eidos_instance::InstanceRef::Portable(_));
             push(inst, i, portable, games);
         }
@@ -182,7 +204,7 @@ pub(crate) fn known_instances_from(
         let Some(m) = inst.read_manifest() else {
             continue;
         };
-        if let Some(i) = games.iter().position(|g| g.def.id == m.game_id) {
+        if let Some(i) = instance_game_index(games, &inst, &m.game_id) {
             push(inst, i, true, games);
         }
     }
@@ -261,6 +283,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         conflicts: None,
         archive_epoch: std::cell::Cell::new(1),
         archive_completed_epoch: None,
+        archive_sources: HashMap::new(),
         archive_job: None,
         archive_plan: None,
         archive_warnings: Vec::new(),
@@ -338,6 +361,13 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         tree_new_folder: None,
         confirm_restore: None,
         preview: None,
+        preview_pending: None,
+        extension_picker: 0,
+        installer: None,
+        mod_picker: 0,
+        archive_filter: String::new(),
+        archive_page: 0,
+        archive_export: None,
         dl_filter: String::new(),
         dl_sort: DownloadSort::default(),
         dl_show_hidden: false,
@@ -473,7 +503,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         .and_then(|root| {
             let inst = Instance::portable(root);
             let m = inst.read_manifest()?;
-            let i = app.games.iter().position(|g| g.def.id == m.game_id)?;
+            let i = instance_game_index(&app.games, &inst, &m.game_id)?;
             if auto.is_some_and(|auto_i| auto_i != i) {
                 return None;
             }
@@ -503,7 +533,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         let found = reg
             .candidates_for(app.games[i].def.id)
             .into_iter()
-            .find(|c| c.exists());
+            .find(|c| {
+                c.exists() && instance_game_index(&app.games, c, app.games[i].def.id) == Some(i)
+            });
         if let Some(inst) = found {
             open_existing(&mut app, i, inst);
             app.status =
@@ -758,16 +790,26 @@ pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<(
 /// Identify which detected game a Steam `%command%` is launching, by matching
 /// each game's install directory against the command's arguments.
 pub(crate) fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
-    for arg in command {
-        for (i, g) in games.iter().enumerate() {
-            if let Some(dir) = g.data_path.parent() {
-                if arg.contains(&*dir.to_string_lossy()) {
-                    return Some(i);
-                }
-            }
-        }
-    }
-    None
+    let paths: Vec<_> = command
+        .iter()
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.canonicalize().unwrap_or(path))
+        .filter(|path| {
+            !path
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+        })
+        .collect();
+    let mut candidates = games.iter().enumerate().filter(|(_, game)| {
+        paths
+            .iter()
+            .any(|path| path.starts_with(&game.install_path))
+    });
+    let (index, _) = candidates.next()?;
+    // Copies sharing installed files but using different prefixes cannot be
+    // distinguished by their executable alone. Let saved selection decide.
+    candidates.next().is_none().then_some(index)
 }
 
 /// The mod list as the user should see it: the profile's rows, with the game's
@@ -869,88 +911,9 @@ pub(crate) fn reload_mods(app: &mut App) {
 /// without a window. Every failure ends in `Unsupported` with a reason, because
 /// an empty preview pane with no explanation reads as the feature being broken
 /// rather than as the file being unreadable.
+#[cfg(test)]
 pub(crate) fn build_preview(path: &Path) -> Preview {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .unwrap_or_default();
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    // What iced's image feature can decode. DDS and NIF are deliberately not
-    // here - see `Preview`.
-    const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
-    if IMAGES.contains(&ext.as_str()) {
-        // Checked, because `Handle::from_path` is lazy: a path that is not there
-        // decodes to nothing at draw time and the pane comes up blank with no
-        // reason on it, which is the one thing this function exists to avoid.
-        if !path.is_file() {
-            return Preview::Unsupported {
-                path: path.to_path_buf(),
-                why: format!("{name} is not there any more."),
-            };
-        }
-        return Preview::Image {
-            path: path.to_path_buf(),
-            handle: iced::widget::image::Handle::from_path(path),
-        };
-    }
-    if ext == "dds" || ext == "nif" {
-        return Preview::Unsupported {
-            path: path.to_path_buf(),
-            why: format!(
-                "{name} is a {kind} file. Eidos has no decoder for those yet - open it in a \
-                 tool from the Run list, or use Reveal to find it on disk.",
-                kind = ext.to_uppercase()
-            ),
-        };
-    }
-    let Ok(md) = std::fs::metadata(path) else {
-        return Preview::Unsupported {
-            path: path.to_path_buf(),
-            why: format!("{name} could not be read."),
-        };
-    };
-    if md.is_dir() {
-        return Preview::Unsupported {
-            path: path.to_path_buf(),
-            why: format!("{name} is a folder."),
-        };
-    }
-    // Read a bounded head rather than the file: a preview is a glance, and a
-    // log can be a hundred megabytes.
-    let mut buf = vec![0u8; PREVIEW_TEXT_CAP];
-    let read = {
-        use std::io::Read;
-        match std::fs::File::open(path).and_then(|mut f| f.read(&mut buf)) {
-            Ok(n) => n,
-            Err(e) => {
-                return Preview::Unsupported {
-                    path: path.to_path_buf(),
-                    why: format!("{name} could not be read: {e}"),
-                }
-            }
-        }
-    };
-    buf.truncate(read);
-    // A NUL byte means binary, whatever the extension claims - an `.esp` is a
-    // record file and a `.bsa` is an archive, and printing either as text fills
-    // the pane with mojibake.
-    if buf.contains(&0) {
-        return Preview::Unsupported {
-            path: path.to_path_buf(),
-            why: format!("{name} is a binary file, so there is nothing to show as text."),
-        };
-    }
-    // Lossy on purpose: a Windows-1252 INI is common in this world, and refusing
-    // to show one because a byte is not valid UTF-8 helps nobody.
-    Preview::Text {
-        path: path.to_path_buf(),
-        body: String::from_utf8_lossy(&buf).into_owned(),
-        truncated: md.len() as usize > read,
-    }
+    crate::file_preview::read(path)
 }
 
 /// Write a `.desktop` launcher for one tool, and return where it went.
@@ -2358,6 +2321,11 @@ pub(crate) fn bump_views(app: &App) {
 /// at the end of `update()`, so a message that changes ten things still pays for
 /// one scan - and a message that changes nothing pays for none.
 pub(crate) fn refresh_diagnostics(app: &mut App) {
+    // Retain dirty flags and refresh after the child exits; automatic indexing
+    // and trusted diagnostic processes should not compete with a running game.
+    if app.running.is_some() {
+        return;
+    }
     if !app.diag_stale.get() && !app.diag_dirty {
         return;
     }
@@ -2459,106 +2427,19 @@ fn run_diagnose_addons(app: &mut App) {
     }
 }
 
-/// Run an add-on and return its stdout, killing it if it overruns.
-///
-/// Three things this has to get right, and the obvious implementation gets none
-/// of them.
-///
-/// The pipes must be DRAINED while the child runs, not after it exits: a check
-/// that writes more than the 64 KiB pipe buffer blocks in `write` forever, and
-/// polling `try_wait` in a loop would never see it finish. It would be killed at
-/// the timeout and reported as slow, having actually produced its findings.
-///
-/// The wait must be on the CHILD, not on the pipes: `wait_with_output` reads to
-/// EOF, and a child that spawns its own children hands them the same pipe, so EOF
-/// only arrives when the last grandchild exits. A three-second timeout would
-/// become unbounded for a shell script that backgrounds anything.
-///
-/// And the reading must happen off this thread, because this runs on the
-/// diagnostics refresh that follows every message.
+/// Run the shared bounded helper; legacy checks may emit findings on failure.
 fn run_addon_capture_inner(
     a: &eidos_addons::Addon,
     ctx: &eidos_addons::Context,
     timeout: std::time::Duration,
 ) -> Result<String, String> {
-    use std::io::Read;
-
-    let mut cmd = std::process::Command::new(&a.exec);
-    for arg in &a.args {
-        cmd.arg(ctx.expand(arg));
-    }
-    if !a.workdir.is_empty() {
-        cmd.current_dir(ctx.expand(&a.workdir));
-    }
-    cmd.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
-
-    // One reader thread per pipe, so neither can wedge the other and neither can
-    // wedge us. They end when their pipe closes, which happens when the last
-    // holder of the write end exits - possibly after we have already returned,
-    // which is why the handles are detached rather than joined on the slow path.
-    let mut out_pipe = child.stdout.take();
-    let mut err_pipe = child.stderr.take();
-    let stdout_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-    let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-    let drain = |pipe: Option<std::process::ChildStdout>,
-                 into: std::sync::Arc<std::sync::Mutex<Vec<u8>>>| {
-        std::thread::spawn(move || {
-            if let Some(mut p) = pipe {
-                let mut buf = Vec::new();
-                let _ = p.read_to_end(&mut buf);
-                if let Ok(mut slot) = into.lock() {
-                    *slot = buf;
-                }
-            }
-        })
-    };
-    let out_thread = drain(out_pipe.take(), stdout_buf.clone());
-    // Same shape for stderr; the types differ, so it cannot share the closure.
-    let err_slot = stderr_buf.clone();
-    let err_thread = std::thread::spawn(move || {
-        if let Some(mut p) = err_pipe.take() {
-            let mut buf = Vec::new();
-            let _ = p.read_to_end(&mut buf);
-            if let Ok(mut slot) = err_slot.lock() {
-                *slot = buf;
-            }
-        }
-    });
-
-    // Wait on the CHILD only.
-    let deadline = std::time::Instant::now() + timeout;
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break st,
-            Ok(None) if std::time::Instant::now() >= deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("it took longer than {timeout:?} and was stopped"));
-            }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
-            Err(e) => return Err(e.to_string()),
-        }
-    };
-    // The child is gone; its own pipe ends are closed, so the readers finish -
-    // unless a grandchild still holds them, which is exactly the case the wait
-    // above refuses to block on. Bounded join, then take what arrived.
-    let joined = out_thread.join().is_ok() && err_thread.join().is_ok();
-    let stdout = stdout_buf
-        .lock()
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
-        .unwrap_or_default();
-    let stderr = stderr_buf
-        .lock()
-        .map(|b| String::from_utf8_lossy(&b).into_owned())
-        .unwrap_or_default();
-    let _ = joined;
-
-    if !status.success() && stdout.is_empty() {
+    let output =
+        eidos_addons::capture(a, ctx, timeout, &std::sync::atomic::AtomicBool::new(false))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    if !output.status.success() && stdout.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         let why = stderr.lines().next().unwrap_or("no output").trim();
-        return Err(format!("it exited with {status} ({why})"));
+        return Err(format!("it exited with {} ({why})", output.status));
     }
     Ok(stdout)
 }
@@ -2569,6 +2450,54 @@ pub(crate) fn run_addon_capture(
     ctx: &eidos_addons::Context,
 ) -> Result<String, String> {
     run_addon_capture_inner(a, ctx, ADDON_DIAGNOSE_TIMEOUT)
+}
+
+#[cfg(test)]
+mod addon_capture_tests {
+    use super::*;
+
+    #[test]
+    fn a_valid_dds_has_a_native_preview() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("one.dds");
+        let mut dds = ddsfile::Dds::new_dxgi(ddsfile::NewDxgiParams {
+            width: 1,
+            height: 1,
+            depth: None,
+            format: ddsfile::DxgiFormat::R8G8B8A8_UNorm,
+            mipmap_levels: None,
+            array_layers: None,
+            caps2: None,
+            is_cubemap: false,
+            resource_dimension: ddsfile::D3D10ResourceDimension::Texture2D,
+            alpha_mode: ddsfile::AlphaMode::Straight,
+        })
+        .unwrap();
+        dds.data = vec![255, 0, 0, 128];
+        dds.write(&mut std::fs::File::create(&path).unwrap())
+            .unwrap();
+        assert!(!matches!(build_preview(&path), Preview::Unsupported { .. }));
+    }
+
+    #[test]
+    fn extension_deadline_includes_inherited_output_pipes() {
+        let addon = eidos_addons::parse_addon(
+            "id='pipe-holder'\nkind='diagnose'\nexec='/bin/sh'\nargs=['-c', 'sleep 0.8 & exit 0']",
+            Path::new("/tmp/pipe-holder.toml"),
+        )
+        .unwrap();
+        let started = std::time::Instant::now();
+        let result = run_addon_capture_inner(
+            &addon,
+            &eidos_addons::Context::default(),
+            std::time::Duration::from_millis(80),
+        );
+        assert!(started.elapsed() < std::time::Duration::from_millis(500));
+        assert!(
+            result.is_err(),
+            "a helper retaining output must hit its deadline"
+        );
+    }
 }
 
 /// Drop cached per-layer file walks: one layer by name (a mod whose contents

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Extensões
 
@@ -19,9 +19,7 @@ comportamento indefinido, não uma divergência de versão. E os widgets do Eido
 genéricos em tempo de compilação, de modo que uma biblioteca não conseguiria
 sequer construir um para devolver, mesmo que a ABI fosse estável.
 
-Então uma extensão é um programa que o Eidos *executa*. Ela não pode derrubar a
-janela, não pode corromper uma lista de mods, e continua funcionando através das
-atualizações do Eidos.
+Uma extensão é um programa que o Eidos executa com as permissões de acesso ao sistema de arquivos da sua conta. Instale apenas programas auxiliares em que confia. O isolamento de processos e a verificação de respostas não fornecem uma sandbox do sistema operacional.
 
 ## Uma ferramenta
 
@@ -90,9 +88,4 @@ não podem ser todos resolvidos é recusado, e o Eidos diz quais faltam.
 
 ## O que uma extensão não pode fazer
 
-Ela recebe valores e executa; não pode chamar de volta o Eidos, mudar a lista de
-mods, nem desenhar nada na janela. Isso é proposital. Aquilo para que o MO2 usa
-plugins e que REALMENTE precisa alcançar o interior - suporte a jogos,
-instaladores, o motor de conflitos - aqui é embutido em vez de aparafusado: uma
-definição de jogo é seu próprio TOML em `~/.config/Colony/Eidos/games/`, e os
-instaladores FOMOD e BAIN são nativos.
+Uma extensão não pode fazer chamadas de volta ao Eidos, registrar-se a partir de um arquivo compactado nem desenhar seus próprios widgets. Instaladores estruturados do protocolo 1 podem retornar planos de arquivos verificados e perguntas com opções; o Eidos controla a revisão, a preparação temporária e a publicação. FOMOD e BAIN continuam sendo instaladores nativos. Extensões de prévia e informações sobre jogos salvos usam o mesmo host com respostas limitadas. Consulte o [contrato do protocolo e os exemplos executáveis](../../../../examples/extensions/README.md) para conhecer a prioridade de correspondência, as respostas CLI registradas, os limites e as verificações de identidade na repetição.

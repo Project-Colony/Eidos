@@ -144,21 +144,34 @@ pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
     let content: Element<Message> = if app.games.is_empty() {
         Column::new()
             .push(text("No supported games detected.").size(15.0))
-            .push(text("Install a supported game via Steam, then restart Eidos.").size(12.0))
+            .push(
+                text(
+                    "Install a supported game via Steam, Heroic or Legendary, then restart Eidos.",
+                )
+                .size(12.0),
+            )
             .into()
     } else {
         let mut list = Column::new().spacing(6);
         for (i, g) in app.games.iter().enumerate() {
             list = list.push(
-                button(text(format!("{}  ({})", g.def.name, g.steam_name)).size(14.0))
-                    .width(Length::Fill)
-                    .padding(10)
-                    .on_press(Message::PickGame(i))
-                    .style(if app.selected == Some(i) {
-                        button::primary
-                    } else {
-                        button::secondary
-                    }),
+                button(
+                    text(format!(
+                        "{}  ({})\n{}",
+                        g.def.name,
+                        g.source_name(),
+                        g.install_path.display()
+                    ))
+                    .size(14.0),
+                )
+                .width(Length::Fill)
+                .padding(10)
+                .on_press(Message::PickGame(i))
+                .style(if app.selected == Some(i) {
+                    button::primary
+                } else {
+                    button::secondary
+                }),
             );
         }
         scrollable(list).height(Length::Fixed(240.0)).into()

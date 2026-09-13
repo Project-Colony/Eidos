@@ -12,12 +12,12 @@ pkgrel=1
 pkgdesc="Native Linux mod manager: a FUSE union filesystem that merges mods over a game for Proton, MO2/usvfs-style"
 arch=('x86_64')
 url="https://github.com/Project-Colony/Eidos"
-license=('GPL-3.0-or-later')
+license=('GPL-3.0-or-later' 'GPL-3.0-only' 'MIT')
 # fuse3 is what actually mounts (fusermount3 for the rootless path); 7zip backs
 # the mod installer's extraction; xdg-utils is the nxm:// handler registration
 # and "open in explorer".
 depends=('fuse3' '7zip' 'xdg-utils' 'gcc-libs' 'glibc')
-makedepends=('cargo' 'git')
+makedepends=('cargo' 'git' 'cmake' 'python')
 optdepends=(
 	'steam: game and Proton detection'
 	'winetricks: tier-2 tool prerequisites (.NET / vcrun for Synthesis, FNIS, Pandora)'
@@ -53,12 +53,16 @@ build() {
 	export RUSTUP_TOOLCHAIN=stable
 	export CARGO_TARGET_DIR=target
 	cargo build --frozen --release --workspace
+	cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+	cmake --build target/nif-preview --parallel 2
 }
 
 check() {
 	cd "$srcdir/$_pkgname"
 	export RUSTUP_TOOLCHAIN=stable
 	export CARGO_TARGET_DIR=target
+	export PATH="$PWD/target/nif-preview:$PATH"
+	ctest --test-dir target/nif-preview --output-on-failure
 	# The FUSE integration test mounts a real union in a private user+mount
 	# namespace and skips itself when it cannot (no /dev/fuse, user namespaces
 	# disabled, restricted build chroot), so this stays green off a build host
@@ -74,6 +78,7 @@ package() {
 	# The GUI finds the CLI as its own sibling before falling back to
 	# PATH, so the two binaries must land in the same directory.
 	install -Dm755 target/release/eidos-gui "$pkgdir/usr/bin/eidos-gui"
+	install -Dm755 target/nif-preview/eidos-nif-preview "$pkgdir/usr/bin/eidos-nif-preview"
 	# The two lower-level CLIs the README documents: mount a union by hand, or
 	# run one command through a union in a private namespace. They stay
 	# unprivileged, like the main launcher.
@@ -81,6 +86,16 @@ package() {
 	install -Dm755 target/release/eidos-launch "$pkgdir/usr/bin/eidos-launch"
 
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+	install -Dm644 crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "$pkgdir/usr/share/licenses/$pkgname/omod/UPSTREAM.md"
+	for notice in UPSTREAM.md VENDORED-SHA256SUMS; do
+		install -Dm644 "native/eidos-nif-preview/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/$notice"
+	done
+	for notice in LICENSE README.md; do
+		install -Dm644 "native/eidos-nif-preview/vendor/nifly/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/$notice"
+	done
+	for notice in half.hpp Miniball.hpp; do
+		install -Dm644 "native/eidos-nif-preview/vendor/nifly/external/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/external/$notice"
+	done
 	install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 	install -Dm644 docs/internals/packaging.md "$pkgdir/usr/share/doc/$pkgname/packaging.md"
 

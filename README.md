@@ -132,8 +132,8 @@ instance played normally, not on a benchmark.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Then set your game's Steam launch option to `~/.local/bin/eidos-gui %command%`
@@ -256,4 +256,7 @@ Adding a family is one descriptor row:
 
 ## License
 
-GPL-3.0-or-later. Mod management belongs to everyone.
+Eidos's original code is GPL-3.0-or-later. Bundled OMOD translations are
+GPL-3.0-only; see their [upstream credits](crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md).
+The NIF helper retains its [component licenses and credits](native/eidos-nif-preview/UPSTREAM.md).
+Mod management belongs to everyone.

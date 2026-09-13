@@ -1,10 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # Eidos kurulumu
 
-Üç giriş yolu. Hepsi aynı iki çalıştırılabilir dosyayı verir - `eidos` (komut
-satırı) ve `eidos-gui` - artı Nexus'taki "Mod Manager Download" düğmesinin sizin
-örneğinize inmesini sağlayan `nxm://` işleyicisi.
+Üç giriş yolu. Hepsi `eidos` (komut satırı), `eidos-gui` ve statik NIF önizleme yardımcısını, ayrıca Nexus'taki "Mod Manager Download" düğmesinin indirilen dosyayı örneğinize ulaştırmasını sağlayan `nxm://` işleyicisini sunar.
 
 ## Önce gerekenler
 
@@ -38,9 +36,11 @@ yükseltmenin desteklenen yoludur.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+Kaynaktan derleme için Rust, `just`, CMake 3.20+, bir C++17 derleyicisi ve yerel yardımcının testleri için Python 3 gerekir. `just` olmadan kullanılacak komutlar için [yerel yardımcı yönergelerine](../../../../../native/eidos-nif-preview/README.md) bakın; Rust'ı `cargo build --release --locked` ile derleyin, yardımcıyı `target/release` içine kopyalayın ve ardından `packaging/install.sh --from target/release` çalıştırın.
 
 ## Sonra: Steam'i ona yöneltin
 

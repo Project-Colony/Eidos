@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -137,8 +137,8 @@ Eidos.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Затем поставьте в параметрах запуска игры в Steam
@@ -263,4 +263,4 @@ Fallout 3, Fallout NV, Fallout 4 (+ VR), Starfield, Oblivion и Morrowind
 
 ## Лицензия
 
-GPL-3.0-or-later. Управление модами принадлежит всем.
+Исходный код самого Eidos распространяется под GPL-3.0-or-later. Включённые переводы кода OMOD распространяются под GPL-3.0-only; см. [сведения об исходных авторах](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). Вспомогательная программа NIF сохраняет [лицензии и сведения об авторах своих компонентов](../../../native/eidos-nif-preview/UPSTREAM.md). Управление модами принадлежит всем.

@@ -10,8 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use libloot::metadata::{
-    MessageContent, MessageType as LootMessageType, PluginCleaningData, PluginMetadata,
-    select_message_content,
+    select_message_content, MessageContent, MessageType as LootMessageType, PluginCleaningData,
+    PluginMetadata,
 };
 use libloot::{EvalMode, Game, GameType, MergeMode};
 
@@ -59,10 +59,13 @@ impl From<std::io::Error> for LootError {
 
 /// LOOT support for an Eidos game id: the libloot `GameType` and the masterlist
 /// repo slug under `github.com/loot/<repo>`. `None` for games LOOT can't sort
-/// (Morrowind/Oblivion are timestamp-ordered; Eidos doesn't manage those anyway).
+/// Timestamp engines use the same metadata engine and project the saved order at launch.
 pub fn loot_support(game_id: &str) -> Option<(GameType, &'static str)> {
     Some(match game_id {
         "skyrimse" => (GameType::SkyrimSE, "skyrimse"),
+        "enderalse" => (GameType::SkyrimSE, "enderal"),
+        "morrowind" => (GameType::Morrowind, "morrowind"),
+        "oblivion" => (GameType::Oblivion, "oblivion"),
         "skyrim" => (GameType::Skyrim, "skyrim"),
         "skyrimvr" => (GameType::SkyrimVR, "skyrimvr"),
         "fallout4" => (GameType::Fallout4, "fallout4"),
@@ -1034,9 +1037,44 @@ mod tests {
             loot_support("fallout4"),
             Some((GameType::Fallout4, "fallout4"))
         ));
-        assert!(loot_support("morrowind").is_none()); // timestamp-ordered, unsupported
+        assert_eq!(
+            loot_support("morrowind"),
+            Some((GameType::Morrowind, "morrowind"))
+        );
+        assert_eq!(
+            loot_support("enderalse"),
+            Some((GameType::SkyrimSE, "enderal"))
+        );
         assert!(loot_support("nonsense").is_none());
-        assert!(is_supported("skyrimse") && !is_supported("oblivion"));
+        assert!(is_supported("skyrimse") && is_supported("oblivion"));
+    }
+
+    #[test]
+    fn enderal_local_masterlist_is_parsed_with_the_skyrim_se_engine() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-enderal-metadata-{}", std::process::id()));
+        fs::create_dir_all(root.join("Data")).unwrap();
+        fs::create_dir_all(root.join("local")).unwrap();
+        let masterlist = root.join("masterlist.yaml");
+        let prelude = root.join("prelude.yaml");
+        fs::write(&masterlist,"globals:\n  - type: say\n    content: Enderal local metadata loaded\nplugins:\n  - name: 'Enderal - Forgotten Stories.esm'\n    group: default\n").unwrap();
+        fs::write(&prelude, "plugins: []\n").unwrap();
+        let view = GameView {
+            game_id: "enderalse",
+            game_path: &root,
+            local_path: &root.join("local"),
+            plugins: &[],
+            mod_dirs: &[],
+            masterlist: &masterlist,
+            prelude: &prelude,
+            userlist: None,
+        };
+        let result = report(&view, &Default::default()).unwrap();
+        assert!(result
+            .general
+            .iter()
+            .any(|m| m.text == "Enderal local metadata loaded"));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1107,7 +1145,7 @@ mod tests {
         ]);
         meta.set_tags(vec![Tag::new("Relev".into(), TagSuggestion::Addition)]);
         meta.set_dirty_info(vec![
-            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3),
+            PluginCleaningData::new(0x1234_5678, "xEdit".into()).with_itm_count(3)
         ]);
 
         let bundle = bundle_from_metadata(&meta, Some(0x1234_5678));
@@ -1434,11 +1472,9 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/skse.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(
-            build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out)
-                .unwrap()
-                .is_empty()
-        );
+        assert!(build_case_bridge(&ml, &[mod_dir], &root.join("game"), &out)
+            .unwrap()
+            .is_empty());
         assert!(!case_bridge_data_dir(&out).join("scripts/skse.pex").exists());
     }
 
@@ -1471,16 +1507,12 @@ mod case_bridge_tests {
         let ml = root.join("m.yaml");
         fs::write(&ml, "condition: 'file(\"scripts/nothere.pex\")'").unwrap();
         let out = root.join("b");
-        assert!(
-            build_case_bridge(&ml, &[root.clone()], &root, &out)
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            !case_bridge_data_dir(&out)
-                .join("scripts/nothere.pex")
-                .exists()
-        );
+        assert!(build_case_bridge(&ml, &[root.clone()], &root, &out)
+            .unwrap()
+            .is_empty());
+        assert!(!case_bridge_data_dir(&out)
+            .join("scripts/nothere.pex")
+            .exists());
     }
 
     #[test]
@@ -1504,12 +1536,21 @@ mod case_bridge_tests {
         let bridged = add_case_bridge(&masterlist, &mut dirs, &root, &out).unwrap();
         assert_eq!(bridged, ["script.pex"]);
         let view = GameView {
-            game_id: "skyrimse", game_path: &root, local_path: &root.join("local"),
-            plugins: &[], mod_dirs: &dirs, masterlist: &masterlist, prelude: &prelude,
+            game_id: "skyrimse",
+            game_path: &root,
+            local_path: &root.join("local"),
+            plugins: &[],
+            mod_dirs: &dirs,
+            masterlist: &masterlist,
+            prelude: &prelude,
             userlist: None,
         };
         let result = report(&view, &Default::default()).unwrap();
-        assert_eq!(result.general.len(), 1, "LOOT must inspect the union's winning file");
+        assert_eq!(
+            result.general.len(),
+            1,
+            "LOOT must inspect the union's winning file"
+        );
         assert_eq!(result.general[0].text, "Winning mod was inspected");
         fs::remove_dir_all(root).unwrap();
     }

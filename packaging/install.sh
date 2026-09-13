@@ -13,7 +13,7 @@ set -euo pipefail
 # Everything ships together; the GUI locates the CLI as its own
 # sibling before falling back to PATH, so they must share a directory.
 REQUIRED_BINS=(eidos eidos-gui)
-OPTIONAL_BINS=(eidos-fuse eidos-launch)
+OPTIONAL_BINS=(eidos-fuse eidos-launch eidos-nif-preview)
 
 # Only `eidos` is capped. Capabilities are per-file and this is the binary the
 # product mounts through; handing CAP_SYS_ADMIN to more files than that widens
@@ -164,6 +164,25 @@ for b in "${REQUIRED_BINS[@]}" "${OPTIONAL_BINS[@]}"; do
 done
 bindir="$(cd "$bindir" && pwd)"
 echo
+
+# Preserve the bundled attribution when users discard the unpacked package.
+notices="${XDG_DATA_HOME:-$HOME/.local/share}/licenses/eidos"
+(( system )) && notices=/usr/local/share/licenses/eidos
+if [[ -d "$here/licenses" ]]; then
+	sudo_if_needed "$notices" install -d -m755 "$notices"
+	sudo_if_needed "$notices" cp -R "$here/licenses/." "$notices/"
+elif [[ -d "$here/../native/eidos-nif-preview" ]]; then
+	for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
+		sudo_if_needed "$notices" install -Dm644 "$here/../native/eidos-nif-preview/$notice" "$notices/nifly/$notice"
+	done
+	sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md" "$notices/omod/UPSTREAM.md"
+fi
+for license_file in "$here/LICENSE" "$here/../LICENSE"; do
+	if [[ -f "$license_file" ]]; then
+		sudo_if_needed "$notices" install -Dm644 "$license_file" "$notices/LICENSE"
+		break
+	fi
+done
 
 echo "capability"
 capped=0
