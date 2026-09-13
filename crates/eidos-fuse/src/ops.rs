@@ -229,7 +229,7 @@ impl Filesystem for Eidos {
         // Cache the open fd under a fresh handle; try to register it for kernel
         // passthrough (no-op fallback when rootless, where it returns EPERM).
         let fh = self.next_fh.fetch_add(1, Ordering::Relaxed);
-        let backing = if !passthrough_enabled() {
+        let backing = if !passthrough_enabled() || self.plugin_timestamps.is_some() {
             None
         } else {
             match reply.open_backing(file.as_fd()) {

@@ -3,6 +3,50 @@ use std::sync::atomic::Ordering;
 use super::*;
 
 #[test]
+fn ordinary_attributes_do_not_wait_for_timestamp_bookkeeping() {
+    use std::fs;
+    use std::sync::{mpsc, Arc};
+    use std::time::Duration;
+    let root =
+        std::env::temp_dir().join(format!("eidos-attr-no-projection-{}", std::process::id()));
+    fs::create_dir(&root).unwrap();
+    let file = root.join("example.esp");
+    fs::write(&file, b"synthetic").unwrap();
+    let meta = fs::metadata(&file).unwrap();
+    let eidos = Arc::new(Eidos::new(vec![], root.join("overwrite")));
+    let ino = eidos.inodes.lock_recover().intern("example.esp");
+    let inodes = eidos.inodes.lock_recover();
+    let atimes = eidos.plugin_atimes.lock_recover();
+    let worker = Arc::clone(&eidos);
+    let (send, recv) = mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        send.send(worker.attr(ino, &meta)).unwrap();
+    });
+    let result = recv.recv_timeout(Duration::from_secs(1));
+    drop(atimes);
+    drop(inodes);
+    thread.join().unwrap();
+    let eidos = Arc::try_unwrap(eidos).ok().unwrap();
+    let expected = UNIX_EPOCH + Duration::from_secs(12345);
+    let projected = eidos
+        .with_plugin_timestamps(PluginTimestamps {
+            times: [("example.esp".into(), expected)].into(),
+            state_path: root.join("times"),
+        })
+        .unwrap();
+    let projected_attr = projected.attr(ino, &fs::metadata(&file).unwrap());
+    let actual = result.as_ref().ok().map(|attr| attr.mtime);
+    let physical = fs::metadata(&file).unwrap().modified().unwrap();
+    fs::remove_dir_all(root).unwrap();
+    assert!(
+        result.is_ok(),
+        "ordinary attr waited for disabled timestamp bookkeeping"
+    );
+    assert_eq!(actual, Some(physical));
+    assert_eq!(projected_attr.mtime, expected);
+}
+
+#[test]
 fn one_file_gets_one_inode_whatever_the_casing() {
     // Windows games mix casing freely; the resolver folds it, so the inode
     // table must too or stat() reports two different files.

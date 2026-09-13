@@ -462,12 +462,15 @@ impl Eidos {
     /// Build a `FileAttr` from a real file's metadata, owned by the mounting
     /// user (the game runs as us under Proton).
     fn attr(&self, ino: u64, meta: &Metadata) -> FileAttr {
-        let projected = self
-            .inodes
-            .lock_recover()
-            .path(ino)
-            .map(|p| self.projected_times(&p))
-            .unwrap_or_default();
+        let projected = if self.plugin_timestamps.is_some() {
+            self.inodes
+                .lock_recover()
+                .path(ino)
+                .map(|p| self.projected_times(&p))
+                .unwrap_or_default()
+        } else {
+            (None, None)
+        };
         let mtime = projected
             .0
             .unwrap_or_else(|| meta.modified().unwrap_or(UNIX_EPOCH));
