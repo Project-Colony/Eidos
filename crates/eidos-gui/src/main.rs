@@ -285,7 +285,13 @@ enum Message {
     PreviewFile(PathBuf),
     RunFileExtension(eidos_addons::protocol::Operation, PathBuf),
     ChooseExtensionFile(eidos_addons::protocol::Operation),
-    ExtensionFilePicked(eidos_addons::protocol::Operation, Option<PathBuf>),
+    ExtensionFilePicked {
+        request: u64,
+        target: Option<CollectionTarget>,
+        epoch: u64,
+        operation: eidos_addons::protocol::Operation,
+        path: Option<PathBuf>,
+    },
     PreviewReady(u64, Preview),
     PreviewDdsSelection(dds_preview::Selection),
     PreviewNifView(nif_render::View),
@@ -1924,6 +1930,7 @@ struct App {
     /// The file being previewed, and what could be made of it.
     preview: Option<Preview>,
     preview_pending: Option<file_preview::Pending>,
+    extension_picker: u64,
     archive_filter: String,
     archive_page: usize,
     archive_export: Option<archive_conflicts::ExportRequest>,
@@ -3885,6 +3892,112 @@ mod tests {
         assert!(known_instances_from(&registry, &app.games)
             .iter()
             .all(|k| k.inst.root != root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn source_selection_matches_whole_install_paths_and_refuses_ambiguous_copies() {
+        let mut app = app_for_game("skyrimse");
+        app.games[0].install_path = "/library/Skyrim".into();
+        app.games[0].data_path = "/library/Skyrim/Data".into();
+        let mut second = app.games[0].clone();
+        second.install_path = "/library/Skyrim Special Edition".into();
+        second.data_path = "/library/Skyrim Special Edition/Data".into();
+        app.games.push(second.clone());
+        let command = vec![
+            "proton".into(),
+            "/library/Skyrim Special Edition/SkyrimSE.exe".into(),
+        ];
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        assert_eq!(
+            identify_game(&app.games, &["/other/library/Skyrim/Skyrim.exe".into()]),
+            None
+        );
+        // Folder-mod games can put their overlay outside the install directory.
+        app.games[1].data_path = "/userdata/Mods".into();
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        app.games.push(second);
+        assert_eq!(identify_game(&app.games, &command), None);
+    }
+
+    #[test]
+    fn source_selection_rechecks_the_known_instances_current_manifest() {
+        let root = temp_portable("skyrimse");
+        let mut app = app_for_game("skyrimse");
+        let mut second = app.games[0].clone();
+        second.install_path = "/second/skyrim".into();
+        app.games.push(second);
+        let inst = Instance::portable(root.clone());
+        app.known = vec![KnownInstance {
+            label: "portable".into(),
+            inst: inst.clone(),
+            game_index: 0,
+            portable: true,
+        }];
+        inst.ensure_installation(
+            "skyrimse",
+            InstanceKind::Portable,
+            &app.games[1].selection_id(),
+        )
+        .unwrap();
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert_eq!(app.selected, Some(1));
+        eidos_instance::Manifest::new("fallout4", InstanceKind::Portable)
+            .write(&inst.manifest_path())
+            .unwrap();
+        assert_eq!(instance_game_index(&app.games, &inst, "skyrimse"), None);
+        app.created = None;
+        app.screen = Screen::Welcome;
+        let _ = update_inner(&mut app, Message::OpenKnown(0));
+        assert!(app.created.is_none());
+        assert_eq!(inst.read_manifest().unwrap().game_id, "fallout4");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn extension_picker_rejects_stale_requests_targets_and_views_before_starting_a_helper() {
+        let (mut app, root) = data_app(&[], &[]);
+        let path = root.join("example.txt");
+        fs::write(&path, "example").unwrap();
+        let original = update::collection_target(&app);
+        let epoch = app.archive_epoch.get();
+        for mismatch in 0..3 {
+            app.extension_picker = 7;
+            let mut target = original.clone();
+            if mismatch == 1 {
+                target.as_mut().unwrap().profile = "another profile".into();
+            }
+            let _ = update_inner(
+                &mut app,
+                Message::ExtensionFilePicked {
+                    request: if mismatch == 0 { 6 } else { 7 },
+                    target,
+                    epoch: if mismatch == 2 {
+                        epoch.wrapping_sub(1)
+                    } else {
+                        epoch
+                    },
+                    operation: eidos_addons::protocol::Operation::Preview,
+                    path: Some(path.clone()),
+                },
+            );
+            assert!(
+                app.preview_pending.is_none(),
+                "started a stale helper: mismatch {mismatch}"
+            );
+        }
+        let _ = update_inner(
+            &mut app,
+            Message::ExtensionFilePicked {
+                request: 7,
+                target: original,
+                epoch,
+                operation: eidos_addons::protocol::Operation::Preview,
+                path: Some(path),
+            },
+        );
+        assert!(app.preview_pending.is_some());
+        let _ = update_inner(&mut app, Message::ClosePreview);
         fs::remove_dir_all(root).unwrap();
     }
 

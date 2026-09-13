@@ -149,6 +149,9 @@ pub(crate) fn instance_game_index(
     id: &str,
 ) -> Option<usize> {
     let manifest = eidos_instance::Manifest::read_checked(&inst.manifest_path()).ok()?;
+    if manifest.as_ref().is_some_and(|m| m.game_id != id) {
+        return None;
+    }
     let key = manifest.as_ref().and_then(|m| m.installation.as_deref());
     let selected = eidos_games::select_installation(games, id, key)?;
     games.iter().position(|g| std::ptr::eq(g, selected))
@@ -359,6 +362,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         confirm_restore: None,
         preview: None,
         preview_pending: None,
+        extension_picker: 0,
         archive_filter: String::new(),
         archive_page: 0,
         archive_export: None,
@@ -784,16 +788,26 @@ pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<(
 /// Identify which detected game a Steam `%command%` is launching, by matching
 /// each game's install directory against the command's arguments.
 pub(crate) fn identify_game(games: &[DetectedGame], command: &[String]) -> Option<usize> {
-    for arg in command {
-        for (i, g) in games.iter().enumerate() {
-            if let Some(dir) = g.data_path.parent() {
-                if arg.contains(&*dir.to_string_lossy()) {
-                    return Some(i);
-                }
-            }
-        }
-    }
-    None
+    let paths: Vec<_> = command
+        .iter()
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .map(|path| path.canonicalize().unwrap_or(path))
+        .filter(|path| {
+            !path
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+        })
+        .collect();
+    let mut candidates = games.iter().enumerate().filter(|(_, game)| {
+        paths
+            .iter()
+            .any(|path| path.starts_with(&game.install_path))
+    });
+    let (index, _) = candidates.next()?;
+    // Copies sharing installed files but using different prefixes cannot be
+    // distinguished by their executable alone. Let saved selection decide.
+    candidates.next().is_none().then_some(index)
 }
 
 /// The mod list as the user should see it: the profile's rows, with the game's

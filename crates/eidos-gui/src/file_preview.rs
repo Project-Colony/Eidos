@@ -1,4 +1,5 @@
 //! Shared bounded byte previews for loose files, archives and trusted helpers.
+use crate::update::collection_target as target;
 use crate::{dds_preview, App, CollectionTarget, Message, Preview, PREVIEW_TEXT_CAP};
 use eidos_addons::protocol::{Operation, Outcome, Payload, Request};
 use iced::{widget::image::Handle, Task};
@@ -30,15 +31,6 @@ impl Drop for Pending {
     fn drop(&mut self) {
         self.cancel.store(true, Ordering::Relaxed);
     }
-}
-
-fn target(app: &App) -> Option<CollectionTarget> {
-    let inst = app.created.as_ref()?;
-    Some(CollectionTarget {
-        instance: inst.root.clone(),
-        profile: inst.active_profile(),
-        installation: crate::selected_game(app)?.selection_id(),
-    })
 }
 
 pub(crate) fn unsupported(path: &Path, why: impl Into<String>) -> Preview {
@@ -230,6 +222,7 @@ fn start_control(
     archive: Option<crate::archive_conflicts::MemberSource>,
 ) -> Task<Message> {
     static NEXT: AtomicU64 = AtomicU64::new(1);
+    app.extension_picker = app.extension_picker.wrapping_add(1);
     app.preview_pending.take();
     let id = NEXT.fetch_add(1, Ordering::Relaxed);
     let cancel = Arc::new(AtomicBool::new(false));

@@ -218,7 +218,7 @@ fn collection_runtime_on_worker(
     ))
 }
 
-fn collection_target(app: &App) -> Option<CollectionTarget> {
+pub(crate) fn collection_target(app: &App) -> Option<CollectionTarget> {
     let instance = app.created.as_ref()?;
     Some(CollectionTarget {
         instance: instance.root.clone(),
@@ -547,10 +547,10 @@ fn unpack_on_worker(
 fn open_unpacked(app: &mut App, root: &std::path::Path) -> Option<String> {
     let inst = Instance::portable(root.to_path_buf());
     let gid = inst.game_id()?;
-    let Some(idx) = app.games.iter().position(|g| g.def.id == gid) else {
+    let Some(idx) = instance_game_index(&app.games, &inst, &gid) else {
         return Some(format!(
             "\n{gid} is not installed on this machine yet, so Eidos cannot open the \
-             instance. Install the game through Steam, then start Eidos again."
+             instance. Restore its selected game installation, then start Eidos again."
         ));
     };
     app.selected = Some(idx);
@@ -1038,16 +1038,26 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // switcher. The entry was built from the registry at a different
             // moment, so re-check the root before committing to it.
             if let Some(k) = app.known.get(i).cloned() {
-                if let (true, Some(g)) = (k.inst.exists(), app.games.get(k.game_index)) {
-                    let id = g.def.id;
-                    app.selected = Some(k.game_index);
-                    let _ = k.inst.ensure_manifest(id, InstanceKind::Global);
-                    let _ = k.inst.ensure_profiles();
+                let current = app
+                    .games
+                    .get(k.game_index)
+                    .and_then(|g| instance_game_index(&app.games, &k.inst, g.def.id));
+                if let (true, Some(index)) = (k.inst.exists(), current) {
+                    let id = app.games[index].def.id;
+                    if let Err(error) = k
+                        .inst
+                        .ensure_manifest(id, InstanceKind::Global)
+                        .and_then(|_| k.inst.ensure_profiles())
+                    {
+                        app.status = Some(format!("Cannot open this instance: {error}"));
+                        return Task::none();
+                    }
+                    app.selected = Some(index);
                     remember_open(&k.inst, id);
                     open_instance(app, k.inst);
                 } else {
                     app.status = Some(format!(
-                        "'{}' is not reachable right now (moved folder, unmounted drive?).",
+                        "'{}' is not reachable right now or its selected installation changed.",
                         k.inst.root.display()
                     ));
                 }
@@ -6125,16 +6135,37 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             return crate::file_preview::start(app, path, Some(operation), None, None);
         }
         Message::ChooseExtensionFile(operation) => {
+            app.extension_picker = app.extension_picker.wrapping_add(1);
+            let request = app.extension_picker;
+            let target = collection_target(app);
+            let epoch = app.archive_epoch.get();
             return Task::perform(
                 rfd::AsyncFileDialog::new()
                     .set_title("Choose a file for an extension")
                     .pick_file(),
-                move |file| {
-                    Message::ExtensionFilePicked(operation, file.map(|f| f.path().to_path_buf()))
+                move |file| Message::ExtensionFilePicked {
+                    request,
+                    target,
+                    epoch,
+                    operation,
+                    path: file.map(|f| f.path().to_path_buf()),
                 },
-            )
+            );
         }
-        Message::ExtensionFilePicked(operation, path) => {
+        Message::ExtensionFilePicked {
+            request,
+            target,
+            epoch,
+            operation,
+            path,
+        } => {
+            if request != app.extension_picker
+                || target != collection_target(app)
+                || epoch != app.archive_epoch.get()
+            {
+                return Task::none();
+            }
+            app.extension_picker = app.extension_picker.wrapping_add(1);
             if let Some(path) = path {
                 app.addons_open = false;
                 return crate::file_preview::start(app, path, Some(operation), None, None);
@@ -6166,6 +6197,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
         }
         Message::ClosePreview => {
+            app.extension_picker = app.extension_picker.wrapping_add(1);
             app.preview_pending.take();
             app.preview = None;
         }
