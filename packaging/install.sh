@@ -165,6 +165,25 @@ done
 bindir="$(cd "$bindir" && pwd)"
 echo
 
+# Preserve the bundled attribution when users discard the unpacked package.
+notices="${XDG_DATA_HOME:-$HOME/.local/share}/licenses/eidos"
+(( system )) && notices=/usr/local/share/licenses/eidos
+if [[ -d "$here/licenses" ]]; then
+	sudo_if_needed "$notices" install -d -m755 "$notices"
+	sudo_if_needed "$notices" cp -R "$here/licenses/." "$notices/"
+elif [[ -d "$here/../native/eidos-nif-preview" ]]; then
+	for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
+		sudo_if_needed "$notices" install -Dm644 "$here/../native/eidos-nif-preview/$notice" "$notices/nifly/$notice"
+	done
+	sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md" "$notices/omod/UPSTREAM.md"
+fi
+for license_file in "$here/LICENSE" "$here/../LICENSE"; do
+	if [[ -f "$license_file" ]]; then
+		sudo_if_needed "$notices" install -Dm644 "$license_file" "$notices/LICENSE"
+		break
+	fi
+done
+
 echo "capability"
 capped=0
 if (( apply_cap )); then

@@ -118,12 +118,12 @@ jobs:
           # anything is installed.
           cp target/release/eidos target/release/eidos-gui "dist/${name}/"
           cp target/nif-preview/eidos-nif-preview "dist/${name}/"
-          mkdir -p "dist/${name}/licenses/nifly"
-          cp native/eidos-nif-preview/UPSTREAM.md native/eidos-nif-preview/VENDORED-SHA256SUMS \
-             native/eidos-nif-preview/vendor/nifly/LICENSE native/eidos-nif-preview/vendor/nifly/README.md \
-             native/eidos-nif-preview/vendor/nifly/external/half.hpp \
-             native/eidos-nif-preview/vendor/nifly/external/Miniball.hpp "dist/${name}/licenses/nifly/"
+          for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
+            install -Dm644 "native/eidos-nif-preview/${notice}" "dist/${name}/licenses/nifly/${notice}"
+          done
           cp README.md LICENSE SECURITY.md "dist/${name}/"
+          mkdir -p "dist/${name}/licenses/omod"
+          cp crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "dist/${name}/licenses/omod/"
           # Not stripped on purpose. Cargo's release profile emits no DWARF
           # anyway, so `--strip-all` would only remove the symbol table - which is
           # precisely what turns a user's panic backtrace into something we can
@@ -199,7 +199,7 @@ jobs:
           ./install.sh
           \`\`\`
 
-          The installer copies \`eidos\` and \`eidos-gui\` into \`~/.local/bin\`
+          The installer copies \`eidos\`, \`eidos-gui\` and the NIF preview helper into \`~/.local/bin\`
           (override with \`--bindir DIR\`) and registers the desktop and Nexus
           download handlers. The default user installation needs no sudo.
 
@@ -215,6 +215,7 @@ jobs:
 
           - x86_64 Linux, glibc 2.39 or newer (built on Ubuntu 24.04)
           - A kernel with FUSE, and \`fusermount3\` available
+          - 7-Zip (\`7z\`, \`7zz\` or \`7za\`) for mod archives
 
           ## Verify
 

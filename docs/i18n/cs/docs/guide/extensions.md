@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Rozšíření
 
@@ -18,8 +18,7 @@ jinou sadou vlastností sdílené závislosti - je nedefinované chování, ne n
 verzí. A widgety Eidosu jsou generické v době překladu, takže knihovna by žádný
 nedokázala postavit a vrátit, ani kdyby ABI stabilní bylo.
 
-Rozšíření je tedy program, který Eidos *spouští*. Nemůže shodit okno, nemůže
-poškodit seznam módů a funguje dál napříč aktualizacemi Eidosu.
+Rozšíření je program, který Eidos spouští s přístupem vašeho účtu k souborovému systému. Instalujte pouze pomocné programy, kterým důvěřujete. Oddělení procesů a kontrola odpovědí neposkytují sandbox operačního systému.
 
 ## Nástroj
 
@@ -87,8 +86,4 @@ vyřešit, je odmítnuto a Eidos řekne, které chybí.
 
 ## Co rozšíření nemůže
 
-Dostane hodnoty a běží; nemůže volat zpět do Eidosu, měnit seznam módů ani cokoli
-kreslit v okně. To je záměr. To, k čemu MO2 používá zásuvné moduly a co skutečně
-MUSÍ sáhnout dovnitř - podpora her, instalátory, engine konfliktů - je tu vestavěné,
-ne přišroubované: definice hry je vlastní TOML v `~/.config/Colony/Eidos/games/` a
-instalátory FOMOD a BAIN jsou nativní.
+Rozšíření nemůže zpětně volat Eidos, zaregistrovat se z archivu ani kreslit vlastní widgety. Strukturované instalátory protokolu 1 mohou vracet kontrolované plány souborů a výzvy k výběru; kontrolu, přípravu v dočasném adresáři a zveřejnění řídí Eidos. FOMOD a BAIN zůstávají nativními instalátory. Rozšíření pro náhled a informace o uložených hrách používají stejného hostitele s omezenými odpověďmi. Prioritu přiřazování, zaznamenané odpovědi CLI, limity a kontroly identity při opakování popisuje [specifikace protokolu se spustitelnými příklady](../../../../examples/extensions/README.md).

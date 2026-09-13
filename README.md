@@ -256,4 +256,7 @@ Adding a family is one descriptor row:
 
 ## License
 
-GPL-3.0-or-later. Mod management belongs to everyone.
+Eidos's original code is GPL-3.0-or-later. Bundled OMOD translations are
+GPL-3.0-only; see their [upstream credits](crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md).
+The NIF helper retains its [component licenses and credits](native/eidos-nif-preview/UPSTREAM.md).
+Mod management belongs to everyone.

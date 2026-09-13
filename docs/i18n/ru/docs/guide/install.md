@@ -1,10 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # Установка Eidos
 
-Три пути. Все дают одни и те же два исполняемых файла - `eidos` (командная
-строка) и `eidos-gui` - плюс обработчик `nxm://`, благодаря которому кнопка
-«Mod Manager Download» на Nexus попадает в вашу инстанцию.
+Три пути. Все дают `eidos` (командную строку), `eidos-gui` и вспомогательную программу статического предпросмотра NIF, а также обработчик `nxm://`, благодаря которому кнопка «Mod Manager Download» на Nexus направляет загрузку в вашу инстанцию.
 
 ## Что нужно заранее
 
@@ -36,9 +34,11 @@ cd packaging && makepkg -si
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+Для сборки из исходников нужны Rust, `just`, CMake 3.20+, компилятор C++17 и Python 3 для тестов нативной вспомогательной программы. Команды без `just` приведены в [инструкции для нативной вспомогательной программы](../../../../../native/eidos-nif-preview/README.md). Соберите Rust командой `cargo build --release --locked`, скопируйте вспомогательную программу в `target/release`, затем запустите `packaging/install.sh --from target/release`.
 
 ## Затем: указать на него Steam
 

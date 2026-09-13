@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -134,8 +134,8 @@ instanci hrané normálně, ne na benchmarku.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Potom nastavte parametr spuštění vaší hry ve Steamu na
@@ -261,4 +261,4 @@ Přidání rodiny je jeden řádek deskriptoru:
 
 ## Licence
 
-GPL-3.0-or-later. Správa módů patří všem.
+Původní kód Eidosu je pod licencí GPL-3.0-or-later. Přibalené překlady kódu OMOD jsou pod licencí GPL-3.0-only; viz [poděkování původním autorům](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). Pomocný program NIF zachovává [licence součástí a poděkování autorům](../../../native/eidos-nif-preview/UPSTREAM.md). Správa módů patří všem.

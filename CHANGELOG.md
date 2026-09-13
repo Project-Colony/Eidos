@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.18.0](https://github.com/Project-Colony/Eidos/compare/v1.17.1...v1.18.0) (2026-09-13)
+
+### Features
+
+* Browse, preview and export validated BSA/BA2 members from the selected physical provider; search and page large member lists.
+* Preview DDS mipmaps, layers, faces and channels, and static LE/SSE NIF models with current-provider textures, orbit, zoom and wireframe.
+* Install OMOD containers, supported OBMM scripts and three fixed native handlers; review choices and profile effects, preserve receipts and retry pending effects.
+* Run trusted custom installers, previews and save-info extensions through checked protocols, with recorded CLI/GUI/collection choices.
+* Retain backups when replacing or merging mods; apply collection bundle, file-selection, patch and exclusion recipes with verified download/runtime identity.
+* Support timestamp ordering for Morrowind, Oblivion, Fallout 3 and New Vegas, Enderal SE sorting, Heroic/Legendary installations, and named-folder Stardew/7 Days to Die mods.
+
+### Fixes
+
+* Keep unrelated filesystem activity from restarting directory scans; avoid timestamp-projection overhead for games that do not use it.
+* Preserve Root Overwrite whiteouts, opaque-directory recovery and profile-specific timestamp receipts; avoid indexing Data twice during Root setup.
+* Keep preview work off the GUI event loop and reject stale installation, profile, file-picker and preview results.
+* Bind scripted installation receipts to the archive actually decoded; reserve host metadata and hold publication locks across ordinary installers.
+* Route Morrowind saves, 7 Days to Die user mods and prerequisite DLLs through the selected installation and prefix.
+* Include the native NIF helper and upstream notices in packages; refresh all affected translations.
+
+### Compatibility
+
+* NIF previews are static and approximate. OMOD support is finite; arbitrary C#/VB scripts are not executed. Trusted extensions have the user's filesystem access.
+* External stores require an explicit compatible launch command; external Tier-2 runtime installation remains manual. Flatpak/AppImage packaging is unverified.
+* Verification evidence and remaining limits are recorded in [the follow-up ledger](docs/project/mo2-followups/progress.md). No Skyrim/Proton gameplay or FPS improvement is claimed.
+
 ## [1.17.1](https://github.com/Project-Colony/Eidos/compare/v1.16.0...v1.17.1) (2026-09-12)
 
 ### Fixes

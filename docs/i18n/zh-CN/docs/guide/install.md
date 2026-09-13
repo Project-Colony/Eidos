@@ -1,9 +1,8 @@
-<!-- eidos-i18n: source=docs/guide/install.md sha=521dbebadf66cbf6e36ba5fc1a2882a9e06d9171 -->
+<!-- eidos-i18n: source=docs/guide/install.md sha=c47b7d58351d0b72f6e700bf9acb7e3d78af6a5c -->
 
 # 安装 Eidos
 
-三条路。它们都会给你同样的两个可执行文件 - `eidos`(命令行)与 `eidos-gui` -
-以及 `nxm://` 处理器,让 Nexus 上的 "Mod Manager Download" 按钮直接落进你的实例。
+三种安装方式都会提供 `eidos`（命令行）、`eidos-gui` 和静态 NIF 预览辅助程序，以及 `nxm://` 处理器，让 Nexus 上的“Mod Manager Download”按钮将下载内容送到你的实例。
 
 ## 你需要先具备
 
@@ -35,9 +34,11 @@ cd packaging && makepkg -si
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
+
+从源码构建需要 Rust、`just`、CMake 3.20 或更高版本、C++17 编译器，以及用于原生辅助程序测试的 Python 3。不使用 `just` 时，请参阅[原生辅助程序说明](../../../../../native/eidos-nif-preview/README.md)，使用 `cargo build --release --locked` 构建 Rust 程序，将辅助程序复制到 `target/release`，然后运行 `packaging/install.sh --from target/release`。
 
 ## 然后:让 Steam 指向它
 

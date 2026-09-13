@@ -34,7 +34,7 @@ panel reports this mode and missing prerequisites.
 File capabilities are ignored on `nosuid` mounts and may be lost when a binary
 is replaced. Only reapply one when deliberately using the optional mode.
 
-## Why Flatpak is impossible
+## Flatpak integration remains unverified
 
 The earlier title is retained for existing links, but its original absolute
 claim was incorrect. Flatpak support has not been implemented or verified.
@@ -42,7 +42,7 @@ Sandbox access to game files, Steam/Proton, FUSE and mount namespaces would need
 an integration design. Its restrictions on file capabilities alone do not prove
 that Eidos's default rootless mode is impossible.
 
-## Why AppImage is a trap
+## AppImage integration remains unverified
 
 AppImage support is also unimplemented and unverified. An image mounted with
 `nosuid` cannot grant a file capability, but normal rootless operation does not

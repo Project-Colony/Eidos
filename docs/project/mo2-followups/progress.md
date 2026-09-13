@@ -1,61 +1,146 @@
 # Eidos follow-up progress
 
-Plan: docs/project/mo2-followups/plan.md
-Base: 9f01d7dc94cf257ccbc579fee8ccf0f39de73f19 (v1.17.1).
-Branch: eidos-mo2-followups.
+Plan: [implementation checklist](plan.md). Base: `9f01d7dc94cf257ccbc579fee8ccf0f39de73f19` (v1.17.1).
+Branch: `eidos-mo2-followups`. Release: [**1.18.0**](https://github.com/Project-Colony/Eidos/releases/tag/v1.18.0).
 
-## Publication boundary — complete
+## Current boundary
 
-[Eidos 1.17.1](https://github.com/Project-Colony/Eidos/releases/tag/v1.17.1)
-is public. MotherSphere authored the release, uploaded both final assets, and
-owns the commits/tag. PRs #65 and #66 are merged. Ubuntu release run
-34702845103 and CI run 34702423465 passed. The archive checksum is
-`b0e9f1b43e26282fcc5da0a783394d0bfc7b22880c2feb758fb0acfa85ce8aec`.
-Both packaged executables are x86-64 ELF and require at most glibc 2.39.
-The CLI does not implement --version; that probe returned usage, not a version.
-The unpublished v1.17.0 candidate remains immutable and was superseded.
+A–G are implemented. H code review and local acceptance are complete. The release
+workflow separately builds and tests the official Ubuntu package before publication.
+The isolated checkout is under `~/improvedcamera-build/`; no original checkout,
+real mod/game/profile files, or selected installed binaries were changed.
+Git and GitHub mutations use MotherSphere, without assistant attribution.
+The completed v1.17.1 release and the unpublished v1.17.0 candidate remain immutable.
 
-## Execution
+## Delivered behavior
 
-A–H are authorized. Integration is in progress; the complete follow-up branch
-has not yet passed its final review or been released.
-Root owns Git, dependency locks, add-on protocols, and shared GUI types.
-Independent archive, installer and collection work uses distinct owned files.
-Installer C owns staging/publication; collection G consumes its pre-publication
-transform API. Reviews and test evidence will be recorded per completed slice.
+| Area | Implementation and finite contract |
+| --- | --- |
+| A — Archives | Bounded TES3/BSA103/104/105 and BA2 GNRL/DX10 payload reading, checked decompression/DDS reconstruction, physical-provider preview/export, search/paging and stale-result rejection. |
+| B — Engine ordering | Profile-specific timestamp projection/capture for Morrowind, Oblivion, Fallout 3 and New Vegas; Enderal SE LOOT mapping; private Morrowind.ini and Saves routing, including MWSE cosaves. |
+| C — Reinstall backups | Remembered GUI backup choice, CLI backup flag, inert retained Replace/Merge backups, and a shared checked manual backup helper. Transforming installers refuse live Merge before mutation. |
+| D — Previews | Bounded BC1–BC7/RGBA/BGRA DDS selection and static LE/SSE NIF geometry, transforms, current-provider diffuse textures, orbit/tilt/zoom/wireframe. Native parser and license notices are packaged. |
+| E — Installers | ZIP/LZMA OMOD, bounded OBMM control flow/prompts/effects, reviewed native DarNified UI 1.3.2 / DarkUI'd DarN 1.6 / Horse Armor Revamped 1.8 handlers, owned shader projections and recoverable approved profile effects. Trusted protocol-1 custom installers share checked staging and identity-bound choices across GUI, CLI and collections. |
+| F — Stores/extensions | Native/Flatpak Heroic GOG/Epic and Legendary discovery, explicit installation identities and real Wine prefixes; named-folder Stardew/SMAPI and 7 Days to Die layouts; Preview/SaveInfo callers and runnable examples. |
+| G — Collections | Archive digest/size checks, installed bundles, hash-based file selection/renames, bounded BSDIFF with original CRC, provider-specific exclusions, exact runtime decisions, validated HTTP resumes and custom/OMOD interventions. |
 
-### Verified slices
+## Review corrections
 
-- A backend: bounded archive member reading/export implemented; independent
-  review corrected LZ4 end-marker validation, combined BSA path limits and
-  substituted export stages. 40 tests and all-target Clippy passed. GUI provider
-  actions, search/paging, checked export and asynchronous previews are wired;
-  final independent GUI review and visual acceptance remain pending.
-- B: four timestamp engines, Enderal mapping, isolated INI/order projections and
-  durable capture implemented. Worker evidence: 450 unit/integration cases and
-  three mounted root sessions, both FUSE modes, clean production Clippy.
-  Independent integration review remains pending; Morrowind save routing is a
-  separate identified gap and is not claimed complete.
-- C: retained reinstall backups, remembered collision checkbox, CLI --backup and
-  shared manual backup are integrated. Transformation callbacks reject Merge
-  before mutation; ordinary Merge remains supported. Final caller review pending.
-- D: bounded DDS decoder and mip/layer/face/alpha controls are integrated. Pinned
-  licensed NIF helper, static Rust renderer, current-provider diffuse textures,
-  orbit/tilt/zoom/wireframe and source/release packaging are integrated. Synthetic
-  rendered images were inspected; actual window interaction remains pending.
-- E1: ZIP/LZMA OMOD containers and unscripted installation use ordinary staging,
-  including collection recipes. 248 installer/collection tests and production
-  Clippy passed; upstream reference checked all 157 members. Script interpreter,
-  named fixed handlers and their supported effects remain pending.
-- F: Heroic GOG/Epic/Legendary discovery, installation identity and actual prefixes
-  are integrated. Folder mod units and named game examples pass installer tests.
-  Trusted Preview/SaveInfo protocols, callers and three executable examples are
-  implemented; custom installer caller integration and remaining routing review
-  are still pending. Add-on tests: 13 passed. GUI suite: 342 passed.
-- G: recipe transforms, receipts, runtime decisions and resumable HTTP identity
-  implemented; 182 backend tests passed before the additional OMOD integration.
-  GUI forwards receipt recovery and requires explicit runtime continuation.
-- H: whole-branch review, full acceptance and publication remain pending.
+Independent reviews reproduced and corrected the following concrete failures:
+
+- Unrelated directory mutations repeatedly rebuilt cold listings. Per-directory
+  cache identities now reject only genuinely stale scans, including slot removal/recreation.
+- Root setup indexed the child Data tree needlessly; private Root capture mishandled
+  shared whiteouts and opaque directories. Recovery is retryable and rejects ambiguity.
+- Failed timestamp receipt writes could lose completed namespace bookkeeping.
+  Pending receipts and durable profile writes preserve the next-launch recovery path.
+- Disabled timestamp projection still locked/cloned per-file metadata. The ordinary
+  path now skips that work; opt-in passthrough follows the projection capability rule.
+- Late preview/picker/installer results could follow another instance or source.
+  Requests retain their original target, physical input and generation.
+- Scripted receipts could hash a different archive from the one decoded. Decoders now
+  read a held original file descriptor and verify its pre-decode identity through publication.
+- A plain collection could carry a forged pending OMOD receipt and request profile
+  writes during recovery. Native payloads now reject reserved host metadata before
+  publication; legitimate receipts are created by the host after payload validation.
+- Custom callbacks could change inputs after the last check; publication now checks
+  again after callbacks. Store-specific control directories bind the actual context.
+- Shader limits disagreed between installation and launch; both enforce 8 MiB inputs.
+  Generated handler files and every approval-critical effect/warning remain visible.
+- Ordinary GUI publication needed a held instance lock, including registration.
+  Original-target checks also cover dialogs that stay open across a profile switch,
+  changed on-disk manifests, and legacy keys that become ambiguous among known copies.
+- Auto-provisioned DLLs used Steam's path for external installs; they now use the
+  selected prefix. Cloud save copies are restricted to the Steam prefix outside the game tree.
+
+## Acceptance evidence
+
+Final local verification used Rust 1.94.1 with the locked, offline dependency graph:
+
+- Installer: 230 unit tests plus 4 corpus checks; one opt-in upstream OMOD archive check
+  was also run explicitly and passed for all 157 supplied members. Collections: 56 unit tests plus 29 integration tests.
+- FUSE: 32 unit tests and 27 real mounted tests in each directory mode, no skips;
+  projected timestamps were also exercised with opt-in passthrough enabled.
+- Source routing: 25 isolated launch attempts include refusal cases, read-only SDP
+  composition, profile switches, Morrowind saves and the separate user Mods mount.
+- GUI: all **383 serial release tests** passed, including the final ordinary-dialog
+  and queued-worker profile/manifest/legacy-key guards. Three tests build, send real pointer/keyboard events to, and render actual iced
+  widget trees offscreen, including a completed synthetic installation, DDS/NIF
+  controls and an archive-member preview. Nine PNGs were visually inspected.
+- Native NIF parser: 66 release and sanitizer fixture cases; geometry/pixel/transform,
+  warning and input bounds are covered separately by Rust tests.
+- Translation check: 135 pages, zero stale stamps. All 168 then-present Markdown
+  files had resolving internal links. Only affected translated sections changed.
+- Rootless installer smoke check preserves all three executables and upstream notices
+  without invoking sudo or setcap. `just` is unavailable on this host; equivalent
+  commands were run directly, its recipes inspected, and no system package installed.
+
+The full workspace release build and non-GUI workspace tests passed. The CLI was
+rerun after its final identity correction: **41 tests passed**. Both mounted directory
+modes passed **27/27 without skips**, alongside the isolated root/SDP/save launch
+harness. The opt-in OMOD reference test also passed explicitly; no unavailable
+reference archive is silently counted as tested. Production workspace Clippy passed
+with warnings denied. The six existing GUI test-only style lints are outside the
+production lint gate; no test failure is waived. Global rustfmt remains advisory,
+matching CI rather than rewriting unrelated historical files.
+
+Reproduce the main checks from the checkout (with isolated XDG state and the built
+native helper on PATH):
+
+```sh
+cargo +1.94.1 build --workspace --release --locked --offline
+cargo +1.94.1 test --workspace --exclude eidos-gui --release --locked --offline
+cargo +1.94.1 test -p eidos-gui --release --locked --offline -- --test-threads=1
+cargo +1.94.1 clippy --workspace --release --locked --offline -- -D warnings
+EIDOS_FUSE_OPENDIR=1 EIDOS_FUSE_PASSTHROUGH=1 cargo +1.94.1 test -p eidos-fuse --test union -p eidos-launch --test root_overwrite --release --locked --offline
+bash packaging/tests/install.sh
+./scripts/i18n-check.sh
+./scripts/i18n-links.py
+```
+
+The release page identifies the published source tag and official archive checksum.
+Local Arch builds are not substituted for the Ubuntu glibc-2.39 compatibility package.
+
+## Performance evidence and limits
+
+Exact-tag synthetic directory churn: v1.16.0 median **13.11 ms / 8 builds**;
+v1.17.1 **541.62 ms / 353 builds**. The isolated correction measured
+**478.218 ms / 305 builds → 12.552 ms / 8 builds**. Quiet/warm controls were comparable.
+Root indexing measured **20,151 entries / 38.605 ms → 51 / 0.098 ms**;
+the separate Data index retained 20,100 entries.
+
+A warmed exact-method attribute experiment measured **52.112 → 10.835 ns/call**
+with projection disabled; the published baseline measured 10.071 ns/call. Nine
+alternating samples of one million calls asserted identical output attributes.
+These are method-level synthetic measurements, not mounted streaming or game FPS.
+
+Optimized GUI medians for 1k/10k synthetic rows were 0.889/9.656 ms for
+construction and 0.927/12.207 ms for layout (1280×800, native tiny-skia renderer,
+ten warmed samples, upper-middle statistic). Debug measurements were much slower
+and are not representative of the package. The existing list remains O(n),
+without virtualization; 10k entries can exceed one 60 Hz frame. These measurements
+cover widget construction/layout, not desktop compositor or GPU presentation.
+
+NIF rendering is static, orthographic and approximate; unsupported blocks and missing
+textures remain visible. OMOD support is a finite native contract, not arbitrary
+C#/VB execution or full MO2 scripting parity. Trusted extensions have the user's
+filesystem access; replies are checked but there is no operating-system sandbox.
+
+External copies require an explicit compatible runner; external Tier-2 prerequisite
+installation remains manual. 7 Days to Die resolves its user-data location at launch;
+discovery cannot infer a future custom command. Nonstandard wrappers need an explicit
+UserDataFolder. No Flatpak/AppImage package integration is claimed.
+
+Profile-effect writes and Root capture are retryable, not one atomic transaction
+across all files. Failure of every receipt path or a kill before persistence remains
+non-durable. A killed shader session can leave unused owned staging files. An empty
+Root upper with no Root mods still skips Root capture. At narrow pane widths the
+existing eight-tab row can clip; the split divider exposes the remaining tabs.
+
+No Skyrim/Proton playthrough, GPU shader compatibility, hardware diagnosis or FPS
+improvement is claimed. All runtime tests use isolated synthetic installations.
+
+## Historical performance investigation
 
 ### Performance investigation checkpoint — 2026-09-13
 
@@ -186,32 +271,3 @@ The existing empty/missing Root upper with no Root mods still skips the root
 mount; root-level writes in that mode are not captured. This limit was verified
 only with synthetic installations. The user's selected v1.16.0 reference binaries
 remain unchanged. No Skyrim/Proton frame-time test or hardware diagnosis is claimed.
-
-### Continued follow-ups after the performance review
-
-- Store discovery rejects invalid IDs, missing/escaping/root install paths,
-  malformed DLC fields and root Wine prefixes. External identities distinguish
-  different prefixes over the same installed files; legacy keys match only when
-  unambiguous. 17 store tests and all-target Clippy passed. Reinitializing a legacy
-  instance still refuses a literal key mismatch; old noncanonical Steam keys
-  require reselection instead of silently following a retargeted symlink.
-- NIF rendering, provider texture resolution and packaging integration now pass
-  361 serial GUI tests. The native LE/SSE fixture tests require the real helper;
-  none silently skip it. Loose Overwrite textures beat archive members, changed
-  model/texture identities and late replies are refused, and failed reads consume
-  their attempted input budget. Native parser tests and 8 renderer test groups
-  separately cover bounds, transforms, alpha, pixels and cancellation.
-- Independent NIF review reproduced a valid 19,000-warning model that previously
-  copied and laid out 2.4 MB of text on every view. A red/green regression now
-  verifies 64 displayed warnings, bounded individual text and an explicit omitted
-  count. Display text and scene/texture data are shared between controls. The
-  original scene diagnostics remain available internally. Approximate lighting,
-  static orthographic rendering and absent engine/animation parity remain visible.
-- The native helper is included in release, Arch and `just` builds with upstream
-  notices. The rootless installer smoke check passed with all three binaries and
-  no privileged command. Shell syntax passed; `just` itself is not installed on
-  this host, so its recipes were inspected rather than executed through `just`.
-- The OBMM interpreter and the exact known-handler inventory are active in
-  separate ownership areas. Full E2/E3 effects and caller acceptance remain pending.
-
-These slices do not claim complete A–H acceptance or a new release.

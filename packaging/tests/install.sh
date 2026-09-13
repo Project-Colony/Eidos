@@ -18,6 +18,9 @@ EIDOS_INSTALL_TEST_GUARD="$root/privileged" PATH="$root/tools:$PATH" XDG_DATA_HO
 test -x "$root/Eidos Tools/eidos"
 test -x "$root/Eidos Tools/eidos-gui"
 test -x "$root/Eidos Tools/eidos-nif-preview"
+test -f "$root/data/licenses/eidos/LICENSE"
+test -f "$root/data/licenses/eidos/omod/UPSTREAM.md"
+test -f "$root/data/licenses/eidos/nifly/vendor/nifly/LICENSE"
 test ! -e "$root/privileged"
 if [ "$(id -u)" != 0 ]; then
     grep -Fx "Exec=\"$root/Eidos Tools/eidos-gui\"" "$root/data/applications/eidos.desktop"

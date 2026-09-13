@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Eklentiler
 
@@ -19,8 +19,7 @@ kitaplık, sürüm uyuşmazlığı değil tanımsız davranıştır. Üstelik Ei
 görsel bileşenleri derleme zamanında geneldir, yani ABI kararlı olsaydı bile bir
 kitaplık geri verecek bir bileşen kuramazdı.
 
-Bu yüzden eklenti, Eidos'un *çalıştırdığı* bir programdır. Pencereyi çökertemez,
-bir mod listesini bozamaz ve Eidos güncellemeleri boyunca çalışmayı sürdürür.
+Eklenti, Eidos'un hesabınızın dosya sistemi erişim haklarıyla çalıştırdığı bir programdır. Yalnızca güvendiğiniz yardımcıları kurun. Süreç yalıtımı ve denetlenen yanıtlar, işletim sistemi düzeyinde bir korumalı alan sağlamaz.
 
 ## Bir araç
 
@@ -89,9 +88,4 @@ bir hata görünür biçimde başarısız olur, `--out {typo}` ifadesini
 
 ## Bir eklentinin yapamayacakları
 
-Değerleri alır ve çalışır; Eidos'u geri çağıramaz, mod listesini değiştiremez,
-pencereye hiçbir şey çizemez. Bu bilinçlidir. MO2'nin eklentilerle karşıladığı ve
-gerçekten içeriye uzanması GEREKEN şeyler - oyun desteği, kurucular, çakışma
-motoru - burada sonradan takılmış değil, gömülüdür: bir oyun tanımı
-`~/.config/Colony/Eidos/games/` içindeki kendi TOML'udur ve FOMOD ile BAIN
-kurucuları yerlidir.
+Bir eklenti Eidos'a geri çağrı yapamaz, kendisini bir arşivden kaydedemez veya kendi arayüz bileşenlerini çizemez. Yapılandırılmış protokol 1 kurucuları denetlenen dosya planları ve seçim soruları döndürebilir; inceleme, geçici hazırlık ve yayımlama Eidos'un kontrolündedir. FOMOD ve BAIN yerel kurucular olarak kalır. Önizleme ve kayıt bilgisi eklentileri aynı sınırlı yanıt sunucusunu kullanır. Eşleştirme önceliği, kaydedilmiş CLI yanıtları, sınırlar ve yeniden yürütmede kimlik denetimleri için [protokol sözleşmesine ve çalıştırılabilir örneklere](../../../../examples/extensions/README.md) bakın.

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/extensions.md sha=9967c65927b3e805a0392071eec77ada3a8c5408 -->
+<!-- eidos-i18n: source=docs/guide/extensions.md sha=5f31f1cbc3dcbfb9655f3570f01e5ada1377268d -->
 
 # Rozszerzenia
 
@@ -19,8 +19,7 @@ niezdefiniowane, a nie niezgodność wersji. Do tego widżety Eidosa są generyc
 etapie kompilacji, więc biblioteka nie zbudowałaby żadnego do zwrócenia, nawet
 gdyby ABI było stabilne.
 
-Rozszerzenie jest więc programem, który Eidos *uruchamia*. Nie może wywrócić okna,
-nie może uszkodzić listy modów i działa dalej mimo aktualizacji Eidosa.
+Rozszerzenie to program, który Eidos uruchamia z uprawnieniami twojego konta do systemu plików. Instaluj tylko programy pomocnicze, którym ufasz. Izolacja procesów i sprawdzanie odpowiedzi nie zapewniają piaskownicy systemu operacyjnego.
 
 ## Narzędzie
 
@@ -89,8 +88,4 @@ rozwinąć, jest odrzucane, a Eidos mówi, których brakuje.
 
 ## Czego rozszerzenie nie może
 
-Dostaje wartości i działa; nie może oddzwonić do Eidosa, zmienić listy modów ani
-narysować czegokolwiek w oknie. To celowe. To, do czego MO2 używa wtyczek i co
-naprawdę MUSI sięgnąć do środka - obsługa gier, instalatory, silnik konfliktów -
-jest tu wbudowane, a nie doczepione: definicja gry to własny TOML w
-`~/.config/Colony/Eidos/games/`, a instalatory FOMOD i BAIN są natywne.
+Rozszerzenie nie może wywoływać Eidosa zwrotnie, rejestrować się z archiwum ani rysować własnych widżetów. Instalatory korzystające ze strukturalnego protokołu 1 mogą zwracać sprawdzone plany plików i pytania z wyborem; Eidos odpowiada za przegląd, przygotowanie w katalogu tymczasowym i publikację. FOMOD i BAIN pozostają instalatorami natywnymi. Rozszerzenia podglądu i informacji o zapisach gry używają tego samego hosta z ograniczonymi odpowiedziami. [Specyfikacja protokołu i uruchamialne przykłady](../../../../examples/extensions/README.md) opisują priorytet dopasowania, zapisane odpowiedzi CLI, limity oraz kontrolę tożsamości przy ponownym wykonaniu.

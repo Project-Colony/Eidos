@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=8e6cd7e22912da361062ab63a7d3e30e3a2c573f -->
+<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
 
 <div align="center">
 
@@ -141,8 +141,8 @@ pas sur un banc d'essai.
 
 ```bash
 git clone https://github.com/Project-Colony/Eidos && cd Eidos
-cargo build --release
-install -m755 target/release/eidos target/release/eidos-gui ~/.local/bin/
+just build
+just install
 ```
 
 Mettez ensuite l'option de lancement Steam de votre jeu à
@@ -266,4 +266,4 @@ Ajouter une famille tient en une ligne de descripteur :
 
 ## Licence
 
-GPL-3.0-or-later. La gestion de mods appartient à tout le monde.
+Le code original d'Eidos est sous licence GPL-3.0-or-later. Les traductions de code OMOD intégrées sont sous licence GPL-3.0-only ; consultez leurs [crédits d'origine](../../../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md). L'utilitaire NIF conserve les [licences et crédits de ses composants](../../../native/eidos-nif-preview/UPSTREAM.md). La gestion de mods appartient à tout le monde.
