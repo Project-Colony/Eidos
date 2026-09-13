@@ -8,6 +8,24 @@ use eidos_instance::Instance;
 #[cfg(test)]
 use eidos_instance::ModEntry;
 
+/// Compose installed OMOD shader requests for the selected Oblivion profile.
+/// The returned owner must outlive the launch's read-only Data file mappings.
+/// An existing profile directory owns the temporary files; game Data and mod
+/// providers are only read. Other engines never enter the SDP path.
+pub(crate) fn prepare_omod_shaders(
+    game: &DetectedGame,
+    inst: &Instance,
+    prof: &eidos_instance::Profile,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> std::io::Result<Option<eidos_gamefeatures::omod_shaders::ShaderSession>> {
+    if game.def.id != "oblivion" {
+        return Ok(None);
+    }
+    let mut layers = prof.load_order();
+    layers.push(game.data_path.clone());
+    eidos_gamefeatures::omod_shaders::prepare(layers, inst.overwrite_dir(), &prof.dir(), cancel)
+}
+
 fn runtime_diagnostics(
     game: &DetectedGame,
     inst: &Instance,
@@ -604,20 +622,18 @@ pub(crate) struct PreparedInis {
 pub(crate) fn prepare_saves(
     game: &DetectedGame,
     prof: &eidos_instance::Profile,
-) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-    let spec = game.plugin_spec()?;
-    let prefix = game.prefix()?;
-    let docs = eidos_plugins::documents_my_games_dir(&prefix, &spec);
-    let prefix_saves = docs.join("Saves");
-    if let Ok(n) = prof.seed_saves(&prefix_saves) {
-        if n > 0 {
-            eidos_log::info!(
-                "eidos play: adopted {n} existing save(s) into profile '{}'",
-                prof.name
-            );
-        }
+) -> std::io::Result<Option<(std::path::PathBuf, std::path::PathBuf)>> {
+    let Some(source) = game.saves_path() else {
+        return Ok(None);
+    };
+    let n = prof.seed_saves(&source)?;
+    if n > 0 {
+        eidos_log::info!(
+            "eidos play: adopted {n} existing save(s) into profile '{}'",
+            prof.name
+        );
     }
-    Some((prof.saves_dir(), prefix_saves))
+    Ok(Some((prof.saves_dir(), source)))
 }
 
 #[cfg(test)]
@@ -1160,6 +1176,53 @@ mod rescue_tests {
                 b"old session"
             );
         }
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod saves_routing_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn morrowind_adopts_install_saves_and_refuses_failed_profile_seed() {
+        let root = std::env::temp_dir().join(format!("eidos-prepare-saves-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let game = DetectedGame {
+            def: eidos_games::catalog()
+                .iter()
+                .find(|g| g.id == "morrowind")
+                .unwrap(),
+            source: Default::default(),
+            install_path: root.join("game"),
+            data_path: root.join("game/Data Files"),
+            compatdata: None,
+            steam_name: String::new(),
+        };
+        fs::create_dir_all(game.install_path.join("Saves")).unwrap();
+        fs::write(game.install_path.join("Saves/Slot.ess"), b"save").unwrap();
+        fs::write(game.install_path.join("Saves/Slot.mwse"), b"cosave").unwrap();
+        let prof = inst.active();
+        let bind = prepare_saves(&game, &prof).unwrap().unwrap();
+        assert_eq!(bind, (prof.saves_dir(), game.install_path.join("Saves")));
+        assert_eq!(
+            fs::read(prof.saves_dir().join("Slot.ess")).unwrap(),
+            b"save"
+        );
+        assert_eq!(
+            fs::read(prof.saves_dir().join("Slot.mwse")).unwrap(),
+            b"cosave"
+        );
+        fs::remove_dir_all(prof.saves_dir()).unwrap();
+        fs::write(prof.saves_dir(), b"obstruction").unwrap();
+        assert!(prepare_saves(&game, &prof).is_err());
+        assert_eq!(
+            fs::read(game.install_path.join("Saves/Slot.ess")).unwrap(),
+            b"save"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 }

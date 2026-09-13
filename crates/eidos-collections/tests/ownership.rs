@@ -509,9 +509,10 @@ fn omod_recipes_patch_before_publication_and_hashes_use_decoded_sources() {
         );
         let scripted = temp.0.join("scripted.omod");
         fs::write(&scripted, include_bytes!("fixtures/scripted.omod")).unwrap();
-        assert!(
-            matches!(hooks.install(&member, &scripted, name), Installed::Failed(error) if error.contains("script"))
-        );
+        // Scripted OMODs now retain an exact prompt instead of rejecting all scripts.
+        // No default file set or failing patch is published before acknowledgment.
+        let pending = hooks.install(&member, &scripted, name);
+        assert!(matches!(pending, Installed::NeedsUser(_)), "{pending:?}");
         assert_eq!(fs::read(dest.join("meta.ini")).unwrap(), meta);
     }
     assert!(fs::read_dir(inst.mods_dir()).unwrap().all(|e| !e

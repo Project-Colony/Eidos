@@ -363,6 +363,8 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         preview: None,
         preview_pending: None,
         extension_picker: 0,
+        installer: None,
+        mod_picker: 0,
         archive_filter: String::new(),
         archive_page: 0,
         archive_export: None,

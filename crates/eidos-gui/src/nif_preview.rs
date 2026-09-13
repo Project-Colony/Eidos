@@ -347,10 +347,10 @@ pub(crate) fn change_view(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    fn fixture_model() -> Model {
+    pub(crate) fn fixture_model() -> Model {
         Model {
             scene: Arc::new(
                 nif_render::parse(include_bytes!("nif_render_fixtures/sse.json")).unwrap(),

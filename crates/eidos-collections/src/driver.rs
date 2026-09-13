@@ -9,7 +9,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::installer_answers::{self, InstallerAnswers};
 use eidos_instance::Instance;
+use std::sync::atomic::AtomicBool;
 
 use crate::install::{Hooks, Installed, Obtained};
 use crate::manifest::{Collection, Mod, SourceType};
@@ -276,6 +278,19 @@ impl Hooks for RealHooks<'_> {
         if !self.verify_installed(m, folder)? {
             return Ok(None);
         }
+        if self
+            .inst
+            .mods_dir()
+            .join(folder)
+            .join(".eidos-omod.mohidden/install.json")
+            .exists()
+        {
+            match eidos_install::scripted::retry_omod_effects(self.inst, folder, &AtomicBool::new(false)) {
+                Ok(true) => {},
+                Ok(false) => return Ok(Some(Installed::NeedsUser("Approved OMOD profile effects remain pending; resume after resolving the reported issue".into()))),
+                Err(e) => return Ok(Some(Installed::NeedsUser(format!("Approved OMOD profile effects could not be retried: {e}")))),
+            }
+        }
         let renamed = (folder != safe(&m.name)).then(|| folder.to_string());
         self.register(folder, &m.name, &renamed)?;
         Ok(Some(
@@ -290,6 +305,10 @@ impl Hooks for RealHooks<'_> {
     }
 
     fn reserve(&mut self, m: &Mod, previous: Option<&str>) -> Result<String, String> {
+        let _lock = self
+            .inst
+            .try_lock("reserving collection member")
+            .map_err(|e| e.to_string())?;
         reserve_folder(self.inst, &safe(&m.name), &self.owner_marker(m), previous)
     }
 
@@ -399,6 +418,11 @@ impl Hooks for RealHooks<'_> {
     }
 
     fn install(&mut self, m: &Mod, archive: &Path, folder: &str) -> Installed {
+        let _lock = match self.inst.try_lock("installing collection member") {
+            Ok(lock) => lock,
+            Err(e) => return Installed::Failed(e.to_string()),
+        };
+        let cancel = AtomicBool::new(false);
         let mods_dir = self.inst.mods_dir();
         if eidos_install::fix_directory_name(folder).as_deref() != Some(folder)
             || !self.owns(&mods_dir.join(folder), m)
@@ -430,35 +454,23 @@ impl Hooks for RealHooks<'_> {
             crate::recipe::finish(&mapped, &self.payload_root, stage, &marker)
                 .map_err(eidos_install::InstallError::BadSelection)
         };
+        let pending = match installer_answers::read(&mods_dir.join(folder), &marker) {
+            Ok(p) => p,
+            Err(e) => return Installed::Failed(e),
+        };
+        let pause = |answers: &InstallerAnswers, why: &str| {
+            match installer_answers::write_for_archive(&mods_dir.join(folder), &marker, archive, answers) {
+                Ok(()) => Installed::NeedsUser(format!("{why}. Exact answers are saved in {}; answer that receipt and resume this collection", installer_answers::path(&mods_dir.join(folder)).display())),
+                Err(e) => Installed::Failed(e),
+            }
+        };
         let mut unmatched = Vec::new();
-        let result = if mapped.source.kind == SourceType::Bundle || !mapped.hashes.is_empty() {
-            let extracted;
-            let omod;
-            let omod_payload;
-            let source = if mapped.source.kind == SourceType::Bundle {
-                archive
-            } else {
-                if let Err(e) = crate::recipe::validate_archive(&mapped, archive) {
-                    return Installed::Failed(e);
-                }
-                omod = match eidos_install::try_open_omod(archive, &mods_dir, |_| {}) {
-                    Ok(session) => session,
-                    Err(e) => return Installed::Failed(e.to_string()),
-                };
-                if let Some(session) = &omod {
-                    if session.script.is_some() {
-                        return Installed::Failed("This OMOD has an installer script; explicit script evaluation is required before collection installation".into());
-                    }
-                    omod_payload = session.payload_root();
-                    &omod_payload
-                } else {
-                    extracted = match eidos_install::extract_to_temp(archive, &mods_dir) {
-                        Ok(t) => t,
-                        Err(e) => return Installed::Failed(e.to_string()),
-                    };
-                    extracted.path()
-                }
-            };
+        let result = if mapped.source.kind == SourceType::Bundle {
+            if pending.is_some() {
+                return Installed::Failed(
+                    "Recorded installer answers cannot be replaced by a bundle recipe".into(),
+                );
+            }
             eidos_install::install_destination(
                 archive,
                 &mods_dir,
@@ -466,7 +478,7 @@ impl Hooks for RealHooks<'_> {
                 &self.game_id,
                 policy,
                 |stage, _| {
-                    crate::recipe::populate(&mapped, source, stage)
+                    crate::recipe::populate(&mapped, archive, stage)
                         .map_err(eidos_install::InstallError::BadSelection)?;
                     finish(stage)?;
                     Ok((String::new(), false, Vec::new()))
@@ -476,17 +488,278 @@ impl Hooks for RealHooks<'_> {
             if let Err(e) = crate::recipe::validate_archive(&mapped, archive) {
                 return Installed::Failed(e);
             }
-            match eidos_install::open_archive_with(archive, &mods_dir, &name, &self.game_id, |_| {})
+            let native_omod = match eidos_install::try_open_omod(archive, &mods_dir, |_| {}) {
+                Ok(s) => s,
+                Err(e) => return Installed::Failed(e.to_string()),
+            };
+            let addons = eidos_addons::load_addons();
+            let custom_context = if native_omod.is_none()
+                && (eidos_install::custom::may_handle(&addons, &self.game_id, archive)
+                    || matches!(pending, Some(InstallerAnswers::Custom { .. })))
             {
-                Ok(eidos_install::Opened::Omod(session)) => {
-                    eidos_install::install_omod_with_finish(
+                let mut controls: Vec<_> = self.game.plugin_state_dir().into_iter().collect();
+                if let (Some(prefix), Some(spec)) = (self.game.prefix(), self.game.plugin_spec()) {
+                    controls.push(eidos_plugins::documents_my_games_dir(&prefix, &spec));
+                }
+                match eidos_install::custom::context_for_instance(
+                    self.inst,
+                    &self.game_id,
+                    &self.game.install_path,
+                    &self.game.data_path,
+                    self.game.prefix().as_deref(),
+                    &controls,
+                    &cancel,
+                ) {
+                    Ok(c) => c,
+                    Err(e) => return Installed::Failed(e.to_string()),
+                }
+            } else {
+                eidos_addons::Context::default()
+            };
+            let expected_custom = match &pending {
+                Some(InstallerAnswers::Custom { receipt, .. }) => Some(receipt),
+                _ => None,
+            };
+            // A pinned OMOD replay must never invoke an unrelated newly installed helper.
+            let opened = if let Some(session) = native_omod {
+                if expected_custom.is_some() {
+                    return Installed::Failed(
+                        "Recorded custom installer cannot change into an OMOD".into(),
+                    );
+                }
+                Ok(eidos_install::Opened::Omod(Box::new(session)))
+            } else if matches!(pending, Some(InstallerAnswers::Omod { .. })) {
+                Err(eidos_install::InstallError::BadSelection(
+                    "Recorded OMOD archive no longer matches its handler".into(),
+                ))
+            } else if !mapped.hashes.is_empty() {
+                (|| {
+                    let tree = eidos_install::extract_to_temp(archive, &mods_dir)?;
+                    match eidos_install::custom::try_custom_installers_with_receipt(
+                        tree,
+                        archive,
+                        &self.game_id,
+                        &addons,
+                        &custom_context,
+                        &cancel,
+                        expected_custom,
+                    )? {
+                        eidos_install::custom::CustomStart::Selected(s) => {
+                            Ok(eidos_install::Opened::Custom(s))
+                        }
+                        // Hash recipes already express native archive selection, including renames.
+                        eidos_install::custom::CustomStart::Fallback(tree) => {
+                            Ok(eidos_install::Opened::Simple(tree))
+                        }
+                    }
+                })()
+            } else {
+                eidos_install::open_archive_with_installers(
+                    archive,
+                    &mods_dir,
+                    &name,
+                    &self.game_id,
+                    &addons,
+                    &custom_context,
+                    &cancel,
+                    expected_custom,
+                    |_| {},
+                )
+            };
+            let interactive_finish = |stage: &Path| {
+                crate::recipe::validate_installer_selection(&mapped, stage)
+                    .map_err(eidos_install::InstallError::BadSelection)?;
+                finish(stage)
+            };
+            match opened {
+                Ok(eidos_install::Opened::Custom(session)) => {
+                    let receipt = session.receipt();
+                    match &session.state {
+                        eidos_install::custom::CustomEvaluation::Prompt(prompt) => {
+                            return pause(
+                                &InstallerAnswers::Custom {
+                                    receipt,
+                                    prompt: Some(prompt.clone()),
+                                },
+                                "Custom installer requires a choice",
+                            )
+                        }
+                        eidos_install::custom::CustomEvaluation::Manual(why) => {
+                            return pause(
+                                &InstallerAnswers::Custom {
+                                    receipt,
+                                    prompt: None,
+                                },
+                                &format!("Custom installer requires manual intervention: {why}"),
+                            )
+                        }
+                        eidos_install::custom::CustomEvaluation::Cancelled => {
+                            return pause(
+                                &InstallerAnswers::Custom {
+                                    receipt,
+                                    prompt: None,
+                                },
+                                "Custom installer was cancelled",
+                            )
+                        }
+                        eidos_install::custom::CustomEvaluation::Ready(plan) => {
+                            unmatched.extend(plan.warnings.clone())
+                        }
+                    }
+                    if let Err(e) = installer_answers::write_for_archive(
+                        &mods_dir.join(folder),
+                        &marker,
+                        archive,
+                        &InstallerAnswers::Custom {
+                            receipt,
+                            prompt: None,
+                        },
+                    ) {
+                        return Installed::Failed(e);
+                    }
+                    eidos_install::custom::finish_custom_with_finish(
                         &session,
                         &mods_dir,
                         &name,
-                        &self.game_id,
                         policy,
-                        finish,
+                        &eidos_addons::load_addons(),
+                        &custom_context,
+                        &cancel,
+                        interactive_finish,
                     )
+                }
+                Ok(eidos_install::Opened::Omod(session)) if session.script.is_some() => {
+                    use eidos_install::scripted::*;
+                    let mut versions = std::collections::BTreeMap::new();
+                    if let Ok(pe) = eidos_gamefeatures::preflight::inspect_pe(
+                        &self.game.install_path.join("Oblivion.exe"),
+                    ) {
+                        if let Some(v) = pe.file_version {
+                            versions.insert("Oblivion".into(), v.to_string());
+                        }
+                    }
+                    let game = ScriptedGame {
+                        game_id: self.game_id.clone(),
+                        install_path: self.game.install_path.clone(),
+                        data_path: self.game.data_path.clone(),
+                        prefix: self.game.prefix(),
+                        observed_versions: versions,
+                    };
+                    let context = match ScriptedContext::capture(self.inst, &game, &cancel) {
+                        Ok(c) => c,
+                        Err(e) => return Installed::Failed(e.to_string()),
+                    };
+                    let (receipt, approval) = match &pending {
+                        Some(InstallerAnswers::Omod {
+                            receipt,
+                            apply_profile_effects,
+                            allow_incomplete,
+                            ..
+                        }) => (
+                            receipt.clone(),
+                            ScriptedApproval {
+                                apply_profile_effects: *apply_profile_effects,
+                                allow_incomplete: *allow_incomplete,
+                            },
+                        ),
+                        None => match new_omod_receipt(&session, &context, &cancel) {
+                            Ok(r) => (r, ScriptedApproval::default()),
+                            Err(e) => return Installed::Failed(e.to_string()),
+                        },
+                        _ => {
+                            return Installed::Failed(
+                                "Recorded custom installer cannot change into an OMOD script"
+                                    .into(),
+                            )
+                        }
+                    };
+                    let evaluation =
+                        match evaluate_scripted_omod(&session, &context, &receipt, &cancel) {
+                            Ok(e) => e,
+                            Err(e) => return Installed::Failed(e.to_string()),
+                        };
+                    let record = |receipt, prompt| InstallerAnswers::Omod {
+                        receipt,
+                        prompt,
+                        apply_profile_effects: approval.apply_profile_effects,
+                        allow_incomplete: approval.allow_incomplete,
+                    };
+                    match evaluation {
+                        ScriptedEvaluation::NeedPrompt(prompt) => {
+                            return pause(
+                                &record(receipt, Some(prompt)),
+                                "OMOD installer requires an answer",
+                            )
+                        }
+                        ScriptedEvaluation::Review(review) => {
+                            if (!review.unsupported.is_empty()
+                                || !approval.apply_profile_effects
+                                    && !review.profile_effects.is_empty())
+                                && !approval.allow_incomplete
+                            {
+                                return pause(&record(review.receipt.clone(), None), &format!("OMOD review needs explicit profile-effect approval or incomplete-install acceptance. Profile effects: {:?}; unsupported: {:?}", review.profile_effects, review.unsupported));
+                            }
+                            if let Err(e) = installer_answers::write_for_archive(
+                                &mods_dir.join(folder),
+                                &marker,
+                                archive,
+                                &record(review.receipt.clone(), None),
+                            ) {
+                                return Installed::Failed(e);
+                            }
+                            match install_scripted_omod_with_finish(
+                                &session,
+                                &context,
+                                &review,
+                                &name,
+                                policy,
+                                approval,
+                                &cancel,
+                                interactive_finish,
+                            ) {
+                                Ok(report) => {
+                                    unmatched.extend(report.warnings);
+                                    if report.pending_effects {
+                                        return Installed::NeedsUser(format!("OMOD files were published; approved profile effects remain pending at {}. Resume to retry them", report.receipt_path.display()));
+                                    }
+                                    Ok(report.install)
+                                }
+                                Err(e) => Err(e),
+                            }
+                        }
+                    }
+                }
+                Ok(eidos_install::Opened::Omod(session)) => {
+                    if pending.is_some() {
+                        return Installed::Failed(
+                            "Recorded scripted installer disappeared; native defaults were refused"
+                                .into(),
+                        );
+                    }
+                    if !mapped.hashes.is_empty() {
+                        eidos_install::install_destination(
+                            archive,
+                            &mods_dir,
+                            &name,
+                            &self.game_id,
+                            policy,
+                            |stage, _| {
+                                crate::recipe::populate(&mapped, &session.payload_root(), stage)
+                                    .map_err(eidos_install::InstallError::BadSelection)?;
+                                finish(stage)?;
+                                Ok((String::new(), false, Vec::new()))
+                            },
+                        )
+                    } else {
+                        eidos_install::install_omod_with_finish(
+                            &session,
+                            &mods_dir,
+                            &name,
+                            &self.game_id,
+                            policy,
+                            finish,
+                        )
+                    }
                 }
                 Ok(eidos_install::Opened::Fomod(session)) => {
                     let r = eidos_fomod::replay(&session.config, &ctx, &recorded_answers(&mapped));
@@ -505,16 +778,34 @@ impl Hooks for RealHooks<'_> {
                     eidos_install::Opened::Simple(tree)
                     | eidos_install::Opened::Manual(tree)
                     | eidos_install::Opened::Bain { tree, .. },
-                ) => eidos_install::install_extracted_with_finish(
-                    &tree,
-                    archive,
-                    &mods_dir,
-                    &name,
-                    &self.game_id,
-                    policy,
-                    &ctx,
-                    finish,
-                ),
+                ) => {
+                    if !mapped.hashes.is_empty() {
+                        eidos_install::install_destination(
+                            archive,
+                            &mods_dir,
+                            &name,
+                            &self.game_id,
+                            policy,
+                            |stage, _| {
+                                crate::recipe::populate(&mapped, tree.path(), stage)
+                                    .map_err(eidos_install::InstallError::BadSelection)?;
+                                finish(stage)?;
+                                Ok((String::new(), false, Vec::new()))
+                            },
+                        )
+                    } else {
+                        eidos_install::install_extracted_with_finish(
+                            &tree,
+                            archive,
+                            &mods_dir,
+                            &name,
+                            &self.game_id,
+                            policy,
+                            &ctx,
+                            finish,
+                        )
+                    }
+                }
                 Err(e) => Err(e),
             }
         };
@@ -533,6 +824,15 @@ impl Hooks for RealHooks<'_> {
                 } else {
                     Installed::Approximate(rep.name, unmatched)
                 }
+            }
+            Err(e)
+                if e.to_string()
+                    .contains("Collection installer selection conflicts") =>
+            {
+                Installed::NeedsUser(format!(
+                    "{e}; reservation and exact installer receipt retained at {}",
+                    installer_answers::path(&mods_dir.join(folder)).display()
+                ))
             }
             Err(e) => Installed::Failed(e.to_string()),
         }

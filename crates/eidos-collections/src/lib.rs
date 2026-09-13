@@ -21,3 +21,5 @@ pub use manifest::{
 };
 
 pub mod recipe;
+
+pub mod installer_answers;

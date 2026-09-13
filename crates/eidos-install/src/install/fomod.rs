@@ -360,6 +360,7 @@ fn finish_fomod_inner(
         |dest, _| {
             let missing =
                 apply_plan_for_game(&session.root, &plan, dest, LayoutRules::for_game(game_id))?;
+            reject_installer_receipts(dest)?;
             if let Some(finish) = finish {
                 finish(dest)?;
             }

@@ -19,6 +19,27 @@ use crate::{
 
 use super::*;
 
+/// Payloads cannot impersonate host-created replay or recovery state.
+pub(crate) fn reject_installer_receipts(root: &Path) -> Result<(), InstallError> {
+    for entry in fs::read_dir(root)? {
+        let name = entry?.file_name();
+        if [
+            ".eidos-custom-installer.json",
+            ".eidos-omod.mohidden",
+            ".eidos-collection-installer.json",
+            ".eidos-collection-recipe.json",
+        ]
+        .iter()
+        .any(|reserved| name.to_string_lossy().eq_ignore_ascii_case(reserved))
+        {
+            return Err(InstallError::BadSelection(
+                "Source payload collides with host installer receipt metadata".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Install `archive` into `mods_dir/name`, MO2 Simple-installer style: extract,
 /// strip the wrapper folder to the Data-relative root, move it in, and write a
 /// MO2-compatible `meta.ini`. Fails if the destination already exists; use
@@ -197,6 +218,7 @@ fn install_extracted_inner(
                 }
                 Err(InstallError::NotSimple)
             })()?;
+            reject_installer_receipts(dest)?;
             if let Some(finish) = finish {
                 finish(dest)?;
             }
@@ -298,6 +320,7 @@ pub(crate) fn install_sources(
         false,
         |dest, merging| {
             place_game_sources(sources, dest, merging, LayoutRules::for_game(game_id))?;
+            reject_installer_receipts(dest)?;
             Ok((stripped, false, Vec::new()))
         },
     )
@@ -341,7 +364,13 @@ pub(super) fn install_destination_inner(
         ));
     }
     let rules = LayoutRules::for_game(game_id);
-    if rules.mod_unit == eidos_gamedef::ModUnit::Folder {
+    // Validate native Merge payloads before touching the live mod or its metadata.
+    if rules.mod_unit == eidos_gamedef::ModUnit::Folder
+        || matches!(
+            policy,
+            OverwritePolicy::Merge | OverwritePolicy::MergeWithBackup
+        )
+    {
         fs::create_dir_all(mods_dir)?;
         let tmp = mods_dir.join(format!(
             ".eidos-install-stage-folder-{}-{}",
@@ -349,9 +378,11 @@ pub(super) fn install_destination_inner(
             COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         fs::create_dir(&tmp)?;
-        let prepared = ExtractedTree { tmp };
+        let prepared = ExtractedTree::owned(tmp);
         let result = place(prepared.path(), false)?;
-        validate_folder_payload(prepared.path(), rules)?;
+        if rules.mod_unit == eidos_gamedef::ModUnit::Folder {
+            validate_folder_payload(prepared.path(), rules)?;
+        }
         return install_destination_ready(
             archive,
             mods_dir,
@@ -440,7 +471,7 @@ pub(super) fn install_destination_ready(
                 COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir(&tmp)?;
-            Some(ExtractedTree { tmp })
+            Some(ExtractedTree::owned(tmp))
         };
         let target = stage
             .as_ref()
@@ -627,6 +658,70 @@ mod publication_tests {
     use super::*;
 
     #[test]
+    fn native_archive_cannot_publish_or_merge_host_receipts() {
+        let tmp = std::env::temp_dir().join(format!(
+            "eidos-native-receipt-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        fs::create_dir(&tmp).unwrap();
+        let root = ExtractedTree::owned(tmp);
+        let source = root.path().join("source");
+        fs::create_dir_all(source.join("Data/textures")).unwrap();
+        fs::create_dir(source.join("Data/.EIDOS-OMOD.MOHIDDEN")).unwrap();
+        fs::write(source.join("Data/textures/new.dds"), b"new").unwrap();
+        fs::write(
+            source.join("Data/.EIDOS-OMOD.MOHIDDEN/install.json"),
+            b"forged receipt",
+        )
+        .unwrap();
+        let archive = root.path().join("ordinary.zip");
+        assert!(
+            std::process::Command::new(eidos_sevenzip::find_7z().unwrap())
+                .current_dir(&source)
+                .args(["a", "-tzip"])
+                .arg(&archive)
+                .arg(".")
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+        let mods = root.path().join("mods");
+        fs::create_dir(&mods).unwrap();
+        for (name, policy) in [
+            ("Fresh", OverwritePolicy::Fail),
+            ("Replace", OverwritePolicy::Replace),
+            ("Merge", OverwritePolicy::Merge),
+        ] {
+            let dest = mods.join(name);
+            if policy != OverwritePolicy::Fail {
+                fs::create_dir(&dest).unwrap();
+                fs::write(dest.join("old.txt"), b"previous").unwrap();
+                fs::write(dest.join("meta.ini"), b"[General]\nnotes=previous\n").unwrap();
+            }
+            let result = install_archive_with_policy(
+                &archive,
+                &mods,
+                name,
+                "skyrimse",
+                policy,
+                &eidos_fomod::Context::default(),
+            );
+            assert!(result.is_err(), "{result:?}");
+            assert!(!dest.join("textures/new.dds").exists());
+            assert!(!dest.join(".EIDOS-OMOD.MOHIDDEN").exists());
+            if dest.exists() {
+                assert_eq!(fs::read(dest.join("old.txt")).unwrap(), b"previous");
+                assert_eq!(
+                    fs::read(dest.join("meta.ini")).unwrap(),
+                    b"[General]\nnotes=previous\n"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn installation_stages_and_recovery_trees_are_not_discovered_as_mods() {
         let temp = std::env::temp_dir().join(format!(
             "eidos-stage-discovery-{}-{}",
@@ -634,7 +729,7 @@ mod publication_tests {
             COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         fs::create_dir(&temp).unwrap();
-        let _cleanup = ExtractedTree { tmp: temp.clone() };
+        let _cleanup = ExtractedTree::owned(temp.clone());
         let instance = eidos_instance::Instance::portable(temp);
         instance.create().unwrap();
         instance.create_empty_mod("Old").unwrap();
@@ -669,7 +764,7 @@ mod publication_tests {
             COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         fs::create_dir(&temp).unwrap();
-        let _cleanup = ExtractedTree { tmp: temp.clone() };
+        let _cleanup = ExtractedTree::owned(temp.clone());
         let dest = temp.join("Old");
         fs::create_dir(&dest).unwrap();
         fs::write(dest.join("precious.esp"), b"original").unwrap();
@@ -678,7 +773,7 @@ mod publication_tests {
         fs::create_dir(&stage).unwrap();
         let mut calls = 0;
         let error = publish_install_with(
-            ExtractedTree { tmp: stage.clone() },
+            ExtractedTree::owned(stage.clone()),
             &stage.join("payload"),
             &dest,
             false,
@@ -713,7 +808,7 @@ mod publication_tests {
                 COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir(&temp).unwrap();
-            let _cleanup = ExtractedTree { tmp: temp.clone() };
+            let _cleanup = ExtractedTree::owned(temp.clone());
             let dest = temp.join("Old");
             fs::create_dir(&dest).unwrap();
             fs::write(dest.join("precious.esp"), b"original").unwrap();
@@ -722,7 +817,7 @@ mod publication_tests {
             fs::write(stage.join("payload/new.esp"), b"replacement").unwrap();
             let mut calls = 0;
             let error = publish_install_with(
-                ExtractedTree { tmp: stage.clone() },
+                ExtractedTree::owned(stage.clone()),
                 &stage.join("payload"),
                 &dest,
                 true,

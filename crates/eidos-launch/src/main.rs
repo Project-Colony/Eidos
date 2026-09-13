@@ -57,6 +57,7 @@ fn main() {
     });
 
     let spec = LaunchSpec {
+        readonly_data_binds: vec![],
         root_readonly_overwrite: None,
         plugin_timestamps: None,
         layers,

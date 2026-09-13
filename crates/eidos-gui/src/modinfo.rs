@@ -4096,10 +4096,18 @@ pub(crate) fn parsed_tree(tree: &eidos_install::ExtractedTree) -> eidos_install:
 /// re-picked instead of re-extracting the archive.
 pub(crate) fn run_picker_install(app: &mut App) {
     let Some(p) = app.picker.as_ref() else { return };
-    let Some(mods_dir) = app.created.as_ref().map(|i| i.mods_dir()) else {
-        app.status = Some("Open a game instance first.".to_string());
-        return;
+    let _guard = match crate::update::lock_install_target(app, &p.target) {
+        Ok(guard) => guard,
+        Err(error) => {
+            app.status = Some(error);
+            return;
+        }
     };
+    let mods_dir = app
+        .created
+        .as_ref()
+        .expect("validated install target")
+        .mods_dir();
     let name = p.name.trim().to_string();
     if name.is_empty() {
         app.status = Some("Give the mod a name first.".to_string());
@@ -4147,6 +4155,7 @@ pub(crate) fn run_picker_install(app: &mut App) {
             let Some(p) = app.picker.take() else { return };
             let rename_to = suggest_free_name(&mods_dir, &name);
             app.collision = Some(CollisionPrompt {
+                target: p.target,
                 backup: app.prefs.retain_install_backup,
                 archive: p.archive,
                 name: name.clone(),
@@ -4220,13 +4229,10 @@ pub(crate) fn run_collision_install(app: &mut App, policy: eidos_install::Overwr
         }
         (_, policy) => policy,
     };
-    let Some(instance) = app.created.clone() else {
-        return;
-    };
-    let _lock = match instance.try_lock("installing over an existing mod") {
+    let _lock = match crate::update::lock_install_target(app, &c.target) {
         Ok(lock) => lock,
         Err(error) => {
-            app.status = Some(format!("Cannot install now: {error}"));
+            app.status = Some(error);
             app.collision = Some(c);
             return;
         }

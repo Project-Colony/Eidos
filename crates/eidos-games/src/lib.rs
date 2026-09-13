@@ -17,6 +17,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod paths;
 mod stores;
 pub use stores::{select_installation, GameSource, Store};
 mod proton;

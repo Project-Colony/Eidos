@@ -63,6 +63,7 @@ fn mount_boundaries(root: &Path) {
         let root_mounted = !matches!(mode, "absent-root" | "empty-root");
         let start = std::time::Instant::now();
         let status = launch(LaunchSpec {
+        readonly_data_binds: vec![],
         root_readonly_overwrite: None,
             plugin_timestamps: None, layers: vec![data_layer], overwrite: overwrite.clone(),
             mountpoint: data.clone(),
@@ -120,10 +121,357 @@ print('mounted metadata loop',mode,':',round((time.monotonic_ns()-start)/1e6,3),
     }
 }
 
+fn readonly_data_projection(root: &Path) {
+    for mode in ["valid", "missing", "escape", "symlink", "duplicate"] {
+        let fixture = root.join(format!("shader-{mode}"));
+        let game = fixture.join("game");
+        let data = game.join("Data");
+        let overwrite = fixture.join("overwrite");
+        let stash = fixture.join("data-stash");
+        let stage = fixture.join("stage.sdp");
+        put(&data, "Shaders/shaderpackage001.sdp", b"vanilla");
+        put(&overwrite, "Shaders/shaderpackage001.sdp", b"overwrite");
+        fs::write(&stage, b"projected").unwrap();
+        let relative = std::path::PathBuf::from("Shaders/shaderpackage001.sdp");
+        let mut mappings = vec![(stage.clone(), relative.clone())];
+        match mode {
+            "missing" => mappings.push((stage.clone(), "Shaders/missing.sdp".into())),
+            "escape" => mappings.push((stage.clone(), "../outside.sdp".into())),
+            "symlink" => {
+                std::os::unix::fs::symlink(&stage, fixture.join("link.sdp")).unwrap();
+                mappings.push((fixture.join("link.sdp"), relative.clone()));
+            }
+            "duplicate" => mappings.push((stage.clone(), "shaders/SHADERPACKAGE001.SDP".into())),
+            _ => {}
+        }
+        let marker = fixture.join("ran");
+        let result = launch(LaunchSpec {
+            readonly_data_binds: mappings,
+            root_readonly_overwrite: None,
+            plugin_timestamps: None,
+            layers: vec![],
+            overwrite: overwrite.clone(),
+            mountpoint: data.clone(),
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                r#"
+import errno,pathlib,sys
+p=pathlib.Path('Data/Shaders/shaderpackage001.sdp')
+assert p.read_bytes() == b'projected'
+try:
+    p.write_bytes(b'bad')
+except OSError as e:
+    assert e.errno == errno.EROFS, e
+else:
+    raise AssertionError('projection is writable')
+pathlib.Path('Data/ordinary.txt').write_text('output')
+pathlib.Path(sys.argv[1]).write_text('ran')
+"#
+                .into(),
+                marker.display().to_string(),
+            ],
+            env: vec![],
+            base_bind: Some((data.clone(), stash.clone())),
+            binds: vec![],
+            cwd: Some(game),
+            root_layers: vec![],
+            root_overwrite: None,
+            root_base_bind: None,
+        });
+        if mode == "valid" {
+            assert!(result.unwrap().success());
+            assert!(marker.exists());
+            assert_eq!(fs::read(overwrite.join("ordinary.txt")).unwrap(), b"output");
+        } else {
+            assert!(result.is_err(), "{mode}");
+            assert!(!marker.exists(), "invalid projection ran the game: {mode}");
+        }
+        assert_eq!(fs::read(data.join(&relative)).unwrap(), b"vanilla");
+        assert_eq!(fs::read(overwrite.join(&relative)).unwrap(), b"overwrite");
+        assert_eq!(fs::read(&stage).unwrap(), b"projected");
+        detach(&stash);
+    }
+}
+
+fn morrowind_root_saves(root: &Path) {
+    for mode in [
+        "missing",
+        "existing",
+        "higher-root",
+        "failure",
+        "symlink",
+        "duplicate",
+        "escape",
+    ] {
+        let fixture = root.join(format!("morrowind-saves-{mode}"));
+        let game = fixture.join("game");
+        let data = game.join("Data Files");
+        let overwrite = fixture.join("overwrite");
+        let root_upper = fixture.join("root-upper");
+        let profile = fixture.join("profile/saves");
+        let root_mod = fixture.join("root-mod");
+        let data_stash = fixture.join("data-stash");
+        let root_stash = fixture.join("root-stash");
+        put(&data, "base.esm", b"master");
+        put(&profile, "Slot.ess", b"profile");
+        put(&profile, "Slot.mwse", b"cosave");
+        if mode == "symlink" {
+            put(&fixture, "outside/Slot.ess", b"original");
+            std::os::unix::fs::symlink(fixture.join("outside"), game.join("Saves")).unwrap();
+        } else if mode != "missing" {
+            put(&game, "Saves/Slot.ess", b"original");
+        }
+        if mode == "higher-root" {
+            put(&root_mod, "Saves/Slot.ess", b"root mod");
+        }
+        let marker = fixture.join("ran");
+        let mut binds = vec![(profile.clone(), game.join("Saves"))];
+        if mode == "failure" {
+            put(&fixture, "not-a-directory", b"obstruction");
+            binds.push((fixture.join("not-a-directory"), game.join("Other")));
+        }
+        if mode == "duplicate" {
+            binds.push((profile.clone(), game.join("sAvEs")));
+        }
+        if mode == "escape" {
+            binds.push((profile.clone(), game.join("../escape")));
+        }
+        let result = launch(LaunchSpec {
+            readonly_data_binds: vec![],
+            root_readonly_overwrite: None,
+            plugin_timestamps: None,
+            layers: vec![],
+            overwrite: overwrite.clone(),
+            mountpoint: data.clone(),
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                r#"
+import pathlib,sys
+s=pathlib.Path('Saves')
+assert (s/'Slot.ess').read_bytes()==b'profile'
+assert (s/'Slot.mwse').read_bytes()==b'cosave'
+(s/'next.tmp').write_bytes(b'new save')
+(s/'next.tmp').replace(s/'Slot.ess')
+(s/'Slot.mwse').write_bytes(b'new cosave')
+pathlib.Path(sys.argv[1]).write_text('ran')
+"#
+                .into(),
+                marker.display().to_string(),
+            ],
+            env: vec![],
+            base_bind: Some((data.clone(), data_stash.clone())),
+            binds,
+            cwd: Some(game.clone()),
+            root_layers: if mode == "higher-root" {
+                vec![root_mod]
+            } else {
+                vec![]
+            },
+            root_overwrite: Some(root_upper.clone()),
+            root_base_bind: Some((game.clone(), root_stash.clone())),
+        });
+        if ["failure", "symlink", "duplicate", "escape"].contains(&mode) {
+            assert!(result.is_err(), "{mode}");
+            assert!(!marker.exists());
+        } else {
+            assert!(result.unwrap().success(), "{mode}");
+            assert_eq!(fs::read(profile.join("Slot.ess")).unwrap(), b"new save");
+            assert_eq!(fs::read(profile.join("Slot.mwse")).unwrap(), b"new cosave");
+        }
+        if mode == "missing" {
+            assert!(
+                !game.join("Saves").exists(),
+                "must not create original Saves"
+            );
+        } else {
+            assert_eq!(fs::read(game.join("Saves/Slot.ess")).unwrap(), b"original");
+        }
+        assert!(!root_upper.join("Saves/Slot.ess").exists());
+        assert!(!overwrite.join("Saves/Slot.ess").exists());
+        assert!(!fs::read_to_string("/proc/self/mountinfo")
+            .unwrap()
+            .lines()
+            .any(
+                |line| line.split_whitespace().nth(4) == Some(game.join("Saves").to_str().unwrap())
+            ));
+        detach(&data_stash);
+        detach(&root_stash);
+    }
+}
+
+fn composed_shader_sessions(root: &Path) {
+    use std::sync::atomic::AtomicBool;
+    let fixture = root.join("composed-shaders");
+    let game = fixture.join("game");
+    let data = game.join("Data");
+    let high = fixture.join("high");
+    let low = fixture.join("low");
+    let overwrite = fixture.join("overwrite");
+    let stash = fixture.join("stash");
+    let sdp = |a: &[u8], b: &[u8]| {
+        let mut bytes = Vec::from(100u32.to_le_bytes());
+        bytes.extend(2u32.to_le_bytes());
+        bytes.extend(((520 + a.len() + b.len()) as u32).to_le_bytes());
+        for (name, data) in [("A.pso", a), ("B.vso", b)] {
+            let mut field = [0; 256];
+            field[..name.len()].copy_from_slice(name.as_bytes());
+            bytes.extend(field);
+            bytes.extend((data.len() as u32).to_le_bytes());
+            bytes.extend(data);
+        }
+        bytes
+    };
+    let original = sdp(b"base", b"base b");
+    let upper = sdp(b"overwrite", b"upper b");
+    put(&data, "Shaders/shaderpackage001.sdp", &original);
+    put(&overwrite, "Shaders/shaderpackage001.sdp", &upper);
+    put(&low, "Shaders/OMOD/1/A.pso", b"low");
+    put(&high, "shaders/omod/1/a.PSO", b"high");
+    for (profile, selected, expected) in [
+        ("profile-a", vec![high.clone(), low.clone()], "high"),
+        ("profile-b", vec![low.clone()], "low"),
+    ] {
+        let parent = fixture.join(profile);
+        fs::create_dir(&parent).unwrap();
+        let mut layers = selected.clone();
+        layers.push(data.clone());
+        let session = eidos_gamefeatures::omod_shaders::prepare(
+            layers,
+            overwrite.clone(),
+            &parent,
+            &AtomicBool::new(false),
+        )
+        .unwrap()
+        .unwrap();
+        session.validate_sources(&AtomicBool::new(false)).unwrap();
+        let generated = session.mappings()[0].0.clone();
+        let result = launch(LaunchSpec {
+            readonly_data_binds: session.mappings().to_vec(),
+            root_readonly_overwrite: None,
+            plugin_timestamps: None,
+            layers: selected,
+            overwrite: overwrite.clone(),
+            mountpoint: data.clone(),
+            command: vec![
+                "python3".into(),
+                "-c".into(),
+                r#"
+import pathlib,struct,sys,errno
+p=pathlib.Path('Data/Shaders/shaderpackage001.sdp'); data=p.read_bytes()
+magic,count,size=struct.unpack_from('<III',data); assert magic==100 and size==len(data)-12
+pos=12; records={}
+for _ in range(count):
+    name=data[pos:pos+256].split(b'\0',1)[0]; n=struct.unpack_from('<I',data,pos+256)[0]
+    pos+=260; records[name]=data[pos:pos+n]; pos+=n
+assert pos==len(data) and records=={b'A.pso':sys.argv[1].encode(), b'B.vso':b'upper b'}
+try: p.write_bytes(b'bad')
+except OSError as e: assert e.errno==errno.EROFS
+else: raise AssertionError('shader projection was writable')
+"#
+                .into(),
+                expected.into(),
+            ],
+            env: vec![],
+            base_bind: Some((data.clone(), stash.clone())),
+            binds: vec![],
+            cwd: Some(game.clone()),
+            root_layers: vec![],
+            root_overwrite: None,
+            root_base_bind: None,
+        })
+        .unwrap();
+        assert!(result.success());
+        session.cleanup().unwrap();
+        assert!(!generated.exists());
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 0);
+        assert_eq!(
+            fs::read(data.join("Shaders/shaderpackage001.sdp")).unwrap(),
+            original
+        );
+        assert_eq!(
+            fs::read(overwrite.join("Shaders/shaderpackage001.sdp")).unwrap(),
+            upper
+        );
+        detach(&stash);
+    }
+    let parent = fixture.join("cancelled");
+    fs::create_dir(&parent).unwrap();
+    assert!(eidos_gamefeatures::omod_shaders::prepare(
+        vec![high, low, data],
+        overwrite,
+        &parent,
+        &AtomicBool::new(true)
+    )
+    .is_err());
+    assert_eq!(fs::read_dir(parent).unwrap().count(), 0);
+}
+
+fn userdata_mods_leave_install_mods_visible(root: &Path) {
+    let fixture = root.join("userdata-mods");
+    let game = fixture.join("game");
+    let data = fixture.join("user data/Mods");
+    let low = fixture.join("low");
+    let high = fixture.join("high");
+    let overwrite = fixture.join("overwrite");
+    let stash = fixture.join("stash");
+    put(&game, "Mods/0_TFP_Harmony/ModInfo.xml", b"shipped harmony");
+    put(&data, "Existing/ModInfo.xml", b"existing user mod");
+    put(&low, "Chosen/ModInfo.xml", b"low");
+    put(&high, "Chosen/ModInfo.xml", b"high");
+    let result = launch(LaunchSpec {
+        readonly_data_binds: vec![],
+        root_readonly_overwrite: None,
+        plugin_timestamps: None,
+        layers: vec![high, low],
+        overwrite: overwrite.clone(),
+        mountpoint: data.clone(),
+        command: vec![
+            "python3".into(),
+            "-c".into(),
+            r#"
+import pathlib,sys
+mods=pathlib.Path(sys.argv[1])
+assert pathlib.Path('Mods/0_TFP_Harmony/ModInfo.xml').read_bytes()==b'shipped harmony'
+assert (mods/'Existing/ModInfo.xml').read_bytes()==b'existing user mod'
+assert (mods/'Chosen/ModInfo.xml').read_bytes()==b'high'
+(mods/'output.txt').write_bytes(b'owned output')
+"#
+            .into(),
+            data.display().to_string(),
+        ],
+        env: vec![],
+        base_bind: Some((data.clone(), stash.clone())),
+        binds: vec![],
+        cwd: Some(game.clone()),
+        root_layers: vec![],
+        root_overwrite: None,
+        root_base_bind: None,
+    })
+    .unwrap();
+    assert!(result.success());
+    assert_eq!(
+        fs::read(overwrite.join("output.txt")).unwrap(),
+        b"owned output"
+    );
+    assert!(!data.join("output.txt").exists());
+    assert!(!data.join("Chosen").exists());
+    assert_eq!(
+        fs::read(game.join("Mods/0_TFP_Harmony/ModInfo.xml")).unwrap(),
+        b"shipped harmony"
+    );
+    detach(&stash);
+}
+
 fn main() {
     let root = std::env::temp_dir().join(format!("eidos-root-overwrite-{}", std::process::id()));
     fs::create_dir_all(&root).unwrap();
+    userdata_mods_leave_install_mods_visible(&root);
+    composed_shader_sessions(&root);
+    morrowind_root_saves(&root);
     mount_boundaries(&root);
+    readonly_data_projection(&root);
     let game = root.join("game");
     let overwrite = root.join("overwrite");
     let root_overwrite = overwrite.join("Root");
@@ -134,6 +482,7 @@ fn main() {
     put(&root_overwrite, "skse64_loader.exe", b"loader");
     put(&root_overwrite, ".eidoswh.hidden.exe", b"");
     let status = launch(LaunchSpec {
+        readonly_data_binds: vec![],
         root_readonly_overwrite: None,
         plugin_timestamps: None,
         layers: vec![],
@@ -211,6 +560,7 @@ fn main() {
         let receipt = root.join(name).join("plugin-times.pending");
         let projected = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1234);
         let status = launch(LaunchSpec {
+            readonly_data_binds: vec![],
             root_readonly_overwrite: Some(root_overwrite.clone()),
             plugin_timestamps: Some(eidos_launch::PluginTimestamps {
                 times: std::collections::BTreeMap::from([("base.esm".into(), projected)]),

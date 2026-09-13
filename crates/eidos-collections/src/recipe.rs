@@ -90,12 +90,16 @@ pub fn relative(raw: &str) -> Result<PathBuf, String> {
 fn installed_path(raw: &str) -> Result<PathBuf, String> {
     let path = relative(raw)?;
     if path.components().next().is_some_and(|c| {
-        c.as_os_str()
-            .to_string_lossy()
-            .eq_ignore_ascii_case("meta.ini")
-            || c.as_os_str()
-                .to_string_lossy()
-                .eq_ignore_ascii_case(RECEIPT)
+        let name = c.as_os_str().to_string_lossy();
+        [
+            "meta.ini",
+            RECEIPT,
+            ".eidos-custom-installer.json",
+            ".eidos-omod.mohidden",
+            ".eidos-collection-installer.json",
+        ]
+        .iter()
+        .any(|reserved| name.eq_ignore_ascii_case(reserved))
     }) {
         return Err(format!(
             "Recipe path conflicts with installer metadata: {raw}"
@@ -377,6 +381,32 @@ fn copy_directories(source: &Path, dest: &Path, relative: &Path) -> Result<(), S
 }
 
 /// Hash-list mode owns selection; a bundle without hashes is an exact installed tree.
+pub fn validate_installer_selection(m: &Mod, stage: &Path) -> Result<(), String> {
+    if m.hashes.is_empty() {
+        return Ok(());
+    }
+    let selected = files(stage, false)?;
+    if selected.len() != m.hashes.len() {
+        return Err(
+            "Collection installer selection conflicts with the exact hash recipe file count".into(),
+        );
+    }
+    for expected in &m.hashes {
+        let path = child(stage, &installed_path(&expected.path)?)
+            .map_err(|e| format!("Collection installer selection conflicts: {e}"))?;
+        if !eidos_nexus::md5_file(&path)
+            .map_err(|e| e.to_string())?
+            .eq_ignore_ascii_case(&expected.md5)
+        {
+            return Err(format!(
+                "Collection installer selection conflicts with recipe path {}",
+                expected.path
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn populate(m: &Mod, source: &Path, dest: &Path) -> Result<(), String> {
     validate_member(m)?;
     let source_files = files(source, false)?;
@@ -542,7 +572,14 @@ fn patch_source(m: &Mod, payload: &Path, path: &str) -> Result<PathBuf, String> 
 fn tree_digests(root: &Path) -> Result<BTreeMap<String, String>, String> {
     files(root, true)?
         .into_iter()
-        .filter(|(p, _)| !p.eq_ignore_ascii_case("meta.ini") && !p.eq_ignore_ascii_case(RECEIPT))
+        .filter(|(p, _)| {
+            let p = p.to_ascii_lowercase();
+            p != "meta.ini"
+                && p != RECEIPT
+                && p != ".eidos-custom-installer.json"
+                && !p.starts_with(".eidos-omod.mohidden/")
+                && p != ".eidos-collection-installer.json"
+        })
         .map(|(p, file)| {
             Ok((
                 p.clone(),
@@ -580,8 +617,21 @@ struct Receipt {
 }
 pub fn finish(m: &Mod, payload: &Path, stage: &Path, owner: &str) -> Result<(), String> {
     validate_member(m)?;
-    if stage.join(RECEIPT).exists() || stage.join(RECEIPT).is_symlink() {
-        return Err("Source payload collides with collection receipt metadata".into());
+    // Host receipts are added only after this callback. Payloads cannot grant
+    // themselves replay or pending-effect authority, even under another casing.
+    for entry in fs::read_dir(stage).map_err(|e| e.to_string())? {
+        let name = entry.map_err(|e| e.to_string())?.file_name();
+        if [
+            RECEIPT,
+            ".eidos-custom-installer.json",
+            ".eidos-omod.mohidden",
+            ".eidos-collection-installer.json",
+        ]
+        .iter()
+        .any(|reserved| name.to_string_lossy().eq_ignore_ascii_case(reserved))
+        {
+            return Err("Source payload collides with host installer receipt metadata".into());
+        }
     }
     for (path, crc) in &m.patches {
         let target = child(stage, &installed_path(path)?)?;

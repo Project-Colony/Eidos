@@ -642,9 +642,7 @@ fn mod_name_for_prefers_sidecar_then_sanitizes() {
 /// post-extraction state without paying for a real 7-Zip run. Dropping it removes
 /// the directory, exactly as a real extraction's would.
 fn extracted(dir: &Path) -> ExtractedTree {
-    ExtractedTree {
-        tmp: dir.to_path_buf(),
-    }
+    ExtractedTree::owned(dir.to_path_buf())
 }
 
 /// A `mods/` dir plus an extraction temp inside it (where a real install puts it).
@@ -1979,13 +1977,14 @@ fn failed_merge_revokes_exact_identity_and_marks_partial_content() {
     original.set("fileID", "2");
     original.set_installed_files(&[(1, 2)]);
     original.write(&dest.join("meta.ini")).unwrap();
-    let result = install_destination_inner(
+    // Inject at the live publication seam, after native staging validation.
+    let result = install_destination_ready(
         Path::new("Update.7z"),
         mods.path(),
         "Owned",
         "skyrimse",
         OverwritePolicy::Merge,
-        false,
+        &[],
         |target, _| {
             fs::write(target.join("changed.esp"), b"partial")?;
             Err(io::Error::new(
@@ -2312,13 +2311,14 @@ fn failed_merge_backup_prevents_even_the_metadata_checkpoint() {
     );
     let original = fs::read(old.join("meta.ini")).unwrap();
     let _socket = std::os::unix::net::UnixListener::bind(old.join("unsupported.socket")).unwrap();
-    let result = install_destination_inner(
+    // Inject at the live publication seam, after native staging validation.
+    let result = install_destination_ready(
         Path::new("Update.7z"),
         t.path(),
         "Old",
         "skyrimse",
         OverwritePolicy::MergeWithBackup,
-        false,
+        &[],
         |_, _| panic!("backup failure must prevent placement"),
     );
     assert!(result.is_err());
@@ -2332,13 +2332,14 @@ fn failed_merge_retains_and_reports_backup_with_incomplete_warning() {
     let t = TempDir::new("merge-backup-partial");
     let old = t.path().join("Old");
     write_at(&old, "keep.esp", b"precious");
-    let error = install_destination_inner(
+    // Inject at the live publication seam, after native staging validation.
+    let error = install_destination_ready(
         Path::new("Update.7z"),
         t.path(),
         "Old",
         "skyrimse",
         OverwritePolicy::MergeWithBackup,
-        false,
+        &[],
         |target, _| {
             fs::write(target.join("keep.esp"), b"partial")?;
             Err(InstallError::BadSelection(
@@ -3023,7 +3024,7 @@ fn folder_mods_open_real_archives_and_install_selected_units() {
                 write_at(&src, "README.txt", b"documentation");
             }
             let archive = t.path().join("Pack.zip");
-            let output = std::process::Command::new(&bin)
+            let output = std::process::Command::new(bin)
                 .args(["a", "-tzip"])
                 .arg(&archive)
                 .arg(".")

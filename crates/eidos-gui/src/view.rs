@@ -2103,6 +2103,10 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         ))
         .push(menu_sep())
         .push(menu_item("Reinstall Mod", Message::ModReinstall(i)))
+        .push(menu_item(
+            "Reinstall with new choices",
+            Message::ModReinstallFresh(i),
+        ))
         .push(menu_item("Rename", Message::RenameStart(i)))
         .push(menu_item("Add separator above", Message::AddSeparator(i)))
         .push(menu_sep())

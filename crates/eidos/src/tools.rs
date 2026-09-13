@@ -117,8 +117,10 @@ pub(crate) fn cmd_tool(args: &[String]) {
         exit(1);
     };
     let inst = target.inst;
-    inst.create().ok();
-    let _ = inst.ensure_manifest(&target.game_id, InstanceKind::Global);
+    if let Err(error) = inst.create().and_then(|()| inst.ensure_manifest(&target.game_id, InstanceKind::Global)) {
+        eidos_log::warn!("Cannot prepare this instance: {error}");
+        exit(1);
+    }
 
     match args.get(1).map(String::as_str) {
         None | Some("list") => {
@@ -346,7 +348,7 @@ pub(crate) fn cmd_tool(args: &[String]) {
             // The bundled Tier-1 DLLs get provisioned at launch; but a Tier-2 verb
             // (vcrun/dotnet) that hasn't been installed will likely crash the tool, so
             // warn with the fix - without blocking (the user may have it via Steam).
-            let satisfied = satisfied_prereqs_in(&inst, game.compatdata.as_ref());
+            let satisfied = satisfied_prereqs_in(&inst, game.prefix().as_deref());
             let missing2: Vec<&String> = prereqs
                 .iter()
                 .filter(|v| eidos_gamefeatures::is_tier2_verb(v) && !satisfied.contains(*v))

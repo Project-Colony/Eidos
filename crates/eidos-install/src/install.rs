@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{ArchiveEntry, ArchiveTree, LayoutRules, BAIN_MIN_SUBPACKAGES, MAX_TREE_DEPTH};
 
+pub mod custom;
 mod extract;
 mod fomod;
 mod fsops;
@@ -181,6 +182,8 @@ pub enum OverwritePolicy {
 /// FOMOD/BAIN package must run its scripted installer, and an archive whose option
 /// folders happen to look like sub-packages must not be hijacked from the wizard.
 pub enum Opened {
+    /// A user-installed trusted helper with an explicit prompt or file plan.
+    Custom(Box<custom::CustomSession>),
     /// An OMOD container; scripted sessions require explicit evaluation.
     Omod(Box<OmodSession>),
     /// A FOMOD scripted installer: drive the wizard, then [`finish_fomod`].
@@ -233,11 +236,69 @@ pub fn open_archive_with(
     game_id: &str,
     on_progress: impl FnMut(u8),
 ) -> Result<Opened, InstallError> {
+    open_archive_with_installers(
+        archive,
+        mods_dir,
+        name,
+        game_id,
+        &[],
+        &eidos_addons::Context::default(),
+        &std::sync::atomic::AtomicBool::new(false),
+        None,
+        on_progress,
+    )
+}
+
+/// Try explicitly configured installers, then use the same native classifier.
+/// A recognized OMOD keeps its container decoder; generic helpers can override
+/// a FOMOD only with an explicit priority greater than the native priority 90.
+#[allow(clippy::too_many_arguments)]
+pub fn open_archive_with_installers(
+    archive: &Path,
+    mods_dir: &Path,
+    name: &str,
+    game_id: &str,
+    addons: &[eidos_addons::Addon],
+    context: &eidos_addons::Context,
+    cancel: &std::sync::atomic::AtomicBool,
+    expected_custom: Option<&custom::CustomReceipt>,
+    on_progress: impl FnMut(u8),
+) -> Result<Opened, InstallError> {
+    if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        return Err(InstallError::BadSelection("Installation cancelled".into()));
+    }
     let mut on_progress = on_progress;
-    if let Some(session) = try_open_omod(archive, mods_dir, &mut on_progress)? {
+    if let Some(session) = try_open_omod_with(archive, mods_dir, cancel, &mut on_progress)? {
+        if expected_custom.is_some() {
+            return Err(InstallError::BadSelection(
+                "Recorded custom installer cannot replay an OMOD container".into(),
+            ));
+        }
         return Ok(Opened::Omod(Box::new(session)));
     }
-    let tree = extract_to_temp_with(archive, mods_dir, on_progress)?;
+    let tree = extract_to_temp_cancellable(archive, mods_dir, cancel, on_progress)?;
+    let tree = match custom::try_custom_installers_with_receipt(
+        tree,
+        archive,
+        game_id,
+        addons,
+        context,
+        cancel,
+        expected_custom,
+    )? {
+        custom::CustomStart::Selected(session) => return Ok(Opened::Custom(session)),
+        custom::CustomStart::Fallback(tree) => tree,
+    };
+    classify_extracted(tree, archive, name, game_id)
+}
+
+/// Classify an owned extraction after helpers declined or explicit native fallback.
+pub fn classify_extracted(
+    tree: ExtractedTree,
+    archive: &Path,
+    name: &str,
+    game_id: &str,
+) -> Result<Opened, InstallError> {
     if let Some(root) = find_fomod_root(&tree.tmp) {
         let config = parse_fomod_at(&root)?;
         return Ok(Opened::Fomod(Box::new(FomodSession {

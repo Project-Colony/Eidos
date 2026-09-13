@@ -41,7 +41,10 @@ mod dds_preview;
 mod dialogs;
 mod file_preview;
 mod fomod;
+#[cfg(test)]
+mod gui_verification;
 mod health;
+mod installers;
 mod modinfo;
 mod nif_preview;
 mod nif_render;
@@ -185,6 +188,7 @@ impl SettingsTab {
 
 #[derive(Debug, Clone)]
 enum Message {
+    Installer(installers::Action),
     Next,
     Back,
     PickKind(InstanceKind),
@@ -203,6 +207,19 @@ enum Message {
     NewProfile,
     InstallMod,
     ModPicked(Option<PathBuf>),
+    InstallerArchiveResolved {
+        request: u64,
+        target: Option<CollectionTarget>,
+        name: String,
+        result: Result<Option<PathBuf>, String>,
+    },
+    ModPickedFor {
+        fresh: bool,
+        request: u64,
+        target: Option<CollectionTarget>,
+        name: Option<String>,
+        path: Option<PathBuf>,
+    },
     FomodToggle(usize, usize),
     FomodNext,
     FomodBack,
@@ -231,6 +248,7 @@ enum Message {
     ModVisitNexus(usize),
     /// Re-run the installer for this mod (MO2 reinstallMod).
     ModReinstall(usize),
+    ModReinstallFresh(usize),
     /// Delete the mod from disk (MO2 removeMods); two-click confirm.
     ModRemove(usize),
     /// Begin renaming a mod (MO2 renameMod); opens an inline editor.
@@ -956,6 +974,7 @@ enum Message {
 /// An in-progress FOMOD installer: the extracted+parsed archive, the current step,
 /// and the user's selection so far.
 struct FomodWizard {
+    target: CollectionTarget,
     session: eidos_install::FomodSession,
     step: usize,
     selection: eidos_fomod::Selection,
@@ -1208,6 +1227,7 @@ struct IniEditorState {
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
 /// Merge / Replace / Rename / Cancel - MO2's QueryOverwriteDialog.
 struct CollisionPrompt {
+    target: CollectionTarget,
     backup: bool,
     archive: PathBuf,
     /// The colliding (already sanitized) mod name.
@@ -1231,6 +1251,7 @@ struct CollisionPrompt {
 /// simple and FOMOD heuristics both decline it. Holds the extracted tree so
 /// nothing is unpacked twice, whatever the user picks.
 struct InstallPicker {
+    target: CollectionTarget,
     archive: PathBuf,
     /// The mod name to install under, editable (MO2 lets you rename here).
     name: String,
@@ -1731,6 +1752,8 @@ pub(crate) struct DataRow {
 type CachedListing = (u64, std::rc::Rc<Vec<String>>);
 
 struct App {
+    installer: Option<installers::Wizard>,
+    mod_picker: u64,
     screen: Screen,
     games: Vec<DetectedGame>,
     kind: InstanceKind,
@@ -2315,15 +2338,14 @@ struct CategoriesDialogState {
 /// resize it had sent went unanswered until the extraction finished. The work
 /// is the same; only the thread it runs on changed.
 struct InstallJob {
+    fresh: bool,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    target: Option<CollectionTarget>,
     /// The mod's name, for the dialog text.
     name: String,
     /// The archive being opened. Kept because the result handler needs it and
     /// the worker has moved its own copy away.
     archive: PathBuf,
-    /// The instance's `mods/`, likewise.
-    mods_dir: PathBuf,
-    /// The game the install is for.
-    game_id: String,
     /// 7-Zip's own percentage, written by the worker as it reads them.
     percent: std::sync::Arc<std::sync::atomic::AtomicU8>,
     /// The worker's result, stored just before `done` flips.
@@ -2332,6 +2354,13 @@ struct InstallJob {
     >,
     /// Flipped to `true` by the worker once `outcome` is filled.
     done: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Drop for InstallJob {
+    fn drop(&mut self) {
+        self.cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 // The worker hands `Opened` back across a thread; if that ever stops holding,
@@ -2513,6 +2542,18 @@ impl std::fmt::Display for CategoryChoice {
 }
 
 fn view(app: &App) -> Element<'_, Message> {
+    if let Some(w) = &app.installer {
+        let mut layers = Stack::new().push(installers::view(w));
+        if let Some(preview) = &app.preview {
+            layers = layers
+                .push(
+                    mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                        .on_press(Message::ClosePreview),
+                )
+                .push(container(preview_dialog(preview)).center(Length::Fill));
+        }
+        return layers.into();
+    }
     if let Some(w) = &app.fomod {
         let base = fomod_wizard_view(w);
         // A reinstall collision raised from inside the wizard must be able to
@@ -2759,6 +2800,7 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
         );
     }
     if app.screen == Screen::Main
+        && app.installer.is_none()
         && app.fomod.is_none()
         && app.rename.is_none()
         && !app.settings_open
@@ -3058,24 +3100,16 @@ fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Message> {
         return Space::new().height(Length::Fixed(0.0)).into();
     }
 
-    // Two sources, and both are needed. Eidos records what IT installed in the
-    // instance; the prefix records what winetricks installed in it, by whoever
-    // ran it. Trusting only the first reports a runtime the user set up years ago
-    // as missing and offers to download it again.
-    let mut done: std::collections::HashSet<String> = app
+    let prefix = selected_game(app).and_then(|g| g.prefix());
+    let done: std::collections::HashSet<String> = app
         .created
         .as_ref()
-        .and_then(|i| std::fs::read_to_string(i.root.join("prereqs.done")).ok())
-        .map(|s| {
-            s.lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty())
+        .map(|i| {
+            eidos_gamefeatures::satisfied_prereqs_in(&i.root, prefix.as_deref())
+                .into_iter()
                 .collect()
         })
         .unwrap_or_default();
-    if let Some(prefix) = selected_game(app).and_then(|g| g.compatdata.as_ref()) {
-        done.extend(eidos_gamefeatures::verbs_in_prefix(&prefix.join("pfx")));
-    }
 
     let mut col = Column::new()
         .spacing(2)
@@ -9395,6 +9429,7 @@ mod tests {
             let archive = root.join("reinstall.zip");
             fs::write(&archive, include_bytes!("../tests/fixtures/reinstall.zip")).unwrap();
             app.collision = Some(CollisionPrompt {
+                target: update::collection_target(&app).unwrap(),
                 backup: false,
                 archive,
                 name: "Existing".into(),
@@ -9568,10 +9603,11 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let done = outcome.is_some();
         InstallJob {
+            fresh: false,
+            cancel: Arc::new(AtomicBool::new(false)),
+            target: None,
             name: "Some Mod".into(),
             archive: PathBuf::from("/tmp/Some Mod.7z"),
-            mods_dir: PathBuf::from("/tmp/mods"),
-            game_id: "skyrimse".into(),
             percent: Arc::new(AtomicU8::new(0)),
             outcome: Arc::new(Mutex::new(outcome)),
             done: Arc::new(AtomicBool::new(done)),

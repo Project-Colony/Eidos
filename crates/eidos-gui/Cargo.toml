@@ -63,3 +63,7 @@ image-decoder = { package = "image", version = "0.25", default-features = false,
 # Pinned to a tag, as Colony and Xion pin it: a change upstream must not be able
 # to alter this window without a deliberate bump.
 colony-ui = "0.1.5"
+
+[dev-dependencies]
+iced_runtime = "0.14"
+iced_tiny_skia = "0.14"

@@ -55,6 +55,91 @@ pub fn verbs_in_prefix(prefix: &Path) -> std::collections::BTreeSet<String> {
         .unwrap_or_default()
 }
 
+/// Read the selected prefix's own log and only the instance receipt explicitly
+/// bound to that same canonical prefix. Older unscoped markers are not evidence
+/// for a newly selected Steam/GOG/Epic prefix.
+pub fn satisfied_prereqs_in(
+    instance_root: &Path,
+    prefix: Option<&Path>,
+) -> std::collections::BTreeSet<String> {
+    let Some(prefix) = prefix else {
+        return Default::default();
+    };
+    let mut done = verbs_in_prefix(prefix);
+    if let (Ok(key), Ok(receipt)) = (
+        prefix_receipt_key(prefix),
+        fs::read_to_string(instance_root.join("prereqs.done")),
+    ) {
+        let mut lines = receipt.lines();
+        if lines.next() == Some(key.as_str()) {
+            done.extend(
+                lines
+                    .map(str::trim)
+                    .filter(|v| is_tier2_verb(v))
+                    .map(str::to_string),
+            );
+        }
+    }
+    done
+}
+
+fn prefix_receipt_key(prefix: &Path) -> io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::os::unix::ffi::OsStrExt;
+    let prefix = prefix.canonicalize()?;
+    if !prefix.is_dir() {
+        return Err(io::Error::other("Wine prefix is not a directory"));
+    }
+    use std::os::unix::fs::MetadataExt;
+    let metadata = prefix.metadata()?;
+    let mut digest = Sha256::new();
+    digest.update(prefix.as_os_str().as_bytes());
+    digest.update([0]);
+    digest.update(metadata.dev().to_le_bytes());
+    digest.update(metadata.ino().to_le_bytes());
+    let hash: String = digest
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    Ok(format!("# eidos-prefix-sha256:{hash}"))
+}
+
+/// Atomically record successful verbs for one actual Wine prefix. The caller
+/// holds the instance lock and has already completed the user-requested install.
+pub fn record_prereqs(
+    instance_root: &Path,
+    prefix: &Path,
+    verbs: &std::collections::BTreeSet<String>,
+) -> io::Result<()> {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let mut body = prefix_receipt_key(prefix)?;
+    body.push('\n');
+    for verb in verbs.iter().filter(|v| is_tier2_verb(v)) {
+        body.push_str(verb);
+        body.push('\n');
+    }
+    let temp = instance_root.join(format!(
+        ".prereqs-{}-{}.tmp",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
+    let result = file
+        .write_all(body.as_bytes())
+        .and_then(|()| file.sync_all())
+        .and_then(|()| fs::rename(&temp, instance_root.join("prereqs.done")));
+    if result.is_err() {
+        let _ = fs::remove_file(temp);
+    }
+    result
+}
+
 /// Whether `verb` is a Tier-2 installer verb (runs winetricks, downloads).
 pub fn is_tier2_verb(verb: &str) -> bool {
     TIER2_VERBS.contains(&verb)
@@ -220,6 +305,11 @@ fn describe_installer_exit(code: i32) -> Option<&'static str> {
 /// Wine processes carry Windows-style argv that never mentions the Linux prefix
 /// path, so a cmdline match alone misses exactly the processes that matter.
 pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
+    prefix_busy_at(prefix, Some(compatdata))
+}
+
+/// Like `prefix_busy`, with no fabricated compatdata for an external Wine prefix.
+pub fn prefix_busy_at(prefix: &Path, compatdata: Option<&Path>) -> Vec<(u32, String)> {
     const MARKERS: [&str; 5] = [
         "wineboot",
         "wineserver",
@@ -228,7 +318,8 @@ pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
         "steam.exe",
     ];
     let want_prefix = fs::canonicalize(prefix).unwrap_or_else(|_| prefix.to_path_buf());
-    let want_compat = fs::canonicalize(compatdata).unwrap_or_else(|_| compatdata.to_path_buf());
+    let want_compat =
+        compatdata.map(|path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf()));
     let me = std::process::id();
 
     let mut busy = Vec::new();
@@ -258,7 +349,7 @@ pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
         let Ok(raw_env) = fs::read(e.path().join("environ")) else {
             continue;
         };
-        if environ_owns_prefix(&raw_env, &want_prefix, &want_compat) {
+        if environ_owns_prefix_at(&raw_env, &want_prefix, want_compat.as_deref()) {
             busy.push((pid, cmdline));
         }
     }
@@ -268,7 +359,12 @@ pub fn prefix_busy(prefix: &Path, compatdata: &Path) -> Vec<(u32, String)> {
 /// Whether a `/proc/<pid>/environ` buffer (NUL-separated `KEY=VALUE` entries)
 /// names this prefix. Split out from the `/proc` walk so it can be tested against
 /// a synthetic buffer without needing real Wine processes.
+#[cfg(test)]
 fn environ_owns_prefix(raw: &[u8], prefix: &Path, compatdata: &Path) -> bool {
+    environ_owns_prefix_at(raw, prefix, Some(compatdata))
+}
+
+fn environ_owns_prefix_at(raw: &[u8], prefix: &Path, compatdata: Option<&Path>) -> bool {
     String::from_utf8_lossy(raw)
         .split('\0')
         .any(|kv| match kv.split_once('=') {
@@ -276,7 +372,9 @@ fn environ_owns_prefix(raw: &[u8], prefix: &Path, compatdata: &Path) -> bool {
             // spelling still matches, and fall back to a literal compare when the
             // path no longer resolves.
             Some(("WINEPREFIX", v)) => same_path(v, prefix),
-            Some(("STEAM_COMPAT_DATA_PATH", v)) => same_path(v, compatdata),
+            Some(("STEAM_COMPAT_DATA_PATH", v)) => {
+                compatdata.is_some_and(|path| same_path(v, path))
+            }
             _ => false,
         })
 }
@@ -289,6 +387,54 @@ fn same_path(value: &str, want: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_prefix_ownership_never_needs_a_steam_compat_path() {
+        let prefix = Path::new("/tmp/eidos-external-wine");
+        assert!(environ_owns_prefix_at(
+            b"WINEPREFIX=/tmp/eidos-external-wine\0",
+            prefix,
+            None
+        ));
+        assert!(!environ_owns_prefix_at(
+            b"STEAM_COMPAT_DATA_PATH=/tmp/eidos-external-wine\0",
+            prefix,
+            None
+        ));
+    }
+
+    #[test]
+    fn prereq_receipts_belong_to_the_exact_prefix_and_legacy_logs_still_work() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-prereq-identity-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let a = root.join("a");
+        let b = root.join("b");
+        fs::create_dir_all(&a).unwrap();
+        fs::create_dir_all(&b).unwrap();
+        fs::write(root.join("prereqs.done"), "dotnet8\n").unwrap();
+        assert!(satisfied_prereqs_in(&root, Some(&a)).is_empty());
+        let verbs = std::collections::BTreeSet::from(["vcrun2022".into()]);
+        record_prereqs(&root, &a, &verbs).unwrap();
+        assert_eq!(satisfied_prereqs_in(&root, Some(&a)), verbs);
+        assert!(satisfied_prereqs_in(&root, Some(&b)).is_empty());
+        assert!(satisfied_prereqs_in(&root, None).is_empty());
+        fs::write(b.join("winetricks.log"), "dotnet8\n").unwrap();
+        assert_eq!(
+            satisfied_prereqs_in(&root, Some(&b)),
+            std::collections::BTreeSet::from(["dotnet8".into()])
+        );
+        let alias = root.join("alias");
+        std::os::unix::fs::symlink(&a, &alias).unwrap();
+        assert_eq!(satisfied_prereqs_in(&root, Some(&alias)), verbs);
+        fs::rename(&a, root.join("old-a")).unwrap();
+        fs::create_dir(&a).unwrap();
+        assert!(
+            satisfied_prereqs_in(&root, Some(&a)).is_empty(),
+            "recreated prefix must not inherit an old receipt"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn environ_identifies_the_owning_prefix() {

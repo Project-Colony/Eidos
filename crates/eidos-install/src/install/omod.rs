@@ -2,6 +2,10 @@
 //! (config/CRC streams) and 05b3d562 (the version-4 writer and script type prefix).
 //! All decoding finishes in owned staging; script bodies are never executed here.
 
+pub mod known_handlers;
+pub mod obmm;
+pub mod scripted;
+
 use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -91,7 +95,7 @@ impl OmodScript {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OmodFileKind {
     Data,
     Plugin,
@@ -114,10 +118,18 @@ pub struct OmodSession {
     pub image: Option<PathBuf>,
     pub members: Vec<OmodMember>,
     pub archive: PathBuf,
+    origin: ArchiveOrigin,
     tree: ExtractedTree,
 }
 
 impl OmodSession {
+    fn verify_archive(&self, cancelled: &AtomicBool) -> Result<(), InstallError> {
+        if self.archive != self.origin.path() {
+            return Err(invalid("archive path changed after decoding"));
+        }
+        self.origin.verify_current(cancelled)
+    }
+
     /// Grouped decoded sources; collection hash matching can search both roots.
     pub fn payload_root(&self) -> PathBuf {
         self.tree.path().join("payload")
@@ -745,13 +757,16 @@ fn unpack_group(
 }
 
 fn decode_container(
-    archive: &Path,
+    origin: ArchiveOrigin,
     work_dir: &Path,
     entries: Vec<ZipEntry>,
     cancelled: &AtomicBool,
     mut on_progress: impl FnMut(u8),
 ) -> Result<OmodSession, InstallError> {
     validate_container(&entries)?;
+    origin.verify_current(cancelled)?;
+    let pinned = origin.pinned_path();
+    let archive = pinned.as_path();
     if cancelled.load(Ordering::Relaxed) {
         return Err(invalid("cancelled"));
     }
@@ -763,7 +778,7 @@ fn decode_container(
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     fs::create_dir(&tmp)?;
-    let tree = ExtractedTree { tmp };
+    let tree = ExtractedTree::owned(tmp);
     let controls = tree.path().join("container");
     fs::create_dir(&controls)?;
     // Validate the small config and inventory before decoding the large groups.
@@ -832,13 +847,15 @@ fn decode_container(
         }
     }
     on_progress(100);
+    origin.verify_current(cancelled)?;
     Ok(OmodSession {
         metadata,
         script,
         readme,
         image,
         members,
-        archive: archive.to_path_buf(),
+        archive: origin.path().to_path_buf(),
+        origin,
         tree,
     })
 }
@@ -851,22 +868,25 @@ pub fn open_omod_with(
     cancelled: &AtomicBool,
     on_progress: impl FnMut(u8),
 ) -> Result<OmodSession, InstallError> {
-    decode_container(
-        archive,
-        work_dir,
-        zip_directory(archive)?,
-        cancelled,
-        on_progress,
-    )
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(invalid("OMOD decoding cancelled"));
+    }
+    let origin = ArchiveOrigin::capture_bounded(archive, cancelled, MAX_ARCHIVE_BYTES)?;
+    let entries = zip_directory(&origin.pinned_path())?;
+    decode_container(origin, work_dir, entries, cancelled, on_progress)
 }
 
-/// Probe the OMOD container contract and fully decode a recognized archive.
-/// Non-OMOD archives return `None`; malformed `.omod` files return an error.
-pub fn try_open_omod(
+/// Cancellable container probe used by background installer classification.
+pub fn try_open_omod_with(
     archive: &Path,
     work_dir: &Path,
+    cancelled: &AtomicBool,
     on_progress: impl FnMut(u8),
 ) -> Result<Option<OmodSession>, InstallError> {
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(invalid("OMOD decoding cancelled"));
+    }
+
     let required = archive
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("omod"));
@@ -886,14 +906,21 @@ pub fn try_open_omod(
     if !candidate {
         return Ok(None);
     }
-    decode_container(
-        archive,
-        work_dir,
-        entries,
-        &AtomicBool::new(false),
-        on_progress,
-    )
-    .map(Some)
+    // The cheap directory probe above avoids hashing ordinary archives twice.
+    // Reparse the candidate through the held source used by every decoder.
+    let origin = ArchiveOrigin::capture_bounded(archive, cancelled, MAX_ARCHIVE_BYTES)?;
+    let entries = zip_directory(&origin.pinned_path())?;
+    decode_container(origin, work_dir, entries, cancelled, on_progress).map(Some)
+}
+
+/// Probe the OMOD container contract and fully decode a recognized archive.
+/// Non-OMOD archives return `None`; malformed `.omod` files return an error.
+pub fn try_open_omod(
+    archive: &Path,
+    work_dir: &Path,
+    on_progress: impl FnMut(u8),
+) -> Result<Option<OmodSession>, InstallError> {
+    try_open_omod_with(archive, work_dir, &AtomicBool::new(false), on_progress)
 }
 
 /// Publish only an unscripted OMOD. Scripted sessions require the explicit
@@ -950,6 +977,8 @@ fn install_omod_inner(
     if session.script.is_some() {
         return Err(InstallError::BadSelection("This OMOD has an installer script; explicit script evaluation is required before installation".into()));
     }
+    let cancelled = AtomicBool::new(false);
+    session.verify_archive(&cancelled)?;
     let quote = |text: &str| {
         format!(
             "\"{}\"",
@@ -982,8 +1011,9 @@ fn install_omod_inner(
     ));
     fs::create_dir_all(mods_dir)?;
     fs::create_dir(&tmp)?;
-    let prepared = ExtractedTree { tmp };
+    let prepared = ExtractedTree::owned(tmp);
     for spec in &session.members {
+        session.verify_archive(&cancelled)?;
         let base = match spec.kind {
             OmodFileKind::Data => session.data_root(),
             OmodFileKind::Plugin => session.plugins_root(),
@@ -1014,6 +1044,7 @@ fn install_omod_inner(
         if count != spec.size || hash.finalize() != spec.crc32 {
             return Err(invalid("decoded member changed before publication"));
         }
+        session.verify_archive(&cancelled)?;
     }
     if let Some(readme) = &session.readme {
         fs::write(prepared.path().join("omod-readme.txt"), readme)?;
@@ -1027,6 +1058,7 @@ fn install_omod_inner(
     if let Some(finish) = finish {
         finish(prepared.path())?;
     }
+    session.verify_archive(&cancelled)?;
     super::simple::install_destination_ready(
         &session.archive,
         mods_dir,
@@ -1146,6 +1178,50 @@ mod tests {
     }
 
     #[test]
+    fn archive_origin_binds_decode_completion_and_unscripted_publication() {
+        let base = std::env::temp_dir().join(format!(
+            "eidos-omod-origin-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&base).unwrap();
+        let owned = ExtractedTree::owned(base);
+        let archive = owned.path().join("pack.omod");
+        let original = omod_zip(&[
+            ("config", omod_config(4, 1)),
+            ("data.crc", omod_crc(&[("Demo.esp", b"abc")])),
+            ("data", omod_zip(&[("a", b"abc".to_vec())])),
+        ]);
+        fs::write(&archive, &original).unwrap();
+        let work = owned.path().join("work");
+        let cancel = AtomicBool::new(false);
+        assert!(open_omod_with(&archive, &work, &cancel, |percent| {
+            if percent == 100 {
+                fs::write(&archive, b"replacement").unwrap();
+            }
+        })
+        .is_err());
+        assert_eq!(fs::read_dir(&work).unwrap().count(), 0);
+
+        fs::write(&archive, &original).unwrap();
+        let session = open_omod_with(&archive, &work, &cancel, |_| {}).unwrap();
+        let mods = owned.path().join("mods");
+        assert!(install_omod_with_finish(
+            &session,
+            &mods,
+            "Pack",
+            "oblivion",
+            OverwritePolicy::Replace,
+            |_| {
+                fs::write(&archive, b"replacement")?;
+                Ok(())
+            }
+        )
+        .is_err());
+        assert!(!mods.join("Pack").exists());
+    }
+
+    #[test]
     fn cancellation_creates_no_staging_and_decoder_output_is_bounded() {
         let base = std::env::temp_dir().join(format!(
             "eidos-omod-cancel-{}-{}",
@@ -1153,7 +1229,7 @@ mod tests {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&base).unwrap();
-        let owned = ExtractedTree { tmp: base };
+        let owned = ExtractedTree::owned(base);
         let archive = owned.path().join("pack.omod");
         fs::write(
             &archive,
@@ -1215,7 +1291,7 @@ mod tests {
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&base).unwrap();
-        let owned = ExtractedTree { tmp: base };
+        let owned = ExtractedTree::owned(base);
         let archive = owned.path().join("pack.omod");
         let original = omod_zip(&[
             ("config", omod_config(4, 1)),

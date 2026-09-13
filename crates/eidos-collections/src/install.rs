@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use crate::manifest::{Collection, Mod, SourceType};
 use crate::report::{Note, Report};
-use crate::state::{InstallState, Status, key_for};
+use crate::state::{key_for, InstallState, Status};
 
 /// What became of a member's archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +45,8 @@ pub enum Installed {
     /// Installed, but the recorded installer answers could not all be replayed,
     /// so the files differ from the author's.
     Approximate(String, Vec<String>),
+    /// The owned reservation and exact receipt remain available for a later answer.
+    NeedsUser(String),
     Failed(String),
 }
 
@@ -226,6 +228,9 @@ pub fn run(
                 return report;
             }
             hooks.progress(n + 1, total, &m.name);
+            if report.aborted {
+                return report;
+            }
             continue;
         }
 
@@ -312,6 +317,9 @@ pub fn run(
             return report;
         }
         hooks.progress(n + 1, total, &m.name);
+        if report.aborted {
+            return report;
+        }
     }
 
     for t in &c.tools {
@@ -344,6 +352,14 @@ fn record_install(
             report.approximate.push(Note {
                 subject: member.name.clone(),
                 detail: why.join("; "),
+            });
+        }
+        Installed::NeedsUser(why) => {
+            state.set(key, Status::Unavailable(why.clone()));
+            report.aborted = true;
+            report.needs_you.push(Note {
+                subject: member.name.clone(),
+                detail: why,
             });
         }
         Installed::Failed(why) => {
@@ -445,6 +461,49 @@ mod tests {
 
     fn noop(_: &InstallState) -> Result<(), String> {
         Ok(())
+    }
+
+    #[test]
+    fn unanswered_installer_stops_then_resumes_same_reserved_member() {
+        let c = collection(vec![
+            member("First", 0, false, 1),
+            member("Later", 0, false, 2),
+        ]);
+        let mut state = InstallState::default();
+        let mut fake = Fake::default();
+        fake.install.insert(
+            "First".into(),
+            Installed::NeedsUser("exact prompt saved".into()),
+        );
+        let mut saved = None;
+        let report = run(&c, &mut state, &mut fake, &mut |s| {
+            saved = Some(s.clone());
+            Ok(())
+        });
+        assert!(report.aborted);
+        assert_eq!(report.needs_you.len(), 1);
+        assert_eq!(fake.installed_order, ["First"]);
+        let mut restored = saved.unwrap();
+        assert_eq!(
+            restored
+                .folders
+                .get(&key_for(&c.mods[0], ""))
+                .map(String::as_str),
+            Some("First")
+        );
+        assert!(restored.status(&key_for(&c.mods[0], "")).is_open());
+        fake.install.clear();
+        fake.installed_order.clear();
+        let report = run(&c, &mut restored, &mut fake, &mut noop);
+        assert!(!report.aborted);
+        assert_eq!(fake.installed_order, ["First", "Later"]);
+        assert_eq!(
+            restored
+                .folders
+                .get(&key_for(&c.mods[0], ""))
+                .map(String::as_str),
+            Some("First")
+        );
     }
 
     #[test]

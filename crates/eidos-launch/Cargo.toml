@@ -13,3 +13,6 @@ libc = "0.2"
 [[test]]
 name = "root_overwrite"
 harness = false
+
+[dev-dependencies]
+eidos-gamefeatures = { path = "../eidos-gamefeatures" }

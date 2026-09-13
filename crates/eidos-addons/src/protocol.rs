@@ -96,7 +96,7 @@ pub struct Field {
     pub value: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FileCopy {
     pub source: String,
@@ -138,6 +138,16 @@ pub fn invoke(
     request: &Request,
     cancel: &AtomicBool,
 ) -> Result<Reply, String> {
+    invoke_with_timeout(addon, context, request, cancel, Duration::from_secs(30))
+}
+
+fn invoke_with_timeout(
+    addon: &Addon,
+    context: &Context,
+    request: &Request,
+    cancel: &AtomicBool,
+    timeout: Duration,
+) -> Result<Reply, String> {
     if request.protocol != 1 || addon.protocol != 1 || addon.kind != request.operation.kind() {
         return Err("unsupported extension operation or protocol".into());
     }
@@ -170,7 +180,7 @@ pub fn invoke(
     context
         .values
         .insert("workspace".into(), request.workspace.display().to_string());
-    let output = crate::capture(addon, &context, Duration::from_secs(30), cancel)?;
+    let output = crate::capture(addon, &context, timeout, cancel)?;
     if !output.status.success() {
         return Err(format!(
             "extension exited with {}: {}",
@@ -332,14 +342,32 @@ fn text(value: &str, limit: usize) -> Result<(), String> {
 
 /// Windows and POSIX paths share this checked, normalized relative spelling.
 pub fn relative_path(raw: &str) -> Result<PathBuf, String> {
-    if raw.is_empty() || raw.len() > 4096 || raw.contains(['\0', ':']) {
+    if raw.is_empty()
+        || raw.len() > 4096
+        || raw.chars().any(char::is_control)
+        || raw.contains([':', '<', '>', '"', '|', '?', '*'])
+    {
         return Err("invalid relative extension path".into());
     }
     let normalized = raw.replace('\\', "/");
-    if normalized
-        .split('/')
-        .any(|part| part.is_empty() || part == "." || part == ".." || part.ends_with(['.', ' ']))
-    {
+    if normalized.split('/').any(|part| {
+        let stem = part
+            .split('.')
+            .next()
+            .unwrap_or_default()
+            .trim_end_matches(' ')
+            .to_ascii_uppercase();
+        let device = ["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
+            || ["COM", "LPT"].iter().any(|prefix| {
+                stem.strip_prefix(prefix).is_some_and(|n| {
+                    matches!(
+                        n,
+                        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                    )
+                })
+            });
+        part.is_empty() || part == "." || part == ".." || part.ends_with(['.', ' ']) || device
+    }) {
         return Err("extension path must contain ordinary relative components".into());
     }
     Ok(PathBuf::from(normalized))
@@ -441,6 +469,85 @@ mod tests {
             fs::read(&input).unwrap(),
             br#"{"player":"Example","level":42}"#
         );
+    }
+
+    #[test]
+    fn installer_timeout_uses_the_real_bounded_host() {
+        let root = tempfile::tempdir().unwrap();
+        let input = root.path().join("input.zip");
+        fs::write(&input, b"unchanged archive").unwrap();
+        let mut addon = crate::parse_addon(
+            "id='timeout'\nkind='installer'\nprotocol=1\nexec='/bin/sh'\nextensions=['zip']",
+            Path::new("/tmp/timeout.toml"),
+        )
+        .unwrap();
+        addon.args = vec!["-c".into(), "sleep 5".into()];
+        let request = Request {
+            protocol: 1,
+            request_id: "timeout".into(),
+            operation: Operation::Installer,
+            game: "skyrimse".into(),
+            input: input.clone(),
+            source: Some(root.path().into()),
+            workspace: root.path().into(),
+            answers: BTreeMap::new(),
+        };
+        let started = std::time::Instant::now();
+        assert!(invoke_with_timeout(
+            &addon,
+            &Context::default(),
+            &request,
+            &AtomicBool::new(false),
+            Duration::from_millis(100)
+        )
+        .unwrap_err()
+        .contains("longer"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(fs::read(input).unwrap(), b"unchanged archive");
+    }
+
+    #[test]
+    fn portable_paths_reject_windows_devices_controls_and_wildcards() {
+        for path in [
+            "CON",
+            "con.txt",
+            "Aux.dds",
+            "PRN",
+            "NUL.foo",
+            "COM1",
+            "LPT9.txt",
+            "COM¹.esp",
+            "LPT²",
+            "COM³",
+            "a/aux/b",
+            "a?b",
+            "a*b",
+            "a<b",
+            "a>b",
+            "a|b",
+            "a\"b",
+            "a\u{1f}b",
+            "a\u{7f}b",
+            "x/..",
+            "x/",
+            "/x",
+            "C:x",
+            "x.",
+            "x ",
+        ] {
+            assert!(relative_path(path).is_err(), "{path:?}");
+        }
+        for path in [
+            "textures/a.dds",
+            "Textures\\名前.dds",
+            "COM0",
+            "COM10.txt",
+            "console.txt",
+            "lpt²_extra",
+            "normal name.txt",
+        ] {
+            assert!(relative_path(path).is_ok(), "{path:?}");
+        }
     }
 
     #[test]
