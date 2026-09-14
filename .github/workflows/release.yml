@@ -170,9 +170,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
-      # The only write permission in this repo's workflows, scoped to the one job
-      # that needs it, to create the release and attach the two files.
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -185,11 +183,12 @@ jobs:
         env:
           # `gh` is preinstalled on the runner, so publishing needs no third-party
           # action holding a write token.
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
           VERSION: ${{ needs.build.outputs.version }}
           TARBALL: ${{ needs.build.outputs.tarball }}
         run: |
           set -eu
+          test "$(gh api user --jq .login)" = MotherSphere
           cat > notes.md <<NOTES
           ## Install
 
