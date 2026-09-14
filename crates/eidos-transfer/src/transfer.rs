@@ -25,15 +25,20 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(what: &str) -> Result<Scratch, TransferError> {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos())
-            .unwrap_or(0);
-        let dir = std::env::temp_dir().join(format!("eidos-{what}-{}-{nanos}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir)
-            .map_err(|e| TransferError::Io(format!("could not create a scratch folder: {e}")))?;
-        Ok(Scratch(dir))
+        use std::os::unix::fs::DirBuilderExt;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        loop {
+            let seq = NEXT.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("eidos-{what}-{}-{seq}", std::process::id()));
+            // Clock ticks are not unique. Claim a fresh private directory and
+            // never remove an existing candidate, even after PID reuse.
+            match fs::DirBuilder::new().mode(0o700).create(&dir) {
+                Ok(()) => return Ok(Scratch(dir)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(TransferError::Io(format!("could not create a scratch folder: {e}"))),
+            }
+        }
     }
 
     fn path(&self) -> &Path {
@@ -691,6 +696,20 @@ impl Transfer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scratch_allocations_keep_live_payloads_separate() {
+        let first = Scratch::new("isolation").unwrap();
+        let sentinel = first.path().join("payload");
+        fs::write(&sentinel, b"first transfer").unwrap();
+        let second = Scratch::new("isolation").unwrap();
+        assert_ne!(first.path(), second.path());
+        drop(second);
+        assert_eq!(fs::read(&sentinel).unwrap(), b"first transfer");
+        let path = first.path().to_path_buf();
+        drop(first);
+        assert!(!path.exists());
+    }
 
     #[test]
     fn an_entry_that_would_write_outside_the_destination_is_recognised() {

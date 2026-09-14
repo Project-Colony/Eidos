@@ -106,6 +106,9 @@ jobs:
           cargo test --workspace --release --locked --exclude eidos-gui
           cargo test -p eidos-gui --release --locked -- --test-threads=1
 
+      - name: Test transfers with colliding clock ticks
+        run: python3 crates/eidos-transfer/tests/check_clock_resolution.py --release
+
       - name: Stage the package
         run: |
           set -eu
