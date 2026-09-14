@@ -19,19 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  # For the last step only, which dispatches release.yml on a tag that shipped
-  # without artifacts. Dispatching a workflow is an `actions` write, and its
-  # absence is not visible until the moment it is needed: every other step
-  # passed, the guard correctly noticed v1.0.2 had nothing attached, and the
-  # dispatch came back 403 "Resource not accessible by integration".
-  #
-  # Dispatching with GITHUB_TOKEN does start the run. The rule that a token's
-  # own events cannot trigger workflows - the one that made this step necessary
-  # in the first place - names `workflow_dispatch` and `repository_dispatch` as
-  # its two exceptions.
-  actions: write
+  contents: read
 
 concurrency:
   group: release-please
@@ -41,9 +29,17 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - name: Verify the release account
+        env:
+          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
+        run: test "$(gh api user --jq .login)" = MotherSphere
+
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
+          # A user token preserves attribution and triggers CI on the generated
+          # PR and the release build on its tag, unlike GITHUB_TOKEN.
+          token: ${{ secrets.EIDOS_RELEASE_TOKEN }}
           # The workspace is a virtual manifest: one `[workspace.package]`
           # version that all seventeen crates inherit, and no `[package]` at the
           # root at all. That is why the config uses `release-type: simple` and
@@ -61,11 +57,12 @@ jobs:
       # skips looks exactly like a step that had nothing to do.
       - name: Keep Cargo.lock in step with the version
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
         run: |
           set -euo pipefail
           branch="release-please--branches--${GITHUB_REF_NAME}"
-          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          gh auth setup-git
+          url="https://github.com/${GITHUB_REPOSITORY}.git"
           if ! git ls-remote --exit-code --heads "$url" "$branch" >/dev/null 2>&1; then
             echo "no release branch open - nothing to sync"
             exit 0
@@ -81,40 +78,8 @@ jobs:
             echo "Cargo.lock already agrees with Cargo.toml"
             exit 0
           fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "MotherSphere"
+          git config user.email "mothersphere.colony@gmail.com"
           git commit -m "chore: sync Cargo.lock with the release version" Cargo.lock
           git push
           echo "Cargo.lock synced onto $branch"
-
-      # A tag created with GITHUB_TOKEN does not start another workflow - GitHub
-      # blocks that so workflows cannot trigger each other in a loop. So the tag
-      # release-please writes would sit there and `release.yml` would never build
-      # it: a release published with no artifacts attached, which is worse than
-      # no release at all. It happened on v1.0.1.
-      #
-      # The condition is the invariant itself - a release with no assets has not
-      # been built - rather than an output of the action above. Guessing at output
-      # names is what silently skipped the Cargo.lock step twice already.
-      #
-      # Dispatching ON THE TAG is what matters: release.yml gates its publish job
-      # on `startsWith(github.ref, 'refs/tags/v')`, so a dispatch against a branch
-      # would build and then decline to ship.
-      - name: Build any release that has no artifacts yet
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          tag=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 \
-                  --json tagName,isDraft --jq '.[] | select(.isDraft|not) | .tagName')
-          if [ -z "$tag" ]; then
-            echo "no releases yet"
-            exit 0
-          fi
-          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')
-          if [ "$assets" -gt 0 ]; then
-            echo "$tag already has $assets artifact(s)"
-            exit 0
-          fi
-          echo "$tag has no artifacts - dispatching release.yml on it"
-          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"

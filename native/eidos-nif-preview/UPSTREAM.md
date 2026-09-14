@@ -1,6 +1,6 @@
 # nifly source and licenses
 
-This helper builds the unmodified `include/`, `src/` and `external/` source directories from
+This helper builds the `include/`, `src/` and `external/` source directories from
 [ousnius/nifly commit f445ebc2e6ace115bbc2de56c70c3562914c5c15](https://github.com/ousnius/nifly/tree/f445ebc2e6ace115bbc2de56c70c3562914c5c15).
 The upstream `LICENSE` and `README.md`, including its credits, are retained in `vendor/nifly/`.
 Upstream identifies its version as 1.0.0; the commit is the reproducibility pin.
@@ -8,6 +8,14 @@ Upstream identifies its version as 1.0.0; the commit is the reproducibility pin.
 Downloaded archive: `https://codeload.github.com/ousnius/nifly/tar.gz/f445ebc2e6ace115bbc2de56c70c3562914c5c15`
 
 Archive SHA-256: `18c63431457e3793e0002bf0a8f7eecd7d77876507afb210ea0ffb3bdac8fff8`.
+
+Local patch (2026-09-14): `include/NifUtil.hpp` uses `size_t` for the source and
+destination cursors in `EraseVectorIndices`. Narrow removal indices must not
+limit traversal of larger containers: 16-bit cursors wrapped at 65,536 elements,
+causing an infinite loop or incorrect compaction. `tests/test_nif_util.cpp`
+checks vectors and deques around that boundary; CTest applies a timeout.
+`VENDORED-SHA256SUMS` records the bundled files including this patch. All other
+vendored files remain unchanged from the pinned archive.
 
 - nifly: GPL version 3; see the complete `vendor/nifly/LICENSE` and source headers.
 - `external/half.hpp`: Christian Rau, MIT license retained in the header (actual bundled version 2.2.1).
