@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/Project-Colony/Eidos/compare/v1.18.1...v1.18.2) (2026-09-14)
+
+
+### Fixes
+
+* **transfer:** isolate scratch directories across concurrent backups ([#70](https://github.com/Project-Colony/Eidos/issues/70)) ([221aeb8](https://github.com/Project-Colony/Eidos/commit/221aeb86d0c80850dd7e907886fac2b4656a2e7a))
+
 ## [1.18.1](https://github.com/Project-Colony/Eidos/compare/v1.18.0...v1.18.1) (2026-09-14)
 
 
