@@ -2,6 +2,7 @@
 nifly
 C++ NIF library for the Gamebryo/NetImmerse File Format
 See the included GPLv3 LICENSE file
+Modified for Eidos on 2026-09-14: widen EraseVectorIndices traversal indices.
 */
 
 #pragma once
@@ -62,8 +63,8 @@ void EraseVectorIndices(VectorType& v, const std::vector<IndexType>& indices) {
 		return;
 
 	size_t indi = 1;
-	IndexType di = indices[0];
-	IndexType si = di + 1;
+	size_t di = indices[0];
+	size_t si = di + 1;
 	for (; si < v.size(); ++si) {
 		if (indi < indices.size() && si == indices[indi])
 			++indi;

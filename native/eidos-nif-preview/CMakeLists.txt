@@ -28,4 +28,8 @@ if(BUILD_TESTING)
   target_link_libraries(nif-preview-fixtures PRIVATE eidos_nifly)
   add_test(NAME nif-preview COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_preview.py"
     "$<TARGET_FILE:eidos-nif-preview>" "$<TARGET_FILE:nif-preview-fixtures>")
+  add_executable(nif-util-tests tests/test_nif_util.cpp)
+  target_link_libraries(nif-util-tests PRIVATE eidos_nifly)
+  add_test(NAME nif-util COMMAND nif-util-tests)
+  set_tests_properties(nif-util PROPERTIES TIMEOUT 5)
 endif()
