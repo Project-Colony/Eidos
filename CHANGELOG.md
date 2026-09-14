@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.18.1](https://github.com/Project-Colony/Eidos/compare/v1.18.0...v1.18.1) (2026-09-14)
+
+
+### Fixes
+
+* **nif:** prevent container index overflow and restore automated releases ([a8e75ae](https://github.com/Project-Colony/Eidos/commit/a8e75ae1706d3abf8a57d08cd0955ea3aabf7f3f))
+* **nif:** prevent index overflow when erasing large containers ([e7d2f63](https://github.com/Project-Colony/Eidos/commit/e7d2f63a3e6c430ca4f72ba4357f620175f19f7a))
+
 ## [1.18.0](https://github.com/Project-Colony/Eidos/compare/v1.17.1...v1.18.0) (2026-09-13)
 
 ### Features
