@@ -99,6 +99,9 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked --exclude eidos-gui
 
+      - name: Test transfers with colliding clock ticks
+        run: python3 crates/eidos-transfer/tests/check_clock_resolution.py
+
       # The GUI suite runs SERIALLY, and this is a workaround, not a fix. Two of
       # its tests fail about one run in twenty under the parallel runner with
       # "this instance is in use by the Eidos window (pid <ourselves>)": the

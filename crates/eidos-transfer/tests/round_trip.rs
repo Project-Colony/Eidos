@@ -202,7 +202,7 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
     assert!(meta.contains("\r\n"), "CRLF must survive: {meta:?}");
 
     // The instance now points at where it is, not where it was.
-    assert_eq!(out.relocated.values, 3);
+    assert_eq!(out.relocated.values, 3, "{out:?}");
     let tools = fs::read_to_string(dest.join("tools.ini")).unwrap();
     assert!(
         tools.contains(&format!(
