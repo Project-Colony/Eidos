@@ -1757,8 +1757,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     // This check used to skip itself and print "load order not computed yet",
     // which reads as reassurance and is not: it says nothing was looked at, on
     // the one check most likely to predict a crash. If the cache is cold,
-    // compute the answer. `diagnostics` only runs when something changed, not
-    // per frame, so it can afford to.
+    // compute the answer. "Something changed" includes every checkbox click and
+    // every Ctrl+Arrow move, so `compute_plugins` must stay cheap: it reads the
+    // layers' root listings, never a full index of every mod's files.
     let computed;
     let plugins = match app.plugins.as_ref() {
         Some(list) => Some(list),
@@ -1905,7 +1906,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .mods
             .iter()
             .rev()
-            .filter(|m| m.is_active())
+            .filter(|m| m.is_active() && !m.is_unmanaged())
             .map(|m| (m.name.clone(), m.path.clone()))
             .collect::<Vec<_>>();
         for d in eidos_gamefeatures::preflight::scan_skse(
@@ -2538,8 +2539,10 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let spec = game.plugin_spec()?;
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
     // app.mods is MO2 display order (lowest priority first) = the ascending order
-    // plugin discovery wants, so feed it through as-is.
-    let enabled = app.mods.iter().filter(|m| m.is_active());
+    // plugin discovery wants, so feed it through as-is. Unmanaged rows (DLC and
+    // Creation Club) are not layers: their `path` is one `.esm` FILE inside Data,
+    // which is already the first source, and the mount drops them the same way.
+    let enabled = app.mods.iter().filter(|m| m.is_active() && !m.is_unmanaged());
     sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
     // The Overwrite layer is a plugin source too (a cleaned/generated .esp lands
     // there) - the launch path includes it, so the GUI must agree.
@@ -2549,7 +2552,12 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
 
     let mut list = PluginList::discover(&sources, &spec);
     if let Some(inst) = app.created.as_ref() {
-        let stack = eidos_core::LayerStack::new(
+        // Plugins only live at the root, so ONE merged root listing answers for
+        // all of them: a read of each layer's top directory, whiteouts and hidden
+        // names applied. This runs on every mod toggle (via `diagnostics`), so the
+        // stack is unindexed - an index walks every file of every enabled mod
+        // first, hundreds of milliseconds of frozen window on a large list.
+        let stack = eidos_core::LayerStack::new_unindexed(
             sources
                 .iter()
                 .rev()
@@ -2558,9 +2566,13 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
                 .collect(),
             inst.overwrite_dir(),
         );
+        let root: HashMap<String, PathBuf> = stack
+            .list_dir("")
+            .into_iter()
+            .map(|(name, path)| (name.to_ascii_lowercase(), path))
+            .collect();
         list.plugins.retain(|plugin| {
-            stack
-                .resolve_read(&plugin.name)
+            root.get(&plugin.name.to_ascii_lowercase())
                 .is_some_and(|path| path.is_file())
         });
     }

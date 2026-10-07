@@ -76,7 +76,11 @@ pub fn scan_skse(
     };
     let mut data_layers = mods.to_vec();
     data_layers.push(("Game".into(), game_data.to_path_buf()));
-    let data = eidos_core::LayerStack::new(
+    // Unindexed, both this stack and the root one below: each answers one
+    // listing and a couple of lookups, and the GUI's health checks run this on
+    // every mod toggle. An index would first walk every file of every mod (and,
+    // for the root, the whole game install) to answer those few questions.
+    let data = eidos_core::LayerStack::new_unindexed(
         data_layers.iter().map(|(_, p)| p.clone()).collect(),
         overwrite.to_path_buf(),
     );
@@ -103,7 +107,7 @@ pub fn scan_skse(
         .collect();
     root_layers.push(("Game".into(), game_root.to_path_buf()));
     let root_overwrite = overwrite.join("Root");
-    let root = eidos_core::LayerStack::new(
+    let root = eidos_core::LayerStack::new_unindexed(
         root_layers.iter().map(|(_, p)| p.clone()).collect(),
         root_overwrite.clone(),
     );

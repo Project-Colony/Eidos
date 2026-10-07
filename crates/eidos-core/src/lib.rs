@@ -364,6 +364,25 @@ impl LayerStack {
         Self::new_with_unindexed_subtree(layers, overwrite, None)
     }
 
+    /// A stack that never builds the lower index, for a caller asking it a
+    /// handful of shallow questions and then dropping it.
+    ///
+    /// The index costs a full recursive walk of every layer up front - a stat
+    /// and several allocations per file, ~300 ms on a 300-mod list - which only
+    /// pays for itself over the thousands of lookups a mount serves. The GUI's
+    /// health checks build a throwaway stack on every mod toggle to read one
+    /// root listing or one `SKSE/Plugins` directory; for them the walk IS the
+    /// cost. Every answer is the one `new` gives: no index is the same complete
+    /// fallback `EIDOS_NO_INDEX` forces.
+    pub fn new_unindexed(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
+        // Built over no layers, so the index walk has nothing to visit; the
+        // real layers go in after, with the index dropped so none answers.
+        let mut stack = Self::new(Vec::new(), overwrite);
+        stack.layers = layers;
+        stack.lower = None;
+        stack
+    }
+
     /// Avoid indexing the descendants of a directory that a child mount will
     /// cover. This is an index boundary, not a visibility boundary: reads and
     /// listings there retain the normal live layer walk. Invalid or empty
@@ -2051,6 +2070,28 @@ mod tests {
         assert_eq!(read(&view.resolve_read("shared.txt").unwrap()), "shared");
         assert_eq!(read(&view.resolve_read("private.txt").unwrap()), "private");
         assert_eq!(view.list_dir("").len(), 2);
+    }
+
+    #[test]
+    fn unindexed_stack_skips_the_walk_and_answers_like_the_indexed_one() {
+        let t = TempTree::new();
+        let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
+        put(&high, "Mod.esp", "high plugin");
+        put(&high, "SKSE/Plugins/a.dll", "high dll");
+        put(&low, "mod.esp", "low plugin");
+        put(&low, "Gone.esp", "whited out");
+        put(&low, "skse/plugins/b.dll", "low dll");
+        let indexed = LayerStack::new(vec![high.clone(), low.clone()], over.clone());
+        indexed.remove("Gone.esp").unwrap();
+        let unindexed = LayerStack::new_unindexed(vec![high, low], over);
+        assert!(indexed.lower.is_some());
+        assert!(unindexed.lower.is_none(), "no walk may run up front");
+        for vpath in ["MOD.ESP", "Gone.esp", "skse/PLUGINS/b.dll", "missing.esp"] {
+            assert_eq!(unindexed.resolve_read(vpath), indexed.resolve_read(vpath));
+        }
+        for dir in ["", "SKSE/Plugins"] {
+            assert_eq!(unindexed.list_dir(dir), indexed.list_dir(dir));
+        }
     }
 
     #[test]
