@@ -354,7 +354,11 @@ pub fn adopt_other_revisions(
             // A key this revision already records in the SAME folder is taken
             // back too: that is going back to a revision after a newer one took
             // its folders over, which otherwise left every member unverifiable.
+            // A member the user skipped here (`--no-optional`, run before this)
+            // is not taken: it would be owned, enabled and in no ordering pass,
+            // reported only as skipped. Left alone it is named as unused below.
             if state.folders.get(&key).is_some_and(|f| f != folder)
+                || matches!(state.status(&key), Status::Skipped)
                 || state.folders.iter().any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
                 || eidos_install::fix_directory_name(folder).as_deref() != Some(folder.as_str())
             {
@@ -1665,6 +1669,19 @@ mod cache_tests {
         assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
         assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
         assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_member_skipped_in_the_new_revision_is_named_not_taken_over() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("skipped");
+        let mut state = gate_state(2);
+        state.set_by_user(&key(10), Status::Skipped);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(&key(10)), None);
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+        assert!(leftovers.iter().any(|n| n.subject == "Kept"), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
