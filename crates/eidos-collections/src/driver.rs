@@ -261,7 +261,8 @@ fn reserve_folder(
 /// same folder, keeping its place in the mod list.
 ///
 /// Repeatable: a folder already carrying THIS revision's marker is taken again,
-/// so a crash before the new state is saved loses nothing.
+/// so a crash before the new state is saved loses nothing. Symmetric too: going
+/// back to an older revision takes its folders back from the newer one.
 ///
 /// Returns the folders another revision still owns that this one does not use.
 /// They stay installed and enabled - removing a mod is the user's call - so the
@@ -330,8 +331,11 @@ pub fn adopt_other_revisions(
         }
         for (key, other_key) in pairs {
             let folder = &folders[&other_key];
-            if state.folders.contains_key(&key)
-                || state.folders.values().any(|f| f.eq_ignore_ascii_case(folder))
+            // A key this revision already records in the SAME folder is taken
+            // back too: that is going back to a revision after a newer one took
+            // its folders over, which otherwise left every member unverifiable.
+            if state.folders.get(&key).is_some_and(|f| f != folder)
+                || state.folders.iter().any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
                 || eidos_install::fix_directory_name(folder).as_deref() != Some(folder.as_str())
             {
                 continue;
@@ -351,7 +355,9 @@ pub fn adopt_other_revisions(
             state.folders.insert(key, folder.clone());
         }
         for (key, folder) in &folders {
+            // A folder this revision records is one it uses, whoever marks it.
             if eidos_install::fix_directory_name(folder).as_deref() == Some(folder.as_str())
+                && !state.folders.values().any(|f| f.eq_ignore_ascii_case(folder))
                 && owns_folder(&mods.join(folder), &marker(&other_owner, key))
             {
                 leftovers.push(Note {
@@ -1480,63 +1486,94 @@ mod cache_tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn a_new_revision_takes_over_its_previous_folders_instead_of_duplicating_them() {
+    const GATE: &str = "skyrimspecialedition";
+    fn mark(owner: &str, key: &str) -> String {
+        serde_json::to_string(&[owner, key]).unwrap()
+    }
+    fn key(file: u64) -> String {
+        format!("file:{GATE}:{file}")
+    }
+    fn owner(revision: u32) -> String {
+        format!("{GATE}:gate:{revision}")
+    }
+    fn gate_state(revision: u32) -> InstallState {
+        InstallState { slug: "gate".into(), revision, game_domain: GATE.into(), ..Default::default() }
+    }
+    /// Cache `mods` as the manifest of `revision` and return it parsed.
+    fn gate_manifest(root: &Path, revision: u32, mods: &[(&str, u64, u64)]) -> Collection {
+        let mods: Vec<String> = mods
+            .iter()
+            .map(|(name, m, f)| format!(r#"{{"name":"{name}","source":{{"type":"nexus","modId":{m},"fileId":{f}}}}}"#))
+            .collect();
+        let text = format!(r#"{{"info":{{"name":"Gate","domainName":"{GATE}"}},"mods":[{}]}}"#, mods.join(","));
+        let dir = crate::state::revision_dir(root, "gate", revision);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("collection.json"), &text).unwrap();
+        std::fs::write(cache_marker(&dir), eidos_nexus::md5_file(&dir.join("collection.json")).unwrap()).unwrap();
+        crate::read(&text).unwrap().collection
+    }
+    /// Revision 1 installed: one member revision 2 keeps, one it updates to a
+    /// new file of the same page, one it drops. Returns revision 2's recipe.
+    fn gate(tag: &str) -> (PathBuf, Instance, Collection) {
         use crate::state::Status;
-        let root = std::env::temp_dir().join(format!("eidos-revision-adopt-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("eidos-revision-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let inst = Instance::portable(root.clone());
-        let domain = "skyrimspecialedition";
-        let (old_owner, new_owner) = (format!("{domain}:gate:1"), format!("{domain}:gate:2"));
-        let mark = |owner: &str, key: &str| serde_json::to_string(&[owner, key]).unwrap();
-        let key = |file: u64| format!("file:{domain}:{file}");
-        let manifest = |mods: &[(&str, u64, u64)]| {
-            let mods: Vec<String> = mods
-                .iter()
-                .map(|(name, m, f)| format!(r#"{{"name":"{name}","source":{{"type":"nexus","modId":{m},"fileId":{f}}}}}"#))
-                .collect();
-            format!(r#"{{"info":{{"name":"Gate","domainName":"{domain}"}},"mods":[{}]}}"#, mods.join(","))
-        };
-        // Revision 1, installed: one member stays, one gets a new file of the
-        // same page, one is dropped by revision 2.
-        let old_dir = crate::state::revision_dir(&root, "gate", 1);
-        std::fs::create_dir_all(&old_dir).unwrap();
-        std::fs::write(old_dir.join("collection.json"), manifest(&[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)])).unwrap();
-        std::fs::write(cache_marker(&old_dir), eidos_nexus::md5_file(&old_dir.join("collection.json")).unwrap()).unwrap();
-        let mut old = InstallState { slug: "gate".into(), revision: 1, game_domain: domain.into(), ..Default::default() };
+        gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = gate_state(1);
         for (name, file) in [("Kept", 10), ("Updated", 20), ("Dropped", 30)] {
             let folder = inst.mods_dir().join(name);
             std::fs::create_dir_all(&folder).unwrap();
             let mut meta = eidos_instance::ModMeta::default();
-            meta.set("eidosCollectionOwner", &mark(&old_owner, &key(file)));
+            meta.set("eidosCollectionOwner", &mark(&owner(1), &key(file)));
             meta.write(&folder.join("meta.ini")).unwrap();
             old.folders.insert(key(file), name.into());
             old.set(&key(file), Status::Installed(name.into()));
         }
-        let receipt = inst.mods_dir().join("Kept/.eidos-collection-recipe.json");
-        let body = serde_json::json!({"schema":1,"owner":mark(&old_owner, &key(10)),"recipe":null,"files":{},"exclusions":{}});
-        std::fs::write(&receipt, body.to_string()).unwrap();
+        let body = serde_json::json!({"schema":1,"owner":mark(&owner(1), &key(10)),"recipe":null,"files":{},"exclusions":{}});
+        std::fs::write(inst.mods_dir().join("Kept/.eidos-collection-recipe.json"), body.to_string()).unwrap();
         old.save(&InstallState::path(&root, "gate", 1)).unwrap();
+        let new = gate_manifest(&root, 2, &[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)]);
+        (root, inst, new)
+    }
 
-        let new = crate::read(&manifest(&[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)])).unwrap().collection;
-        let fresh = || InstallState { slug: "gate".into(), revision: 2, game_domain: domain.into(), ..Default::default() };
-        let mut state = fresh();
+    #[test]
+    fn a_new_revision_takes_over_its_previous_folders_instead_of_duplicating_them() {
+        let (root, inst, new) = gate("adopt");
+        let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state).unwrap();
         assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
         assert_eq!(state.folders.get(&key(21)).map(String::as_str), Some("Updated"));
         assert_eq!(state.folders.len(), 2);
-        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&new_owner, &key(21))));
+        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(2), &key(21))));
+        let receipt = inst.mods_dir().join("Kept/.eidos-collection-recipe.json");
         let moved: serde_json::Value = serde_json::from_slice(&std::fs::read(&receipt).unwrap()).unwrap();
-        assert_eq!(moved["owner"], mark(&new_owner, &key(10)));
+        assert_eq!(moved["owner"], mark(&owner(2), &key(10)));
         // The dropped member is named, not deleted.
         assert_eq!(leftovers.iter().map(|n| n.subject.as_str()).collect::<Vec<_>>(), ["Dropped"]);
         assert!(inst.mods_dir().join("Dropped").is_dir());
         // The member reserves its old folder instead of "Kept (2)".
-        assert_eq!(reserve_folder(&inst, "Kept", &mark(&new_owner, &key(10)), state.folders.get(&key(10)).map(String::as_str)).unwrap(), "Kept");
+        assert_eq!(reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), state.folders.get(&key(10)).map(String::as_str)).unwrap(), "Kept");
         // Repeatable: a crash before the new state was saved adopts the same folders.
-        let mut again = fresh();
+        let mut again = gate_state(2);
         assert_eq!(adopt_other_revisions(&inst, &new, &mut again).unwrap(), leftovers);
         assert_eq!(again.folders, state.folders);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn going_back_to_the_previous_revision_takes_its_folders_back() {
+        let (root, inst, new) = gate("rollback");
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        state.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
+        let leftovers = adopt_other_revisions(&inst, &old_recipe, &mut old).unwrap();
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
+        // Revision 1 uses both, so neither is reported as something it does not use.
+        assert!(leftovers.is_empty(), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 }
