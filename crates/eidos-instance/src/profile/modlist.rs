@@ -350,6 +350,47 @@ impl Profile {
         crate::write_atomic(&target, s.as_bytes())
     }
 
+    /// Drop the lines of mods whose folders the caller has just deleted, leaving
+    /// every other line - order, enabled state, `*` rows, comments - as it was.
+    ///
+    /// Deleting a folder without this leaves its line behind, and the trust check
+    /// counts a listed mod with no folder as LOST: remove a dozen at once and the
+    /// next save looks exactly like an unmounted drive, so it is refused, and so is
+    /// every save after it, because nothing can rewrite the file any more. This
+    /// edit cannot be fooled by that drive - it reads no scan and drops only the
+    /// names it is handed - so it needs no trust check of its own.
+    pub fn forget_mods(&self, names: &[String]) -> io::Result<()> {
+        let src = self.modlist_source();
+        let text = match fs::read_to_string(&src) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let mut kept = String::new();
+        let mut dropped = false;
+        for line in text.lines() {
+            let t = line.trim();
+            // Same reading as `modlist_checked`: `+`, `-` or a bare name is a mod.
+            let name = t.strip_prefix(['+', '-']).unwrap_or(t).trim();
+            if !t.starts_with(['*', '#']) && names.iter().any(|n| n == name) {
+                dropped = true;
+                continue;
+            }
+            kept.push_str(line);
+            kept.push('\n');
+        }
+        if !dropped {
+            return Ok(());
+        }
+        if kept.trim().is_empty() {
+            // An empty file next to surviving folders reads as a TRUNCATED list
+            // (see `modlist_checked`); an absent one is the honest "no order yet".
+            return fs::remove_file(&src);
+        }
+        fs::create_dir_all(self.dir())?;
+        crate::write_atomic(&self.modlist_path(), kept.as_bytes())
+    }
+
     /// Register new content without changing a previously listed mod's priority or activation.
     pub(crate) fn register_installed_mod(&self, name: &str) -> io::Result<()> {
         if !crate::tools::is_mod_folder_name(name) || !self.mods_dir().join(name).is_dir() {
@@ -387,13 +428,15 @@ impl Profile {
     /// Why writing `modlist.txt` right now would destroy the curated order rather
     /// than record an edit, or `None` when it is safe.
     ///
-    /// The check is deliberately absolute rather than proportional, because the
-    /// disaster is absolute: the mod pool is unreachable, so the in-memory list is
-    /// missing EVERYTHING and any save flattens the order to nothing. A user who
-    /// really did delete every mod hits this too and has to say so by removing
-    /// `modlist.txt` themselves - an annoyance, weighed against permanently losing
-    /// the one thing on disk that cannot be re-derived: which of forty overlapping
-    /// mods wins each file conflict, and which are installed but deliberately off.
+    /// The check is [`ListTrust::judge`]: everything missing, or a large share of
+    /// the list missing at once. The disaster it stops is the unreachable mod pool,
+    /// where the in-memory list is missing EVERYTHING and any save flattens the
+    /// order to nothing. A user who really did delete that many mods by hand hits
+    /// this too and has to say so by removing `modlist.txt` themselves - an
+    /// annoyance, weighed against permanently losing the one thing on disk that
+    /// cannot be re-derived: which of forty overlapping mods wins each file
+    /// conflict, and which are installed but deliberately off. Eidos's own Remove
+    /// does not hit it: it calls [`Profile::forget_mods`] for what it deleted.
     ///
     /// MO2 has no equivalent. `Profile::refreshModStatus` rewrites the file inside
     /// the same refresh that dropped the entries, and the guard that looks like

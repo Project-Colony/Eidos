@@ -2466,8 +2466,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             app.selected_mods.clear();
                             app.drag_state = None;
                             drop_files_cache(app, Some(&m.name));
+                            // Forgotten in every profile, not only this one: a line
+                            // left in another profile counts as a missing mod there,
+                            // and enough of them wedge it (see ConfirmBatchRemove).
+                            let forgot = app.created.as_ref()
+                                .map(|inst| inst.forget_mods(std::slice::from_ref(&m.name)));
+                            app.status = Some(match forgot {
+                                Some(Err(e)) => format!(
+                                    "Removed '{}'. The mod list could not be updated: {e}.",
+                                    m.name
+                                ),
+                                _ => format!("Removed '{}'.", m.name),
+                            });
                             mods_changed(app);
-                            app.status = Some(format!("Removed '{}'.", m.name));
                         }
                         Err(e) => app.status = Some(format!("Remove failed: {e}")),
                     }
@@ -6228,7 +6239,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // Delete from the highest index down so the lower indices stay valid.
             let mut targets = real_selection(app);
             targets.sort_unstable();
-            let mut removed = 0usize;
+            let mut gone: Vec<String> = Vec::new();
             let mut failed = 0usize;
             for &i in targets.iter().rev() {
                 if let Some(m) = app.mods.get(i).cloned() {
@@ -6236,7 +6247,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => {
                             app.mods.remove(i);
                             drop_files_cache(app, Some(&m.name));
-                            removed += 1;
+                            gone.push(m.name);
                         }
                         Err(_) => failed += 1,
                     }
@@ -6244,12 +6255,25 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             app.selected_mods.clear();
             app.selected_mod = None;
-            mods_changed(app);
-            app.status = Some(if failed == 0 {
+            let removed = gone.len();
+            let mut status = if failed == 0 {
                 format!("Removed {removed} mod(s).")
             } else {
                 format!("Removed {removed} mod(s); {failed} could not be deleted.")
-            });
+            };
+            // Before the save: every profile's modlist.txt still lists the deleted
+            // folders, and a big enough batch of listed-but-missing mods is exactly
+            // what an unmounted drive looks like - the save, and every one after
+            // it, would be refused. Only the folders really deleted are forgotten:
+            // one that failed keeps its line, its slot and its enabled state.
+            let forgot = app.created.as_ref().map(|inst| inst.forget_mods(&gone));
+            if let Some(Err(e)) = forgot {
+                status = format!("{status} The mod list could not be updated: {e}.");
+            }
+            // Set BEFORE mods_changed, which replaces it with the reason if the
+            // save is refused; set after, it hid that refusal behind "Removed".
+            app.status = Some(status);
+            mods_changed(app);
         }
         Message::BatchSendTop => {
             // Lift the whole selection (keeping its relative order) to the top.

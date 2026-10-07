@@ -1058,6 +1058,21 @@ impl Instance {
         self.active().save_modlist(mods)
     }
 
+    /// Forget mods the caller has just deleted from `mods/`, in EVERY profile -
+    /// see [`Profile::forget_mods`]. The pool is shared, so a line left behind in
+    /// a profile that is not active wedges that profile the day it is switched to.
+    /// Every profile is tried; the last failure, if any, is returned.
+    pub fn forget_mods(&self, names: &[String]) -> std::io::Result<()> {
+        let _lock = self.try_lock("forgetting removed mods")?;
+        let mut result = Ok(());
+        for name in self.profiles() {
+            if let Err(e) = self.profile(&name).forget_mods(names) {
+                result = Err(e);
+            }
+        }
+        result
+    }
+
     /// Enabled mods of the active profile, highest priority first.
     pub fn load_order(&self) -> Vec<PathBuf> {
         self.active().load_order()
@@ -2802,6 +2817,32 @@ mod whole_audit_regressions {
         let result = i.save_modlist(&[entry]);
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn removing_a_big_batch_of_mods_does_not_wedge_any_profile() {
+        // 11 of 20 deleted in one go is past the "looks like an unmounted drive"
+        // threshold; the line each one left behind used to refuse every save.
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let mods: Vec<ModEntry> = (0..20)
+            .map(|n| i.create_empty_mod(&format!("Mod{n:02}")).unwrap())
+            .collect();
+        i.save_modlist(&mods).unwrap();
+        i.profile("Other").create_from(&i.active()).unwrap();
+        let gone: Vec<String> = mods[..11].iter().map(|m| m.name.clone()).collect();
+        for m in &mods[..11] {
+            fs::remove_dir_all(&m.path).unwrap();
+        }
+
+        i.forget_mods(&gone).unwrap();
+
+        let (list, trust) = i.modlist_checked();
+        assert!(trust.is_good(), "{trust:?}");
+        let names = |l: &[ModEntry]| l.iter().map(|m| (m.name.clone(), m.enabled)).collect::<Vec<_>>();
+        assert_eq!(names(&list), names(&mods[11..]));
+        i.save_modlist(&list).unwrap();
+        assert!(i.profile("Other").modlist_checked().1.is_good());
     }
 
     #[test]
