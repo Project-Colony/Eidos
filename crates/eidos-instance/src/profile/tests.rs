@@ -505,13 +505,15 @@ fn a_folder_nobody_listed_appears_disabled() {
     // (MO2 parity): nothing knows where in the conflict order it belongs, and
     // silently enabling it could overwrite half the load order's files on the
     // next launch. A mod installed THROUGH Eidos never takes this path - the
-    // installer writes its own modlist entry.
+    // installer writes its own modlist entry. It lands at the HIGHEST priority,
+    // the last display row, like MO2 and like a fresh install: once enabled it is
+    // meant to win, not to sit under every other mod.
     let read: Vec<_> = p
         .modlist()
         .iter()
         .map(|m| (m.name.clone(), m.enabled))
         .collect();
-    assert_eq!(read, vec![("New".into(), false), ("A".into(), true)]);
+    assert_eq!(read, vec![("A".into(), true), ("New".into(), false)]);
     let _ = fs::remove_dir_all(&root);
 }
 

@@ -270,9 +270,14 @@ impl Profile {
         // highest priority and leaves it DISABLED - it has no idea where in the
         // conflict order it belongs, and enabling it silently could overwrite half
         // the load order's files on the next launch.
+        // `out` is in file order, highest priority FIRST, so "highest priority" is
+        // the front: pushing these after the listed rows put them at the very
+        // bottom once enabled, under every other mod (and a mod captured from
+        // Overwrite, which only enables this entry in place, lost every conflict).
+        let mut fresh = Vec::new();
         for name in present {
             if seen.insert(name.clone()) {
-                out.push(ModEntry {
+                fresh.push(ModEntry {
                     path: mods_dir.join(&name),
                     name,
                     enabled: false,
@@ -280,6 +285,7 @@ impl Profile {
                 });
             }
         }
+        out.splice(0..0, fresh);
         let trust = if list_lost {
             ListTrust::Suspect(
                 "modlist.txt exists but could not be read (truncated, or permissions) - \
