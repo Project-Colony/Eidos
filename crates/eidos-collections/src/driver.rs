@@ -330,10 +330,10 @@ pub fn adopt_other_revisions(
             .collect();
         // The INI Tweaks folder is no member, but it is this collection's output
         // too: unpaired, it was installed again as "(2)" and the old one was
-        // reported as unused. Only when this revision ships INI Tweaks at all.
+        // reported as unused. Only when this revision ships fragments at all:
+        // an empty directory installs nothing, so the old ones stayed owned.
         if folders.contains_key(INI_TWEAKS_KEY)
-            && ini_tweaks_source(&revision_dir(&inst.root, &state.slug, state.revision))
-                .is_ok_and(|src| src.is_some())
+            && ships_ini_fragments(&revision_dir(&inst.root, &state.slug, state.revision))
         {
             pairs.push((INI_TWEAKS_KEY.into(), INI_TWEAKS_KEY.into()));
         }
@@ -1518,6 +1518,16 @@ fn ini_tweaks_source(dir: &Path) -> std::io::Result<Option<PathBuf>> {
     }))
 }
 
+/// Whether `dir` ships INI fragments: the test [`apply_ini_tweaks`] makes
+/// before it installs anything.
+fn ships_ini_fragments(dir: &Path) -> bool {
+    ini_tweaks_source(dir)
+        .ok()
+        .flatten()
+        .and_then(|src| std::fs::read_dir(src).ok())
+        .is_some_and(|mut files| files.any(|f| f.is_ok_and(|f| f.path().is_file())))
+}
+
 /// Copy the collection's INI fragments in as a mod of their own.
 pub fn apply_ini_tweaks(
     inst: &Instance,
@@ -1571,6 +1581,11 @@ pub fn apply_ini_tweaks(
             return Err("The INI output directory is not an owned directory".into());
         }
         std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        let shipped: Vec<_> = files
+            .iter()
+            .filter(|f| f.path().is_file())
+            .map(|f| f.file_name())
+            .collect();
         let mut n = 0;
         for file in files {
             if !file.path().is_file() {
@@ -1598,6 +1613,27 @@ pub fn apply_ini_tweaks(
                 ));
             }
             n += 1;
+        }
+        // A folder taken over from another revision still held its fragments,
+        // and the user's selection of them was merged in at every launch. The
+        // folder is this collection's output, so it mirrors this revision.
+        for entry in std::fs::read_dir(&dest).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            if entry.file_type().is_ok_and(|t| t.is_file()) && !shipped.contains(&entry.file_name()) {
+                std::fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+            }
+        }
+        let meta_path = inst.mods_dir().join(&name).join("meta.ini");
+        let mut meta = eidos_instance::ModMeta::read(&meta_path);
+        let selected: Vec<String> = meta
+            .ini_tweaks()
+            .iter()
+            .filter(|t| shipped.iter().any(|s| *s == t.as_str()))
+            .cloned()
+            .collect();
+        if selected.len() != meta.ini_tweaks().len() {
+            meta.set_ini_tweaks(&selected);
+            meta.write(&meta_path).map_err(|e| e.to_string())?;
         }
         inst.register_installed_mod(&name)
             .map_err(|e| e.to_string())?;
@@ -1747,12 +1783,33 @@ mod cache_tests {
         let mut old = InstallState::load(&path).unwrap().unwrap();
         old.folders.insert(INI_TWEAKS_KEY.into(), "Gate - INI Tweaks".into());
         old.save(&path).unwrap();
-        std::fs::create_dir_all(crate::state::revision_dir(&root, "gate", 2).join("INI Tweaks")).unwrap();
+        std::fs::create_dir_all(folder.join("Ini Tweaks")).unwrap();
+        std::fs::write(folder.join("Ini Tweaks/Dropped.ini"), "[Display]\n").unwrap();
+        std::fs::write(folder.join("Ini Tweaks/Kept.ini"), "[Display]\n").unwrap();
+        let mut meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        meta.set_ini_tweaks(&["Dropped.ini".into(), "Kept.ini".into()]);
+        meta.write(&folder.join("meta.ini")).unwrap();
+        let dir = crate::state::revision_dir(&root, "gate", 2);
+        std::fs::create_dir_all(dir.join("INI Tweaks")).unwrap();
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Gate - INI Tweaks\n").unwrap();
+        // An empty directory ships nothing, so it takes nothing over.
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(INI_TWEAKS_KEY), None);
+        assert!(leftovers.iter().any(|n| n.subject == "Gate - INI Tweaks"), "{leftovers:?}");
+        std::fs::write(dir.join("INI Tweaks/Kept.ini"), "[Display]\n").unwrap();
         let mut state = gate_state(2);
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
         assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
         assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
+        // The fragment revision 2 dropped no longer applies at launch.
+        let mut report = Report::default();
+        apply_ini_tweaks(&inst, &dir, &new, &mut state, &mut |_| Ok(()), &mut report);
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert!(!folder.join("Ini Tweaks/Dropped.ini").exists());
+        assert!(folder.join("Ini Tweaks/Kept.ini").is_file());
+        assert_eq!(eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(), ["Kept.ini"]);
         std::fs::remove_dir_all(root).unwrap();
     }
 
