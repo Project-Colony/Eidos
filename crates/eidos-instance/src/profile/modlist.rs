@@ -357,6 +357,21 @@ impl Profile {
         if target.exists() {
             let _ = fs::copy(&target, target.with_extension("txt.bak"));
         }
+        if s.is_empty() {
+            // No rows is "no order yet", which only an ABSENT file says: an empty
+            // one reads as a truncated list as soon as a folder exists (see
+            // `modlist_checked`), so the next install or save is refused. The
+            // window saves right after removing the last mods, and writing "" here
+            // put back the file `forget_mods` had just deleted. Once this profile's
+            // own file is gone, `modlist_source` may name the legacy flat file it
+            // shadowed; that one goes too, or it would come back as the list.
+            let remove = |path: PathBuf| match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            };
+            remove(target)?;
+            return remove(self.modlist_source());
+        }
         // Through the shared writer, whose temp name is unique per process: the
         // window, `eidos install` and `eidos collection` all write this file.
         // Every one of them takes the instance lock first, so the writes are

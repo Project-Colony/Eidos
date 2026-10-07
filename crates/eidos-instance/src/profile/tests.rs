@@ -758,6 +758,25 @@ fn display_order_file_order_and_load_order_stay_consistent() {
 }
 
 #[test]
+fn saving_an_empty_list_leaves_no_file_to_block_the_next_install() {
+    // The window saves right after the last mod is removed. An empty modlist.txt
+    // next to the next installed folder reads as a truncated list and refuses it.
+    let root = inst_with_mods(&["Gone"]);
+    let p = prof(&root, "Default");
+    p.save_modlist(&p.modlist()).unwrap();
+    fs::remove_dir_all(root.join("mods/Gone")).unwrap();
+    p.forget_mods(&["Gone".to_string()]).unwrap();
+
+    p.save_modlist(&[]).unwrap();
+
+    assert!(!p.modlist_path().exists());
+    fs::create_dir_all(root.join("mods/New")).unwrap();
+    p.register_installed_mod("New").unwrap();
+    assert!(p.modlist_checked().1.is_good());
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn separator_round_trips_keeps_position_and_is_excluded_from_load_order() {
     // A separator is a real `*_separator` folder; it must round-trip in place,
     // be recognised as a separator, and never become a mount layer.
