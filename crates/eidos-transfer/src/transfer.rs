@@ -98,6 +98,16 @@ fn left_out_warning(left: &[Left]) -> Option<String> {
     );
     for l in lost.iter().take(SHOWN) {
         out.push_str(&format!("\n  {} - {}", l.path, l.why));
+        // A `downloads/` linked to another drive is usually deliberate, and the
+        // walk never follows a link (7-Zip would copy whatever it points at).
+        // Leaving it out on request is not a loss, so say how: otherwise a
+        // `pack && ...` script fails on every run with no way out given.
+        if l.path == "downloads" && l.why == Why::Symlink {
+            out.push_str(
+                " (to back up without it, pass --no-downloads or untick \
+                 \"Include downloads/\" in the window)",
+            );
+        }
     }
     if lost.len() > SHOWN {
         out.push_str(&format!("\n  ... and {} more", lost.len() - SHOWN));
@@ -855,6 +865,9 @@ mod tests {
         assert!(w.contains("mods - a symbolic link"), "{w}");
         assert!(w.contains("mods/A/locked - unreadable"), "{w}");
         assert!(!w.contains("logs"), "{w}");
+        assert!(!w.contains("--no-downloads"), "{w}");
+        let w = left_out_warning(&[left("downloads", Why::Symlink)]).unwrap();
+        assert!(w.contains("downloads - a symbolic link (to back up without it, pass --no-downloads"), "{w}");
     }
 
     #[test]
