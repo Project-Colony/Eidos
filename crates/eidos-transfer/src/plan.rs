@@ -218,9 +218,11 @@ pub fn plan(inst: &Instance, opt: &Options) -> Plan {
                 // contributing the moment this was pushed, so without this line
                 // a mod folder whose only child cannot be read produces no
                 // entries at all - and the whole ancestor chain vanishes from
-                // the archive while `left` names only the deepest one. 7-Zip
-                // stores a directory it cannot read and warns, which is the
-                // honest outcome: the shape survives, the loss is reported.
+                // the archive while `left` names only the deepest one. The pack
+                // stages every directory entry from an empty scratch folder, so
+                // 7-Zip never opens this one and never warns: the shape survives,
+                // and the loss is reported by the pack's own warning built from
+                // `left` (`left_out_warning`).
                 if !rel.is_empty() {
                     out.entries.push(rel);
                 }

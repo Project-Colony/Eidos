@@ -184,8 +184,10 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
 and how much room it needs, without writing anything. `eidos unpack --info` does
 the same for a file you already have.
 
-If 7-Zip could not read something, the archive is still written and named - it
-is worth having - but `eidos pack` exits **1** and says what is missing. An
+If 7-Zip could not read something, or the walk had to skip something you would
+expect in a backup (a symbolic link, a folder it could not read, a name 7-Zip
+cannot be given safely), the archive is still written and named - it is worth
+having - but `eidos pack` exits **1** and says what is missing. An
 incomplete backup is not a success, and this is a command people put in front of
 `&&`.
 
@@ -217,7 +219,7 @@ complete and is not.
 | `loot/`, except `userlist.yaml` | A masterlist cache Eidos re-fetches on demand. Your own LOOT rules are not a cache - nobody re-fetches those - so that one file rides along. |
 | `.base/`, `.base-root/` | Empty mountpoints where the game's own files are stashed during a session. |
 | Half-written files | A paused download (`*.unfinished`), an atomic write in flight (`*.eidos-tmp*`). |
-| Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead. |
+| Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead, and the backup counts as incomplete: a `mods/` or `downloads/` linked to another drive is NOT packed. |
 
 Every one of these goes into `eidos-backup.ini` at the root of the archive, with
 its reason - so the answer to "what is not in here" is `cat`, not a guess. The

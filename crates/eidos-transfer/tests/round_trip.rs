@@ -146,7 +146,14 @@ fn an_instance_survives_being_packed_and_put_back_somewhere_else() {
         .pack(&inst, &p, &archive, &mut |pc| seen.push(pc))
         .expect("pack");
     assert!(archive.is_file());
-    assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    // The one loss in this instance is the symlink, and it makes the backup
+    // incomplete rather than quietly smaller.
+    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    assert!(
+        report.warnings[0].contains("mods/danger-link - a symbolic link"),
+        "{:?}",
+        report.warnings
+    );
     assert_eq!(
         seen.last().copied(),
         Some(100),
@@ -330,9 +337,10 @@ fn a_file_that_vanishes_under_the_pack_costs_that_file_and_not_the_backup() {
     let t = Transfer::new(opt).unwrap();
     let report = t.pack(&inst, &p, &archive, &mut |_| {}).expect("pack");
     assert!(archive.is_file(), "the archive is real and worth keeping");
-    assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+    // Two: the fixture's symlink, and the vanished file.
+    assert_eq!(report.warnings.len(), 2, "{:?}", report.warnings);
     assert!(
-        report.warnings[0].contains("missing some files"),
+        report.warnings[1].contains("missing some files"),
         "{:?}",
         report.warnings
     );

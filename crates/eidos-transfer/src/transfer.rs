@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use eidos_instance::Instance;
 
 use crate::manifest::BackupManifest;
-use crate::plan::{scrub_meta, Outside, Plan};
+use crate::plan::{scrub_meta, Left, Outside, Plan, Why};
 use crate::relocate::{relocate, Relocated};
 use crate::{
     existing_ancestor, free_bytes, human_bytes, Options, TransferError, MANIFEST_NAME,
@@ -62,8 +62,47 @@ pub struct PackReport {
     pub source_bytes: u64,
     pub entries: usize,
     pub manifest: BackupManifest,
-    /// Things worth saying that are not failures.
+    /// What did not make it into the archive although the user would expect it
+    /// to. The file is real and worth keeping, but a non-empty list means the
+    /// backup is NOT complete, and both front ends say so (`eidos pack` exits 1).
     pub warnings: Vec<String>,
+}
+
+/// The one warning naming what the walk skipped for a reason the rules did not
+/// anticipate: a symbolic link, a name 7-Zip's list file cannot carry, a folder
+/// that could not be read. The deliberate exclusions (the prefix, logs, caches)
+/// are not losses and stay out of it.
+///
+/// Without this, those items lived only in the manifest and the CLI's pre-pack
+/// listing, and the report came back clean: a `mods/` symlinked to a second
+/// drive was dropped whole while the window said "Packed" and `eidos pack ...
+/// && rm -rf <old>` went ahead. An unreadable folder is worse - the pack stages
+/// it from an empty scratch folder, so 7-Zip never sees it and never warns.
+fn left_out_warning(left: &[Left]) -> Option<String> {
+    const SHOWN: usize = 20;
+    let lost: Vec<&Left> = left
+        .iter()
+        .filter(|l| {
+            matches!(
+                l.why,
+                Why::Symlink | Why::NotUtf8 | Why::LineBreak | Why::Unreadable(_)
+            )
+        })
+        .collect();
+    if lost.is_empty() {
+        return None;
+    }
+    let mut out = format!(
+        "{} item(s) could not be packed and are NOT in the backup:",
+        lost.len()
+    );
+    for l in lost.iter().take(SHOWN) {
+        out.push_str(&format!("\n  {} - {}", l.path, l.why));
+    }
+    if lost.len() > SHOWN {
+        out.push_str(&format!("\n  ... and {} more", lost.len() - SHOWN));
+    }
+    Some(out)
 }
 
 impl PackReport {
@@ -347,7 +386,7 @@ impl Transfer {
         fs::create_dir_all(&stage).map_err(io("could not stage the manifest"))?;
 
         let manifest = BackupManifest::describe(inst, plan, &self.opt);
-        let mut warnings = Vec::new();
+        let mut warnings: Vec<String> = left_out_warning(&plan.left).into_iter().collect();
         fs::write(stage.join(MANIFEST_NAME), manifest.render())
             .map_err(io("could not write the manifest"))?;
         let mut staged = vec![MANIFEST_NAME.to_string()];
@@ -793,6 +832,29 @@ mod tests {
         for name in ["a\nb", "a\rb", "x\"\n\"../private"] {
             assert!(list_file_body(&[name.into()]).is_err());
         }
+    }
+
+    #[test]
+    fn only_unplanned_losses_make_the_backup_incomplete() {
+        let left = |path: &str, why: Why| Left {
+            path: path.into(),
+            why,
+        };
+        // A stock instance: every exclusion is deliberate, nothing is lost.
+        assert_eq!(
+            left_out_warning(&[left("logs", Why::Local), left("loot", Why::Refetchable)]),
+            None
+        );
+        let w = left_out_warning(&[
+            left("logs", Why::Local),
+            left("mods", Why::Symlink),
+            left("mods/A/locked", Why::Unreadable("Permission denied".into())),
+        ])
+        .expect("a symlinked mods/ is a loss");
+        assert!(w.starts_with("2 item(s)"), "{w}");
+        assert!(w.contains("mods - a symbolic link"), "{w}");
+        assert!(w.contains("mods/A/locked - unreadable"), "{w}");
+        assert!(!w.contains("logs"), "{w}");
     }
 
     #[test]
