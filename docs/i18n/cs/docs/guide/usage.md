@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
 
 # Používání Eidosu
 
@@ -82,6 +82,49 @@ skrz tento pohled spustí příkaz. Zápisy (savy, znovu vygenerované konfigura
 přistanou ve vrstvě `overwrite/` dané instance; instalace hry i každý zdroj módu
 zůstanou bajt po bajtu nedotčené.
 
+### Seznam módů
+
+Stejně jako v MO2 má každý profil vlastní `modlist.txt` (které módy jsou zapnuté
+a s jakou prioritou), zatímco složky módů žijí ve sdíleném `mods/` instance.
+Složka, kterou do `mods/` vložíte ručně, v seznamu ještě není: objeví se
+**vypnutá s nejvyšší prioritou** - na konci seznamu v okně, kam ji dává i MO2 -
+takže jakmile ji zapnete, vyhraje své konflikty. Starší verze ji dávaly na
+začátek, kde ji přebil každý jiný mód.
+
+Protože jsou složky sdílené, odebrání nebo přejmenování módu změní každý profil:
+jeho řádek se z `modlist.txt` každého profilu odstraní, nebo se v něm přejmenuje,
+a ve zbytku si každý profil drží vlastní stav a pořadí. Profil, kterému nezůstal
+žádný mód, nemá `modlist.txt` vůbec, místo prázdného souboru, který se četl jako
+poškozený a blokoval další instalaci.
+
+Okno pracuje s vlastní kopií seznamu módů a pořadí načítání. Pokud jedno nebo
+druhé zapíše jiný proces Eidosu, zatímco je okno otevřené - `eidos install` nebo
+`eidos sort` v terminálu, kolekce, relace spuštěná Steamem, druhé okno - další
+úprava v okně se odmítne, místo aby tu práci přepsala. Okno se znovu načte
+z disku a řekne *Not saved: another Eidos process changed the mod
+list. It has been reloaded - redo the change.* (nebo totéž pro pořadí načítání);
+ztratí se jen to jedno kliknutí, takže ho udělejte znovu. Rename, New mod, Add
+separator, Remove a proměna Overwrite v mód provádějí kontrolu dřív, než sáhnou
+na `mods/`, takže odmítnutá úprava na disku nic nezmění. Editor INI stejně tak
+odmítne uložit přes soubor, který se změnil od chvíle, kdy jej otevřel.
+
+### Savy patří profilu
+
+Každý profil si drží vlastní savy v `profiles/<name>/saves/` a po dobu běhu se
+tato složka připojí přes složku savů hry v prefixu Protonu. První spuštění
+profilu do ní jednou zkopíruje savy, které už v prefixu jsou, takže sav, který
+z profilu později smažete, zůstane smazaný. Po každém běhu se nejnovější savy
+profilu zkopírují zpět do prefixu kvůli Steam Cloud; sav v prefixu, který tam
+nedal Eidos, se nejdřív uchová v profilu jako `orphan-<time>-<name>`, nikdy se
+nepřepíše.
+
+Sav, který se do prefixu dostane po tom prvním kopírování, aniž by prošel
+Eidosem - stažení ze Steam Cloud ze Steam Decku, spuštění bez Eidosu - zůstane
+skrytý, dokud jsou savy profilu připojené. Nic ho nemaže: spuštění ho jmenuje
+v logu běhu (`logs/run-*.log` dané instance při spuštění z okna, konzole Steamu
+při spuštění ze Steamu), a to jednou pokaždé, když se ta sada souborů změní.
+Chcete-li ho hrát, zkopírujte jej i s jeho co-savem do složky `saves/` profilu.
+
 ### Žádný privilegovaný krok
 
 Eidos běží plně bez roota. Připojuje v soukromém uživatelském + připojovacím
@@ -140,6 +183,24 @@ takže po přerušení zůstane starý záznam, nebo nový, nikdy půlka ani jed
 z nich; a pokud jej někdy nelze přečíst, Eidos se zastaví a řekne to, místo aby
 potichu začal celou kolekci znovu. Spusťte tentýž příkaz znovu.
 
+Instalace novější revize kolekce, kterou už máte, převezme složky předchozí
+revize: nezměněný člen se ověří na místě, člen, jehož soubor autor aktualizoval,
+se nahradí uvnitř své staré složky, a člen, kterého nová revize vypustila,
+zůstane nainstalovaný a zpráva ho jmenuje, abyste ho vypnuli nebo odebrali.
+Složka, kterou zapíná jiný profil, se nikdy nepřevezme, protože složka mods je
+sdílená a ten profil by se vám změnil pod rukama: nová revize místo toho
+nainstaluje vlastní kopii vedle ní a zpráva vás požádá, abyste starou v tomto
+profilu vypnuli, nikdy ne, abyste ji odebrali. Návrat ke starší revizi si vezme
+její složky zpět stejným způsobem, nebo nainstaluje čerstvé kopie těch, které
+převzít nemůže.
+
+Pozůstatek z dřívější revize, který zůstane zapnutý, brání tomu, aby se
+instalace počítala jako ta, kterou sestavil autor; poznámka zmizí, jakmile ho
+vypnete. Člen, kterého jste přeskočili pomocí `--no-optional`, se nepřevezme a
+zpráva ho jmenuje stejným způsobem. Pokud selže samotné převzetí, běh se zastaví
+s *previous revision: its folders could not be taken over* a důvodem; to opravte
+a spusťte příkaz znovu.
+
 ### Co nebude předstírat
 
 **Bezplatný účet na Nexusu módy členů stáhnout nedokáže.** Nexus přes API
@@ -186,9 +247,12 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # on the other machine
 kolik místa to potřebuje, aniž by cokoli zapsal. `eidos unpack --info` udělá
 totéž pro soubor, který už máte.
 
-Pokud 7-Zip něco nedokázal přečíst, archiv se přesto zapíše a pojmenuje - stojí
-za to ho mít - ale `eidos pack` skončí s kódem **1** a řekne, co chybí. Neúplná
-záloha není úspěch a tohle je příkaz, který lidé dávají před `&&`.
+Pokud 7-Zip něco nedokázal přečíst, nebo procházení muselo přeskočit něco, co
+byste v záloze čekali (symbolický odkaz, složku, kterou se nepodařilo přečíst,
+název, který 7-Zipu nelze bezpečně předat), archiv se přesto zapíše
+a pojmenuje - stojí za to ho mít - ale `eidos pack` skončí s kódem **1** a řekne,
+co chybí. Neúplná záloha není úspěch a tohle je příkaz, který lidé dávají před
+`&&`.
 
 Soubor `.eidos` je archiv 7-Zip pod vlastním názvem, což je volba, ne
 přestrojení: 7-Zip je stejně potřeba už k tomu, aby šlo mód vůbec nainstalovat,
@@ -218,7 +282,7 @@ zjevně nedokončeného místo souboru `.eidos`, který vypadá kompletní a nen
 | `loot/`, kromě `userlist.yaml` | Mezipaměť masterlistu, kterou si Eidos podle potřeby stáhne znovu. Vaše vlastní pravidla LOOT žádná mezipaměť nejsou - ta nikdo znovu nestahuje - takže tenhle jeden soubor jede s sebou. |
 | `.base/`, `.base-root/` | Prázdné body připojení, kam se během relace odkládají vlastní soubory hry. |
 | Napůl zapsané soubory | Pozastavené stahování (`*.unfinished`), probíhající atomický zápis (`*.eidos-tmp*`). |
-| Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se jen nahlásí. |
+| Symbolické odkazy | 7-Zip by je následoval a zkopíroval to, na co ukazují, což u absolutního odkazu znamená vtáhnout do zálohy cizí strom. Místo toho se nahlásí a záloha se počítá jako neúplná: složka `mods/` nebo `downloads/` napojená odkazem na jiný disk se NEZABALÍ. Chcete-li záměrně zálohovat bez odkazované složky `downloads/`, předejte `--no-downloads` (nebo v okně zrušte zaškrtnutí *Include downloads/*); záměrné vynechání se jako chybějící nepočítá. |
 
 Každá z těchto věcí je i se svým důvodem zapsaná v `eidos-backup.ini` v kořeni
 archivu - takže odpovědí na otázku „co tady není" je `cat`, ne dohad. Tentýž
@@ -370,8 +434,8 @@ je pořadí načítání ESP/ESM/ESL (přepínání, ruční přeuspořádání,
 LOOTem a čtení zprávy po seřazení, jejíž odkazy na rady se otevírají ve vašem
 prohlížeči). **Conflicts** vysvětluje vítěze a poražené u jednotlivých souborů.
 **Overwrite** promění to, co hra zapsala, v jednom kroku ve skutečný mód.
-**Saves** rozebere hlavičku každého savu - postava, úroveň, místo, odehraný čas
-- a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které
+**Saves** rozebere hlavičku každého savu - postava, úroveň, místo, odehraný
+čas - a porovná seznam pluginů zapečený uvnitř s vaším současným, s tlačítkem, které
 zapne módy, jež sav potřebuje, protože pojmenovat je a nechat to na vás je ta
 nudná polovina.
 

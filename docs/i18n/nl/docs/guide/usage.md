@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
 
 # Eidos gebruiken
 
@@ -86,6 +86,54 @@ Schrijfacties (saves, opnieuw gegenereerde configs) landen in de
 `overwrite/`-laag van de instantie; de spelinstallatie en elke modbron blijven
 byte voor byte ongerept.
 
+### De modlijst
+
+Net als in MO2 heeft elk profiel zijn eigen `modlist.txt` (welke mods
+ingeschakeld zijn, en met welke prioriteit), terwijl de modmappen in de gedeelde
+`mods/` van de instantie staan. Een map die je met de hand in `mods/` zet, staat
+nog niet in de lijst: ze verschijnt **uitgeschakeld op de hoogste prioriteit** -
+onderaan de lijst van het venster, waar MO2 haar ook zet - zodat ze, zodra je
+haar inschakelt, haar conflicten wint. Oudere versies zetten haar bovenaan, waar
+elke andere mod haar overstemde.
+
+Omdat de mappen gedeeld zijn, verandert het verwijderen of hernoemen van een mod
+elk profiel: haar regel verdwijnt uit, of wordt hernoemd in, de `modlist.txt` van
+elk profiel, en voor de rest houdt elk profiel zijn eigen staat en volgorde. Een
+profiel dat geen mods meer heeft, heeft helemaal geen `modlist.txt` in plaats
+van een lege, die als een beschadigd bestand gelezen werd en de volgende
+installatie blokkeerde.
+
+Het venster werkt vanuit zijn eigen kopie van de modlijst en de laadvolgorde.
+Schrijft een ander Eidos-proces een van beide terwijl het open is - `eidos install`
+of `eidos sort` in een terminal, een collectie, een sessie die Steam gestart
+heeft, een tweede venster - dan wordt de volgende bewerking van het venster
+geweigerd in plaats van dat werk te overschrijven. Het laadt opnieuw vanaf schijf
+en zegt *Not saved: another Eidos process changed the mod list. It has been reloaded - redo the change.*
+(of hetzelfde voor de laadvolgorde); alleen die ene klik gaat verloren, dus doe
+hem opnieuw. Rename, New mod, Add separator, Remove en van de Overwrite een mod
+maken controleren dit eerst, voordat ze aan `mods/` komen, zodat een geweigerde
+bewerking niets op schijf verandert. De INI-editor weigert evenzo op te slaan
+over een bestand dat veranderd is sinds hij het opende.
+
+### Saves horen bij het profiel
+
+Elk profiel bewaart zijn eigen saves in `profiles/<name>/saves/`, en zolang een
+run duurt wordt die map over de savemap van het spel in het Proton-prefix
+gekoppeld. De eerste start van een profiel kopieert de saves die al in het prefix
+staan erin, één keer, zodat een save die je later uit het profiel verwijdert ook
+verwijderd blijft. Na elke run worden de nieuwste saves van het profiel
+teruggekopieerd naar het prefix voor Steam Cloud; een save in het prefix die
+Eidos er niet neergezet heeft, wordt eerst in het profiel bewaard als
+`orphan-<time>-<name>`, nooit overschreven.
+
+Een save die na die eerste kopie in het prefix belandt zonder via Eidos te gaan -
+een Steam Cloud-download vanaf een Steam Deck, een start zonder Eidos - blijft
+verborgen zolang de saves van het profiel gekoppeld zijn. Niets verwijdert hem:
+de start benoemt hem in het log van de run (de `logs/run-*.log` van de instantie
+bij een start vanuit het venster, de console van Steam bij een start via Steam),
+één keer telkens wanneer die verzameling bestanden verandert. Om hem te spelen,
+kopieer je hem en zijn co-save naar de map `saves/` van het profiel.
+
 ### Geen bevoorrechte stap nodig
 
 Eidos draait volledig zonder root. Het koppelt in een privé-user- +
@@ -148,6 +196,26 @@ de helft van een van beide; als ze ooit niet gelezen kan worden, stopt Eidos en
 zegt het, in plaats van stilletjes de hele collectie opnieuw te beginnen. Draai
 dezelfde opdracht opnieuw.
 
+Een nieuwere revisie installeren van een collectie die je al hebt, neemt de
+mappen van de vorige revisie over: een ongewijzigd lid wordt ter plekke
+geverifieerd, een lid waarvan de auteur het bestand bijgewerkt heeft wordt binnen
+zijn oude map vervangen, en een lid dat de nieuwe revisie geschrapt heeft blijft
+geïnstalleerd en wordt in het verslag benoemd, zodat jij het kunt uitschakelen of
+verwijderen. Een map die een ander profiel inschakelt, wordt nooit overgenomen,
+want de mods-map is gedeeld en dat profiel zou buiten je om veranderen: de nieuwe
+revisie installeert dan haar eigen kopie ernaast, en het verslag vraagt je de
+oude in dit profiel uit te schakelen, nooit om haar te verwijderen. Teruggaan naar
+een oudere revisie neemt haar mappen op dezelfde manier terug, of installeert
+verse kopieën van de mappen die ze niet kan overnemen.
+
+Een overblijfsel van een eerdere revisie dat ingeschakeld blijft, zorgt ervoor
+dat de installatie niet telt als die welke de auteur gebouwd heeft; de melding
+verdwijnt zodra je het uitschakelt. Een lid dat je met `--no-optional`
+overgeslagen hebt, wordt niet overgenomen en wordt op dezelfde manier benoemd.
+Mislukt de overname zelf, dan stopt de run met
+*previous revision: its folders could not be taken over* en de reden; los dat op
+en draai de opdracht opnieuw.
+
 ### Wat het niet zal voorwenden
 
 **Een gratis Nexus-account kan de mods van de leden niet ophalen.** Nexus maakt
@@ -196,8 +264,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # op de andere machine
 hoeveel ruimte het nodig heeft, zonder iets te schrijven. `eidos unpack --info`
 doet hetzelfde voor een bestand dat je al hebt.
 
-Als 7-Zip iets niet kon lezen, wordt het archief alsnog geschreven en van een
-naam voorzien - het is het waard om te hebben - maar `eidos pack` sluit af met
+Als 7-Zip iets niet kon lezen, of als er bij het doorlopen iets overgeslagen
+moest worden wat je in een back-up zou verwachten (een symbolische link, een map
+die niet gelezen kon worden, een naam die niet veilig aan 7-Zip meegegeven kan
+worden), wordt het archief alsnog geschreven en van een naam voorzien - het is
+het waard om te hebben - maar `eidos pack` sluit af met
 **1** en zegt wat er ontbreekt. Een onvolledige back-up is geen succes, en dit is
 een opdracht die mensen vóór `&&` zetten.
 
@@ -231,7 +302,7 @@ zodat een onderbroken pack iets zichtbaar onafs achterlaat in plaats van een
 | `loot/`, behalve `userlist.yaml` | Een cache van de masterlist die Eidos op verzoek opnieuw ophaalt. Je eigen LOOT-regels zijn geen cache - niemand haalt die opnieuw op - dus dat ene bestand gaat mee. |
 | `.base/`, `.base-root/` | Lege koppelpunten waar de eigen bestanden van het spel tijdens een sessie gestald worden. |
 | Halfgeschreven bestanden | Een gepauzeerde download (`*.unfinished`), een atomaire schrijfactie onderweg (`*.eidos-tmp*`). |
-| Symbolische links | 7-Zip zou er een volgen en kopiëren waar hij naar wijst, wat bij een absolute link betekent dat er een vreemde boom je back-up in getrokken wordt. Ze worden in plaats daarvan gemeld. |
+| Symbolische links | 7-Zip zou er een volgen en kopiëren waar hij naar wijst, wat bij een absolute link betekent dat er een vreemde boom je back-up in getrokken wordt. Ze worden in plaats daarvan gemeld, en de back-up telt als onvolledig: een `mods/` of `downloads/` die naar een andere schijf gelinkt is, wordt NIET ingepakt. Wil je bewust een back-up maken zonder een gelinkte `downloads/`, geef dan `--no-downloads` mee (of vink *Include downloads/* uit in het venster); een bewuste uitsluiting telt niet als ontbrekend. |
 
 Elk van deze belandt in `eidos-backup.ini` in de wortel van het archief, met de
 reden erbij - dus het antwoord op "wat zit hier niet in" is `cat`, geen gok.

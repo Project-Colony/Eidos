@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
 
 # Eidos kullanımı
 
@@ -86,6 +86,53 @@ hâlâ dokunulmamış dosyaları okur), sonra komutu o görünüm üzerinden ça
 Yazmalar (kayıtlar, yeniden üretilen yapılandırmalar) örneğin `overwrite/`
 katmanına iner; oyun kurulumu ve her mod kaynağı bayt bayt dokunulmamış kalır.
 
+### Mod listesi
+
+MO2'de olduğu gibi her profilin kendi `modlist.txt` dosyası vardır (hangi
+modların açık olduğu, hangi öncelikte), mod klasörleri ise örneğin paylaşılan
+`mods/` dizininde yaşar. `mods/` içine elle bıraktığınız bir klasör henüz
+listelenmemiştir: **en yüksek öncelikte ve kapalı** olarak görünür - pencerenin
+listesinin en altında, MO2'nin de onu koyduğu yerde - böylece onu açtığınızda
+çakışmalarını kazanır. Daha eski sürümler onu en üste koyuyordu; orada diğer her
+mod onu geçersiz kılıyordu.
+
+Klasörler paylaşıldığı için bir modu kaldırmak ya da yeniden adlandırmak her
+profili değiştirir: satırı her profilin `modlist.txt` dosyasından çıkarılır ya
+da orada yeniden adlandırılır ve her profil geri kalanında kendi durumunu ve
+sırasını korur. Hiç modu kalmayan bir profilde boş bir `modlist.txt` değil, hiç
+`modlist.txt` olmaz; boş olan, hasarlı bir dosya gibi okunuyor ve sonraki
+kurulumu engelliyordu.
+
+Pencere, mod listesinin ve yükleme sırasının kendi kopyası üzerinden çalışır.
+Pencere açıkken başka bir Eidos süreci bunlardan birini yazarsa - bir terminalde
+`eidos install` ya da `eidos sort`, bir koleksiyon, Steam'in başlattığı bir
+oturum, ikinci bir pencere - pencerenin sonraki düzenlemesi o işin üzerine
+yazmak yerine reddedilir. Pencere diskten yeniden yükler ve *Not saved: another
+Eidos process changed the mod list. It has been reloaded - redo the change.* der
+(ya da yükleme sırası için aynısını); yalnızca o tek tıklama yitirilir, yani onu
+yeniden yapın. Rename, New mod, Add separator, Remove ve Overwrite'ı bir moda
+dönüştürmek, `mods/` dizinine dokunmadan önce denetim yapar; böylece reddedilen
+bir düzenleme diskte hiçbir şeyi değiştirmez. INI düzenleyicisi de aynı biçimde,
+açtığından beri değişmiş bir dosyanın üzerine kaydetmeyi reddeder.
+
+### Kayıtlar profile aittir
+
+Her profil kendi kayıtlarını `profiles/<name>/saves/` içinde tutar ve bir
+çalıştırma boyunca o klasör, Proton önekindeki oyunun kayıt klasörünün üzerine
+bağlanır. Bir profilin ilk başlatılması, önekte zaten bulunan kayıtları onun
+içine bir kez kopyalar; böylece sonradan profilden sildiğiniz bir kayıt silinmiş
+kalır. Her çalıştırmadan sonra profilin en yeni kayıtları Steam Cloud için öneke
+geri kopyalanır; önekte Eidos'un oraya koymadığı bir kayıt önce profilde
+`orphan-<time>-<name>` olarak saklanır, asla üzerine yazılmaz.
+
+O ilk kopyadan sonra Eidos'tan geçmeden öneke inen bir kayıt - bir Steam
+Deck'ten gelen bir Steam Cloud indirmesi, Eidos olmadan yapılan bir başlatma -
+profilin kayıtları bağlıyken gizli kalır. Hiçbir şey onu silmez: başlatma, o
+dosya kümesi her değiştiğinde bir kez, onu çalıştırmanın günlüğünde adlandırır
+(pencereden bir başlatma için örneğin `logs/run-*.log` dosyası, Steam'den bir
+başlatma için Steam'in konsolu). Onu oynamak için kaydı ve ona eşlik eden
+co-save dosyasını profilin `saves/` klasörüne kopyalayın.
+
 ### Ayrıcalıklı adım gerekmez
 
 Eidos tamamen rootsuz çalışır. Özel bir kullanıcı + bağlama ad alanı içinde
@@ -146,6 +193,24 @@ birinin yarısını değil; bir gün okunamaz hale gelirse Eidos bütün koleksi
 sessizce baştan başlatmaktansa durur ve bunu söyler. Aynı komutu yeniden
 çalıştırın.
 
+Zaten sahip olduğunuz bir koleksiyonun daha yeni bir revizyonunu kurmak, önceki
+revizyonun klasörlerini devralır: değişmemiş bir üye yerinde doğrulanır,
+dosyasını yazarın güncellediği bir üye eski klasörünün içinde değiştirilir, yeni
+revizyonun çıkardığı bir üye ise kurulu bırakılır ve devre dışı bırakmanız ya da
+kaldırmanız için raporda adı geçer. Başka bir profilin açık tuttuğu bir klasör
+asla devralınmaz, çünkü mods klasörü paylaşılır ve o profil sizden habersiz
+değişirdi: yeni revizyon onun yerine kendi kopyasını onun yanına kurar ve rapor
+sizden eskisini bu profilde devre dışı bırakmanızı ister, asla kaldırmanızı
+değil. Daha eski bir revizyona dönmek, onun klasörlerini aynı biçimde geri alır
+ya da alamadıklarının taze kopyalarını kurar.
+
+Daha eski bir revizyondan kalıp açık kalmayı sürdüren bir artık, kurulumun
+yazarın oluşturduğu kurulum sayılmasını engeller; onu devre dışı bıraktığınızda
+not kaybolur. `--no-optional` ile atladığınız bir üye devralınmaz ve aynı
+biçimde adı geçer. Devralmanın kendisi başarısız olursa koşu *previous revision:
+its folders could not be taken over* iletisi ve nedeniyle durur; onu düzeltin ve
+komutu yeniden çalıştırın.
+
 ### Neyi varmış gibi göstermez
 
 **Ücretsiz bir Nexus hesabı üye modları getiremez.** Nexus, API üzerinden
@@ -193,10 +258,12 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # öteki makinede
 ve nedenini, bir de ne kadar yer gerektiğini tam olarak listeler.
 `eidos unpack --info`, elinizde zaten olan bir dosya için aynısını yapar.
 
-7-Zip bir şeyi okuyamadıysa arşiv yine de yazılır ve adlandırılır - elde
-olması iyidir - ama `eidos pack` **1** ile çıkar ve neyin eksik olduğunu
-söyler. Eksik bir yedek bir başarı değildir ve bu, insanların `&&` işaretinin
-önüne koyduğu bir komuttur.
+7-Zip bir şeyi okuyamadıysa ya da klasör taraması bir yedekte bulunmasını
+bekleyeceğiniz bir şeyi atlamak zorunda kaldıysa (bir sembolik bağ, okuyamadığı
+bir klasör, 7-Zip'e güvenle verilemeyecek bir ad), arşiv yine de yazılır ve
+adlandırılır - elde olması iyidir - ama `eidos pack` **1** ile çıkar ve neyin
+eksik olduğunu söyler. Eksik bir yedek bir başarı değildir ve bu, insanların
+`&&` işaretinin önüne koyduğu bir komuttur.
 
 Bir `.eidos` dosyası, kendine ait bir ad altındaki bir 7-Zip arşividir; bu bir
 kılık değil, bir tercihtir: bir modu kurabilmek için zaten 7-Zip gerekiyor, yani
@@ -227,7 +294,7 @@ yerine açıkça yarım kalmış bir şey bırakır.
 | `loot/`, `userlist.yaml` dışında | Eidos'un gerektiğinde yeniden getirdiği bir masterlist önbelleği. Kendi LOOT kurallarınız bir önbellek değildir - onları kimse yeniden getirmez - bu yüzden o tek dosya birlikte gelir. |
 | `.base/`, `.base-root/` | Oyunun kendi dosyalarının bir oturum boyunca saklandığı boş bağlama noktaları. |
 | Yarım yazılmış dosyalar | Duraklatılmış bir indirme (`*.unfinished`), yolda olan atomik bir yazma (`*.eidos-tmp*`). |
-| Sembolik bağlar | 7-Zip birini izler ve neyi gösteriyorsa onu kopyalardı; mutlak bir bağ için bu, yedeğinizin içine yabancı bir ağaç çekmek demektir. Onun yerine bildirilirler. |
+| Sembolik bağlar | 7-Zip birini izler ve neyi gösteriyorsa onu kopyalardı; mutlak bir bağ için bu, yedeğinizin içine yabancı bir ağaç çekmek demektir. Onun yerine bildirilirler ve yedek eksik sayılır: başka bir sürücüyü gösteren sembolik bağ olan bir `mods/` ya da `downloads/` pakete GİRMEZ. Sembolik bağ olan bir `downloads/` dizinini bilerek dışarıda bırakıp yedek almak için `--no-downloads` verin (ya da pencerede *Include downloads/* işaretini kaldırın); kasıtlı bir dışlama eksik sayılmaz. |
 
 Bunların her biri, nedeniyle birlikte arşivin kökündeki `eidos-backup.ini`
 dosyasına girer - yani "burada ne yok" sorusunun yanıtı bir tahmin değil,
