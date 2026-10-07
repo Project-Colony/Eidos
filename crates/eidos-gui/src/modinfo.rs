@@ -2684,6 +2684,13 @@ pub(crate) fn write_plugin_state(
         .transpose()?;
     if let Some(inst) = app.created.as_ref() {
         let prof = inst.active();
+        // Adopt the game's state first, as launch and sort do, failing closed.
+        // Writing into an unseeded profile built Morrowind.ini from nothing: a
+        // `[Game Files]`-only stub that every later launch deployed in place of
+        // the real INI, since the seed never replaces a file the profile owns.
+        if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
+            prof.seed_plugin_state(&dir, spec)?;
+        }
         // A deliberate GUI edit is the user speaking: it must not trip the
         // "session damaged the active set" card, so the snapshot follows it -
         // EXCEPT while damage is currently flagged, where refreshing would

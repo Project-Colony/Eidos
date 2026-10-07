@@ -429,11 +429,10 @@ impl Hooks for RealHooks<'_> {
         {
             return Installed::Failed("Refusing to replace an unowned collection folder".into());
         }
-        let fallback = self.game.prefix().and_then(|prefix| {
-            self.game
-                .plugin_spec()
-                .map(|spec| eidos_plugins::plugins_txt_dir(&prefix, &spec))
-        });
+        // Where the game keeps its activation state, as launch and the GUI
+        // read it: the install root for Morrowind and root-mode Oblivion, where
+        // AppData has nothing and every plugin would read as active.
+        let fallback = self.game.plugin_state_dir();
         let ctx = eidos_install::fomod_context_for_instance(
             self.inst,
             &self.game.data_path,
@@ -994,7 +993,13 @@ pub fn apply_plugin_states(
         });
         return;
     };
-    let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    // Seed and fall back from where the game keeps its activation state, as
+    // launch and sort do: the install root for Morrowind and root-mode Oblivion.
+    // AppData held nothing there, so the profile was founded on an all-enabled
+    // default - and for Morrowind the write below then built the profile's
+    // Morrowind.ini from nothing, a `[Game Files]`-only stub every later launch
+    // deployed in place of the real INI.
+    let local_dir = eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec);
     let _ = inst.ensure_profiles();
     let prof = inst.active();
     if prof.seed_plugin_state(&local_dir, &spec).is_err() {
@@ -1044,8 +1049,11 @@ pub fn apply_plugin_states(
         });
         return;
     }
-    // Shadow for tools that read the prefix; never fatal.
-    let _ = list.write_load_order(&local_dir, &spec);
+    // Shadow for tools that read the prefix; never fatal. Skipped for Timestamp
+    // games, as launch does: their state dir can be the game install itself.
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        let _ = list.write_load_order(&local_dir, &spec);
+    }
     for name in missing {
         report.loot_notes.push(Note {
             subject: name,

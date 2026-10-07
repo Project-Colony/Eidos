@@ -6035,6 +6035,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_plugins_tab_edit_on_a_fresh_morrowind_profile_keeps_the_real_ini() {
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["A.esp", "B.esp"] {
+            fs::write(game.data_path.join(name), []).unwrap();
+        }
+        let ini = "[General]\r\nSubtitles=1\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+        let spec = game.plugin_spec().unwrap();
+        let mut list = inst
+            .plugin_list(&game.data_path, "morrowind", game.plugin_state_dir().as_deref())
+            .unwrap();
+        assert!(list.set_enabled("B.esp", false));
+        write_plugin_state(&app, &list, &spec).unwrap();
+        let written =
+            fs::read_to_string(inst.active().plugins_state_dir().join("Morrowind.ini")).unwrap();
+        assert!(written.contains("Subtitles=1"), "{written}");
+        assert!(written.contains("GameFile0=A.esp") && !written.contains("B.esp"), "{written}");
+        assert_eq!(fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(), ini);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// An instance with two profiles and a save in the active one.
     fn saves_app() -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
