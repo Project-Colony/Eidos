@@ -481,6 +481,12 @@ pub(crate) fn sync_saves_for_cloud(
         .unwrap_or_default();
     let mut new_entries: Vec<String> = Vec::new();
 
+    // Every profile of the instance binds over this same prefix dir, so a copy
+    // a SIBLING profile pushed is provenance-known too: it still lives in that
+    // profile's own saves. Checking only our manifest made two profiles
+    // alternating on a fixed name (quicksave.fos, autosave.ess) import each
+    // other's copy as a fresh orphan-* group on every sync, forever.
+    let mut siblings = None;
     // Rescue the whole batch before replacing any file, so a failed co-save
     // rescue also leaves its prefix save untouched.
     let mut copies = Vec::new();
@@ -493,7 +499,12 @@ pub(crate) fn sync_saves_for_cloud(
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
             Ok(d) if src_mtime > d => {
-                if !manifest.contains(&manifest_key(&dst)?) {
+                let key = manifest_key(&dst)?;
+                if !manifest.contains(&key)
+                    && !siblings
+                        .get_or_insert_with(|| instance_sync_keys(prof_saves))
+                        .contains(&key)
+                {
                     preserve_diverged_save(&dst, d, prof_saves)?;
                 }
             }
@@ -516,6 +527,56 @@ pub(crate) fn sync_saves_for_cloud(
         let _ = std::fs::write(&manifest_path, body);
     }
     Ok(n)
+}
+
+/// Every content key any profile of this instance has pushed to the prefix:
+/// `prof_saves` is `<instance>/profiles/<name>/saves`, and all those profiles
+/// bind over the same prefix Saves dir.
+fn instance_sync_keys(prof_saves: &std::path::Path) -> std::collections::HashSet<String> {
+    let Some(profiles) = prof_saves.parent().and_then(|p| p.parent()) else {
+        return Default::default();
+    };
+    std::fs::read_dir(profiles)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| std::fs::read_to_string(e.path().join("saves/.cloud-sync-manifest")).ok())
+        .flat_map(|t| t.lines().map(String::from).collect::<Vec<_>>())
+        .collect()
+}
+
+/// Prefix saves the profile bind will hide for good: written after the profile
+/// was seeded (the `.seeded` marker's mtime), absent from the profile, and never
+/// pushed there by any profile of this instance. A Steam Cloud download from
+/// another device or a launch without Eidos lands here, and nothing pulls it in:
+/// seeding is one-time so saves the user deleted stay deleted. Older names are
+/// that deleted set, so they are not reported.
+fn hidden_prefix_saves(prof_saves: &std::path::Path, prefix_saves: &std::path::Path) -> Vec<String> {
+    let Ok(seeded) = std::fs::metadata(prof_saves.join(".seeded")).and_then(|m| m.modified())
+    else {
+        return Vec::new(); // not seeded yet: the next seed adopts everything
+    };
+    let pushed: std::collections::HashSet<String> = instance_sync_keys(prof_saves)
+        .into_iter()
+        .filter_map(|k| k.split_once('\t').map(|(name, _)| name.to_string()))
+        .collect();
+    std::fs::read_dir(prefix_saves)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().into_string().ok()?;
+            let newer = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t > seeded);
+            (eidos_instance::is_save_listing(&name)
+                && newer
+                && !pushed.contains(&name)
+                && !prof_saves.join(&name).exists())
+            .then_some(name)
+        })
+        .collect()
 }
 
 /// Content provenance: matching sizes and second-resolution mtimes cannot prove
@@ -594,6 +655,12 @@ pub(crate) fn preserve_diverged_save(
                     let _ = std::fs::remove_file(&orphan);
                     return Err(error);
                 }
+                // Keep each file's own date, like the seed and the sync copy: a
+                // rescue stamped "now" sorted another profile's or a stale save
+                // above the playthrough the user made last session.
+                if let Ok(mtime) = std::fs::metadata(&path).and_then(|m| m.modified()) {
+                    let _ = file.set_modified(mtime);
+                }
             }
             Err(error)
                 if error.kind() == std::io::ErrorKind::AlreadyExists
@@ -631,6 +698,19 @@ pub(crate) fn prepare_saves(
         eidos_log::info!(
             "eidos play: adopted {n} existing save(s) into profile '{}'",
             prof.name
+        );
+    }
+    let hidden = hidden_prefix_saves(&prof.saves_dir(), &source);
+    if !hidden.is_empty() {
+        eidos_log::warn!(
+            "eidos play: {} save(s) in {} are not in profile '{}' (another device, a launch \
+             without Eidos or another instance wrote them) and stay hidden while its saves \
+             are bound; copy them into {} to play them: {}",
+            hidden.len(),
+            source.display(),
+            prof.name,
+            prof.saves_dir().display(),
+            hidden.join(", ")
         );
     }
     Ok(Some((prof.saves_dir(), source)))
@@ -1145,6 +1225,98 @@ mod rescue_tests {
         }));
         fs::remove_dir_all(root).unwrap();
     }
+    fn stamped(path: &std::path::Path, bytes: &[u8], secs: u64) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, bytes).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(UNIX_EPOCH + Duration::from_secs(secs))
+            .unwrap();
+    }
+
+    fn orphans(dir: &std::path::Path) -> Vec<String> {
+        fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.starts_with("orphan-"))
+            .collect()
+    }
+
+    #[test]
+    fn sibling_profiles_alternating_on_a_fixed_name_mint_no_orphans() {
+        let root =
+            std::env::temp_dir().join(format!("eidos-rescue-siblings-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let a = root.join("profiles/Main/saves");
+        let b = root.join("profiles/Hardcore/saves");
+        let prefix = root.join("prefix");
+        let t = 1_700_000_000;
+        for (dir, tag, secs) in [
+            (&a, "main 1", t),
+            (&b, "hardcore 1", t + 10),
+            (&a, "main 2", t + 20),
+        ] {
+            stamped(&dir.join("quicksave.fos"), tag.as_bytes(), secs);
+            stamped(&dir.join("quicksave.nvse"), tag.as_bytes(), secs);
+            sync_saves_for_cloud(dir, &prefix).unwrap();
+            assert_eq!(fs::read(prefix.join("quicksave.fos")).unwrap(), tag.as_bytes());
+        }
+        // Each overwritten prefix copy still lives in the profile that pushed it.
+        assert!(orphans(&a).is_empty(), "{:?}", orphans(&a));
+        assert!(orphans(&b).is_empty(), "{:?}", orphans(&b));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rescued_orphans_keep_their_own_mtime() {
+        let root = std::env::temp_dir().join(format!("eidos-rescue-mtime-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let profile = root.join("profile");
+        let prefix = root.join("prefix");
+        let t = 1_700_000_000;
+        stamped(&prefix.join("quicksave.ess"), b"old session", t);
+        stamped(&prefix.join("quicksave.skse"), b"old cosave", t + 1);
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join("quicksave.ess"), b"new session").unwrap();
+        sync_saves_for_cloud(&profile, &prefix).unwrap();
+        for (ext, secs) in [("ess", t), ("skse", t + 1)] {
+            let orphan = profile.join(format!("orphan-{t}-quicksave.{ext}"));
+            assert_eq!(
+                fs::metadata(orphan).unwrap().modified().unwrap(),
+                UNIX_EPOCH + Duration::from_secs(secs),
+                "a rescue stamped now sorts above the live playthrough"
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn prefix_saves_made_after_seeding_outside_the_instance_are_reported() {
+        let root = std::env::temp_dir().join(format!("eidos-hidden-saves-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let saves = root.join("profiles/Main/saves");
+        let prefix = root.join("prefix");
+        let t = 1_700_000_000;
+        stamped(&saves.join(".seeded"), b"done", t);
+        stamped(&saves.join("Kept.ess"), b"kept", t + 10);
+        // Seeded then deleted by the user: older than the marker, stays deleted.
+        stamped(&prefix.join("Deleted.ess"), b"deleted", t - 10);
+        stamped(&prefix.join("Kept.ess"), b"kept", t + 10);
+        // A sibling profile's own push, not a stranger's.
+        let pushed = root.join("profiles/Other/saves");
+        stamped(&prefix.join("Other.ess"), b"other", t + 10);
+        fs::create_dir_all(&pushed).unwrap();
+        fs::write(pushed.join(".cloud-sync-manifest"), "Other.ess\t0000000000000000\n").unwrap();
+        // Made on a Steam Deck and downloaded by Steam Cloud.
+        stamped(&prefix.join("Deck.ess"), b"deck", t + 10);
+        stamped(&prefix.join("Deck.skse"), b"deck cosave", t + 10);
+        assert_eq!(hidden_prefix_saves(&saves, &prefix), vec!["Deck.ess".to_string()]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn failed_rescue_keeps_both_prefix_files_unchanged() {
         use std::os::unix::fs::PermissionsExt;
