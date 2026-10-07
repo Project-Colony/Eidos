@@ -268,12 +268,15 @@ fn reserve_folder(
 /// Repeatable: a folder already carrying THIS revision's marker is taken again,
 /// and `state` is saved with the claims before any marker moves, so a crash at
 /// any point leaves folders either revision can take. Symmetric too: going back
-/// to an older revision takes its folders back from the newer one.
+/// to an older revision takes its folders back from the newer one - or, when
+/// one of the rules above keeps a folder, drops its claim on it so the member
+/// installs a fresh copy.
 ///
 /// Returns the folders another revision still owns that this one does not use
 /// and the active profile still enables. They stay installed and enabled -
 /// removing a mod is the user's call - so the report has to name them until
-/// the user disables or removes them.
+/// the user disables or removes them. A revision whose record cannot be read
+/// is named too.
 pub fn adopt_other_revisions(
     inst: &Instance,
     c: &Collection,
@@ -294,15 +297,14 @@ pub fn adopt_other_revisions(
     // mods/ is shared by every profile. A folder another profile enables is
     // that profile's setup: taking it over would replace an updated member's
     // files under it, so this revision installs its own copy as it used to.
+    // Folder -> the other profiles that enable it, which the note names.
     let active = inst.active_profile();
-    let elsewhere: std::collections::HashSet<String> = inst
-        .profiles()
-        .into_iter()
-        .filter(|p| *p != active)
-        .flat_map(|p| inst.profile(&p).modlist())
-        .filter(|m| m.is_active())
-        .map(|m| m.name)
-        .collect();
+    let mut elsewhere: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for p in inst.profiles().into_iter().filter(|p| *p != active) {
+        for m in inst.profile(&p).modlist().into_iter().filter(|m| m.is_active()) {
+            elsewhere.entry(m.name).or_default().push(p.clone());
+        }
+    }
     // The leftover note asks the user to disable a folder, and it holds the
     // install short of faithful, so it must go away once they have.
     let enabled_here: std::collections::HashSet<String> = inst
@@ -312,7 +314,7 @@ pub fn adopt_other_revisions(
         .map(|m| m.name)
         .collect();
     let mut leftovers = Vec::new();
-    for other in other_revisions(inst, state)? {
+    for other in other_revisions(inst, state, &mut leftovers)? {
         let other_owner = format!("{}:{}:{}", other.game_domain, other.slug, other.revision);
         let mut folders = other.folders.clone();
         for (key, status) in &other.members {
@@ -370,6 +372,10 @@ pub fn adopt_other_revisions(
         // crash in between leaves a folder both revisions' adoption can still
         // take, never one that no state claims.
         let mut moves = Vec::new();
+        // Folders left alone for a reason the leftover note must give instead
+        // of "this revision does not use it".
+        let mut why_kept: std::collections::HashMap<String, &str> = Default::default();
+        let mut dropped_claim = false;
         for (key, other_key) in pairs {
             let folder = &folders[&other_key];
             // A key this revision already records in the SAME folder is taken
@@ -377,10 +383,12 @@ pub fn adopt_other_revisions(
             // its folders over, which otherwise left every member unverifiable.
             // A member the user skipped here (`--no-optional`, run before this)
             // is not taken: it would be owned, enabled and in no ordering pass,
-            // reported only as skipped. Left alone it is named as unused below.
+            // reported only as skipped. Left alone it is named below, as skipped.
+            if matches!(state.status(&key), Status::Skipped) {
+                why_kept.insert(folder.clone(), "you skipped this optional member in this revision");
+                continue;
+            }
             if state.folders.get(&key).is_some_and(|f| f != folder)
-                || matches!(state.status(&key), Status::Skipped)
-                || elsewhere.contains(folder)
                 || state.folders.iter().any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
                 || eidos_install::fix_directory_name(folder).as_deref() != Some(folder.as_str())
             {
@@ -388,9 +396,26 @@ pub fn adopt_other_revisions(
             }
             let path = mods.join(folder);
             let (from, to) = (marker(&other_owner, &other_key), marker(&owner, &key));
-            if !(owns_folder(&path, &from) || owns_folder(&path, &to))
-                || installer_answers::path(&path).exists()
-            {
+            if !(owns_folder(&path, &from) || owns_folder(&path, &to)) {
+                continue;
+            }
+            let answers = installer_answers::path(&path).exists();
+            if answers || elsewhere.contains_key(folder) {
+                if answers {
+                    why_kept.insert(
+                        folder.clone(),
+                        "it holds saved installer answers, so this revision installs its own copy",
+                    );
+                }
+                // Going back, this revision still records the folder the newer
+                // one took. Kept, that claim could never verify again - the
+                // folder carries the newer marker - so every member failed for
+                // good. Dropped, the member installs a fresh copy beside it.
+                if state.folders.get(&key) == Some(folder) && !owns_folder(&path, &to) {
+                    state.folders.remove(&key);
+                    state.set(&key, Status::Pending);
+                    dropped_claim = true;
+                }
                 continue;
             }
             // An unchanged member keeps its status too. Left Pending, the run
@@ -398,25 +423,30 @@ pub fn adopt_other_revisions(
             // had clone hashes, so nearly every update read as not faithful for
             // good. Install still verifies it, and replaces it when that fails.
             // An updated member stays Pending: it is replaced anyway.
-            let mut seeded = false;
             if key == other_key && state.status(&key).is_open() {
                 let status = match other.status(&other_key) {
                     Status::Installed(_) => Status::Installed(folder.clone()),
                     Status::Approximate(_, why) => Status::Approximate(folder.clone(), why.clone()),
                     _ => Status::Pending,
                 };
-                seeded = status != Status::Pending;
-                if seeded {
+                if status != Status::Pending {
                     state.set(&key, status);
                 }
             }
+            // On every pass, not only the one that seeded the status: a run
+            // stopped part-way finds the rest already seeded, and install
+            // verifies them without ever registering them.
+            let register = matches!(
+                state.status(&key),
+                Status::Installed(f) | Status::Approximate(f, _) if f == folder
+            );
             state.folders.insert(key, folder.clone());
-            moves.push((path, from, to, folder.clone(), seeded));
+            moves.push((path, from, to, folder.clone(), register));
         }
-        if !moves.is_empty() {
+        if !moves.is_empty() || dropped_claim {
             save(state)?;
         }
-        for (path, from, to, folder, seeded) in moves {
+        for (path, from, to, folder, register) in moves {
             crate::recipe::transfer_receipt(&path, &from, &to)?;
             let mut meta = eidos_instance::ModMeta::read(&path.join("meta.ini"));
             meta.set("eidosCollectionOwner", &to);
@@ -425,7 +455,7 @@ pub fn adopt_other_revisions(
             // A verified member is never registered again, so this does it, as
             // the recovery did: a profile that does not list the folder enables
             // it, one that lists it keeps its own decision.
-            if seeded {
+            if register {
                 inst.register_installed_mod(&folder)
                     .map_err(|e| e.to_string())?;
             }
@@ -437,18 +467,21 @@ pub fn adopt_other_revisions(
                 && enabled_here.contains(folder)
                 && owns_folder(&mods.join(folder), &marker(&other_owner, key))
             {
-                leftovers.push(Note {
-                    subject: folder.clone(),
-                    detail: format!(
-                        "revision {} of this collection installed it and this revision does not use it{}; it is still enabled, so disable or remove it yourself",
+                // mods/ is shared: removing a folder another profile enables
+                // removes it from that profile too, so that note never says so.
+                let detail = match elsewhere.get(folder) {
+                    Some(profiles) => format!(
+                        "revision {} of this collection installed it and another profile ('{}') still enables it, so it was not taken over; disable it in this profile, but do not remove it while that profile uses it",
                         other.revision,
-                        if elsewhere.contains(folder) {
-                            " (another profile enables it, so it was not taken over)"
-                        } else {
-                            ""
-                        }
+                        profiles.join("', '")
                     ),
-                });
+                    None => format!(
+                        "revision {} of this collection installed it and {}; it is still enabled, so disable or remove it yourself",
+                        other.revision,
+                        why_kept.get(folder).copied().unwrap_or("this revision does not use it")
+                    ),
+                };
+                leftovers.push(Note { subject: folder.clone(), detail });
             }
         }
     }
@@ -456,7 +489,15 @@ pub fn adopt_other_revisions(
 }
 
 /// Every other revision of this collection with a state file here, newest first.
-fn other_revisions(inst: &Instance, state: &InstallState) -> Result<Vec<InstallState>, String> {
+///
+/// A state file that cannot be read is skipped with a note in `notes`: it only
+/// costs the takeover of that revision's folders, while the error
+/// [`InstallState::load`] gives is about the CURRENT revision's record.
+fn other_revisions(
+    inst: &Instance,
+    state: &InstallState,
+    notes: &mut Vec<Note>,
+) -> Result<Vec<InstallState>, String> {
     let dir = inst.root.join("collections");
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -476,8 +517,19 @@ fn other_revisions(inst: &Instance, state: &InstallState) -> Result<Vec<InstallS
         else {
             continue;
         };
-        let Some(other) = InstallState::load(&dir.join(&name))? else {
-            continue;
+        let other = match InstallState::load(&dir.join(&name)) {
+            Ok(Some(other)) => other,
+            Ok(None) => continue,
+            Err(_) => {
+                notes.push(Note {
+                    subject: format!("revision {revision}"),
+                    detail: format!(
+                        "its record {} cannot be read, so its folders were not taken over and this revision installs its own copies",
+                        dir.join(&name).display()
+                    ),
+                });
+                continue;
+            }
         };
         // A sanitized slug can collide with another collection's.
         if other
@@ -1713,7 +1765,8 @@ mod cache_tests {
         let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(state.folders.get(&key(10)), None);
         assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
-        assert!(leftovers.iter().any(|n| n.subject == "Kept"), "{leftovers:?}");
+        // This revision does use it; the user skipped it.
+        assert!(leftovers.iter().any(|n| n.subject == "Kept" && n.detail.contains("you skipped")), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -1723,9 +1776,12 @@ mod cache_tests {
         std::fs::create_dir_all(inst.profile("Stable").dir()).unwrap();
         std::fs::write(inst.profile("Stable").dir().join("modlist.txt"), "+Updated\n").unwrap();
         let mut state = gate_state(2);
-        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // "Stable" keeps revision 1's files; the update installs its own copy.
         assert_eq!(state.folders.get(&key(21)), None);
+        // Removing it would remove it from "Stable" too, so the note never asks.
+        let note = leftovers.iter().find(|n| n.subject == "Updated").unwrap();
+        assert!(note.detail.contains("'Stable'") && !note.detail.contains("or remove"), "{note:?}");
         assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
         assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
         std::fs::remove_dir_all(root).unwrap();
@@ -1755,6 +1811,58 @@ mod cache_tests {
         assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
         // Revision 1 uses both, so neither is reported as something it does not use.
         assert!(leftovers.is_empty(), "{leftovers:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn going_back_drops_a_folder_it_cannot_take_back_so_the_member_installs_fresh() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("rollback-kept");
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        state.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        // A copy of the profile made before going back enables every folder.
+        std::fs::create_dir_all(inst.profile("Backup").dir()).unwrap();
+        std::fs::write(inst.profile("Backup").dir().join("modlist.txt"), "+Kept\n+Updated\n").unwrap();
+        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
+        let mut saved = None;
+        adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |s| {
+            saved = Some(s.folders.clone());
+            Ok(())
+        })
+        .unwrap();
+        // Kept, the claim on a folder marked by revision 2 failed every run.
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(2), &key(10))));
+        assert_eq!(old.folders.get(&key(10)), None);
+        assert_eq!(old.status(&key(10)), &Status::Pending);
+        assert_eq!(saved.as_ref(), Some(&old.folders));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_interrupted_adoption_still_registers_the_members_it_seeded() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("resume");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
+        // Seeded and saved, then stopped before the folder changed hands.
+        let mut state = gate_state(2);
+        state.set(&key(10), Status::Installed("Kept".into()));
+        state.folders.insert(key(10), "Kept".into());
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_record_of_another_revision_does_not_stop_the_install() {
+        let (root, inst, new) = gate("unreadable");
+        std::fs::write(InstallState::path(&root, "gate", 3), "{ truncated").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert!(leftovers.iter().any(|n| n.subject == "revision 3"), "{leftovers:?}");
+        // Revision 1 is still taken over.
+        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

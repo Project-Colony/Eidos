@@ -144,7 +144,10 @@ member whose file the author updated is replaced inside its old folder, and a
 member the new revision dropped is left installed and named in the report for
 you to disable or remove. A folder another profile enables is never taken
 over, because the mods folder is shared and that profile would change under
-you: the new revision installs its own copy beside it instead.
+you: the new revision installs its own copy beside it instead, and the report
+asks you to disable the old one in this profile, never to remove it. Going back
+to an older revision takes its folders back the same way, or installs fresh
+copies of the ones it cannot take.
 
 ### What it will not pretend
 
