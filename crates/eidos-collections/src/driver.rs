@@ -1615,29 +1615,55 @@ pub fn apply_ini_tweaks(
             n += 1;
         }
         // A folder taken over from another revision still held its fragments,
-        // and the user's selection of them was merged in at every launch. The
-        // folder is this collection's output, so it mirrors this revision.
-        for entry in std::fs::read_dir(&dest).map_err(|e| e.to_string())? {
-            let entry = entry.map_err(|e| e.to_string())?;
-            if entry.file_type().is_ok_and(|t| t.is_file()) && !shipped.contains(&entry.file_name()) {
-                std::fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
-            }
-        }
+        // and the user's selection of them was merged in at every launch. Only
+        // the fragments a collection run installed itself are removed: one the
+        // user added here (by hand, or with MO2's Create Tweak) is theirs. A
+        // folder from before that record has no list, so a fragment this
+        // revision does not ship is only deselected there, and named.
         let meta_path = inst.mods_dir().join(&name).join("meta.ini");
         let mut meta = eidos_instance::ModMeta::read(&meta_path);
-        let selected: Vec<String> = meta
+        let shipped: Vec<String> = shipped.iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let ours = meta.collection_ini_fragments();
+        let mut removed = Vec::new();
+        for old in ours.iter().flatten().filter(|old| !shipped.contains(old)) {
+            // The record is ours, but a name with a separator would leave dest.
+            if Path::new(old).file_name().is_none_or(|f| f != old.as_str()) {
+                continue;
+            }
+            let path = dest.join(old);
+            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
+                std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+                removed.push(old.clone());
+            }
+        }
+        let dropped: Vec<String> = meta
             .ini_tweaks()
             .iter()
-            .filter(|t| shipped.iter().any(|s| *s == t.as_str()))
+            .filter(|t| if ours.is_some() { removed.contains(t) } else { !shipped.contains(t) })
             .cloned()
             .collect();
-        if selected.len() != meta.ini_tweaks().len() {
+        if !dropped.is_empty() {
+            let selected: Vec<String> =
+                meta.ini_tweaks().iter().filter(|t| !dropped.contains(t)).cloned().collect();
             meta.set_ini_tweaks(&selected);
-            meta.write(&meta_path).map_err(|e| e.to_string())?;
         }
+        meta.set_collection_ini_fragments(&shipped);
+        meta.write(&meta_path).map_err(|e| e.to_string())?;
         inst.register_installed_mod(&name)
             .map_err(|e| e.to_string())?;
-        report.deferred.push(Note { subject: "INI tweaks".into(), detail: format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab") });
+        let mut detail = format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab");
+        if !removed.is_empty() {
+            detail += &format!(". Removed, as this revision no longer ships them: {}", removed.join(", "));
+        }
+        let deselected: Vec<&str> =
+            dropped.iter().filter(|d| !removed.contains(d)).map(String::as_str).collect();
+        if !deselected.is_empty() {
+            detail += &format!(
+                ". Deselected, as this revision does not ship them (select them again if you added them yourself): {}",
+                deselected.join(", ")
+            );
+        }
+        report.deferred.push(Note { subject: "INI tweaks".into(), detail });
         Ok(())
     })();
     if let Err(error) = result {
@@ -1803,13 +1829,33 @@ mod cache_tests {
         assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
         assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
         assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
-        // The fragment revision 2 dropped no longer applies at launch.
+        // The fragment revision 2 dropped no longer applies at launch. This
+        // folder predates the record of what a run installed, so the unknown
+        // fragment is deselected and named, never deleted.
         let mut report = Report::default();
         apply_ini_tweaks(&inst, &dir, &new, &mut state, &mut |_| Ok(()), &mut report);
         assert!(report.failed.is_empty(), "{report:?}");
-        assert!(!folder.join("Ini Tweaks/Dropped.ini").exists());
+        assert!(folder.join("Ini Tweaks/Dropped.ini").is_file());
         assert!(folder.join("Ini Tweaks/Kept.ini").is_file());
-        assert_eq!(eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(), ["Kept.ini"]);
+        let meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        assert_eq!(meta.ini_tweaks(), ["Kept.ini"]);
+        assert_eq!(meta.collection_ini_fragments(), Some(vec!["Kept.ini".to_string()]));
+        assert!(report.deferred.iter().any(|n| n.detail.contains("Deselected") && n.detail.contains("Dropped.ini")), "{report:?}");
+        // Now the run's own fragments are known: one a later revision drops is
+        // removed, while a fragment the user added and selected stays.
+        std::fs::write(folder.join("Ini Tweaks/Mine.ini"), "[Display]\n").unwrap();
+        let mut meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        meta.set_ini_tweaks(&["Kept.ini".into(), "Mine.ini".into()]);
+        meta.write(&folder.join("meta.ini")).unwrap();
+        std::fs::remove_file(dir.join("INI Tweaks/Kept.ini")).unwrap();
+        std::fs::write(dir.join("INI Tweaks/New.ini"), "[Display]\n").unwrap();
+        let mut report = Report::default();
+        apply_ini_tweaks(&inst, &dir, &new, &mut state, &mut |_| Ok(()), &mut report);
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert!(!folder.join("Ini Tweaks/Kept.ini").exists());
+        assert!(folder.join("Ini Tweaks/Mine.ini").is_file());
+        assert!(folder.join("Ini Tweaks/New.ini").is_file());
+        assert_eq!(eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(), ["Mine.ini"]);
         std::fs::remove_dir_all(root).unwrap();
     }
 
