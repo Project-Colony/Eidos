@@ -243,7 +243,11 @@ fn reserve_folder(
 }
 
 /// Hand the folders another revision of this collection owns to the revision
-/// `state` installs, before it starts.
+/// `state` installs, before its first member.
+///
+/// Called by [`crate::install::run`] once the recipe and the game runtime have
+/// passed, never before: a revision the user cannot or will not install must
+/// not take anything over, or the one they stay on can no longer verify it.
 ///
 /// The owner names the revision, so two revisions never mistake each other's
 /// output - but each one then started from nothing. Updating to the author's
@@ -262,8 +266,9 @@ fn reserve_folder(
 /// the mod list.
 ///
 /// Repeatable: a folder already carrying THIS revision's marker is taken again,
-/// so a crash before the new state is saved loses nothing. Symmetric too: going
-/// back to an older revision takes its folders back from the newer one.
+/// and `state` is saved with the claims before any marker moves, so a crash at
+/// any point leaves folders either revision can take. Symmetric too: going back
+/// to an older revision takes its folders back from the newer one.
 ///
 /// Returns the folders another revision still owns that this one does not use.
 /// They stay installed and enabled - removing a mod is the user's call - so the
@@ -272,6 +277,7 @@ pub fn adopt_other_revisions(
     inst: &Instance,
     c: &Collection,
     state: &mut InstallState,
+    save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
 ) -> Result<Vec<Note>, String> {
     use crate::state::{key_for, revision_dir, Status};
     let _lock = inst
@@ -339,6 +345,10 @@ pub fn adopt_other_revisions(
                 }
             }
         }
+        // Claimed in the state, and the state saved, BEFORE any marker moves: a
+        // crash in between leaves a folder both revisions' adoption can still
+        // take, never one that no state claims.
+        let mut moves = Vec::new();
         for (key, other_key) in pairs {
             let folder = &folders[&other_key];
             // A key this revision already records in the SAME folder is taken
@@ -357,32 +367,42 @@ pub fn adopt_other_revisions(
             {
                 continue;
             }
+            // An unchanged member keeps its status too. Left Pending, the run
+            // recovered it as Approximate ("interrupted status save") unless it
+            // had clone hashes, so nearly every update read as not faithful for
+            // good. Install still verifies it, and replaces it when that fails.
+            // An updated member stays Pending: it is replaced anyway.
+            let mut seeded = false;
+            if key == other_key && state.status(&key).is_open() {
+                let status = match other.status(&other_key) {
+                    Status::Installed(_) => Status::Installed(folder.clone()),
+                    Status::Approximate(_, why) => Status::Approximate(folder.clone(), why.clone()),
+                    _ => Status::Pending,
+                };
+                seeded = status != Status::Pending;
+                if seeded {
+                    state.set(&key, status);
+                }
+            }
+            state.folders.insert(key, folder.clone());
+            moves.push((path, from, to, folder.clone(), seeded));
+        }
+        if !moves.is_empty() {
+            save(state)?;
+        }
+        for (path, from, to, folder, seeded) in moves {
             crate::recipe::transfer_receipt(&path, &from, &to)?;
             let mut meta = eidos_instance::ModMeta::read(&path.join("meta.ini"));
             meta.set("eidosCollectionOwner", &to);
             meta.write(&path.join("meta.ini"))
                 .map_err(|e| e.to_string())?;
-            // An unchanged member keeps its status too. Left Pending, the run
-            // recovered it as Approximate ("interrupted status save") unless it
-            // had clone hashes, so nearly every update read as not faithful for
-            // good. Install still verifies it, and replaces it when that fails.
-            // An updated member stays Pending: it is replaced anyway. A verified
-            // member is never registered again, so this does it, as the
-            // recovery did: a profile that does not list the folder enables it,
-            // one that lists it keeps its own decision.
-            if key == other_key && state.status(&key).is_open() {
-                let seeded = match other.status(&other_key) {
-                    Status::Installed(_) => Status::Installed(folder.clone()),
-                    Status::Approximate(_, why) => Status::Approximate(folder.clone(), why.clone()),
-                    _ => Status::Pending,
-                };
-                if seeded != Status::Pending {
-                    inst.register_installed_mod(folder)
-                        .map_err(|e| e.to_string())?;
-                    state.set(&key, seeded);
-                }
+            // A verified member is never registered again, so this does it, as
+            // the recovery did: a profile that does not list the folder enables
+            // it, one that lists it keeps its own decision.
+            if seeded {
+                inst.register_installed_mod(&folder)
+                    .map_err(|e| e.to_string())?;
             }
-            state.folders.insert(key, folder.clone());
         }
         for (key, folder) in &folders {
             // A folder this revision records is one it uses, whoever marks it.
@@ -464,6 +484,14 @@ impl Hooks for RealHooks<'_> {
     }
     fn allow_runtime_mismatch(&self) -> bool {
         self.allow_runtime_mismatch
+    }
+    fn adopt(
+        &mut self,
+        c: &Collection,
+        state: &mut InstallState,
+        save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+    ) -> Result<Vec<Note>, String> {
+        adopt_other_revisions(self.inst, c, state, save)
     }
 
     fn verify_installed(&mut self, m: &Mod, folder: &str) -> Result<bool, String> {
@@ -1577,7 +1605,15 @@ mod cache_tests {
     fn a_new_revision_takes_over_its_previous_folders_instead_of_duplicating_them() {
         let (root, inst, new) = gate("adopt");
         let mut state = gate_state(2);
-        let leftovers = adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        let mut saved = None;
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |s| {
+            // The claim is durable before the folder changes hands.
+            assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+            saved = Some(s.folders.clone());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(saved.as_ref(), Some(&state.folders));
         assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
         assert_eq!(state.folders.get(&key(21)).map(String::as_str), Some("Updated"));
         assert_eq!(state.folders.len(), 2);
@@ -1592,7 +1628,7 @@ mod cache_tests {
         assert_eq!(reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), state.folders.get(&key(10)).map(String::as_str)).unwrap(), "Kept");
         // Repeatable: a crash before the new state was saved adopts the same folders.
         let mut again = gate_state(2);
-        assert_eq!(adopt_other_revisions(&inst, &new, &mut again).unwrap(), leftovers);
+        assert_eq!(adopt_other_revisions(&inst, &new, &mut again, &mut |_| Ok(())).unwrap(), leftovers);
         assert_eq!(again.folders, state.folders);
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1602,7 +1638,7 @@ mod cache_tests {
         use crate::state::Status;
         let (root, inst, new) = gate("status");
         let mut state = gate_state(2);
-        adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // Pending would be recovered as Approximate, an install that is not faithful.
         assert_eq!(state.status(&key(10)), &Status::Installed("Kept".into()));
         assert_eq!(state.status(&key(21)), &Status::Pending);
@@ -1625,7 +1661,7 @@ mod cache_tests {
         old.save(&path).unwrap();
         std::fs::create_dir_all(crate::state::revision_dir(&root, "gate", 2).join("INI Tweaks")).unwrap();
         let mut state = gate_state(2);
-        let leftovers = adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
         assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
         assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
@@ -1636,11 +1672,11 @@ mod cache_tests {
     fn going_back_to_the_previous_revision_takes_its_folders_back() {
         let (root, inst, new) = gate("rollback");
         let mut state = gate_state(2);
-        adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         state.save(&InstallState::path(&root, "gate", 2)).unwrap();
         let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
         let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
-        let leftovers = adopt_other_revisions(&inst, &old_recipe, &mut old).unwrap();
+        let leftovers = adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |_| Ok(())).unwrap();
         assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
         assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
         // Revision 1 uses both, so neither is reported as something it does not use.

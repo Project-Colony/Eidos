@@ -439,9 +439,6 @@ fn collection_on_worker(
     };
 
     state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain)?;
-    // Before anything is reserved: members another revision of this collection
-    // already installed keep their folders instead of colliding with them.
-    let leftovers = eidos_collections::driver::adopt_other_revisions(inst, c, &mut state)?;
 
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
@@ -480,7 +477,6 @@ fn collection_on_worker(
             ),
         });
     }
-    report.deferred.extend(leftovers);
     if report.aborted {
         return Err(report.render());
     }
@@ -520,6 +516,14 @@ impl eidos_collections::install::Hooks for CountingHooks<'_> {
     }
     fn allow_runtime_mismatch(&self) -> bool {
         self.inner.allow_runtime_mismatch()
+    }
+    fn adopt(
+        &mut self,
+        c: &eidos_collections::Collection,
+        state: &mut eidos_collections::state::InstallState,
+        save: &mut dyn FnMut(&eidos_collections::state::InstallState) -> Result<(), String>,
+    ) -> Result<Vec<eidos_collections::report::Note>, String> {
+        self.inner.adopt(c, state, save)
     }
 
     fn obtain(
