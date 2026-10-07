@@ -2364,13 +2364,26 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
 /// process's. Only when the list was current before: following an outside change
 /// too would let that save erase it.
 pub(crate) fn forget_removed_mods(app: &App, names: &[String]) -> Option<std::io::Result<()>> {
+    own_modlist_edit(app, |inst| inst.forget_mods(names))
+}
+
+/// [`Instance::rename_mod`] for a folder the window has just renamed, with the
+/// same following of `modlist_seen` as [`forget_removed_mods`].
+pub(crate) fn rename_mod_lines(app: &App, old: &str, new: &str) -> Option<std::io::Result<()>> {
+    own_modlist_edit(app, |inst| inst.rename_mod(old, new))
+}
+
+fn own_modlist_edit(
+    app: &App,
+    edit: impl FnOnce(&Instance) -> std::io::Result<()>,
+) -> Option<std::io::Result<()>> {
     let inst = app.created.as_ref()?;
     let current = modlist_unchanged(app, inst);
-    let forgot = inst.forget_mods(names);
+    let result = edit(inst);
     if current {
         app.modlist_seen.set(Some(modlist_fingerprint(inst)));
     }
-    Some(forgot)
+    Some(result)
 }
 
 /// Invalidate every memoised view listing. Cheap: the listings rebuild lazily on
@@ -2696,10 +2709,13 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
 }
 
 /// Persist the mod list and invalidate everything derived from it (plugin order,
-/// conflict emblems, the per-mod metadata cache).
-pub(crate) fn mods_changed(app: &mut App) {
-    if let Some(err) = save_mods(app) {
-        app.status = Some(err);
+/// conflict emblems, the per-mod metadata cache). Returns whether the save
+/// landed: a caller that reports success sets its status only then, or it
+/// replaces the refusal this put there with news of an edit that was reverted.
+pub(crate) fn mods_changed(app: &mut App) -> bool {
+    let refused = save_mods(app);
+    if let Some(err) = &refused {
+        app.status = Some(err.clone());
         // The write was refused (another process owns the instance, or rewrote
         // the list since it was read): the in-memory edit will never reach disk,
         // and leaving it displayed shows the user a state that silently
@@ -2708,6 +2724,7 @@ pub(crate) fn mods_changed(app: &mut App) {
         reload_mods(app);
     }
     mod_views_changed(app);
+    refused.is_none()
 }
 
 /// Everything derived from the mod list, recomputed after it changed.

@@ -1222,6 +1222,9 @@ struct IniEditorState {
     /// buffer over a file that exists destroys it - and a permission error is
     /// exactly when that would happen.
     unreadable: bool,
+    /// A hash of the file's bytes as read, so a save can tell that another
+    /// process rewrote it since (see `IniEditorSave`).
+    on_disk: u64,
 }
 
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
@@ -6165,6 +6168,38 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn the_ini_editor_opens_the_real_morrowind_ini_and_never_reverts_an_outside_write() {
+        // A fresh profile used to open an EMPTY buffer, and saving it founded
+        // the profile's Morrowind.ini on a stub.
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        let ed = app.ini_editor.as_mut().expect("the editor opened");
+        assert!(!ed.missing, "status={:?}", app.status);
+        assert!(ed.original.contains("GameFile0=A.esp"), "{}", ed.original);
+
+        // `eidos sort` rewrites it while the editor is open.
+        let path = inst.active().ini_path("Morrowind.ini");
+        fs::write(&path, "[Game Files]\r\nGameFile0=B.esp\r\n").unwrap();
+        ed.content = iced::widget::text_editor::Content::with_text("[General]\r\nSubtitles=1\r\n");
+        ed.dirty = true;
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert!(app.ini_editor.as_ref().unwrap().dirty);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[Game Files]\r\nGameFile0=B.esp\r\n");
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// An instance with two profiles and a save in the active one.
     fn saves_app() -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
@@ -7572,6 +7607,37 @@ mod tests {
     }
 
     #[test]
+    fn batch_edits_in_a_stale_window_report_the_refusal_not_success() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "Bbb"] {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst.clone());
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        let stale = |app: &mut App, name: &str| {
+            fs::create_dir_all(root.join("mods").join(name)).unwrap();
+            inst.register_installed_mod(name).unwrap();
+            app.selected_mods = (0..app.mods.len()).collect();
+        };
+
+        // "Enable selected" used to replace the refusal with "Enabled 2 mod(s)."
+        stale(&mut app, "Foo");
+        let _ = update_inner(&mut app, Message::BatchToggleMods);
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+
+        // And a batch Remove refuses BEFORE deleting, not after.
+        stale(&mut app, "Bar");
+        let _ = update_inner(&mut app, Message::ConfirmBatchRemove);
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+        assert!(root.join("mods").join("Aaa").is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn renaming_a_mod_leaves_it_where_it_was_and_still_enabled() {
         // The defect, exactly as it was reported: rename a mod and it is
         // "teleported all the way to the top, unticked". The rename itself was
@@ -7596,6 +7662,9 @@ mod tests {
         mods_changed(&mut app);
         let before = app.mods.iter().position(|m| m.name == "Middle").unwrap();
         let total = app.mods.len();
+        // A second profile sharing the pool must follow the rename too.
+        let inst = app.created.clone().unwrap();
+        inst.profile("Other").create_from(&inst.active()).unwrap();
 
         let _ = update_inner(&mut app, Message::RenameStart(before));
         let _ = update_inner(&mut app, Message::RenameChanged("Renamed".to_string()));
@@ -7629,6 +7698,11 @@ mod tests {
             .expect("in modlist.txt");
         assert_eq!(reloaded, before);
         assert!(app.mods[reloaded].enabled);
+        let (other, trust) = inst.profile("Other").modlist_checked();
+        assert!(trust.is_good(), "{trust:?}");
+        let at = other.iter().position(|m| m.name == "Renamed").expect("listed in Other");
+        assert_eq!(at, before);
+        assert!(other[at].enabled);
         let _ = fs::remove_dir_all(&root);
     }
 

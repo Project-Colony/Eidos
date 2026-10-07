@@ -424,6 +424,41 @@ impl Profile {
         crate::write_atomic(&self.modlist_path(), kept.as_bytes())
     }
 
+    /// [`Profile::forget_mods`]'s twin for a folder the caller has just renamed:
+    /// the line keeps its `+`/`-` prefix and its place, only the name changes.
+    /// Left alone, the old name counts as a LOST mod (enough of them and the
+    /// list is judged an unmounted drive), and the new folder, listed nowhere,
+    /// comes back DISABLED at the top priority. MO2 does the same edit
+    /// (Profile::renameModInAllProfiles).
+    pub fn rename_mod(&self, old: &str, new: &str) -> io::Result<()> {
+        let src = self.modlist_source();
+        let text = match fs::read_to_string(&src) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let mut out = String::new();
+        let mut renamed = false;
+        for line in text.lines() {
+            let t = line.trim();
+            let name = t.strip_prefix(['+', '-']).unwrap_or(t).trim();
+            if !t.starts_with(['*', '#']) && name == old {
+                // `name` is a suffix of `t`, so what precedes it is the prefix.
+                out.push_str(&t[..t.len() - name.len()]);
+                out.push_str(new);
+                renamed = true;
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+        if !renamed {
+            return Ok(());
+        }
+        fs::create_dir_all(self.dir())?;
+        crate::write_atomic(&self.modlist_path(), out.as_bytes())
+    }
+
     /// Register new content without changing a previously listed mod's priority or activation.
     pub(crate) fn register_installed_mod(&self, name: &str) -> io::Result<()> {
         if !crate::tools::is_mod_folder_name(name) || !self.mods_dir().join(name).is_dir() {

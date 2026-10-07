@@ -1073,6 +1073,20 @@ impl Instance {
         result
     }
 
+    /// Follow a folder the caller has just renamed in `mods/`, in EVERY profile -
+    /// see [`Profile::rename_mod`]. Same lock and same error rule as
+    /// [`Instance::forget_mods`].
+    pub fn rename_mod(&self, old: &str, new: &str) -> std::io::Result<()> {
+        let _lock = self.try_lock("renaming a mod")?;
+        let mut result = Ok(());
+        for name in self.profiles() {
+            if let Err(e) = self.profile(&name).rename_mod(old, new) {
+                result = Err(e);
+            }
+        }
+        result
+    }
+
     /// Enabled mods of the active profile, highest priority first.
     pub fn load_order(&self) -> Vec<PathBuf> {
         self.active().load_order()
@@ -2843,6 +2857,31 @@ mod whole_audit_regressions {
         assert_eq!(names(&list), names(&mods[11..]));
         i.save_modlist(&list).unwrap();
         assert!(i.profile("Other").modlist_checked().1.is_good());
+    }
+
+    #[test]
+    fn renaming_mods_keeps_every_profile_s_order_and_state() {
+        // 11 of 20 renamed: each old name used to stay behind in the other
+        // profile as a LOST mod, past the "unmounted drive" threshold.
+        let fixture = Fixture::new();
+        let i = &fixture.0;
+        let mut mods: Vec<ModEntry> = (0..20)
+            .map(|n| i.create_empty_mod(&format!("Mod{n:02}")).unwrap())
+            .collect();
+        mods[3].enabled = false;
+        i.save_modlist(&mods).unwrap();
+        i.profile("Other").create_from(&i.active()).unwrap();
+        for m in &mut mods[..11] {
+            let new = format!("Short{}", &m.name[3..]);
+            fs::rename(&m.path, i.mods_dir().join(&new)).unwrap();
+            i.rename_mod(&m.name, &new).unwrap();
+            m.name = new;
+        }
+
+        let (list, trust) = i.profile("Other").modlist_checked();
+        assert!(trust.is_good(), "{trust:?}");
+        let names = |l: &[ModEntry]| l.iter().map(|m| (m.name.clone(), m.enabled)).collect::<Vec<_>>();
+        assert_eq!(names(&list), names(&mods));
     }
 
     #[test]

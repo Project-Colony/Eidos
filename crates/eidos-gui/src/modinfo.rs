@@ -4742,6 +4742,7 @@ pub(crate) fn after_install(
         load_downloads(app);
     }
     let mut where_to = String::new();
+    let mut move_refused = None;
     // A drop aimed at a gap says WHERE, not just whether. Consumed here, after
     // `reload_mods`, because that is when the new row exists to be moved - and
     // this is MO2's own ordering too (install first, reposition after).
@@ -4761,9 +4762,14 @@ pub(crate) fn after_install(
             let hidden = hidden_by_folds(app);
             let landed = move_block(&mut app.mods, &[at], dest);
             settle_folds_after_move(app, landed, 1, &hidden);
-            mods_changed(app);
-            app.selected_mod = Some(landed);
-            where_to = format!(" at priority {landed}");
+            if mods_changed(app) {
+                app.selected_mod = Some(landed);
+                where_to = format!(" at priority {landed}");
+            } else {
+                // The move was reverted; its reason rides along below instead
+                // of being replaced by "at priority N".
+                move_refused = app.status.take();
+            }
         }
     }
     // A note the drop left for the installer to deliver - it could not say it
@@ -4779,7 +4785,7 @@ pub(crate) fn after_install(
     } else {
         format!("Installed '{name}'{where_to}{note}.")
     });
-    for warning in [warning, registration_warning].into_iter().flatten() {
+    for warning in [warning, registration_warning, move_refused].into_iter().flatten() {
         if let Some(status) = &mut app.status {
             status.push_str(&format!(" Warning: {warning}"));
         }
