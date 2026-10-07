@@ -81,6 +81,49 @@ namespace, then runs the command through that view. Writes (saves, regenerated
 configs) land in the instance's `overwrite/` layer; the game install and every
 mod source stay byte-for-byte pristine.
 
+### The mod list
+
+As in MO2, each profile has its own `modlist.txt` (which mods are enabled, in
+what priority), while the mod folders live in the instance's shared `mods/`. A
+folder you drop into `mods/` by hand is not listed yet: it shows up **disabled
+at the highest priority** - the bottom of the window's list, where MO2 puts it
+too - so once you enable it, it wins its conflicts. Older versions put it at
+the top, where every other mod overrode it.
+
+Because the folders are shared, removing or renaming a mod changes every
+profile: its line is dropped from, or renamed in, every profile's
+`modlist.txt`, and each profile keeps its own state and order for the rest. A
+profile left with no mods has no `modlist.txt` at all rather than an empty one,
+which read as a damaged file and blocked the next install.
+
+The window works from its own copy of the mod list and load order. If another
+Eidos process writes either one while it is open - `eidos install` or
+`eidos sort` in a terminal, a collection, a session Steam started, a second
+window - the window's next edit is refused instead of overwriting that work. It
+reloads from disk and says *Not saved: another Eidos process changed the mod
+list. It has been reloaded - redo the change.* (or the same for the load
+order); only that one click is lost, so make it again. Rename, New mod, Add
+separator, Remove and turning the Overwrite into a mod check before touching
+`mods/`, so a refused edit changes nothing on disk. The INI editor likewise
+refuses to save over a file that changed since it opened it.
+
+### Saves belong to the profile
+
+Each profile keeps its own saves in `profiles/<name>/saves/`, and for the length
+of a run that folder is mounted over the game's save folder in the Proton
+prefix. The first launch of a profile copies the saves already in the prefix
+into it, once, so a save you later delete from the profile stays deleted. After
+each run the profile's newest saves are copied back into the prefix for Steam
+Cloud; a prefix save Eidos did not put there is first kept in the profile as
+`orphan-<time>-<name>`, never overwritten.
+
+A save that lands in the prefix after that first copy without going through
+Eidos - a Steam Cloud download from a Steam Deck, a launch without Eidos - stays
+hidden while the profile's saves are mounted. Nothing deletes it: the launch
+names it in the run's log (the instance's `logs/run-*.log` for a window launch,
+Steam's console for a Steam launch), once each time that set of files changes.
+To play it, copy it and its co-save into the profile's `saves/` folder.
+
 ### No privileged step required
 
 Eidos runs fully rootless. It mounts in a private user + mount namespace, so no
@@ -148,6 +191,13 @@ you: the new revision installs its own copy beside it instead, and the report
 asks you to disable the old one in this profile, never to remove it. Going back
 to an older revision takes its folders back the same way, or installs fresh
 copies of the ones it cannot take.
+
+A leftover from an earlier revision that stays enabled keeps the install from
+counting as the one the author built; the note goes away once you disable it.
+A member you skipped with `--no-optional` is not taken over and is named the
+same way. If the takeover itself fails, the run stops with *previous revision:
+its folders could not be taken over* and the reason; fix that and run the
+command again.
 
 ### What it will not pretend
 
@@ -230,7 +280,7 @@ complete and is not.
 | `loot/`, except `userlist.yaml` | A masterlist cache Eidos re-fetches on demand. Your own LOOT rules are not a cache - nobody re-fetches those - so that one file rides along. |
 | `.base/`, `.base-root/` | Empty mountpoints where the game's own files are stashed during a session. |
 | Half-written files | A paused download (`*.unfinished`), an atomic write in flight (`*.eidos-tmp*`). |
-| Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead, and the backup counts as incomplete: a `mods/` or `downloads/` linked to another drive is NOT packed. |
+| Symbolic links | 7-Zip would follow one and copy whatever it points at, which for an absolute link means pulling a foreign tree into your backup. They are reported instead, and the backup counts as incomplete: a `mods/` or `downloads/` linked to another drive is NOT packed. To back up without a linked `downloads/` on purpose, pass `--no-downloads` (or untick *Include downloads/* in the window); a deliberate exclusion does not count as missing. |
 
 Every one of these goes into `eidos-backup.ini` at the root of the archive, with
 its reason - so the answer to "what is not in here" is `cat`, not a guess. The
