@@ -142,7 +142,9 @@ Installing a newer revision of a collection you already have takes over the
 previous revision's folders: an unchanged member is verified in place, a
 member whose file the author updated is replaced inside its old folder, and a
 member the new revision dropped is left installed and named in the report for
-you to disable or remove.
+you to disable or remove. A folder another profile enables is never taken
+over, because the mods folder is shared and that profile would change under
+you: the new revision installs its own copy beside it instead.
 
 ### What it will not pretend
 
