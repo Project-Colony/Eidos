@@ -228,6 +228,25 @@ fn oblivion_state_location_obeys_the_install_root_flag() {
     );
 }
 #[test]
+fn oblivion_install_root_flag_is_read_like_the_engine() {
+    // The engine (Wine's profile parser) keeps the FIRST duplicate and sees past
+    // a UTF-8 BOM; the state must be read from where the game reads it.
+    let t = Temp::new();
+    let prefix = t.0.join("prefix");
+    let spec = GameSpec::for_id("oblivion").unwrap();
+    for ini in [
+        "[General]\nbUseMyGamesDirectory=0\nbUseMyGamesDirectory=1\n",
+        "\u{feff}[General]\r\nbUseMyGamesDirectory=0\r\n",
+    ] {
+        fs::write(t.0.join("Oblivion.ini"), ini).unwrap();
+        assert_eq!(
+            eidos_plugins::plugin_state_dir(&prefix, &t.0, &spec),
+            t.0,
+            "{ini:?}"
+        );
+    }
+}
+#[test]
 fn timestamp_order_matches_libloadorder_without_changing_sources() {
     for (id, oracle_id) in [
         ("morrowind", loadorder::GameId::Morrowind),

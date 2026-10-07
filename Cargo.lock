@@ -1320,6 +1320,7 @@ name = "eidos-plugins"
 version = "1.18.2"
 dependencies = [
  "eidos-gamedef",
+ "eidos-ini",
  "encoding_rs",
  "esplugin",
  "libloadorder",

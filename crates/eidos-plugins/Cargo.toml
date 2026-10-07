@@ -10,6 +10,7 @@ edition.workspace = true
 esplugin = "6"
 encoding_rs = "0.8"
 eidos-gamedef = { path = "../eidos-gamedef" }
+eidos-ini = { path = "../eidos-ini" }
 
 [dev-dependencies]
 libloadorder = "=18.8.2"
