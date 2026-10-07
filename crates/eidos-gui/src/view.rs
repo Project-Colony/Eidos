@@ -187,30 +187,37 @@ pub(crate) fn clear_dir_contents(dir: &Path) -> std::io::Result<()> {
 
 /// [`merged_listing`] memoised per directory against the view generation - it
 /// read every enabled mod's directory on each redraw of the Data tab.
-pub(crate) fn cached_merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
+///
+/// An `Rc` for the same reason as [`cached_entries`]: a filter walks every
+/// directory of the merged tree on every redraw, and a hit that deep-cloned
+/// each listing copied ~100k rows per pointer move on a 347-mod instance.
+pub(crate) fn cached_merged_listing(app: &App, dir: &str) -> std::rc::Rc<Vec<DataRow>> {
     let gen = app.view_generation.get();
     if let Some((at, entries)) = app.data_listing.borrow().get(dir) {
         if *at == gen {
-            return entries.clone();
+            return entries.clone(); // Rc bump, not a Vec copy
         }
     }
-    let entries = merged_listing(app, dir);
+    let entries = std::rc::Rc::new(merged_listing(app, dir));
     app.data_listing
         .borrow_mut()
         .insert(dir.to_string(), (gen, entries.clone()));
     entries
 }
 
-/// The union the Data tab reads, built once per view generation.
+/// The union the Data tab reads, built once per view generation, with the label
+/// of every layer root (see [`DataSources`]).
 ///
 /// The same `LayerStack` `eidos-launch` mounts: same layers, same order, same
 /// overwrite. Building it walks every enabled mod once, which is why it is
 /// cached against the view generation rather than rebuilt per directory.
-pub(crate) fn data_stack(app: &App) -> Option<std::rc::Rc<eidos_core::LayerStack>> {
+pub(crate) fn data_stack(
+    app: &App,
+) -> Option<(std::rc::Rc<eidos_core::LayerStack>, std::rc::Rc<DataSources>)> {
     let gen = app.view_generation.get();
-    if let Some((at, stack)) = app.data_stack.borrow().as_ref() {
+    if let Some((at, stack, sources)) = app.data_stack.borrow().as_ref() {
         if *at == gen {
-            return Some(stack.clone());
+            return Some((stack.clone(), sources.clone()));
         }
     }
     let inst = app.created.as_ref()?;
@@ -220,8 +227,44 @@ pub(crate) fn data_stack(app: &App) -> Option<std::rc::Rc<eidos_core::LayerStack
     let mut layers = inst.load_order();
     layers.push(game.data_path.clone());
     let stack = std::rc::Rc::new(eidos_core::LayerStack::new(layers, inst.overwrite_dir()));
-    *app.data_stack.borrow_mut() = Some((gen, stack.clone()));
-    Some(stack)
+
+    // Where each real path came from, so a winner can be named.
+    let mut sources = DataSources::new();
+    sources.insert(inst.overwrite_dir(), "[Overwrite]".to_string());
+    // Unmanaged rows are EXCLUDED. Their `path` is a single plugin file inside
+    // the game's own Data directory, and a longest-prefix match against that
+    // would attribute every vanilla file to whichever DLC row sorted first - and
+    // put a Hide button on the pristine game install.
+    for m in app
+        .mods
+        .iter()
+        .filter(|m| m.is_active() && !m.is_unmanaged())
+    {
+        sources.insert(m.path.clone(), m.name.clone());
+    }
+    sources.insert(game.data_path.clone(), format!("[{}]", game.def.id));
+    let sources = std::rc::Rc::new(sources);
+    *app.data_stack.borrow_mut() = Some((gen, stack.clone(), sources.clone()));
+    Some((stack, sources))
+}
+
+/// Every layer root of the Data tab's union, mapped to the label its rows show.
+///
+/// A map rather than a list, because attribution runs once per entry of the
+/// merged tree: a linear `starts_with` scan over every enabled mod was
+/// O(entries x mods), ~4.5 s of frozen UI for one filtered walk of a 347-mod
+/// instance. [`data_source`] answers the same question in O(path depth).
+pub(crate) type DataSources = HashMap<PathBuf, String>;
+
+/// The label of the layer providing `real`: its LONGEST root prefix, so a mod
+/// nested under another root is not attributed to the outer one. Walking
+/// `ancestors()` from the deepest makes the first hit the longest match, and
+/// `Path` hashes and compares by component exactly as `starts_with` matches.
+pub(crate) fn data_source(sources: &DataSources, real: &Path) -> String {
+    real.ancestors()
+        .find_map(|a| sources.get(a))
+        .cloned()
+        .unwrap_or_default()
 }
 
 /// The entries of ONE directory of the merged view (`dir` relative to `Data`,
@@ -237,43 +280,16 @@ pub(crate) fn data_stack(app: &App) -> Option<std::rc::Rc<eidos_core::LayerStack
 /// One level at a time, so expanding a node costs one directory read per layer
 /// that has it rather than a full recursive walk of every enabled mod.
 pub(crate) fn merged_listing(app: &App, dir: &str) -> Vec<DataRow> {
-    let Some(stack) = data_stack(app) else {
+    let Some((stack, sources)) = data_stack(app) else {
         return Vec::new();
     };
-    // Where each real path came from, so a winner can be named. Built once per
-    // call rather than per row: a deep tree asks this thousands of times.
-    let mut sources: Vec<(PathBuf, String)> = Vec::new();
-    if let Some(inst) = app.created.as_ref() {
-        sources.push((inst.overwrite_dir(), "[Overwrite]".to_string()));
-    }
-    // Unmanaged rows are EXCLUDED. Their `path` is a single plugin file inside
-    // the game's own Data directory, and a longest-prefix match against that
-    // would attribute every vanilla file to whichever DLC row sorted first - and
-    // put a Hide button on the pristine game install.
-    for m in app
-        .mods
-        .iter()
-        .filter(|m| m.is_active() && !m.is_unmanaged())
-    {
-        sources.push((m.path.clone(), m.name.clone()));
-    }
-    if let Some(g) = selected_game(app) {
-        sources.push((g.data_path.clone(), format!("[{}]", g.def.id)));
-    }
     let conflicts = app.conflicts.as_ref();
 
     let mut out: Vec<DataRow> = stack
         .list_dir_typed(dir)
         .into_iter()
         .map(|(name, real, ftype)| {
-            // Longest match wins: a mod nested under another root would
-            // otherwise be attributed to whichever prefix came first.
-            let source = sources
-                .iter()
-                .filter(|(root, _)| real.starts_with(root))
-                .max_by_key(|(root, _)| root.as_os_str().len())
-                .map(|(_, label)| label.clone())
-                .unwrap_or_default();
+            let source = data_source(&sources, &real);
             let md = fs::symlink_metadata(&real).ok();
             let is_dir = ftype.map(|t| t.is_dir()).unwrap_or_else(|| real.is_dir());
             // The conflict map is keyed by lowercased relative path and is
@@ -435,7 +451,7 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
         // dropped if nothing under it survived.
         let query = app.data_query.trim().to_lowercase();
         let filtering = !query.is_empty() || app.data_conflicts_only;
-        for row in cached_merged_listing(app, dir) {
+        for row in cached_merged_listing(app, dir).iter() {
             // Checked against the KEPT count, and re-checked after each subtree.
             // Filtering removes rows again, so `out.len()` alone stopped being a
             // bound the moment a filter was typed: the walk then stat'd the
@@ -443,21 +459,26 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
             if out.len() >= limit {
                 return;
             }
+            let keeps = !filtering
+                || (row.name.to_lowercase().contains(&query)
+                    && (!app.data_conflicts_only || row.conflicted));
+            // A file that does not match has nothing under it to earn it a row,
+            // so it is passed over before its path is built or it is cloned: a
+            // selective filter crosses nearly the whole tree on every redraw.
+            if !keeps && !row.is_dir {
+                continue;
+            }
             let rel = if dir.is_empty() {
                 row.name.clone()
             } else {
                 format!("{dir}/{}", row.name)
             };
             let expanded = row.is_dir && (app.data_expanded.contains(&rel) || filtering);
-            let keeps = !filtering
-                || (row.name.to_lowercase().contains(&query)
-                    && (!app.data_conflicts_only || row.conflicted));
             let at = out.len();
-            let is_dir = row.is_dir;
             out.push(TreeRow {
                 depth,
                 rel: rel.clone(),
-                row,
+                row: row.clone(),
             });
             if expanded {
                 walk(app, &rel, depth + 1, limit, out);
@@ -468,7 +489,7 @@ pub(crate) fn data_tree_rows(app: &App, limit: usize) -> Vec<TreeRow> {
             // and shorten the list below the budget, suppressing the "showing
             // the first N" notice that explains why.
             let budget_spent = out.len() >= limit;
-            if filtering && !keeps && !budget_spent && (!is_dir || out.len() == at + 1) {
+            if !keeps && !budget_spent && out.len() == at + 1 {
                 out.remove(at);
             }
         }

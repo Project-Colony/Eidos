@@ -1750,6 +1750,15 @@ pub(crate) struct DataRow {
 /// cloning ~5k Strings per redraw (which is what it did, and what made the
 /// "cache" allocate proportionally to its own payload).
 type CachedListing = (u64, std::rc::Rc<Vec<String>>);
+/// The same for one directory of the Data tab's merged view.
+type CachedDataListing = (u64, std::rc::Rc<Vec<DataRow>>);
+/// The Data tab's union and its layer labels, with the generation they were
+/// built at (see [`view::data_stack`]).
+type CachedDataStack = (
+    u64,
+    std::rc::Rc<eidos_core::LayerStack>,
+    std::rc::Rc<view::DataSources>,
+);
 
 struct App {
     installer: Option<installers::Wizard>,
@@ -2235,7 +2244,7 @@ struct App {
     /// relative to `Data`, `""` for the root), each with the generation it was
     /// built at. The tree merges a level at a time, so only the directories the
     /// user actually opened are ever read.
-    data_listing: std::cell::RefCell<HashMap<String, (u64, Vec<DataRow>)>>,
+    data_listing: std::cell::RefCell<HashMap<String, CachedDataListing>>,
     /// The profile chip row's data: every profile name and which one is active.
     ///
     /// Both were read from disk on EVERY frame of the main screen - a `read_dir`
@@ -2257,7 +2266,7 @@ struct App {
     /// merge beside it: whiteouts, opaque directories, hidden names, case-folded
     /// dedup and NTFS collation all live in one place, and the tab can no longer
     /// disagree with the filesystem the game sees.
-    data_stack: std::cell::RefCell<Option<(u64, std::rc::Rc<eidos_core::LayerStack>)>>,
+    data_stack: std::cell::RefCell<Option<CachedDataStack>>,
     /// Free-text filter over the Data tree.
     data_query: String,
     /// Show only paths more than one mod provides.
@@ -4241,7 +4250,7 @@ mod tests {
             String::new(),
             (
                 app.view_generation.get(),
-                vec![DataRow {
+                std::rc::Rc::new(vec![DataRow {
                     name: "SKSE".into(),
                     source: "[skyrimse]".into(),
                     is_dir: true,
@@ -4249,7 +4258,7 @@ mod tests {
                     size: None,
                     mtime: None,
                     conflicted: false,
-                }],
+                }]),
             ),
         );
         app.listing_cache.borrow_mut().insert(
@@ -10354,6 +10363,24 @@ mod tests {
         assert_eq!(m.size, Some(1));
         assert!(m.real.ends_with("mods/AAA/mod.esp"), "{:?}", m.real);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_data_source_is_the_longest_root_found_by_lookup() {
+        // Attribution used to scan every root per entry, O(entries x mods). The
+        // lookup must keep its longest-prefix rule: a mod nested under another
+        // root belongs to the inner one, and a sibling that merely shares a
+        // string prefix (`mods/A` vs `mods/AB`) is not a match at all.
+        let mut sources = DataSources::new();
+        sources.insert(PathBuf::from("/i/mods/A"), "A".to_string());
+        sources.insert(PathBuf::from("/i/mods/A/inner"), "Inner".to_string());
+        sources.insert(PathBuf::from("/g/Data"), "[skyrimse]".to_string());
+        let src = |p: &str| data_source(&sources, Path::new(p));
+        assert_eq!(src("/i/mods/A/inner/x.nif"), "Inner");
+        assert_eq!(src("/i/mods/A/meshes/x.nif"), "A");
+        assert_eq!(src("/i/mods/A"), "A");
+        assert_eq!(src("/i/mods/AB/x.nif"), "");
+        assert_eq!(src("/g/Data/Skyrim.esm"), "[skyrimse]");
     }
 
     #[test]
