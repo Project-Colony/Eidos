@@ -270,9 +270,10 @@ fn reserve_folder(
 /// any point leaves folders either revision can take. Symmetric too: going back
 /// to an older revision takes its folders back from the newer one.
 ///
-/// Returns the folders another revision still owns that this one does not use.
-/// They stay installed and enabled - removing a mod is the user's call - so the
-/// report has to name them.
+/// Returns the folders another revision still owns that this one does not use
+/// and the active profile still enables. They stay installed and enabled -
+/// removing a mod is the user's call - so the report has to name them until
+/// the user disables or removes them.
 pub fn adopt_other_revisions(
     inst: &Instance,
     c: &Collection,
@@ -299,6 +300,14 @@ pub fn adopt_other_revisions(
         .into_iter()
         .filter(|p| *p != active)
         .flat_map(|p| inst.profile(&p).modlist())
+        .filter(|m| m.is_active())
+        .map(|m| m.name)
+        .collect();
+    // The leftover note asks the user to disable a folder, and it holds the
+    // install short of faithful, so it must go away once they have.
+    let enabled_here: std::collections::HashSet<String> = inst
+        .modlist()
+        .into_iter()
         .filter(|m| m.is_active())
         .map(|m| m.name)
         .collect();
@@ -425,6 +434,7 @@ pub fn adopt_other_revisions(
             // A folder this revision records is one it uses, whoever marks it.
             if eidos_install::fix_directory_name(folder).as_deref() == Some(folder.as_str())
                 && !state.folders.values().any(|f| f.eq_ignore_ascii_case(folder))
+                && enabled_here.contains(folder)
                 && owns_folder(&mods.join(folder), &marker(&other_owner, key))
             {
                 leftovers.push(Note {
@@ -1619,6 +1629,8 @@ mod cache_tests {
         let body = serde_json::json!({"schema":1,"owner":mark(&owner(1), &key(10)),"recipe":null,"files":{},"exclusions":{}});
         std::fs::write(inst.mods_dir().join("Kept/.eidos-collection-recipe.json"), body.to_string()).unwrap();
         old.save(&InstallState::path(&root, "gate", 1)).unwrap();
+        std::fs::create_dir_all(inst.profile("Default").dir()).unwrap();
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Dropped\n").unwrap();
         let new = gate_manifest(&root, 2, &[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)]);
         (root, inst, new)
     }
@@ -1659,12 +1671,14 @@ mod cache_tests {
     fn an_unchanged_member_keeps_its_installed_status_and_an_updated_one_does_not() {
         use crate::state::Status;
         let (root, inst, new) = gate("status");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
         let mut state = gate_state(2);
         adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
         // Pending would be recovered as Approximate, an install that is not faithful.
         assert_eq!(state.status(&key(10)), &Status::Installed("Kept".into()));
         assert_eq!(state.status(&key(21)), &Status::Pending);
-        // Verified members are not registered again, so adoption enables it.
+        // Verified members are not registered again, so adoption enables an
+        // unlisted one.
         assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1706,7 +1720,6 @@ mod cache_tests {
     #[test]
     fn a_folder_another_profile_enables_is_not_taken_over() {
         let (root, inst, new) = gate("profiles");
-        std::fs::create_dir_all(inst.profile("Default").dir()).unwrap();
         std::fs::create_dir_all(inst.profile("Stable").dir()).unwrap();
         std::fs::write(inst.profile("Stable").dir().join("modlist.txt"), "+Updated\n").unwrap();
         let mut state = gate_state(2);
@@ -1715,6 +1728,17 @@ mod cache_tests {
         assert_eq!(state.folders.get(&key(21)), None);
         assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
         assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_leftover_the_user_disabled_is_no_longer_reported() {
+        let (root, inst, new) = gate("disabled");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n-Dropped\n").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        // Disabling is what the note asks for, so it must clear the note.
+        assert!(leftovers.is_empty(), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
