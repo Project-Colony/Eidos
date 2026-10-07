@@ -3541,6 +3541,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         ed.current,
                         inst.active().name
                     ));
+                    // Morrowind.ini (and plugins.txt) live in the profile's plugin
+                    // state: the cached load order and the hash its next write is
+                    // checked against are both stale now, and left so that write
+                    // was refused as another process's change. Re-read both, which
+                    // also picks up a `[Game Files]` line typed here.
+                    if path.starts_with(inst.active().plugins_state_dir()) {
+                        invalidate_plugins(app);
+                    }
                 }
                 Err(e) => app.status = Some(format!("Could not save {}: {e}", ed.current)),
             }

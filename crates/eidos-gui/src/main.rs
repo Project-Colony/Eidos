@@ -6124,6 +6124,47 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn saving_morrowind_ini_in_the_window_does_not_block_its_next_plugin_edit() {
+        // The INI editor writes the same Morrowind.ini the plugin state is hashed
+        // from; the window's own save is not another process's sort.
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["A.esp", "B.esp"] {
+            fs::write(game.data_path.join(name), []).unwrap();
+        }
+        let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+        app.tab = Tab::Plugins;
+        let spec = game.plugin_spec().unwrap();
+        app.plugins = compute_plugins(&app);
+        let list = app.plugins.clone().unwrap();
+        write_plugin_state(&app, &list, &spec).unwrap();
+
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        {
+            let ed = app.ini_editor.as_mut().expect("the editor opened");
+            assert_eq!(ed.current, "Morrowind.ini");
+            let edited = ed.content.text().replace("[General]", "[General]\r\nSubtitles=1");
+            ed.content = iced::widget::text_editor::Content::with_text(&edited);
+            ed.dirty = true;
+        }
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert!(!app.ini_editor.as_ref().unwrap().dirty, "status={:?}", app.status);
+
+        let mut next = app.plugins.clone().unwrap();
+        assert!(next.set_enabled("B.esp", false));
+        write_plugin_state(&app, &next, &spec).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// An instance with two profiles and a save in the active one.
     fn saves_app() -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
