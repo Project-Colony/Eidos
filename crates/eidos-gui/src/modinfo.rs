@@ -2565,6 +2565,12 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
         });
     }
 
+    // Recorded BEFORE the state is read, for the same reason as `reload_mods`:
+    // a write in between may refuse the next edit, never let a stale list over.
+    if let Some(inst) = app.created.as_ref() {
+        app.plugins_seen
+            .set(Some(plugin_state_fingerprint(&inst.active(), &spec)));
+    }
     // The load order is per-profile: read the active profile's own copy once it
     // has one, and otherwise the prefix's (which the profile adopts on first
     // launch). Same primitive as the launch path, so for PlainList games this also
@@ -2668,6 +2674,19 @@ pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
     }
 }
 
+/// A hash of the profile's own plugin state - the files `compute_plugins` reads
+/// and `write_plugin_state` rewrites. Not the prefix shadow: other tools write
+/// that, and it is never read while the profile owns a state.
+fn plugin_state_fingerprint(prof: &eidos_instance::Profile, spec: &GameSpec) -> u64 {
+    let dir = prof.plugins_state_dir();
+    let read = |path: Option<PathBuf>| path.and_then(|p| std::fs::read(p).ok());
+    content_hash(&[
+        read(eidos_plugins::newest_variant(&dir, spec.active_file())),
+        read(eidos_plugins::newest_variant(&dir, "loadorder.txt")),
+        read(Some(prof.locked_order_path())),
+    ])
+}
+
 pub(crate) fn write_plugin_state(
     app: &App,
     list: &PluginList,
@@ -2684,6 +2703,21 @@ pub(crate) fn write_plugin_state(
         .transpose()?;
     if let Some(inst) = app.created.as_ref() {
         let prof = inst.active();
+        // `list` was read when the tab was opened, perhaps long ago. Since then
+        // `eidos sort`, `eidos collection` or a session another window started
+        // may have rewritten the profile's order, and writing `list` over it
+        // would revert that silently - then snapshot the revert, so not even the
+        // damage card could tell. Both callers re-read the list on Err. Checked
+        // before the seed below, which would itself change the files.
+        let unchanged = app
+            .plugins_seen
+            .get()
+            .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
+        if !unchanged {
+            return Err(std::io::Error::other(
+                "another Eidos process changed the load order; it has been reloaded - redo the change",
+            ));
+        }
         // Adopt the game's state first, as launch and sort do, failing closed.
         // Writing into an unseeded profile built Morrowind.ini from nothing: a
         // `[Game Files]`-only stub that every later launch deployed in place of
@@ -2701,6 +2735,8 @@ pub(crate) fn write_plugin_state(
         if !damage_flagged {
             let _ = prof.snapshot_plugin_state();
         }
+        app.plugins_seen
+            .set(Some(plugin_state_fingerprint(&prof, spec)));
     }
     if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
         if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {

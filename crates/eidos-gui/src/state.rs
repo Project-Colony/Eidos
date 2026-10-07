@@ -279,7 +279,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         created: None,
         error: None,
         mods: Vec::new(),
+        modlist_seen: std::cell::Cell::new(None),
         plugins: None,
+        plugins_seen: std::cell::Cell::new(None),
         conflicts: None,
         archive_epoch: std::cell::Cell::new(1),
         archive_completed_epoch: None,
@@ -517,9 +519,11 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         let _ = inst.ensure_profiles();
         remember_open(&inst, id);
         app.selected = Some(i);
-        app.mods = modlist_with_unmanaged(&inst, app.games.get(i));
-        app.categories = Some(inst.category_factory());
         app.created = Some(inst);
+        // Through `reload_mods`, which also records what `modlist.txt` held: a
+        // window Steam opened is exactly the one most likely to sit next to
+        // another, and without the record its first save could not tell.
+        reload_mods(app);
         app.screen = Screen::Main;
     };
     if let Some((i, inst)) = pinned {
@@ -890,6 +894,9 @@ pub(crate) fn reload_mods(app: &mut App) {
     // across by name; anything that disappeared is dropped rather than silently
     // re-pointed at whatever took its place.
     let held = hold_mod_selection(app);
+    // Taken BEFORE the read: a write landing in between then makes the next
+    // save refuse needlessly, instead of letting a stale list through.
+    app.modlist_seen.set(Some(modlist_fingerprint(&inst)));
     app.mods = modlist_with_unmanaged(&inst, game.as_ref());
     put_mod_selection(app, held);
     // Same moment the list is rebuilt: a category could have been added by an
@@ -2284,6 +2291,28 @@ pub(crate) fn move_block(mods: &mut Vec<ModEntry>, targets: &[usize], dest: usiz
     at
 }
 
+/// A content hash, for telling whether a file changed since it was read. Not
+/// mtime and size: two writes within one timestamp tick can leave both equal,
+/// and flipping `+Mod` to `-Mod` does not change the size.
+pub(crate) fn content_hash(value: &impl std::hash::Hash) -> u64 {
+    use std::hash::Hasher;
+    let mut h = std::hash::DefaultHasher::new();
+    value.hash(&mut h);
+    h.finish()
+}
+
+fn modlist_fingerprint(inst: &Instance) -> u64 {
+    content_hash(&inst.active().modlist_bytes())
+}
+
+/// Whether `modlist.txt` still holds what `app.mods` was read from (or nothing
+/// was ever recorded to compare against).
+fn modlist_unchanged(app: &App, inst: &Instance) -> bool {
+    app.modlist_seen
+        .get()
+        .is_none_or(|seen| seen == modlist_fingerprint(inst))
+}
+
 /// Persist the mod list, surfacing a failure instead of losing it silently (a
 /// full disk or permission problem would otherwise revert the user's changes on
 /// the next restart with no warning). Returns the error text, if any.
@@ -2296,9 +2325,36 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
         Ok(l) => l,
         Err(e) => return Some(format!("Not saved: {e}.")),
     };
-    inst.save_modlist(&app.mods)
-        .err()
-        .map(|e| format!("Could not save the mod list: {e}"))
+    // The lock serialises the writes, not this list's read, which may be minutes
+    // old: `eidos install` or a collection run since then rewrote the file, and
+    // writing `app.mods` wholesale would erase what they added (their mods come
+    // back DISABLED, the collection's order is gone). `mods_changed` reloads.
+    if !modlist_unchanged(app, inst) {
+        return Some(
+            "Not saved: another Eidos process changed the mod list. It has been reloaded - redo the change."
+                .to_string(),
+        );
+    }
+    if let Err(e) = inst.save_modlist(&app.mods) {
+        return Some(format!("Could not save the mod list: {e}"));
+    }
+    app.modlist_seen.set(Some(modlist_fingerprint(inst)));
+    None
+}
+
+/// [`Instance::forget_mods`] for mods the window has just deleted. It edits
+/// `modlist.txt` itself, so the record of what the window last saw follows it -
+/// otherwise the save right after would take the window's own edit for another
+/// process's. Only when the list was current before: following an outside change
+/// too would let that save erase it.
+pub(crate) fn forget_removed_mods(app: &App, names: &[String]) -> Option<std::io::Result<()>> {
+    let inst = app.created.as_ref()?;
+    let current = modlist_unchanged(app, inst);
+    let forgot = inst.forget_mods(names);
+    if current {
+        app.modlist_seen.set(Some(modlist_fingerprint(inst)));
+    }
+    Some(forgot)
 }
 
 /// Invalidate every memoised view listing. Cheap: the listings rebuild lazily on
@@ -2628,10 +2684,11 @@ pub(crate) fn put_mod_selection(app: &mut App, held: HeldSelection) {
 pub(crate) fn mods_changed(app: &mut App) {
     if let Some(err) = save_mods(app) {
         app.status = Some(err);
-        // The write was refused (another process owns the instance): the
-        // in-memory edit will never reach disk, and leaving it displayed shows
-        // the user a state that silently evaporates when they close the window.
-        // Disk is the truth; resync the view to it.
+        // The write was refused (another process owns the instance, or rewrote
+        // the list since it was read): the in-memory edit will never reach disk,
+        // and leaving it displayed shows the user a state that silently
+        // evaporates when they close the window. Disk is the truth; resync the
+        // view to it.
         reload_mods(app);
     }
     // The merged view depends on which mods are enabled and in what order, not

@@ -2469,8 +2469,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             // Forgotten in every profile, not only this one: a line
                             // left in another profile counts as a missing mod there,
                             // and enough of them wedge it (see ConfirmBatchRemove).
-                            let forgot = app.created.as_ref()
-                                .map(|inst| inst.forget_mods(std::slice::from_ref(&m.name)));
+                            let forgot =
+                                forget_removed_mods(app, std::slice::from_ref(&m.name));
                             app.status = Some(match forgot {
                                 Some(Err(e)) => format!(
                                     "Removed '{}'. The mod list could not be updated: {e}.",
@@ -6266,7 +6266,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // what an unmounted drive looks like - the save, and every one after
             // it, would be refused. Only the folders really deleted are forgotten:
             // one that failed keeps its line, its slot and its enabled state.
-            let forgot = app.created.as_ref().map(|inst| inst.forget_mods(&gone));
+            let forgot = forget_removed_mods(app, &gone);
             if let Some(Err(e)) = forgot {
                 status = format!("{status} The mod list could not be updated: {e}.");
             }

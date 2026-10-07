@@ -121,6 +121,14 @@ impl Profile {
         own
     }
 
+    /// The raw bytes of the file [`Profile::modlist`] reads (`None` when there is
+    /// none). A caller holding a list it read earlier compares these to tell
+    /// whether another process has rewritten the file since: the instance lock
+    /// serialises the writes, not a read made minutes before the write.
+    pub fn modlist_bytes(&self) -> Option<Vec<u8>> {
+        fs::read(self.modlist_source()).ok()
+    }
+
     pub fn create(&self) -> io::Result<()> {
         fs::create_dir_all(self.dir())
     }
@@ -350,9 +358,13 @@ impl Profile {
             let _ = fs::copy(&target, target.with_extension("txt.bak"));
         }
         // Through the shared writer, whose temp name is unique per process: the
-        // window and `eidos install` both write this file and neither serialises
-        // against the other (flock is advisory and the CLI does not take it), so
-        // a fixed temp name let two of them splice the curated order.
+        // window, `eidos install` and `eidos collection` all write this file.
+        // Every one of them takes the instance lock first, so the writes are
+        // serialised; the unique temp name is defence in depth against a fixed
+        // name letting two writers splice the curated order. What the lock does
+        // NOT cover is a caller whose `mods` was read before another process
+        // wrote: this rewrites the whole file from that list, so such a caller
+        // must compare `modlist_bytes` with what it read (the window does).
         crate::write_atomic(&target, s.as_bytes())
     }
 
