@@ -7494,6 +7494,43 @@ mod tests {
     }
 
     #[test]
+    fn a_rename_in_a_stale_window_is_refused_before_the_folder_moves() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "SkyUI"] {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst.clone());
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        for m in app.mods.iter_mut() {
+            m.enabled = true;
+        }
+        mods_changed(&mut app);
+        // `eidos install` in a terminal while the window is open.
+        fs::create_dir_all(root.join("mods").join("Foo")).unwrap();
+        inst.register_installed_mod("Foo").unwrap();
+
+        let i = app.mods.iter().position(|m| m.name == "SkyUI").unwrap();
+        let _ = update_inner(&mut app, Message::RenameStart(i));
+        let _ = update_inner(&mut app, Message::RenameChanged("SkyUI 5.2".to_string()));
+        let _ = update_inner(&mut app, Message::RenameCommit);
+
+        // Refused while the folder still had its old name, and said so: had it
+        // moved first, the reload would have listed "SkyUI 5.2" DISABLED.
+        assert!(root.join("mods").join("SkyUI").is_dir(), "status={:?}", app.status);
+        assert!(!root.join("mods").join("SkyUI 5.2").exists());
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+        let listed = inst.modlist();
+        assert!(listed.iter().any(|m| m.name == "SkyUI" && m.enabled));
+        assert!(listed.iter().any(|m| m.name == "Foo" && m.enabled));
+        assert!(app.mods.iter().any(|m| m.name == "Foo"), "the window reloaded");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn renaming_a_mod_leaves_it_where_it_was_and_still_enabled() {
         // The defect, exactly as it was reported: rename a mod and it is
         // "teleported all the way to the top, unticked". The rename itself was

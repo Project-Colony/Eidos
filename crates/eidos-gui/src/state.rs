@@ -2313,6 +2313,25 @@ fn modlist_unchanged(app: &App, inst: &Instance) -> bool {
         .is_none_or(|seen| seen == modlist_fingerprint(inst))
 }
 
+const MODLIST_STALE: &str =
+    "Not saved: another Eidos process changed the mod list. It has been reloaded - redo the change.";
+
+/// For a handler that changes `mods/` itself (renames a folder, creates one)
+/// and then saves: the staleness check, made BEFORE the folder changes. Left
+/// to `save_mods`, the refusal came after it, and the reload then found the
+/// new folder listed nowhere and appended it DISABLED at the top priority
+/// (a renamed mod, a mod built from the Overwrite stopped loading). Reloads and
+/// says so when stale; `true` means refused, leave `mods/` alone.
+pub(crate) fn refuse_stale_modlist(app: &mut App) -> bool {
+    if app.created.as_ref().is_none_or(|inst| modlist_unchanged(app, inst)) {
+        return false;
+    }
+    reload_mods(app);
+    mod_views_changed(app);
+    app.status = Some(MODLIST_STALE.to_string());
+    true
+}
+
 /// Persist the mod list, surfacing a failure instead of losing it silently (a
 /// full disk or permission problem would otherwise revert the user's changes on
 /// the next restart with no warning). Returns the error text, if any.
@@ -2330,10 +2349,7 @@ pub(crate) fn save_mods(app: &App) -> Option<String> {
     // writing `app.mods` wholesale would erase what they added (their mods come
     // back DISABLED, the collection's order is gone). `mods_changed` reloads.
     if !modlist_unchanged(app, inst) {
-        return Some(
-            "Not saved: another Eidos process changed the mod list. It has been reloaded - redo the change."
-                .to_string(),
-        );
+        return Some(MODLIST_STALE.to_string());
     }
     if let Err(e) = inst.save_modlist(&app.mods) {
         return Some(format!("Could not save the mod list: {e}"));
@@ -2691,6 +2707,11 @@ pub(crate) fn mods_changed(app: &mut App) {
         // view to it.
         reload_mods(app);
     }
+    mod_views_changed(app);
+}
+
+/// Everything derived from the mod list, recomputed after it changed.
+fn mod_views_changed(app: &mut App) {
     // The merged view depends on which mods are enabled and in what order, not
     // just on their contents.
     bump_views(app);

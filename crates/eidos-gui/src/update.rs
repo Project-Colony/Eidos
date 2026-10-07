@@ -2080,7 +2080,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(name) = app.overwrite_to_mod.take().map(|s| s.trim().to_string()) else {
                 return Task::none();
             };
-            let Some(inst) = app.created.as_ref() else {
+            // Owned: the staleness check below needs `app` mutably.
+            let Some(inst) = app.created.clone() else {
                 return Task::none();
             };
             let existing = inst.mods_dir().join(&name).exists();
@@ -2094,6 +2095,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
+            // Checked before the move, as Rename does: a save refused after it
+            // reloads a list that does not name the new mod, which comes back
+            // DISABLED - generated output the game then silently stops loading.
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             match inst.overwrite_into_mod(&name) {
                 Ok(dest) => {
                     // Highest priority (the end of the display order), which is where
@@ -2107,12 +2114,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         });
                     }
                     drop_files_cache(app, None);
-                    mods_changed(app);
+                    // Before mods_changed, which replaces it with the reason if
+                    // the save is refused.
                     app.status = Some(if existing {
                         format!("Moved the Overwrite into '{name}'.")
                     } else {
                         format!("Created mod '{name}' from the Overwrite.")
                     });
+                    mods_changed(app);
                 }
                 Err(e) => {
                     app.status = Some(format!("Could not create the mod: {e}"));
@@ -2541,7 +2550,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             // folder moves a live union layer out from under a
                             // running session, and the refused save afterwards
                             // would leave modlist.txt naming a folder that no
-                            // longer exists.
+                            // longer exists. For the same reason the list must be
+                            // known current BEFORE the rename: the lock is
+                            // re-entrant, so the save can then only refuse a
+                            // list another process rewrote, and that has to be
+                            // caught while the folder still has its old name.
                             let Some(inst) = app.created.as_ref() else {
                                 return Task::none();
                             };
@@ -2552,6 +2565,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                     return Task::none();
                                 }
                             };
+                            if refuse_stale_modlist(app) {
+                                return Task::none();
+                            }
                             match fs::rename(&old.path, &dest) {
                                 Ok(()) => {
                                     if let Some(m) = app.mods.get_mut(i) {
@@ -2573,8 +2589,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                         app.collapsed.insert(typed.clone());
                                         save_collapsed(app);
                                     }
-                                    mods_changed(app);
+                                    // Before mods_changed, which replaces it with
+                                    // the reason if the save is refused.
                                     app.status = Some(format!("Renamed to '{typed}'."));
+                                    mods_changed(app);
                                 }
                                 Err(e) => app.status = Some(format!("Rename failed: {e}")),
                             }
@@ -2585,6 +2603,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::AddSeparator(i) => {
             app.menu_mod = None;
+            // Before the folder exists, as Rename does: a refused save after it
+            // reloads the list, and the rename editor opened below would then
+            // sit on whichever unrelated mod took this index.
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             let mods_dir = app.created.as_ref().map(|inst| inst.mods_dir());
             if let Some(mods_dir) = mods_dir {
                 // A unique "Separator N" display name -> folder "<name>_separator".
@@ -4885,6 +4909,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CreateEmptyMod => return update(app, Message::CreateEmptyModAt(app.mods.len())),
         Message::CreateEmptyModAt(at) => {
             app.menu_mod = None;
+            // Same as AddSeparator: checked before the folder is created.
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             if let Some(inst) = &app.created {
                 // A unique "New Mod N" name, never colliding on disk.
                 let mut n = 1usize;
