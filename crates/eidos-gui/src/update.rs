@@ -439,6 +439,9 @@ fn collection_on_worker(
     };
 
     state.validate_revision(&rev.slug, rev.revision_number, &rev.game_domain)?;
+    // Before anything is reserved: members another revision of this collection
+    // already installed keep their folders instead of colliding with them.
+    let leftovers = eidos_collections::driver::adopt_other_revisions(inst, c, &mut state)?;
 
     let total = c.mods.len().max(1);
     let mut say = |_line: String| {};
@@ -477,6 +480,7 @@ fn collection_on_worker(
             ),
         });
     }
+    report.deferred.extend(leftovers);
     if report.aborted {
         return Err(report.render());
     }

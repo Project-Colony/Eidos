@@ -185,6 +185,16 @@ pub(crate) fn cmd_collection(args: &[String]) {
         }
     };
 
+    // Before anything is reserved: members another revision of this collection
+    // already installed keep their folders instead of colliding with them.
+    let leftovers = match driver::adopt_other_revisions(&inst, c, &mut state) {
+        Ok(l) => l,
+        Err(e) => {
+            eidos_log::warn!("eidos collection: {e}");
+            exit(1);
+        }
+    };
+
     let mut say = |line: String| println!("  {line}");
     let mut hooks = driver::RealHooks {
         nexus: &nexus,
@@ -207,6 +217,7 @@ pub(crate) fn cmd_collection(args: &[String]) {
             detail: format!("installed as \"{folder}\", because a mod of yours already had that name"),
         });
     }
+    report.deferred.extend(leftovers);
 
     if report.aborted {
         eidos_log::warn!("{}", report.render());
