@@ -256,9 +256,10 @@ fn reserve_folder(
 /// on both sides; anything ambiguous installs fresh. The folder must still
 /// carry the other revision's exact marker - a folder the user reinstalled by
 /// hand has lost it - and must hold no saved installer answers, which are tied
-/// to the old archive and owner. The receipt moves with the folder, so an
-/// unchanged member verifies in place and a changed one is replaced inside the
-/// same folder, keeping its place in the mod list.
+/// to the old archive and owner. The receipt moves with the folder, and an
+/// unchanged member's status with it, so an unchanged member verifies in place
+/// and a changed one is replaced inside the same folder, keeping its place in
+/// the mod list.
 ///
 /// Repeatable: a folder already carrying THIS revision's marker is taken again,
 /// so a crash before the new state is saved loses nothing. Symmetric too: going
@@ -352,6 +353,26 @@ pub fn adopt_other_revisions(
             meta.set("eidosCollectionOwner", &to);
             meta.write(&path.join("meta.ini"))
                 .map_err(|e| e.to_string())?;
+            // An unchanged member keeps its status too. Left Pending, the run
+            // recovered it as Approximate ("interrupted status save") unless it
+            // had clone hashes, so nearly every update read as not faithful for
+            // good. Install still verifies it, and replaces it when that fails.
+            // An updated member stays Pending: it is replaced anyway. A verified
+            // member is never registered again, so this does it, as the
+            // recovery did: a profile that does not list the folder enables it,
+            // one that lists it keeps its own decision.
+            if key == other_key && state.status(&key).is_open() {
+                let seeded = match other.status(&other_key) {
+                    Status::Installed(_) => Status::Installed(folder.clone()),
+                    Status::Approximate(_, why) => Status::Approximate(folder.clone(), why.clone()),
+                    _ => Status::Pending,
+                };
+                if seeded != Status::Pending {
+                    inst.register_installed_mod(folder)
+                        .map_err(|e| e.to_string())?;
+                    state.set(&key, seeded);
+                }
+            }
             state.folders.insert(key, folder.clone());
         }
         for (key, folder) in &folders {
@@ -1558,6 +1579,20 @@ mod cache_tests {
         let mut again = gate_state(2);
         assert_eq!(adopt_other_revisions(&inst, &new, &mut again).unwrap(), leftovers);
         assert_eq!(again.folders, state.folders);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unchanged_member_keeps_its_installed_status_and_an_updated_one_does_not() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("status");
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        // Pending would be recovered as Approximate, an install that is not faithful.
+        assert_eq!(state.status(&key(10)), &Status::Installed("Kept".into()));
+        assert_eq!(state.status(&key(21)), &Status::Pending);
+        // Verified members are not registered again, so adoption enables it.
+        assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
         std::fs::remove_dir_all(root).unwrap();
     }
 
