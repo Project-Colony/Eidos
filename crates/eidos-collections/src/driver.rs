@@ -299,6 +299,15 @@ pub fn adopt_other_revisions(
             .filter(|k| folders.contains_key(*k))
             .map(|k| (k.clone(), k.clone()))
             .collect();
+        // The INI Tweaks folder is no member, but it is this collection's output
+        // too: unpaired, it was installed again as "(2)" and the old one was
+        // reported as unused. Only when this revision ships INI Tweaks at all.
+        if folders.contains_key(INI_TWEAKS_KEY)
+            && ini_tweaks_source(&revision_dir(&inst.root, &state.slug, state.revision))
+                .is_ok_and(|src| src.is_some())
+        {
+            pairs.push((INI_TWEAKS_KEY.into(), INI_TWEAKS_KEY.into()));
+        }
         let dir = revision_dir(&inst.root, &other.slug, other.revision);
         if let Some(text) = cached_manifest(&dir)? {
             let old = crate::read(&text)?.collection;
@@ -1385,6 +1394,18 @@ pub fn apply_plugin_rules(
     }
 }
 
+/// The state key of the folder [`apply_ini_tweaks`] installs.
+const INI_TWEAKS_KEY: &str = "aux:ini-tweaks";
+
+/// The collection's "INI Tweaks" directory, in whatever case its author used.
+fn ini_tweaks_source(dir: &Path) -> std::io::Result<Option<PathBuf>> {
+    Ok(std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).find(|p| {
+        p.is_dir()
+            && p.file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
+    }))
+}
+
 /// Copy the collection's INI fragments in as a mod of their own.
 pub fn apply_ini_tweaks(
     inst: &Instance,
@@ -1395,13 +1416,7 @@ pub fn apply_ini_tweaks(
     report: &mut Report,
 ) {
     let result = (|| -> Result<(), String> {
-        let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-        let src = entries.filter_map(Result::ok).map(|e| e.path()).find(|p| {
-            p.is_dir()
-                && p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
-        });
-        let Some(src) = src else {
+        let Some(src) = ini_tweaks_source(dir).map_err(|e| e.to_string())? else {
             return Ok(());
         };
         let root = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
@@ -1421,7 +1436,7 @@ pub fn apply_ini_tweaks(
         if !files.iter().any(|f| f.path().is_file()) {
             return Ok(());
         }
-        let key = "aux:ini-tweaks";
+        let key = INI_TWEAKS_KEY;
         let owner = format!("{}:{}:{}", state.game_domain, state.slug, state.revision);
         let marker = serde_json::to_string(&[owner.as_str(), key]).expect("strings serialize");
         let wanted = safe(&format!("{} - INI Tweaks", c.info.name));
@@ -1593,6 +1608,27 @@ mod cache_tests {
         assert_eq!(state.status(&key(21)), &Status::Pending);
         // Verified members are not registered again, so adoption enables it.
         assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_ini_tweaks_folder_moves_to_a_revision_that_still_ships_ini_tweaks() {
+        let (root, inst, new) = gate("ini");
+        let folder = inst.mods_dir().join("Gate - INI Tweaks");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut meta = eidos_instance::ModMeta::default();
+        meta.set("eidosCollectionOwner", &mark(&owner(1), INI_TWEAKS_KEY));
+        meta.write(&folder.join("meta.ini")).unwrap();
+        let path = InstallState::path(&root, "gate", 1);
+        let mut old = InstallState::load(&path).unwrap().unwrap();
+        old.folders.insert(INI_TWEAKS_KEY.into(), "Gate - INI Tweaks".into());
+        old.save(&path).unwrap();
+        std::fs::create_dir_all(crate::state::revision_dir(&root, "gate", 2).join("INI Tweaks")).unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state).unwrap();
+        assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
+        assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
+        assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
         std::fs::remove_dir_all(root).unwrap();
     }
 
