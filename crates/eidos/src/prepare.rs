@@ -579,6 +579,28 @@ fn hidden_prefix_saves(prof_saves: &std::path::Path, prefix_saves: &std::path::P
         .collect()
 }
 
+/// Whether the hidden set differs from the one the last launch warned about,
+/// recording the new set. The warning is about files the user has to move by
+/// hand, and it repeated on every launch until they did, burying itself in the
+/// log; now it comes once per change. An empty set clears the record, so the
+/// same names turning up again later are reported again. The record sits beside
+/// `.seeded` on the profile side: the cloud sync only copies save data out.
+fn hidden_saves_changed(prof_saves: &std::path::Path, hidden: &[String]) -> bool {
+    let record = prof_saves.join(".hidden-saves-warned");
+    if hidden.is_empty() {
+        let _ = std::fs::remove_file(record);
+        return false;
+    }
+    let mut names = hidden.to_vec();
+    names.sort();
+    let body = names.join("\n");
+    if std::fs::read_to_string(&record).is_ok_and(|known| known == body) {
+        return false;
+    }
+    let _ = std::fs::write(record, body);
+    true
+}
+
 /// Content provenance: matching sizes and second-resolution mtimes cannot prove
 /// the prefix still holds our previous copy. A stdlib hash change merely causes
 /// a conservative rescue on the first sync after an upgrade.
@@ -701,7 +723,7 @@ pub(crate) fn prepare_saves(
         );
     }
     let hidden = hidden_prefix_saves(&prof.saves_dir(), &source);
-    if !hidden.is_empty() {
+    if hidden_saves_changed(&prof.saves_dir(), &hidden) {
         eidos_log::warn!(
             "eidos play: {} save(s) in {} are not in profile '{}' (another device, a launch \
              without Eidos or another instance wrote them) and stay hidden while its saves \
@@ -1313,7 +1335,14 @@ mod rescue_tests {
         // Made on a Steam Deck and downloaded by Steam Cloud.
         stamped(&prefix.join("Deck.ess"), b"deck", t + 10);
         stamped(&prefix.join("Deck.skse"), b"deck cosave", t + 10);
-        assert_eq!(hidden_prefix_saves(&saves, &prefix), vec!["Deck.ess".to_string()]);
+        let hidden = hidden_prefix_saves(&saves, &prefix);
+        assert_eq!(hidden, vec!["Deck.ess".to_string()]);
+        // Warned once per change, not on every launch.
+        assert!(hidden_saves_changed(&saves, &hidden));
+        assert!(!hidden_saves_changed(&saves, &hidden));
+        assert!(hidden_saves_changed(&saves, &["Deck.ess".into(), "Deck2.ess".into()]));
+        assert!(!hidden_saves_changed(&saves, &[]));
+        assert!(hidden_saves_changed(&saves, &hidden));
         fs::remove_dir_all(root).unwrap();
     }
 
