@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.4](https://github.com/Project-Colony/Eidos/compare/v1.18.3...v1.18.4) (2026-10-08)
+
+
+### Fixes
+
+* data-integrity and responsiveness fixes from the 1.18.2 audit ([#72](https://github.com/Project-Colony/Eidos/issues/72)) ([14a497f](https://github.com/Project-Colony/Eidos/commit/14a497fa69249e5b605b38ae4b50adddca54cf7b))
+
 ## [1.18.3](https://github.com/Project-Colony/Eidos/compare/v1.18.2...v1.18.3) (2026-10-08)
 
 
