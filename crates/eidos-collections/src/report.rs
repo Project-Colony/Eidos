@@ -47,6 +47,9 @@ pub struct Report {
     /// Members installed under a different folder name because a mod that is
     /// not this collection's already had that one.
     pub renamed: Vec<Note>,
+    /// Members whose previous folder differed from its install receipt, so it
+    /// was kept beside the replacement instead of deleted.
+    pub kept: Vec<Note>,
     /// Unverified requirements and remaining collection-wide choices, including
     /// unknown runtime evidence, an approved runtime mismatch, and INI selection.
     pub deferred: Vec<Note>,
@@ -128,6 +131,11 @@ impl Report {
             &mut out,
             "Installed under a different name, because a mod of yours already had it:",
             &self.renamed,
+        );
+        section(
+            &mut out,
+            "Replaced, with the previous folder kept beside it:",
+            &self.kept,
         );
         section(&mut out, "Load order:", &self.loot_notes);
         section(

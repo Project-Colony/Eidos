@@ -95,6 +95,7 @@ fn a_previously_unavailable_member_does_not_own_an_existing_personal_mod() {
         collection_domain: "skyrimspecialedition".into(),
         owner: "test:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     let folder = hooks
         .reserve(
@@ -254,6 +255,7 @@ fn a_stale_download_sidecar_does_not_hide_a_later_complete_archive() {
         collection_domain: "skyrimspecialedition".into(),
         owner: "test:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     assert_eq!(
         hooks.obtain(&member),
@@ -348,6 +350,7 @@ fn bundle_clone_patch_pipeline_resumes_and_failed_replacement_retains_owned_and_
         collection_domain: c.info.domain_name.clone(),
         owner: "synthetic:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     let mut state = InstallState::default();
     let mut durable = state.clone();
@@ -459,6 +462,7 @@ fn omod_recipes_patch_before_publication_and_hashes_use_decoded_sources() {
         collection_domain: "oblivion".into(),
         owner: "omod:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     for (name, hashes) in [
         ("Plain", vec![]),
@@ -520,4 +524,73 @@ fn omod_recipes_patch_before_publication_and_hashes_use_decoded_sources() {
         .file_name()
         .to_string_lossy()
         .starts_with(".eidos-install")));
+}
+
+#[test]
+fn replacing_a_member_keeps_a_folder_that_holds_files_its_receipt_never_saw() {
+    let temp = Fixture::new();
+    let inst = eidos_instance::Instance::portable(temp.0.join("instance"));
+    inst.create().unwrap();
+    let def = eidos_games::catalog()
+        .iter()
+        .find(|g| g.id == "skyrimse")
+        .unwrap();
+    let game = eidos_games::DetectedGame {
+        source: Default::default(),
+        def,
+        install_path: temp.0.join("game"),
+        data_path: temp.0.join("game/Data"),
+        compatdata: None,
+        steam_name: "test".into(),
+    };
+    fs::create_dir_all(&game.data_path).unwrap();
+    let member = Mod {
+        name: "Member".into(),
+        source: Source {
+            file_id: Some(1),
+            mod_id: Some(1),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let archive = archive(&temp.0);
+    let nexus = eidos_nexus::Nexus::with_bearer("synthetic-no-network");
+    let mut say = |_: String| {};
+    let mut hooks = RealHooks {
+        payload_root: std::path::PathBuf::new(),
+        allow_runtime_mismatch: false,
+        nexus: &nexus,
+        inst: &inst,
+        game: &game,
+        game_id: "skyrimse".into(),
+        say: &mut say,
+        collection_domain: "skyrimspecialedition".into(),
+        owner: "test:1".into(),
+        renamed: vec![],
+        kept: vec![],
+    };
+    let folder = hooks.reserve(&member, None).unwrap();
+    let installed = hooks.install(&member, &archive, &folder);
+    assert!(matches!(installed, Installed::Ok(_)), "{installed:?}");
+    let backup = inst.mods_dir().join(format!("{folder}_backup"));
+
+    // An untouched member is replaced outright: nothing is kept.
+    let installed = hooks.install(&member, &archive, &folder);
+    assert!(matches!(installed, Installed::Ok(_)), "{installed:?}");
+    assert!(!backup.exists());
+    assert!(hooks.kept.is_empty());
+
+    // A file the user moved in (Sync to Mods) is not in the receipt.
+    let mine = inst.mods_dir().join(&folder).join("scripts/mine.pex");
+    fs::write(&mine, b"my edit").unwrap();
+    let installed = hooks.install(&member, &archive, &folder);
+    assert!(matches!(installed, Installed::Ok(_)), "{installed:?}");
+    assert!(!mine.exists());
+    assert_eq!(fs::read(backup.join("scripts/mine.pex")).unwrap(), b"my edit");
+    assert_eq!(hooks.kept, vec![(member.name.clone(), backup)]);
+
+    let mut report = eidos_collections::report::Report::default();
+    hooks.drain_notes(&mut report);
+    assert_eq!(report.kept.len(), 1);
+    assert!(report.render().contains("Member_backup"), "{}", report.render());
 }

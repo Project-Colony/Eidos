@@ -364,6 +364,25 @@ impl LayerStack {
         Self::new_with_unindexed_subtree(layers, overwrite, None)
     }
 
+    /// A stack that never builds the lower index, for a caller asking it a
+    /// handful of shallow questions and then dropping it.
+    ///
+    /// The index costs a full recursive walk of every layer up front - a stat
+    /// and several allocations per file, ~300 ms on a 300-mod list - which only
+    /// pays for itself over the thousands of lookups a mount serves. The GUI's
+    /// health checks build a throwaway stack on every mod toggle to read one
+    /// root listing or one `SKSE/Plugins` directory; for them the walk IS the
+    /// cost. Every answer is the one `new` gives: no index is the same complete
+    /// fallback `EIDOS_NO_INDEX` forces.
+    pub fn new_unindexed(layers: Vec<PathBuf>, overwrite: PathBuf) -> Self {
+        // Built over no layers, so the index walk has nothing to visit; the
+        // real layers go in after, with the index dropped so none answers.
+        let mut stack = Self::new(Vec::new(), overwrite);
+        stack.layers = layers;
+        stack.lower = None;
+        stack
+    }
+
     /// Avoid indexing the descendants of a directory that a child mount will
     /// cover. This is an index boundary, not a visibility boundary: reads and
     /// listings there retain the normal live layer walk. Invalid or empty
@@ -1023,21 +1042,50 @@ impl LayerStack {
                 if real_dir {
                     fs::create_dir_all(&dest)?;
                 } else if src.is_file() {
-                    fs::copy(&src, &dest)?;
-                    // The point of a copy-up is that the result is WRITABLE, and
-                    // `fs::copy` clones the source's mode - so a read-only lower
-                    // file (a Steam depot restored 0444, a mod extracted from a
-                    // Windows archive carrying the DOS read-only attribute) yields
-                    // a read-only copy whose very next read-write open fails
-                    // EACCES. Do it BEFORE clone_metadata: `lsetxattr` of a
-                    // `user.*` attribute onto a 0444 file is refused even for the
-                    // owner, so the xattrs would be silently dropped otherwise.
-                    ensure_owner_writable(&dest);
-                    // Re-apply the lower file's mtime/atime + user.* xattrs so the
-                    // copied-up file looks unchanged to tools comparing mtimes
-                    // (FileTime load order, xEdit, Wrye Bash) or reading DOS
-                    // attributes - usvfs preserves these by writing through in place.
-                    clone_metadata(&src, &dest);
+                    // Staged under a temporary name and renamed into place only
+                    // once complete. `fs::copy` straight onto `dest` left a
+                    // truncated file behind whenever it failed part-way (ENOSPC
+                    // on the Overwrite volume) or the process was killed mid-copy;
+                    // the next call then saw `dest.exists()` and never copied
+                    // again, so the cut-off file shadowed the intact lower one in
+                    // this session and every later one. It also let a concurrent
+                    // reader resolve the half-written file whenever the index was
+                    // rebuilt from disk during the copy. The temp sits beside
+                    // `dest` (same filesystem, so the rename is atomic) and ends
+                    // in HIDDEN_SUFFIX, so readdir and resolve never serve it - a
+                    // WHITEOUT_PREFIX name would instead hide a sibling. The
+                    // short pid+counter name never collides and never pushes a
+                    // long file name past NAME_MAX. A kill can still strand one,
+                    // but only an invisible temp, never a wrong `dest`.
+                    static COPY_UP_SEQ: AtomicU64 = AtomicU64::new(0);
+                    let tmp = dest.with_file_name(format!(
+                        ".eidos-copyup.{}.{}{HIDDEN_SUFFIX}",
+                        std::process::id(),
+                        COPY_UP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ));
+                    let staged = fs::copy(&src, &tmp).and_then(|_| {
+                        // The point of a copy-up is that the result is WRITABLE, and
+                        // `fs::copy` clones the source's mode - so a read-only lower
+                        // file (a Steam depot restored 0444, a mod extracted from a
+                        // Windows archive carrying the DOS read-only attribute) yields
+                        // a read-only copy whose very next read-write open fails
+                        // EACCES. Do it BEFORE clone_metadata: `lsetxattr` of a
+                        // `user.*` attribute onto a 0444 file is refused even for the
+                        // owner, so the xattrs would be silently dropped otherwise.
+                        ensure_owner_writable(&tmp);
+                        // Re-apply the lower file's mtime/atime + user.* xattrs so the
+                        // copied-up file looks unchanged to tools comparing mtimes
+                        // (FileTime load order, xEdit, Wrye Bash) or reading DOS
+                        // attributes - usvfs preserves these by writing through in place.
+                        // Both land on the temp: the rename keeps the inode, so
+                        // `dest` appears with its final mode, times and xattrs.
+                        clone_metadata(&src, &tmp);
+                        fs::rename(&tmp, &dest)
+                    });
+                    if let Err(e) = staged {
+                        let _ = fs::remove_file(&tmp);
+                        return Err(e);
+                    }
                 }
             }
         } else if self.read_lower(vpath).is_some() {
@@ -2025,6 +2073,28 @@ mod tests {
     }
 
     #[test]
+    fn unindexed_stack_skips_the_walk_and_answers_like_the_indexed_one() {
+        let t = TempTree::new();
+        let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
+        put(&high, "Mod.esp", "high plugin");
+        put(&high, "SKSE/Plugins/a.dll", "high dll");
+        put(&low, "mod.esp", "low plugin");
+        put(&low, "Gone.esp", "whited out");
+        put(&low, "skse/plugins/b.dll", "low dll");
+        let indexed = LayerStack::new(vec![high.clone(), low.clone()], over.clone());
+        indexed.remove("Gone.esp").unwrap();
+        let unindexed = LayerStack::new_unindexed(vec![high, low], over);
+        assert!(indexed.lower.is_some());
+        assert!(unindexed.lower.is_none(), "no walk may run up front");
+        for vpath in ["MOD.ESP", "Gone.esp", "skse/PLUGINS/b.dll", "missing.esp"] {
+            assert_eq!(unindexed.resolve_read(vpath), indexed.resolve_read(vpath));
+        }
+        for dir in ["", "SKSE/Plugins"] {
+            assert_eq!(unindexed.list_dir(dir), indexed.list_dir(dir));
+        }
+    }
+
+    #[test]
     fn directory_recreated_over_a_deleted_file_does_not_expose_deeper_layers() {
         let t = TempTree::new();
         let (high, low, over) = (t.sub("high"), t.sub("low"), t.sub("over"));
@@ -2283,6 +2353,24 @@ mod tests {
             fs::metadata(&dest).unwrap().permissions().mode() & 0o200,
             0o200
         );
+    }
+
+    #[test]
+    fn copy_up_that_fails_part_way_leaves_nothing_in_the_overwrite() {
+        let t = TempTree::new();
+        let (game, over) = (t.sub("game"), t.sub("over"));
+        // A lower "file" whose read fails AFTER the copy has created its
+        // destination: `/proc/self/mem` is a regular file that opens fine and
+        // returns EIO at offset 0 (the zero page is never mapped) - the same
+        // shape as ENOSPC or a kill in the middle of a large copy.
+        std::os::unix::fs::symlink("/proc/self/mem", game.join("plugin.esp")).unwrap();
+        let stack = LayerStack::new(vec![game.clone()], over.clone());
+
+        assert!(stack.open_for_write("plugin.esp").is_err());
+        // No truncated copy at the final path to shadow the lower file for good,
+        // and no stranded temp either.
+        assert_eq!(fs::read_dir(&over).unwrap().count(), 0);
+        assert_eq!(stack.resolve_read("plugin.esp"), Some(game.join("plugin.esp")));
     }
 
     #[test]
@@ -2766,11 +2854,11 @@ mod tests {
             let results: Vec<_> = workers.into_iter().map(|w| w.join().unwrap()).collect();
             assert_eq!(results.iter().filter(|(_, r)| r.is_ok()).count(), 1);
             for (from, result) in results {
-                let folder = if result.is_ok() {
-                    "dest"
-                } else {
-                    assert_eq!(result.unwrap_err().raw_os_error(), Some(libc::ENOTEMPTY));
+                let folder = if let Err(e) = result {
+                    assert_eq!(e.raw_os_error(), Some(libc::ENOTEMPTY));
                     from
+                } else {
+                    "dest"
                 };
                 for index in 0..64 {
                     assert_eq!(read(&overwrite.join(format!("{folder}/{index}.txt"))), from);

@@ -18,33 +18,24 @@ impl GameSpec {
     }
 }
 /// Location to READ the game's existing activation state. Writers use profile storage.
+/// The flag is read through `eidos_ini::get_key`, the reader the root-mode writer
+/// pairs with: first value wins like the engine's (Wine's) parser, and a BOM does
+/// not hide `[General]`. A private parser kept the LAST duplicate and missed a
+/// BOM'd header, so Eidos could read plugins.txt from where the game does not.
 pub fn plugin_state_dir(prefix: &Path, game_root: &Path, spec: &GameSpec) -> PathBuf {
     if spec.esplugin_id == esplugin::GameId::Morrowind
         || spec.esplugin_id == esplugin::GameId::Oblivion
             && newest_variant(game_root, "Oblivion.ini")
                 .and_then(|p| read_decoded(&p))
-                .is_some_and(|s| ini_value(&s, "General", "bUseMyGamesDirectory") == Some("0"))
+                .is_some_and(|s| {
+                    eidos_ini::get_key(&s, "General", "bUseMyGamesDirectory").map(str::trim)
+                        == Some("0")
+                })
     {
         game_root.to_path_buf()
     } else {
         plugins_txt_dir(prefix, spec)
     }
-}
-fn ini_value<'a>(text: &'a str, section: &str, key: &str) -> Option<&'a str> {
-    let mut inside = false;
-    let mut value = None;
-    for line in text.lines().map(str::trim) {
-        if let Some(s) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-            inside = s.eq_ignore_ascii_case(section);
-        } else if inside {
-            if let Some((k, v)) = line.split_once('=') {
-                if k.trim().eq_ignore_ascii_case(key) {
-                    value = Some(v.trim());
-                }
-            }
-        }
-    }
-    value
 }
 pub fn morrowind_active(text: &str) -> Vec<String> {
     let mut inside = false;

@@ -270,6 +270,21 @@ impl ModMeta {
         self.raw("eidosCollectionOwner")
     }
 
+    /// The INI fragments a collection itself installed into this folder, so a
+    /// later revision removes only those and never one the user added. `None`
+    /// for a folder written before this record existed: provenance unknown.
+    pub fn collection_ini_fragments(&self) -> Option<Vec<String>> {
+        serde_json::from_str(self.raw("eidosCollectionIniFragments")?).ok()
+    }
+
+    pub fn set_collection_ini_fragments(&mut self, names: &[String]) {
+        // JSON keeps arbitrary file names on one INI line, like eidosInstallWarning.
+        self.set(
+            "eidosCollectionIniFragments",
+            &serde_json::to_string(names).expect("strings serialize"),
+        );
+    }
+
     /// A `[General]` string value, unquoted and with empty treated as absent.
     fn string(&self, key: &str) -> Option<String> {
         self.raw(key).map(unquote).filter(|s| !s.is_empty())

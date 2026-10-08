@@ -1757,8 +1757,9 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
     // This check used to skip itself and print "load order not computed yet",
     // which reads as reassurance and is not: it says nothing was looked at, on
     // the one check most likely to predict a crash. If the cache is cold,
-    // compute the answer. `diagnostics` only runs when something changed, not
-    // per frame, so it can afford to.
+    // compute the answer. "Something changed" includes every checkbox click and
+    // every Ctrl+Arrow move, so `compute_plugins` must stay cheap: it reads the
+    // layers' root listings, never a full index of every mod's files.
     let computed;
     let plugins = match app.plugins.as_ref() {
         Some(list) => Some(list),
@@ -1905,7 +1906,7 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
             .mods
             .iter()
             .rev()
-            .filter(|m| m.is_active())
+            .filter(|m| m.is_active() && !m.is_unmanaged())
             .map(|m| (m.name.clone(), m.path.clone()))
             .collect::<Vec<_>>();
         for d in eidos_gamefeatures::preflight::scan_skse(
@@ -2538,8 +2539,10 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
     let spec = game.plugin_spec()?;
     let mut sources: Vec<(String, PathBuf)> = vec![(String::new(), game.data_path.clone())];
     // app.mods is MO2 display order (lowest priority first) = the ascending order
-    // plugin discovery wants, so feed it through as-is.
-    let enabled = app.mods.iter().filter(|m| m.is_active());
+    // plugin discovery wants, so feed it through as-is. Unmanaged rows (DLC and
+    // Creation Club) are not layers: their `path` is one `.esm` FILE inside Data,
+    // which is already the first source, and the mount drops them the same way.
+    let enabled = app.mods.iter().filter(|m| m.is_active() && !m.is_unmanaged());
     sources.extend(enabled.map(|m| (m.name.clone(), m.path.clone())));
     // The Overwrite layer is a plugin source too (a cleaned/generated .esp lands
     // there) - the launch path includes it, so the GUI must agree.
@@ -2549,7 +2552,12 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
 
     let mut list = PluginList::discover(&sources, &spec);
     if let Some(inst) = app.created.as_ref() {
-        let stack = eidos_core::LayerStack::new(
+        // Plugins only live at the root, so ONE merged root listing answers for
+        // all of them: a read of each layer's top directory, whiteouts and hidden
+        // names applied. This runs on every mod toggle (via `diagnostics`), so the
+        // stack is unindexed - an index walks every file of every enabled mod
+        // first, hundreds of milliseconds of frozen window on a large list.
+        let stack = eidos_core::LayerStack::new_unindexed(
             sources
                 .iter()
                 .rev()
@@ -2558,13 +2566,23 @@ pub(crate) fn compute_plugins(app: &App) -> Option<PluginList> {
                 .collect(),
             inst.overwrite_dir(),
         );
+        let root: HashMap<String, PathBuf> = stack
+            .list_dir("")
+            .into_iter()
+            .map(|(name, path)| (name.to_ascii_lowercase(), path))
+            .collect();
         list.plugins.retain(|plugin| {
-            stack
-                .resolve_read(&plugin.name)
+            root.get(&plugin.name.to_ascii_lowercase())
                 .is_some_and(|path| path.is_file())
         });
     }
 
+    // Recorded BEFORE the state is read, for the same reason as `reload_mods`:
+    // a write in between may refuse the next edit, never let a stale list over.
+    if let Some(inst) = app.created.as_ref() {
+        app.plugins_seen
+            .set(Some(plugin_state_fingerprint(&inst.active(), &spec)));
+    }
     // The load order is per-profile: read the active profile's own copy once it
     // has one, and otherwise the prefix's (which the profile adopts on first
     // launch). Same primitive as the launch path, so for PlainList games this also
@@ -2668,6 +2686,19 @@ pub(crate) fn commit_plugin_order(app: &mut App, spec: &GameSpec) {
     }
 }
 
+/// A hash of the profile's own plugin state - the files `compute_plugins` reads
+/// and `write_plugin_state` rewrites. Not the prefix shadow: other tools write
+/// that, and it is never read while the profile owns a state.
+fn plugin_state_fingerprint(prof: &eidos_instance::Profile, spec: &GameSpec) -> u64 {
+    let dir = prof.plugins_state_dir();
+    let read = |path: Option<PathBuf>| path.and_then(|p| std::fs::read(p).ok());
+    content_hash(&[
+        read(eidos_plugins::newest_variant(&dir, spec.active_file())),
+        read(eidos_plugins::newest_variant(&dir, "loadorder.txt")),
+        read(Some(prof.locked_order_path())),
+    ])
+}
+
 pub(crate) fn write_plugin_state(
     app: &App,
     list: &PluginList,
@@ -2684,6 +2715,28 @@ pub(crate) fn write_plugin_state(
         .transpose()?;
     if let Some(inst) = app.created.as_ref() {
         let prof = inst.active();
+        // `list` was read when the tab was opened, perhaps long ago. Since then
+        // `eidos sort`, `eidos collection` or a session another window started
+        // may have rewritten the profile's order, and writing `list` over it
+        // would revert that silently - then snapshot the revert, so not even the
+        // damage card could tell. Both callers re-read the list on Err. Checked
+        // before the seed below, which would itself change the files.
+        let unchanged = app
+            .plugins_seen
+            .get()
+            .is_none_or(|seen| seen == plugin_state_fingerprint(&prof, spec));
+        if !unchanged {
+            return Err(std::io::Error::other(
+                "another Eidos process changed the load order; it has been reloaded - redo the change",
+            ));
+        }
+        // Adopt the game's state first, as launch and sort do, failing closed.
+        // Writing into an unseeded profile built Morrowind.ini from nothing: a
+        // `[Game Files]`-only stub that every later launch deployed in place of
+        // the real INI, since the seed never replaces a file the profile owns.
+        if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
+            prof.seed_plugin_state(&dir, spec)?;
+        }
         // A deliberate GUI edit is the user speaking: it must not trip the
         // "session damaged the active set" card, so the snapshot follows it -
         // EXCEPT while damage is currently flagged, where refreshing would
@@ -2694,6 +2747,8 @@ pub(crate) fn write_plugin_state(
         if !damage_flagged {
             let _ = prof.snapshot_plugin_state();
         }
+        app.plugins_seen
+            .set(Some(plugin_state_fingerprint(&prof, spec)));
     }
     if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
         if let Some(dir) = selected_game(app).and_then(|g| g.plugin_state_dir()) {
@@ -4687,6 +4742,7 @@ pub(crate) fn after_install(
         load_downloads(app);
     }
     let mut where_to = String::new();
+    let mut move_refused = None;
     // A drop aimed at a gap says WHERE, not just whether. Consumed here, after
     // `reload_mods`, because that is when the new row exists to be moved - and
     // this is MO2's own ordering too (install first, reposition after).
@@ -4706,9 +4762,14 @@ pub(crate) fn after_install(
             let hidden = hidden_by_folds(app);
             let landed = move_block(&mut app.mods, &[at], dest);
             settle_folds_after_move(app, landed, 1, &hidden);
-            mods_changed(app);
-            app.selected_mod = Some(landed);
-            where_to = format!(" at priority {landed}");
+            if mods_changed(app) {
+                app.selected_mod = Some(landed);
+                where_to = format!(" at priority {landed}");
+            } else {
+                // The move was reverted; its reason rides along below instead
+                // of being replaced by "at priority N".
+                move_refused = app.status.take();
+            }
         }
     }
     // A note the drop left for the installer to deliver - it could not say it
@@ -4724,7 +4785,7 @@ pub(crate) fn after_install(
     } else {
         format!("Installed '{name}'{where_to}{note}.")
     });
-    for warning in [warning, registration_warning].into_iter().flatten() {
+    for warning in [warning, registration_warning, move_refused].into_iter().flatten() {
         if let Some(status) = &mut app.status {
             status.push_str(&format!(" Warning: {warning}"));
         }

@@ -197,16 +197,12 @@ pub(crate) fn cmd_collection(args: &[String]) {
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
         renamed: Vec::new(),
+        kept: Vec::new(),
     };
     let mut save = |s: &InstallState| s.save(&state_path).map_err(|e| e.to_string());
     let mut report = eidos_collections::install::run(c, &mut state, &mut hooks, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
-    for (member, folder) in std::mem::take(&mut hooks.renamed) {
-        report.renamed.push(eidos_collections::report::Note {
-            subject: member,
-            detail: format!("installed as \"{folder}\", because a mod of yours already had that name"),
-        });
-    }
+    hooks.drain_notes(&mut report);
 
     if report.aborted {
         eidos_log::warn!("{}", report.render());

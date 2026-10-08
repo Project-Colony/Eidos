@@ -92,8 +92,10 @@ pub fn archive_plan(
             if line.starts_with([';', '#']) {
                 continue;
             }
-            if let Some(s) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
-                section = s.trim().to_ascii_lowercase();
+            // The shared header rule, so a BOM'd first section is not read as
+            // keys of section "" (the engine sees past the BOM).
+            if let Some(s) = eidos_ini::section_header(line) {
+                section = s.to_ascii_lowercase();
                 continue;
             }
             if let Some((k, v)) = line.split_once('=') {
@@ -316,6 +318,28 @@ mod tests {
             ["Base.bsa", "Patch.bsa", "Patch - Textures.bsa"]
         );
         assert_eq!(plan.archives[1].plugin.as_deref(), Some("Patch.esp"));
+    }
+
+    #[test]
+    fn a_bom_does_not_hide_the_first_ini_section() {
+        // A StarfieldCustom.ini saved as "UTF-8 with BOM": its first section is
+        // still [Archive] to the engine, so the archive it lists is registered.
+        let plan = archive_plan(
+            "starfield",
+            &names(&["MyMod - Main.ba2"]),
+            &[],
+            &names(&["\u{feff}[Archive]\r\nsResourceArchiveList2=MyMod - Main.ba2\r\n"]),
+            "en",
+        );
+        assert_eq!(
+            plan.archives
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>(),
+            ["MyMod - Main.ba2"],
+            "{:?}",
+            plan.diagnostics
+        );
     }
 
     #[test]

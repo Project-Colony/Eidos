@@ -244,10 +244,9 @@ pub(crate) fn cmd_install(args: &[String]) {
         .name
         .clone()
         .unwrap_or_else(|| eidos_install::mod_name_for(&options.archive));
-    let fallback = game.prefix().and_then(|p| {
-        game.plugin_spec()
-            .map(|s| eidos_plugins::plugins_txt_dir(&p, &s))
-    });
+    // Same fallback as the GUI: the install root for Morrowind and root-mode
+    // Oblivion, where AppData has no state and every plugin would read active.
+    let fallback = game.plugin_state_dir();
     let fomod = eidos_install::fomod_context_for_instance(
         &inst,
         &game.data_path,

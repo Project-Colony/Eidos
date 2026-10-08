@@ -505,13 +505,15 @@ fn a_folder_nobody_listed_appears_disabled() {
     // (MO2 parity): nothing knows where in the conflict order it belongs, and
     // silently enabling it could overwrite half the load order's files on the
     // next launch. A mod installed THROUGH Eidos never takes this path - the
-    // installer writes its own modlist entry.
+    // installer writes its own modlist entry. It lands at the HIGHEST priority,
+    // the last display row, like MO2 and like a fresh install: once enabled it is
+    // meant to win, not to sit under every other mod.
     let read: Vec<_> = p
         .modlist()
         .iter()
         .map(|m| (m.name.clone(), m.enabled))
         .collect();
-    assert_eq!(read, vec![("New".into(), false), ("A".into(), true)]);
+    assert_eq!(read, vec![("A".into(), true), ("New".into(), false)]);
     let _ = fs::remove_dir_all(&root);
 }
 
@@ -752,6 +754,25 @@ fn display_order_file_order_and_load_order_stay_consistent() {
         p.load_order(),
         vec![root.join("mods/High"), root.join("mods/Low")]
     );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn saving_an_empty_list_leaves_no_file_to_block_the_next_install() {
+    // The window saves right after the last mod is removed. An empty modlist.txt
+    // next to the next installed folder reads as a truncated list and refuses it.
+    let root = inst_with_mods(&["Gone"]);
+    let p = prof(&root, "Default");
+    p.save_modlist(&p.modlist()).unwrap();
+    fs::remove_dir_all(root.join("mods/Gone")).unwrap();
+    p.forget_mods(&["Gone".to_string()]).unwrap();
+
+    p.save_modlist(&[]).unwrap();
+
+    assert!(!p.modlist_path().exists());
+    fs::create_dir_all(root.join("mods/New")).unwrap();
+    p.register_installed_mod("New").unwrap();
+    assert!(p.modlist_checked().1.is_good());
     let _ = fs::remove_dir_all(&root);
 }
 

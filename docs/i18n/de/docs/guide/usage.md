@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
 
 # Eidos verwenden
 
@@ -90,6 +90,55 @@ Schreibvorgänge (Spielstände, neu erzeugte Konfigurationen) landen in der
 `overwrite/`-Schicht der Instanz; die Spielinstallation und jede Mod-Quelle
 bleiben Byte für Byte unberührt.
 
+### Die Mod-Liste
+
+Wie in MO2 hat jedes Profil seine eigene `modlist.txt` (welche Mods aktiviert
+sind, mit welcher Priorität), während die Mod-Ordner im gemeinsamen `mods/` der
+Instanz liegen. Ein Ordner, den Sie von Hand nach `mods/` legen, ist noch nicht
+aufgeführt: er erscheint **deaktiviert mit der höchsten Priorität** - am Ende
+der Liste im Fenster, wo auch MO2 ihn einordnet -, sodass er seine Konflikte
+gewinnt, sobald Sie ihn aktivieren. Ältere Versionen setzten ihn an den Anfang,
+wo jede andere Mod ihn überschrieb.
+
+Weil die Ordner gemeinsam sind, ändert das Entfernen oder Umbenennen einer Mod
+jedes Profil: ihre Zeile wird aus der `modlist.txt` jedes Profils entfernt oder
+darin umbenannt, und im Übrigen behält jedes Profil seinen eigenen Zustand und
+seine eigene Reihenfolge. Ein Profil, dem keine Mods bleiben, hat gar keine
+`modlist.txt` statt einer leeren, die als beschädigte Datei gelesen wurde und
+die nächste Installation blockierte.
+
+Das Fenster arbeitet mit seiner eigenen Kopie der Mod-Liste und der
+Ladereihenfolge. Schreibt ein anderer Eidos-Prozess eine der beiden, während es
+offen ist - `eidos install` oder `eidos sort` in einem Terminal, eine
+Collection, eine von Steam gestartete Sitzung, ein zweites Fenster -, wird die
+nächste Änderung im Fenster abgelehnt, statt diese Arbeit zu überschreiben. Es
+lädt neu von der Platte und sagt *Not saved: another Eidos process changed the mod
+list. It has been reloaded - redo the change.* (oder dasselbe für die
+Ladereihenfolge); nur dieser eine Klick geht verloren, machen Sie ihn also noch
+einmal. Rename, New mod, Add separator, Remove und das Umwandeln des Overwrites
+in eine Mod prüfen, bevor sie `mods/` anfassen, sodass eine abgelehnte Änderung
+auf der Platte nichts ändert. Ebenso lehnt der INI-Editor es ab, über eine Datei
+zu speichern, die sich geändert hat, seit er sie geöffnet hat.
+
+### Spielstände gehören zum Profil
+
+Jedes Profil hält seine eigenen Spielstände in `profiles/<name>/saves/`, und für
+die Dauer eines Laufs wird dieser Ordner über den Spielstand-Ordner des Spiels
+im Proton-Präfix gemountet. Der erste Start eines Profils kopiert die bereits im
+Präfix liegenden Spielstände hinein, einmalig, sodass ein Spielstand, den Sie
+später aus dem Profil löschen, gelöscht bleibt. Nach jedem Lauf werden die
+neuesten Spielstände des Profils für Steam Cloud zurück ins Präfix kopiert; ein
+Spielstand im Präfix, den Eidos nicht dort hingelegt hat, wird zuerst als
+`orphan-<time>-<name>` im Profil aufbewahrt, nie überschrieben.
+
+Ein Spielstand, der nach dieser ersten Kopie im Präfix landet, ohne durch Eidos
+zu gehen - ein Steam-Cloud-Download von einem Steam Deck, ein Start ohne Eidos -,
+bleibt verborgen, solange die Spielstände des Profils gemountet sind. Nichts
+löscht ihn: der Start nennt ihn im Log des Laufs (`logs/run-*.log` der Instanz
+bei einem Start aus dem Fenster, die Konsole von Steam bei einem Steam-Start),
+jeweils einmal, wenn sich dieser Satz von Dateien ändert. Um ihn zu spielen,
+kopieren Sie ihn und seinen Co-Save in den `saves/`-Ordner des Profils.
+
 ### Kein privilegierter Schritt nötig
 
 Eidos läuft vollständig rootless. Es mountet in einem privaten User- und
@@ -154,6 +203,27 @@ lässt er sich einmal nicht lesen, hält Eidos an und sagt es, statt still die
 ganze Collection von vorn zu beginnen. Führen Sie denselben Befehl noch einmal
 aus.
 
+Eine neuere Revision einer Collection zu installieren, die Sie bereits haben,
+übernimmt die Ordner der vorherigen Revision: ein unverändertes Mitglied wird an
+Ort und Stelle geprüft, ein Mitglied, dessen Datei der Autor aktualisiert hat,
+wird in seinem alten Ordner ersetzt, und ein Mitglied, das die neue Revision
+fallen gelassen hat, bleibt installiert und wird im Bericht benannt, damit Sie
+es deaktivieren oder entfernen. Ein Ordner, den ein anderes Profil aktiviert,
+wird nie übernommen, denn der mods-Ordner ist gemeinsam und jenes Profil würde
+sich unter Ihnen ändern: die neue Revision installiert stattdessen ihre eigene
+Kopie daneben, und der Bericht bittet Sie, die alte in diesem Profil zu
+deaktivieren, nie, sie zu entfernen. Die Rückkehr zu einer älteren Revision
+holt deren Ordner auf dieselbe Weise zurück oder installiert frische Kopien
+derer, die sie nicht nehmen kann.
+
+Ein Überbleibsel einer früheren Revision, das aktiviert bleibt, verhindert, dass
+die Installation als die zählt, die der Autor gebaut hat; der Hinweis
+verschwindet, sobald Sie es deaktivieren. Ein Mitglied, das Sie mit
+`--no-optional` übersprungen haben, wird nicht übernommen und auf dieselbe Weise
+benannt. Schlägt die Übernahme selbst fehl, hält der Lauf mit *previous
+revision: its folders could not be taken over* und dem Grund an; beheben Sie das
+und führen Sie den Befehl noch einmal aus.
+
 ### Was es nicht vortäuschen wird
 
 **Ein kostenloses Nexus-Konto kann die Mitglieds-Mods nicht holen.** Nexus prägt
@@ -206,8 +276,11 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # auf dem anderen Rechner
 wie viel Platz es braucht, ohne irgendetwas zu schreiben. `eidos unpack --info`
 tut dasselbe für eine Datei, die Sie bereits haben.
 
-Falls 7-Zip etwas nicht lesen konnte, wird das Archiv trotzdem geschrieben und
-benannt - es ist brauchbar -, aber `eidos pack` endet mit **1** und sagt, was
+Falls 7-Zip etwas nicht lesen konnte oder der Durchlauf etwas überspringen
+musste, das Sie in einer Sicherung erwarten würden (einen symbolischen Link,
+einen Ordner, den er nicht lesen konnte, einen Namen, der sich 7-Zip nicht
+sicher übergeben lässt), wird das Archiv trotzdem geschrieben und benannt - es
+ist brauchbar -, aber `eidos pack` endet mit **1** und sagt, was
 fehlt. Eine unvollständige Sicherung ist kein Erfolg, und das ist ein Befehl,
 den Leute vor ein `&&` setzen.
 
@@ -243,7 +316,7 @@ es nicht ist.
 | `loot/`, außer `userlist.yaml` | Ein Masterlist-Cache, den Eidos bei Bedarf neu holt. Ihre eigenen LOOT-Regeln sind kein Cache - die holt niemand neu -, also kommt diese eine Datei mit. |
 | `.base/`, `.base-root/` | Leere Mountpunkte, an denen die eigenen Dateien des Spiels während einer Sitzung verstaut werden. |
 | Halb geschriebene Dateien | Ein angehaltener Download (`*.unfinished`), ein atomares Schreiben im Flug (`*.eidos-tmp*`). |
-| Symbolische Links | 7-Zip würde einem folgen und kopieren, worauf er zeigt, was bei einem absoluten Link heißt, einen fremden Baum in Ihre Sicherung zu ziehen. Sie werden stattdessen gemeldet. |
+| Symbolische Links | 7-Zip würde einem folgen und kopieren, worauf er zeigt, was bei einem absoluten Link heißt, einen fremden Baum in Ihre Sicherung zu ziehen. Sie werden stattdessen gemeldet, und die Sicherung gilt als unvollständig: ein auf ein anderes Laufwerk verlinktes `mods/` oder `downloads/` wird NICHT gepackt. Um bewusst ohne ein verlinktes `downloads/` zu sichern, geben Sie `--no-downloads` an (oder entfernen Sie im Fenster den Haken bei *Include downloads/*); ein bewusstes Weglassen zählt nicht als fehlend. |
 
 Jeder dieser Punkte landet mit seinem Grund in der `eidos-backup.ini` in der
 Wurzel des Archivs - die Antwort auf "was ist hier nicht drin" ist also `cat` und

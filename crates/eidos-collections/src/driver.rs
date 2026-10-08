@@ -110,6 +110,8 @@ pub struct RealHooks<'a> {
     pub owner: String,
     /// Members installed under a name that was free, and what it was.
     pub renamed: Vec<(String, String)>,
+    /// Members whose previous folder was kept before it was replaced, and where.
+    pub kept: Vec<(String, PathBuf)>,
     pub payload_root: PathBuf,
     pub allow_runtime_mismatch: bool,
 }
@@ -125,6 +127,26 @@ impl RealHooks<'_> {
 
     fn owns(&self, folder: &Path, m: &Mod) -> bool {
         owns_folder(folder, &self.owner_marker(m))
+    }
+    /// Move what the hooks noted during [`install::run`] into its report.
+    pub fn drain_notes(&mut self, report: &mut Report) {
+        for (member, folder) in std::mem::take(&mut self.renamed) {
+            report.renamed.push(Note {
+                subject: member,
+                detail: format!(
+                    "installed as \"{folder}\", because a mod of yours already had that name"
+                ),
+            });
+        }
+        for (member, backup) in std::mem::take(&mut self.kept) {
+            report.kept.push(Note {
+                subject: member,
+                detail: format!(
+                    "its previous folder differed from what Eidos installed (a file changed, added or hidden, or it could not be checked), so it was kept as \"{}\". A backup is never loaded into the game: copy back what you still need",
+                    backup.file_name().unwrap_or_default().to_string_lossy()
+                ),
+            });
+        }
     }
     /// Record the successful install without changing existing profile decisions.
     fn register(
@@ -242,6 +264,320 @@ fn reserve_folder(
     }
 }
 
+/// Hand the folders another revision of this collection owns to the revision
+/// `state` installs, before its first member.
+///
+/// Called by [`crate::install::run`] once the recipe and the game runtime have
+/// passed, never before: a revision the user cannot or will not install must
+/// not take anything over, or the one they stay on can no longer verify it.
+///
+/// The owner names the revision, so two revisions never mistake each other's
+/// output - but each one then started from nothing. Updating to the author's
+/// next revision collided every member with its own previous copy, installed
+/// it again as "Name (2)", and left the old copies enabled, members the update
+/// dropped included.
+///
+/// A member keeps a folder when its key is unchanged or, for a Nexus member
+/// whose file the author updated, when it is the only member from that mod page
+/// on both sides; anything ambiguous installs fresh. The folder must still
+/// carry the other revision's exact marker - a folder the user reinstalled by
+/// hand has lost it - and must hold no saved installer answers, which are tied
+/// to the old archive and owner, and no other profile may enable it. The
+/// receipt moves with the folder, and an unchanged member's status with it, so
+/// an unchanged member verifies in place and a changed one is replaced inside
+/// the same folder, keeping its place in the mod list.
+///
+/// Repeatable: a folder already carrying THIS revision's marker is taken again,
+/// and `state` is saved with the claims before any marker moves, so a crash at
+/// any point leaves folders either revision can take. Symmetric too: going back
+/// to an older revision takes its folders back from the newer one - or, when
+/// one of the rules above keeps a folder, drops its claim on it so the member
+/// installs a fresh copy.
+///
+/// Returns the folders another revision still owns that this one does not use
+/// and the active profile still enables. They stay installed and enabled -
+/// removing a mod is the user's call - so the report has to name them until
+/// the user disables or removes them. A revision whose record cannot be read
+/// is named too.
+pub fn adopt_other_revisions(
+    inst: &Instance,
+    c: &Collection,
+    state: &mut InstallState,
+    save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+) -> Result<Vec<Note>, String> {
+    use crate::state::{key_for, revision_dir, Status};
+    let _lock = inst
+        .try_lock("adopting another collection revision")
+        .map_err(|e| e.to_string())?;
+    let mods = inst.mods_dir();
+    let marker = |owner: &str, key: &str| {
+        serde_json::to_string(&[owner, key]).expect("strings serialize")
+    };
+    let owner = format!("{}:{}:{}", state.game_domain, state.slug, state.revision);
+    let domain = &c.info.domain_name;
+    let keys: Vec<String> = c.mods.iter().map(|m| key_for(m, domain)).collect();
+    // mods/ is shared by every profile. A folder another profile enables is
+    // that profile's setup: taking it over would replace an updated member's
+    // files under it, so this revision installs its own copy as it used to.
+    // Folder -> the other profiles that enable it, which the note names.
+    let active = inst.active_profile();
+    let mut elsewhere: std::collections::HashMap<String, Vec<String>> = Default::default();
+    for p in inst.profiles().into_iter().filter(|p| *p != active) {
+        for m in inst.profile(&p).modlist().into_iter().filter(|m| m.is_active()) {
+            elsewhere.entry(m.name).or_default().push(p.clone());
+        }
+    }
+    // The leftover note asks the user to disable a folder, and it holds the
+    // install short of faithful, so it must go away once they have.
+    let enabled_here: std::collections::HashSet<String> = inst
+        .modlist()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.name)
+        .collect();
+    let mut leftovers = Vec::new();
+    for other in other_revisions(inst, state, &mut leftovers)? {
+        let other_owner = format!("{}:{}:{}", other.game_domain, other.slug, other.revision);
+        let mut folders = other.folders.clone();
+        for (key, status) in &other.members {
+            if let Status::Installed(f) | Status::Approximate(f, _) = status {
+                folders.entry(key.clone()).or_insert_with(|| f.clone());
+            }
+        }
+        // (this revision's key, the other revision's key)
+        let mut pairs: Vec<(String, String)> = keys
+            .iter()
+            .filter(|k| folders.contains_key(*k))
+            .map(|k| (k.clone(), k.clone()))
+            .collect();
+        // The INI Tweaks folder is no member, but it is this collection's output
+        // too: unpaired, it was installed again as "(2)" and the old one was
+        // reported as unused. Only when this revision ships fragments at all:
+        // an empty directory installs nothing, so the old ones stayed owned.
+        if folders.contains_key(INI_TWEAKS_KEY)
+            && ships_ini_fragments(&revision_dir(&inst.root, &state.slug, state.revision))
+        {
+            pairs.push((INI_TWEAKS_KEY.into(), INI_TWEAKS_KEY.into()));
+        }
+        let dir = revision_dir(&inst.root, &other.slug, other.revision);
+        if let Some(text) = cached_manifest(&dir)? {
+            let old = crate::read(&text)?.collection;
+            let old_domain = if old.info.domain_name.trim().is_empty() {
+                &other.game_domain
+            } else {
+                &old.info.domain_name
+            };
+            let mut pages: std::collections::BTreeMap<_, (Vec<String>, Vec<String>)> =
+                Default::default();
+            for (m, key) in c.mods.iter().zip(&keys) {
+                if let (false, Some(page)) = (folders.contains_key(key), nexus_page(m, domain)) {
+                    pages.entry(page).or_default().0.push(key.clone());
+                }
+            }
+            for m in &old.mods {
+                let key = key_for(m, old_domain);
+                if let (true, false, Some(page)) = (
+                    folders.contains_key(&key),
+                    keys.contains(&key),
+                    nexus_page(m, old_domain),
+                ) {
+                    pages.entry(page).or_default().1.push(key);
+                }
+            }
+            for (new, old) in pages.into_values() {
+                if let ([new], [old]) = (&new[..], &old[..]) {
+                    pairs.push((new.clone(), old.clone()));
+                }
+            }
+        }
+        // Claimed in the state, and the state saved, BEFORE any marker moves: a
+        // crash in between leaves a folder both revisions' adoption can still
+        // take, never one that no state claims.
+        let mut moves = Vec::new();
+        // Folders left alone for a reason the leftover note must give instead
+        // of "this revision does not use it".
+        let mut why_kept: std::collections::HashMap<String, &str> = Default::default();
+        let mut dropped_claim = false;
+        for (key, other_key) in pairs {
+            let folder = &folders[&other_key];
+            // A key this revision already records in the SAME folder is taken
+            // back too: that is going back to a revision after a newer one took
+            // its folders over, which otherwise left every member unverifiable.
+            // A member the user skipped here (`--no-optional`, run before this)
+            // is not taken: it would be owned, enabled and in no ordering pass,
+            // reported only as skipped. Left alone it is named below, as skipped.
+            if matches!(state.status(&key), Status::Skipped) {
+                why_kept.insert(folder.clone(), "you skipped this optional member in this revision");
+                continue;
+            }
+            if state.folders.get(&key).is_some_and(|f| f != folder)
+                || state.folders.iter().any(|(k, f)| *k != key && f.eq_ignore_ascii_case(folder))
+                || eidos_install::fix_directory_name(folder).as_deref() != Some(folder.as_str())
+            {
+                continue;
+            }
+            let path = mods.join(folder);
+            let (from, to) = (marker(&other_owner, &other_key), marker(&owner, &key));
+            if !(owns_folder(&path, &from) || owns_folder(&path, &to)) {
+                continue;
+            }
+            let answers = installer_answers::path(&path).exists();
+            if answers || elsewhere.contains_key(folder) {
+                if answers {
+                    why_kept.insert(
+                        folder.clone(),
+                        "it holds saved installer answers, so this revision installs its own copy",
+                    );
+                }
+                // Going back, this revision still records the folder the newer
+                // one took. Kept, that claim could never verify again - the
+                // folder carries the newer marker - so every member failed for
+                // good. Dropped, the member installs a fresh copy beside it.
+                if state.folders.get(&key) == Some(folder) && !owns_folder(&path, &to) {
+                    state.folders.remove(&key);
+                    state.set(&key, Status::Pending);
+                    dropped_claim = true;
+                }
+                continue;
+            }
+            // An unchanged member keeps its status too. Left Pending, the run
+            // recovered it as Approximate ("interrupted status save") unless it
+            // had clone hashes, so nearly every update read as not faithful for
+            // good. Install still verifies it, and replaces it when that fails.
+            // An updated member stays Pending: it is replaced anyway.
+            if key == other_key && state.status(&key).is_open() {
+                let status = match other.status(&other_key) {
+                    Status::Installed(_) => Status::Installed(folder.clone()),
+                    Status::Approximate(_, why) => Status::Approximate(folder.clone(), why.clone()),
+                    _ => Status::Pending,
+                };
+                if status != Status::Pending {
+                    state.set(&key, status);
+                }
+            }
+            // On every pass, not only the one that seeded the status: a run
+            // stopped part-way finds the rest already seeded, and install
+            // verifies them without ever registering them.
+            let register = matches!(
+                state.status(&key),
+                Status::Installed(f) | Status::Approximate(f, _) if f == folder
+            );
+            state.folders.insert(key, folder.clone());
+            moves.push((path, from, to, folder.clone(), register));
+        }
+        if !moves.is_empty() || dropped_claim {
+            save(state)?;
+        }
+        for (path, from, to, folder, register) in moves {
+            crate::recipe::transfer_receipt(&path, &from, &to)?;
+            let mut meta = eidos_instance::ModMeta::read(&path.join("meta.ini"));
+            meta.set("eidosCollectionOwner", &to);
+            meta.write(&path.join("meta.ini"))
+                .map_err(|e| e.to_string())?;
+            // A verified member is never registered again, so this does it, as
+            // the recovery did: a profile that does not list the folder enables
+            // it, one that lists it keeps its own decision.
+            if register {
+                inst.register_installed_mod(&folder)
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        for (key, folder) in &folders {
+            // A folder this revision records is one it uses, whoever marks it.
+            if eidos_install::fix_directory_name(folder).as_deref() == Some(folder.as_str())
+                && !state.folders.values().any(|f| f.eq_ignore_ascii_case(folder))
+                && enabled_here.contains(folder)
+                && owns_folder(&mods.join(folder), &marker(&other_owner, key))
+            {
+                // mods/ is shared: removing a folder another profile enables
+                // removes it from that profile too, so that note never says so.
+                let detail = match elsewhere.get(folder) {
+                    Some(profiles) => format!(
+                        "revision {} of this collection installed it and another profile ('{}') still enables it, so it was not taken over; disable it in this profile, but do not remove it while that profile uses it",
+                        other.revision,
+                        profiles.join("', '")
+                    ),
+                    None => format!(
+                        "revision {} of this collection installed it and {}; it is still enabled, so disable or remove it yourself",
+                        other.revision,
+                        why_kept.get(folder).copied().unwrap_or("this revision does not use it")
+                    ),
+                };
+                leftovers.push(Note { subject: folder.clone(), detail });
+            }
+        }
+    }
+    Ok(leftovers)
+}
+
+/// Every other revision of this collection with a state file here, newest first.
+///
+/// A state file that cannot be read is skipped with a note in `notes`: it only
+/// costs the takeover of that revision's folders, while the error
+/// [`InstallState::load`] gives is about the CURRENT revision's record.
+fn other_revisions(
+    inst: &Instance,
+    state: &InstallState,
+    notes: &mut Vec<Note>,
+) -> Result<Vec<InstallState>, String> {
+    let dir = inst.root.join("collections");
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let prefix = format!("{}-", crate::state::safe_slug(&state.slug));
+    let mut found = Vec::new();
+    for entry in entries {
+        let name = entry.map_err(|e| e.to_string())?.file_name();
+        let Some(revision) = name
+            .to_str()
+            .and_then(|n| n.strip_prefix(&prefix))
+            .and_then(|n| n.strip_suffix(".state.json"))
+            .and_then(|n| n.parse::<u32>().ok())
+            .filter(|r| *r != state.revision)
+        else {
+            continue;
+        };
+        let other = match InstallState::load(&dir.join(&name)) {
+            Ok(Some(other)) => other,
+            Ok(None) => continue,
+            Err(_) => {
+                notes.push(Note {
+                    subject: format!("revision {revision}"),
+                    detail: format!(
+                        "its record {} cannot be read, so its folders were not taken over and this revision installs its own copies",
+                        dir.join(&name).display()
+                    ),
+                });
+                continue;
+            }
+        };
+        // A sanitized slug can collide with another collection's.
+        if other
+            .validate_revision(&state.slug, revision, &state.game_domain)
+            .is_ok()
+        {
+            found.push(other);
+        }
+    }
+    found.sort_by(|a, b| b.revision.cmp(&a.revision));
+    Ok(found)
+}
+
+/// The Nexus mod page a member comes from, which survives a file update.
+fn nexus_page(m: &Mod, collection_domain: &str) -> Option<(String, u64)> {
+    if m.source.kind != SourceType::Nexus {
+        return None;
+    }
+    let domain = if m.domain_name.trim().is_empty() {
+        collection_domain
+    } else {
+        &m.domain_name
+    };
+    Some((domain.trim().to_ascii_lowercase(), m.source.mod_id?))
+}
+
 impl Hooks for RealHooks<'_> {
     fn validate_recipe(&mut self, c: &Collection) -> Result<(), String> {
         for m in &c.mods {
@@ -254,6 +590,14 @@ impl Hooks for RealHooks<'_> {
     }
     fn allow_runtime_mismatch(&self) -> bool {
         self.allow_runtime_mismatch
+    }
+    fn adopt(
+        &mut self,
+        c: &Collection,
+        state: &mut InstallState,
+        save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+    ) -> Result<Vec<Note>, String> {
+        adopt_other_revisions(self.inst, c, state, save)
     }
 
     fn verify_installed(&mut self, m: &Mod, folder: &str) -> Result<bool, String> {
@@ -429,11 +773,10 @@ impl Hooks for RealHooks<'_> {
         {
             return Installed::Failed("Refusing to replace an unowned collection folder".into());
         }
-        let fallback = self.game.prefix().and_then(|prefix| {
-            self.game
-                .plugin_spec()
-                .map(|spec| eidos_plugins::plugins_txt_dir(&prefix, &spec))
-        });
+        // Where the game keeps its activation state, as launch and the GUI
+        // read it: the install root for Morrowind and root-mode Oblivion, where
+        // AppData has nothing and every plugin would read as active.
+        let fallback = self.game.plugin_state_dir();
         let ctx = eidos_install::fomod_context_for_instance(
             self.inst,
             &self.game.data_path,
@@ -449,7 +792,16 @@ impl Hooks for RealHooks<'_> {
                 Err(e) => return Installed::Failed(e),
             };
         let marker = self.owner_marker(m);
-        let policy = eidos_install::OverwritePolicy::ReplaceOwned(marker.clone());
+        // A member folder replaced by a new revision, or by a repair, can hold
+        // files its receipt never saw (an edited INI, files moved in by Sync to
+        // Mods). Keep that folder as `<name>_backup`; an untouched one is
+        // replaced outright, so an update does not double the disk use.
+        let keep = crate::recipe::holds_unreceipted_files(&mods_dir.join(folder)).unwrap_or(true);
+        let policy = if keep {
+            eidos_install::OverwritePolicy::ReplaceOwnedWithBackup(marker.clone())
+        } else {
+            eidos_install::OverwritePolicy::ReplaceOwned(marker.clone())
+        };
         let finish = |stage: &Path| {
             crate::recipe::finish(&mapped, &self.payload_root, stage, &marker)
                 .map_err(eidos_install::InstallError::BadSelection)
@@ -720,6 +1072,10 @@ impl Hooks for RealHooks<'_> {
                                 Ok(report) => {
                                     unmatched.extend(report.warnings);
                                     if report.pending_effects {
+                                        // The files are published, so a kept folder exists now.
+                                        if let Some(backup) = report.install.backup.clone() {
+                                            self.kept.push((m.name.clone(), backup));
+                                        }
                                         return Installed::NeedsUser(format!("OMOD files were published; approved profile effects remain pending at {}. Resume to retry them", report.receipt_path.display()));
                                     }
                                     Ok(report.install)
@@ -811,6 +1167,9 @@ impl Hooks for RealHooks<'_> {
         };
         match result {
             Ok(rep) => {
+                if let Some(backup) = rep.backup.clone() {
+                    self.kept.push((m.name.clone(), backup));
+                }
                 if let Err(e) = self.register(&rep.name, &m.name, &renamed_to) {
                     return Installed::Failed(e);
                 }
@@ -994,7 +1353,13 @@ pub fn apply_plugin_states(
         });
         return;
     };
-    let local_dir = eidos_plugins::plugins_txt_dir(&prefix, &spec);
+    // Seed and fall back from where the game keeps its activation state, as
+    // launch and sort do: the install root for Morrowind and root-mode Oblivion.
+    // AppData held nothing there, so the profile was founded on an all-enabled
+    // default - and for Morrowind the write below then built the profile's
+    // Morrowind.ini from nothing, a `[Game Files]`-only stub every later launch
+    // deployed in place of the real INI.
+    let local_dir = eidos_plugins::plugin_state_dir(&prefix, &game.install_path, &spec);
     let _ = inst.ensure_profiles();
     let prof = inst.active();
     if prof.seed_plugin_state(&local_dir, &spec).is_err() {
@@ -1044,8 +1409,11 @@ pub fn apply_plugin_states(
         });
         return;
     }
-    // Shadow for tools that read the prefix; never fatal.
-    let _ = list.write_load_order(&local_dir, &spec);
+    // Shadow for tools that read the prefix; never fatal. Skipped for Timestamp
+    // games, as launch does: their state dir can be the game install itself.
+    if spec.mechanism != eidos_plugins::LoadOrderMechanism::Timestamp {
+        let _ = list.write_load_order(&local_dir, &spec);
+    }
     for name in missing {
         report.loot_notes.push(Note {
             subject: name,
@@ -1176,6 +1544,28 @@ pub fn apply_plugin_rules(
     }
 }
 
+/// The state key of the folder [`apply_ini_tweaks`] installs.
+const INI_TWEAKS_KEY: &str = "aux:ini-tweaks";
+
+/// The collection's "INI Tweaks" directory, in whatever case its author used.
+fn ini_tweaks_source(dir: &Path) -> std::io::Result<Option<PathBuf>> {
+    Ok(std::fs::read_dir(dir)?.filter_map(Result::ok).map(|e| e.path()).find(|p| {
+        p.is_dir()
+            && p.file_name()
+                .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
+    }))
+}
+
+/// Whether `dir` ships INI fragments: the test [`apply_ini_tweaks`] makes
+/// before it installs anything.
+fn ships_ini_fragments(dir: &Path) -> bool {
+    ini_tweaks_source(dir)
+        .ok()
+        .flatten()
+        .and_then(|src| std::fs::read_dir(src).ok())
+        .is_some_and(|mut files| files.any(|f| f.is_ok_and(|f| f.path().is_file())))
+}
+
 /// Copy the collection's INI fragments in as a mod of their own.
 pub fn apply_ini_tweaks(
     inst: &Instance,
@@ -1186,13 +1576,7 @@ pub fn apply_ini_tweaks(
     report: &mut Report,
 ) {
     let result = (|| -> Result<(), String> {
-        let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-        let src = entries.filter_map(Result::ok).map(|e| e.path()).find(|p| {
-            p.is_dir()
-                && p.file_name()
-                    .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("ini tweaks"))
-        });
-        let Some(src) = src else {
+        let Some(src) = ini_tweaks_source(dir).map_err(|e| e.to_string())? else {
             return Ok(());
         };
         let root = std::fs::canonicalize(dir).map_err(|e| e.to_string())?;
@@ -1212,7 +1596,7 @@ pub fn apply_ini_tweaks(
         if !files.iter().any(|f| f.path().is_file()) {
             return Ok(());
         }
-        let key = "aux:ini-tweaks";
+        let key = INI_TWEAKS_KEY;
         let owner = format!("{}:{}:{}", state.game_domain, state.slug, state.revision);
         let marker = serde_json::to_string(&[owner.as_str(), key]).expect("strings serialize");
         let wanted = safe(&format!("{} - INI Tweaks", c.info.name));
@@ -1235,6 +1619,11 @@ pub fn apply_ini_tweaks(
             return Err("The INI output directory is not an owned directory".into());
         }
         std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        let shipped: Vec<_> = files
+            .iter()
+            .filter(|f| f.path().is_file())
+            .map(|f| f.file_name())
+            .collect();
         let mut n = 0;
         for file in files {
             if !file.path().is_file() {
@@ -1263,9 +1652,56 @@ pub fn apply_ini_tweaks(
             }
             n += 1;
         }
+        // A folder taken over from another revision still held its fragments,
+        // and the user's selection of them was merged in at every launch. Only
+        // the fragments a collection run installed itself are removed: one the
+        // user added here (by hand, or with MO2's Create Tweak) is theirs. A
+        // folder from before that record has no list, so a fragment this
+        // revision does not ship is only deselected there, and named.
+        let meta_path = inst.mods_dir().join(&name).join("meta.ini");
+        let mut meta = eidos_instance::ModMeta::read(&meta_path);
+        let shipped: Vec<String> = shipped.iter().map(|s| s.to_string_lossy().into_owned()).collect();
+        let ours = meta.collection_ini_fragments();
+        let mut removed = Vec::new();
+        for old in ours.iter().flatten().filter(|old| !shipped.contains(old)) {
+            // The record is ours, but a name with a separator would leave dest.
+            if Path::new(old).file_name().is_none_or(|f| f != old.as_str()) {
+                continue;
+            }
+            let path = dest.join(old);
+            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
+                std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+                removed.push(old.clone());
+            }
+        }
+        let dropped: Vec<String> = meta
+            .ini_tweaks()
+            .iter()
+            .filter(|t| if ours.is_some() { removed.contains(t) } else { !shipped.contains(t) })
+            .cloned()
+            .collect();
+        if !dropped.is_empty() {
+            let selected: Vec<String> =
+                meta.ini_tweaks().iter().filter(|t| !dropped.contains(t)).cloned().collect();
+            meta.set_ini_tweaks(&selected);
+        }
+        meta.set_collection_ini_fragments(&shipped);
+        meta.write(&meta_path).map_err(|e| e.to_string())?;
         inst.register_installed_mod(&name)
             .map_err(|e| e.to_string())?;
-        report.deferred.push(Note { subject: "INI tweaks".into(), detail: format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab") });
+        let mut detail = format!("{n} fragment(s) installed as '{name}'; select the wanted fragments in its INI Tweaks tab");
+        if !removed.is_empty() {
+            detail += &format!(". Removed, as this revision no longer ships them: {}", removed.join(", "));
+        }
+        let deselected: Vec<&str> =
+            dropped.iter().filter(|d| !removed.contains(d)).map(String::as_str).collect();
+        if !deselected.is_empty() {
+            detail += &format!(
+                ". Deselected, as this revision does not ship them (select them again if you added them yourself): {}",
+                deselected.join(", ")
+            );
+        }
+        report.deferred.push(Note { subject: "INI tweaks".into(), detail });
         Ok(())
     })();
     if let Err(error) = result {
@@ -1295,6 +1731,279 @@ mod cache_tests {
         assert_eq!(cached_manifest(&dir).unwrap(), Some(text.into()));
         std::fs::write(dir.join("collection.json"), "changed recipe").unwrap();
         assert!(cached_manifest(&dir).unwrap().is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    const GATE: &str = "skyrimspecialedition";
+    fn mark(owner: &str, key: &str) -> String {
+        serde_json::to_string(&[owner, key]).unwrap()
+    }
+    fn key(file: u64) -> String {
+        format!("file:{GATE}:{file}")
+    }
+    fn owner(revision: u32) -> String {
+        format!("{GATE}:gate:{revision}")
+    }
+    fn gate_state(revision: u32) -> InstallState {
+        InstallState { slug: "gate".into(), revision, game_domain: GATE.into(), ..Default::default() }
+    }
+    /// Cache `mods` as the manifest of `revision` and return it parsed.
+    fn gate_manifest(root: &Path, revision: u32, mods: &[(&str, u64, u64)]) -> Collection {
+        let mods: Vec<String> = mods
+            .iter()
+            .map(|(name, m, f)| format!(r#"{{"name":"{name}","source":{{"type":"nexus","modId":{m},"fileId":{f}}}}}"#))
+            .collect();
+        let text = format!(r#"{{"info":{{"name":"Gate","domainName":"{GATE}"}},"mods":[{}]}}"#, mods.join(","));
+        let dir = crate::state::revision_dir(root, "gate", revision);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("collection.json"), &text).unwrap();
+        std::fs::write(cache_marker(&dir), eidos_nexus::md5_file(&dir.join("collection.json")).unwrap()).unwrap();
+        crate::read(&text).unwrap().collection
+    }
+    /// Revision 1 installed: one member revision 2 keeps, one it updates to a
+    /// new file of the same page, one it drops. Returns revision 2's recipe.
+    fn gate(tag: &str) -> (PathBuf, Instance, Collection) {
+        use crate::state::Status;
+        let root = std::env::temp_dir().join(format!("eidos-revision-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let inst = Instance::portable(root.clone());
+        gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = gate_state(1);
+        for (name, file) in [("Kept", 10), ("Updated", 20), ("Dropped", 30)] {
+            let folder = inst.mods_dir().join(name);
+            std::fs::create_dir_all(&folder).unwrap();
+            let mut meta = eidos_instance::ModMeta::default();
+            meta.set("eidosCollectionOwner", &mark(&owner(1), &key(file)));
+            meta.write(&folder.join("meta.ini")).unwrap();
+            old.folders.insert(key(file), name.into());
+            old.set(&key(file), Status::Installed(name.into()));
+        }
+        let body = serde_json::json!({"schema":1,"owner":mark(&owner(1), &key(10)),"recipe":null,"files":{},"exclusions":{}});
+        std::fs::write(inst.mods_dir().join("Kept/.eidos-collection-recipe.json"), body.to_string()).unwrap();
+        old.save(&InstallState::path(&root, "gate", 1)).unwrap();
+        std::fs::create_dir_all(inst.profile("Default").dir()).unwrap();
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Dropped\n").unwrap();
+        let new = gate_manifest(&root, 2, &[("Kept", 1, 10), ("Updated", 2, 21), ("Added", 4, 40)]);
+        (root, inst, new)
+    }
+
+    #[test]
+    fn a_new_revision_takes_over_its_previous_folders_instead_of_duplicating_them() {
+        let (root, inst, new) = gate("adopt");
+        let mut state = gate_state(2);
+        let mut saved = None;
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |s| {
+            // The claim is durable before the folder changes hands.
+            assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+            saved = Some(s.folders.clone());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(saved.as_ref(), Some(&state.folders));
+        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
+        assert_eq!(state.folders.get(&key(21)).map(String::as_str), Some("Updated"));
+        assert_eq!(state.folders.len(), 2);
+        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(2), &key(21))));
+        let receipt = inst.mods_dir().join("Kept/.eidos-collection-recipe.json");
+        let moved: serde_json::Value = serde_json::from_slice(&std::fs::read(&receipt).unwrap()).unwrap();
+        assert_eq!(moved["owner"], mark(&owner(2), &key(10)));
+        // The dropped member is named, not deleted.
+        assert_eq!(leftovers.iter().map(|n| n.subject.as_str()).collect::<Vec<_>>(), ["Dropped"]);
+        assert!(inst.mods_dir().join("Dropped").is_dir());
+        // The member reserves its old folder instead of "Kept (2)".
+        assert_eq!(reserve_folder(&inst, "Kept", &mark(&owner(2), &key(10)), state.folders.get(&key(10)).map(String::as_str)).unwrap(), "Kept");
+        // Repeatable: a crash before the new state was saved adopts the same folders.
+        let mut again = gate_state(2);
+        assert_eq!(adopt_other_revisions(&inst, &new, &mut again, &mut |_| Ok(())).unwrap(), leftovers);
+        assert_eq!(again.folders, state.folders);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unchanged_member_keeps_its_installed_status_and_an_updated_one_does_not() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("status");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        // Pending would be recovered as Approximate, an install that is not faithful.
+        assert_eq!(state.status(&key(10)), &Status::Installed("Kept".into()));
+        assert_eq!(state.status(&key(21)), &Status::Pending);
+        // Verified members are not registered again, so adoption enables an
+        // unlisted one.
+        assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_ini_tweaks_folder_moves_to_a_revision_that_still_ships_ini_tweaks() {
+        let (root, inst, new) = gate("ini");
+        let folder = inst.mods_dir().join("Gate - INI Tweaks");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut meta = eidos_instance::ModMeta::default();
+        meta.set("eidosCollectionOwner", &mark(&owner(1), INI_TWEAKS_KEY));
+        meta.write(&folder.join("meta.ini")).unwrap();
+        let path = InstallState::path(&root, "gate", 1);
+        let mut old = InstallState::load(&path).unwrap().unwrap();
+        old.folders.insert(INI_TWEAKS_KEY.into(), "Gate - INI Tweaks".into());
+        old.save(&path).unwrap();
+        std::fs::create_dir_all(folder.join("Ini Tweaks")).unwrap();
+        std::fs::write(folder.join("Ini Tweaks/Dropped.ini"), "[Display]\n").unwrap();
+        std::fs::write(folder.join("Ini Tweaks/Kept.ini"), "[Display]\n").unwrap();
+        let mut meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        meta.set_ini_tweaks(&["Dropped.ini".into(), "Kept.ini".into()]);
+        meta.write(&folder.join("meta.ini")).unwrap();
+        let dir = crate::state::revision_dir(&root, "gate", 2);
+        std::fs::create_dir_all(dir.join("INI Tweaks")).unwrap();
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n+Gate - INI Tweaks\n").unwrap();
+        // An empty directory ships nothing, so it takes nothing over.
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(INI_TWEAKS_KEY), None);
+        assert!(leftovers.iter().any(|n| n.subject == "Gate - INI Tweaks"), "{leftovers:?}");
+        std::fs::write(dir.join("INI Tweaks/Kept.ini"), "[Display]\n").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(INI_TWEAKS_KEY).map(String::as_str), Some("Gate - INI Tweaks"));
+        assert!(owns_folder(&folder, &mark(&owner(2), INI_TWEAKS_KEY)));
+        assert!(leftovers.iter().all(|n| n.subject != "Gate - INI Tweaks"), "{leftovers:?}");
+        // The fragment revision 2 dropped no longer applies at launch. This
+        // folder predates the record of what a run installed, so the unknown
+        // fragment is deselected and named, never deleted.
+        let mut report = Report::default();
+        apply_ini_tweaks(&inst, &dir, &new, &mut state, &mut |_| Ok(()), &mut report);
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert!(folder.join("Ini Tweaks/Dropped.ini").is_file());
+        assert!(folder.join("Ini Tweaks/Kept.ini").is_file());
+        let meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        assert_eq!(meta.ini_tweaks(), ["Kept.ini"]);
+        assert_eq!(meta.collection_ini_fragments(), Some(vec!["Kept.ini".to_string()]));
+        assert!(report.deferred.iter().any(|n| n.detail.contains("Deselected") && n.detail.contains("Dropped.ini")), "{report:?}");
+        // Now the run's own fragments are known: one a later revision drops is
+        // removed, while a fragment the user added and selected stays.
+        std::fs::write(folder.join("Ini Tweaks/Mine.ini"), "[Display]\n").unwrap();
+        let mut meta = eidos_instance::ModMeta::read(&folder.join("meta.ini"));
+        meta.set_ini_tweaks(&["Kept.ini".into(), "Mine.ini".into()]);
+        meta.write(&folder.join("meta.ini")).unwrap();
+        std::fs::remove_file(dir.join("INI Tweaks/Kept.ini")).unwrap();
+        std::fs::write(dir.join("INI Tweaks/New.ini"), "[Display]\n").unwrap();
+        let mut report = Report::default();
+        apply_ini_tweaks(&inst, &dir, &new, &mut state, &mut |_| Ok(()), &mut report);
+        assert!(report.failed.is_empty(), "{report:?}");
+        assert!(!folder.join("Ini Tweaks/Kept.ini").exists());
+        assert!(folder.join("Ini Tweaks/Mine.ini").is_file());
+        assert!(folder.join("Ini Tweaks/New.ini").is_file());
+        assert_eq!(eidos_instance::ModMeta::read(&folder.join("meta.ini")).ini_tweaks(), ["Mine.ini"]);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_member_skipped_in_the_new_revision_is_named_not_taken_over() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("skipped");
+        let mut state = gate_state(2);
+        state.set_by_user(&key(10), Status::Skipped);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert_eq!(state.folders.get(&key(10)), None);
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+        // This revision does use it; the user skipped it.
+        assert!(leftovers.iter().any(|n| n.subject == "Kept" && n.detail.contains("you skipped")), "{leftovers:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_folder_another_profile_enables_is_not_taken_over() {
+        let (root, inst, new) = gate("profiles");
+        std::fs::create_dir_all(inst.profile("Stable").dir()).unwrap();
+        std::fs::write(inst.profile("Stable").dir().join("modlist.txt"), "+Updated\n").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        // "Stable" keeps revision 1's files; the update installs its own copy.
+        assert_eq!(state.folders.get(&key(21)), None);
+        // Removing it would remove it from "Stable" too, so the note never asks.
+        let note = leftovers.iter().find(|n| n.subject == "Updated").unwrap();
+        assert!(note.detail.contains("'Stable'") && !note.detail.contains("or remove"), "{note:?}");
+        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
+        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_leftover_the_user_disabled_is_no_longer_reported() {
+        let (root, inst, new) = gate("disabled");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Kept\n+Updated\n-Dropped\n").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        // Disabling is what the note asks for, so it must clear the note.
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn going_back_to_the_previous_revision_takes_its_folders_back() {
+        let (root, inst, new) = gate("rollback");
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        state.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
+        let leftovers = adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |_| Ok(())).unwrap();
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(1), &key(10))));
+        assert!(owns_folder(&inst.mods_dir().join("Updated"), &mark(&owner(1), &key(20))));
+        // Revision 1 uses both, so neither is reported as something it does not use.
+        assert!(leftovers.is_empty(), "{leftovers:?}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn going_back_drops_a_folder_it_cannot_take_back_so_the_member_installs_fresh() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("rollback-kept");
+        let mut state = gate_state(2);
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        state.save(&InstallState::path(&root, "gate", 2)).unwrap();
+        // A copy of the profile made before going back enables every folder.
+        std::fs::create_dir_all(inst.profile("Backup").dir()).unwrap();
+        std::fs::write(inst.profile("Backup").dir().join("modlist.txt"), "+Kept\n+Updated\n").unwrap();
+        let old_recipe = gate_manifest(&root, 1, &[("Kept", 1, 10), ("Updated", 2, 20), ("Dropped", 3, 30)]);
+        let mut old = InstallState::load(&InstallState::path(&root, "gate", 1)).unwrap().unwrap();
+        let mut saved = None;
+        adopt_other_revisions(&inst, &old_recipe, &mut old, &mut |s| {
+            saved = Some(s.folders.clone());
+            Ok(())
+        })
+        .unwrap();
+        // Kept, the claim on a folder marked by revision 2 failed every run.
+        assert!(owns_folder(&inst.mods_dir().join("Kept"), &mark(&owner(2), &key(10))));
+        assert_eq!(old.folders.get(&key(10)), None);
+        assert_eq!(old.status(&key(10)), &Status::Pending);
+        assert_eq!(saved.as_ref(), Some(&old.folders));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_interrupted_adoption_still_registers_the_members_it_seeded() {
+        use crate::state::Status;
+        let (root, inst, new) = gate("resume");
+        std::fs::write(inst.profile("Default").dir().join("modlist.txt"), "+Updated\n+Dropped\n").unwrap();
+        // Seeded and saved, then stopped before the folder changed hands.
+        let mut state = gate_state(2);
+        state.set(&key(10), Status::Installed("Kept".into()));
+        state.folders.insert(key(10), "Kept".into());
+        adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert!(inst.modlist().iter().any(|m| m.name == "Kept" && m.enabled));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_unreadable_record_of_another_revision_does_not_stop_the_install() {
+        let (root, inst, new) = gate("unreadable");
+        std::fs::write(InstallState::path(&root, "gate", 3), "{ truncated").unwrap();
+        let mut state = gate_state(2);
+        let leftovers = adopt_other_revisions(&inst, &new, &mut state, &mut |_| Ok(())).unwrap();
+        assert!(leftovers.iter().any(|n| n.subject == "revision 3"), "{leftovers:?}");
+        // Revision 1 is still taken over.
+        assert_eq!(state.folders.get(&key(10)).map(String::as_str), Some("Kept"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

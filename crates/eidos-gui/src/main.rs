@@ -1222,6 +1222,9 @@ struct IniEditorState {
     /// buffer over a file that exists destroys it - and a permission error is
     /// exactly when that would happen.
     unreadable: bool,
+    /// A hash of the file's bytes as read, so a save can tell that another
+    /// process rewrote it since (see `IniEditorSave`).
+    on_disk: u64,
 }
 
 /// A mod-install name collision: `mods/<name>/` already exists, so the user picks
@@ -1750,6 +1753,15 @@ pub(crate) struct DataRow {
 /// cloning ~5k Strings per redraw (which is what it did, and what made the
 /// "cache" allocate proportionally to its own payload).
 type CachedListing = (u64, std::rc::Rc<Vec<String>>);
+/// The same for one directory of the Data tab's merged view.
+type CachedDataListing = (u64, std::rc::Rc<Vec<DataRow>>);
+/// The Data tab's union and its layer labels, with the generation they were
+/// built at (see [`view::data_stack`]).
+type CachedDataStack = (
+    u64,
+    std::rc::Rc<eidos_core::LayerStack>,
+    std::rc::Rc<view::DataSources>,
+);
 
 struct App {
     installer: Option<installers::Wizard>,
@@ -1763,8 +1775,17 @@ struct App {
     created: Option<Instance>,
     error: Option<String>,
     mods: Vec<ModEntry>,
+    /// A content hash of `modlist.txt` as it was when `mods` was last read from
+    /// or written to it; `None` until then. Another Eidos process (the CLI, a
+    /// second window Steam or a collection link opened) can rewrite the file
+    /// while this window shows its old copy, and saving that copy would erase
+    /// what it wrote, so `save_mods` refuses when the file no longer matches.
+    modlist_seen: std::cell::Cell<Option<u64>>,
     /// Cached ESP/ESM load order for the Plugins tab (recomputed on demand).
     plugins: Option<PluginList>,
+    /// The same guard for `plugins`: a hash of the profile's plugin state files
+    /// as `compute_plugins` read them or `write_plugin_state` last wrote them.
+    plugins_seen: std::cell::Cell<Option<u64>>,
     /// Cached per-file conflict analysis for the Conflicts tab + mod-row flags.
     conflicts: Option<ConflictMap>,
     archive_epoch: std::cell::Cell<u64>,
@@ -2226,7 +2247,7 @@ struct App {
     /// relative to `Data`, `""` for the root), each with the generation it was
     /// built at. The tree merges a level at a time, so only the directories the
     /// user actually opened are ever read.
-    data_listing: std::cell::RefCell<HashMap<String, (u64, Vec<DataRow>)>>,
+    data_listing: std::cell::RefCell<HashMap<String, CachedDataListing>>,
     /// The profile chip row's data: every profile name and which one is active.
     ///
     /// Both were read from disk on EVERY frame of the main screen - a `read_dir`
@@ -2248,7 +2269,7 @@ struct App {
     /// merge beside it: whiteouts, opaque directories, hidden names, case-folded
     /// dedup and NTFS collation all live in one place, and the tab can no longer
     /// disagree with the filesystem the game sees.
-    data_stack: std::cell::RefCell<Option<(u64, std::rc::Rc<eidos_core::LayerStack>)>>,
+    data_stack: std::cell::RefCell<Option<CachedDataStack>>,
     /// Free-text filter over the Data tree.
     data_query: String,
     /// Show only paths more than one mod provides.
@@ -4232,7 +4253,7 @@ mod tests {
             String::new(),
             (
                 app.view_generation.get(),
-                vec![DataRow {
+                std::rc::Rc::new(vec![DataRow {
                     name: "SKSE".into(),
                     source: "[skyrimse]".into(),
                     is_dir: true,
@@ -4240,7 +4261,7 @@ mod tests {
                     size: None,
                     mtime: None,
                     conflicted: false,
-                }],
+                }]),
             ),
         );
         app.listing_cache.borrow_mut().insert(
@@ -6035,6 +6056,150 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_plugins_tab_edit_on_a_fresh_morrowind_profile_keeps_the_real_ini() {
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["A.esp", "B.esp"] {
+            fs::write(game.data_path.join(name), []).unwrap();
+        }
+        let ini = "[General]\r\nSubtitles=1\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+        let spec = game.plugin_spec().unwrap();
+        let mut list = inst
+            .plugin_list(&game.data_path, "morrowind", game.plugin_state_dir().as_deref())
+            .unwrap();
+        assert!(list.set_enabled("B.esp", false));
+        write_plugin_state(&app, &list, &spec).unwrap();
+        let written =
+            fs::read_to_string(inst.active().plugins_state_dir().join("Morrowind.ini")).unwrap();
+        assert!(written.contains("Subtitles=1"), "{written}");
+        assert!(written.contains("GameFile0=A.esp") && !written.contains("B.esp"), "{written}");
+        assert_eq!(fs::read_to_string(game.install_path.join("Morrowind.ini")).unwrap(), ini);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_plugin_edit_in_a_stale_window_does_not_revert_another_process_sort() {
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["A.esp", "B.esp"] {
+            fs::write(game.data_path.join(name), []).unwrap();
+        }
+        let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+        let spec = game.plugin_spec().unwrap();
+        app.plugins = compute_plugins(&app);
+        let list = app.plugins.clone().unwrap();
+        write_plugin_state(&app, &list, &spec).unwrap();
+        // `eidos sort` in a terminal rewrites the profile's order while the
+        // window keeps the list it read before.
+        let state = inst.active().plugins_state_dir().join("Morrowind.ini");
+        let sorted = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        assert_ne!(fs::read_to_string(&state).unwrap(), sorted, "the sort must change something");
+        fs::write(&state, sorted).unwrap();
+        let mut stale = list.clone();
+        assert!(stale.set_enabled("B.esp", false));
+        assert!(write_plugin_state(&app, &stale, &spec).is_err());
+        assert_eq!(fs::read_to_string(&state).unwrap(), sorted);
+        // Re-read, the window's edits land again - twice, so its own write is
+        // not mistaken for another process's.
+        app.plugins = compute_plugins(&app);
+        let mut fresh = app.plugins.clone().unwrap();
+        assert!(fresh.set_enabled("B.esp", false));
+        write_plugin_state(&app, &fresh, &spec).unwrap();
+        assert!(fresh.set_enabled("B.esp", true));
+        write_plugin_state(&app, &fresh, &spec).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn saving_morrowind_ini_in_the_window_does_not_block_its_next_plugin_edit() {
+        // The INI editor writes the same Morrowind.ini the plugin state is hashed
+        // from; the window's own save is not another process's sort.
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        for name in ["A.esp", "B.esp"] {
+            fs::write(game.data_path.join(name), []).unwrap();
+        }
+        let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\nGameFile1=B.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+        app.tab = Tab::Plugins;
+        let spec = game.plugin_spec().unwrap();
+        app.plugins = compute_plugins(&app);
+        let list = app.plugins.clone().unwrap();
+        write_plugin_state(&app, &list, &spec).unwrap();
+
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        {
+            let ed = app.ini_editor.as_mut().expect("the editor opened");
+            assert_eq!(ed.current, "Morrowind.ini");
+            let edited = ed.content.text().replace("[General]", "[General]\r\nSubtitles=1");
+            ed.content = iced::widget::text_editor::Content::with_text(&edited);
+            ed.dirty = true;
+        }
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert!(!app.ini_editor.as_ref().unwrap().dirty, "status={:?}", app.status);
+
+        let mut next = app.plugins.clone().unwrap();
+        assert!(next.set_enabled("B.esp", false));
+        write_plugin_state(&app, &next, &spec).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_ini_editor_opens_the_real_morrowind_ini_and_never_reverts_an_outside_write() {
+        // A fresh profile used to open an EMPTY buffer, and saving it founded
+        // the profile's Morrowind.ini on a stub.
+        let root = temp_portable("morrowind");
+        let inst = Instance::portable(root.join("instance"));
+        inst.create().unwrap();
+        let mut app = app_for_game("morrowind");
+        app.games[0].install_path = root.join("game");
+        app.games[0].data_path = root.join("game/Data Files");
+        let game = app.games[0].clone();
+        fs::create_dir_all(&game.data_path).unwrap();
+        let ini = "[General]\r\n[Game Files]\r\nGameFile0=A.esp\r\n";
+        fs::write(game.install_path.join("Morrowind.ini"), ini).unwrap();
+        app.created = Some(inst.clone());
+
+        let _ = update_inner(&mut app, Message::ShowIniEditor);
+        let ed = app.ini_editor.as_mut().expect("the editor opened");
+        assert!(!ed.missing, "status={:?}", app.status);
+        assert!(ed.original.contains("GameFile0=A.esp"), "{}", ed.original);
+
+        // `eidos sort` rewrites it while the editor is open.
+        let path = inst.active().ini_path("Morrowind.ini");
+        fs::write(&path, "[Game Files]\r\nGameFile0=B.esp\r\n").unwrap();
+        ed.content = iced::widget::text_editor::Content::with_text("[General]\r\nSubtitles=1\r\n");
+        ed.dirty = true;
+        let _ = update_inner(&mut app, Message::IniEditorSave);
+        assert!(app.ini_editor.as_ref().unwrap().dirty);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "[Game Files]\r\nGameFile0=B.esp\r\n");
+        fs::remove_dir_all(root).unwrap();
+    }
+
     /// An instance with two profiles and a save in the active one.
     fn saves_app() -> (App, PathBuf) {
         let root = temp_portable("skyrimse");
@@ -7364,6 +7529,115 @@ mod tests {
     }
 
     #[test]
+    fn an_edit_in_a_stale_window_keeps_what_another_process_wrote() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "Zzz"] {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst.clone());
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        // `eidos install` in a terminal while the window is open.
+        fs::create_dir_all(root.join("mods").join("SkyUI")).unwrap();
+        inst.register_installed_mod("SkyUI").unwrap();
+        // A tick in the window, which still shows the list from before.
+        let at = |app: &App| app.mods.iter().position(|m| m.name == "Aaa").unwrap();
+        let i = at(&app);
+        app.mods[i].enabled = !app.mods[i].enabled;
+        mods_changed(&mut app);
+        let skyui = inst.modlist().into_iter().find(|m| m.name == "SkyUI");
+        assert!(skyui.is_some_and(|m| m.enabled), "status={:?}", app.status);
+        assert!(app.mods.iter().any(|m| m.name == "SkyUI"), "the window reloaded");
+        // Reloaded, the window's edits land again - twice, so its own save is
+        // not mistaken for another process's.
+        for on in [true, false] {
+            let i = at(&app);
+            app.mods[i].enabled = on;
+            mods_changed(&mut app);
+            let aaa = inst.modlist().into_iter().find(|m| m.name == "Aaa").unwrap();
+            assert_eq!(aaa.enabled, on, "status={:?}", app.status);
+        }
+        // A removal edits modlist.txt itself before saving; that is the
+        // window's own write, not another process's.
+        let zzz = app.mods.iter().position(|m| m.name == "Zzz").unwrap();
+        let _ = update_inner(&mut app, Message::ModRemove(zzz));
+        let _ = update_inner(&mut app, Message::ModRemove(zzz));
+        assert_eq!(app.status.as_deref(), Some("Removed 'Zzz'."));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_rename_in_a_stale_window_is_refused_before_the_folder_moves() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "SkyUI"] {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst.clone());
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        for m in app.mods.iter_mut() {
+            m.enabled = true;
+        }
+        mods_changed(&mut app);
+        // `eidos install` in a terminal while the window is open.
+        fs::create_dir_all(root.join("mods").join("Foo")).unwrap();
+        inst.register_installed_mod("Foo").unwrap();
+
+        let i = app.mods.iter().position(|m| m.name == "SkyUI").unwrap();
+        let _ = update_inner(&mut app, Message::RenameStart(i));
+        let _ = update_inner(&mut app, Message::RenameChanged("SkyUI 5.2".to_string()));
+        let _ = update_inner(&mut app, Message::RenameCommit);
+
+        // Refused while the folder still had its old name, and said so: had it
+        // moved first, the reload would have listed "SkyUI 5.2" DISABLED.
+        assert!(root.join("mods").join("SkyUI").is_dir(), "status={:?}", app.status);
+        assert!(!root.join("mods").join("SkyUI 5.2").exists());
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+        let listed = inst.modlist();
+        assert!(listed.iter().any(|m| m.name == "SkyUI" && m.enabled));
+        assert!(listed.iter().any(|m| m.name == "Foo" && m.enabled));
+        assert!(app.mods.iter().any(|m| m.name == "Foo"), "the window reloaded");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn batch_edits_in_a_stale_window_report_the_refusal_not_success() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for n in ["Aaa", "Bbb"] {
+            fs::create_dir_all(root.join("mods").join(n)).unwrap();
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst.clone());
+        app.screen = Screen::Main;
+        reload_mods(&mut app);
+        let stale = |app: &mut App, name: &str| {
+            fs::create_dir_all(root.join("mods").join(name)).unwrap();
+            inst.register_installed_mod(name).unwrap();
+            app.selected_mods = (0..app.mods.len()).collect();
+        };
+
+        // "Enable selected" used to replace the refusal with "Enabled 2 mod(s)."
+        stale(&mut app, "Foo");
+        let _ = update_inner(&mut app, Message::BatchToggleMods);
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+
+        // And a batch Remove refuses BEFORE deleting, not after.
+        stale(&mut app, "Bar");
+        let _ = update_inner(&mut app, Message::ConfirmBatchRemove);
+        assert!(app.status.as_deref().unwrap_or("").contains("another Eidos process"));
+        assert!(root.join("mods").join("Aaa").is_dir());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn renaming_a_mod_leaves_it_where_it_was_and_still_enabled() {
         // The defect, exactly as it was reported: rename a mod and it is
         // "teleported all the way to the top, unticked". The rename itself was
@@ -7388,6 +7662,9 @@ mod tests {
         mods_changed(&mut app);
         let before = app.mods.iter().position(|m| m.name == "Middle").unwrap();
         let total = app.mods.len();
+        // A second profile sharing the pool must follow the rename too.
+        let inst = app.created.clone().unwrap();
+        inst.profile("Other").create_from(&inst.active()).unwrap();
 
         let _ = update_inner(&mut app, Message::RenameStart(before));
         let _ = update_inner(&mut app, Message::RenameChanged("Renamed".to_string()));
@@ -7421,6 +7698,11 @@ mod tests {
             .expect("in modlist.txt");
         assert_eq!(reloaded, before);
         assert!(app.mods[reloaded].enabled);
+        let (other, trust) = inst.profile("Other").modlist_checked();
+        assert!(trust.is_good(), "{trust:?}");
+        let at = other.iter().position(|m| m.name == "Renamed").expect("listed in Other");
+        assert_eq!(at, before);
+        assert!(other[at].enabled);
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -10233,6 +10515,24 @@ mod tests {
         assert_eq!(m.size, Some(1));
         assert!(m.real.ends_with("mods/AAA/mod.esp"), "{:?}", m.real);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_data_source_is_the_longest_root_found_by_lookup() {
+        // Attribution used to scan every root per entry, O(entries x mods). The
+        // lookup must keep its longest-prefix rule: a mod nested under another
+        // root belongs to the inner one, and a sibling that merely shares a
+        // string prefix (`mods/A` vs `mods/AB`) is not a match at all.
+        let mut sources = DataSources::new();
+        sources.insert(PathBuf::from("/i/mods/A"), "A".to_string());
+        sources.insert(PathBuf::from("/i/mods/A/inner"), "Inner".to_string());
+        sources.insert(PathBuf::from("/g/Data"), "[skyrimse]".to_string());
+        let src = |p: &str| data_source(&sources, Path::new(p));
+        assert_eq!(src("/i/mods/A/inner/x.nif"), "Inner");
+        assert_eq!(src("/i/mods/A/meshes/x.nif"), "A");
+        assert_eq!(src("/i/mods/A"), "A");
+        assert_eq!(src("/i/mods/AB/x.nif"), "");
+        assert_eq!(src("/g/Data/Skyrim.esm"), "[skyrimse]");
     }
 
     #[test]

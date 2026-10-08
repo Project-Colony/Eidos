@@ -68,6 +68,17 @@ pub trait Hooks {
     fn allow_runtime_mismatch(&self) -> bool {
         false
     }
+    /// Take over what another revision of this collection installed, once the
+    /// recipe and the runtime have passed and before the first member. Returns
+    /// what the report has to name.
+    fn adopt(
+        &mut self,
+        _c: &Collection,
+        _state: &mut InstallState,
+        _save: &mut dyn FnMut(&InstallState) -> Result<(), String>,
+    ) -> Result<Vec<Note>, String> {
+        Ok(Vec::new())
+    }
     /// Get this member's archive, or say why not.
     fn obtain(&mut self, m: &Mod) -> Obtained;
     /// Reserve an owned destination before the engine persists it and starts extraction.
@@ -154,6 +165,19 @@ pub fn run(
             detail: runtime.message(),
         }),
         _ => {}
+    }
+    // Only now: a revision stopped by either gate above must not have taken the
+    // folders of the revision the user stays on.
+    match hooks.adopt(c, state, save) {
+        Ok(notes) => report.deferred.extend(notes),
+        Err(error) => {
+            report.aborted = true;
+            report.failed.push(Note {
+                subject: "previous revision".into(),
+                detail: format!("its folders could not be taken over: {error}"),
+            });
+            return report;
+        }
     }
     let order = install_order(c);
     let total = order.len();
@@ -504,6 +528,42 @@ mod tests {
                 .map(String::as_str),
             Some("First")
         );
+    }
+
+    #[test]
+    fn a_revision_stopped_at_the_runtime_gate_takes_nothing_over() {
+        struct Gated {
+            allow: bool,
+            adopted: usize,
+        }
+        impl Hooks for Gated {
+            fn runtime_check(&mut self, _: &Collection) -> crate::recipe::RuntimeCheck {
+                crate::recipe::RuntimeCheck::Mismatch { observed: "new".into(), expected: vec!["old".into()] }
+            }
+            fn allow_runtime_mismatch(&self) -> bool {
+                self.allow
+            }
+            fn adopt(&mut self, _: &Collection, _: &mut InstallState, _: &mut dyn FnMut(&InstallState) -> Result<(), String>) -> Result<Vec<Note>, String> {
+                self.adopted += 1;
+                Ok(vec![Note { subject: "Old".into(), detail: "unused".into() }])
+            }
+            fn obtain(&mut self, _: &Mod) -> Obtained {
+                assert_eq!(self.adopted, 1, "adoption comes before the first member");
+                Obtained::Ready("archive".into())
+            }
+            fn install(&mut self, m: &Mod, _: &std::path::Path, _: &str) -> Installed {
+                Installed::Ok(m.name.clone())
+            }
+        }
+        let c = collection(vec![member("A", 0, false, 1)]);
+        let mut hooks = Gated { allow: false, adopted: 0 };
+        // The user may stay on the revision they have; it keeps its folders.
+        assert!(run(&c, &mut InstallState::default(), &mut hooks, &mut noop).aborted);
+        assert_eq!(hooks.adopted, 0);
+        hooks.allow = true;
+        let report = run(&c, &mut InstallState::default(), &mut hooks, &mut noop);
+        assert_eq!(hooks.adopted, 1);
+        assert!(report.deferred.iter().any(|n| n.subject == "Old"));
     }
 
     #[test]

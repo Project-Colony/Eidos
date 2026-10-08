@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=89921c0b3973303663ecd15de8ec4a5bcdf23f1f -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
 
 # Usare Eidos
 
@@ -91,6 +91,55 @@ dei nomi privato, poi esegue il comando attraverso quella vista. Le scritture
 dell'istanza; l'installazione del gioco e ogni sorgente delle mod restano
 intatte byte per byte.
 
+### L'elenco delle mod
+
+Come in MO2, ogni profilo ha il proprio `modlist.txt` (quali mod sono attive, e
+con quale priorità), mentre le cartelle delle mod stanno nella cartella `mods/`
+condivisa dell'istanza. Una cartella che metti a mano in `mods/` non è ancora
+nell'elenco: compare **disattivata alla priorità più alta** - in fondo
+all'elenco della finestra, dove la mette anche MO2 - così, una volta attivata,
+vince i suoi conflitti. Le versioni precedenti la mettevano in cima, dove ogni
+altra mod prevaleva su di essa.
+
+Poiché le cartelle sono condivise, rimuovere o rinominare una mod cambia ogni
+profilo: la sua riga viene tolta dal `modlist.txt` di ogni profilo, o
+rinominata al suo interno, e per il resto ogni profilo conserva il proprio stato e il proprio
+ordine. Un profilo rimasto senza mod non ha affatto un `modlist.txt` invece di
+averne uno vuoto, che veniva letto come un file danneggiato e bloccava
+l'installazione successiva.
+
+La finestra lavora sulla propria copia dell'elenco delle mod e dell'ordine di
+caricamento. Se un altro processo Eidos scrive l'uno o l'altro mentre è aperta -
+`eidos install` o `eidos sort` in un terminale, una collezione, una sessione
+avviata da Steam, una seconda finestra - la modifica successiva della finestra
+viene rifiutata invece di sovrascrivere quel lavoro. La finestra ricarica dal
+disco e dice *Not saved: another Eidos process changed the mod
+list. It has been reloaded - redo the change.* (o lo stesso per l'ordine di
+caricamento); si perde solo quel clic, quindi rifallo. Rename, New mod, Add
+separator, Remove e la trasformazione dell'Overwrite in una mod controllano
+prima di toccare `mods/`, così una modifica rifiutata non cambia niente sul
+disco. Allo stesso modo l'editor INI rifiuta di salvare sopra un file che è
+cambiato da quando l'ha aperto.
+
+### I salvataggi appartengono al profilo
+
+Ogni profilo tiene i propri salvataggi in `profiles/<name>/saves/`, e per tutta
+la durata di un'esecuzione quella cartella viene montata sopra la cartella dei
+salvataggi del gioco nel prefisso Proton. Il primo avvio di un profilo vi copia
+dentro, una volta sola, i salvataggi già presenti nel prefisso, così un
+salvataggio che poi cancelli dal profilo resta cancellato. Dopo ogni esecuzione
+i salvataggi più recenti del profilo vengono ricopiati nel prefisso per Steam
+Cloud; un salvataggio del prefisso che non è stato Eidos a mettere lì viene
+prima conservato nel profilo come `orphan-<time>-<name>`, mai sovrascritto.
+
+Un salvataggio che arriva nel prefisso dopo quella prima copia senza passare da
+Eidos - un download di Steam Cloud da uno Steam Deck, un avvio senza Eidos -
+resta nascosto finché i salvataggi del profilo sono montati. Niente lo cancella:
+l'avvio lo nomina nel log dell'esecuzione (il `logs/run-*.log` dell'istanza per
+un avvio dalla finestra, la console di Steam per un avvio da Steam), una volta
+ogni volta che quell'insieme di file cambia. Per giocarlo, copialo insieme al
+suo co-save nella cartella `saves/` del profilo.
+
 ### Nessun passaggio privilegiato
 
 Eidos gira interamente senza root. Monta in uno spazio dei nomi privato di utente
@@ -152,6 +201,25 @@ registro o quello nuovo e mai metà dell'uno o dell'altro; se mai non si
 riuscisse a leggerlo, Eidos si ferma e lo dice invece di ricominciare in
 silenzio l'intera collezione. Esegui di nuovo lo stesso comando.
 
+Installare una revisione più recente di una collezione che hai già prende in
+carico le cartelle della revisione precedente: un membro invariato viene
+verificato sul posto, un membro il cui file l'autore ha aggiornato viene
+sostituito dentro la sua vecchia cartella, e un membro che la nuova revisione ha
+tolto resta installato e viene nominato nel rapporto perché tu lo disattivi o lo
+rimuova. Una cartella che un altro profilo attiva non viene mai presa in carico,
+perché la cartella delle mod è condivisa e quel profilo cambierebbe sotto i tuoi
+piedi: la nuova revisione installa invece la propria copia accanto a essa, e il
+rapporto ti chiede di disattivare quella vecchia in questo profilo, mai di
+rimuoverla. Tornare a una revisione più vecchia riprende le sue cartelle allo
+stesso modo, oppure installa copie nuove di quelle che non riesce a prendere.
+
+Un residuo di una revisione precedente che resta attivo impedisce che
+l'installazione conti come quella costruita dall'autore; la nota sparisce una
+volta che lo disattivi. Un membro che hai saltato con `--no-optional` non viene
+preso in carico ed è nominato allo stesso modo. Se la presa in carico stessa
+fallisce, l'esecuzione si ferma con *previous revision: its folders could not be
+taken over* e il motivo; risolvi quello ed esegui di nuovo il comando.
+
 ### Cosa non farà finta di fare
 
 **Un account Nexus gratuito non può scaricare le mod che compongono la
@@ -203,10 +271,13 @@ eidos unpack ~/backup.eidos /mnt/games/EidosSkyrim  # sull'altra macchina
 perché, e quanto spazio serve, senza scrivere niente. `eidos unpack --info` fa
 lo stesso per un file che hai già.
 
-Se 7-Zip non è riuscito a leggere qualcosa, l'archivio viene comunque scritto e
-rinominato - vale la pena averlo - ma `eidos pack` esce con **1** e dice cosa
-manca. Una copia di sicurezza incompleta non è un successo, e questo è un
-comando che la gente mette davanti a un `&&`.
+Se 7-Zip non è riuscito a leggere qualcosa, o la scansione ha dovuto saltare
+qualcosa che ti aspetteresti in una copia di sicurezza (un collegamento
+simbolico, una cartella che non è riuscita a leggere, un nome che non si può
+dare a 7-Zip in modo sicuro), l'archivio viene comunque scritto e rinominato -
+vale la pena averlo - ma `eidos pack` esce con **1** e dice cosa manca. Una
+copia di sicurezza incompleta non è un successo, e questo è un comando che la
+gente mette davanti a un `&&`.
 
 Un file `.eidos` è un archivio 7-Zip sotto un nome tutto suo, cosa che è una
 scelta e non un travestimento: 7-Zip serve già per installare una mod, quindi
@@ -238,7 +309,7 @@ palesemente incompleto invece di un file `.eidos` che sembra completo e non lo
 | `loot/`, tranne `userlist.yaml` | Una cache della masterlist che Eidos riscarica su richiesta. Le tue regole LOOT non sono una cache - quelle non le riscarica nessuno - quindi quel file viaggia insieme. |
 | `.base/`, `.base-root/` | Punti di mount vuoti dove i file del gioco stesso vengono messi da parte durante una sessione. |
 | File scritti a metà | Un download in pausa (`*.unfinished`), una scrittura atomica ancora in corso (`*.eidos-tmp*`). |
-| Collegamenti simbolici | 7-Zip ne seguirebbe uno e copierebbe quello a cui punta, cosa che per un link assoluto significa tirarsi dentro la copia un albero estraneo. Vengono invece segnalati. |
+| Collegamenti simbolici | 7-Zip ne seguirebbe uno e copierebbe quello a cui punta, cosa che per un link assoluto significa tirarsi dentro la copia un albero estraneo. Vengono invece segnalati, e la copia conta come incompleta: un `mods/` o un `downloads/` collegato a un altro disco NON viene impacchettato. Per fare apposta una copia senza un `downloads/` collegato, passa `--no-downloads` (o togli la spunta a *Include downloads/* nella finestra); un'esclusione deliberata non conta come mancante. |
 
 Ognuna di queste voci finisce in `eidos-backup.ini` alla radice dell'archivio,
 con la sua ragione - così la risposta a "cosa non c'è qui dentro" è `cat`, non

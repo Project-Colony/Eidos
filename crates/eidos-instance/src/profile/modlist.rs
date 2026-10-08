@@ -121,6 +121,14 @@ impl Profile {
         own
     }
 
+    /// The raw bytes of the file [`Profile::modlist`] reads (`None` when there is
+    /// none). A caller holding a list it read earlier compares these to tell
+    /// whether another process has rewritten the file since: the instance lock
+    /// serialises the writes, not a read made minutes before the write.
+    pub fn modlist_bytes(&self) -> Option<Vec<u8>> {
+        fs::read(self.modlist_source()).ok()
+    }
+
     pub fn create(&self) -> io::Result<()> {
         fs::create_dir_all(self.dir())
     }
@@ -270,9 +278,14 @@ impl Profile {
         // highest priority and leaves it DISABLED - it has no idea where in the
         // conflict order it belongs, and enabling it silently could overwrite half
         // the load order's files on the next launch.
+        // `out` is in file order, highest priority FIRST, so "highest priority" is
+        // the front: pushing these after the listed rows put them at the very
+        // bottom once enabled, under every other mod (and a mod captured from
+        // Overwrite, which only enables this entry in place, lost every conflict).
+        let mut fresh = Vec::new();
         for name in present {
             if seen.insert(name.clone()) {
-                out.push(ModEntry {
+                fresh.push(ModEntry {
                     path: mods_dir.join(&name),
                     name,
                     enabled: false,
@@ -280,6 +293,7 @@ impl Profile {
                 });
             }
         }
+        out.splice(0..0, fresh);
         let trust = if list_lost {
             ListTrust::Suspect(
                 "modlist.txt exists but could not be read (truncated, or permissions) - \
@@ -343,11 +357,106 @@ impl Profile {
         if target.exists() {
             let _ = fs::copy(&target, target.with_extension("txt.bak"));
         }
+        if s.is_empty() {
+            // No rows is "no order yet", which only an ABSENT file says: an empty
+            // one reads as a truncated list as soon as a folder exists (see
+            // `modlist_checked`), so the next install or save is refused. The
+            // window saves right after removing the last mods, and writing "" here
+            // put back the file `forget_mods` had just deleted. Once this profile's
+            // own file is gone, `modlist_source` may name the legacy flat file it
+            // shadowed; that one goes too, or it would come back as the list.
+            let remove = |path: PathBuf| match fs::remove_file(path) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+                _ => Ok(()),
+            };
+            remove(target)?;
+            return remove(self.modlist_source());
+        }
         // Through the shared writer, whose temp name is unique per process: the
-        // window and `eidos install` both write this file and neither serialises
-        // against the other (flock is advisory and the CLI does not take it), so
-        // a fixed temp name let two of them splice the curated order.
+        // window, `eidos install` and `eidos collection` all write this file.
+        // Every one of them takes the instance lock first, so the writes are
+        // serialised; the unique temp name is defence in depth against a fixed
+        // name letting two writers splice the curated order. What the lock does
+        // NOT cover is a caller whose `mods` was read before another process
+        // wrote: this rewrites the whole file from that list, so such a caller
+        // must compare `modlist_bytes` with what it read (the window does).
         crate::write_atomic(&target, s.as_bytes())
+    }
+
+    /// Drop the lines of mods whose folders the caller has just deleted, leaving
+    /// every other line - order, enabled state, `*` rows, comments - as it was.
+    ///
+    /// Deleting a folder without this leaves its line behind, and the trust check
+    /// counts a listed mod with no folder as LOST: remove a dozen at once and the
+    /// next save looks exactly like an unmounted drive, so it is refused, and so is
+    /// every save after it, because nothing can rewrite the file any more. This
+    /// edit cannot be fooled by that drive - it reads no scan and drops only the
+    /// names it is handed - so it needs no trust check of its own.
+    pub fn forget_mods(&self, names: &[String]) -> io::Result<()> {
+        let src = self.modlist_source();
+        let text = match fs::read_to_string(&src) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let mut kept = String::new();
+        let mut dropped = false;
+        for line in text.lines() {
+            let t = line.trim();
+            // Same reading as `modlist_checked`: `+`, `-` or a bare name is a mod.
+            let name = t.strip_prefix(['+', '-']).unwrap_or(t).trim();
+            if !t.starts_with(['*', '#']) && names.iter().any(|n| n == name) {
+                dropped = true;
+                continue;
+            }
+            kept.push_str(line);
+            kept.push('\n');
+        }
+        if !dropped {
+            return Ok(());
+        }
+        if kept.trim().is_empty() {
+            // An empty file next to surviving folders reads as a TRUNCATED list
+            // (see `modlist_checked`); an absent one is the honest "no order yet".
+            return fs::remove_file(&src);
+        }
+        fs::create_dir_all(self.dir())?;
+        crate::write_atomic(&self.modlist_path(), kept.as_bytes())
+    }
+
+    /// [`Profile::forget_mods`]'s twin for a folder the caller has just renamed:
+    /// the line keeps its `+`/`-` prefix and its place, only the name changes.
+    /// Left alone, the old name counts as a LOST mod (enough of them and the
+    /// list is judged an unmounted drive), and the new folder, listed nowhere,
+    /// comes back DISABLED at the top priority. MO2 does the same edit
+    /// (Profile::renameModInAllProfiles).
+    pub fn rename_mod(&self, old: &str, new: &str) -> io::Result<()> {
+        let src = self.modlist_source();
+        let text = match fs::read_to_string(&src) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let mut out = String::new();
+        let mut renamed = false;
+        for line in text.lines() {
+            let t = line.trim();
+            let name = t.strip_prefix(['+', '-']).unwrap_or(t).trim();
+            if !t.starts_with(['*', '#']) && name == old {
+                // `name` is a suffix of `t`, so what precedes it is the prefix.
+                out.push_str(&t[..t.len() - name.len()]);
+                out.push_str(new);
+                renamed = true;
+            } else {
+                out.push_str(line);
+            }
+            out.push('\n');
+        }
+        if !renamed {
+            return Ok(());
+        }
+        fs::create_dir_all(self.dir())?;
+        crate::write_atomic(&self.modlist_path(), out.as_bytes())
     }
 
     /// Register new content without changing a previously listed mod's priority or activation.
@@ -387,13 +496,15 @@ impl Profile {
     /// Why writing `modlist.txt` right now would destroy the curated order rather
     /// than record an edit, or `None` when it is safe.
     ///
-    /// The check is deliberately absolute rather than proportional, because the
-    /// disaster is absolute: the mod pool is unreachable, so the in-memory list is
-    /// missing EVERYTHING and any save flattens the order to nothing. A user who
-    /// really did delete every mod hits this too and has to say so by removing
-    /// `modlist.txt` themselves - an annoyance, weighed against permanently losing
-    /// the one thing on disk that cannot be re-derived: which of forty overlapping
-    /// mods wins each file conflict, and which are installed but deliberately off.
+    /// The check is [`ListTrust::judge`]: everything missing, or a large share of
+    /// the list missing at once. The disaster it stops is the unreachable mod pool,
+    /// where the in-memory list is missing EVERYTHING and any save flattens the
+    /// order to nothing. A user who really did delete that many mods by hand hits
+    /// this too and has to say so by removing `modlist.txt` themselves - an
+    /// annoyance, weighed against permanently losing the one thing on disk that
+    /// cannot be re-derived: which of forty overlapping mods wins each file
+    /// conflict, and which are installed but deliberately off. Eidos's own Remove
+    /// does not hit it: it calls [`Profile::forget_mods`] for what it deleted.
     ///
     /// MO2 has no equivalent. `Profile::refreshModStatus` rewrites the file inside
     /// the same refresh that dropped the entries, and the guard that looks like

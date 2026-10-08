@@ -20,8 +20,15 @@ pub fn newline_style(text: &str) -> &'static str {
 
 /// If `line` is a section header `[name]`, returns the trimmed `name` (no
 /// brackets). INI section names are matched case-insensitively by callers.
+///
+/// A leading UTF-8 BOM (U+FEFF) is skipped: `str::trim` keeps it (it is not
+/// White_Space), and the INI readers decode the file as-is, so a file saved as
+/// "UTF-8 with BOM" hid its FIRST section. set_key then appended a duplicate
+/// `[General]` at the end, which Wine never reads (its profile parser consumes
+/// the BOM and stops at the first matching section). Only the match skips it:
+/// set_key and delete_key copy lines verbatim, so the BOM survives a rewrite.
 pub fn section_header(line: &str) -> Option<&str> {
-    let t = line.trim();
+    let t = line.trim_start_matches('\u{feff}').trim();
     t.strip_prefix('[')
         .and_then(|s| s.strip_suffix(']'))
         .map(str::trim)
@@ -250,6 +257,20 @@ mod tests {
             get_key(&gone, "Archive", "bInvalidateOlderFiles"),
             None,
             "{gone}"
+        );
+    }
+
+    #[test]
+    fn a_bom_does_not_hide_the_first_section() {
+        // Notepad's "UTF-8 with BOM": the BOM sits right before the first
+        // header. Without skipping it, get_key saw no [General] and set_key
+        // appended a second one the engine never reads.
+        let text = "\u{feff}[General]\r\nbUseMyGamesDirectory=1\r\n[Display]\r\nx=1\r\n";
+        assert_eq!(get_key(text, "General", "bUseMyGamesDirectory"), Some("1"));
+        let out = set_key(text, "General", "bUseMyGamesDirectory", "0");
+        assert_eq!(
+            out,
+            "\u{feff}[General]\r\nbUseMyGamesDirectory=0\r\n[Display]\r\nx=1\r\n"
         );
     }
 

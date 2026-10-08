@@ -707,3 +707,49 @@ pub fn verify_receipt(m: &Mod, payload: &Path, folder: &Path, owner: &str) -> Re
         && receipt.recipe == identity(m, payload)?
         && receipt.files == tree_digests(folder)?)
 }
+/// Whether `folder` holds files its install receipt does not vouch for: a file
+/// the user edited, added or hid, files moved in by Sync to Mods, or content
+/// with no readable receipt at all. A fresh reservation holds nothing to lose.
+pub fn holds_unreceipted_files(folder: &Path) -> Result<bool, String> {
+    let current = tree_digests(folder)?;
+    if current.is_empty() {
+        return Ok(false);
+    }
+    let path = folder.join(RECEIPT);
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_file() => {}
+        _ => return Ok(true),
+    }
+    Ok(
+        match serde_json::from_slice::<Receipt>(&bounded_read(&path, 64 * 1024 * 1024)?) {
+            Ok(receipt) => receipt.files != current,
+            Err(_) => true,
+        },
+    )
+}
+/// Hand a receipt to the next revision of the same collection.
+///
+/// The owner is part of what a receipt proves, so without this every member a
+/// new revision takes over would fail verification and be extracted again -
+/// downloaded again too, when `downloads/` was cleaned. The recipe and file
+/// digests are untouched and still checked against the new revision's member,
+/// so a member the author changed is replaced as before. A receipt that is
+/// missing, unreadable or names any other owner is left alone, and
+/// verification rejects it.
+pub fn transfer_receipt(folder: &Path, from: &str, to: &str) -> Result<(), String> {
+    let path = folder.join(RECEIPT);
+    if !fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_file()) {
+        return Ok(());
+    }
+    let Ok(mut receipt) =
+        serde_json::from_slice::<Receipt>(&bounded_read(&path, 64 * 1024 * 1024)?)
+    else {
+        return Ok(());
+    };
+    if receipt.owner != from {
+        return Ok(());
+    }
+    receipt.owner = to.into();
+    let bytes = serde_json::to_vec(&receipt).map_err(|e| e.to_string())?;
+    eidos_instance::write_atomic(&path, &bytes).map_err(|e| e.to_string())
+}

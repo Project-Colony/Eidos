@@ -454,6 +454,7 @@ fn collection_on_worker(
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
         renamed: Vec::new(),
+        kept: Vec::new(),
     };
     // The bar counts members reached, which is the only honest measure here: a
     // collection that is half skipped still moves, and 7-Zip's own percentage
@@ -469,14 +470,7 @@ fn collection_on_worker(
         |s: &eidos_collections::state::InstallState| s.save(&state_path).map_err(|e| e.to_string());
     let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
-    for (member, folder) in std::mem::take(&mut hooks.renamed) {
-        report.renamed.push(eidos_collections::report::Note {
-            subject: member,
-            detail: format!(
-                "installed as \"{folder}\", because a mod of yours already had that name"
-            ),
-        });
-    }
+    hooks.drain_notes(&mut report);
     if report.aborted {
         return Err(report.render());
     }
@@ -516,6 +510,14 @@ impl eidos_collections::install::Hooks for CountingHooks<'_> {
     }
     fn allow_runtime_mismatch(&self) -> bool {
         self.inner.allow_runtime_mismatch()
+    }
+    fn adopt(
+        &mut self,
+        c: &eidos_collections::Collection,
+        state: &mut eidos_collections::state::InstallState,
+        save: &mut dyn FnMut(&eidos_collections::state::InstallState) -> Result<(), String>,
+    ) -> Result<Vec<eidos_collections::report::Note>, String> {
+        self.inner.adopt(c, state, save)
     }
 
     fn obtain(
@@ -1932,9 +1934,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // The card hosting the editor is dismissed by the commit, not by the
             // click that armed it.
             app.menu_mod = None;
-            mods_changed(app);
             // The toast quotes the same 1-based numbering the column shows.
-            app.status = Some(format!("Moved to priority {}.", at + 1));
+            if mods_changed(app) {
+                app.status = Some(format!("Moved to priority {}.", at + 1));
+            }
         }
         Message::SendToSeparatorStart(i) => {
             // Same as above: the chooser lives inside the menu card.
@@ -2076,7 +2079,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let Some(name) = app.overwrite_to_mod.take().map(|s| s.trim().to_string()) else {
                 return Task::none();
             };
-            let Some(inst) = app.created.as_ref() else {
+            // Owned: the staleness check below needs `app` mutably.
+            let Some(inst) = app.created.clone() else {
                 return Task::none();
             };
             let existing = inst.mods_dir().join(&name).exists();
@@ -2090,6 +2094,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
+            // Checked before the move, as Rename does: a save refused after it
+            // reloads a list that does not name the new mod, which comes back
+            // DISABLED - generated output the game then silently stops loading.
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             match inst.overwrite_into_mod(&name) {
                 Ok(dest) => {
                     // Highest priority (the end of the display order), which is where
@@ -2103,12 +2113,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         });
                     }
                     drop_files_cache(app, None);
-                    mods_changed(app);
+                    // Before mods_changed, which replaces it with the reason if
+                    // the save is refused.
                     app.status = Some(if existing {
                         format!("Moved the Overwrite into '{name}'.")
                     } else {
                         format!("Created mod '{name}' from the Overwrite.")
                     });
+                    mods_changed(app);
                 }
                 Err(e) => {
                     app.status = Some(format!("Could not create the mod: {e}"));
@@ -2458,6 +2470,13 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         return Task::none();
                     }
                 };
+                // And known current before the deletion, as Rename does: the
+                // save after it would refuse a list another process rewrote,
+                // and its "redo the change" would then cover a delete that
+                // already happened.
+                if refuse_stale_modlist(app) {
+                    return Task::none();
+                }
                 if let Some(m) = app.mods.get(i).cloned() {
                     match fs::remove_dir_all(&m.path) {
                         Ok(()) => {
@@ -2466,8 +2485,19 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             app.selected_mods.clear();
                             app.drag_state = None;
                             drop_files_cache(app, Some(&m.name));
+                            // Forgotten in every profile, not only this one: a line
+                            // left in another profile counts as a missing mod there,
+                            // and enough of them wedge it (see ConfirmBatchRemove).
+                            let forgot =
+                                forget_removed_mods(app, std::slice::from_ref(&m.name));
+                            app.status = Some(match forgot {
+                                Some(Err(e)) => format!(
+                                    "Removed '{}'. The mod list could not be updated: {e}.",
+                                    m.name
+                                ),
+                                _ => format!("Removed '{}'.", m.name),
+                            });
                             mods_changed(app);
-                            app.status = Some(format!("Removed '{}'.", m.name));
                         }
                         Err(e) => app.status = Some(format!("Remove failed: {e}")),
                     }
@@ -2526,7 +2556,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                             // folder moves a live union layer out from under a
                             // running session, and the refused save afterwards
                             // would leave modlist.txt naming a folder that no
-                            // longer exists.
+                            // longer exists. For the same reason the list must be
+                            // known current BEFORE the rename: the lock is
+                            // re-entrant, so the save can then only refuse a
+                            // list another process rewrote, and that has to be
+                            // caught while the folder still has its old name.
                             let Some(inst) = app.created.as_ref() else {
                                 return Task::none();
                             };
@@ -2537,6 +2571,9 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                     return Task::none();
                                 }
                             };
+                            if refuse_stale_modlist(app) {
+                                return Task::none();
+                            }
                             match fs::rename(&old.path, &dest) {
                                 Ok(()) => {
                                     if let Some(m) = app.mods.get_mut(i) {
@@ -2558,8 +2595,20 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                         app.collapsed.insert(typed.clone());
                                         save_collapsed(app);
                                     }
+                                    // Renamed in every profile, not only this one:
+                                    // the pool is shared, and a profile still
+                                    // naming the old folder loses the mod's state
+                                    // and order (see Profile::rename_mod).
+                                    let renamed = rename_mod_lines(app, &old.name, &new_name);
+                                    // Before mods_changed, which replaces it with
+                                    // the reason if the save is refused.
+                                    app.status = Some(match renamed {
+                                        Some(Err(e)) => format!(
+                                            "Renamed to '{typed}'. The other profiles could not be updated: {e}."
+                                        ),
+                                        _ => format!("Renamed to '{typed}'."),
+                                    });
                                     mods_changed(app);
-                                    app.status = Some(format!("Renamed to '{typed}'."));
                                 }
                                 Err(e) => app.status = Some(format!("Rename failed: {e}")),
                             }
@@ -2570,6 +2619,23 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::AddSeparator(i) => {
             app.menu_mod = None;
+            // Under the lock and before the folder exists, as Rename does: a
+            // refused save after it reloads the list, and the new folder comes
+            // back unlisted at the end. Without the lock another process could
+            // still write between the check and the save.
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot add a separator now: {e}."));
+                    return Task::none();
+                }
+            };
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             let mods_dir = app.created.as_ref().map(|inst| inst.mods_dir());
             if let Some(mods_dir) = mods_dir {
                 // A unique "Separator N" display name -> folder "<name>_separator".
@@ -2597,11 +2663,15 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         );
                         // Indices at/after the insertion point shifted.
                         app.selected_mods.clear();
-                        mods_changed(app);
-                        app.selected_mod = Some(idx);
-                        // Open its rename editor so the user names it straight away.
-                        app.rename = Some((idx, display));
-                        app.menu_mod = Some(idx);
+                        // Only once the save landed: a refusal (a trust check,
+                        // say) reloads the list, and the editor would then sit
+                        // on whichever unrelated mod took this index.
+                        if mods_changed(app) {
+                            app.selected_mod = Some(idx);
+                            // Open its rename editor so the user names it straight away.
+                            app.rename = Some((idx, display));
+                            app.menu_mod = Some(idx);
+                        }
                     }
                     Err(e) => app.status = Some(format!("Could not create separator: {e}")),
                 }
@@ -3431,8 +3501,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.status = Some(format!("{} has no INI files Eidos manages.", game.def.name));
                 return Task::none();
             };
-            let prof = inst.active();
-            app.ini_editor = Some(load_ini_editor(&prof, files, first));
+            let inst = inst.clone();
+            if let Err(e) = seed_ini_from_game(app, &first) {
+                app.status = Some(e);
+                return Task::none();
+            }
+            app.ini_editor = Some(load_ini_editor(&inst.active(), files, first));
         }
         Message::CloseIniEditor => app.ini_editor = None,
         Message::IniEditorPick(name) => {
@@ -3455,6 +3529,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             let files = ed.files.clone();
+            if let Err(e) = seed_ini_from_game(app, &name) {
+                app.status = Some(e);
+                return Task::none();
+            }
             app.ini_editor = Some(load_ini_editor(&inst.active(), files, name));
         }
         Message::IniEditorAction(action) => {
@@ -3485,6 +3563,27 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 ));
                 return Task::none();
             }
+            // Under the lock, and only over the file the buffer was read from.
+            // The buffer may be minutes old: since then `eidos sort` or
+            // `eidos collection` may have rewritten Morrowind.ini's
+            // [Game Files], or a session written its INIs back into the
+            // profile, and writing the buffer would revert that silently (the
+            // re-read below would then even record the revert as current).
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Not saved: {e}."));
+                    return Task::none();
+                }
+            };
+            if content_hash(&std::fs::read(&path).ok()) != ed.on_disk {
+                app.status = Some(format!(
+                    "Not saved: {} changed on disk since the editor opened it. \
+                     Copy your edits, then close the editor and open it again.",
+                    ed.current
+                ));
+                return Task::none();
+            }
             // No trailing-newline surgery. iced 0.14's `Content::text()`
             // round-trips exactly, so the guard that used to sit here did not
             // prevent growth - it DELETED newlines the user had typed at the end
@@ -3495,6 +3594,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     ed.original = ed.content.text();
                     ed.dirty = false;
                     ed.missing = false;
+                    ed.on_disk = content_hash(&std::fs::read(&path).ok());
                     app.archive_epoch
                         .set(app.archive_epoch.get().wrapping_add(1));
                     app.status = Some(format!(
@@ -3502,6 +3602,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         ed.current,
                         inst.active().name
                     ));
+                    // Morrowind.ini (and plugins.txt) live in the profile's plugin
+                    // state: the cached load order and the hash its next write is
+                    // checked against are both stale now, and left so that write
+                    // was refused as another process's change. Re-read both, which
+                    // also picks up a `[Game Files]` line typed here.
+                    if path.starts_with(inst.active().plugins_state_dir()) {
+                        invalidate_plugins(app);
+                    }
                 }
                 Err(e) => app.status = Some(format!("Could not save {}: {e}", ed.current)),
             }
@@ -4870,6 +4978,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         Message::CreateEmptyMod => return update(app, Message::CreateEmptyModAt(app.mods.len())),
         Message::CreateEmptyModAt(at) => {
             app.menu_mod = None;
+            // Same as AddSeparator: checked under the lock, before the folder
+            // is created.
+            let Some(inst) = app.created.as_ref() else {
+                return Task::none();
+            };
+            let _lock = match inst.try_lock("the Eidos window") {
+                Ok(l) => l,
+                Err(e) => {
+                    app.status = Some(format!("Cannot create a mod now: {e}."));
+                    return Task::none();
+                }
+            };
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             if let Some(inst) = &app.created {
                 // A unique "New Mod N" name, never colliding on disk.
                 let mut n = 1usize;
@@ -4897,12 +5020,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                                 save_collapsed(app);
                             }
                         }
-                        mods_changed(app);
-                        app.selected_mod = Some(idx);
-                        app.selected_mods.clear();
-                        // Open its rename editor so the user names it straight away.
-                        app.rename = Some((idx, name));
-                        app.menu_mod = Some(idx);
+                        // Only once the save landed, as in AddSeparator.
+                        if mods_changed(app) {
+                            app.selected_mod = Some(idx);
+                            app.selected_mods.clear();
+                            // Open its rename editor so the user names it straight away.
+                            app.rename = Some((idx, name));
+                            app.menu_mod = Some(idx);
+                        }
                     }
                     Err(e) => app.status = Some(format!("Could not create mod: {e}")),
                 }
@@ -5815,7 +5940,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .collect();
             let mut enabled = 0usize;
             for m in app.mods.iter_mut() {
-                if !m.enabled && wanted.contains(&m.name) {
+                if !m.enabled && !m.is_backup() && wanted.contains(&m.name) {
                     m.enabled = true;
                     enabled += 1;
                 }
@@ -5825,7 +5950,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     Some("Those mods are already enabled - the plugins still need turning on in the Plugins tab.".to_string());
                 return Task::none();
             }
-            mods_changed(app);
+            let saved = mods_changed(app);
             // The plugin list changed shape, so the save's diff has to be redone
             // against it rather than left showing the old answer. But
             // mods_changed just INVALIDATED that list, and on the Saves tab
@@ -5838,6 +5963,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 app.plugins = compute_plugins(app);
             }
             load_save_details(app);
+            // A refused save left its reason in the status; keep it there.
+            if !saved {
+                return Task::none();
+            }
             let left = app.save_missing.len();
             app.status = Some(if left == 0 {
                 format!("Enabled {enabled} mod(s); this save's plugins are all available now.")
@@ -6152,8 +6281,12 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 ));
                 return Task::none();
             }
-            mods_changed(app);
+            let saved = mods_changed(app);
             app.view_menu_open = false;
+            // A refused save left its reason in the status; keep it there.
+            if !saved {
+                return Task::none();
+            }
             // A collapsed group hides rows exactly as a filter does, and the
             // status has to admit either.
             let total = app
@@ -6176,7 +6309,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // MO2-style batch enable/disable: if any selected real mod is enabled,
             // the whole selection is disabled; otherwise the whole selection is
             // enabled. Separators carry no toggle and are skipped.
-            let targets: Vec<usize> = real_selection(app);
+            // A backup is inert: ticking one would write `+X_backup` (see ToggleMod).
+            let targets: Vec<usize> = real_selection(app)
+                .into_iter()
+                .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_backup()))
+                .collect();
             if targets.is_empty() {
                 app.status = Some("Select one or more mods first.".to_string());
                 return Task::none();
@@ -6190,13 +6327,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     m.enabled = new_state;
                 }
             }
-            mods_changed(app);
             app.menu_mod = None;
-            app.status = Some(format!(
-                "{} {} mod(s).",
-                if new_state { "Enabled" } else { "Disabled" },
-                targets.len()
-            ));
+            if mods_changed(app) {
+                app.status = Some(format!(
+                    "{} {} mod(s).",
+                    if new_state { "Enabled" } else { "Disabled" },
+                    targets.len()
+                ));
+            }
         }
         Message::BatchRemoveMods => {
             let n = real_selection(app).len();
@@ -6225,10 +6363,14 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     return Task::none();
                 }
             };
+            // Known current before the first deletion too, as in ModRemove.
+            if refuse_stale_modlist(app) {
+                return Task::none();
+            }
             // Delete from the highest index down so the lower indices stay valid.
             let mut targets = real_selection(app);
             targets.sort_unstable();
-            let mut removed = 0usize;
+            let mut gone: Vec<String> = Vec::new();
             let mut failed = 0usize;
             for &i in targets.iter().rev() {
                 if let Some(m) = app.mods.get(i).cloned() {
@@ -6236,7 +6378,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => {
                             app.mods.remove(i);
                             drop_files_cache(app, Some(&m.name));
-                            removed += 1;
+                            gone.push(m.name);
                         }
                         Err(_) => failed += 1,
                     }
@@ -6244,12 +6386,25 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             app.selected_mods.clear();
             app.selected_mod = None;
-            mods_changed(app);
-            app.status = Some(if failed == 0 {
+            let removed = gone.len();
+            let mut status = if failed == 0 {
                 format!("Removed {removed} mod(s).")
             } else {
                 format!("Removed {removed} mod(s); {failed} could not be deleted.")
-            });
+            };
+            // Before the save: every profile's modlist.txt still lists the deleted
+            // folders, and a big enough batch of listed-but-missing mods is exactly
+            // what an unmounted drive looks like - the save, and every one after
+            // it, would be refused. Only the folders really deleted are forgotten:
+            // one that failed keeps its line, its slot and its enabled state.
+            let forgot = forget_removed_mods(app, &gone);
+            if let Some(Err(e)) = forgot {
+                status = format!("{status} The mod list could not be updated: {e}.");
+            }
+            // Set BEFORE mods_changed, which replaces it with the reason if the
+            // save is refused; set after, it hid that refusal behind "Removed".
+            app.status = Some(status);
+            mods_changed(app);
         }
         Message::BatchSendTop => {
             // Lift the whole selection (keeping its relative order) to the top.
@@ -8312,6 +8467,9 @@ fn load_ini_editor(
     current: String,
 ) -> IniEditorState {
     let path = prof.ini_path(&current);
+    // Hashed BEFORE the text is read: a write in between then refuses the
+    // save, never lets the older buffer over it.
+    let on_disk = content_hash(&std::fs::read(&path).ok());
     // `read_text_lossy` returns None on ANY read failure, and a file that exists
     // but could not be read is not an empty one. Collapsing the two meant an
     // EACCES or an I/O error opened a blank editor whose always-enabled Save
@@ -8327,9 +8485,40 @@ fn load_ini_editor(
         dirty: false,
         missing: !exists,
         unreadable,
+        on_disk,
         files,
         current,
     }
+}
+
+/// Seed a file kept in the profile's plugin state (Morrowind.ini) from the
+/// game's real state before the editor opens it, as `write_plugin_state` does.
+/// Opened unseeded it showed an empty buffer, and saving that founded the
+/// profile's Morrowind.ini on a stub that every later launch deployed in place
+/// of the real INI, since the seed never replaces a file the profile owns.
+/// Fails closed with the reason.
+fn seed_ini_from_game(app: &mut App, file: &str) -> Result<(), String> {
+    let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
+        return Ok(());
+    };
+    let prof = inst.active();
+    let path = prof.ini_path(file);
+    if path.is_file() || !path.starts_with(prof.plugins_state_dir()) {
+        return Ok(());
+    }
+    let (Some(dir), Some(spec)) = (game.plugin_state_dir(), game.plugin_spec()) else {
+        return Ok(());
+    };
+    let seeded = inst
+        .try_lock("the Eidos window")
+        .and_then(|_lock| prof.seed_plugin_state(&dir, &spec))
+        .map_err(|e| format!("Cannot open {file} now: {e}."))?;
+    if seeded > 0 {
+        // The profile's plugin state changed under the cached load order and
+        // the hash its next write is checked against.
+        invalidate_plugins(app);
+    }
+    Ok(())
 }
 
 /// How much of a session log the pane reads. A launch log runs to megabytes and
