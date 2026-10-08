@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.3](https://github.com/Project-Colony/Eidos/compare/v1.18.2...v1.18.3) (2026-10-08)
+
+
+### Fixes
+
+* **deps:** update rustls to 0.23.45 (RUSTSEC-2026-0285) ([#73](https://github.com/Project-Colony/Eidos/issues/73)) ([1002b8a](https://github.com/Project-Colony/Eidos/commit/1002b8a03daaddb329592209796be38135858ee1))
+
 ## [1.18.2](https://github.com/Project-Colony/Eidos/compare/v1.18.1...v1.18.2) (2026-09-14)
 
 
