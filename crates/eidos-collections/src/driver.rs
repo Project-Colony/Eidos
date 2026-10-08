@@ -110,6 +110,8 @@ pub struct RealHooks<'a> {
     pub owner: String,
     /// Members installed under a name that was free, and what it was.
     pub renamed: Vec<(String, String)>,
+    /// Members whose previous folder was kept before it was replaced, and where.
+    pub kept: Vec<(String, PathBuf)>,
     pub payload_root: PathBuf,
     pub allow_runtime_mismatch: bool,
 }
@@ -125,6 +127,26 @@ impl RealHooks<'_> {
 
     fn owns(&self, folder: &Path, m: &Mod) -> bool {
         owns_folder(folder, &self.owner_marker(m))
+    }
+    /// Move what the hooks noted during [`install::run`] into its report.
+    pub fn drain_notes(&mut self, report: &mut Report) {
+        for (member, folder) in std::mem::take(&mut self.renamed) {
+            report.renamed.push(Note {
+                subject: member,
+                detail: format!(
+                    "installed as \"{folder}\", because a mod of yours already had that name"
+                ),
+            });
+        }
+        for (member, backup) in std::mem::take(&mut self.kept) {
+            report.kept.push(Note {
+                subject: member,
+                detail: format!(
+                    "its previous folder differed from what Eidos installed (a file changed, added or hidden, or it could not be checked), so it was kept as \"{}\". A backup is never loaded into the game: copy back what you still need",
+                    backup.file_name().unwrap_or_default().to_string_lossy()
+                ),
+            });
+        }
     }
     /// Record the successful install without changing existing profile decisions.
     fn register(
@@ -770,7 +792,16 @@ impl Hooks for RealHooks<'_> {
                 Err(e) => return Installed::Failed(e),
             };
         let marker = self.owner_marker(m);
-        let policy = eidos_install::OverwritePolicy::ReplaceOwned(marker.clone());
+        // A member folder replaced by a new revision, or by a repair, can hold
+        // files its receipt never saw (an edited INI, files moved in by Sync to
+        // Mods). Keep that folder as `<name>_backup`; an untouched one is
+        // replaced outright, so an update does not double the disk use.
+        let keep = crate::recipe::holds_unreceipted_files(&mods_dir.join(folder)).unwrap_or(true);
+        let policy = if keep {
+            eidos_install::OverwritePolicy::ReplaceOwnedWithBackup(marker.clone())
+        } else {
+            eidos_install::OverwritePolicy::ReplaceOwned(marker.clone())
+        };
         let finish = |stage: &Path| {
             crate::recipe::finish(&mapped, &self.payload_root, stage, &marker)
                 .map_err(eidos_install::InstallError::BadSelection)
@@ -1041,6 +1072,10 @@ impl Hooks for RealHooks<'_> {
                                 Ok(report) => {
                                     unmatched.extend(report.warnings);
                                     if report.pending_effects {
+                                        // The files are published, so a kept folder exists now.
+                                        if let Some(backup) = report.install.backup.clone() {
+                                            self.kept.push((m.name.clone(), backup));
+                                        }
                                         return Installed::NeedsUser(format!("OMOD files were published; approved profile effects remain pending at {}. Resume to retry them", report.receipt_path.display()));
                                     }
                                     Ok(report.install)
@@ -1132,6 +1167,9 @@ impl Hooks for RealHooks<'_> {
         };
         match result {
             Ok(rep) => {
+                if let Some(backup) = rep.backup.clone() {
+                    self.kept.push((m.name.clone(), backup));
+                }
                 if let Err(e) = self.register(&rep.name, &m.name, &renamed_to) {
                     return Installed::Failed(e);
                 }

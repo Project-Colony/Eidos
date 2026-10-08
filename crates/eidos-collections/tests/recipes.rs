@@ -573,6 +573,7 @@ fn actual_pe_runtime_evidence_gates_the_real_driver_before_member_mutation() {
         collection_domain: def.nexus_game.into(),
         owner: "test:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     c.mods.push(Mod {
         name: "Must never be reserved".into(),

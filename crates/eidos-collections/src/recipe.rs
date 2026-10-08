@@ -707,6 +707,26 @@ pub fn verify_receipt(m: &Mod, payload: &Path, folder: &Path, owner: &str) -> Re
         && receipt.recipe == identity(m, payload)?
         && receipt.files == tree_digests(folder)?)
 }
+/// Whether `folder` holds files its install receipt does not vouch for: a file
+/// the user edited, added or hid, files moved in by Sync to Mods, or content
+/// with no readable receipt at all. A fresh reservation holds nothing to lose.
+pub fn holds_unreceipted_files(folder: &Path) -> Result<bool, String> {
+    let current = tree_digests(folder)?;
+    if current.is_empty() {
+        return Ok(false);
+    }
+    let path = folder.join(RECEIPT);
+    match fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_file() => {}
+        _ => return Ok(true),
+    }
+    Ok(
+        match serde_json::from_slice::<Receipt>(&bounded_read(&path, 64 * 1024 * 1024)?) {
+            Ok(receipt) => receipt.files != current,
+            Err(_) => true,
+        },
+    )
+}
 /// Hand a receipt to the next revision of the same collection.
 ///
 /// The owner is part of what a receipt proves, so without this every member a

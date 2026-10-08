@@ -454,6 +454,7 @@ fn collection_on_worker(
         collection_domain: c.info.domain_name.clone(),
         owner: format!("{}:{}:{}", state.game_domain, state.slug, state.revision),
         renamed: Vec::new(),
+        kept: Vec::new(),
     };
     // The bar counts members reached, which is the only honest measure here: a
     // collection that is half skipped still moves, and 7-Zip's own percentage
@@ -469,14 +470,7 @@ fn collection_on_worker(
         |s: &eidos_collections::state::InstallState| s.save(&state_path).map_err(|e| e.to_string());
     let mut report = eidos_collections::install::run(c, &mut state, &mut counting, &mut save);
     report.unknown_sections = read.unknown_sections.clone();
-    for (member, folder) in std::mem::take(&mut hooks.renamed) {
-        report.renamed.push(eidos_collections::report::Note {
-            subject: member,
-            detail: format!(
-                "installed as \"{folder}\", because a mod of yours already had that name"
-            ),
-        });
-    }
+    hooks.drain_notes(&mut report);
     if report.aborted {
         return Err(report.render());
     }
@@ -5946,7 +5940,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 .collect();
             let mut enabled = 0usize;
             for m in app.mods.iter_mut() {
-                if !m.enabled && wanted.contains(&m.name) {
+                if !m.enabled && !m.is_backup() && wanted.contains(&m.name) {
                     m.enabled = true;
                     enabled += 1;
                 }
@@ -6315,7 +6309,11 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             // MO2-style batch enable/disable: if any selected real mod is enabled,
             // the whole selection is disabled; otherwise the whole selection is
             // enabled. Separators carry no toggle and are skipped.
-            let targets: Vec<usize> = real_selection(app);
+            // A backup is inert: ticking one would write `+X_backup` (see ToggleMod).
+            let targets: Vec<usize> = real_selection(app)
+                .into_iter()
+                .filter(|&i| app.mods.get(i).is_some_and(|m| !m.is_backup()))
+                .collect();
             if targets.is_empty() {
                 app.status = Some("Select one or more mods first.".to_string());
                 return Task::none();

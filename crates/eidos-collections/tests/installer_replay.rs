@@ -88,6 +88,7 @@ print(json.dumps({'protocol':1,'request_id':r['request_id'],'outcome':o}))
         collection_domain: "oblivion".into(),
         owner: "fixture:1".into(),
         renamed: vec![],
+        kept: vec![],
         payload_root: root.clone(),
         allow_runtime_mismatch: false,
     };

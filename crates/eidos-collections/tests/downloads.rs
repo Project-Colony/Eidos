@@ -42,6 +42,7 @@ fn a_direct_member_preserves_unrelated_downloads_and_partials() {
         collection_domain: def.nexus_game.into(),
         owner: "test:1".into(),
         renamed: vec![],
+        kept: vec![],
     };
     for (name, suffix) in [
         ("Complete", ""),
