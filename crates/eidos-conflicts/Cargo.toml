@@ -14,4 +14,4 @@ tempfile = "3"
 rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
-ddsfile = "0.5"
+ddsfile = "0.6"
