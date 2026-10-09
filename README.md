@@ -61,7 +61,8 @@ and previews images and text without launching anything.
 computes them, missing-master warnings, and your DLC and Creation Club content
 shown as the unmanaged rows they are.
 
-**Instances.** Global - managed centrally under `~/.local/share/eidos` - or
+**Instances.** Global - managed centrally under
+`~/.local/share/Colony/Eidos/instances/` - or
 portable: a self-contained folder anywhere you want (a second drive, a games
 partition), movable and isolated, like MO2's. Portable instances are remembered
 across sessions; the GUI, the Steam launch and every CLI command follow the one
@@ -94,12 +95,16 @@ launches it through the merged view without opening Eidos at all.
 plugin sets - and, after a run, what the script extender's own log says actually
 loaded.
 
-**Where it keeps its own files.** `~/.config/Colony/Eidos/` for what you chose -
-preferences, your Nexus session, your instance list, the game and add-on
-definitions you wrote - with logs under `~/.local/state/Colony/Eidos/`. The
-layout every program in the Colony family uses. An older Eidos kept these in
-`~/.config/eidos/`; the first launch after upgrading copies them across, says so
-in the log, and leaves the old directory exactly as it was.
+**Where it keeps its own files.** The layout every program in the Colony family
+uses: `~/.config/Colony/Eidos/` for what you chose - preferences, your Nexus
+session, your instance list, the game and add-on definitions you wrote -
+`~/.local/share/Colony/Eidos/` for global instances, downloaded runtimes and
+session logs, and `~/.cache/Colony/Eidos/` for LOOT masterlists. An older Eidos
+kept these in `~/.config/eidos/`, `~/.local/share/eidos/` and `~/.local/state/`;
+the first launch after upgrading carries them across, says so in the log, and
+leaves the old directories exactly as they were. Until a move has completed,
+Eidos keeps using the old files. Details in
+[internals/paths.md](docs/internals/paths.md).
 
 See [Integrity checks and generated output](docs/internals/integrity.md) for
 replacement protection, BSA/BA2 member conflicts, static SKSE diagnostics and
@@ -158,7 +163,7 @@ combine freely:
 | DLSS with Community Shaders | `PROTON_ENABLE_NVAPI=1` - without it DLSS silently never initialises; the full checklist is [guide/graphics.md](docs/guide/graphics.md) |
 | an FPS counter on screen | `DXVK_HUD=fps` |
 | driver-level frame interpolation, zero mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - never together with Community Shaders' own frame generation |
-| verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/state/Colony/Eidos/logs/`) |
+| verbose logs for a bug report | `EIDOS_LOG=debug` (session logs land in `~/.local/share/Colony/Eidos/logs/`) |
 | a per-session I/O report from the mount | `EIDOS_FUSE_STATS=1` |
 | a different FUSE worker count | `EIDOS_FUSE_THREADS=8` (default 4; `1` is the first thing to try when chasing a concurrency bug) |
 | this launch pinned to one portable instance | `EIDOS_INSTANCE=/path/to/folder` - without it Eidos opens the instance you last used, which is usually what you want |

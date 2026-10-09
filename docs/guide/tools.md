@@ -50,7 +50,7 @@ Register the executable where it actually sits. If the tool was installed as a
 mod, that is inside the mod folder:
 
 ```
-~/.local/share/eidos/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
+~/.local/share/Colony/Eidos/instances/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
 ```
 
 (that is the global instance's path - for a portable instance the same rule

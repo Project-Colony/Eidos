@@ -338,6 +338,7 @@ fn carry(from: &Path, to: &Path, root: &Path, how: Carry) -> io::Result<usize> {
             match how {
                 Carry::Copy => {
                     fs::copy(&src, &dst)?;
+                    keep_mtime(&src, fs::OpenOptions::new().write(true).open(&dst));
                 }
                 Carry::Link => fs::hard_link(&src, &dst)?,
             }
@@ -345,7 +346,19 @@ fn carry(from: &Path, to: &Path, root: &Path, how: Carry) -> io::Result<usize> {
         }
         // Sockets, FIFOs and devices: nothing a profile is made of.
     }
+    // Last, once nothing more is added to it: a mod folder's mtime is the
+    // "installed" date the mod list shows, and every mod moved today would
+    // otherwise read as installed today.
+    keep_mtime(from, fs::File::open(to));
     Ok(n)
+}
+
+/// Give `dst` the modification time of `src`. Best effort: a date is not worth
+/// failing a migration over.
+fn keep_mtime(src: &Path, dst: io::Result<fs::File>) {
+    if let (Ok(time), Ok(dst)) = (fs::metadata(src).and_then(|m| m.modified()), dst) {
+        let _ = dst.set_modified(time);
+    }
 }
 
 /// The target a carried symlink gets: the place the original pointed at.
@@ -641,6 +654,12 @@ mod tests {
         let old = h.join(".local/share/eidos/skyrimse");
         let new = h.join(".local/share/Colony/Eidos/instances/skyrimse");
         h.write(".local/share/eidos/skyrimse/modlist.txt", "+A\n");
+        h.write(".local/share/eidos/skyrimse/mods/A/a.esp", "plugin");
+        let installed = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        fs::File::open(old.join("mods/A"))
+            .unwrap()
+            .set_modified(installed)
+            .unwrap();
         assert_eq!(global_instance_dir("skyrimse"), old);
         assert_eq!(moved_global_instance(&old), None);
 
@@ -648,6 +667,9 @@ mod tests {
 
         assert_eq!(global_instance_dir("skyrimse"), new);
         assert_eq!(moved_global_instance(&old), Some(new.clone()));
+        // The mod list's "installed" date is the folder's mtime: it moves too.
+        let mtime = |p: PathBuf| fs::metadata(p).unwrap().modified().unwrap();
+        assert_eq!(mtime(new.join("mods/A")), installed);
         // A portable instance somewhere else is nobody's old path.
         assert_eq!(moved_global_instance(&h.join("Games/skyrimse")), None);
         assert!(old.join("modlist.txt").is_file());

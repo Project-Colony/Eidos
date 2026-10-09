@@ -10,7 +10,7 @@ wrong, see [troubleshooting.md](troubleshooting.md).
 eidos games                       # supported games installed here (like MO2's list)
 eidos init skyrimse               # create a modding instance
 # ...drop each mod as a folder into <instance>/mods/ (the global instance lives
-#    at ~/.local/share/eidos/skyrimse; `eidos init` prints yours)...
+#    at ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` prints yours)...
 eidos install skyrimse mod.7z     # or install a downloaded archive (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + plugin state
 eidos sort skyrimse               # LOOT-sort the plugin load order
@@ -27,7 +27,7 @@ out the set; run `eidos` with no arguments for the full list.
 ### Instances: global and portable
 
 Every command above addresses an instance. `skyrimse` names the **global** one -
-stored centrally at `~/.local/share/eidos/skyrimse`, managed by Eidos. The other
+stored centrally at `~/.local/share/Colony/Eidos/instances/skyrimse`, managed by Eidos. The other
 kind is **portable**: a self-contained folder wherever you want it (a second
 drive, a games partition), movable and isolated, exactly like MO2's portable
 instances. Wherever a command takes a game id it also takes a portable
@@ -55,17 +55,23 @@ a 78 MB .NET host is not per-instance.
 Eidos keeps its own files under `Colony/Eidos`, the layout every program in the
 Colony family uses: `~/.config/Colony/Eidos/` for what you chose (preferences,
 your Nexus session, your instance list, the game and add-on definitions you
-wrote), `~/.local/state/Colony/Eidos/logs/` for session logs, and
-`~/.local/share/Colony/Eidos/` for what Eidos downloaded. An older Eidos kept
-these in `~/.config/eidos/` and `~/.local/state/eidos/`; the first launch after
-upgrading **copies** them across and says so in the log. The old directories are
-left exactly as they were - nothing is deleted, so a bad upgrade cannot cost you
-a sign-in - and you can remove them yourself once you are satisfied.
+wrote), `~/.local/share/Colony/Eidos/` for global instances (`instances/`),
+downloaded runtimes and session logs (`logs/`), and `~/.cache/Colony/Eidos/` for
+the LOOT masterlists, which are downloaded again whenever they are missing.
 
-Your mods are not part of that. A global instance still lives at
-`~/.local/share/eidos/<game>/`, and a portable one wherever you put it, because
-those paths are written into your instance list and possibly into a Steam launch
-option: moving them would break a link Eidos does not own both ends of.
+An older Eidos kept these in `~/.config/eidos/`, `~/.local/share/eidos/` and
+`~/.local/state/`. The first launch after upgrading **copies** them across and
+says so in the log. A global instance is moved with hard links rather than a
+byte copy, so tens of gigabytes of mods move in a moment without taking any
+extra space, and its tool entries are repointed at the new folder. The old
+directories are left exactly as they were - nothing is deleted, so a bad upgrade
+cannot cost you a sign-in or a save - and you can remove them yourself once you
+are satisfied. If a copy cannot be made (a full or read-only disk, an old
+instance folder on another drive, a game still running from it), Eidos keeps
+using the old location and tries again on the next launch. A Steam launch
+option that still names the old instance folder opens the moved one.
+
+A portable instance is never moved: it stays wherever you put it.
 
 One place is refused outright: **inside a game's install folder** (the MO2
 veteran reflex). Steam owns that tree - an update, a "verify integrity" or an

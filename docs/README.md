@@ -19,6 +19,7 @@ Sorted by who is reading, not by subject.
 |---|---|
 | [internals/architecture.md](internals/architecture.md) | why FUSE, the daemon's design, caching, write semantics |
 | [internals/performance.md](internals/performance.md) | what was slow, what each change bought, how to measure it yourself |
+| [internals/paths.md](internals/paths.md) | where Eidos keeps its files, and how an upgrade moves them without losing any |
 | [internals/contributing.md](internals/contributing.md) | building, testing, and where everything lives |
 | [internals/adding-games.md](internals/adding-games.md) | wiring a new game family |
 | [internals/packaging.md](internals/packaging.md) | distribution, and why the obvious formats do not work |

@@ -263,7 +263,9 @@ they do not certify the audit branch in gameplay.
       closed: the last of them, Nexus **collection installation**, installs from
       the window on a worker thread whose progress bar becomes the report
 - [x] The Colony filesystem layout (`eidos-paths`) - `~/.config/Colony/Eidos`,
-      with logs under `~/.local/state/Colony/Eidos`, migrated by COPY so a wrong
+      with global instances, runtimes and logs under `~/.local/share/Colony/Eidos`
+      and the LOOT masterlists under `~/.cache/Colony/Eidos`, built on
+      `colony_ui::paths` and migrated by COPY (hard links for instances) so a wrong
       migration cannot cost anybody a Nexus session. Four crates had each been
       answering "where do my files go" by hand; there is one answer now. The
       reason to look was worse than the layout: `Settings::save` resolved its

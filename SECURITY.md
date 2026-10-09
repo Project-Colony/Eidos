@@ -96,7 +96,7 @@ The interesting attack surface, roughly in order of severity:
   permissions, and anywhere it could be logged or sent to a host other than
   Nexus.
 - **Runtime provisioning.** Eidos can download a .NET runtime (the `dotnet10`
-  prerequisite) and unpack it into `~/.local/share/eidos/runtimes/`. The expected
+  prerequisite) and unpack it into `~/.local/share/Colony/Eidos/runtimes/`. The expected
   SHA-256 is compiled into the binary rather than fetched alongside the file, and
   a mismatch refuses the install rather than warning about it; the archive is
   unpacked into a staging directory and renamed into place only once complete.
