@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Používání Eidosu
 
@@ -12,7 +12,7 @@ najdete v [troubleshooting.cs.md](troubleshooting.md).
 eidos games                       # supported games installed here (like MO2's list)
 eidos init skyrimse               # create a modding instance
 # ...drop each mod as a folder into <instance>/mods/ (the global instance lives
-#    at ~/.local/share/eidos/skyrimse; `eidos init` prints yours)...
+#    at ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` prints yours)...
 eidos install skyrimse mod.7z     # or install a downloaded archive (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + plugin state
 eidos sort skyrimse               # LOOT-sort the plugin load order
@@ -29,7 +29,7 @@ doplňují; úplný seznam vypíše `eidos` bez argumentů.
 ### Instance: globální a přenosné
 
 Každý příkaz výše se obrací na instanci. `skyrimse` pojmenovává tu **globální** -
-uloženou centrálně v `~/.local/share/eidos/skyrimse` a spravovanou Eidosem.
+uloženou centrálně v `~/.local/share/Colony/Eidos/instances/skyrimse` a spravovanou Eidosem.
 Druhý druh je **přenosná**: soběstačná složka kdekoli chcete (druhý disk, herní
 oddíl), přesunutelná a izolovaná, přesně jako přenosné instance v MO2. Kdekoli
 příkaz bere identifikátor hry, bere i složku přenosné instance:
@@ -57,17 +57,24 @@ stroj - 78MB hostitel .NET není záležitost jednotlivé instance.
 Eidos drží vlastní soubory pod `Colony/Eidos`, v rozvržení, které používá každý
 program z rodiny Colony: `~/.config/Colony/Eidos/` pro to, co jste zvolili
 (předvolby, vaše relace na Nexusu, seznam instancí, definice her a doplňků,
-které jste napsali), `~/.local/state/Colony/Eidos/logs/` pro logy relací a
-`~/.local/share/Colony/Eidos/` pro to, co Eidos stáhl. Starší Eidos je držel v
-`~/.config/eidos/` a `~/.local/state/eidos/`; první spuštění po aktualizaci je
-**zkopíruje** a napíše to do logu. Staré adresáře zůstanou přesně takové, jaké
-byly - nic se nemaže, takže vás špatná aktualizace nemůže stát přihlášení - a až
-budete spokojeni, můžete je smazat sami.
+které jste napsali), `~/.local/share/Colony/Eidos/` pro globální instance
+(`instances/`), stažené runtimy a logy relací (`logs/`) a
+`~/.cache/Colony/Eidos/` pro masterlisty LOOT, které se stáhnou znovu, kdykoli
+chybí.
 
-Vaše módy do toho nepatří. Globální instance dál žije v
-`~/.local/share/eidos/<game>/` a přenosná tam, kam jste ji dali, protože tyto
-cesty jsou zapsané ve vašem seznamu instancí a možná i v parametru spuštění ve
-Steamu: jejich přesun by rozbil odkaz, jehož oba konce Eidos nevlastní.
+Starší Eidos je držel v `~/.config/eidos/`, `~/.local/share/eidos/` a
+`~/.local/state/`. První spuštění po aktualizaci je **zkopíruje** a napíše to do
+logu. Globální instance se přesouvá pevnými odkazy místo kopírování bajtů, takže
+desítky gigabajtů módů se přesunou v okamžiku a nezaberou žádné místo navíc, a
+její položky nástrojů se přesměrují na novou složku. Staré adresáře zůstanou
+přesně takové, jaké byly - nic se nemaže, takže vás špatná aktualizace nemůže
+stát přihlášení ani uloženou hru - a až budete spokojeni, můžete je smazat sami.
+Pokud kopii nejde vytvořit (plný disk nebo disk jen pro čtení, stará složka
+instance na jiném disku, hra z ní stále běží), Eidos dál používá staré umístění
+a při dalším spuštění to zkusí znovu. Parametr spuštění ve Steamu, který stále
+jmenuje starou složku instance, otevře tu přesunutou.
+
+Přenosná instance se nikdy nepřesouvá: zůstává tam, kam jste ji dali.
 
 Jedno místo je odmítnuto rovnou: **uvnitř instalační složky hry** (reflex
 veteránů MO2). Ten strom vlastní Steam - aktualizace, „ověření integrity" nebo

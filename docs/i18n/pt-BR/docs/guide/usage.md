@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Usar o Eidos
 
@@ -12,7 +12,7 @@ parece errado, veja [troubleshooting.pt-BR.md](troubleshooting.md).
 eidos games                       # jogos suportados instalados aqui (como a lista do MO2)
 eidos init skyrimse               # criar uma instância de modding
 # ...largue cada mod como uma pasta em <instance>/mods/ (a instância global fica
-#    em ~/.local/share/eidos/skyrimse; `eidos init` mostra a sua)...
+#    em ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` mostra a sua)...
 eidos install skyrimse mod.7z     # ou instalar um arquivo baixado (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adotar a ordem e o estado dos plugins de um perfil MO2 existente
 eidos sort skyrimse               # ordenar a carga dos plugins com o LOOT
@@ -29,7 +29,7 @@ completam o conjunto; rode `eidos` sem argumentos para a lista inteira.
 ### Instâncias: global e portátil
 
 Todo comando acima se dirige a uma instância. `skyrimse` nomeia a **global** -
-guardada centralmente em `~/.local/share/eidos/skyrimse`, administrada pelo
+guardada centralmente em `~/.local/share/Colony/Eidos/instances/skyrimse`, administrada pelo
 Eidos. O outro tipo é a **portátil**: uma pasta autossuficiente onde você quiser
 (um segundo disco, uma partição de jogos), móvel e isolada, exatamente como as
 instâncias portáteis do MO2. Onde um comando aceita um identificador de jogo,
@@ -59,19 +59,25 @@ O Eidos guarda os próprios arquivos em `Colony/Eidos`, o layout que todo
 programa da família Colony usa: `~/.config/Colony/Eidos/` para o que você
 escolheu (preferências, sua sessão do Nexus, sua lista de instâncias, as
 definições de jogos e de add-ons que você escreveu),
-`~/.local/state/Colony/Eidos/logs/` para os logs de sessão, e
-`~/.local/share/Colony/Eidos/` para o que o Eidos baixou. Um Eidos mais antigo
-guardava isso em `~/.config/eidos/` e `~/.local/state/eidos/`; o primeiro início
-depois da atualização **copia** tudo para o lugar novo e diz isso no log. Os
-diretórios antigos ficam exatamente como estavam - nada é apagado, então uma
-atualização ruim não pode lhe custar um login - e você mesmo pode removê-los
-quando estiver satisfeito.
+`~/.local/share/Colony/Eidos/` para as instâncias globais (`instances/`), os
+runtimes baixados e os logs de sessão (`logs/`), e `~/.cache/Colony/Eidos/` para
+as masterlists do LOOT, que são baixadas de novo sempre que faltam.
 
-Seus mods não fazem parte disso. Uma instância global continua em
-`~/.local/share/eidos/<game>/`, e uma portátil onde você a pôs, porque esses
-caminhos estão escritos na sua lista de instâncias e possivelmente numa opção de
-inicialização do Steam: movê-los quebraria um vínculo cujas duas pontas não
-pertencem ao Eidos.
+Um Eidos mais antigo guardava isso em `~/.config/eidos/`,
+`~/.local/share/eidos/` e `~/.local/state/`. O primeiro início depois da
+atualização **copia** tudo para o lugar novo e diz isso no log. Uma instância
+global é movida com hard links em vez de uma cópia byte a byte, então dezenas de
+gigabytes de mods mudam de lugar num instante sem ocupar espaço extra, e as
+entradas de ferramentas dela passam a apontar para a pasta nova. Os diretórios
+antigos ficam exatamente como estavam - nada é apagado, então uma atualização
+ruim não pode lhe custar um login nem um save - e você mesmo pode removê-los
+quando estiver satisfeito. Se não for possível fazer uma cópia (um disco cheio
+ou somente leitura, uma pasta de instância antiga em outro disco, um jogo ainda
+rodando a partir dela), o Eidos continua usando o local antigo e tenta de novo
+no próximo início. Uma opção de inicialização do Steam que ainda aponta para a
+pasta antiga da instância abre a instância movida.
+
+Uma instância portátil nunca é movida: ela fica onde você a pôs.
 
 Um lugar é recusado de saída: **dentro da pasta de instalação de um jogo** (o
 reflexo de veterano do MO2). Aquela árvore pertence ao Steam - uma atualização,

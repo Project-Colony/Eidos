@@ -938,7 +938,7 @@ pub(crate) fn write_desktop_entry(
     game_id: &str,
     tool: &eidos_instance::Tool,
 ) -> std::io::Result<PathBuf> {
-    let dir = xdg_data_home().join("applications");
+    let dir = eidos_paths::desktop_entries_dir();
     std::fs::create_dir_all(&dir)?;
     // The instance by PATH when it is portable, by id when it is the global one
     // - the same two spellings `eidos tool` itself accepts.
@@ -1021,15 +1021,6 @@ pub(crate) fn write_desktop_entry(
     );
     std::fs::write(&path, body)?;
     Ok(path)
-}
-
-/// `$XDG_DATA_HOME`, or `~/.local/share`. NOT the Colony tree: a `.desktop` file
-/// belongs where the desktop looks for one, which is not ours to choose.
-fn xdg_data_home() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| home().join(".local/share"))
 }
 
 pub(crate) fn find_eidos_binary() -> PathBuf {

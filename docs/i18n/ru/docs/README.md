@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Документация Eidos
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | почему FUSE, устройство демона, кеширование, семантика записи |
 | [internals/performance.md](../../../internals/performance.md) | что было медленным, что дало каждое изменение, как измерить это самому |
+| [internals/paths.md](../../../internals/paths.md) | где Eidos хранит свои файлы и как обновление переносит их, ничего не теряя |
 | [internals/contributing.md](../../../internals/contributing.md) | сборка, тесты и где что лежит |
 | [internals/adding-games.md](../../../internals/adding-games.md) | подключение нового семейства игр |
 | [internals/packaging.md](../../../internals/packaging.md) | распространение и почему очевидные форматы не работают |

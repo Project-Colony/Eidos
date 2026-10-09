@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Eidos kullanımı
 
@@ -12,7 +12,7 @@ bkz. [troubleshooting.tr.md](troubleshooting.md).
 eidos games                       # burada kurulu desteklenen oyunlar (MO2'nin listesi gibi)
 eidos init skyrimse               # bir modlama örneği oluştur
 # ...her modu bir klasör olarak <instance>/mods/ içine bırakın (global örnek
-#    ~/.local/share/eidos/skyrimse konumundadır; `eidos init` sizinkini yazar)...
+#    ~/.local/share/Colony/Eidos/instances/skyrimse konumundadır; `eidos init` sizinkini yazar)...
 eidos install skyrimse mod.7z     # ya da indirilmiş bir arşivi kur (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # var olan bir MO2 profilinin sırasını + eklenti durumunu devral
 eidos sort skyrimse               # eklenti yükleme sırasını LOOT ile sırala
@@ -29,7 +29,7 @@ takımı tamamlar; tam liste için `eidos`'u argümansız çalıştırın.
 ### Örnekler: global ve taşınabilir
 
 Yukarıdaki her komut bir örneğe seslenir. `skyrimse`, **global** olanı
-adlandırır - merkezî olarak `~/.local/share/eidos/skyrimse` içinde saklanır,
+adlandırır - merkezî olarak `~/.local/share/Colony/Eidos/instances/skyrimse` içinde saklanır,
 Eidos tarafından yönetilir. Diğer tür **taşınabilir**: istediğiniz yerde (ikinci
 bir disk, bir oyun bölümü) kendi kendine yeten bir klasör; taşınabilir ve
 yalıtılmış, tam olarak MO2'nin taşınabilir örnekleri gibi. Bir komut nerede bir
@@ -58,19 +58,26 @@ MB'lık bir .NET host'u örnek başına olmaz.
 Eidos kendi dosyalarını `Colony/Eidos` altında tutar; bu, Colony ailesindeki her
 programın kullandığı düzendir: seçtikleriniz için `~/.config/Colony/Eidos/`
 (tercihler, Nexus oturumunuz, örnek listeniz, yazdığınız oyun ve eklenti
-tanımları), oturum günlükleri için `~/.local/state/Colony/Eidos/logs/` ve
-Eidos'un indirdikleri için `~/.local/share/Colony/Eidos/`. Daha eski bir Eidos
-bunları `~/.config/eidos/` ve `~/.local/state/eidos/` içinde tutuyordu;
-yükseltmeden sonraki ilk başlatma onları karşıya **kopyalar** ve bunu günlükte
-söyler. Eski dizinler tam olarak oldukları gibi bırakılır - hiçbir şey silinmez,
-yani kötü bir yükseltme size bir oturum açmaya mal olamaz - ve içiniz rahat
-ettiğinde onları kendiniz kaldırabilirsiniz.
+tanımları), global örnekler (`instances/`), indirilen çalışma zamanları ve
+oturum günlükleri (`logs/`) için `~/.local/share/Colony/Eidos/`, eksik
+olduklarında yeniden indirilen LOOT ana listeleri için de
+`~/.cache/Colony/Eidos/`.
 
-Modlarınız buna dahil değildir. Global bir örnek hâlâ
-`~/.local/share/eidos/<game>/` konumundadır, taşınabilir olan da onu koyduğunuz
-yerde, çünkü bu yollar örnek listenize ve muhtemelen bir Steam başlatma
-seçeneğine yazılmıştır: onları taşımak, Eidos'un iki ucuna birden sahip olmadığı
-bir bağı koparırdı.
+Daha eski bir Eidos bunları `~/.config/eidos/`, `~/.local/share/eidos/` ve
+`~/.local/state/` içinde tutuyordu. Yükseltmeden sonraki ilk başlatma onları
+karşıya **kopyalar** ve bunu günlükte söyler. Global bir örnek bayt bayt
+kopyalanmak yerine sabit bağlantılarla taşınır; böylece onlarca gigabaytlık
+modlar bir anda, fazladan yer kaplamadan taşınır ve araç kayıtları yeni klasörü
+gösterecek şekilde güncellenir. Eski dizinler tam olarak oldukları gibi
+bırakılır - hiçbir şey silinmez, yani kötü bir yükseltme size ne bir oturum
+açmaya ne de bir kayıt dosyasına mal olabilir - ve içiniz rahat ettiğinde onları
+kendiniz kaldırabilirsiniz. Kopya yapılamazsa (dolu ya da salt okunur bir disk,
+başka bir sürücüdeki eski bir örnek klasörü, hâlâ oradan çalışan bir oyun),
+Eidos eski konumu kullanmaya devam eder ve bir sonraki başlatmada yeniden dener.
+Hâlâ eski örnek klasörünü gösteren bir Steam başlatma seçeneği, taşınmış örneği
+açar.
+
+Taşınabilir bir örnek asla taşınmaz: onu koyduğunuz yerde kalır.
 
 Bir yer düpedüz reddedilir: **bir oyunun kurulum klasörünün içi** (MO2
 kıdemlisinin refleksi). O ağaç Steam'e aittir - bir güncelleme, bir "verify

@@ -11,6 +11,9 @@ edition.workspace = true
 # describe it. Reading the layout from here rather than re-deriving the folder
 # names is what keeps a backup honest the day the layout gains a folder.
 eidos-instance = { path = "../eidos-instance" }
+# Where a global instance lived before the Colony layout, and the
+# copy-then-marker move that carries it across.
+eidos-paths = { path = "../eidos-paths" }
 # The one 7-Zip seam: find the binary, drive it, read its progress. Packing adds
 # no archiver of its own precisely because this exists.
 eidos-sevenzip = { path = "../eidos-sevenzip" }

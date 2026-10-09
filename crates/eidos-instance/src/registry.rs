@@ -4,8 +4,8 @@
 //! game id. A portable instance is the opposite: the user chose the folder,
 //! and nothing can re-derive that choice. Without a record of it, the folder
 //! is orphaned the moment the process exits - the wizard greets its owner
-//! like a stranger and every CLI command quietly operates on the XDG-global
-//! path instead. This file is that record: the known portable roots, plus
+//! like a stranger and every CLI command quietly operates on the global
+//! instance instead. This file is that record: the known portable roots, plus
 //! which instance was opened last, so startup and the `nxm://` handler land
 //! on the setup the user actually plays.
 //!
@@ -25,7 +25,7 @@ use crate::Instance;
 /// A persistable reference to an instance - the two ways one can be named.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstanceRef {
-    /// The central instance for a game id (`$XDG_DATA_HOME/eidos/<id>`).
+    /// The central instance for a game id (`~/.local/share/Colony/Eidos/instances/<id>`).
     Global(String),
     /// A portable instance at an explicit root.
     Portable(PathBuf),

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Eidos verwenden
 
@@ -12,7 +12,7 @@ etwas falsch aussieht, steht in [troubleshooting.de.md](troubleshooting.md).
 eidos games                       # hier installierte unterstützte Spiele (wie MO2s Liste)
 eidos init skyrimse               # eine Modding-Instanz anlegen
 # ...jede Mod als Ordner nach <instance>/mods/ legen (die globale Instanz liegt
-#    unter ~/.local/share/eidos/skyrimse; `eidos init` nennt Ihre)...
+#    unter ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` nennt Ihre)...
 eidos install skyrimse mod.7z     # oder ein heruntergeladenes Archiv installieren (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # Reihenfolge + Plugin-Zustand eines vorhandenen MO2-Profils übernehmen
 eidos sort skyrimse               # die Plugin-Ladereihenfolge mit LOOT sortieren
@@ -30,7 +30,7 @@ vollständige Liste.
 ### Instanzen: global und portabel
 
 Jeder Befehl oben spricht eine Instanz an. `skyrimse` benennt die **globale** -
-zentral unter `~/.local/share/eidos/skyrimse` abgelegt, von Eidos verwaltet. Die
+zentral unter `~/.local/share/Colony/Eidos/instances/skyrimse` abgelegt, von Eidos verwaltet. Die
 andere Art ist **portabel**: ein in sich geschlossener Ordner, wo immer Sie ihn
 haben wollen (eine zweite Platte, eine Spielepartition), verschiebbar und
 isoliert, genau wie MO2s portable Instanzen. Wo ein Befehl eine Spiel-ID annimmt,
@@ -57,22 +57,30 @@ gemeinsame Runtime-Cache (`~/.local/share/Colony/Eidos/runtimes/`) bleibt bewuss
 maschinenweit - ein 78 MB großer .NET-Host gehört nicht in jede Instanz.
 
 Eidos hält seine eigenen Dateien unter `Colony/Eidos`, dem Aufbau, den jedes
-Programm der Colony-Familie verwendet: `~/.config/Colony/Eidos/` für das, was Sie
-gewählt haben (Einstellungen, Ihre Nexus-Sitzung, Ihre Instanzliste, die Spiel-
-und Add-on-Definitionen, die Sie geschrieben haben),
-`~/.local/state/Colony/Eidos/logs/` für Sitzungsprotokolle und
-`~/.local/share/Colony/Eidos/` für das, was Eidos heruntergeladen hat. Ein
-älteres Eidos hielt diese in `~/.config/eidos/` und `~/.local/state/eidos/`; der
-erste Start nach dem Upgrade **kopiert** sie herüber und schreibt das ins Log.
-Die alten Verzeichnisse bleiben genau so, wie sie waren - nichts wird gelöscht,
-ein missglücktes Upgrade kann Sie also keine Anmeldung kosten - und Sie können
-sie selbst entfernen, sobald Sie zufrieden sind.
+Programm der Colony-Familie verwendet: `~/.config/Colony/Eidos/` für das, was
+Sie gewählt haben (Einstellungen, Ihre Nexus-Sitzung, Ihre Instanzliste, die
+Spiel- und Add-on-Definitionen, die Sie geschrieben haben),
+`~/.local/share/Colony/Eidos/` für globale Instanzen (`instances/`),
+heruntergeladene Laufzeitumgebungen und Sitzungsprotokolle (`logs/`), und
+`~/.cache/Colony/Eidos/` für die LOOT-Masterlisten, die erneut heruntergeladen
+werden, sobald sie fehlen.
 
-Ihre Mods gehören nicht dazu. Eine globale Instanz liegt weiterhin unter
-`~/.local/share/eidos/<game>/`, eine portable dort, wo Sie sie hingelegt haben,
-weil diese Pfade in Ihrer Instanzliste stehen und womöglich in einer
-Steam-Startoption: sie zu verschieben würde eine Verbindung brechen, von der
-Eidos nicht beide Enden besitzt.
+Ein älteres Eidos hielt diese in `~/.config/eidos/`, `~/.local/share/eidos/` und
+`~/.local/state/`. Der erste Start nach dem Upgrade **kopiert** sie herüber und
+schreibt das ins Log. Eine globale Instanz wird mit Hardlinks statt einer
+Byte-Kopie verschoben, sodass Dutzende Gigabyte an Mods im Nu umziehen, ohne
+zusätzlichen Platz zu belegen, und ihre Werkzeugeinträge werden auf den neuen
+Ordner umgestellt. Die alten Verzeichnisse bleiben genau so, wie sie waren -
+nichts wird gelöscht, ein missglücktes Upgrade kann Sie also weder eine
+Anmeldung noch einen Spielstand kosten - und Sie können sie selbst entfernen,
+sobald Sie zufrieden sind. Lässt sich eine Kopie nicht anlegen (ein volles oder
+schreibgeschütztes Laufwerk, ein alter Instanzordner auf einem anderen Laufwerk,
+ein Spiel, das noch daraus läuft), verwendet Eidos weiter den alten Ort und
+versucht es beim nächsten Start erneut. Eine Steam-Startoption, die noch den
+alten Instanzordner nennt, öffnet die verschobene Instanz.
+
+Eine portable Instanz wird nie verschoben: sie bleibt dort, wo Sie sie hingelegt
+haben.
 
 Ein Ort wird rundheraus abgelehnt: **im Installationsordner eines Spiels** (der
 Reflex des MO2-Veteranen). Steam besitzt diesen Baum - ein Update, ein "verify

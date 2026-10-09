@@ -10,3 +10,5 @@ version.workspace = true
 libloot = "0.29"
 ureq = "3"
 eidos-plugins = { path = "../eidos-plugins" }
+# Where the masterlist cache lives: the Colony cache root.
+eidos-paths = { path = "../eidos-paths" }

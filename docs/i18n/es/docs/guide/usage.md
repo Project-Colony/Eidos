@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Usar Eidos
 
@@ -13,7 +13,7 @@ de concepto. Para qué hacer cuando algo parece ir mal, ver
 eidos games                       # juegos compatibles instalados aquí (como la lista de MO2)
 eidos init skyrimse               # crear una instancia de modding
 # ...deja cada mod como una carpeta en <instance>/mods/ (la instancia global vive
-#    en ~/.local/share/eidos/skyrimse; `eidos init` imprime la tuya)...
+#    en ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` imprime la tuya)...
 eidos install skyrimse mod.7z     # o instala un archivo descargado (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adoptar el orden y el estado de plugins de un perfil MO2 existente
 eidos sort skyrimse               # ordenar la carga de plugins con LOOT
@@ -30,7 +30,7 @@ completan el conjunto; ejecuta `eidos` sin argumentos para la lista completa.
 ### Instancias: globales y portátiles
 
 Toda orden de arriba se dirige a una instancia. `skyrimse` nombra la **global** -
-guardada de forma centralizada en `~/.local/share/eidos/skyrimse`, gestionada por
+guardada de forma centralizada en `~/.local/share/Colony/Eidos/instances/skyrimse`, gestionada por
 Eidos. El otro tipo es **portátil**: una carpeta autónoma donde tú quieras (un
 segundo disco, una partición de juegos), movible y aislada, exactamente como las
 instancias portátiles de MO2. Allí donde una orden acepta un identificador de
@@ -56,22 +56,30 @@ las corrigen; un simple `mv` no), y la caché compartida de
 runtimes (`~/.local/share/Colony/Eidos/runtimes/`) se queda deliberadamente global
 a la máquina - un host .NET de 78 MB no va por instancia.
 
-Eidos guarda sus propios archivos bajo `Colony/Eidos`, la disposición que usa todo
-programa de la familia Colony: `~/.config/Colony/Eidos/` para lo que elegiste
-(preferencias, tu sesión de Nexus, tu lista de instancias, las definiciones de
-juegos y extensiones que escribiste), `~/.local/state/Colony/Eidos/logs/` para los
-registros de sesión, y `~/.local/share/Colony/Eidos/` para lo que Eidos descargó.
-Un Eidos más antiguo los guardaba en `~/.config/eidos/` y `~/.local/state/eidos/`;
-el primer lanzamiento tras actualizar los **copia** y lo dice en el registro. Los
-directorios antiguos quedan exactamente como estaban - no se borra nada, así que
-una mala actualización no puede costarte un inicio de sesión - y puedes
-eliminarlos tú mismo cuando estés conforme.
+Eidos guarda sus propios archivos bajo `Colony/Eidos`, la disposición que usa
+todo programa de la familia Colony: `~/.config/Colony/Eidos/` para lo que
+elegiste (preferencias, tu sesión de Nexus, tu lista de instancias, las
+definiciones de juegos y extensiones que escribiste),
+`~/.local/share/Colony/Eidos/` para las instancias globales (`instances/`), los
+runtimes descargados y los registros de sesión (`logs/`), y
+`~/.cache/Colony/Eidos/` para las masterlists de LOOT, que se vuelven a
+descargar siempre que faltan.
 
-Tus mods no forman parte de eso. Una instancia global sigue viviendo en
-`~/.local/share/eidos/<game>/`, y una portátil donde la pusieras, porque esas
-rutas están escritas en tu lista de instancias y quizá en una opción de
-lanzamiento de Steam: moverlas rompería un enlace del que Eidos no controla los
-dos extremos.
+Un Eidos más antiguo los guardaba en `~/.config/eidos/`, `~/.local/share/eidos/`
+y `~/.local/state/`. El primer lanzamiento tras actualizar los **copia** y lo
+dice en el registro. Una instancia global se traslada con enlaces duros en lugar
+de una copia byte a byte, así que decenas de gigabytes de mods se mueven en un
+instante sin ocupar espacio extra, y sus entradas de herramientas se redirigen a
+la carpeta nueva. Los directorios antiguos quedan exactamente como estaban - no
+se borra nada, así que una mala actualización no puede costarte un inicio de
+sesión ni una partida guardada - y puedes eliminarlos tú mismo cuando estés
+conforme. Si no se puede hacer una copia (un disco lleno o de solo lectura, una
+carpeta de instancia antigua en otra unidad, un juego que aún se ejecuta desde
+ella), Eidos sigue usando la ubicación antigua y lo vuelve a intentar en el
+siguiente lanzamiento. Una opción de lanzamiento de Steam que todavía nombre la
+carpeta antigua de la instancia abre la trasladada.
+
+Una instancia portátil nunca se mueve: se queda donde la pusiste.
 
 Hay un sitio que se rechaza sin más: **dentro de la carpeta de instalación de un
 juego** (el reflejo del veterano de MO2). Ese árbol pertenece a Steam - una

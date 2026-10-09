@@ -49,9 +49,9 @@ crates/eidos-nexus      Nexus Mods: v1 API client, nxm:// downloads, update chec
                         v2 GraphQL for collections
 crates/eidos-log        session logs: levels, rotation, home-path redaction
 crates/eidos-addons     user extensions, read as out-of-process TOML manifests
-crates/eidos-paths      where Eidos keeps its files: the Colony layout, and the
-                        migration onto it. Depended on by every leaf crate, so
-                        std-only on purpose
+crates/eidos-paths      where Eidos keeps its files: the Colony layout from
+                        colony_ui::paths, and the migration onto it (see
+                        docs/internals/paths.md)
 docs/internals/architecture.md  the design and the tradeoffs behind it
 scripts/poc-overlay.sh  runnable proof that the "virtualize under Wine" thesis
                         holds with native primitives, no root required

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Eidos 文档
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | 为什么用 FUSE、守护进程的设计、缓存、写入语义 |
 | [internals/performance.md](../../../internals/performance.md) | 哪里慢过、每一处改动换来了什么、你自己怎么测 |
+| [internals/paths.md](../../../internals/paths.md) | Eidos 把文件放在哪里,以及升级如何在不丢失任何文件的情况下迁移它们 |
 | [internals/contributing.md](../../../internals/contributing.md) | 构建、测试,以及各样东西放在哪里 |
 | [internals/adding-games.md](../../../internals/adding-games.md) | 接入一个新的游戏系列 |
 | [internals/packaging.md](../../../internals/packaging.md) | 分发,以及为什么那些显而易见的格式行不通 |

@@ -6,9 +6,14 @@ license.workspace = true
 repository.workspace = true
 edition.workspace = true
 
-# std only, deliberately. This crate is depended on by every leaf crate in the
-# tree - eidos-log, eidos-gamedef, eidos-addons, eidos-instance - so anything it
-# pulls in is pulled in everywhere. `dirs` would be one line here and one more
-# crate in the graph of a program whose only platform is Linux, where the whole
-# of `dirs` reduces to reading four environment variables.
 [dependencies]
+# The ecosystem's one answer to "where does a Colony program keep its files".
+# Rebuilding it here by hand is what the Colony layout rule exists to stop: the
+# helper is the only place the `Colony/<Program>` shape, the absolute-only XDG
+# rule and the per-platform roots are written down.
+colony-ui = "0.1.5"
+# Only for the roots of the layout Eidos used BEFORE it joined the ecosystem
+# (`~/.config/eidos`, `~/.local/share/eidos`, `~/.local/state/eidos`), which no
+# Colony helper names because no other program ever used them. Already in the
+# graph through colony-ui, at the same version.
+dirs = "6"

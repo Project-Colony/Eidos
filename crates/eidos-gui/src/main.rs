@@ -2982,17 +2982,22 @@ fn subscription(app: &App) -> iced::Subscription<Message> {
 fn main() -> iced::Result {
     // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
     let launch_command: Vec<String> = std::env::args().skip(1).collect();
+    // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
+    // reads a setting, and before the log opens, so the log already lands in
+    // the folder it will be read from. Copies rather than moves, runs once, and
+    // cannot fail a launch: see `eidos_paths::migrate_legacy_layout`.
+    let moved = eidos_paths::migrate_legacy_layout();
     // Its own rotation bucket, distinct from the CLI's: the window and an
     // `eidos` child are separate processes writing the same directory, and
     // sharing a bucket would let one rotate the other's session away.
     let _ =
         eidos_log::init_with(eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")));
-    // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
-    // reads a setting. Copies rather than moves, runs once, and cannot fail a
-    // launch: see `eidos_paths::migrate_legacy_layout`. Logged rather than
-    // silent, because a user who goes looking for their settings deserves to
-    // find out from the log where they went.
-    for note in eidos_paths::migrate_legacy_layout() {
+    // Logged rather than silent, because a user who goes looking for their
+    // settings or their mods deserves to find out from the log where they went.
+    for note in moved
+        .into_iter()
+        .chain(eidos_transfer::migrate_global_instances())
+    {
         eidos_log::info!("{note}");
     }
     eidos_log::info!("eidos-gui {} starting", env!("CARGO_PKG_VERSION"));

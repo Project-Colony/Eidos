@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Dokumentace Eidosu
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | proč FUSE, návrh démona, cachování, sémantika zápisu |
 | [internals/performance.md](../../../internals/performance.md) | co bylo pomalé, co která změna přinesla, jak si to změřit sami |
+| [internals/paths.md](../../../internals/paths.md) | kde Eidos drží své soubory a jak je aktualizace přesune, aniž by o některý přišla |
 | [internals/contributing.md](../../../internals/contributing.md) | sestavení, testování a kde co leží |
 | [internals/adding-games.md](../../../internals/adding-games.md) | zapojení nové rodiny her |
 | [internals/packaging.md](../../../internals/packaging.md) | distribuce a proč zjevné formáty nefungují |

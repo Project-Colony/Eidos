@@ -1,6 +1,6 @@
 //! Persisted GLOBAL app settings, shared by the CLI and the GUI.
 //!
-//! Two files under the XDG dirs, both our own minimal `key=value` INI dialect
+//! Two files in the config directory, both our own minimal `key=value` INI dialect
 //! (not MO2's, distinct from the per-mod `meta.ini`):
 //!
 //! - `~/.config/Colony/Eidos/nexus.ini` holds only the personal Nexus API key.

@@ -67,7 +67,7 @@ pub fn is_runtime_verb(verb: &str) -> bool {
 /// not per-game and not per-profile. Two instances that both use DynDOLOD share
 /// one copy.
 pub fn runtimes_dir() -> PathBuf {
-    eidos_paths::data_dir().join("runtimes")
+    eidos_paths::runtimes_dir()
 }
 
 /// Where one runtime lives, version included so an Eidos that pins a newer one

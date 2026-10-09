@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -73,7 +73,7 @@ ouvrir - et prévisualise images et textes sans rien lancer.
 tels que le jeu les calcule, les avertissements de masters manquants, et vos DLC
 et contenus Creation Club affichés comme les lignes non gérées qu'ils sont.
 
-**Instances.** Globales - gérées centralement sous `~/.local/share/eidos` - ou
+**Instances.** Globales - gérées centralement sous `~/.local/share/Colony/Eidos/instances/` - ou
 portables : un dossier autonome où vous voulez (un second disque, une partition de
 jeux), déplaçable et isolé, comme celles de MO2. Les instances portables sont
 mémorisées d'une session à l'autre ; la GUI, le lancement Steam et chaque commande
@@ -103,13 +103,18 @@ travers la vue fusionnée sans ouvrir Eidos du tout.
 mods, jeux de plugins abîmés - et, après une exécution, ce que le journal du
 script extender dit avoir réellement chargé.
 
-**Où il range ses propres fichiers.** `~/.config/Colony/Eidos/` pour ce que vous
-avez choisi - préférences, votre session Nexus, votre liste d'instances, les
-définitions de jeux et d'extensions que vous avez écrites - avec les journaux sous
-`~/.local/state/Colony/Eidos/`. La disposition qu'utilise chaque programme de la
-famille Colony. Un Eidos plus ancien rangeait cela dans `~/.config/eidos/` ; le
-premier lancement après mise à jour les recopie, le dit dans le journal, et laisse
-l'ancien dossier exactement tel qu'il était.
+**Où il range ses propres fichiers.** La disposition qu'utilise chaque programme
+de la famille Colony : `~/.config/Colony/Eidos/` pour ce que vous avez choisi -
+préférences, votre session Nexus, votre liste d'instances, les définitions de
+jeux et d'extensions que vous avez écrites - `~/.local/share/Colony/Eidos/` pour
+les instances globales, les runtimes téléchargés et les journaux de session, et
+`~/.cache/Colony/Eidos/` pour les masterlists LOOT. Un Eidos plus ancien
+rangeait cela dans `~/.config/eidos/`, `~/.local/share/eidos/` et
+`~/.local/state/` ; le premier lancement après mise à jour les transfère, le dit
+dans le journal, et laisse les anciens dossiers exactement tels qu'ils étaient.
+Tant qu'un transfert n'est pas terminé, Eidos continue d'utiliser les anciens
+fichiers. Détails dans [internals/paths.md](../../internals/paths.md) (en
+anglais).
 
 Consultez [Contrôles d'intégrité et fichiers générés](../../../docs/internals/integrity.md) (en anglais) pour la protection des remplacements, les conflits entre fichiers BSA/BA2, les diagnostics statiques SKSE et les traces de génération, ainsi que leurs limites.
 
@@ -167,7 +172,7 @@ se combinent librement :
 | DLSS avec Community Shaders | `PROTON_ENABLE_NVAPI=1` - sans elle, DLSS ne s'initialise jamais, en silence ; la liste complète est dans [guide/graphics.md](docs/guide/graphics.md) |
 | un compteur d'IPS à l'écran | `DXVK_HUD=fps` |
 | l'interpolation d'images au niveau du pilote, sans mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - jamais en même temps que la génération d'images de Community Shaders |
-| des journaux détaillés pour un rapport de bug | `EIDOS_LOG=debug` (les journaux de session vont dans `~/.local/state/Colony/Eidos/logs/`) |
+| des journaux détaillés pour un rapport de bug | `EIDOS_LOG=debug` (les journaux de session vont dans `~/.local/share/Colony/Eidos/logs/`) |
 | un rapport d'E/S par session depuis le montage | `EIDOS_FUSE_STATS=1` |
 | un autre nombre de travailleurs FUSE | `EIDOS_FUSE_THREADS=8` (4 par défaut ; `1` est la première chose à essayer face à un bug de concurrence) |
 | épingler ce lancement à une instance portable | `EIDOS_INSTANCE=/chemin/vers/dossier` - sans elle Eidos ouvre l'instance utilisée en dernier, ce qui est généralement ce que vous voulez |

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -63,7 +63,7 @@ ENB, Engine Fixes), Root Builder 플러그인 없이, 설치 폴더로 복사되
 인덱스, 마스터 누락 경고, 그리고 DLC와 Creation Club 콘텐츠를 있는 그대로
 관리되지 않는 행으로 표시.
 
-**인스턴스.** 전역 - `~/.local/share/eidos` 아래에서 중앙 관리 - 또는 휴대용:
+**인스턴스.** 전역 - `~/.local/share/Colony/Eidos/instances/` 아래에서 중앙 관리 - 또는 휴대용:
 원하는 곳 어디에나 두는 자족적 폴더(두 번째 드라이브, 게임 파티션), 옮길 수
 있고 격리되어 있으며, MO2의 것과 같습니다. 휴대용 인스턴스는 세션을 넘어
 기억됩니다; GUI도, Steam 실행도, 모든 CLI 명령도 마지막에 쓴 것을 따라가고,
@@ -90,12 +90,13 @@ Steam AppID를 주고, Eidos를 전혀 열지 않고도 병합된 뷰를 통해 
 그리고 실행 뒤에는, 스크립트 익스텐더 자신의 로그가 실제로 무엇이 로드됐다고
 말하는지.
 
-**자기 파일을 두는 곳.** 여러분이 고른 것 - 환경 설정, Nexus 세션, 인스턴스
-목록, 직접 쓴 게임과 애드온 정의 - 은 `~/.config/Colony/Eidos/`에, 로그는
-`~/.local/state/Colony/Eidos/` 아래에. Colony 제품군의 모든 프로그램이 쓰는
-배치입니다. 예전 Eidos는 이것들을 `~/.config/eidos/`에 두었습니다; 업그레이드
-후 첫 실행이 그것들을 옮겨 복사하고, 로그에 그렇게 적고, 예전 폴더는 정확히
-이전 그대로 둡니다.
+**자기 파일을 두는 곳.** Colony 제품군의 모든 프로그램이 쓰는 배치입니다. 여러분이 고른 것 - 환경 설정, Nexus 세션,
+인스턴스 목록, 직접 쓴 게임과 애드온 정의 - 은 `~/.config/Colony/Eidos/`에, 전역 인스턴스와 내려받은 런타임, 세션
+로그는 `~/.local/share/Colony/Eidos/`에, LOOT 마스터리스트는 `~/.cache/Colony/Eidos/`에 둡니다.
+예전 Eidos는 이것들을 `~/.config/eidos/`, `~/.local/share/eidos/`, `~/.local/state/`에
+두었습니다; 업그레이드 후 첫 실행이 그것들을 옮기고, 로그에 그렇게 적고, 예전 폴더는 정확히 이전 그대로 둡니다. 옮기기가 끝나기 전까지
+Eidos는 예전 파일을 계속 씁니다. 자세한 내용은
+[internals/paths.md](../../internals/paths.md)(영어)를 참고하세요.
 
 교체 시 보호, BSA/BA2 내부 파일 충돌, SKSE 정적 진단, 생성 기록 및 그 한계는 [무결성 검사와 생성된 파일](../../../docs/internals/integrity.md)(영어)을 참고하세요.
 
@@ -151,7 +152,7 @@ Arch 패키지와 릴리스 압축 파일, 먼저 설치해야 하는 것, 그�
 | Community Shaders와 함께 쓰는 DLSS | `PROTON_ENABLE_NVAPI=1` - 이것이 없으면 DLSS는 조용히 초기화되지 않습니다; 전체 점검 목록은 [guide/graphics.ko.md](docs/guide/graphics.md) |
 | 화면에 FPS 카운터 | `DXVK_HUD=fps` |
 | 모드 없는 드라이버 수준 프레임 보간 (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - Community Shaders 자체의 프레임 생성과는 절대 함께 쓰지 마세요 |
-| 버그 신고용 상세 로그 | `EIDOS_LOG=debug` (세션 로그는 `~/.local/state/Colony/Eidos/logs/`에 떨어집니다) |
+| 버그 신고용 상세 로그 | `EIDOS_LOG=debug` (세션 로그는 `~/.local/share/Colony/Eidos/logs/`에 떨어집니다) |
 | 마운트의 세션별 I/O 보고 | `EIDOS_FUSE_STATS=1` |
 | 다른 FUSE 워커 수 | `EIDOS_FUSE_THREADS=8` (기본값 4; 동시성 버그를 쫓을 때 가장 먼저 시도할 것은 `1`입니다) |
 | 이번 실행을 휴대용 인스턴스 하나에 고정 | `EIDOS_INSTANCE=/path/to/folder` - 이것이 없으면 Eidos는 마지막에 쓴 인스턴스를 여는데, 보통은 그게 원하는 바입니다 |

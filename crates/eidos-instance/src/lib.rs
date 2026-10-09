@@ -2,8 +2,8 @@
 //! instances identically.
 //!
 //! An instance is one modding setup for a game. Like Mod Organizer 2 it can be:
-//! - **Global**: stored centrally at `$XDG_DATA_HOME/eidos/<game-id>/`, managed
-//!   by Eidos.
+//! - **Global**: stored centrally at
+//!   `~/.local/share/Colony/Eidos/instances/<game-id>/`, managed by Eidos.
 //! - **Portable**: a self-contained folder the user chooses (movable, isolated).
 //!
 //! Either way the layout is the same:
@@ -59,7 +59,7 @@ pub use tools::{
 /// Where an instance is stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InstanceKind {
-    /// Centrally under `$XDG_DATA_HOME/eidos/<id>`.
+    /// Centrally under `~/.local/share/Colony/Eidos/instances/<id>`.
     Global,
     /// In a self-contained folder chosen by the user.
     Portable,
@@ -164,19 +164,6 @@ fn is_plugin_name(name: &str) -> bool {
     n.ends_with(".esp") || n.ends_with(".esm") || n.ends_with(".esl")
 }
 
-/// `$XDG_DATA_HOME`, or `$HOME/.local/share`.
-pub fn data_home() -> PathBuf {
-    std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| {
-            let home = std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("/"));
-            home.join(".local/share")
-        })
-}
-
 /// A modding instance rooted at a directory.
 #[derive(Debug, Clone)]
 pub struct Instance {
@@ -245,16 +232,24 @@ impl Drop for InstanceLock {
 }
 
 impl Instance {
-    /// A global instance for a game id: `$XDG_DATA_HOME/eidos/<id>`.
+    /// A global instance for a game id:
+    /// `~/.local/share/Colony/Eidos/instances/<id>`, or its old
+    /// `~/.local/share/eidos/<id>` until that has moved (see `eidos_paths`).
     pub fn global(game_id: &str) -> Self {
         Instance {
-            root: data_home().join("eidos").join(game_id),
+            root: eidos_paths::global_instance_dir(game_id),
         }
     }
 
     /// A portable instance at an explicit folder.
+    ///
+    /// A folder that is the OLD home of a global instance which has since moved
+    /// opens the moved one: a Steam launch option or a shortcut written before
+    /// the move must not quietly carry on in a tree Eidos no longer reads.
     pub fn portable(root: PathBuf) -> Self {
-        Instance { root }
+        Instance {
+            root: eidos_paths::moved_global_instance(&root).unwrap_or(root),
+        }
     }
 
     /// Take this instance's cross-process exclusive lock, without blocking.
