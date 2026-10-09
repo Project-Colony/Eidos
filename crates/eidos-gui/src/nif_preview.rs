@@ -451,7 +451,7 @@ pub(crate) mod tests {
     fn model_textures_use_current_loose_winners_then_checked_archive_members() {
         let member = "Textures/Synthetic/Diffuse.dds";
         let (mut app, root) =
-            crate::tests::data_app(&[(member, "placeholder")], &[(member, "placeholder")]);
+            crate::test_support::data_app(&[(member, "placeholder")], &[(member, "placeholder")]);
         let loose = root.join("overwrite").join(member);
         let packed = root.join("mods/AAA/textures.bsa");
         std::fs::write(&loose, dds([0, 255, 0, 255])).unwrap();
@@ -517,7 +517,7 @@ pub(crate) mod tests {
     fn nif_controls_keep_original_source_and_view_provenance() {
         for archived in [false, true] {
             for replace_source in [false, true] {
-                let (mut app, root) = crate::tests::data_app(&[], &[]);
+                let (mut app, root) = crate::test_support::data_app(&[], &[]);
                 let path = root.join(if archived { "models.bsa" } else { "mesh.nif" });
                 std::fs::write(&path, b"source").unwrap();
                 let _ = crate::file_preview::start(&mut app, path.clone(), None, None, None);
@@ -560,7 +560,7 @@ pub(crate) mod tests {
 
     #[test]
     fn nif_texture_phase_and_late_replies_keep_the_original_request() {
-        let (mut app, root) = crate::tests::data_app(&[], &[]);
+        let (mut app, root) = crate::test_support::data_app(&[], &[]);
         let path = root.join("mesh.nif");
         std::fs::write(&path, b"source").unwrap();
         let _ = crate::file_preview::start(&mut app, path.clone(), None, None, None);

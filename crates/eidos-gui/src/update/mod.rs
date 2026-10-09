@@ -909,6 +909,24 @@ pub(crate) fn finish_open(
     Task::none()
 }
 
+/// Whether any tool declares a runtime that is not downloaded yet.
+///
+/// Asked before refusing Tool Setup for want of a Proton prefix: a runtime is a
+/// directory and an environment variable, so it can be fetched on a machine that
+/// has never launched the game.
+fn any_runtime_pending(app: &App) -> bool {
+    app.created
+        .as_ref()
+        .map(|i| eidos_instance::read_tools(&i.root.join("tools.ini")))
+        .unwrap_or_default()
+        .iter()
+        .flat_map(|t| t.prereqs.iter())
+        .any(|v| {
+            eidos_gamefeatures::runtime(v)
+                .is_some_and(|r| !eidos_gamefeatures::runtime_is_installed(r))
+        })
+}
+
 pub(crate) fn update(app: &mut App, message: Message) -> Task<Message> {
     // Whether we were mid-drain BEFORE the message ran: a `DrainDrops` that
     // popped the last item must not re-arm itself off its own empty queue.
@@ -8795,3 +8813,6 @@ pub(crate) fn recompute_collection_states(app: &mut App) {
         state.states = states;
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,6 @@
 //! Shared bounded byte previews for loose files, archives and trusted helpers.
 use crate::update::collection_target as target;
-use crate::{dds_preview, App, CollectionTarget, Message, Preview, PREVIEW_TEXT_CAP};
+use crate::{dds_preview, App, CollectionTarget, Message};
 use eidos_addons::protocol::{Operation, Outcome, Payload, Request};
 use iced::{widget::image::Handle, Task};
 use std::io::Read;
@@ -9,6 +9,60 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
 };
+
+/// Decoded content and its physical source for Reveal.
+#[derive(Debug, Clone)]
+pub(crate) enum Preview {
+    Archive {
+        source: crate::archive_conflicts::MemberSource,
+        content: Box<Preview>,
+    },
+    Image {
+        path: PathBuf,
+        handle: iced::widget::image::Handle,
+    },
+    Dds {
+        path: PathBuf,
+        provenance: Option<Snapshot>,
+        bytes: std::sync::Arc<Vec<u8>>,
+        info: dds_preview::DdsInfo,
+        selection: dds_preview::Selection,
+        image: Result<iced::widget::image::Handle, String>,
+    },
+    Nif {
+        path: PathBuf,
+        provenance: Option<Snapshot>,
+        model: crate::nif_preview::Model,
+    },
+    /// The head of a text file, and whether there was more.
+    Text {
+        path: PathBuf,
+        body: String,
+        truncated: bool,
+    },
+    /// Nothing could be shown, and this says why rather than showing an empty
+    /// box - "no preview" with no reason reads as the feature being broken.
+    Unsupported { path: PathBuf, why: String },
+}
+
+impl Preview {
+    pub(crate) fn path(&self) -> &Path {
+        match self {
+            Preview::Archive { source, .. } => &source.path,
+            Preview::Image { path, .. }
+            | Preview::Dds { path, .. }
+            | Preview::Nif { path, .. }
+            | Preview::Text { path, .. }
+            | Preview::Unsupported { path, .. } => path,
+        }
+    }
+}
+
+/// How much of a text file a preview reads.
+///
+/// A preview is a glance, and a log can be a hundred megabytes - reading one
+/// whole to show its first screen is how a file browser freezes.
+pub(crate) const PREVIEW_TEXT_CAP: usize = 64 * 1024;
 
 const IMAGES: &[&str] = &["png", "jpg", "jpeg", "bmp", "gif", "webp", "ico", "tga"];
 

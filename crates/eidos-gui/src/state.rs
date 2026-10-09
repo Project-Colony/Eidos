@@ -3,7 +3,7 @@
 //! save/reload paths.
 //!
 //! Split out of `main.rs` unchanged. `update` calls into here; `view` reads from
-//! it. main.rs is left with the types they all share and the iced wiring.
+//! it. The types they all share live in `app` and `message`.
 
 use crate::*;
 use std::time::UNIX_EPOCH;
@@ -2843,5 +2843,1438 @@ pub(crate) fn save_collapsed(app: &App) {
     if let Some(p) = collapsed_path(app) {
         let body: String = app.collapsed.iter().map(|n| format!("{n}\n")).collect();
         let _ = fs::write(p, body);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::*;
+
+    #[test]
+    fn selecting_a_mod_marks_the_plugins_it_ships() {
+        // MO2's behaviour, and the reason the feature exists: with hundreds of
+        // rows, the only other way to learn which plugins a mod brought is to
+        // hover them one by one.
+        let mut app = nav_app(&["Armour Pack", "Weather_separator", "Quest Mod"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "Armour Pack"));
+        assert!(
+            !plugin_from_selected_mod(&origins, "Quest Mod"),
+            "another mod's plugin"
+        );
+        // The game's own Data has no origin mod, so it can never light up.
+        assert!(
+            !plugin_from_selected_mod(&origins, ""),
+            "vanilla content belongs to no mod"
+        );
+    }
+
+    #[test]
+    fn the_origin_match_ignores_case_like_the_filesystem_does() {
+        // `origin_mod` is a folder name: an archive that installed as
+        // "armour pack" must still match the row shown as "Armour Pack".
+        let mut app = nav_app(&["Armour Pack"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "ARMOUR PACK"));
+        assert!(plugin_from_selected_mod(&origins, "armour pack"));
+    }
+
+    #[test]
+    fn a_multi_selection_marks_every_selected_mods_plugins() {
+        // The mod list supports multi-select, so a highlight covering only the
+        // anchor row would contradict what the user sees selected.
+        let mut app = nav_app(&["A", "B", "C"]);
+        app.selected_mod = Some(0);
+        app.selected_mods.extend([0, 2]);
+        let origins = selected_mod_origins(&app);
+        assert!(plugin_from_selected_mod(&origins, "A"));
+        assert!(plugin_from_selected_mod(&origins, "C"));
+        assert!(
+            !plugin_from_selected_mod(&origins, "B"),
+            "B was never selected"
+        );
+    }
+
+    #[test]
+    fn a_selected_separator_marks_nothing() {
+        // A separator is a divider, never the origin of a plugin. Matching on it
+        // would light up every plugin whose origin happens to be empty - i.e.
+        // the whole of the game's own Data.
+        let mut app = nav_app(&["Group_separator"]);
+        app.selected_mod = Some(0);
+        let origins = selected_mod_origins(&app);
+        assert!(origins.is_empty(), "{origins:?}");
+        assert!(!plugin_from_selected_mod(&origins, ""));
+        assert!(!plugin_from_selected_mod(&origins, "Group_separator"));
+    }
+
+    #[test]
+    fn no_mod_selected_marks_nothing() {
+        let app = nav_app(&["A", "B"]);
+        assert!(
+            selected_mod_origins(&app).is_empty(),
+            "nothing selected, nothing lit"
+        );
+    }
+
+    /// A throwaway game dir holding the named executables.
+    fn game_dir(exes: &[&str]) -> PathBuf {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!("eidos-play-{}-{}", std::process::id(), n));
+        fs::create_dir_all(&d).unwrap();
+        for e in exes {
+            fs::write(d.join(e), b"MZ").unwrap();
+        }
+        d
+    }
+
+    /// The args `play_command` will hand to `eidos play`, i.e. everything after `--`.
+    fn played(game_id: &str, command: &[String]) -> (Vec<String>, Option<String>) {
+        let install = command
+            .iter()
+            .rev()
+            .filter_map(|arg| Path::new(arg).parent())
+            .find(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let instance = eidos_instance::Instance::portable(install.join("test-instance"));
+        let (cmd, warning) = play_command(game_id, game_id, install, &instance, command);
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let after = args
+            .iter()
+            .position(|a| a == "--")
+            .map(|i| args[i + 1..].to_vec());
+        (after.unwrap_or_default(), warning)
+    }
+
+    #[test]
+    fn the_vanilla_launcher_is_never_what_gets_run() {
+        // Steam's %command% for Skyrim SE points at SkyrimSELauncher.exe, and the
+        // Bethesda launcher is a settings app that rewrites plugins.txt - running
+        // it through a mod manager undoes the load order that was just deployed.
+        let d = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe"]);
+        let cmd = vec![
+            "proton".to_string(),
+            d.join("SkyrimSELauncher.exe").display().to_string(),
+        ];
+
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[1].ends_with("SkyrimSE.exe"), "{args:?}");
+        // And the user is told why their SKSE mods will do nothing.
+        assert!(
+            warning
+                .as_deref()
+                .unwrap_or_default()
+                .contains("skse64_loader.exe"),
+            "{warning:?}"
+        );
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn play_prefers_the_loader_from_the_active_root_view() {
+        let game = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe"]);
+        let instance = eidos_instance::Instance::portable(game.join("fixture-instance"));
+        instance.create().unwrap();
+        let entry = instance.create_empty_mod("SKSE").unwrap();
+        fs::create_dir(entry.path.join("Root")).unwrap();
+        fs::write(entry.path.join("Root/skse64_loader.exe"), b"loader").unwrap();
+        instance.save_modlist(&[entry]).unwrap();
+        let command = vec![game.join("SkyrimSELauncher.exe").display().to_string()];
+        let (cmd, warning) =
+            play_command("skyrimse", "portable-fixture", &game, &instance, &command);
+        assert_eq!(warning, None);
+        assert!(cmd
+            .get_args()
+            .any(|arg| arg == game.join("skse64_loader.exe").as_os_str()));
+        fs::remove_dir_all(game).unwrap();
+    }
+
+    #[test]
+    fn the_script_extender_still_wins_when_it_is_installed() {
+        let d = game_dir(&["SkyrimSE.exe", "SkyrimSELauncher.exe", "skse64_loader.exe"]);
+        let cmd = vec![d.join("SkyrimSELauncher.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[0].ends_with("skse64_loader.exe"), "{args:?}");
+        // Nothing was given up, so nothing to warn about.
+        assert_eq!(warning, None);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn a_command_that_is_already_the_game_is_left_alone() {
+        let d = game_dir(&["SkyrimSE.exe", "skse64_loader.exe"]);
+        let cmd = vec![d.join("SkyrimSE.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        // No launcher in the command means no swap - we do not second-guess a
+        // target the user or Steam already chose.
+        assert!(args[0].ends_with("SkyrimSE.exe"), "{args:?}");
+        assert_eq!(warning, None);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn an_empty_game_dir_leaves_the_command_untouched_and_says_so() {
+        let d = game_dir(&[]);
+        let cmd = vec![d.join("SkyrimSELauncher.exe").display().to_string()];
+        let (args, warning) = played("skyrimse", &cmd);
+        assert!(args[0].ends_with("SkyrimSELauncher.exe"), "{args:?}");
+        assert!(warning.is_some());
+        fs::remove_dir_all(&d).ok();
+    }
+
+    /// The drop the user described: grab a mod, aim at the strip ABOVE another
+    /// one, and it lands there - whichever direction the drag came from. Under
+    /// the old row-targeted drop this was ambiguous, and the downward case
+    /// landed one slot short of where the pointer was.
+    #[test]
+    fn a_gap_targeted_drop_lands_exactly_where_it_was_aimed() {
+        // Dragging UP: "Terrain Helper" (index 3) onto the strip above
+        // "Terrain Variation" (index 2).
+        let mut v = mods(&["a", "b", "variation", "helper"]);
+        move_block(&mut v, &[3], 2);
+        assert_eq!(names(&v), ["a", "b", "helper", "variation"]);
+
+        // Dragging DOWN to the SAME visual place: grab "helper" from the top and
+        // aim at the strip above "variation" (index 3 now). Same destination,
+        // opposite direction - this is the case the row-targeted version got
+        // wrong by one.
+        let mut v = mods(&["helper", "a", "b", "variation"]);
+        move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["a", "b", "helper", "variation"]);
+
+        // The trailing strip (gap == len) is the only way to reach the end.
+        let mut v = mods(&["a", "b", "c"]);
+        move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a"]);
+    }
+
+    /// The two gaps that touch a grabbed row mean "leave it where it is". The
+    /// drop handler treats them as no-ops so a slightly-wobbly click never
+    /// rewrites modlist.txt (and never fires the save + reload it triggers).
+    #[test]
+    fn the_strips_touching_the_grabbed_row_are_no_ops() {
+        for gap in [1usize, 2] {
+            let mut v = mods(&["a", "b", "c"]);
+            let before: Vec<String> = names(&v).iter().map(|s| s.to_string()).collect();
+            // What the handler computes for a single grabbed row at index 1.
+            let unchanged = gap == 1 || gap == 1 + 1;
+            assert!(unchanged, "gap {gap} next to row 1 must be a no-op");
+            if !unchanged {
+                move_block(&mut v, &[1], gap);
+            }
+            assert_eq!(names(&v), before);
+        }
+    }
+
+    /// The rows `visible_rows` says to draw, by name, for a readable assertion.
+    fn drawn<'a>(v: &'a [ModEntry], vis: &[bool]) -> Vec<&'a str> {
+        v.iter()
+            .zip(vis)
+            .filter(|(_, &s)| s)
+            .map(|(m, _)| m.name.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn a_search_finds_mods_inside_a_folded_group() {
+        // The bug this pins: the fold was applied before the query, so a match
+        // inside a folded group was dropped and the list said "no mods match" -
+        // a WRONG answer, not a slow one. The user then reasonably concludes the
+        // mod is not installed.
+        let v = mods(&[
+            "armour_separator",
+            "iron armour",
+            "steel armour",
+            "misc_separator",
+            "a map",
+        ]);
+        let folded: HashSet<String> = ["armour".to_string()].into_iter().collect();
+
+        let vis = visible_rows(&v, &folded, true, |_, m| {
+            m.display_name().contains("armour")
+        });
+        assert_eq!(
+            drawn(&v, &vis),
+            ["armour_separator", "iron armour", "steel armour"]
+        );
+
+        // The group that contributed nothing is gone, header included, so the
+        // filter does not leave a wall of empty headers behind.
+        assert!(!vis[3]);
+    }
+
+    #[test]
+    fn folding_still_hides_the_group_when_nothing_is_being_asked() {
+        let v = mods(&["armour_separator", "iron armour", "misc_separator", "a map"]);
+        let folded: HashSet<String> = ["armour".to_string()].into_iter().collect();
+
+        // No filter: the fold is honoured, and both headers stay - a header is
+        // the handle you unfold by, so hiding it would strand the group.
+        let vis = visible_rows(&v, &folded, false, |_, _| true);
+        assert_eq!(
+            drawn(&v, &vis),
+            ["armour_separator", "misc_separator", "a map"]
+        );
+    }
+
+    #[test]
+    fn a_separator_draws_only_for_the_group_it_actually_heads() {
+        // Rows before the FIRST separator belong to no group; a match there must
+        // not resurrect the header that follows it.
+        let v = mods(&["loose mod", "armour_separator", "iron armour"]);
+        let vis = visible_rows(&v, &HashSet::new(), true, |_, m| m.name == "loose mod");
+        assert_eq!(drawn(&v, &vis), ["loose mod"]);
+
+        // And a match inside the group brings back that header and no other.
+        let v2 = mods(&["a_separator", "one", "b_separator", "two"]);
+        let vis2 = visible_rows(&v2, &HashSet::new(), true, |_, m| m.name == "two");
+        assert_eq!(drawn(&v2, &vis2), ["b_separator", "two"]);
+    }
+
+    #[test]
+    fn the_indices_visible_rows_reports_are_the_real_row_indices() {
+        // The drop gaps are keyed by absolute index, so a filtered list must not
+        // renumber anything: gap `i` has to keep meaning "before mods[i]" or a
+        // drop under a filter lands somewhere else entirely.
+        let v = mods(&["a", "b", "c"]);
+        let vis = visible_rows(&v, &HashSet::new(), true, |_, m| m.name == "c");
+        assert_eq!(vis, [false, false, true]);
+    }
+
+    #[test]
+    fn known_instance_reopens_its_saved_store_copy() {
+        let mut app = app_for_game("skyrimse");
+        let mut gog = app.games[0].clone();
+        gog.install_path = PathBuf::from("/different/skyrim");
+        gog.source = eidos_games::GameSource::External {
+            store: eidos_games::Store::Gog,
+            app_id: "1711230643".into(),
+            prefix: None,
+            heroic: true,
+        };
+        app.games.push(gog);
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.ensure_installation(
+            "skyrimse",
+            InstanceKind::Portable,
+            &app.games[1].selection_id(),
+        )
+        .unwrap();
+        let mut registry = eidos_instance::Registry::default();
+        registry.set_last(eidos_instance::InstanceRef::Portable(root.clone()));
+        let known = known_instances_from(&registry, &app.games);
+        assert_eq!(
+            known
+                .iter()
+                .find(|k| k.inst.root == root)
+                .unwrap()
+                .game_index,
+            1
+        );
+        app.games.pop();
+        assert!(known_instances_from(&registry, &app.games)
+            .iter()
+            .all(|k| k.inst.root != root));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn source_selection_matches_whole_install_paths_and_refuses_ambiguous_copies() {
+        let mut app = app_for_game("skyrimse");
+        app.games[0].install_path = "/library/Skyrim".into();
+        app.games[0].data_path = "/library/Skyrim/Data".into();
+        let mut second = app.games[0].clone();
+        second.install_path = "/library/Skyrim Special Edition".into();
+        second.data_path = "/library/Skyrim Special Edition/Data".into();
+        app.games.push(second.clone());
+        let command = vec![
+            "proton".into(),
+            "/library/Skyrim Special Edition/SkyrimSE.exe".into(),
+        ];
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        assert_eq!(
+            identify_game(&app.games, &["/other/library/Skyrim/Skyrim.exe".into()]),
+            None
+        );
+        // Folder-mod games can put their overlay outside the install directory.
+        app.games[1].data_path = "/userdata/Mods".into();
+        assert_eq!(identify_game(&app.games, &command), Some(1));
+        app.games.push(second);
+        assert_eq!(identify_game(&app.games, &command), None);
+    }
+
+    #[test]
+    fn known_instances_list_last_used_first_and_skips_missing_roots() {
+        let a = temp_portable("skyrimse");
+        let b = temp_portable("skyrimse");
+        let mut reg = eidos_instance::Registry::default();
+        reg.remember_portable(&a);
+        reg.remember_portable(&b);
+        reg.portables.push(PathBuf::from("/nonexistent/eidos-x"));
+        reg.set_last(eidos_instance::InstanceRef::Portable(a.clone()));
+        let app = app_for_game("skyrimse");
+        let known = known_instances_from(&reg, &app.games);
+        let roots: Vec<PathBuf> = known.iter().map(|k| k.inst.root.clone()).collect();
+        assert_eq!(roots.first(), Some(&a), "last-used first");
+        assert!(roots.contains(&b));
+        assert!(
+            !roots.iter().any(|r| r.starts_with("/nonexistent")),
+            "a missing root is skipped (not offered), never listed dead"
+        );
+        assert_eq!(
+            roots.iter().filter(|r| **r == a).count(),
+            1,
+            "last + MRU must not duplicate"
+        );
+        let _ = fs::remove_dir_all(&a);
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn the_plugins_tab_is_only_offered_where_eidos_manages_plugins() {
+        // Skyrim has a plugins.txt Eidos writes, so the tab means something.
+        assert!(game_manages_plugins(&app_for_game("skyrimse")));
+        // Stellar Blade has no plugin system at all. Offering the tab would open
+        // an empty list for a game that will never have one.
+        assert!(!game_manages_plugins(&app_for_game("stellarblade")));
+        // Timestamp engines now use the same profile order through virtual mtimes.
+        for game in ["morrowind", "oblivion", "fallout3", "falloutnv"] {
+            assert!(game_manages_plugins(&app_for_game(game)), "{game}");
+        }
+        // And with no game chosen at all there is nothing to manage.
+        assert!(!game_manages_plugins(&nav_app(&[])));
+    }
+
+    #[test]
+    fn plugin_advice_is_only_given_to_games_that_have_plugins() {
+        // Bethesda engines expose their supported order; folder-only games do not.
+        let sky = app_for_game("skyrimse");
+        assert!(game_has_plugins(&sky) && game_manages_plugins(&sky));
+
+        let mw = app_for_game("morrowind");
+        assert!(
+            game_has_plugins(&mw),
+            "Morrowind has .esp files and a load order"
+        );
+        assert!(
+            game_manages_plugins(&mw),
+            "Morrowind order is projected by Eidos"
+        );
+
+        let sb = app_for_game("stellarblade");
+        assert!(!game_has_plugins(&sb) && !game_manages_plugins(&sb));
+
+        // With no game at all, neither is true.
+        let none = nav_app(&[]);
+        assert!(!game_has_plugins(&none) && !game_manages_plugins(&none));
+    }
+
+    #[test]
+    fn a_remembered_plugins_tab_does_not_survive_a_game_without_plugins() {
+        // `app.tab` outlives a game switch, so it can name a tab this game does
+        // not show. The panel must follow what is on screen, not what was.
+        let mut app = app_for_game("stellarblade");
+        app.tab = Tab::Plugins;
+        assert_eq!(
+            effective_tab(&app),
+            Tab::Data,
+            "an invisible tab must not draw"
+        );
+
+        let mut app = app_for_game("skyrimse");
+        app.tab = Tab::Plugins;
+        assert_eq!(
+            effective_tab(&app),
+            Tab::Plugins,
+            "and a visible one still does"
+        );
+
+        // Every other tab is untouched by this.
+        for t in [
+            Tab::Data,
+            Tab::Conflicts,
+            Tab::Overwrite,
+            Tab::Saves,
+            Tab::Downloads,
+        ] {
+            let mut app = app_for_game("stellarblade");
+            app.tab = t;
+            assert_eq!(effective_tab(&app), t);
+        }
+    }
+
+    #[test]
+    fn the_first_arrow_key_lands_on_the_list_instead_of_doing_nothing() {
+        // With nothing focused, Down must reach the top and Up the bottom, or a
+        // keyboard-only user has no way in.
+        let mut app = nav_app(&["a", "b", "c"]);
+        assert_eq!(app.selected_mod, None);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+
+        let mut app = nav_app(&["a", "b", "c"]);
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn navigation_stops_at_the_ends_rather_than_wrapping() {
+        // Wrapping from the last row to the first is how a held arrow key
+        // silently loses your place in a long list.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(2));
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(0));
+
+        // A page past the end clamps too, and Home/End are absolute.
+        let _ = key_nav(&mut app, Nav::PageDown);
+        assert_eq!(app.selected_mod, Some(2));
+        let _ = key_nav(&mut app, Nav::First);
+        assert_eq!(app.selected_mod, Some(0));
+        let _ = key_nav(&mut app, Nav::Last);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn shift_and_arrows_build_the_same_selection_as_shift_and_click() {
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(1);
+        app.modifiers = iced::keyboard::Modifiers::SHIFT;
+        let _ = key_nav(&mut app, Nav::Down);
+        let _ = key_nav(&mut app, Nav::Down);
+        let mut got: Vec<usize> = app.selected_mods.iter().copied().collect();
+        got.sort_unstable();
+        assert_eq!(got, [1, 2, 3]);
+        assert_eq!(app.selected_mod, Some(3));
+
+        // And a plain arrow after that collapses back to one row.
+        app.modifiers = iced::keyboard::Modifiers::default();
+        let _ = key_nav(&mut app, Nav::Up);
+        assert!(app.selected_mods.is_empty());
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn an_empty_list_swallows_every_navigation_key() {
+        let mut app = nav_app(&[]);
+        for nav in [
+            Nav::Down,
+            Nav::Up,
+            Nav::First,
+            Nav::Last,
+            Nav::PageDown,
+            Nav::Toggle,
+        ] {
+            let _ = key_nav(&mut app, nav);
+            assert_eq!(app.selected_mod, None, "{nav:?} on an empty list");
+        }
+    }
+
+    #[test]
+    fn delete_arms_the_guard_and_never_removes_on_its_own() {
+        // A key that deletes a mod outright is a key that deletes a mod by
+        // accident. It opens the same two-step confirmation the menu uses.
+        let mut app = nav_app(&["a", "b"]);
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, Some(1));
+        assert_eq!(names(&app.mods), ["a", "b"], "nothing may be removed yet");
+
+        // Unmanaged rows are the game's own content and are not removable.
+        let mut app = nav_app(&["dlc"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, None);
+    }
+
+    #[test]
+    fn the_keyboard_never_drives_a_list_that_is_not_on_screen() {
+        // Focus follows the last row pressed, but the plugin list only exists
+        // while its tab does - so a focus left there would send the arrows
+        // somewhere invisible.
+        let mut app = nav_app(&["a", "b"]);
+        app.focus = Pane::Plugins;
+        app.tab = Tab::Data;
+        assert_eq!(effective_focus(&app), Pane::Mods);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0), "the mod list answered");
+
+        // Even on the Plugins tab, with no plugin list computed there is nothing
+        // to drive.
+        app.tab = Tab::Plugins;
+        assert!(app.plugins.is_none());
+        assert_eq!(effective_focus(&app), Pane::Mods);
+    }
+
+    #[test]
+    fn an_armed_removal_does_not_survive_the_list_being_rebuilt() {
+        // The guard names its target by index. After a refresh that index may be
+        // a different mod, and the second Delete would confirm against it.
+        let mut app = nav_app(&["a", "b", "c"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::Remove);
+        assert_eq!(app.confirm_remove, Some(2));
+        // `reload_mods` needs an instance; the disarm itself lives in
+        // `put_mod_selection`, which is what every rebuild goes through.
+        let held = hold_mod_selection(&app);
+        put_mod_selection(&mut app, held);
+        assert_eq!(app.confirm_remove, None, "a rebuild must disarm it");
+    }
+
+    #[test]
+    fn loot_is_never_handed_a_file_as_a_data_path() {
+        // Reproduced against the real 108-path list: 80 of them were the game's
+        // own .esm files, carried in app.mods as unmanaged rows, and libloot
+        // answered the whole sort with "an I/O error occurred".
+        let d = std::env::temp_dir().join(format!("eidos-lootpaths-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(d.join("RealMod")).unwrap();
+        fs::write(d.join("Dawnguard.esm"), b"x").unwrap();
+
+        let mut app = new(Vec::new()).0;
+        app.mods = vec![
+            ModEntry {
+                name: "RealMod".into(),
+                enabled: true,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
+            // The shape that broke it: enabled, not a separator, and a FILE.
+            ModEntry {
+                name: "Dawnguard.esm".into(),
+                enabled: true,
+                path: d.join("Dawnguard.esm"),
+                unmanaged: true,
+            },
+            // And one that is simply gone from disk.
+            ModEntry {
+                name: "Vanished".into(),
+                enabled: true,
+                path: d.join("Vanished"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "Off".into(),
+                enabled: false,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
+            ModEntry {
+                name: "grp_separator".into(),
+                enabled: true,
+                path: d.join("RealMod"),
+                unmanaged: false,
+            },
+        ];
+        let paths = loot_data_paths(&app);
+        // The invariant that matters: nothing here may be anything but a real
+        // directory. An Overwrite dir from the live instance may lead the list.
+        assert!(
+            paths.iter().all(|p| p.is_dir()),
+            "a non-directory got through: {paths:?}"
+        );
+        assert!(
+            paths.contains(&d.join("RealMod")),
+            "the real mod is missing: {paths:?}"
+        );
+        assert!(
+            !paths.contains(&d.join("Dawnguard.esm")),
+            "an unmanaged FILE got through"
+        );
+        assert!(
+            !paths.contains(&d.join("Vanished")),
+            "a path that is gone got through"
+        );
+        // Disabled rows and separators contribute nothing, so RealMod appears once.
+        assert_eq!(paths.iter().filter(|p| **p == d.join("RealMod")).count(), 1);
+        fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn the_arrows_only_land_on_rows_the_list_is_drawing() {
+        // Walking the raw vector moved the focus into rows the filter had hidden:
+        // the highlight was invisible and Space toggled a mod nobody was looking
+        // at. Navigation counts in VISIBLE positions now.
+        let mut app = nav_app(&["alpha", "beta", "gamma", "alderaan"]);
+        app.search = "al".to_string();
+        // Only alpha (0) and alderaan (3) match.
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, [true, false, false, true]);
+
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(3), "one step skips the hidden rows");
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(
+            app.selected_mod,
+            Some(3),
+            "and stops at the last visible row"
+        );
+        let _ = key_nav(&mut app, Nav::Up);
+        assert_eq!(app.selected_mod, Some(0));
+
+        // A focus stranded on a row the filter has since hidden comes back onto
+        // something visible rather than sticking.
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::Down);
+        assert_eq!(app.selected_mod, Some(0));
+    }
+
+    #[test]
+    fn a_reorder_carries_the_selection_and_the_anchor_with_it() {
+        // Indices survive a reorder while meaning different rows - the failure
+        // that made a batch action write plugins nobody chose. Names do not.
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(2);
+        app.sel_anchor = Some(1);
+        app.selected_mods = [1, 2].into_iter().collect();
+
+        let held = hold_mod_selection(&app);
+        // Simulate what a drag does: move "a" to the end.
+        move_block(&mut app.mods, &[0], 4);
+        assert_eq!(names(&app.mods), ["b", "c", "d", "a"]);
+        put_mod_selection(&mut app, held);
+
+        // b and c moved up one; the selection followed them.
+        assert_eq!(app.selected_mod, Some(1), "focus follows 'c'");
+        assert_eq!(app.sel_anchor, Some(0), "anchor follows 'b'");
+        let mut got: Vec<usize> = app.selected_mods.iter().copied().collect();
+        got.sort_unstable();
+        assert_eq!(got, [0, 1]);
+    }
+
+    #[test]
+    fn group_children_stops_at_the_next_separator() {
+        let v = mods(&["Head_separator", "a", "b", "Tail_separator", "c"]);
+        assert_eq!(group_children(&v, 0), 1..3);
+        assert_eq!(
+            group_children(&v, 3),
+            4..5,
+            "the last group runs to the end"
+        );
+        let empty = mods(&["Head_separator", "Tail_separator"]);
+        assert!(
+            group_children(&empty, 0).is_empty(),
+            "a header with nothing under it"
+        );
+        assert!(group_children(&empty, 1).is_empty());
+    }
+
+    #[test]
+    fn ctrl_arrow_moves_a_separator_like_any_other_row() {
+        // This was a dead key: `selection_or` returned an empty block and
+        // `move_mod_rows` bailed without so much as a status line.
+        let mut app = nav_app(&["a", "Sec_separator", "b"]);
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["Sec_separator", "a", "b"]);
+        assert_eq!(
+            app.selected_mod,
+            Some(0),
+            "the focus follows the row it moved"
+        );
+    }
+
+    #[test]
+    fn a_separator_can_be_parked_above_the_games_own_content() {
+        // The user's actual goal: a header above the DLC / Creation Club block, so
+        // the arrow beside it folds all of that away.
+        let mut app = nav_app(&["dlc", "Sec_separator", "a"]);
+        app.mods[0].unmanaged = true;
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["Sec_separator", "dlc", "a"]);
+    }
+
+    #[test]
+    fn a_batch_acts_on_the_selection_not_on_a_row_left_deselected() {
+        // Ctrl-clicking a row OFF leaves the focus on it. Going through the
+        // focus would then act on the one row the user just excluded.
+        let mut app = nav_app(&["a", "b", "c"]);
+        // Same shape on the mod side of the model: focus outside the set.
+        app.selected_mods = [0, 1].into_iter().collect();
+        app.selected_mod = Some(2);
+        let rows = selection_or(&app, 2);
+        assert_eq!(
+            rows,
+            vec![2],
+            "selection_or answers about the row it is asked about"
+        );
+        // Which is exactly why the batch handler must not ask it about the
+        // focus: it consults the SET first. Documented here so the two do not
+        // get "unified" back into the bug.
+        assert!(!app.selected_mods.contains(&2));
+    }
+
+    #[test]
+    fn ctrl_arrow_moves_the_row_not_the_focus() {
+        let mut app = nav_app(&["a", "b", "c", "d"]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(names(&app.mods), ["a", "c", "b", "d"]);
+        assert_eq!(app.selected_mod, Some(1), "the focus travels with the row");
+
+        let _ = key_nav(&mut app, Nav::ShiftDown);
+        assert_eq!(names(&app.mods), ["a", "b", "c", "d"]);
+        assert_eq!(app.selected_mod, Some(2));
+    }
+
+    #[test]
+    fn a_row_move_lands_beside_the_neighbour_the_user_can_see() {
+        // Under a filter the visible neighbour is not the adjacent index, and a
+        // move whose effect is invisible reads as a key that did nothing.
+        let mut app = nav_app(&["alpha", "hidden", "alderaan"]);
+        app.search = "al".to_string();
+        assert_eq!(mod_row_visibility(&app, None), [true, false, true]);
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        // "alderaan" jumped over the hidden row to sit above "alpha".
+        assert_eq!(names(&app.mods), ["alderaan", "alpha", "hidden"]);
+    }
+
+    #[test]
+    fn a_row_move_stops_at_the_ends_but_may_pass_the_game_content() {
+        let mut app = nav_app(&["dlc", "a", "b"]);
+        app.mods[0].unmanaged = true;
+
+        // Above the game's own content is now a legal place to be. It has to be:
+        // a separator can only fold what comes AFTER it, so the only way to put
+        // the DLC block away is to get a separator above it. The rows are written
+        // to modlist.txt with MO2's `*` now, so nothing is lost by going there.
+        app.selected_mod = Some(1);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "a row could not pass the game content"
+        );
+
+        // The ends still hold.
+        app.selected_mod = Some(0);
+        let _ = key_nav(&mut app, Nav::ShiftUp);
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "the first row has nowhere to go"
+        );
+
+        app.selected_mod = Some(2);
+        let _ = key_nav(&mut app, Nav::ShiftDown);
+        assert_eq!(
+            names(&app.mods),
+            ["a", "dlc", "b"],
+            "the last row has nowhere to go"
+        );
+    }
+
+    #[test]
+    fn move_block_compensates_for_the_lifted_rows() {
+        // Moving DOWN: removing the source shifts everything after it, which is
+        // the classic off-by-one that lands a dragged row one slot short.
+        let mut v = mods(&["a", "b", "c", "d"]);
+        let at = move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a", "d"]);
+        assert_eq!(at, 2);
+
+        // Moving UP needs no compensation.
+        let mut v = mods(&["a", "b", "c", "d"]);
+        let at = move_block(&mut v, &[3], 1);
+        assert_eq!(names(&v), ["a", "d", "b", "c"]);
+        assert_eq!(at, 1);
+
+        // To the very end.
+        let mut v = mods(&["a", "b", "c"]);
+        let at = move_block(&mut v, &[0], 3);
+        assert_eq!(names(&v), ["b", "c", "a"]);
+        assert_eq!(at, 2);
+    }
+
+    #[test]
+    fn move_block_keeps_a_multi_selection_together_and_ordered() {
+        // A non-contiguous selection lands as one contiguous block, in its
+        // original relative order.
+        let mut v = mods(&["a", "b", "c", "d", "e"]);
+        let at = move_block(&mut v, &[0, 2], 4);
+        assert_eq!(names(&v), ["b", "d", "a", "c", "e"]);
+        assert_eq!(at, 2);
+
+        // Moving up, same rule.
+        let mut v = mods(&["a", "b", "c", "d", "e"]);
+        let at = move_block(&mut v, &[3, 4], 1);
+        assert_eq!(names(&v), ["a", "d", "e", "b", "c"]);
+        assert_eq!(at, 1);
+    }
+
+    #[test]
+    fn move_block_is_safe_on_junk_input() {
+        let mut v = mods(&["a", "b"]);
+        // Out-of-range indices are dropped, duplicates collapse, empty is a no-op.
+        assert_eq!(move_block(&mut v, &[], 1), 1);
+        assert_eq!(names(&v), ["a", "b"]);
+        move_block(&mut v, &[9, 9], 0);
+        assert_eq!(names(&v), ["a", "b"]);
+        move_block(&mut v, &[1, 1], 0);
+        assert_eq!(names(&v), ["b", "a"]);
+        // A destination past the end clamps instead of panicking.
+        move_block(&mut v, &[0], 99);
+        assert_eq!(names(&v), ["a", "b"]);
+    }
+
+    #[test]
+    fn the_active_filter_keeps_only_what_it_says() {
+        let mut app = nav_app(&["On", "Off"]);
+        app.mods[1].enabled = false;
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, false], "only the enabled one");
+        app.filters.active = Criterion::Exclude;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(
+            vis,
+            vec![false, true],
+            "and the inverse is the other question"
+        );
+    }
+
+    #[test]
+    fn filters_combine_with_each_other_and_with_the_name_box() {
+        // They narrow together (AND), like MO2's - otherwise two criteria would
+        // widen the list, which is the opposite of what a filter is for.
+        let mut app = nav_app(&["Armour Pack", "Armour Patch", "Weather"]);
+        app.mods[1].enabled = false;
+        app.search = "armour".to_string();
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, false, false], "name AND state: {vis:?}");
+    }
+
+    #[test]
+    fn a_separator_survives_only_while_something_under_it_does() {
+        // A group header for an empty group is noise; the existing rule has to
+        // keep holding once state filters can empty a group.
+        let mut app = nav_app(&["Group_separator", "Inside"]);
+        app.mods[1].enabled = false;
+        app.filters.active = Criterion::Require;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![false, false], "the header goes with its only mod");
+        app.mods[1].enabled = true;
+        let vis = mod_row_visibility(&app, None);
+        assert_eq!(vis, vec![true, true], "and comes back with it");
+    }
+
+    #[test]
+    fn failed_profile_switch_preserves_the_view_and_reports_the_error() {
+        let (mut app, root) = list_app(&["Personal"]);
+        let inst = app.created.clone().unwrap();
+        fs::write(inst.manifest_path(), "malformed manifest").unwrap();
+        app.selected_mod = Some(0);
+        assert!(!switch_to_profile(&mut app, "Other"));
+        assert_eq!(app.selected_mod, Some(0));
+        assert!(app
+            .status
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Cannot switch"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_preview_says_why_when_it_cannot_show_something() {
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(&root).unwrap();
+
+        // Text, shown lossily: a Windows-1252 INI is common in this world and
+        // refusing one because a byte is not valid UTF-8 helps nobody.
+        let ini = root.join("Skyrim.ini");
+        fs::write(&ini, b"[Display]\niSize=1920\nname=Andr\xe9\n").unwrap();
+        match build_preview(&ini) {
+            Preview::Text {
+                body, truncated, ..
+            } => {
+                assert!(body.contains("iSize=1920"));
+                assert!(!truncated);
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+
+        // A NUL byte means binary whatever the extension claims - an .esp is a
+        // record file, and printing one as text fills the pane with mojibake.
+        let esp = root.join("Mod.esp");
+        fs::write(&esp, b"TES4\0\0\0garbage").unwrap();
+        assert!(matches!(build_preview(&esp), Preview::Unsupported { .. }));
+
+        // DDS and NIF say what they are and what to do instead, rather than
+        // showing an empty box - "no preview" with no reason reads as broken.
+        let dds = root.join("skin.dds");
+        fs::write(&dds, b"DDS ").unwrap();
+        match build_preview(&dds) {
+            Preview::Unsupported { why, .. } => {
+                assert!(why.contains("DDS"), "{why}");
+                assert!(why.contains("Reveal"), "and what to do instead: {why}");
+            }
+            other => panic!("expected unsupported, got {other:?}"),
+        }
+
+        // A folder is not a file.
+        assert!(matches!(build_preview(&root), Preview::Unsupported { .. }));
+        // And something that is not there at all.
+        assert!(matches!(
+            build_preview(&root.join("nope.txt")),
+            Preview::Unsupported { .. }
+        ));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_huge_text_file_is_read_as_far_as_the_cap_and_says_so() {
+        // A preview is a glance, and a log can be a hundred megabytes: reading
+        // one whole to show its first screen is how a file browser freezes.
+        let root = temp_portable("skyrimse");
+        fs::create_dir_all(&root).unwrap();
+        let log = root.join("big.log");
+        fs::write(&log, "x".repeat(PREVIEW_TEXT_CAP * 2)).unwrap();
+
+        match build_preview(&log) {
+            Preview::Text {
+                body, truncated, ..
+            } => {
+                assert_eq!(body.len(), PREVIEW_TEXT_CAP);
+                assert!(truncated, "and it says the rest is there");
+            }
+            other => panic!("expected text, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_desktop_shortcut_quotes_a_path_with_a_space_in_it() {
+        use eidos_instance::Tool;
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.join("Eidos Skyrim"));
+        inst.create().unwrap();
+        let home = root.join("fakehome");
+        fs::create_dir_all(&home).unwrap();
+        // The entry must land where the DESKTOP looks, not in the Colony tree.
+        let prev = std::env::var_os("XDG_DATA_HOME");
+        // SAFETY: single-threaded here, and restored below.
+        unsafe { std::env::set_var("XDG_DATA_HOME", &home) };
+
+        let tool = Tool {
+            title: "SSEEdit".to_string(),
+            exe: PathBuf::from("/x/SSEEdit.exe"),
+            ..Default::default()
+        };
+        let path = write_desktop_entry(&inst, "skyrimse", &tool).unwrap();
+        let body = fs::read_to_string(&path).unwrap();
+
+        assert!(path.starts_with(home.join("applications")));
+        assert!(body.starts_with("[Desktop Entry]"));
+        // A portable instance with a space in its path is ordinary, and unquoted
+        // it would reach `eidos tool` as two arguments.
+        assert!(
+            body.contains(&format!("\"{}\"", inst.root.display())),
+            "the whole path is one quoted argument:\n{body}"
+        );
+        assert!(
+            inst.root.display().to_string().contains(' '),
+            "the fixture has a space in it"
+        );
+        assert!(body.contains("tool "), "{body}");
+        assert!(body.contains("run \"SSEEdit\""), "{body}");
+
+        match prev {
+            // SAFETY: as above.
+            Some(v) => unsafe { std::env::set_var("XDG_DATA_HOME", v) },
+            None => unsafe { std::env::remove_var("XDG_DATA_HOME") },
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_active_is_the_one_predicate_that_decides_what_reaches_the_game() {
+        let mk = |name: &str, enabled: bool| ModEntry {
+            name: name.to_string(),
+            enabled,
+            path: PathBuf::from("/tmp").join(name),
+            unmanaged: false,
+        };
+        assert!(mk("Armour", true).is_active());
+        assert!(!mk("Armour", false).is_active(), "disabled");
+        assert!(
+            !mk("SEP_separator", true).is_active(),
+            "a separator has no files"
+        );
+        // The case this predicate was introduced for: a backup is not merely
+        // disabled, because a user who ticked it would deploy two copies of one
+        // mod over each other.
+        assert!(!mk("Armour_backup", true).is_active());
+        assert!(!mk("Armour_backup7", true).is_active());
+        assert!(
+            mk("Armour_backups", true).is_active(),
+            "only the exact suffix"
+        );
+    }
+
+    #[test]
+    fn a_mod_downloaded_for_another_game_says_which_one() {
+        let root = temp_portable("skyrimse");
+        let inst = Instance::portable(root.clone());
+        inst.create().unwrap();
+        for (name, game) in [("Ours", "SkyrimSE"), ("Theirs", "Fallout4"), ("Silent", "")] {
+            let dir = root.join("mods").join(name);
+            fs::create_dir_all(dir.join("Meshes")).unwrap();
+            if !game.is_empty() {
+                fs::write(
+                    dir.join("meta.ini"),
+                    format!("[General]\ngameName={game}\n"),
+                )
+                .unwrap();
+            }
+        }
+        let mut app = app_for_game("skyrimse");
+        app.created = Some(inst);
+        app.mods = ["Ours", "Theirs", "Silent"]
+            .iter()
+            .map(|n| ModEntry {
+                name: (*n).to_string(),
+                enabled: true,
+                path: root.join("mods").join(n),
+                unmanaged: false,
+            })
+            .collect();
+        app.screen = Screen::Main;
+        refresh_meta_cache(&mut app);
+
+        assert_eq!(app.meta_cache["Ours"].other_game, None);
+        assert_eq!(
+            app.meta_cache["Theirs"].other_game.as_deref(),
+            Some("Fallout4")
+        );
+        // "Does not say" must look identical to "same game". A mod installed
+        // from a folder never had a game recorded, and warning about that would
+        // flag half a list.
+        assert_eq!(app.meta_cache["Silent"].other_game, None);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bulk_enable_never_touches_a_separator_or_the_games_own_content() {
+        let mut app = nav_app(&["Gear_separator", "real"]);
+        app.mods.push(ModEntry {
+            name: "Skyrim.esm".into(),
+            enabled: true,
+            path: PathBuf::from("/game/Data/Skyrim.esm"),
+            unmanaged: true,
+        });
+        assert_eq!(mods_visible_for_bulk(&app), vec![1], "only the real mod");
+    }
+
+    #[test]
+    fn an_extension_gets_every_instance_path_it_is_promised() {
+        let (app, root) = data_app(&[], &[]);
+        let ctx = addon_context(&app);
+        // Every placeholder documented in docs/guide/extensions.md must
+        // actually resolve, or the doc is a promise the code does not keep.
+        for key in [
+            "instance",
+            "mods",
+            "downloads",
+            "overwrite",
+            "profile",
+            "profile_dir",
+            "game",
+            "game_name",
+            "install",
+            "data",
+        ] {
+            assert!(
+                ctx.values.contains_key(key),
+                "{key} is documented but not provided"
+            );
+            assert!(!ctx.values[key].is_empty(), "{key} resolved to nothing");
+        }
+        assert_eq!(ctx.values["game"], "skyrimse");
+        assert!(ctx
+            .expand("--root {instance}")
+            .contains(&root.display().to_string()));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_check_extension_reports_under_its_own_name_and_never_as_eidoss_own() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='c'\nname='My check'\nkind='diagnose'\nexec='sh'\n\
+             args=['-c','printf \"advice\\\\tLook here\\\\tand the detail\\\\n\"']\n",
+            std::path::Path::new("/c.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        refresh_diagnostics(&mut app);
+
+        let found = app
+            .diag
+            .iter()
+            .find(|d| d.title.contains("Look here"))
+            .expect("the finding reached the Health tab");
+        assert_eq!(found.level, DiagLevel::Advice);
+        assert_eq!(found.detail, "and the detail");
+        // Attributed. A row that read like one of Eidos's own checks would put
+        // Eidos's authority behind something it did not check.
+        assert!(found.title.starts_with("My check - "), "{}", found.title);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_check_that_hangs_is_stopped_and_blamed_by_name() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='slow'\nname='Slow one'\nkind='diagnose'\nexec='sh'\nargs=['-c','sleep 30']\n",
+            std::path::Path::new("/s.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        let started = std::time::Instant::now();
+        refresh_diagnostics(&mut app);
+        // It runs on the refresh that follows every click, so a hanging one
+        // would freeze the window with nothing on screen to blame.
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "it was not stopped"
+        );
+        let row = app
+            .diag
+            .iter()
+            .find(|d| d.title.contains("Slow one"))
+            .expect("the failure is reported, not swallowed");
+        assert_eq!(row.level, DiagLevel::Problem);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_extension_for_another_game_does_not_run_here() {
+        let (mut app, root) = data_app(&[], &[]);
+        app.addons = vec![eidos_addons::parse_addon(
+            "id='f4'\nname='FO4 only'\nkind='diagnose'\nexec='sh'\n\
+             args=['-c','printf \"problem\\\\tShould not appear\\\\n\"']\ngames=['fallout4']\n",
+            std::path::Path::new("/f.toml"),
+        )
+        .unwrap()];
+        app.diag_dirty = true;
+        refresh_diagnostics(&mut app);
+        assert!(!app
+            .diag
+            .iter()
+            .any(|d| d.title.contains("Should not appear")));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn one_definition_decides_whether_a_filter_is_running() {
+        // Two copies of this predicate drifted: the view's never learned about
+        // the criteria, so a state filter left folding on and emptied the list
+        // in silence.
+        let mut app = nav_app(&["a", "b"]);
+        assert!(!is_filtering(&app));
+        app.filters.update = Criterion::Require;
+        assert!(is_filtering(&app), "a criterion alone counts as filtering");
+        app.filters = ModFilters::default();
+        app.search = "a".to_string();
+        assert!(is_filtering(&app));
+    }
+
+    #[test]
+    fn rebuilding_the_plugin_list_closes_a_menu_that_points_at_a_row() {
+        // menu_plugin is a raw index and the rebuild renumbers the rows: acting
+        // on a stale one would hit whichever plugin now sits there.
+        let mut app = app_for_game("skyrimse");
+        app.menu_plugin = Some(3);
+        invalidate_plugins(&mut app);
+        assert_eq!(app.menu_plugin, None);
+    }
+
+    #[test]
+    fn the_plugin_menu_finds_the_mod_that_ships_the_plugin() {
+        // The question the menu exists to answer, and the one the tooltip could
+        // only answer one row at a time.
+        let mut app = app_for_game("skyrimse");
+        app.mods = mods(&["Other Mod", "Armour Pack"]);
+        let mut list = PluginList::default();
+        list.plugins.push(plugin_row("Armour.esp", "Armour Pack"));
+        list.plugins.push(plugin_row("Skyrim.esm", ""));
+        app.plugins = Some(list);
+        assert_eq!(
+            plugin_origin_row(&app, 0),
+            Some(1),
+            "matched to the mod row"
+        );
+        // Vanilla content belongs to no mod: a real answer, not a failure.
+        assert_eq!(plugin_origin_row(&app, 1), None);
+    }
+
+    // ---- the game's own content, reconciled -------------------------------
+    //
+    // `modlist_with_unmanaged` decides where the DLC and Creation Club rows land.
+    // The rule that matters: a row the profile already places keeps its position,
+    // because that position is something the user said. Re-pinning it to the top
+    // on every refresh is what stopped a separator from ever sitting above the
+    // block, so it could not be collapsed.
+
+    fn entry(name: &str, unmanaged: bool) -> ModEntry {
+        ModEntry {
+            name: name.into(),
+            enabled: true,
+            path: if unmanaged {
+                PathBuf::new()
+            } else {
+                PathBuf::from("/mods").join(name)
+            },
+            unmanaged,
+        }
+    }
+
+    /// The reconciliation, extracted from the filesystem so it can be tested:
+    /// `listed` is what the profile holds, `real` what the game ships.
+    fn reconcile(listed: Vec<ModEntry>, real: Vec<ModEntry>) -> Vec<String> {
+        let mut by_name: std::collections::HashMap<String, ModEntry> = real
+            .into_iter()
+            .map(|m| (m.name.to_ascii_lowercase(), m))
+            .collect();
+        let mut placed: Vec<ModEntry> = Vec::new();
+        for m in listed {
+            if !m.unmanaged {
+                placed.push(m);
+            } else if let Some(found) = by_name.remove(&m.name.to_ascii_lowercase()) {
+                placed.push(found);
+            }
+        }
+        let mut fresh: Vec<ModEntry> = by_name.into_values().collect();
+        fresh.sort_by_key(|m| m.name.to_ascii_lowercase());
+        fresh.into_iter().chain(placed).map(|m| m.name).collect()
+    }
+
+    #[test]
+    fn a_placed_dlc_row_stays_where_the_user_put_it() {
+        // The separator sits ABOVE the DLC block - the arrangement that lets it be
+        // collapsed, and the one that was impossible before.
+        let listed = vec![
+            entry("00. DLCs_separator", false),
+            entry("Dawnguard", true),
+            entry("Dragonborn", true),
+            entry("SkyUI", false),
+        ];
+        let real = vec![entry("Dawnguard", true), entry("Dragonborn", true)];
+        assert_eq!(
+            reconcile(listed, real),
+            ["00. DLCs_separator", "Dawnguard", "Dragonborn", "SkyUI"],
+            "the DLC rows were moved out from under their separator"
+        );
+    }
+
+    #[test]
+    fn a_dlc_the_game_no_longer_ships_is_dropped() {
+        // Uninstalling a DLC must not leave a row pointing at nothing - it has no
+        // path, and every consumer would have to defend against that.
+        let listed = vec![
+            entry("Dawnguard", true),
+            entry("Dragonborn", true),
+            entry("SkyUI", false),
+        ];
+        let real = vec![entry("Dawnguard", true)];
+        assert_eq!(reconcile(listed, real), ["Dawnguard", "SkyUI"]);
+    }
+
+    #[test]
+    fn content_the_profile_has_never_seen_goes_to_the_top() {
+        // A newly installed DLC has no position yet, and the engine loads its own
+        // content first - so lowest priority, which is the top of the display.
+        let listed = vec![entry("Dawnguard", true), entry("SkyUI", false)];
+        let real = vec![entry("Dawnguard", true), entry("Anniversary", true)];
+        assert_eq!(
+            reconcile(listed, real),
+            ["Anniversary", "Dawnguard", "SkyUI"]
+        );
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_like_every_other_name_here() {
+        // The profile stores what the display showed; the game directory spells it
+        // however Bethesda spelled it. A case difference must not duplicate a row.
+        let listed = vec![entry("dawnguard", true), entry("SkyUI", false)];
+        let real = vec![entry("Dawnguard", true)];
+        let got = reconcile(listed, real);
+        assert_eq!(
+            got,
+            ["Dawnguard", "SkyUI"],
+            "a case difference split one row into two"
+        );
+    }
+
+    #[test]
+    fn managed_mods_are_untouched_by_any_of_this() {
+        // The reconciliation must not reorder, drop or duplicate a single mod the
+        // user actually installed.
+        let listed = vec![
+            entry("A", false),
+            entry("Dawnguard", true),
+            entry("B", false),
+            entry("C", false),
+        ];
+        let got = reconcile(listed, vec![]);
+        assert_eq!(got, ["A", "B", "C"]);
+    }
+
+    #[test]
+    fn preflight_diagnostics_require_a_current_deep_record_check() {
+        let (mut app, root) = data_app(&[("meshes/test.nif", "mesh")], &[]);
+        let mut plugin = plugin_row("Small.esl", "AAA");
+        plugin.is_light = true;
+        app.plugins = Some(eidos_plugins::PluginList {
+            plugins: vec![plugin],
+            implicit: Default::default(),
+            locked: Default::default(),
+        });
+        assert!(diagnostics(&app)
+            .iter()
+            .any(|d| d.title.starts_with("Unverified record limits")));
+        app.loot_meta = Some(std::collections::HashMap::from([(
+            "small.esl".into(),
+            eidos_loot::PluginMetadataBundle {
+                record_validity: Some(false),
+                messages: vec![eidos_loot::LootMessage {
+                    kind: eidos_loot::MessageType::Error,
+                    text: "Invalid light plugin records".into(),
+                }],
+                ..Default::default()
+            },
+        )]));
+        let found = diagnostics(&app);
+        assert!(!found
+            .iter()
+            .any(|d| d.title.starts_with("Unverified record limits")));
+        assert!(found
+            .iter()
+            .any(|d| d.level == DiagLevel::Problem
+                && d.detail.contains("Invalid light plugin records")));
+        invalidate_plugins(&mut app);
+        assert!(
+            app.loot_meta.is_none(),
+            "a changed plugin set must discard the deep check"
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 }

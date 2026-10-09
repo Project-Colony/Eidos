@@ -8,6 +8,91 @@ use crate::theme::*;
 use crate::widgets::*;
 use crate::*;
 
+/// One entry in the category-filter dropdown (`None` id = "all").
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CategoryChoice {
+    id: Option<i32>,
+    label: String,
+}
+
+impl std::fmt::Display for CategoryChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.label)
+    }
+}
+
+pub(crate) fn view(app: &App) -> Element<'_, Message> {
+    if let Some(w) = &app.installer {
+        let mut layers = Stack::new().push(installers::view(w));
+        if let Some(preview) = &app.preview {
+            layers = layers
+                .push(
+                    mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                        .on_press(Message::ClosePreview),
+                )
+                .push(container(preview_dialog(preview)).center(Length::Fill));
+        }
+        return layers.into();
+    }
+    if let Some(w) = &app.fomod {
+        let base = fomod_wizard_view(w);
+        // A reinstall collision raised from inside the wizard must be able to
+        // show over it (the wizard replaces the whole view).
+        if let Some(c) = &app.collision {
+            let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+                .on_press(Message::CollisionCancel);
+            let dialog = container(collision_dialog(c)).center(Length::Fill);
+            return Stack::new().push(base).push(scrim).push(dialog).into();
+        }
+        return base;
+    }
+    if app.screen == Screen::Main {
+        return main_screen(app);
+    }
+    let inner = match app.screen {
+        Screen::Welcome => welcome(app),
+        Screen::Kind => kind_screen(app),
+        Screen::Game => game_screen(app),
+        Screen::NameLoc => nameloc_screen(app),
+        Screen::Summary => summary_screen(app),
+        Screen::Main => welcome(app),
+    };
+    let base: Element<'_, Message> = container(inner)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(20)
+        .into();
+    // The collection pane also belongs here, not only on the main screen.
+    // `eidos-gui --collection` opens it before anything else, and with no
+    // instance yet the window lands on the welcome screen - where a pane drawn
+    // only by `main_screen` is a link that silently does nothing.
+    if let Some(state) = &app.collection {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseCollection);
+        let dialog = container(collection_dialog(state)).center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(dialog).into();
+    }
+    // And unpacking, for the same reason and more sharply. A backup is restored
+    // onto a machine that has no instance yet - that is the whole point of the
+    // file - so the welcome screen is where this happens. Drawn only by
+    // `main_screen`, it would be a button that silently does nothing on exactly
+    // the machine it exists for.
+    if let Some(job) = &app.transfer_job {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill));
+        let card = container(mouse_area(transfer_dialog(job)).on_press(Message::Noop))
+            .center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(card).into();
+    }
+    if let Some(state) = &app.unpack {
+        let scrim = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::CloseUnpackDialog);
+        let dialog = container(mouse_area(unpack_dialog(state)).on_press(Message::Noop))
+            .center(Length::Fill);
+        return Stack::new().push(base).push(scrim).push(dialog).into();
+    }
+    base
+}
+
 pub(crate) const C_CHECK: Length = Length::Fixed(36.0);
 pub(crate) const C_PRIO: Length = Length::Fixed(26.0);
 /// The flags cell's width. The other columns carry their own (see
@@ -2314,4 +2399,282 @@ pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Messa
     .on_press(Message::Noop)
     .on_right_press(Message::Noop)
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::*;
+
+    fn sorted(v: &[&str]) -> Vec<String> {
+        let mut o: Vec<String> = v.iter().map(|s| s.to_string()).collect();
+        o.sort();
+        o
+    }
+
+    #[test]
+    fn the_tree_shows_one_level_and_counts_what_is_below() {
+        // Lin's real Overwrite in miniature: a Root/ subtree beside the tool's own
+        // files. The root level must be four rows, not 4902.
+        let e = sorted(&[
+            "CalienteTools/BodySlide/Config.xml",
+            "CalienteTools/BodySlide/Log_BS.txt",
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "Root/d3dx9_42.log",
+            "note.txt",
+        ]);
+        let top = tree_children(&e, "");
+        assert_eq!(
+            top,
+            vec![
+                ("CalienteTools".to_string(), Some(2)),
+                ("Root".to_string(), Some(3)),
+                ("note.txt".to_string(), None),
+            ],
+            "folders first with their recursive file count, then loose files"
+        );
+        assert_eq!(
+            tree_children(&e, "Root"),
+            vec![
+                ("meshes".to_string(), Some(2)),
+                ("d3dx9_42.log".to_string(), None)
+            ]
+        );
+        assert_eq!(
+            tree_children(&e, "Root/meshes/actors"),
+            vec![("body.nif".to_string(), None)]
+        );
+    }
+
+    #[test]
+    fn a_prefix_that_is_not_a_path_component_is_not_a_child() {
+        // "Rootless" must not be mistaken for something under "Root", which is
+        // what a bare starts_with would do.
+        let e = sorted(&["Root/a.nif", "Rootless/b.nif", "Roo/c.nif"]);
+        assert_eq!(tree_children(&e, "Root"), vec![("a.nif".to_string(), None)]);
+    }
+
+    #[test]
+    fn nothing_is_expanded_so_only_the_top_level_is_drawn() {
+        let e = sorted(&[
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "CalienteTools/BodySlide/Config.xml",
+        ]);
+        let app = nav_app(&[]);
+        let rows = overwrite_tree_rows(&app, &e, 3000);
+        assert_eq!(
+            rows.len(),
+            2,
+            "two folders closed, and none of their contents"
+        );
+        assert!(rows.iter().all(|r| r.depth == 0));
+    }
+
+    #[test]
+    fn expanding_a_folder_reveals_exactly_its_children() {
+        let e = sorted(&[
+            "Root/meshes/actors/body.nif",
+            "Root/meshes/armor/boots.nif",
+            "Root/d3dx9_42.log",
+        ]);
+        let mut app = nav_app(&[]);
+        app.overwrite_expanded.insert("Root".to_string());
+        let rows = overwrite_tree_rows(&app, &e, 3000);
+        let drawn: Vec<&str> = rows.iter().map(|r| r.rel.as_str()).collect();
+        assert_eq!(drawn, vec!["Root", "Root/meshes", "Root/d3dx9_42.log"]);
+        // Still closed one level down: the grandchildren stay out.
+        assert!(!drawn.iter().any(|r| r.starts_with("Root/meshes/")));
+
+        app.overwrite_expanded.insert("Root/meshes".to_string());
+        let deep = overwrite_tree_rows(&app, &e, 3000);
+        assert_eq!(
+            deep.iter().filter(|r| r.depth == 2).count(),
+            2,
+            "actors and armor"
+        );
+    }
+
+    #[test]
+    fn the_row_budget_is_respected() {
+        let many: Vec<String> = (0..500).map(|i| format!("d/f{i:04}.txt")).collect();
+        let mut app = nav_app(&[]);
+        app.overwrite_expanded.insert("d".to_string());
+        assert_eq!(overwrite_tree_rows(&app, &many, 10).len(), 10);
+    }
+
+    #[test]
+    fn a_menu_label_names_the_host_not_the_whole_url() {
+        assert_eq!(
+            url_host("https://www.loverslab.com/files/file/123-x/"),
+            "loverslab.com"
+        );
+        assert_eq!(url_host("https://github.com/a/b"), "github.com");
+        assert_eq!(url_host("http://example.org"), "example.org");
+        // Anything unparseable falls back to the whole string rather than
+        // rendering an entry that reads "Visit ".
+        assert_eq!(url_host("nonsense"), "nonsense");
+    }
+
+    #[test]
+    fn restoring_hidden_files_keeps_external_links_opaque_and_reports_collisions() {
+        let (app, root) = list_app(&["Personal"]);
+        let dir = app.mods[0].path.clone();
+        let outside = root.join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(outside.join("sentinel.mohidden"), b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("link")).unwrap();
+        fs::write(dir.join("local.mohidden"), b"local").unwrap();
+        assert_eq!(restore_hidden_files(&dir).unwrap(), 1);
+        assert!(outside.join("sentinel.mohidden").is_file());
+        fs::write(dir.join("local.mohidden"), b"new").unwrap();
+        assert!(restore_hidden_files(&dir).is_err());
+        assert_eq!(fs::read(dir.join("local")).unwrap(), b"local");
+        assert_eq!(fs::read(dir.join("local.mohidden")).unwrap(), b"new");
+        fs::remove_file(dir.join("local.mohidden")).unwrap();
+        fs::write(dir.join("LOCAL.mohidden"), b"new").unwrap();
+        assert!(restore_hidden_files(&dir).is_err());
+        assert_eq!(fs::read(dir.join("local")).unwrap(), b"local");
+        assert!(dir.join("LOCAL.mohidden").is_file());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_nexus_budget_shows_only_once_the_server_has_answered() {
+        let mut app = nav_app(&[]);
+        assert_eq!(
+            nexus_budget_suffix(&app),
+            "",
+            "no invented number before the first call"
+        );
+
+        // The smaller of the two buckets is the one that matters: the daily
+        // budget is large enough to be uninteresting until the hourly is spent.
+        app.nexus_hourly_left = Some(1400);
+        app.nexus_daily_left = Some(2200);
+        assert!(nexus_budget_suffix(&app).contains("1400"));
+        app.nexus_hourly_left = Some(2400);
+        app.nexus_daily_left = Some(90);
+        assert!(nexus_budget_suffix(&app).contains("90"));
+        // And one bucket alone is still worth saying.
+        app.nexus_daily_left = None;
+        assert!(nexus_budget_suffix(&app).contains("2400"));
+    }
+
+    #[test]
+    fn the_data_tree_hides_what_the_mount_hides() {
+        // The tab used to re-implement the union merge beside the real one, and
+        // had drifted: it showed `.eidoswh.<name>` markers as ordinary rows, and
+        // showed the lower-layer files those markers DELETE as winners - so it
+        // claimed the game would see files the mount hides.
+        let (app, root) = data_app(
+            &[("mod.esp", "from the mod")],
+            &[(&format!("{}Skyrim.esm", eidos_core::WHITEOUT_PREFIX), "")],
+        );
+        let names: Vec<String> = merged_listing(&app, "")
+            .into_iter()
+            .map(|r| r.name)
+            .collect();
+        assert!(names.contains(&"mod.esp".to_string()), "{names:?}");
+        assert!(
+            !names
+                .iter()
+                .any(|n| n.starts_with(eidos_core::WHITEOUT_PREFIX)),
+            "the marker is bookkeeping, not a file: {names:?}"
+        );
+        assert!(
+            !names.contains(&"Skyrim.esm".to_string()),
+            "a whited-out file is NOT in the merged view: {names:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_data_row_names_the_layer_that_actually_provides_it() {
+        let (app, root) = data_app(&[("mod.esp", "x")], &[("gen.json", "y")]);
+        let rows = merged_listing(&app, "");
+        let by = |n: &str| {
+            rows.iter()
+                .find(|r| r.name == n)
+                .map(|r| r.source.clone())
+                .unwrap_or_default()
+        };
+        assert_eq!(by("gen.json"), "[Overwrite]");
+        assert_eq!(by("mod.esp"), "AAA");
+        assert_eq!(by("Skyrim.esm"), "[skyrimse]");
+        // And the size column reads the WINNER's file, not some other layer's.
+        let m = rows.iter().find(|r| r.name == "mod.esp").unwrap();
+        assert_eq!(m.size, Some(1));
+        assert!(m.real.ends_with("mods/AAA/mod.esp"), "{:?}", m.real);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_data_source_is_the_longest_root_found_by_lookup() {
+        // Attribution used to scan every root per entry, O(entries x mods). The
+        // lookup must keep its longest-prefix rule: a mod nested under another
+        // root belongs to the inner one, and a sibling that merely shares a
+        // string prefix (`mods/A` vs `mods/AB`) is not a match at all.
+        let mut sources = DataSources::new();
+        sources.insert(PathBuf::from("/i/mods/A"), "A".to_string());
+        sources.insert(PathBuf::from("/i/mods/A/inner"), "Inner".to_string());
+        sources.insert(PathBuf::from("/g/Data"), "[skyrimse]".to_string());
+        let src = |p: &str| data_source(&sources, Path::new(p));
+        assert_eq!(src("/i/mods/A/inner/x.nif"), "Inner");
+        assert_eq!(src("/i/mods/A/meshes/x.nif"), "A");
+        assert_eq!(src("/i/mods/A"), "A");
+        assert_eq!(src("/i/mods/AB/x.nif"), "");
+        assert_eq!(src("/g/Data/Skyrim.esm"), "[skyrimse]");
+    }
+
+    #[test]
+    fn the_data_filter_reaches_into_folders_and_drops_empty_ones() {
+        let (mut app, root) = data_app(
+            &[("meshes/actors/thing.nif", "x"), ("scripts/other.pex", "y")],
+            &[],
+        );
+        // Unfiltered and unexpanded: only the top level draws.
+        let top: Vec<String> = data_tree_rows(&app, 500)
+            .into_iter()
+            .map(|r| r.rel)
+            .collect();
+        assert!(top.contains(&"meshes".to_string()));
+        assert!(
+            !top.iter().any(|r| r.contains('/')),
+            "nothing is expanded: {top:?}"
+        );
+
+        // A filter looks THROUGH folders - the match is somewhere in the tree,
+        // not necessarily on the level the user happens to have open.
+        app.data_query = "thing".to_string();
+        let hits: Vec<String> = data_tree_rows(&app, 500)
+            .into_iter()
+            .map(|r| r.rel)
+            .collect();
+        assert!(
+            hits.contains(&"meshes/actors/thing.nif".to_string()),
+            "{hits:?}"
+        );
+        assert!(
+            hits.contains(&"meshes".to_string()),
+            "its parents stay, to reach it: {hits:?}"
+        );
+        assert!(
+            !hits.iter().any(|r| r.starts_with("scripts")),
+            "a branch with no match is dropped whole: {hits:?}"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn conflicts_only_needs_a_conflict_map_and_says_nothing_without_one() {
+        let (mut app, root) = data_app(&[("mod.esp", "x")], &[]);
+        app.data_conflicts_only = true;
+        assert!(app.conflicts.is_none());
+        // No map means nothing is KNOWN to conflict. Reporting rows as
+        // contested on no evidence would be worse than an empty list.
+        assert!(data_tree_rows(&app, 500).is_empty());
+        let _ = fs::remove_dir_all(&root);
+    }
 }

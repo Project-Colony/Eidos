@@ -5257,3 +5257,6 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
         )
         .into()
 }
+
+#[cfg(test)]
+mod tests;

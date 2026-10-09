@@ -6,6 +6,26 @@
 use crate::theme::*;
 use crate::*;
 
+/// An in-progress FOMOD installer: the extracted+parsed archive, the current step,
+/// and the user's selection so far.
+pub(crate) struct FomodWizard {
+    pub(crate) target: CollectionTarget,
+    pub(crate) session: eidos_install::FomodSession,
+    pub(crate) step: usize,
+    pub(crate) selection: eidos_fomod::Selection,
+    pub(crate) game_id: String,
+    /// The source archive, kept so the download can be marked installed on finish.
+    pub(crate) archive: PathBuf,
+    /// Current plugin states, so fileDependency/gameDependency conditions evaluate
+    /// against the real setup instead of always reading Missing.
+    pub(crate) ctx: eidos_fomod::Context,
+    /// The `(group, option)` the pointer is over, which is what the preview pane
+    /// shows. `None` falls back to the option that is actually selected, so the
+    /// pane is never blank and the keyboard is not left out - MO2 tracks hover
+    /// only, and its preview empties the moment you move the mouse away.
+    pub(crate) hover: Option<(usize, usize)>,
+}
+
 pub(crate) fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
     use eidos_fomod::GroupType::*;
     match t {

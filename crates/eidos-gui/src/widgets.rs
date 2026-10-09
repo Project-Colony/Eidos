@@ -13,6 +13,40 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 use crate::theme::{accent, conflict_loses_bg, conflict_wins_bg, pal, row_bg, sel_bg};
 use crate::{App, Message};
 
+// MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
+pub(crate) const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
+
+pub(crate) const IC_NEXUS: &[u8] = include_bytes!("../assets/icons/internet-web-browser.png");
+
+pub(crate) const IC_CHANGE_GAME: &[u8] = include_bytes!("../assets/icons/switch-instance-icon.png");
+
+pub(crate) const IC_REFRESH: &[u8] = include_bytes!("../assets/icons/view-refresh.png");
+
+pub(crate) const IC_EXECUTABLES: &[u8] = include_bytes!("../assets/icons/function.png");
+
+pub(crate) const IC_TOOLS: &[u8] = include_bytes!("../assets/icons/plugins.png");
+
+pub(crate) const IC_SETTINGS: &[u8] = include_bytes!("../assets/icons/preferences-system.png");
+
+pub(crate) const IC_ENDORSE: &[u8] = include_bytes!("../assets/icons/icon-favorite.png");
+
+pub(crate) const IC_UPDATE: &[u8] = include_bytes!("../assets/icons/system-software-update.png");
+
+pub(crate) const IC_HELP: &[u8] = include_bytes!("../assets/icons/help-browser_32.png");
+
+// MO2's real conflict emblems (modconflicticondelegate: emblem_conflict_*).
+pub(crate) const IC_CONFLICT_OVERWRITE: &[u8] = include_bytes!("../assets/icons/conflict-overwrite.png");
+
+pub(crate) const IC_CONFLICT_OVERWRITTEN: &[u8] = include_bytes!("../assets/icons/conflict-overwritten.png");
+
+pub(crate) const IC_CONFLICT_MIXED: &[u8] = include_bytes!("../assets/icons/conflict-mixed.png");
+
+pub(crate) const IC_CONFLICT_REDUNDANT: &[u8] = include_bytes!("../assets/icons/conflict-redundant.png");
+
+pub(crate) const IC_CONFLICT_HIDDEN: &[u8] = include_bytes!("../assets/icons/conflict-hidden.png");
+
+pub(crate) const IC_RUN: &[u8] = include_bytes!("../assets/icons/media-playback-start.png");
+
 /// A collapsible settings section: a title row that toggles, and its body when
 /// open. Colony's `view_collapsible_section`, in Eidos's palette.
 ///
@@ -691,4 +725,113 @@ pub(crate) fn dropdown_under<'a>(
             )
         })
         .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::*;
+
+    #[test]
+    fn the_conflict_tint_says_which_way_each_pair_goes() {
+        use eidos_conflicts::{ConflictMap, ModConflicts};
+        let mut app = nav_app(&["low", "focus", "high"]);
+        // Origins are index + 1. "focus" (index 1) overwrites "low" and is
+        // overwritten by "high".
+        let mut mods = HashMap::new();
+        mods.insert(
+            2u32,
+            ModConflicts {
+                overwrites: [1u32].into_iter().collect(),
+                overwritten_by: [3u32].into_iter().collect(),
+                ..Default::default()
+            },
+        );
+        app.conflicts = Some(ConflictMap {
+            files: Default::default(),
+            mods,
+            names: HashMap::new(),
+            ..Default::default()
+        });
+
+        app.selected_mod = Some(1);
+        assert_eq!(
+            conflict_tint(&app, 0),
+            Some(conflict_wins_bg()),
+            "the row it beats"
+        );
+        assert_eq!(
+            conflict_tint(&app, 2),
+            Some(conflict_loses_bg()),
+            "the row that beats it"
+        );
+        assert_eq!(
+            conflict_tint(&app, 1),
+            None,
+            "the focused row keeps its selection colour"
+        );
+
+        // Nothing focused, nothing tinted.
+        app.selected_mod = None;
+        assert_eq!(conflict_tint(&app, 0), None);
+    }
+
+    #[test]
+    fn a_menu_grows_away_from_the_edge_it_was_summoned_near() {
+        // The card's height is unknown until layout, so a menu opened near the
+        // bottom cannot just be offset downwards - it would run off screen.
+        // Anchoring the far edge to the pointer instead needs no size at all.
+        let win = iced::Size::new(1000.0, 800.0);
+
+        // Top-left quadrant: the card's top-left corner sits at the pointer.
+        let p = iced::Point::new(100.0, 100.0);
+        assert!(p.x <= win.width * 0.5 && p.y <= win.height * 0.5);
+
+        // Bottom-right: it must flip on BOTH axes, and the padding that places
+        // it is measured from the opposite edges.
+        let p = iced::Point::new(900.0, 700.0);
+        let (right, below) = (p.x > win.width * 0.5, p.y > win.height * 0.5);
+        assert!(right && below);
+        assert_eq!(win.height - p.y, 100.0, "padding from the bottom edge");
+        assert_eq!(win.width - p.x, 100.0, "padding from the right edge");
+    }
+
+    #[test]
+    fn the_row_colour_has_exactly_one_owner() {
+        // The fill and the fade must agree, always. They agree because they ask
+        // the same function - this pins the precedence they both inherit.
+        let conflict = Some(conflict_wins_bg());
+        assert_eq!(
+            row_background(true, true, conflict, None),
+            sel_bg(),
+            "selection outranks the conflict tint"
+        );
+        assert_eq!(
+            row_background(true, false, conflict, None),
+            conflict_wins_bg()
+        );
+        assert_eq!(row_background(true, false, None, None), row_bg(true));
+        assert_eq!(row_background(false, false, None, None), row_bg(false));
+        // A user colour paints when nothing more urgent is asking for the row,
+        // and yields to both selection and a live conflict answer.
+        let tint = mod_tint([0x2e, 0x5e, 0x8b], true);
+        assert_eq!(row_background(true, false, None, Some(tint)), tint);
+        assert_eq!(
+            row_background(true, false, conflict, Some(tint)),
+            conflict_wins_bg()
+        );
+        assert_eq!(row_background(true, true, None, Some(tint)), sel_bg());
+        // And it is a WASH: closer to the stripe than to the raw colour.
+        let raw = Color::from_rgb8(0x2e, 0x5e, 0x8b);
+        let d = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
+        assert!(
+            d(tint, row_bg(true)) < d(tint, raw),
+            "the colour must not become the page"
+        );
+        assert_ne!(
+            row_bg(true),
+            row_bg(false),
+            "the stripes differ, so a fade into the wrong one would show"
+        );
+    }
 }
