@@ -75,7 +75,9 @@ changes on both sides, since both name the same data.
 
 - It takes the instance lock on the old folder first. If a game started by an
   older Eidos is still running from it, the instance is left for a later launch
-  rather than linked across mid-write.
+  rather than linked across mid-write. Taking the lock creates the old
+  folder's `.eidos.lock` if it is missing, as opening the instance in any
+  Eidos does; that file is the only thing the move writes there.
 - It runs the relocation pass that `eidos unpack` uses, so `tools.ini` entries
   and each mod's `installationFile` point at the new folder.
 - If the new folder already exists without a marker, it does not merge two
