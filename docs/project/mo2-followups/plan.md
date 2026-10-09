@@ -27,7 +27,7 @@
 
 ## A. Validated archive payloads and export
 
-Owner: archive worker. Files: eidos-conflicts/src/archives.rs and focused payload/tests modules; root owns GUI actions.
+Owner: archive worker. Files: eidos-conflicts/src/archives/mod.rs and focused payload/tests modules; root owns GUI actions.
 
 - [x] Extend the existing parsers to retrieve payload metadata on demand for TES3/BSA103/104/105 and existing BA2 GNRL/DX10 families.
 - [x] Decode raw, zlib, LZ4 frame/block correctly; reconstruct bounded DDS subresources and check exact output sizes/checksums.

@@ -2,7 +2,9 @@
 //! right, and the status bar. MO2's layout.
 //!
 //! Split out of `main.rs` unchanged. Everything here reads `App` and returns an
-//! `Element`; the decisions live in `update`.
+//! `Element`; the decisions live in `update`. [`view`] at the top is the root:
+//! it picks what the window shows - an installer, the FOMOD wizard, a wizard
+//! screen or the main window - and lays any open modal over it.
 
 use crate::theme::*;
 use crate::widgets::*;
