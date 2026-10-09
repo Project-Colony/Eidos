@@ -12,9 +12,9 @@ sub-directories Eidos uses inside them, and no other crate builds a path from
 | data | `~/.local/share/Colony/Eidos/` | `instances/<game>/` (global instances), `runtimes/` (downloaded tool runtimes), `logs/` (session logs) |
 | cache | `~/.cache/Colony/Eidos/` | `loot/<repo>/` (LOOT masterlist and prelude, fetched again when missing) |
 
-A relative `$XDG_*_HOME` is ignored, as the XDG specification requires: under
-Proton the working directory is the game's folder, and honouring a relative
-value would put the user's settings there.
+A relative `$XDG_*_HOME` is ignored, as the XDG specification requires, and so
+is a relative `$HOME`: under Proton the working directory is the game's folder,
+and honouring a relative value would put the user's settings there.
 
 Two things stay outside the Colony tree on purpose:
 
