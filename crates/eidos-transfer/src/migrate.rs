@@ -21,6 +21,16 @@ use eidos_paths::{Carry, MIGRATION_MARKER};
 
 use crate::relocate::relocate;
 
+/// Left in a moved instance once [`repoint`] has run clean on it.
+///
+/// The move and the repoint are two steps, and the move's own marker
+/// ([`MIGRATION_MARKER`]) goes down with the first. Without a second one, a
+/// repoint that failed, or a process killed between the two, would leave
+/// `tools.ini` and every `meta.ini` naming the old folder for good. Until this
+/// is down, every launch repoints the instance again: the pass only rewrites
+/// values that still name the old folder, so running it twice changes nothing.
+const REPOINTED_MARKER: &str = ".migrated-repointed";
+
 /// Move every global instance still at its old path. Returns notes for the log.
 pub fn migrate_global_instances() -> Vec<String> {
     match eidos_paths::legacy_data_dir() {
@@ -43,10 +53,12 @@ pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
         let inst = Instance { root: from.clone() };
         // An instance, not `runtimes/` or anything else sharing the folder.
         let is_instance = inst.exists() || inst.manifest_path().is_file();
-        if !from.is_dir() || !is_instance || to.join(MIGRATION_MARKER).exists() {
+        if !from.is_dir() || !is_instance || to.join(REPOINTED_MARKER).exists() {
             continue;
         }
-        if to.symlink_metadata().is_ok() {
+        // Moved by an earlier launch that did not get to finish repointing it.
+        let moved = to.join(MIGRATION_MARKER).exists();
+        if !moved && to.symlink_metadata().is_ok() {
             notes.push(format!(
                 "{} and {} both exist, so Eidos keeps using the first - move or remove one \
                  of them by hand to settle which instance is yours",
@@ -55,9 +67,11 @@ pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
             ));
             continue;
         }
-        // Held for the whole move: a game an older Eidos started from the old
-        // folder must not write into it while it is linked across, or the save
-        // it writes last would stay behind.
+        // Held for the whole move and the repoint: a game an older Eidos started
+        // from the old folder must not write into it while it is linked across,
+        // or the save it writes last would stay behind. The moved instance's
+        // `.eidos.lock` is a link to this one, so an Eidos that opened the new
+        // folder holds this same lock and keeps the repoint out too.
         let _lock = match inst.try_lock("the move to the Colony layout") {
             Ok(lock) => lock,
             Err(e) => {
@@ -68,22 +82,31 @@ pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
                 continue;
             }
         };
-        match eidos_paths::migrate_tree(&from, &to, Carry::Link) {
-            Ok(n) => {
-                notes.push(format!(
+        if !moved {
+            match eidos_paths::migrate_tree(&from, &to, Carry::Link) {
+                Ok(n) => notes.push(format!(
                     "moved the instance at {} to {} ({n} files, linked rather than copied, so \
                      it takes no extra space) - the old folder is left as it was",
                     from.display(),
                     to.display()
-                ));
-                notes.extend(repoint(&to, &from));
+                )),
+                Err(e) => {
+                    notes.push(format!(
+                        "could not move the instance at {} to {}: {e} - Eidos keeps using it \
+                         where it is",
+                        from.display(),
+                        to.display()
+                    ));
+                    continue;
+                }
             }
-            Err(e) => notes.push(format!(
-                "could not move the instance at {} to {}: {e} - Eidos keeps using it where it is",
-                from.display(),
-                to.display()
-            )),
         }
+        let problems = repoint(&to, &from);
+        if problems.is_empty() {
+            // Best effort: without it the next launch only repoints again.
+            let _ = fs::write(to.join(REPOINTED_MARKER), "");
+        }
+        notes.extend(problems);
     }
     notes
 }
@@ -181,6 +204,7 @@ mod tests {
         assert_eq!(notes.len(), 1, "{notes:?}");
         let to = new.join("skyrimse");
         assert!(to.join(MIGRATION_MARKER).is_file());
+        assert!(to.join(REPOINTED_MARKER).is_file());
         let ino = |p: PathBuf| fs::metadata(p).unwrap().ino();
         assert_eq!(
             ino(to.join("mods/A/Data/a.esp")),
@@ -202,6 +226,29 @@ mod tests {
         assert!(!new.join("runtimes").exists());
 
         // And the second launch has nothing left to do.
+        assert!(migrate_global_instances_in(&old, &new).is_empty());
+    }
+
+    #[test]
+    fn a_move_whose_repoint_never_ran_is_repointed_on_the_next_launch() {
+        // A launch killed between the move and the repoint: the instance is in
+        // place with its marker down, and its files still name the old folder.
+        let t = Tmp::new("repoint");
+        let (old, new) = (t.0.join("eidos"), t.0.join("instances"));
+        let from = legacy_instance(&old, "skyrimse");
+        let to = new.join("skyrimse");
+        eidos_paths::migrate_tree(&from, &to, Carry::Link).unwrap();
+        assert!(!to.join(REPOINTED_MARKER).exists());
+
+        let notes = migrate_global_instances_in(&old, &new);
+
+        assert!(notes.is_empty(), "{notes:?}");
+        let tools = fs::read_to_string(to.join("tools.ini")).unwrap();
+        assert!(
+            tools.contains(&format!("exe={}/mods/A/tool.exe", to.display())),
+            "{tools}"
+        );
+        assert!(to.join(REPOINTED_MARKER).is_file());
         assert!(migrate_global_instances_in(&old, &new).is_empty());
     }
 

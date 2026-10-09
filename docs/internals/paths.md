@@ -14,7 +14,11 @@ sub-directories Eidos uses inside them, and no other crate builds a path from
 
 A relative `$XDG_*_HOME` is ignored, as the XDG specification requires, and so
 is a relative `$HOME`: under Proton the working directory is the game's folder,
-and honouring a relative value would put the user's settings there.
+and honouring a relative value would put the user's settings there. With no
+usable home at all, the roots are the ones a `$HOME` of `/` would give
+(`/.config/Colony/Eidos/` and so on), where writing fails and nothing is saved.
+Never the shared temp directory, where another local user could create the
+folder first and plant definitions in it.
 
 Two things stay outside the Colony tree on purpose:
 
@@ -79,7 +83,11 @@ changes on both sides, since both name the same data.
   folder's `.eidos.lock` if it is missing, as opening the instance in any
   Eidos does; that file is the only thing the move writes there.
 - It runs the relocation pass that `eidos unpack` uses, so `tools.ini` entries
-  and each mod's `installationFile` point at the new folder.
+  and each mod's `installationFile` point at the new folder. Once that pass runs
+  clean it leaves a second marker, `.migrated-repointed`. Until then (the pass
+  hit a file it could not rewrite, or the launch was killed between the move and
+  the pass), every launch runs it again on the moved instance. It only rewrites
+  values that still name the old folder, so a second run changes nothing else.
 - If the new folder already exists without a marker, it does not merge two
   instances: it keeps using the old one and says so in the log.
 

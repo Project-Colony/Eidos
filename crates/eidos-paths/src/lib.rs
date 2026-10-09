@@ -56,22 +56,24 @@ pub use colony_ui::paths::VENDOR;
 /// ecosystem's directories are `Colony/Eidos`, not `colony/eidos`.
 pub const PROGRAM: &str = "Eidos";
 
-/// One Colony root, or a scratch location when the machine has no home at all.
+/// One Colony root, or the same root under `/` when the machine has no home.
 ///
 /// `locate` fails only when neither `$HOME` nor the password database names a
 /// home directory: a systemd unit with an empty environment, a bare container.
-/// Every caller then goes on to `create_dir_all` and write, which works in the
-/// temp dir where it would fail on `/`. The `kind` level keeps config, data and
-/// cache apart even there, so clearing one can never take the others with it.
+/// The answer is then the one a `HOME` of `/` would give, where every caller's
+/// `create_dir_all` fails with a real errno naming a real path, so nothing is
+/// saved and nothing is read from anywhere unexpected. Never the temp dir: it is
+/// shared by every local user, and one of them could create the directory first
+/// and plant game definitions or read the Nexus session written into it.
 ///
 /// A relative answer counts as none. `dirs` checks the `XDG_*` variables for
 /// that but takes `$HOME` as given, and a relative one would resolve against
 /// the working directory, which for Eidos under Proton is the game's folder.
-fn root(found: io::Result<PathBuf>, kind: &str) -> PathBuf {
+fn root(found: io::Result<PathBuf>, homeless: &str) -> PathBuf {
     found
         .ok()
         .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| std::env::temp_dir().join(kind).join(VENDOR).join(PROGRAM))
+        .unwrap_or_else(|| Path::new("/").join(homeless).join(VENDOR).join(PROGRAM))
 }
 
 /// An old-layout root, or `None` where there can be nothing to carry over.
@@ -90,7 +92,7 @@ pub fn config_dir() -> PathBuf {
 
 /// The Colony config directory itself, migrated or not.
 fn colony_config_dir() -> PathBuf {
-    root(locate::config_dir(PROGRAM), "config")
+    root(locate::config_dir(PROGRAM), ".config")
 }
 
 /// `~/.local/share/Colony/Eidos` - what the program produced and cannot rebuild.
@@ -99,12 +101,12 @@ fn colony_config_dir() -> PathBuf {
 /// [`runtimes_dir`], [`global_instance_dir`]): those fall back to their old
 /// locations until they have moved, and this cannot.
 pub fn data_dir() -> PathBuf {
-    root(locate::data_dir(PROGRAM), "data")
+    root(locate::data_dir(PROGRAM), ".local/share")
 }
 
 /// `~/.cache/Colony/Eidos` - what the program can rebuild by asking again.
 pub fn cache_dir() -> PathBuf {
-    root(locate::cache_dir(PROGRAM), "cache")
+    root(locate::cache_dir(PROGRAM), ".cache")
 }
 
 /// `~/.local/share/Colony/Eidos/logs` - session logs.
@@ -163,7 +165,8 @@ pub fn moved_global_instance(root: &Path) -> Option<PathBuf> {
 pub fn desktop_entries_dir() -> PathBuf {
     dirs::data_dir()
         .filter(|p| p.is_absolute())
-        .unwrap_or_else(std::env::temp_dir)
+        // As in `root`: never a shared temp dir.
+        .unwrap_or_else(|| PathBuf::from("/.local/share"))
         .join("applications")
 }
 
@@ -681,10 +684,16 @@ mod tests {
             std::env::remove_var("XDG_CONFIG_HOME");
             std::env::remove_var("XDG_STATE_HOME");
         }
-        for dir in [config_dir(), data_dir(), cache_dir(), logs_dir()] {
-            assert!(dir.is_absolute(), "{}", dir.display());
-        }
-        assert!(desktop_entries_dir().is_absolute());
+        // And with no usable home, nothing lands in the shared temp dir, where
+        // another user could have made the directory first.
+        assert_eq!(config_dir(), Path::new("/.config/Colony/Eidos"));
+        assert_eq!(data_dir(), Path::new("/.local/share/Colony/Eidos"));
+        assert_eq!(cache_dir(), Path::new("/.cache/Colony/Eidos"));
+        assert_eq!(logs_dir(), Path::new("/.local/share/Colony/Eidos/logs"));
+        assert_eq!(
+            desktop_entries_dir(),
+            Path::new("/.local/share/applications")
+        );
         assert_eq!(legacy_data_dir(), None);
         assert!(migrate_legacy_layout().is_empty());
     }
