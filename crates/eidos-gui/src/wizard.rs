@@ -120,7 +120,7 @@ pub(crate) fn kind_screen<'a>(app: &App) -> Element<'a, Message> {
         .spacing(10)
         .push(kind_card(
             "Global",
-            "Stored centrally in ~/.local/share/eidos, managed by Eidos. Recommended.",
+            "Stored centrally in ~/.local/share/Colony/Eidos/instances, managed by Eidos. Recommended.",
             app.kind == InstanceKind::Global,
             Message::PickKind(InstanceKind::Global),
         ))

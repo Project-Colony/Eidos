@@ -1486,7 +1486,7 @@ pub fn apply_plugin_rules(
     let Some((_, repo)) = eidos_loot::loot_support(game.def.id) else {
         return;
     };
-    let Ok((masterlist, prelude)) = eidos_loot::ensure_masterlist(repo, &cache, false) else {
+    let Ok((masterlist, prelude)) = eidos_loot::ensure_masterlist(repo, false) else {
         report.loot_notes.push(Note {
             subject: "load order".into(),
             detail: "the LOOT masterlist could not be fetched, so the rules were not merged".into(),

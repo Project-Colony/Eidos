@@ -68,10 +68,12 @@ pub(crate) fn cmd_sort(args: &[String]) {
         exit(1);
     }
 
-    // Fetch/cache the per-game masterlist + shared prelude.
+    // Fetch/cache the per-game masterlist + shared prelude. The instance's own
+    // `loot/` keeps what is the user's or the instance's: the userlist and the
+    // case bridge built from this instance's mods.
     let (_game_type, repo) = eidos_loot::loot_support(id).unwrap();
     let cache = inst.root.join("loot");
-    let (masterlist, prelude) = match eidos_loot::ensure_masterlist(repo, &cache, update) {
+    let (masterlist, prelude) = match eidos_loot::ensure_masterlist(repo, update) {
         Ok(p) => p,
         Err(e) => {
             eidos_log::warn!("Could not obtain masterlist: {e}");

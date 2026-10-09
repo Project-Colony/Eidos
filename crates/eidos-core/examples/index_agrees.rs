@@ -3,7 +3,8 @@
 //! Run against a real instance:
 //! ```text
 //! cargo run --release -p eidos-core --example index_agrees -- \
-//!     ~/.local/share/eidos/skyrimse/mods ~/.local/share/eidos/skyrimse/overwrite
+//!     ~/.local/share/Colony/Eidos/instances/skyrimse/mods \
+//!     ~/.local/share/Colony/Eidos/instances/skyrimse/overwrite
 //! ```
 //!
 //! Playing the game tests the paths the game happens to ask for. This tests

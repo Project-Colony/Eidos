@@ -216,7 +216,12 @@ pub enum Carry {
 /// `eidos-instance` and `eidos-transfer`.
 pub fn migrate_legacy_layout() -> Vec<String> {
     let jobs = [
-        (legacy_config_dir(), colony_config_dir(), Carry::Copy, "settings"),
+        (
+            legacy_config_dir(),
+            colony_config_dir(),
+            Carry::Copy,
+            "settings",
+        ),
         (
             legacy_logs_dirs().into_iter().find(|d| d.is_dir()),
             data_dir().join("logs"),
@@ -395,10 +400,8 @@ mod tests {
     impl Home {
         fn new(tag: &str) -> Home {
             let env = ENV.lock().unwrap_or_else(|e| e.into_inner());
-            let dir = std::env::temp_dir().join(format!(
-                "eidos-paths-{}-{tag}",
-                std::process::id()
-            ));
+            let dir =
+                std::env::temp_dir().join(format!("eidos-paths-{}-{tag}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             fs::create_dir_all(&dir).unwrap();
             let saved = VARS.iter().map(|v| (*v, std::env::var_os(v))).collect();
@@ -457,7 +460,10 @@ mod tests {
         )
         .unwrap();
         h.write(".config/eidos/games/stardew.toml", "id='stardew'\n");
-        h.write(".local/state/Colony/Eidos/logs/gui.20261001.1.log", "old log\n");
+        h.write(
+            ".local/state/Colony/Eidos/logs/gui.20261001.1.log",
+            "old log\n",
+        );
         h.write(".local/share/eidos/runtimes/dotnet-8/dotnet", "binary\n");
     }
 
@@ -521,7 +527,10 @@ mod tests {
         assert_eq!(read(config.join("settings.ini")), "theme=dark\n");
         assert_eq!(read(config.join("games/stardew.toml")), "id='stardew'\n");
         let mode = fs::metadata(config.join("nexus.ini")).unwrap().mode() & 0o777;
-        assert_eq!(mode, 0o600, "an OAuth token must not become readable by moving");
+        assert_eq!(
+            mode, 0o600,
+            "an OAuth token must not become readable by moving"
+        );
         assert_eq!(logs_dir(), data.join("logs"));
         assert_eq!(read(data.join("logs/gui.20261001.1.log")), "old log\n");
         assert_eq!(runtimes_dir(), data.join("runtimes"));
@@ -533,8 +542,12 @@ mod tests {
         );
         // ...and every old file is still where it was.
         assert_eq!(read(h.join(".config/eidos/settings.ini")), "theme=dark\n");
-        assert!(h.join(".local/state/Colony/Eidos/logs/gui.20261001.1.log").is_file());
-        assert!(h.join(".local/share/eidos/runtimes/dotnet-8/dotnet").is_file());
+        assert!(h
+            .join(".local/state/Colony/Eidos/logs/gui.20261001.1.log")
+            .is_file());
+        assert!(h
+            .join(".local/share/eidos/runtimes/dotnet-8/dotnet")
+            .is_file());
         // And no staging directory is left behind.
         for parent in [h.join(".config/Colony"), data.clone()] {
             for e in fs::read_dir(parent).unwrap().flatten() {
@@ -559,7 +572,9 @@ mod tests {
         fs::set_permissions(&colony, fs::Permissions::from_mode(0o755)).unwrap();
 
         assert!(
-            notes.iter().any(|n| n.starts_with("could not copy the settings")),
+            notes
+                .iter()
+                .any(|n| n.starts_with("could not copy the settings")),
             "{notes:?}"
         );
         assert_eq!(config_dir(), h.join(".config/eidos"));
@@ -658,6 +673,11 @@ mod tests {
         let out = fs::read_link(to.join("outside")).unwrap();
         assert_eq!(out, fs::canonicalize(h.join("elsewhere")).unwrap());
         // ...which was linked, never walked or copied.
-        assert!(to.join("outside").symlink_metadata().unwrap().file_type().is_symlink());
+        assert!(to
+            .join("outside")
+            .symlink_metadata()
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 }

@@ -12,7 +12,7 @@
 //! `eidos-gamefeatures`, differing in probe mechanism, candidate set and order)
 //! and a third was about to be written for instance packing. A process wrapper
 //! that belongs to no domain is exactly the shape of the other leaf crates
-//! here - `eidos-paths` has an empty dependency list, `eidos-core` has only
+//! here - `eidos-ini` has an empty dependency list, `eidos-core` has only
 //! libc - and making it one is what stops the fourth copy.
 //!
 //! What deliberately did NOT move here: the installer's temp-directory naming,

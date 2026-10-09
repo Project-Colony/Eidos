@@ -34,11 +34,13 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 mod manifest;
+mod migrate;
 mod plan;
 mod relocate;
 mod transfer;
 
 pub use manifest::BackupManifest;
+pub use migrate::{migrate_global_instances, migrate_global_instances_in};
 pub use plan::{plan, Left, Outside, Plan, Why};
 pub use relocate::{relocate, Relocated};
 pub use transfer::{PackReport, Transfer, UnpackReport};

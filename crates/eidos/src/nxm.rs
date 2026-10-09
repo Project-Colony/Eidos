@@ -92,7 +92,7 @@ pub(crate) fn cmd_nxm(args: &[String]) {
         }
         Some("--register") => {
             let exe = std::env::current_exe().unwrap_or_else(|_| "eidos".into());
-            let apps = home().join(".local/share/applications");
+            let apps = eidos_paths::desktop_entries_dir();
             let _ = std::fs::create_dir_all(&apps);
             let desktop = apps.join("eidos-nxm.desktop");
             let body = format!(

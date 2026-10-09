@@ -2,7 +2,8 @@
 //!
 //! ```text
 //! cargo run --release -p eidos-core --example index_health -- \
-//!     ~/.local/share/eidos/skyrimse/mods ~/.local/share/eidos/skyrimse/overwrite
+//!     ~/.local/share/Colony/Eidos/instances/skyrimse/mods \
+//!     ~/.local/share/Colony/Eidos/instances/skyrimse/overwrite
 //! ```
 //!
 //! The index is all-or-nothing and built in silence: `LayerStack::new` either

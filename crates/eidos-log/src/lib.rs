@@ -13,10 +13,10 @@
 //!
 //! * **A file per run.** Sessions are the unit users talk about ("it broke the
 //!   third time I launched"), so a run gets its own file under
-//!   `~/.local/state/Colony/Eidos/logs/` (XDG basedir 0.8 puts logs in the *state*
-//!   dir, not data or cache: state is "persists between restarts, not portable,
-//!   not precious", which is exactly a log). Appending to one growing file
-//!   would force the reader to guess where the interesting run starts.
+//!   `~/.local/share/Colony/Eidos/logs/` ([`eidos_paths::logs_dir`], which also
+//!   keeps using an older Eidos's log folder until it has been copied across).
+//!   Appending to one growing file would force the reader to guess where the
+//!   interesting run starts.
 //! * **Rotation.** Only the last [`DEFAULT_KEEP`] sessions per instance survive,
 //!   so an unattended machine cannot fill its home partition with logs. Per
 //!   instance is not enough on its own - a bucket nobody writes to again is
@@ -40,7 +40,6 @@
 //! `EIDOS_LOG=debug|info|warn|error` raises or lowers both thresholds at once.
 
 use std::borrow::Cow;
-use std::ffi::OsString;
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -181,39 +180,12 @@ impl Config {
 }
 
 // ---------------------------------------------------------------------------
-// XDG paths
+// Paths
 // ---------------------------------------------------------------------------
 
-/// `~/.local/state/Colony/Eidos`, or `~/.local/state/Colony/Eidos`.
-pub fn state_dir() -> PathBuf {
-    state_dir_from(std::env::var_os("XDG_STATE_HOME"), std::env::var_os("HOME"))
-}
-
-/// Where session logs live: `~/.local/state/Colony/Eidos/logs`.
+/// Where session logs live: `~/.local/share/Colony/Eidos/logs`.
 pub fn log_dir() -> PathBuf {
-    state_dir().join("logs")
-}
-
-/// The path resolution behind [`state_dir`], split out so it can be tested
-/// without mutating process-wide environment variables (which would race with
-/// every other test in the binary).
-///
-/// Falls back to the temp dir rather than `/` when `HOME` is unset: a log we
-/// cannot write is worse than a log in an odd place, and `HOME` is genuinely
-/// missing in some systemd and Steam-launcher contexts.
-fn state_dir_from(xdg: Option<OsString>, home: Option<OsString>) -> PathBuf {
-    // `Colony/Eidos`, the ecosystem's layout - see `eidos_paths`, which owns the
-    // rule. Spelled out here rather than delegated because this function takes
-    // its environment as arguments precisely so tests need not mutate the
-    // process's, and that shape is worth more than sharing four joins.
-    let tail = Path::new(eidos_paths::VENDOR).join(eidos_paths::PROGRAM);
-    if let Some(x) = xdg.filter(|x| !x.is_empty()) {
-        return PathBuf::from(x).join(tail);
-    }
-    match home.filter(|h| !h.is_empty()) {
-        Some(h) => PathBuf::from(h).join(".local/state").join(tail),
-        None => std::env::temp_dir().join(tail),
-    }
+    eidos_paths::logs_dir()
 }
 
 // ---------------------------------------------------------------------------
@@ -1621,21 +1593,6 @@ mod tests {
         let b = session_file_name("sse", 1_700_000_060, 9);
         assert_eq!(a, "sse.20231114-221320.10.log");
         assert!(a < b, "name order must be time order: {a} vs {b}");
-    }
-
-    #[test]
-    fn state_dir_prefers_xdg_then_home_then_temp() {
-        // `Colony/Eidos` - the ecosystem's layout, so a user finds one tree per
-        // program rather than one spelling per crate that needed a directory.
-        let xdg = state_dir_from(Some("/x/state".into()), Some("/home/alice".into()));
-        assert_eq!(xdg, PathBuf::from("/x/state/Colony/Eidos"));
-        // Empty is treated as unset, as the XDG spec requires.
-        let home = state_dir_from(Some("".into()), Some("/home/alice".into()));
-        assert_eq!(home, PathBuf::from("/home/alice/.local/state/Colony/Eidos"));
-        // And with no environment at all it still lands somewhere writable,
-        // because a log we cannot write is worse than a log in an odd place.
-        let none = state_dir_from(None, None);
-        assert!(none.ends_with("Colony/Eidos"), "{}", none.display());
     }
 
     #[test]

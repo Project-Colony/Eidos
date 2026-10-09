@@ -2900,8 +2900,8 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                     };
                     // Refresh the masterlist on every sort, like MO2/LOOT; a failed
                     // download falls back to the cached copy.
-                    let (ml, pre) = eidos_loot::ensure_masterlist(repo, &cache, true)
-                        .map_err(|e| e.to_string())?;
+                    let (ml, pre) =
+                        eidos_loot::ensure_masterlist(repo, true).map_err(|e| e.to_string())?;
                     let userlist = cache.join("userlist.yaml");
                     // Close libloot's case gap before it evaluates anything. Its
                     // condition evaluator is a bare `exists()`, and the masterlist

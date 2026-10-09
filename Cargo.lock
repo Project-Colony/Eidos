@@ -1292,6 +1292,7 @@ dependencies = [
 name = "eidos-loot"
 version = "1.18.4"
 dependencies = [
+ "eidos-paths",
  "eidos-plugins",
  "libloot",
  "ureq",
@@ -1340,6 +1341,7 @@ version = "1.18.4"
 dependencies = [
  "eidos-ini",
  "eidos-instance",
+ "eidos-paths",
  "eidos-sevenzip",
  "libc",
 ]

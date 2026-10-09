@@ -695,7 +695,7 @@ impl Transfer {
         // The instance now lives here, and `kind` has to agree: a backup of a
         // central instance unpacked into a folder of the user's choosing IS a
         // portable one, and an instance that says otherwise sends every command
-        // looking for it under `$XDG_DATA_HOME`.
+        // looking for it in the central instance folder instead.
         let inst = Instance::portable(dest.to_path_buf());
         if let Some(mut m) = inst.read_manifest() {
             let central = Instance::global(&m.game_id).root;

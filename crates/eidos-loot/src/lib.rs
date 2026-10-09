@@ -82,17 +82,20 @@ pub fn is_supported(game_id: &str) -> bool {
     loot_support(game_id).is_some()
 }
 
-/// Ensure the masterlist + prelude are cached under `cache_dir`, fetching from
+/// Ensure the masterlist + prelude are cached, fetching from
 /// `github.com/loot/<repo>` (and the shared prelude) when missing or `update`.
 /// Returns their paths.
-pub fn ensure_masterlist(
-    repo: &str,
-    cache_dir: &Path,
-    update: bool,
-) -> Result<(PathBuf, PathBuf), LootError> {
+///
+/// The cache is `~/.cache/Colony/Eidos/loot/<repo>/`, shared by every instance
+/// of a game: both files are downloaded as they are, so they are cache in the
+/// Colony sense, and deleting them costs one download. They used to sit in each
+/// instance's `loot/` folder, where a backup had to skip them by name; the
+/// user's own `userlist.yaml` still lives there, because it is not cache.
+pub fn ensure_masterlist(repo: &str, update: bool) -> Result<(PathBuf, PathBuf), LootError> {
+    let cache_dir = eidos_paths::cache_dir().join("loot").join(repo);
     let masterlist = cache_dir.join("masterlist.yaml");
     let prelude = cache_dir.join("prelude.yaml");
-    fs::create_dir_all(cache_dir)?;
+    fs::create_dir_all(&cache_dir)?;
     // A refresh is best-effort: if the download fails but a cached copy exists,
     // sorting proceeds with it (LOOT stays usable offline). Only a MISSING file
     // makes a failed fetch fatal.

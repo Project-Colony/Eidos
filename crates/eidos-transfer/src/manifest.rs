@@ -210,7 +210,7 @@ impl BackupManifest {
                     "game_id" => {
                         // This value BECOMES A PATH COMPONENT: with no folder
                         // given, `eidos unpack` restores a central instance to
-                        // `$XDG_DATA_HOME/eidos/<game_id>`. A backup is a file
+                        // `~/.local/share/Colony/Eidos/instances/<game_id>`. A backup is a file
                         // handed between people, so a `game_id` of
                         // `../../.config/systemd/user` would choose its own
                         // destination. Refusing it here rather than at the one
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn a_game_id_that_could_choose_its_own_destination_is_refused() {
         // With no folder given, `eidos unpack` puts a central instance back at
-        // `$XDG_DATA_HOME/eidos/<game_id>`. A .eidos file is passed between
+        // `~/.local/share/Colony/Eidos/instances/<game_id>`. A .eidos file is passed between
         // people, so this value is untrusted input that names a directory.
         for hostile in [
             "../../../../home/somebody/.ssh",
