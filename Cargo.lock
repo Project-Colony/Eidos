@@ -1314,6 +1314,10 @@ dependencies = [
 [[package]]
 name = "eidos-paths"
 version = "1.18.4"
+dependencies = [
+ "colony-ui",
+ "dirs",
+]
 
 [[package]]
 name = "eidos-plugins"
