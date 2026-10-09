@@ -148,7 +148,7 @@ body:
       label: Launch log
       description: |
         Runs started from the GUI write the game's stdout and stderr to
-        `~/.local/share/eidos/<game-id>/logs/run-<timestamp>.log` (or
+        `~/.local/share/Colony/Eidos/instances/<game-id>/logs/run-<timestamp>.log` (or
         `<instance>/logs/` for a portable instance). Paste the tail of the newest
         one - Eidos's own warnings about the capability, failed binds and the
         mount all appear there. From a terminal launch, paste what `eidos play`

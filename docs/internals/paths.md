@@ -85,6 +85,11 @@ Hard links cannot cross filesystems. When `~/.local/share/eidos` is a link to
 another disk, the move fails cleanly and the instance stays where it is, which
 is where the user chose to put it.
 
+Only an old folder that holds an instance (a `mods/` folder or an
+`eidos-instance.ini`) is moved or fallen back to. A stray one, such as the
+`profiles/` a cancelled setup leaves, stays where it is and is ignored, so a new
+global instance of that game is created in the Colony layout.
+
 A folder path that names the old location of a moved instance (an
 `EIDOS_INSTANCE` in a Steam launch option, a script) opens the moved instance:
 `Instance::portable` redirects it through `eidos_paths::moved_global_instance`.

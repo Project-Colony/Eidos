@@ -130,7 +130,14 @@ pub fn runtimes_dir() -> PathBuf {
 pub fn global_instance_dir(game_id: &str) -> PathBuf {
     resolved(
         data_dir().join("instances").join(game_id),
-        legacy_data_dir().map(|d| d.join(game_id)),
+        legacy_data_dir()
+            .map(|d| d.join(game_id))
+            // Only an old folder that holds an instance (its `mods/` or its
+            // manifest, the same test the move applies). A stray one, such as
+            // the `profiles/` a cancelled setup leaves, is never moved, so
+            // falling back to it would keep every new instance of that game
+            // in the old layout for good.
+            .filter(|d| d.join("mods").is_dir() || d.join("eidos-instance.ini").is_file()),
     )
 }
 
@@ -707,6 +714,29 @@ mod tests {
         // A portable instance somewhere else is nobody's old path.
         assert_eq!(moved_global_instance(&h.join("Games/skyrimse")), None);
         assert!(old.join("modlist.txt").is_file());
+    }
+
+    #[test]
+    fn a_stray_old_folder_that_is_no_instance_is_not_fallen_back_to() {
+        // What a setup cancelled half way leaves: a profile, no mods, no
+        // manifest. The move skips it, so the resolver must too, or a new
+        // instance of that game would be created in the old layout.
+        let h = Home::new("stray");
+        h.write(
+            ".local/share/eidos/skyrimse/profiles/Default/modlist.txt",
+            "",
+        );
+
+        assert_eq!(
+            global_instance_dir("skyrimse"),
+            h.join(".local/share/Colony/Eidos/instances/skyrimse")
+        );
+        // A real one, by its manifest alone, is.
+        h.write(".local/share/eidos/fallout4/eidos-instance.ini", "");
+        assert_eq!(
+            global_instance_dir("fallout4"),
+            h.join(".local/share/eidos/fallout4")
+        );
     }
 
     #[test]
