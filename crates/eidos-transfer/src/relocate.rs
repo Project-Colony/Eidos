@@ -115,7 +115,16 @@ fn starts_with_arg(k: &str) -> bool {
 /// Rewrite one file in place, preserving its line endings byte for byte.
 /// Returns how many values changed, or why it was left alone.
 fn rewrite(path: &Path, keys: &[&str], from: &str, to: &str) -> Result<u64, String> {
-    let text = fs::read_to_string(path)
+    let bytes =
+        fs::read(path).map_err(|e| format!("could not be read and was left alone ({e})"))?;
+    // A file that never names the old root has nothing to repair, whatever its
+    // encoding: an MO2 `meta.ini` in a legacy code page is not a problem to
+    // report, and reporting it would keep a moved instance repointing (and
+    // logging the same line) on every launch.
+    if !bytes.windows(from.len()).any(|w| w == from.as_bytes()) {
+        return Ok(0);
+    }
+    let text = String::from_utf8(bytes)
         .map_err(|e| format!("could not be read as text and was left alone ({e})"))?;
     let mut out = String::with_capacity(text.len());
     let mut changed = 0u64;
@@ -295,6 +304,18 @@ mod tests {
             out, "[Tool/X]\r\nexe=/new/a.exe\r\nprereqs=dotnet8\r\n",
             "{out:?}"
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_file_that_is_not_utf8_is_a_problem_only_when_it_names_the_old_root() {
+        let root = tmp("latin1");
+        let p = root.join("meta.ini");
+        // `é` in Latin-1, as an MO2 install in a legacy code page writes it.
+        fs::write(&p, b"comments=caf\xe9\ninstallationFile=/elsewhere/a.7z\n").unwrap();
+        assert_eq!(rewrite(&p, &META_KEYS, "/old/root", "/new"), Ok(0));
+        fs::write(&p, b"comments=caf\xe9\ninstallationFile=/old/root/a.7z\n").unwrap();
+        assert!(rewrite(&p, &META_KEYS, "/old/root", "/new").is_err());
         let _ = fs::remove_dir_all(&root);
     }
 

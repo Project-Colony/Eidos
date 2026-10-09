@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Usare Eidos
 
@@ -78,6 +78,10 @@ lettura, una vecchia cartella dell'istanza su un'altra unità, un gioco ancora i
 esecuzione da lì), Eidos continua a usare la vecchia posizione e riprova
 all'avvio successivo. Un'opzione di avvio di Steam che nomina ancora la vecchia
 cartella dell'istanza apre quella spostata.
+Lo spostamento non occupa spazio in più solo all'inizio: una mod o un download
+che rimuovi o reinstalli dopo conserva la sua vecchia copia sul disco attraverso
+la vecchia cartella dell'istanza, quindi è cancellare
+`~/.local/share/eidos/<game>/` che restituisce quello spazio.
 
 Un'istanza portatile non viene mai spostata: resta dove l'hai messa.
 

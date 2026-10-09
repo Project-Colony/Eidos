@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Eidos verwenden
 
@@ -78,6 +78,10 @@ schreibgeschütztes Laufwerk, ein alter Instanzordner auf einem anderen Laufwerk
 ein Spiel, das noch daraus läuft), verwendet Eidos weiter den alten Ort und
 versucht es beim nächsten Start erneut. Eine Steam-Startoption, die noch den
 alten Instanzordner nennt, öffnet die verschobene Instanz.
+Ohne zusätzlichen Platz kommt der Umzug nur anfangs aus: Eine Mod oder ein
+Download, den Sie danach entfernen oder neu installieren, behält über den alten
+Instanzordner seine alte Kopie auf dem Laufwerk, und erst das Löschen von
+`~/.local/share/eidos/<game>/` gibt diesen Platz wieder frei.
 
 Eine portable Instanz wird nie verschoben: sie bleibt dort, wo Sie sie hingelegt
 haben.

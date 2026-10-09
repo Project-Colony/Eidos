@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Utiliser Eidos
 
@@ -81,6 +81,10 @@ seule, un ancien dossier d'instance sur un autre disque, un jeu qui tourne
 encore depuis celui-ci), Eidos continue d'utiliser l'ancien emplacement et
 réessaie au lancement suivant. Une option de lancement Steam qui nomme encore
 l'ancien dossier d'instance ouvre l'instance déplacée.
+Le déplacement n'occupe pas d'espace supplémentaire qu'au début : un mod ou un
+téléchargement que vous retirez ou réinstallez ensuite garde son ancienne copie
+sur le disque à travers l'ancien dossier d'instance, et c'est la suppression de
+`~/.local/share/eidos/<game>/` qui rend cet espace.
 
 Une instance portable n'est jamais déplacée : elle reste là où vous l'avez mise.
 

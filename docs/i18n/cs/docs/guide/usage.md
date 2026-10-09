@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Používání Eidosu
 
@@ -73,6 +73,9 @@ Pokud kopii nejde vytvořit (plný disk nebo disk jen pro čtení, stará složk
 instance na jiném disku, hra z ní stále běží), Eidos dál používá staré umístění
 a při dalším spuštění to zkusí znovu. Parametr spuštění ve Steamu, který stále
 jmenuje starou složku instance, otevře tu přesunutou.
+Místo navíc přesun nezabírá jen zpočátku: mód nebo stažený soubor, který potom
+odeberete nebo přeinstalujete, si přes starou složku instance nechá na disku
+svou starou kopii, takže to místo vrátí až smazání `~/.local/share/eidos/<game>/`.
 
 Přenosná instance se nikdy nepřesouvá: zůstává tam, kam jste ji dali.
 

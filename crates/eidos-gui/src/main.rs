@@ -2992,12 +2992,11 @@ fn main() -> iced::Result {
     // sharing a bucket would let one rotate the other's session away.
     let _ =
         eidos_log::init_with(eidos_log::Config::new("gui").with_version(env!("CARGO_PKG_VERSION")));
+    // Held until exit: no other Eidos moves an instance this one has resolved.
+    let (instances, _instances_held) = eidos_transfer::migrate_global_instances();
     // Logged rather than silent, because a user who goes looking for their
     // settings or their mods deserves to find out from the log where they went.
-    for note in moved
-        .into_iter()
-        .chain(eidos_transfer::migrate_global_instances())
-    {
+    for note in moved.into_iter().chain(instances) {
         eidos_log::info!("{note}");
     }
     eidos_log::info!("eidos-gui {} starting", env!("CARGO_PKG_VERSION"));

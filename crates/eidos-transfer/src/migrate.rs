@@ -31,31 +31,88 @@ use crate::relocate::relocate;
 /// values that still name the old folder, so running it twice changes nothing.
 const REPOINTED_MARKER: &str = ".migrated-repointed";
 
-/// Move every global instance still at its old path. Returns notes for the log.
-pub fn migrate_global_instances() -> Vec<String> {
+/// Taken in the Colony instances folder by every Eidos process that finds an
+/// instance still to move: exclusively for the move, then shared for the rest
+/// of the run.
+///
+/// Every process resolves `Instance::global` and `Instance::portable` against
+/// what has moved so far, and keeps that answer for its whole run. A window that
+/// opened an old folder (its move was put off because a game still held it)
+/// must not have the move happen under it, from a child it spawns or from a link
+/// clicked in the browser: from then on that process would write into the new
+/// tree and the window into the old one, and the window's edits would seem lost
+/// on the next launch. So a process that cannot take this exclusively moves
+/// nothing and waits only for a move already under way.
+const MOVE_LOCK: &str = ".move.lock";
+
+/// Move every global instance still at its old path.
+///
+/// Returns notes for the log, and a lock to hold until the process exits (see
+/// [`MOVE_LOCK`]): dropping it early lets another process move an instance this
+/// one may already have resolved to its old folder.
+pub fn migrate_global_instances() -> (Vec<String>, Option<fs::File>) {
     match eidos_paths::legacy_data_dir() {
         Some(old) => migrate_global_instances_in(&old, &eidos_paths::data_dir().join("instances")),
-        None => Vec::new(),
+        None => (Vec::new(), None),
     }
 }
 
 /// [`migrate_global_instances`] between explicit roots, so it can be tested
 /// without pointing the process's `HOME` anywhere.
-pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
+pub fn migrate_global_instances_in(old: &Path, new: &Path) -> (Vec<String>, Option<fs::File>) {
     let mut notes = Vec::new();
     let Ok(entries) = fs::read_dir(old) else {
-        return notes;
+        return (notes, None);
     };
-    for entry in entries.flatten() {
-        let (from, to) = (entry.path(), new.join(entry.file_name()));
-        // Built directly rather than through `Instance::portable`, which would
-        // redirect a moved instance - exactly what is not wanted here.
-        let inst = Instance { root: from.clone() };
-        // An instance, not `runtimes/` or anything else sharing the folder.
-        let is_instance = inst.exists() || inst.manifest_path().is_file();
-        if !from.is_dir() || !is_instance || to.join(REPOINTED_MARKER).exists() {
-            continue;
+    let pending: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            // Built directly rather than through `Instance::portable`, which
+            // would redirect a moved instance - exactly what is not wanted here.
+            let inst = Instance { root: entry.path() };
+            let to = new.join(entry.file_name());
+            // An instance, not `runtimes/` or anything else sharing the folder.
+            let is_instance = inst.exists() || inst.manifest_path().is_file();
+            (inst.root.is_dir() && is_instance && !to.join(REPOINTED_MARKER).exists())
+                .then_some((inst, to))
+        })
+        .collect();
+    // Nothing left to move, so nothing another process could move under us.
+    if pending.is_empty() {
+        return (notes, None);
+    }
+    let held = fs::create_dir_all(new).and_then(|()| {
+        fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(new.join(MOVE_LOCK))
+    });
+    let held = match held.map(|f| (f.try_lock(), f)) {
+        Ok((Ok(()), f)) => f,
+        Ok((Err(fs::TryLockError::WouldBlock), f)) => {
+            notes.push(format!(
+                "another Eidos is running, so the instances still in {} move on a later launch",
+                old.display()
+            ));
+            // Blocks only while a move is under way, so this process resolves
+            // the instances after it, the same way the mover does.
+            return match f.lock_shared() {
+                Ok(()) => (notes, Some(f)),
+                Err(_) => (notes, None),
+            };
         }
+        Ok((Err(fs::TryLockError::Error(e)), _)) | Err(e) => {
+            notes.push(format!(
+                "could not lock {} ({e}) - the instances in {} move on a later launch",
+                new.join(MOVE_LOCK).display(),
+                old.display()
+            ));
+            return (notes, None);
+        }
+    };
+    for (inst, to) in pending {
+        let from = inst.root.clone();
         // Moved by an earlier launch that did not get to finish repointing it.
         let moved = to.join(MIGRATION_MARKER).exists();
         if !moved && to.symlink_metadata().is_ok() {
@@ -85,8 +142,10 @@ pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
         if !moved {
             match eidos_paths::migrate_tree(&from, &to, Carry::Link) {
                 Ok(n) => notes.push(format!(
-                    "moved the instance at {} to {} ({n} files, linked rather than copied, so \
-                     it takes no extra space) - the old folder is left as it was",
+                    "moved the instance at {} to {} ({n} files, linked rather than copied) - \
+                     the old folder is left as it was, and once you are happy with the move \
+                     you can delete it: until then, every mod or download you remove or \
+                     reinstall keeps its old copy on disk through it",
                     from.display(),
                     to.display()
                 )),
@@ -108,7 +167,15 @@ pub fn migrate_global_instances_in(old: &Path, new: &Path) -> Vec<String> {
         }
         notes.extend(problems);
     }
-    notes
+    // Shared from here on: another Eidos may now start, and must find the
+    // instances where this one left them. Released first, so a process that
+    // takes it exclusively in between only finishes a move this one put off,
+    // and this one waits for that before resolving anything.
+    let _ = held.unlock();
+    match held.lock_shared() {
+        Ok(()) => (notes, Some(held)),
+        Err(_) => (notes, None),
+    }
 }
 
 /// Point the tool entries and install records of a moved instance at it.
@@ -167,6 +234,11 @@ mod tests {
         }
     }
 
+    /// One Eidos launch that exits right after: its move lock goes with it.
+    fn launch(old: &Path, new: &Path) -> Vec<String> {
+        migrate_global_instances_in(old, new).0
+    }
+
     fn write(p: PathBuf, body: &str) {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, body).unwrap();
@@ -199,7 +271,7 @@ mod tests {
         let from = legacy_instance(&old, "skyrimse");
         write(old.join("runtimes/dotnet-8/dotnet"), "binary");
 
-        let notes = migrate_global_instances_in(&old, &new);
+        let notes = launch(&old, &new);
 
         assert_eq!(notes.len(), 1, "{notes:?}");
         let to = new.join("skyrimse");
@@ -226,7 +298,7 @@ mod tests {
         assert!(!new.join("runtimes").exists());
 
         // And the second launch has nothing left to do.
-        assert!(migrate_global_instances_in(&old, &new).is_empty());
+        assert!(launch(&old, &new).is_empty());
     }
 
     #[test]
@@ -240,7 +312,7 @@ mod tests {
         eidos_paths::migrate_tree(&from, &to, Carry::Link).unwrap();
         assert!(!to.join(REPOINTED_MARKER).exists());
 
-        let notes = migrate_global_instances_in(&old, &new);
+        let notes = launch(&old, &new);
 
         assert!(notes.is_empty(), "{notes:?}");
         let tools = fs::read_to_string(to.join("tools.ini")).unwrap();
@@ -249,7 +321,7 @@ mod tests {
             "{tools}"
         );
         assert!(to.join(REPOINTED_MARKER).is_file());
-        assert!(migrate_global_instances_in(&old, &new).is_empty());
+        assert!(launch(&old, &new).is_empty());
     }
 
     #[test]
@@ -266,13 +338,28 @@ mod tests {
         });
         held_rx.recv().unwrap();
 
-        let notes = migrate_global_instances_in(&old, &new);
+        // The window starts while the game holds the old folder, so it keeps
+        // using that folder, and keeps its move lock for as long as it runs.
+        let (notes, window) = migrate_global_instances_in(&old, &new);
         done_tx.send(()).unwrap();
         holder.join().unwrap();
-
         assert!(notes[0].starts_with("could not lock"), "{notes:?}");
         assert!(!new.join("fallout4").exists());
-        assert_eq!(migrate_global_instances_in(&old, &new).len(), 1);
+
+        // The game is over, but the window is still open on the old folder: a
+        // child it spawns, or a link clicked in the browser, must not move the
+        // instance out from under it.
+        let notes = launch(&old, &new);
+        assert!(
+            notes[0].starts_with("another Eidos is running"),
+            "{notes:?}"
+        );
+        assert!(!new.join("fallout4").exists());
+
+        // Once the window has closed, the next launch moves it.
+        drop(window);
+        assert_eq!(launch(&old, &new).len(), 1);
+        assert!(new.join("fallout4").join(REPOINTED_MARKER).is_file());
     }
 
     #[test]
@@ -282,7 +369,7 @@ mod tests {
         legacy_instance(&old, "skyrimse");
         write(new.join("skyrimse/modlist.txt"), "+Mine\n");
 
-        let notes = migrate_global_instances_in(&old, &new);
+        let notes = launch(&old, &new);
 
         assert!(notes[0].contains("both exist"), "{notes:?}");
         assert!(!new.join("skyrimse/mods").exists());

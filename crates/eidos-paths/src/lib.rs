@@ -321,10 +321,22 @@ pub fn migrate_tree(from: &Path, to: &Path, how: Carry) -> io::Result<usize> {
         .ok_or_else(|| io::Error::other(format!("{} has no parent", to.display())))?;
     fs::create_dir_all(parent)?;
     let name = to.file_name().unwrap_or_default().to_string_lossy();
-    let staging = parent.join(format!(".{name}.migrating-{}", std::process::id()));
-    // Only ever a leftover of a crashed run that had this same pid: the name is
-    // ours, and it holds nothing but copies.
-    let _ = fs::remove_dir_all(&staging);
+    let prefix = format!(".{name}.migrating-");
+    let staging = parent.join(format!("{prefix}{}", std::process::id()));
+    // Leftovers of crashed runs: ours by name, and nothing but copies (one of
+    // the config can hold a stale copy of the Nexus session). A run that is
+    // still going is another live process, so only a dead pid's is removed.
+    for entry in fs::read_dir(parent)?.flatten() {
+        let file = entry.file_name();
+        let pid = file
+            .to_str()
+            .and_then(|f| f.strip_prefix(&prefix)?.parse::<u32>().ok());
+        if pid
+            .is_some_and(|p| p == std::process::id() || !Path::new(&format!("/proc/{p}")).exists())
+        {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
     let done = carry(from, &staging, from, how)
         .and_then(|n| fs::write(staging.join(MIGRATION_MARKER), &marker).map(|()| n))
         .and_then(|n| fs::rename(&staging, to).map(|()| n));
@@ -654,6 +666,29 @@ mod tests {
         assert_eq!(read(config.join("settings.ini")), "theme=light\n");
         assert_eq!(read(config.join("nexus.ini")), "access_token=abc\n");
         assert!(config.join(MIGRATION_MARKER).is_file());
+    }
+
+    #[test]
+    fn a_crashed_run_leaves_no_staging_behind_but_a_live_one_keeps_its_own() {
+        let h = Home::new("staging");
+        legacy_layout(&h);
+        // What a run killed mid-copy leaves (no pid that high exists), and the
+        // staging of a run still going in another process (pid 1 always runs).
+        h.write(
+            &format!(".config/Colony/.Eidos.migrating-{}/nexus.ini", u32::MAX),
+            "access_token=old\n",
+        );
+        h.write(".config/Colony/.Eidos.migrating-1/settings.ini", "x\n");
+
+        migrate_legacy_layout();
+
+        let mut left: Vec<_> = fs::read_dir(h.join(".config/Colony"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, [".Eidos.migrating-1", "Eidos"]);
     }
 
     #[test]

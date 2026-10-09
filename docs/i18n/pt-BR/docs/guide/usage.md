@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Usar o Eidos
 
@@ -76,6 +76,9 @@ ou somente leitura, uma pasta de instância antiga em outro disco, um jogo ainda
 rodando a partir dela), o Eidos continua usando o local antigo e tenta de novo
 no próximo início. Uma opção de inicialização do Steam que ainda aponta para a
 pasta antiga da instância abre a instância movida.
+A mudança só não ocupa espaço extra no começo: um mod ou download que você
+remover ou reinstalar depois mantém a cópia antiga no disco pela pasta antiga da
+instância, então é apagar `~/.local/share/eidos/<game>/` que devolve esse espaço.
 
 Uma instância portátil nunca é movida: ela fica onde você a pôs.
 
