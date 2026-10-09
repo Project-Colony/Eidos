@@ -34,7 +34,7 @@ jobs:
           GH_TOKEN: ${{ secrets.EIDOS_RELEASE_TOKEN }}
         run: test "$(gh api user --jq .login)" = MotherSphere
 
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         id: rp
         with:
           # A user token preserves attribution and triggers CI on the generated
