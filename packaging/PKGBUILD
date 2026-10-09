@@ -36,8 +36,9 @@ sha256sums=('SKIP')
 
 pkgver() {
 	cd "$srcdir/$_pkgname"
-	# No tags yet, so the revision-count form is the one that actually runs. The
-	# describe branch takes over automatically once a release is tagged.
+	# Releases are tagged vX.Y.Z, so this reads e.g. 1.18.4.r3.gabc1234: the last
+	# release, then the commits since it. The revision-count form is the fallback
+	# for a clone that carries no tags.
 	git describe --long --tags 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' ||
 		printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
 }

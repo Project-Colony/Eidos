@@ -1,8 +1,8 @@
 # Security Policy
 
-Eidos mounts a filesystem and asks for a file capability. That is unusual for a
-mod manager, so this document is specific about what it does, what could go
-wrong, and what we want to hear about.
+Eidos mounts a filesystem, and its launch binary can optionally carry a file
+capability. That is unusual for a mod manager, so this document is specific
+about what it does, what could go wrong, and what we want to hear about.
 
 ## Two things to know before you install
 
@@ -12,10 +12,15 @@ game makes against its `Data` directory goes through Eidos's code
 namespace and is invisible to the rest of the system, and the daemon exits when
 the game does. Nothing is mounted when Eidos is not running a game.
 
-**2. Eidos asks for `setcap cap_sys_admin+ep` on its launch binary.** This is
-what lets it unshare a plain mount namespace and turn on FUSE kernel
-passthrough, without which script-extender plugin DLLs may fail to load. Be
-clear-eyed about what it means:
+**2. Eidos runs rootless by default; `cap_sys_admin+ep` is an opt-in.** Without
+any capability Eidos mounts inside a user+mount namespace, and that is the
+supported mode: mods deploy identically either way. The installer grants the
+capability only when asked (`./install.sh --cap`, or `just setcap` for a source
+build). With it, Eidos takes a plain mount namespace instead, and that is the
+only way to make FUSE kernel passthrough available. Passthrough itself stays
+**off** unless `EIDOS_FUSE_PASSTHROUGH=1` is also set, because measured on
+Skyrim SE it stops the game opening its own archives and plugins. If you do
+grant the capability, be clear-eyed about what it means:
 
 - `CAP_SYS_ADMIN` is the broadest capability in Linux. Anyone who can execute
   that binary gets it, because `+ep` raises the capability on exec for every
@@ -32,9 +37,10 @@ clear-eyed about what it means:
   (`~/.local/bin`, the installer's default) and restrict it, for example
   `chmod 0750 ~/.local/bin/eidos` with a home directory other users cannot
   traverse.
-- You can decline the capability entirely. Eidos falls back to a fully rootless
-  user+mount namespace, prints a warning, and flags it in the GUI's Diagnostics
-  tab. Everything works except FUSE passthrough.
+- Declining it is the default. Eidos then uses the rootless user+mount
+  namespace, and everything works except FUSE passthrough, which is off by
+  default anyway. The launch and the GUI's Diagnostics tab only speak up when
+  `EIDOS_FUSE_PASSTHROUGH` is set and the capability is missing.
 
 The capability lives on the file, so replacing the file drops it. A rebuild or a
 reinstall silently returns you to the rootless path.
@@ -42,8 +48,9 @@ reinstall silently returns you to the rootless path.
 
 ## Supported versions
 
-Eidos is pre-1.0. Only the most recent release tag and the current `main` get
-security fixes. There is no backport branch, and older tags are not patched.
+Eidos follows semantic versioning and is past 1.0. Only the most recent release
+and the current `main` get security fixes. There is no backport branch, and
+older releases are not patched: the fix ships in the next release.
 
 ## Reporting a vulnerability
 
@@ -92,9 +99,10 @@ The interesting attack surface, roughly in order of severity:
   `nxm://` links, which means a web page can hand it a URL. Anything in that path
   that turns a crafted URL into a file written outside the download directory, a
   request to an attacker-chosen host, or command execution.
-- **Credential handling.** The Nexus API key: where it is stored, its file
-  permissions, and anywhere it could be logged or sent to a host other than
-  Nexus.
+- **Credential handling.** The Nexus OAuth session (access and refresh tokens
+  in `~/.config/Colony/Eidos/nexus.ini`, written with mode 0600), the sign-in
+  flow's loopback listener, and anywhere a token could be logged or sent to a
+  host other than Nexus. Eidos does not accept personal API keys.
 - **Runtime provisioning.** Eidos can download a .NET runtime (the `dotnet10`
   prerequisite) and unpack it into `~/.local/share/Colony/Eidos/runtimes/`. The expected
   SHA-256 is compiled into the binary rather than fetched alongside the file, and
@@ -129,8 +137,11 @@ The interesting attack surface, roughly in order of severity:
 - Releases are produced by the tagged workflow in `.github/workflows/release.yml`
   and nowhere else. Each release publishes a SHA-256 checksum next to the
   tarball; verify with `sha256sum -c`.
-- The workflows use only first-party `actions/*` steps, and the single job that
-  holds a write token is the one that creates the release.
+- Every action in the workflows is pinned to a full commit SHA, and each
+  workflow's own token is read-only. The write token is used only by the
+  release-please job, the one place a third-party action
+  (`googleapis/release-please-action`) runs, and by the job that creates the
+  release.
 - The Rust toolchain version is pinned in the workflows, so a release is built by
   a known compiler rather than by whatever was current that day.
 - There is no Flatpak or AppImage build. Both formats strip or ignore the file

@@ -106,10 +106,80 @@ and as a possible optimization later, not as the foundation.
      touched, and new/modified files sit in Overwrite.
 3. **Engine** (`eidos-fuse` + `eidos-core`). `eidos-core` is the pure resolver
    (this repo, unit-tested). `eidos-fuse` binds it to the kernel via the `fuser`
-   crate with passthrough.
+   crate; kernel passthrough is an opt-in and off by default (see below).
 4. **Everything else** (load order, conflict display, FOMOD, Nexus integration)
    is app code. Reuse an existing native manager or build minimal. Not the hard
    part.
+
+## Crate map
+
+The workspace is 22 crates under `crates/`, plus one C++ helper under
+`native/`. They build into a few processes, and the process boundaries are what
+decide where a privilege, a crash or untrusted input can reach:
+
+```
+Steam (eidos-gui %command%) or the desktop
+  |
+  +-- eidos-gui          the window. Unprivileged, never mounts anything.
+  |     +-- runs  eidos play | tool | prereqs ...   every launch goes through the CLI
+  |     +-- runs  eidos-nif-preview <model>         one short-lived process per preview
+  |     +-- runs  7z, add-on programs, xdg-open
+  |
+  +-- eidos              the CLI, and the only binary that mounts.
+        play / tool:  unshare a namespace in this process, run the FUSE daemon
+                      on background threads of this same process, then spawn
+                      Proton, the game or the tool as a child inside it. When
+                      the child exits, the namespace and its mounts go too.
+```
+
+The optional `cap_sys_admin` capability goes on `eidos` and on nothing else:
+the GUI hands every launch to the `eidos` binary beside it, so the privileged
+work stays in one file. Everything the GUI does besides launching (installs,
+Nexus, LOOT, conflicts, previews) runs in its own process through the library
+crates below.
+
+### Programs
+
+| Crate | Builds | Role |
+|---|---|---|
+| `eidos` | `eidos` | The CLI: `games`, `init`, `play`, `install`, `collection`, `pack`/`unpack`, `tool`, `prereqs`, `export`, `sort`, `nexus`, `nxm`, `import`. The Steam launch path. |
+| `eidos-gui` | `eidos-gui` | The iced window, MO2-style. Finds `eidos` beside itself first, then in `~/.cargo/bin`, then on `PATH`. |
+| `eidos-fuse` | library, plus the dev CLI `eidos-fuse` | The read-write union daemon. Runs inside `eidos`; the binary mounts a union by hand for debugging. |
+| `eidos-launch` | library, plus the dev CLI `eidos-launch` | Namespace and mount orchestration. Runs inside `eidos`; the binary runs any command through a union given on the command line. |
+| `native/eidos-nif-preview` | `eidos-nif-preview` (CMake, not a workspace member) | Bounded static NIF parser on vendored nifly. A separate process so a hostile mesh costs the preview, not the window. |
+
+The two dev CLIs are optional in an installation; `eidos` and `eidos-gui` are
+the product.
+
+### Libraries
+
+| Crate | Owns |
+|---|---|
+| `eidos-core` | The layer-resolution engine, kept apart from any FUSE binding: which real file serves a virtual path, where a write lands in Overwrite, whiteouts, case folding, the layer index. |
+| `eidos-paths` | Where Eidos keeps its files, on `colony_ui::paths`, and the migration onto that layout ([paths.md](paths.md)). |
+| `eidos-log` | Session logs: levels, rotation, home-path redaction. |
+| `eidos-ini` | Shared INI primitives: newline, section and key parsing, format-preserving edits. |
+| `eidos-gamedef` | The declarative per-game descriptor, one row per game on MO2's `IPluginGame` schema. |
+| `eidos-games` | The supported-game catalog, and install detection for Steam and Heroic (GOG, Epic). |
+| `eidos-plugins` | ESP/ESM/ESL load order: MO2-parity ordering, FormID indexes, `plugins.txt`. |
+| `eidos-loot` | LOOT sorting through libloot, and the masterlist fetch and cache. |
+| `eidos-instance` | Instances (global and portable), profiles, per-mod `meta.ini`, the manifest, global settings and `nexus.ini`. |
+| `eidos-conflicts` | Per-file and archive-member conflicts: winners, losers, per-mod state. |
+| `eidos-sevenzip` | The 7-Zip process seam: find the binary, drive it, read its progress. |
+| `eidos-install` | The mod installers (Simple, Root/Data, BAIN, OMOD, the manual picker, add-on installers) and staged publication. |
+| `eidos-fomod` | The FOMOD scripted-installer parser and condition/flag engine. |
+| `eidos-gamefeatures` | Per-game launch work: archive invalidation, per-profile INIs and saves, prefix DLLs and tool prerequisites (winetricks, .NET). |
+| `eidos-nexus` | Nexus Mods: OAuth sign-in, the v1 API, `nxm://` downloads, update checks, GraphQL for collections. |
+| `eidos-collections` | Nexus collections: read a collection's manifest and install it as its author built it. |
+| `eidos-transfer` | `eidos pack`/`unpack`: one instance into one `.eidos` file and back. |
+| `eidos-addons` | User extensions: TOML manifests whose programs run out of process ([guide/extensions.md](../guide/extensions.md)). |
+
+`eidos-core`, `eidos-paths`, `eidos-ini`, `eidos-sevenzip`, `eidos-conflicts`
+and `eidos-fomod` depend on no other Eidos crate. The two programs depend on
+nearly all of them, and no library depends on a program.
+
+A pull request that adds, removes or splits a crate updates this map in the
+same pull request.
 
 ## The Proton integration wrinkle
 
@@ -380,6 +450,6 @@ fraction of the gain.
 
 - `ModOrganizer2/usvfs` - the semantics we reproduce.
 - `containers/fuse-overlayfs` - overlay semantics done entirely in FUSE.
-- `fuser` (Rust) - the FUSE binding we will use.
+- `fuser` (Rust) - the FUSE binding `eidos-fuse` is built on.
 - Limo, RadTux, modorganizer2-linux-installer - the existing compromises and the
   Proton integration surface to learn from.

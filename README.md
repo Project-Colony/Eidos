@@ -200,43 +200,6 @@ bisection toggles, why `EIDOS_FUSE_PASSTHROUGH` is off by default) live in
 The whole index is at [docs/README.md](docs/README.md); security policy and how
 to report a vulnerability at [SECURITY.md](SECURITY.md).
 
-## Language
-
-The pages a player needs are translated. **English is canonical**: when a
-translation disagrees with it, the English file is right.
-
-- **Français** - [README](docs/i18n/fr/README.md) · [index](docs/i18n/fr/docs/README.md) · [install](docs/i18n/fr/docs/guide/install.md) · [usage](docs/i18n/fr/docs/guide/usage.md) · [tools](docs/i18n/fr/docs/guide/tools.md) · [fallout4](docs/i18n/fr/docs/guide/fallout4.md) · [graphics](docs/i18n/fr/docs/guide/graphics.md) · [troubleshooting](docs/i18n/fr/docs/guide/troubleshooting.md) · [extensions](docs/i18n/fr/docs/guide/extensions.md)
-- **Русский** - [README](docs/i18n/ru/README.md) · [index](docs/i18n/ru/docs/README.md) · [install](docs/i18n/ru/docs/guide/install.md) · [usage](docs/i18n/ru/docs/guide/usage.md) · [tools](docs/i18n/ru/docs/guide/tools.md) · [fallout4](docs/i18n/ru/docs/guide/fallout4.md) · [graphics](docs/i18n/ru/docs/guide/graphics.md) · [troubleshooting](docs/i18n/ru/docs/guide/troubleshooting.md) · [extensions](docs/i18n/ru/docs/guide/extensions.md)
-- **Deutsch** - [README](docs/i18n/de/README.md) · [index](docs/i18n/de/docs/README.md) · [install](docs/i18n/de/docs/guide/install.md) · [usage](docs/i18n/de/docs/guide/usage.md) · [tools](docs/i18n/de/docs/guide/tools.md) · [fallout4](docs/i18n/de/docs/guide/fallout4.md) · [graphics](docs/i18n/de/docs/guide/graphics.md) · [troubleshooting](docs/i18n/de/docs/guide/troubleshooting.md) · [extensions](docs/i18n/de/docs/guide/extensions.md)
-- **Español** - [README](docs/i18n/es/README.md) · [index](docs/i18n/es/docs/README.md) · [install](docs/i18n/es/docs/guide/install.md) · [usage](docs/i18n/es/docs/guide/usage.md) · [tools](docs/i18n/es/docs/guide/tools.md) · [fallout4](docs/i18n/es/docs/guide/fallout4.md) · [graphics](docs/i18n/es/docs/guide/graphics.md) · [troubleshooting](docs/i18n/es/docs/guide/troubleshooting.md) · [extensions](docs/i18n/es/docs/guide/extensions.md)
-- **Português (BR)** - [README](docs/i18n/pt-BR/README.md) · [index](docs/i18n/pt-BR/docs/README.md) · [install](docs/i18n/pt-BR/docs/guide/install.md) · [usage](docs/i18n/pt-BR/docs/guide/usage.md) · [tools](docs/i18n/pt-BR/docs/guide/tools.md) · [fallout4](docs/i18n/pt-BR/docs/guide/fallout4.md) · [graphics](docs/i18n/pt-BR/docs/guide/graphics.md) · [troubleshooting](docs/i18n/pt-BR/docs/guide/troubleshooting.md) · [extensions](docs/i18n/pt-BR/docs/guide/extensions.md)
-- **简体中文** - [README](docs/i18n/zh-CN/README.md) · [index](docs/i18n/zh-CN/docs/README.md) · [install](docs/i18n/zh-CN/docs/guide/install.md) · [usage](docs/i18n/zh-CN/docs/guide/usage.md) · [tools](docs/i18n/zh-CN/docs/guide/tools.md) · [fallout4](docs/i18n/zh-CN/docs/guide/fallout4.md) · [graphics](docs/i18n/zh-CN/docs/guide/graphics.md) · [troubleshooting](docs/i18n/zh-CN/docs/guide/troubleshooting.md) · [extensions](docs/i18n/zh-CN/docs/guide/extensions.md)
-- **Polski** - [README](docs/i18n/pl/README.md) · [index](docs/i18n/pl/docs/README.md) · [install](docs/i18n/pl/docs/guide/install.md) · [usage](docs/i18n/pl/docs/guide/usage.md) · [tools](docs/i18n/pl/docs/guide/tools.md) · [fallout4](docs/i18n/pl/docs/guide/fallout4.md) · [graphics](docs/i18n/pl/docs/guide/graphics.md) · [troubleshooting](docs/i18n/pl/docs/guide/troubleshooting.md) · [extensions](docs/i18n/pl/docs/guide/extensions.md)
-- **Italiano** - [README](docs/i18n/it/README.md) · [index](docs/i18n/it/docs/README.md) · [install](docs/i18n/it/docs/guide/install.md) · [usage](docs/i18n/it/docs/guide/usage.md) · [tools](docs/i18n/it/docs/guide/tools.md) · [fallout4](docs/i18n/it/docs/guide/fallout4.md) · [graphics](docs/i18n/it/docs/guide/graphics.md) · [troubleshooting](docs/i18n/it/docs/guide/troubleshooting.md) · [extensions](docs/i18n/it/docs/guide/extensions.md)
-- **Українська** - [README](docs/i18n/uk/README.md) · [index](docs/i18n/uk/docs/README.md) · [install](docs/i18n/uk/docs/guide/install.md) · [usage](docs/i18n/uk/docs/guide/usage.md) · [tools](docs/i18n/uk/docs/guide/tools.md) · [fallout4](docs/i18n/uk/docs/guide/fallout4.md) · [graphics](docs/i18n/uk/docs/guide/graphics.md) · [troubleshooting](docs/i18n/uk/docs/guide/troubleshooting.md) · [extensions](docs/i18n/uk/docs/guide/extensions.md)
-- **日本語** - [README](docs/i18n/ja/README.md) · [index](docs/i18n/ja/docs/README.md) · [install](docs/i18n/ja/docs/guide/install.md) · [usage](docs/i18n/ja/docs/guide/usage.md) · [tools](docs/i18n/ja/docs/guide/tools.md) · [fallout4](docs/i18n/ja/docs/guide/fallout4.md) · [graphics](docs/i18n/ja/docs/guide/graphics.md) · [troubleshooting](docs/i18n/ja/docs/guide/troubleshooting.md) · [extensions](docs/i18n/ja/docs/guide/extensions.md)
-- **繁體中文** - [README](docs/i18n/zh-TW/README.md) · [index](docs/i18n/zh-TW/docs/README.md) · [install](docs/i18n/zh-TW/docs/guide/install.md) · [usage](docs/i18n/zh-TW/docs/guide/usage.md) · [tools](docs/i18n/zh-TW/docs/guide/tools.md) · [fallout4](docs/i18n/zh-TW/docs/guide/fallout4.md) · [graphics](docs/i18n/zh-TW/docs/guide/graphics.md) · [troubleshooting](docs/i18n/zh-TW/docs/guide/troubleshooting.md) · [extensions](docs/i18n/zh-TW/docs/guide/extensions.md)
-- **Čeština** - [README](docs/i18n/cs/README.md) · [index](docs/i18n/cs/docs/README.md) · [install](docs/i18n/cs/docs/guide/install.md) · [usage](docs/i18n/cs/docs/guide/usage.md) · [tools](docs/i18n/cs/docs/guide/tools.md) · [fallout4](docs/i18n/cs/docs/guide/fallout4.md) · [graphics](docs/i18n/cs/docs/guide/graphics.md) · [troubleshooting](docs/i18n/cs/docs/guide/troubleshooting.md) · [extensions](docs/i18n/cs/docs/guide/extensions.md)
-- **한국어** - [README](docs/i18n/ko/README.md) · [index](docs/i18n/ko/docs/README.md) · [install](docs/i18n/ko/docs/guide/install.md) · [usage](docs/i18n/ko/docs/guide/usage.md) · [tools](docs/i18n/ko/docs/guide/tools.md) · [fallout4](docs/i18n/ko/docs/guide/fallout4.md) · [graphics](docs/i18n/ko/docs/guide/graphics.md) · [troubleshooting](docs/i18n/ko/docs/guide/troubleshooting.md) · [extensions](docs/i18n/ko/docs/guide/extensions.md)
-- **Türkçe** - [README](docs/i18n/tr/README.md) · [index](docs/i18n/tr/docs/README.md) · [install](docs/i18n/tr/docs/guide/install.md) · [usage](docs/i18n/tr/docs/guide/usage.md) · [tools](docs/i18n/tr/docs/guide/tools.md) · [fallout4](docs/i18n/tr/docs/guide/fallout4.md) · [graphics](docs/i18n/tr/docs/guide/graphics.md) · [troubleshooting](docs/i18n/tr/docs/guide/troubleshooting.md) · [extensions](docs/i18n/tr/docs/guide/extensions.md)
-- **Nederlands** - [README](docs/i18n/nl/README.md) · [index](docs/i18n/nl/docs/README.md) · [install](docs/i18n/nl/docs/guide/install.md) · [usage](docs/i18n/nl/docs/guide/usage.md) · [tools](docs/i18n/nl/docs/guide/tools.md) · [fallout4](docs/i18n/nl/docs/guide/fallout4.md) · [graphics](docs/i18n/nl/docs/guide/graphics.md) · [troubleshooting](docs/i18n/nl/docs/guide/troubleshooting.md) · [extensions](docs/i18n/nl/docs/guide/extensions.md)
-
-**Everything else is English on purpose, not by omission.** `docs/internals/` and
-`docs/project/` are read by people who are also reading the Rust, and `CHANGELOG.md`
-is generated. Translating them would be 17,678 more words to keep honest for an
-audience that does not need them.
-
-Each translation carries the hash of the English file it was made from, and CI
-fails when the English moves ahead - see [`scripts/i18n-check.sh`](scripts/i18n-check.sh).
-A translation that cannot be brought back up to date is **deleted**, not left in
-place: a stale page still looks authoritative and hands out last month's
-commands, which is worse for the reader than being sent to English.
-
-A language is one directory. `docs/i18n/<lang>/` mirrors the repo root, so
-`docs/i18n/de/docs/guide/install.md` is the German `docs/guide/install.md` - which
-is what makes a link between two translated pages the SAME string as the link
-between their English originals, and what makes retiring a language one `rm -r`.
-
 ## Supported games
 
 **Skyrim SE/AE** - proven in real play. **Fallout 4** is wired end to end too

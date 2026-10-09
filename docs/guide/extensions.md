@@ -90,5 +90,5 @@ An extension cannot call back into Eidos, register itself from an archive, or dr
 its own widgets. Structured protocol-1 installers can return checked file plans
 and choice prompts; Eidos owns the review, staging and publication. FOMOD and BAIN
 remain native installers. Preview and save-info extensions use the same bounded
-reply host. See the [protocol contract and runnable examples](../examples/extensions/README.md)
+reply host. See the [protocol contract and runnable examples](examples/extensions/README.md)
 for matching priority, recorded CLI answers, limits and replay identity checks.
