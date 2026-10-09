@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # 使用 Eidos
 
@@ -11,7 +11,7 @@
 eidos games                       # 本机装了哪些受支持的游戏(相当于 MO2 的那份列表)
 eidos init skyrimse               # 创建一个模组实例
 # ...把每个模组作为一个文件夹放进 <instance>/mods/(全局实例位于
-#    ~/.local/share/eidos/skyrimse;`eidos init` 会打印出你的那个)...
+#    ~/.local/share/Colony/Eidos/instances/skyrimse;`eidos init` 会打印出你的那个)...
 eidos install skyrimse mod.7z     # 或者安装一个下载好的压缩包(Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # 接管已有 MO2 配置档的顺序与插件状态
 eidos sort skyrimse               # 用 LOOT 排序插件加载顺序
@@ -28,7 +28,7 @@ eidos unpack backup.eidos <folder>   # 在另一台机器上把它放回去
 ### 实例:全局与便携
 
 上面每条命令都作用于某个实例。`skyrimse` 指的是**全局**那一个 - 集中存放在
-`~/.local/share/eidos/skyrimse`,由 Eidos 管理。另一种是**便携**的:一个自包含的
+`~/.local/share/Colony/Eidos/instances/skyrimse`,由 Eidos 管理。另一种是**便携**的:一个自包含的
 文件夹,放在你想放的任何地方(第二块硬盘、游戏分区),可移动、彼此隔离,和 MO2 的
 便携实例完全一样。凡是接受游戏 id 的命令,同样接受便携实例的文件夹:
 
@@ -48,17 +48,11 @@ Steam 启动会落在你上次玩的那一个上,`nxm://` 处理器也下载进�
 runtime 缓存(`~/.local/share/Colony/Eidos/runtimes/`)是有意保持
 全机器共用的 - 一个 78 MB 的 .NET host 不该每个实例来一份。
 
-Eidos 把自己的文件放在 `Colony/Eidos` 下,这是 Colony 家族每个程序都用的布局:
-`~/.config/Colony/Eidos/` 放你的选择(偏好设置、你的 Nexus 会话、你的实例列表、你写的
-游戏与附加组件定义),`~/.local/state/Colony/Eidos/logs/` 放会话日志,
-`~/.local/share/Colony/Eidos/` 放 Eidos 下载来的东西。更早的 Eidos 把这些放在
-`~/.config/eidos/` 和 `~/.local/state/eidos/`;升级后的第一次启动会把它们**复制**
-过来,并在日志里说明。旧目录原样保留 - 什么都不删,所以一次糟糕的升级不会让你丢掉
-登录状态 - 等你确认没问题,可以自己删掉。
+Eidos 把自己的文件放在 `Colony/Eidos` 下,这是 Colony 家族每个程序都用的布局:`~/.config/Colony/Eidos/` 放你的选择(偏好设置、你的 Nexus 会话、你的实例列表、你写的游戏与附加组件定义),`~/.local/share/Colony/Eidos/` 放全局实例(`instances/`)、下载的运行时和会话日志(`logs/`),`~/.cache/Colony/Eidos/` 放 LOOT 主列表,缺失时随时会重新下载。
 
-你的模组不在其中。全局实例仍然位于 `~/.local/share/eidos/<game>/`,便携实例则在你放
-它的地方,因为这些路径被写进了你的实例列表,也可能写进了 Steam 启动选项:移动它们会
-切断一条 Eidos 并不同时掌握两端的链接。
+更早的 Eidos 把这些放在 `~/.config/eidos/`、`~/.local/share/eidos/` 和 `~/.local/state/`。升级后的第一次启动会把它们**复制**过来,并在日志里说明。全局实例用硬链接而不是逐字节复制来迁移,所以几十 GB 的模组转眼就能搬完,也不占用额外空间,它的工具条目也会改为指向新文件夹。旧目录原样保留 - 什么都不删,所以一次糟糕的升级不会让你丢掉登录状态或存档 - 等你确认没问题,可以自己删掉。如果无法复制(磁盘已满或只读、旧实例文件夹在另一块磁盘上、游戏仍在从那里运行),Eidos 会继续使用旧位置,并在下次启动时再试。仍指向旧实例文件夹的 Steam 启动选项会打开迁移后的实例。
+
+便携实例永远不会被移动:它留在你放它的地方。
 
 有一个位置被直接拒绝:**游戏安装文件夹内部**(MO2 老手的条件反射)。那棵目录树归
 Steam 所有 - 一次更新、一次"验证文件完整性"或一次卸载都可能重写或删除它,把你整套

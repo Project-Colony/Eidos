@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Eidos gebruiken
 
@@ -12,7 +12,7 @@ staat in [troubleshooting.nl.md](troubleshooting.md).
 eidos games                       # hier geïnstalleerde ondersteunde spellen (zoals de lijst van MO2)
 eidos init skyrimse               # een modding-instantie maken
 # ...zet elke mod als map in <instance>/mods/ (de globale instantie staat
-#    in ~/.local/share/eidos/skyrimse; `eidos init` toont die van jou)...
+#    in ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` toont die van jou)...
 eidos install skyrimse mod.7z     # of een gedownload archief installeren (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # de volgorde + pluginstatus van een bestaand MO2-profiel overnemen
 eidos sort skyrimse               # de laadvolgorde van de plugins met LOOT sorteren
@@ -29,7 +29,7 @@ het geheel compleet; draai `eidos` zonder argumenten voor de volledige lijst.
 ### Instanties: globaal en draagbaar
 
 Elke opdracht hierboven spreekt een instantie aan. `skyrimse` benoemt de
-**globale** - centraal opgeslagen in `~/.local/share/eidos/skyrimse`, beheerd
+**globale** - centraal opgeslagen in `~/.local/share/Colony/Eidos/instances/skyrimse`, beheerd
 door Eidos. De andere soort is **draagbaar**: een op zichzelf staande map waar je
 maar wilt (een tweede schijf, een spellenpartitie), verplaatsbaar en geïsoleerd,
 precies zoals de draagbare instanties van MO2. Overal waar een opdracht een
@@ -57,19 +57,26 @@ bewust machinebreed - een .NET-host van 78 MB hoort niet per instantie.
 Eidos bewaart zijn eigen bestanden onder `Colony/Eidos`, de indeling die elk
 programma uit de Colony-familie gebruikt: `~/.config/Colony/Eidos/` voor wat jij
 gekozen hebt (voorkeuren, je Nexus-sessie, je instantielijst, de spel- en
-add-on-definities die je geschreven hebt), `~/.local/state/Colony/Eidos/logs/`
-voor sessielogs, en `~/.local/share/Colony/Eidos/` voor wat Eidos gedownload
-heeft. Een oudere Eidos hield die in `~/.config/eidos/` en
-`~/.local/state/eidos/`; de eerste start na het bijwerken **kopieert** ze over en
-meldt dat in het log. De oude mappen blijven precies zoals ze waren - er wordt
-niets verwijderd, zodat een mislukte upgrade je geen aanmelding kan kosten - en
-je kunt ze zelf weghalen zodra je tevreden bent.
+add-on-definities die je geschreven hebt), `~/.local/share/Colony/Eidos/` voor
+globale instanties (`instances/`), gedownloade runtimes en sessielogs (`logs/`),
+en `~/.cache/Colony/Eidos/` voor de LOOT-masterlists, die opnieuw gedownload
+worden zodra ze ontbreken.
 
-Je mods horen daar niet bij. Een globale instantie staat nog steeds in
-`~/.local/share/eidos/<game>/`, en een draagbare waar jij ze gezet hebt, omdat
-die paden in je instantielijst geschreven staan en mogelijk in een
-Steam-opstartoptie: ze verplaatsen zou een verbinding breken waarvan Eidos niet
-beide uiteinden bezit.
+Een oudere Eidos hield die in `~/.config/eidos/`, `~/.local/share/eidos/` en
+`~/.local/state/`. De eerste start na het bijwerken **kopieert** ze over en
+meldt dat in het log. Een globale instantie wordt met hardlinks verplaatst in
+plaats van met een kopie byte voor byte, zodat tientallen gigabytes aan mods in
+een oogwenk verhuizen zonder extra ruimte in te nemen, en haar tool-items worden
+naar de nieuwe map omgezet. De oude mappen blijven precies zoals ze waren - er
+wordt niets verwijderd, zodat een mislukte upgrade je geen aanmelding en geen
+savegame kan kosten - en je kunt ze zelf weghalen zodra je tevreden bent. Lukt
+een kopie niet (een volle of alleen-lezen schijf, een oude instantiemap op een
+andere schijf, een spel dat er nog vanuit draait), dan blijft Eidos de oude
+locatie gebruiken en probeert het bij de volgende start opnieuw. Een
+Steam-opstartoptie die nog de oude instantiemap noemt, opent de verplaatste.
+
+Een draagbare instantie wordt nooit verplaatst: ze blijft waar jij ze gezet
+hebt.
 
 Eén plek wordt botweg geweigerd: **in de installatiemap van een spel** (de reflex
 van de MO2-veteraan). Steam bezit die boom - een update, een "verify integrity"

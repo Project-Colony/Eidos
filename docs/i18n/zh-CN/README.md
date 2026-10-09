@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -56,7 +56,7 @@ Root Builder 插件,也不往你的安装目录里复制任何东西。隐藏单
 **插件。** 内置 LOOT 排序的加载顺序、与游戏计算方式一致的模组索引、缺失 master 的
 警告,以及把你的 DLC 和 Creation Club 内容按其本来面目显示为未管理的条目。
 
-**实例。** 全局 - 集中管理在 `~/.local/share/eidos` 下 - 或者便携:一个放在任何地方
+**实例。** 全局 - 集中管理在 `~/.local/share/Colony/Eidos/instances/` 下 - 或者便携:一个放在任何地方
 的自包含文件夹(第二块硬盘、一个游戏分区),可移动、相互隔离,和 MO2 的一样。便携
 实例会跨会话被记住;GUI、Steam 启动和每一条 CLI 命令都跟随你上次用过的那个,而且
 凡是接受游戏 id 的命令,同样接受这个文件夹。细节见
@@ -79,10 +79,7 @@ Root Builder 插件,也不往你的安装目录里复制任何东西。隐藏单
 **诊断。** 缺失的 master、无主的压缩包、模组列表漂移、损坏的插件集合 - 以及在一次运行
 之后,script extender 自己的日志说实际加载了什么。
 
-**它把自己的文件放在哪。** `~/.config/Colony/Eidos/` 存放你选择的东西 - 偏好设置、你的
-Nexus 会话、你的实例列表、你写的游戏与附加定义 - 日志在 `~/.local/state/Colony/Eidos/`
-下。Colony 家族里每个程序都用这套布局。更早的 Eidos 把这些放在 `~/.config/eidos/`;
-升级后的第一次启动会把它们复制过来,在日志里说明,并让旧目录保持原样。
+**它把自己的文件放在哪。** Colony 家族里每个程序都用这套布局:`~/.config/Colony/Eidos/` 存放你选择的东西 - 偏好设置、你的 Nexus 会话、你的实例列表、你写的游戏与附加定义 - `~/.local/share/Colony/Eidos/` 存放全局实例、下载的运行时和会话日志,`~/.cache/Colony/Eidos/` 存放 LOOT 主列表。更早的 Eidos 把这些放在 `~/.config/eidos/`、`~/.local/share/eidos/` 和 `~/.local/state/`;升级后的第一次启动会把它们迁移过来,在日志里说明,并让旧目录保持原样。迁移完成之前,Eidos 会继续使用旧文件。详情见 [internals/paths.md](../../internals/paths.md)（英文）。
 
 有关替换保护、BSA/BA2 内部文件冲突、SKSE 静态诊断、生成记录及其局限，请参阅[完整性检查与生成文件](../../../docs/internals/integrity.md)（英文）。
 
@@ -136,7 +133,7 @@ Arch 软件包和发行版压缩包、你需要先装什么,以及命令行路�
 | 配合 Community Shaders 的 DLSS | `PROTON_ENABLE_NVAPI=1` - 没有它,DLSS 会悄无声息地永远初始化不了;完整清单见 [guide/graphics.zh-CN.md](docs/guide/graphics.md) |
 | 屏幕上的 FPS 计数 | `DXVK_HUD=fps` |
 | 驱动级插帧,零模组(RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - 绝不要和 Community Shaders 自带的帧生成一起用 |
-| 用于 bug 报告的详细日志 | `EIDOS_LOG=debug`(会话日志落在 `~/.local/state/Colony/Eidos/logs/`) |
+| 用于 bug 报告的详细日志 | `EIDOS_LOG=debug`(会话日志落在 `~/.local/share/Colony/Eidos/logs/`) |
 | 来自挂载的单次会话 I/O 报告 | `EIDOS_FUSE_STATS=1` |
 | 不同的 FUSE 工作线程数 | `EIDOS_FUSE_THREADS=8`(默认 4;追查并发 bug 时,`1` 是第一个该试的值) |
 | 把这次启动钉在某个便携实例上 | `EIDOS_INSTANCE=/path/to/folder` - 没有它,Eidos 会打开你上次用过的实例,而那通常正是你想要的 |

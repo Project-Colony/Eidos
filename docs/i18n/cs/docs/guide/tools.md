@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
 
 # Nástroje: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -52,7 +52,7 @@ Zaregistrujte spustitelný soubor tam, kde doopravdy leží. Pokud byl nástroj
 nainstalovaný jako mód, je to uvnitř složky módu:
 
 ```
-~/.local/share/eidos/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
+~/.local/share/Colony/Eidos/instances/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
 ```
 
 (to je cesta globální instance - u přenosné instance platí totéž pravidlo pod

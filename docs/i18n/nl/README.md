@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -70,7 +70,7 @@ van afbeeldingen en tekst zonder iets te starten.
 spel ze berekent, waarschuwingen voor ontbrekende masters, en je DLC en Creation
 Club-inhoud getoond als de onbeheerde rijen die ze zijn.
 
-**Instanties.** Globaal - centraal beheerd onder `~/.local/share/eidos` - of
+**Instanties.** Globaal - centraal beheerd onder `~/.local/share/Colony/Eidos/instances/` - of
 draagbaar: een op zichzelf staande map waar je maar wilt (een tweede schijf, een
 spellenpartitie), verplaatsbaar en geïsoleerd, zoals die van MO2. Draagbare
 instanties worden van sessie tot sessie onthouden; de GUI, de Steam-start en elke
@@ -101,13 +101,16 @@ Eidos ook maar te openen.
 beschadigde pluginsets - en, na een run, wat het eigen log van de script extender
 zegt dat er werkelijk geladen is.
 
-**Waar het zijn eigen bestanden bewaart.** `~/.config/Colony/Eidos/` voor wat jij
-gekozen hebt - voorkeuren, je Nexus-sessie, je instantielijst, de spel- en
-add-on-definities die je geschreven hebt - met logs onder
-`~/.local/state/Colony/Eidos/`. De indeling die elk programma uit de
-Colony-familie gebruikt. Een oudere Eidos hield die in `~/.config/eidos/`; de
-eerste start na het bijwerken kopieert ze over, meldt dat in het log, en laat de
-oude map precies zoals ze was.
+**Waar het zijn eigen bestanden bewaart.** De indeling die elk programma uit de
+Colony-familie gebruikt: `~/.config/Colony/Eidos/` voor wat jij gekozen hebt -
+voorkeuren, je Nexus-sessie, je instantielijst, de spel- en add-on-definities
+die je geschreven hebt - `~/.local/share/Colony/Eidos/` voor globale instanties,
+gedownloade runtimes en sessielogs, en `~/.cache/Colony/Eidos/` voor
+LOOT-masterlists. Een oudere Eidos hield die in `~/.config/eidos/`,
+`~/.local/share/eidos/` en `~/.local/state/`; de eerste start na het bijwerken
+zet ze over, meldt dat in het log, en laat de oude mappen precies zoals ze
+waren. Zolang een verhuizing niet klaar is, blijft Eidos de oude bestanden
+gebruiken. Details in [internals/paths.md](../../internals/paths.md) (Engels).
 
 Zie [Integriteitscontroles en gegenereerde bestanden](../../../docs/internals/integrity.md) (Engels) voor bescherming bij vervanging, conflicten tussen BSA/BA2-bestanden, statische SKSE-diagnostiek en generatieregistraties, inclusief hun beperkingen.
 
@@ -164,7 +167,7 @@ laten zich vrij combineren:
 | DLSS met Community Shaders | `PROTON_ENABLE_NVAPI=1` - zonder haar initialiseert DLSS zich stilzwijgend nooit; de volledige checklist is [guide/graphics.nl.md](docs/guide/graphics.md) |
 | een fps-teller op het scherm | `DXVK_HUD=fps` |
 | frame-interpolatie op driverniveau, nul mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - nooit samen met de eigen frame generation van Community Shaders |
-| uitgebreide logs voor een bugrapport | `EIDOS_LOG=debug` (sessielogs belanden in `~/.local/state/Colony/Eidos/logs/`) |
+| uitgebreide logs voor een bugrapport | `EIDOS_LOG=debug` (sessielogs belanden in `~/.local/share/Colony/Eidos/logs/`) |
 | een I/O-rapport per sessie vanuit de koppeling | `EIDOS_FUSE_STATS=1` |
 | een ander aantal FUSE-werkers | `EIDOS_FUSE_THREADS=8` (standaard 4; `1` is het eerste om te proberen bij het jagen op een concurrency-bug) |
 | deze start vastgepind op één draagbare instantie | `EIDOS_INSTANCE=/path/to/folder` - zonder haar opent Eidos de instantie die je het laatst gebruikt hebt, wat meestal is wat je wilt |

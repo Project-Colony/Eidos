@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Eidos の使い方
 
@@ -12,7 +12,7 @@
 eidos games                       # ここに入っている対応ゲーム(MO2 の一覧と同じ)
 eidos init skyrimse               # MOD 用インスタンスを作る
 # ...各 MOD をフォルダのまま <instance>/mods/ へ置く(グローバルインスタンスは
-#    ~/.local/share/eidos/skyrimse にある。`eidos init` が自分の場所を表示する)...
+#    ~/.local/share/Colony/Eidos/instances/skyrimse にある。`eidos init` が自分の場所を表示する)...
 eidos install skyrimse mod.7z     # または、落としてきた書庫をインストールする(Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # 既存の MO2 プロファイルの順序 + プラグイン状態を引き継ぐ
 eidos sort skyrimse               # プラグインのロード順を LOOT で並べ替える
@@ -29,7 +29,7 @@ eidos unpack backup.eidos <folder>   # 向こうのマシンで元に戻す
 ### インスタンス: グローバルとポータブル
 
 上のコマンドはどれもインスタンスを指しています。`skyrimse` が指すのは
-**グローバル**のほう - `~/.local/share/eidos/skyrimse` に集約して置かれ、
+**グローバル**のほう - `~/.local/share/Colony/Eidos/instances/skyrimse` に集約して置かれ、
 Eidos が管理します。もう一方は**ポータブル**。好きな場所(二台目のドライブ、
 ゲーム用のパーティション)に置ける自己完結したフォルダで、移動でき、隔離
 されていて、MO2 のポータブルインスタンスとまったく同じです。ゲーム ID を取る
@@ -54,21 +54,11 @@ eidos play /mnt/games/EidosSkyrim -- %command%
 (`~/.local/share/Colony/Eidos/runtimes/`)は意図的にマシン全体のままです -
 78 MB の .NET ホストはインスタンスごとに持つものではありません。
 
-Eidos は自分のファイルを `Colony/Eidos` の下に置きます。Colony 系のどの
-プログラムも使う配置です。あなたが選んだもの(設定、Nexus のセッション、
-インスタンス一覧、自分で書いたゲームとアドオンの定義)は
-`~/.config/Colony/Eidos/`、セッションログは
-`~/.local/state/Colony/Eidos/logs/`、Eidos が落としてきたものは
-`~/.local/share/Colony/Eidos/`。古い Eidos はこれらを `~/.config/eidos/` と
-`~/.local/state/eidos/` に置いていました。更新後の初回起動がそれらを
-**コピー**し、ログにそう書きます。古いディレクトリはそのままの姿で残ります -
-何も削除しないので、更新の失敗でサインインを失うことはありません - 納得したら
-自分で消してください。
+Eidos は自分のファイルを `Colony/Eidos` の下に置きます。Colony 系のどのプログラムも使う配置です。あなたが選んだもの(設定、Nexus のセッション、インスタンス一覧、自分で書いたゲームとアドオンの定義)は `~/.config/Colony/Eidos/`、グローバルインスタンス(`instances/`)、ダウンロードしたランタイム、セッションログ(`logs/`)は `~/.local/share/Colony/Eidos/`、LOOT のマスターリストは `~/.cache/Colony/Eidos/` で、無くなればいつでも再ダウンロードされます。
 
-あなたの MOD はそこに含まれません。グローバルインスタンスは今も
-`~/.local/share/eidos/<game>/` にあり、ポータブルは置いた場所にあります。
-それらのパスはインスタンス一覧に、場合によっては Steam の起動オプションにも
-書かれているからです。動かせば、Eidos が両端を持っていないリンクが切れます。
+古い Eidos はこれらを `~/.config/eidos/`、`~/.local/share/eidos/`、`~/.local/state/` に置いていました。更新後の初回起動がそれらを**コピー**し、ログにそう書きます。グローバルインスタンスはバイト単位のコピーではなくハードリンクで移すので、数十ギガバイトの MOD も一瞬で移り、余分な容量も使いません。ツールの登録も新しいフォルダを指すよう書き換えます。古いディレクトリはそのままの姿で残ります - 何も削除しないので、更新の失敗でサインインやセーブを失うことはありません - 納得したら自分で消してください。コピーができない場合(ディスクが一杯か読み取り専用、古いインスタンスフォルダが別のドライブにある、そこからゲームがまだ動いている)、Eidos は古い場所を使い続け、次回の起動で再び試みます。古いインスタンスフォルダを指したままの Steam の起動オプションは、移動後のインスタンスを開きます。
+
+ポータブルインスタンスは決して移動しません。置いた場所にそのまま残ります。
 
 一箇所だけはきっぱり拒否されます。**ゲームのインストールフォルダの中**
 (MO2 のベテランがつい取る反射)。あの木は Steam のものです - 更新、

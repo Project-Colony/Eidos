@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -67,7 +67,7 @@ cokoli spouštěl.
 počítá hra, varování na chybějící mastery a váš obsah z DLC a Creation Clubu
 zobrazený jako nespravované řádky, kterými je.
 
-**Instance.** Globální - spravované centrálně pod `~/.local/share/eidos` - nebo
+**Instance.** Globální - spravované centrálně pod `~/.local/share/Colony/Eidos/instances/` - nebo
 přenosné: samostatná složka kdekoli chcete (druhý disk, herní oddíl),
 přesunutelná a izolovaná, jako v MO2. Přenosné instance si Eidos pamatuje mezi
 sezeními; GUI, spuštění ze Steamu i každý příkaz z příkazové řádky se drží té,
@@ -98,12 +98,16 @@ otevřel.
 poškozené sady pluginů - a po skončení běhu to, co podle vlastního logu script
 extenderu skutečně načetlo.
 
-**Kde si drží vlastní soubory.** `~/.config/Colony/Eidos/` pro to, co jste
-zvolili - předvolby, vaše sezení na Nexusu, váš seznam instancí, definice her a
-doplňků, které jste napsali - a logy pod `~/.local/state/Colony/Eidos/`.
-Rozvržení, které používá každý program z rodiny Colony. Starší Eidos je držel
-v `~/.config/eidos/`; první spuštění po aktualizaci je zkopíruje, napíše to do
-logu a starý adresář nechá přesně tak, jak byl.
+**Kde si drží vlastní soubory.** Rozvržení, které používá každý program z rodiny
+Colony: `~/.config/Colony/Eidos/` pro to, co jste zvolili - předvolby, vaše
+sezení na Nexusu, váš seznam instancí, definice her a doplňků, které jste
+napsali - `~/.local/share/Colony/Eidos/` pro globální instance, stažené runtimy
+a logy sezení a `~/.cache/Colony/Eidos/` pro masterlisty LOOT. Starší Eidos je
+držel v `~/.config/eidos/`, `~/.local/share/eidos/` a `~/.local/state/`; první
+spuštění po aktualizaci je přenese, napíše to do logu a staré adresáře nechá
+přesně tak, jak byly. Dokud přesun není dokončen, Eidos dál používá staré
+soubory. Podrobnosti v [internals/paths.md](../../internals/paths.md)
+(anglicky).
 
 [Kontroly integrity a vygenerované soubory](../../../docs/internals/integrity.md) (anglicky) popisují ochranu při nahrazování, konflikty souborů v BSA/BA2, statickou diagnostiku SKSE a záznamy generování včetně jejich omezení.
 
@@ -161,7 +165,7 @@ kombinují:
 | DLSS s Community Shaders | `PROTON_ENABLE_NVAPI=1` - bez ní se DLSS tiše nikdy neinicializuje; kompletní seznam je [guide/graphics.cs.md](docs/guide/graphics.md) |
 | počítadlo FPS na obrazovce | `DXVK_HUD=fps` |
 | interpolaci snímků na úrovni ovladače, nula módů (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - nikdy zároveň s vlastní generací snímků z Community Shaders |
-| podrobné logy pro hlášení chyby | `EIDOS_LOG=debug` (logy sezení přistanou v `~/.local/state/Colony/Eidos/logs/`) |
+| podrobné logy pro hlášení chyby | `EIDOS_LOG=debug` (logy sezení přistanou v `~/.local/share/Colony/Eidos/logs/`) |
 | zprávu o I/O z připojení za jedno sezení | `EIDOS_FUSE_STATS=1` |
 | jiný počet FUSE workerů | `EIDOS_FUSE_THREADS=8` (výchozí 4; `1` je první věc, kterou zkusit při honu na souběhovou chybu) |
 | toto spuštění připnuté k jedné přenosné instanci | `EIDOS_INSTANCE=/path/to/folder` - bez ní Eidos otevře instanci, kterou jste použili naposledy, což je obvykle to, co chcete |

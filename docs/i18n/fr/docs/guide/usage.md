@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Utiliser Eidos
 
@@ -13,7 +13,7 @@ quoi faire quand quelque chose semble anormal, voir
 eidos games                       # les jeux supportés installés ici (comme la liste de MO2)
 eidos init skyrimse               # créer une instance de modding
 # ...déposez chaque mod comme un dossier dans <instance>/mods/ (l'instance globale
-#    vit dans ~/.local/share/eidos/skyrimse ; `eidos init` affiche la vôtre)...
+#    vit dans ~/.local/share/Colony/Eidos/instances/skyrimse ; `eidos init` affiche la vôtre)...
 eidos install skyrimse mod.7z     # ou installer une archive téléchargée (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adopter l'ordre et l'état des plugins d'un profil MO2 existant
 eidos sort skyrimse               # trier l'ordre de chargement des plugins avec LOOT
@@ -31,7 +31,7 @@ complètent l'ensemble ; lancez `eidos` sans argument pour la liste complète.
 
 Chaque commande ci-dessus s'adresse à une instance. `skyrimse` désigne
 l'instance **globale** - stockée centralement dans
-`~/.local/share/eidos/skyrimse`, gérée par Eidos. L'autre sorte est
+`~/.local/share/Colony/Eidos/instances/skyrimse`, gérée par Eidos. L'autre sorte est
 **portable** : un dossier autonome là où vous le voulez (un second disque, une
 partition de jeux), déplaçable et isolé, exactement comme les instances portables
 de MO2. Partout où une commande accepte un identifiant de jeu, elle accepte aussi
@@ -62,19 +62,27 @@ Eidos range ses propres fichiers sous `Colony/Eidos`, la disposition qu'utilise
 chaque programme de la famille Colony : `~/.config/Colony/Eidos/` pour ce que
 vous avez choisi (préférences, votre session Nexus, votre liste d'instances, les
 définitions de jeux et d'add-ons que vous avez écrites),
-`~/.local/state/Colony/Eidos/logs/` pour les logs de session, et
-`~/.local/share/Colony/Eidos/` pour ce qu'Eidos a téléchargé. Un Eidos plus
-ancien gardait tout cela dans `~/.config/eidos/` et `~/.local/state/eidos/` ; le
-premier lancement après la mise à jour les **copie** et le dit dans le log. Les
-anciens répertoires sont laissés exactement tels quels - rien n'est supprimé, une
-mauvaise mise à jour ne peut donc pas vous coûter une session ouverte - et vous
-pouvez les supprimer vous-même une fois rassuré.
+`~/.local/share/Colony/Eidos/` pour les instances globales (`instances/`), les
+runtimes téléchargés et les logs de session (`logs/`), et
+`~/.cache/Colony/Eidos/` pour les masterlists LOOT, retéléchargées chaque fois
+qu'elles manquent.
 
-Vos mods ne font pas partie de tout cela. Une instance globale vit toujours dans
-`~/.local/share/eidos/<game>/`, et une portable là où vous l'avez mise, parce que
-ces chemins sont inscrits dans votre liste d'instances et peut-être dans une
-option de lancement Steam : les déplacer casserait un lien dont Eidos ne possède
-pas les deux bouts.
+Un Eidos plus ancien gardait tout cela dans `~/.config/eidos/`,
+`~/.local/share/eidos/` et `~/.local/state/`. Le premier lancement après la mise
+à jour les **copie** et le dit dans le log. Une instance globale est déplacée
+par liens physiques plutôt que par une copie octet par octet : des dizaines de
+gigaoctets de mods changent de place en un instant sans occuper d'espace
+supplémentaire, et ses entrées d'outils sont redirigées vers le nouveau dossier.
+Les anciens répertoires sont laissés exactement tels quels - rien n'est
+supprimé, une mauvaise mise à jour ne peut donc vous coûter ni une session
+ouverte ni une sauvegarde - et vous pouvez les supprimer vous-même une fois
+rassuré. Si une copie ne peut pas être faite (un disque plein ou en lecture
+seule, un ancien dossier d'instance sur un autre disque, un jeu qui tourne
+encore depuis celui-ci), Eidos continue d'utiliser l'ancien emplacement et
+réessaie au lancement suivant. Une option de lancement Steam qui nomme encore
+l'ancien dossier d'instance ouvre l'instance déplacée.
+
+Une instance portable n'est jamais déplacée : elle reste là où vous l'avez mise.
 
 Un endroit est refusé net : **à l'intérieur du dossier d'installation d'un jeu**
 (le réflexe du vétéran de MO2). Steam est propriétaire de cette arborescence -

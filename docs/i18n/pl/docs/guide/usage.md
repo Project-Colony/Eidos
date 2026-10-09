@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Używanie Eidos
 
@@ -12,7 +12,7 @@ opisuje [troubleshooting.pl.md](troubleshooting.md).
 eidos games                       # obsługiwane gry zainstalowane tutaj (jak lista MO2)
 eidos init skyrimse               # utworzyć instancję do modowania
 # ...każdy mod wrzucić jako folder do <instance>/mods/ (instancja globalna leży
-#    w ~/.local/share/eidos/skyrimse; `eidos init` wypisze twoją)...
+#    w ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` wypisze twoją)...
 eidos install skyrimse mod.7z     # albo zainstalować pobrane archiwum (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # przejąć kolejność i stan wtyczek istniejącego profilu MO2
 eidos sort skyrimse               # posortować kolejność wczytywania wtyczek LOOT-em
@@ -29,7 +29,7 @@ dopełniają zestaw; uruchom `eidos` bez argumentów, by zobaczyć pełną list�
 ### Instancje: globalne i przenośne
 
 Każde powyższe polecenie adresuje instancję. `skyrimse` nazywa tę **globalną** -
-przechowywaną centralnie w `~/.local/share/eidos/skyrimse`, zarządzaną przez
+przechowywaną centralnie w `~/.local/share/Colony/Eidos/instances/skyrimse`, zarządzaną przez
 Eidos. Drugi rodzaj to instancja **przenośna**: samodzielny folder gdziekolwiek
 chcesz (drugi dysk, partycja z grami), przenoszalna i odizolowana, dokładnie jak
 instancje przenośne MO2. Wszędzie tam, gdzie polecenie przyjmuje identyfikator
@@ -58,18 +58,27 @@ globalny dla maszyny - host .NET ważący 78 MB nie jest per instancja.
 Eidos trzyma własne pliki pod `Colony/Eidos`, w układzie używanym przez każdy
 program z rodziny Colony: `~/.config/Colony/Eidos/` na to, co wybrałeś
 (preferencje, twoja sesja Nexusa, twoja lista instancji, napisane przez ciebie
-definicje gier i dodatków), `~/.local/state/Colony/Eidos/logs/` na logi sesji i
-`~/.local/share/Colony/Eidos/` na to, co Eidos pobrał. Starszy Eidos trzymał je
-w `~/.config/eidos/` i `~/.local/state/eidos/`; pierwsze uruchomienie po
-aktualizacji **kopiuje** je i mówi o tym w logu. Stare katalogi zostają dokładnie
-takie, jakie były - nic nie jest usuwane, więc nieudana aktualizacja nie może cię
-kosztować zalogowania - i możesz je usunąć sam, gdy się upewnisz.
+definicje gier i dodatków), `~/.local/share/Colony/Eidos/` na instancje globalne
+(`instances/`), pobrane środowiska uruchomieniowe i logi sesji (`logs/`), a
+`~/.cache/Colony/Eidos/` na masterlisty LOOT, pobierane ponownie, ilekroć ich
+brakuje.
 
-Twoje mody nie są tego częścią. Instancja globalna nadal leży w
-`~/.local/share/eidos/<game>/`, a przenośna tam, gdzie ją umieściłeś, ponieważ te
-ścieżki są wpisane w twoją listę instancji i być może w opcję uruchamiania
-Steama: przeniesienie ich zerwałoby połączenie, którego Eidos nie trzyma z obu
-stron.
+Starszy Eidos trzymał je w `~/.config/eidos/`, `~/.local/share/eidos/` i
+`~/.local/state/`. Pierwsze uruchomienie po aktualizacji **kopiuje** je i mówi o
+tym w logu. Instancja globalna jest przenoszona dowiązaniami twardymi zamiast
+kopiowania bajt po bajcie, więc dziesiątki gigabajtów modów przenoszą się w
+mgnieniu oka bez zajmowania dodatkowego miejsca, a jej wpisy narzędzi są
+przekierowywane na nowy folder. Stare katalogi zostają dokładnie takie, jakie
+były - nic nie jest usuwane, więc nieudana aktualizacja nie może cię kosztować
+zalogowania ani zapisu gry - i możesz je usunąć sam, gdy się upewnisz. Jeśli
+kopii nie da się zrobić (pełny dysk lub dysk tylko do odczytu, stary folder
+instancji na innym dysku, gra wciąż z niego uruchomiona), Eidos dalej używa
+starej lokalizacji i próbuje ponownie przy następnym uruchomieniu. Opcja
+uruchamiania Steama, która wciąż wskazuje stary folder instancji, otwiera
+przeniesioną.
+
+Instancja przenośna nigdy nie jest przenoszona: zostaje tam, gdzie ją
+umieściłeś.
 
 Jedno miejsce jest odrzucane wprost: **wnętrze folderu instalacyjnego gry**
 (odruch weterana MO2). To drzewo należy do Steama - aktualizacja, „sprawdzenie

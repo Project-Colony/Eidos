@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -66,7 +66,7 @@ Steam ──> eidos-gui %command% ──> [ private namespace ]
 インデックス、マスタ欠落の警告、そして DLC と Creation Club のコンテンツを、
 実際そうである管理外の行として表示します。
 
-**インスタンス。** グローバル - `~/.local/share/eidos` の下で一元管理 - か、
+**インスタンス。** グローバル - `~/.local/share/Colony/Eidos/instances/` の下で一元管理 - か、
 ポータブル。好きな場所(別のドライブ、ゲーム用パーティション)に置ける自己完結の
 フォルダで、移動でき、隔離されています。MO2 のそれと同じです。ポータブル
 インスタンスはセッションをまたいで記憶されます。GUI も、Steam からの起動も、
@@ -95,12 +95,7 @@ Steam AppID を与え、Eidos をまったく開かずに統合ビュー越し�
 **診断。** マスタの欠落、孤立した書庫、MOD 一覧のずれ、壊れたプラグイン構成 -
 そして実行後には、script extender 自身のログが実際に何を読み込んだと言っているか。
 
-**自分のファイルを置く場所。** あなたが選んだもの - 設定、Nexus のセッション、
-インスタンスの一覧、自分で書いたゲームとアドオンの定義 - は
-`~/.config/Colony/Eidos/` に、ログは `~/.local/state/Colony/Eidos/` の下に。
-Colony ファミリのどのプログラムも使う配置です。以前の Eidos はこれらを
-`~/.config/eidos/` に置いていました。更新後の最初の起動でコピーし、その旨をログに
-書き、古いディレクトリは元のまま残します。
+**自分のファイルを置く場所。** Colony ファミリのどのプログラムも使う配置です。あなたが選んだもの - 設定、Nexus のセッション、インスタンスの一覧、自分で書いたゲームとアドオンの定義 - は `~/.config/Colony/Eidos/` に、グローバルインスタンス、ダウンロードしたランタイム、セッションログは `~/.local/share/Colony/Eidos/` に、LOOT のマスターリストは `~/.cache/Colony/Eidos/` に置きます。以前の Eidos はこれらを `~/.config/eidos/`、`~/.local/share/eidos/`、`~/.local/state/` に置いていました。更新後の最初の起動でそれらを移し、その旨をログに書き、古いディレクトリは元のまま残します。移動が完了するまで、Eidos は古いファイルを使い続けます。詳しくは [internals/paths.md](../../internals/paths.md)（英語）を参照してください。
 
 置き換え時の保護、BSA/BA2 内のファイル競合、SKSE の静的診断、生成履歴とその制限については、[整合性チェックと生成ファイル](../../../docs/internals/integrity.md)（英語）を参照してください。
 
@@ -156,7 +151,7 @@ Arch のパッケージとリリースの書庫、先に入れておくもの、
 | Community Shaders で DLSS | `PROTON_ENABLE_NVAPI=1` - これがないと DLSS は黙って初期化されません。全体のチェックリストは [guide/graphics.ja.md](docs/guide/graphics.md) |
 | 画面に FPS カウンタ | `DXVK_HUD=fps` |
 | MOD なしでドライバレベルのフレーム補間(RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - Community Shaders 自身のフレーム生成とは決して併用しないこと |
-| バグ報告用の詳細なログ | `EIDOS_LOG=debug`(セッションのログは `~/.local/state/Colony/Eidos/logs/` に出ます) |
+| バグ報告用の詳細なログ | `EIDOS_LOG=debug`(セッションのログは `~/.local/share/Colony/Eidos/logs/` に出ます) |
 | マウントからのセッションごとの I/O レポート | `EIDOS_FUSE_STATS=1` |
 | FUSE のワーカ数を変える | `EIDOS_FUSE_THREADS=8`(既定は 4。並行性のバグを追うときはまず `1` を試すこと) |
 | この起動を一つのポータブルインスタンスに固定する | `EIDOS_INSTANCE=/path/to/folder` - これがないと Eidos は最後に使ったインスタンスを開きます。たいていはそれが望みどおりです |

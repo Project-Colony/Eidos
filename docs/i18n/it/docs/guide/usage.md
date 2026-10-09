@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Usare Eidos
 
@@ -13,7 +13,7 @@ Per cosa fare quando qualcosa sembra andare storto, vedi
 eidos games                       # i giochi supportati installati qui (come l'elenco di MO2)
 eidos init skyrimse               # creare un'istanza di modding
 # ...metti ogni mod come cartella dentro <instance>/mods/ (l'istanza globale sta
-#    in ~/.local/share/eidos/skyrimse; `eidos init` stampa la tua)...
+#    in ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` stampa la tua)...
 eidos install skyrimse mod.7z     # oppure installa un archivio scaricato (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adottare ordine e stato dei plugin di un profilo MO2 esistente
 eidos sort skyrimse               # ordinare il caricamento dei plugin con LOOT
@@ -31,7 +31,7 @@ completano l'insieme; esegui `eidos` senza argomenti per l'elenco completo.
 
 Ogni comando qui sopra si rivolge a un'istanza. `skyrimse` nomina quella
 **globale** - conservata in modo centralizzato in
-`~/.local/share/eidos/skyrimse`, gestita da Eidos. L'altro tipo è **portatile**:
+`~/.local/share/Colony/Eidos/instances/skyrimse`, gestita da Eidos. L'altro tipo è **portatile**:
 una cartella autosufficiente dove vuoi tu (un secondo disco, una partizione per
 i giochi), spostabile e isolata, esattamente come le istanze portatili di MO2.
 Ovunque un comando accetti un identificatore di gioco accetta anche la cartella
@@ -60,20 +60,26 @@ macchina - un host .NET da 78 MB non sta per istanza.
 Eidos tiene i propri file sotto `Colony/Eidos`, la disposizione che usa ogni
 programma della famiglia Colony: `~/.config/Colony/Eidos/` per quello che hai
 scelto (preferenze, la tua sessione Nexus, il tuo elenco di istanze, le
-definizioni di giochi e add-on che hai scritto),
-`~/.local/state/Colony/Eidos/logs/` per i log di sessione e
-`~/.local/share/Colony/Eidos/` per quello che Eidos ha scaricato. Un Eidos più
-vecchio li teneva in `~/.config/eidos/` e `~/.local/state/eidos/`; il primo
-avvio dopo l'aggiornamento li **copia** e lo scrive nel log. Le vecchie cartelle
-restano esattamente com'erano - non viene cancellato nulla, quindi un
-aggiornamento andato male non può costarti un accesso - e puoi rimuoverle tu
-quando sei soddisfatto.
+definizioni di giochi e add-on che hai scritto), `~/.local/share/Colony/Eidos/`
+per le istanze globali (`instances/`), i runtime scaricati e i log di sessione
+(`logs/`), e `~/.cache/Colony/Eidos/` per le masterlist di LOOT, che vengono
+scaricate di nuovo ogni volta che mancano.
 
-Le tue mod non fanno parte di tutto questo. Un'istanza globale sta ancora in
-`~/.local/share/eidos/<game>/`, e una portatile dove l'hai messa, perché quei
-percorsi sono scritti nel tuo elenco di istanze e forse in un'opzione di avvio
-di Steam: spostarli spezzerebbe un collegamento di cui Eidos non possiede
-entrambi i capi.
+Un Eidos più vecchio li teneva in `~/.config/eidos/`, `~/.local/share/eidos/` e
+`~/.local/state/`. Il primo avvio dopo l'aggiornamento li **copia** e lo scrive
+nel log. Un'istanza globale viene spostata con hard link invece che con una
+copia byte per byte, così decine di gigabyte di mod si spostano in un attimo
+senza occupare spazio in più, e le sue voci degli strumenti vengono
+reindirizzate alla nuova cartella. Le vecchie cartelle restano esattamente
+com'erano - non viene cancellato nulla, quindi un aggiornamento andato male non
+può costarti un accesso né un salvataggio - e puoi rimuoverle tu quando sei
+soddisfatto. Se non si riesce a fare una copia (un disco pieno o in sola
+lettura, una vecchia cartella dell'istanza su un'altra unità, un gioco ancora in
+esecuzione da lì), Eidos continua a usare la vecchia posizione e riprova
+all'avvio successivo. Un'opzione di avvio di Steam che nomina ancora la vecchia
+cartella dell'istanza apre quella spostata.
+
+Un'istanza portatile non viene mai spostata: resta dove l'hai messa.
 
 Un posto è rifiutato senza appello: **dentro la cartella di installazione di un
 gioco** (il riflesso del veterano di MO2). Quell'albero appartiene a Steam - un

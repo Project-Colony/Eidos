@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Eidos 文件
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | 為什麼是 FUSE、常駐程式的設計、快取、寫入語意 |
 | [internals/performance.md](../../../internals/performance.md) | 哪裡慢、每一項改動換來了什麼、你自己要怎麼量測 |
+| [internals/paths.md](../../../internals/paths.md) | Eidos 把檔案放在哪裡,以及升級如何在不遺失任何檔案的情況下搬移它們 |
 | [internals/contributing.md](../../../internals/contributing.md) | 建置、測試,以及每樣東西放在哪裡 |
 | [internals/adding-games.md](../../../internals/adding-games.md) | 接上一個新的遊戲家族 |
 | [internals/packaging.md](../../../internals/packaging.md) | 散布,以及為什麼那些顯而易見的格式行不通 |

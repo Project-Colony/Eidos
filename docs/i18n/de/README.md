@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -72,7 +72,7 @@ so, wie das Spiel sie berechnet, Warnungen vor fehlenden Mastern, und Ihre DLC-
 und Creation-Club-Inhalte angezeigt als die nicht verwalteten Zeilen, die sie
 sind.
 
-**Instanzen.** Global - zentral unter `~/.local/share/eidos` verwaltet - oder
+**Instanzen.** Global - zentral unter `~/.local/share/Colony/Eidos/instances/` verwaltet - oder
 portabel: ein eigenständiger Ordner, wo Sie wollen (eine zweite Platte, eine
 Spielepartition), verschiebbar und isoliert, wie die von MO2. Portable Instanzen
 werden über Sitzungen hinweg gemerkt; die GUI, der Steam-Start und jeder
@@ -104,13 +104,17 @@ Eidos überhaupt zu öffnen.
 beschädigte Plugin-Sätze - und, nach einem Lauf, was das eigene Log des Script
 Extenders als tatsächlich geladen ausweist.
 
-**Wo es seine eigenen Dateien ablegt.** `~/.config/Colony/Eidos/` für das, was
-Sie gewählt haben - Einstellungen, Ihre Nexus-Sitzung, Ihre Instanzliste, die
-Spiel- und Add-on-Definitionen, die Sie geschrieben haben - mit Logs unter
-`~/.local/state/Colony/Eidos/`. Die Anordnung, die jedes Programm der
-Colony-Familie verwendet. Ein älteres Eidos legte diese in `~/.config/eidos/`
-ab; der erste Start nach der Aktualisierung kopiert sie herüber, sagt es im Log
-und lässt das alte Verzeichnis exakt so, wie es war.
+**Wo es seine eigenen Dateien ablegt.** Die Anordnung, die jedes Programm der
+Colony-Familie verwendet: `~/.config/Colony/Eidos/` für das, was Sie gewählt
+haben - Einstellungen, Ihre Nexus-Sitzung, Ihre Instanzliste, die Spiel- und
+Add-on-Definitionen, die Sie geschrieben haben - `~/.local/share/Colony/Eidos/`
+für globale Instanzen, heruntergeladene Laufzeitumgebungen und Sitzungs-Logs,
+und `~/.cache/Colony/Eidos/` für LOOT-Masterlisten. Ein älteres Eidos legte
+diese in `~/.config/eidos/`, `~/.local/share/eidos/` und `~/.local/state/` ab;
+der erste Start nach der Aktualisierung überträgt sie, sagt es im Log und lässt
+die alten Verzeichnisse exakt so, wie sie waren. Solange ein Umzug nicht
+abgeschlossen ist, verwendet Eidos weiter die alten Dateien. Details in
+[internals/paths.md](../../internals/paths.md) (Englisch).
 
 [Integritätsprüfungen und generierte Dateien](../../../docs/internals/integrity.md) (Englisch) beschreibt den Schutz beim Ersetzen, BSA/BA2-Dateikonflikte, statische SKSE-Diagnosen und Generierungsnachweise samt Grenzen.
 
@@ -168,7 +172,7 @@ lassen sich frei kombinieren:
 | DLSS mit Community Shaders | `PROTON_ENABLE_NVAPI=1` - ohne sie initialisiert sich DLSS stillschweigend nie; die vollständige Checkliste ist [guide/graphics.de.md](docs/guide/graphics.md) |
 | einen FPS-Zähler auf dem Bildschirm | `DXVK_HUD=fps` |
 | Frame-Interpolation auf Treiberebene, keine Mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - niemals zusammen mit der eigenen Frame Generation von Community Shaders |
-| ausführliche Logs für einen Fehlerbericht | `EIDOS_LOG=debug` (Sitzungs-Logs landen in `~/.local/state/Colony/Eidos/logs/`) |
+| ausführliche Logs für einen Fehlerbericht | `EIDOS_LOG=debug` (Sitzungs-Logs landen in `~/.local/share/Colony/Eidos/logs/`) |
 | einen I/O-Bericht pro Sitzung vom Mount | `EIDOS_FUSE_STATS=1` |
 | eine andere Anzahl an FUSE-Workern | `EIDOS_FUSE_THREADS=8` (Standard 4; `1` ist das Erste, was man bei der Jagd auf einen Nebenläufigkeitsfehler versucht) |
 | diesen Start an eine portable Instanz binden | `EIDOS_INSTANCE=/path/to/folder` - ohne sie öffnet Eidos die zuletzt verwendete Instanz, was meistens das ist, was Sie wollen |

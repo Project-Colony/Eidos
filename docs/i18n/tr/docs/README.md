@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Eidos belgeleri
 
@@ -21,6 +21,7 @@ Konuya göre değil, kimin okuduğuna göre sıralanmıştır.
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | neden FUSE, artalan sürecinin tasarımı, önbellekleme, yazma semantiği |
 | [internals/performance.md](../../../internals/performance.md) | ne yavaştı, her değişikliğin ne kazandırdığı, bunu kendiniz nasıl ölçersiniz |
+| [internals/paths.md](../../../internals/paths.md) | Eidos'un dosyalarını nerede tuttuğu ve bir yükseltmenin hiçbirini kaybetmeden onları nasıl taşıdığı |
 | [internals/contributing.md](../../../internals/contributing.md) | derleme, sınama ve her şeyin nerede durduğu |
 | [internals/adding-games.md](../../../internals/adding-games.md) | yeni bir oyun ailesini bağlamak |
 | [internals/packaging.md](../../../internals/packaging.md) | dağıtım ve apaçık biçimlerin neden işe yaramadığı |

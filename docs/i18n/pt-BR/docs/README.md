@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Documentação do Eidos
 
@@ -21,6 +21,7 @@ Organizada por quem lê, não por assunto.
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | por que FUSE, o desenho do daemon, cache, semântica de escrita |
 | [internals/performance.md](../../../internals/performance.md) | o que estava lento, o que cada mudança rendeu, como medir você mesmo |
+| [internals/paths.md](../../../internals/paths.md) | onde o Eidos guarda seus arquivos, e como uma atualização os move sem perder nenhum |
 | [internals/contributing.md](../../../internals/contributing.md) | compilar, testar, e onde fica cada coisa |
 | [internals/adding-games.md](../../../internals/adding-games.md) | ligar uma nova família de jogos |
 | [internals/packaging.md](../../../internals/packaging.md) | distribuição, e por que os formatos óbvios não funcionam |

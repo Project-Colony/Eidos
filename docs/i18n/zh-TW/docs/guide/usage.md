@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # 使用 Eidos
 
@@ -11,7 +11,7 @@
 eidos games                       # supported games installed here (like MO2's list)
 eidos init skyrimse               # create a modding instance
 # ...drop each mod as a folder into <instance>/mods/ (the global instance lives
-#    at ~/.local/share/eidos/skyrimse; `eidos init` prints yours)...
+#    at ~/.local/share/Colony/Eidos/instances/skyrimse; `eidos init` prints yours)...
 eidos install skyrimse mod.7z     # or install a downloaded archive (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # adopt an existing MO2 profile's order + plugin state
 eidos sort skyrimse               # LOOT-sort the plugin load order
@@ -28,7 +28,7 @@ eidos unpack backup.eidos <folder>   # put it back on the other machine
 ### 實例:全域與可攜
 
 上面每一個命令都指向某個實例。`skyrimse` 指的是**全域**的那一個 - 集中存放在
-`~/.local/share/eidos/skyrimse`,由 Eidos 管理。另一種是**可攜**的:一個自我完備
+`~/.local/share/Colony/Eidos/instances/skyrimse`,由 Eidos 管理。另一種是**可攜**的:一個自我完備
 的資料夾,放在你想要的任何地方(第二顆硬碟、遊戲分割區),可移動、彼此隔離,
 和 MO2 的可攜實例完全一樣。凡是接受遊戲 id 的命令,同樣接受可攜實例的資料夾:
 
@@ -49,17 +49,11 @@ Steam 啟動選項裡很方便。你建立過或開啟過的可攜實例會被�
 (`~/.local/share/Colony/Eidos/runtimes/`)刻意維持在整台機器共用 - 一個 78 MB 的
 .NET host 不該每個實例一份。
 
-Eidos 把自己的檔案放在 `Colony/Eidos` 底下,那是 Colony 家族每個程式都用的配置:
-`~/.config/Colony/Eidos/` 放你選的東西(偏好設定、你的 Nexus 工作階段、你的實例
-清單、你自己寫的遊戲與附加元件定義),`~/.local/state/Colony/Eidos/logs/` 放工作
-階段日誌,`~/.local/share/Colony/Eidos/` 放 Eidos 下載的東西。舊版 Eidos 把這些
-放在 `~/.config/eidos/` 與 `~/.local/state/eidos/`;升級後的第一次啟動會把它們
-**複製**過來,並在日誌裡說明。舊目錄會原封不動留著 - 什麼都不刪,所以一次糟糕的
-升級不會讓你賠掉登入狀態 - 等你確認沒問題,可以自己移除。
+Eidos 把自己的檔案放在 `Colony/Eidos` 底下,那是 Colony 家族每個程式都用的配置:`~/.config/Colony/Eidos/` 放你選的東西(偏好設定、你的 Nexus 工作階段、你的實例清單、你自己寫的遊戲與附加元件定義),`~/.local/share/Colony/Eidos/` 放全域實例(`instances/`)、下載的執行環境與工作階段日誌(`logs/`),`~/.cache/Colony/Eidos/` 放 LOOT 主清單,缺少時隨時會重新下載。
 
-你的模組不屬於那一部分。全域實例仍然在 `~/.local/share/eidos/<game>/`,可攜實例則
-在你放的地方,因為那些路徑寫進了你的實例清單,也可能寫進了 Steam 啟動選項:移動
-它們會弄斷一條 Eidos 並不同時擁有兩端的連結。
+舊版 Eidos 把這些放在 `~/.config/eidos/`、`~/.local/share/eidos/` 與 `~/.local/state/`。升級後的第一次啟動會把它們**複製**過來,並在日誌裡說明。全域實例用硬連結而不是逐位元組複製來搬移,所以幾十 GB 的模組一眨眼就搬完,也不佔用額外空間,它的工具項目也會改為指向新資料夾。舊目錄會原封不動留著 - 什麼都不刪,所以一次糟糕的升級不會讓你賠掉登入狀態或存檔 - 等你確認沒問題,可以自己移除。如果無法複製(磁碟已滿或唯讀、舊實例資料夾在另一顆磁碟上、遊戲仍從那裡執行中),Eidos 會繼續使用舊位置,並在下次啟動時再試一次。仍指向舊實例資料夾的 Steam 啟動選項會開啟搬移後的實例。
+
+可攜實例永遠不會被搬移:它留在你放的地方。
 
 有一個位置會被直接拒絕:**遊戲安裝資料夾裡面**(MO2 老手的反射動作)。那棵樹歸
 Steam 管 - 一次更新、一次「驗證檔案完整性」或一次解除安裝,都可能改寫或刪除它,

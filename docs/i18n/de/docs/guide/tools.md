@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/tools.md sha=da946f1cc4bb783330a6a6248b16f0d547b533ff -->
+<!-- eidos-i18n: source=docs/guide/tools.md sha=13248970bb8989b15a41910dd3f9c6564a833325 -->
 
 # Tools: xEdit, BodySlide, DynDOLOD, PGPatcher, FNIS
 
@@ -54,7 +54,7 @@ Tragen Sie die ausführbare Datei dort ein, wo sie tatsächlich liegt. Wurde das
 Tool als Mod installiert, ist das im Mod-Ordner:
 
 ```
-~/.local/share/eidos/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
+~/.local/share/Colony/Eidos/instances/skyrimse/mods/BodySlide.../CalienteTools/BodySlide/BodySlide.exe
 ```
 
 (das ist der Pfad der globalen Instanz - für eine portable Instanz gilt dieselbe

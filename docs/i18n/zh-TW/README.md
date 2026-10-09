@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -56,7 +56,7 @@ Root Builder 外掛程式,也沒有任何東西被複製進你的安裝目錄。
 **外掛。** 內建 LOOT 排序的載入順序、和遊戲自己算出來一樣的模組索引、缺少 master
 的警告,以及以未受管理的列的身分顯示的 DLC 與 Creation Club 內容。
 
-**實例。** 全域 - 集中管理在 `~/.local/share/eidos` 底下 - 或可攜:一個自我完備的
+**實例。** 全域 - 集中管理在 `~/.local/share/Colony/Eidos/instances/` 底下 - 或可攜:一個自我完備的
 資料夾,放在你想要的任何地方(第二顆硬碟、遊戲分割區),可移動、彼此隔離,和 MO2
 的一樣。可攜實例會跨工作階段被記住;GUI、Steam 啟動與每一個 CLI 命令都跟隨你上次
 用的那一個,而凡是接受遊戲 id 的命令,同樣接受那個資料夾。細節見
@@ -81,11 +81,7 @@ Steam AppID,並寫出一個 `.desktop` 捷徑,讓它完全不必打開 Eidos 就
 **診斷。** 缺少的 master、無主的壓縮檔、模組清單偏移、損壞的外掛組合 - 以及在一次
 執行之後,script extender 自己的日誌說實際載入了什麼。
 
-**它把自己的檔案放在哪裡。** `~/.config/Colony/Eidos/` 放你選的東西 - 偏好設定、
-你的 Nexus 工作階段、你的實例清單、你自己寫的遊戲與附加元件定義 - 日誌則在
-`~/.local/state/Colony/Eidos/` 底下。這是 Colony 家族每個程式都用的配置。舊版 Eidos
-把這些放在 `~/.config/eidos/`;升級後的第一次啟動會把它們複製過來,在日誌裡說明,
-並讓舊目錄原封不動留著。
+**它把自己的檔案放在哪裡。** 這是 Colony 家族每個程式都用的配置:`~/.config/Colony/Eidos/` 放你選的東西 - 偏好設定、你的 Nexus 工作階段、你的實例清單、你自己寫的遊戲與附加元件定義 - `~/.local/share/Colony/Eidos/` 放全域實例、下載的執行環境與工作階段日誌,`~/.cache/Colony/Eidos/` 放 LOOT 主清單。舊版 Eidos 把這些放在 `~/.config/eidos/`、`~/.local/share/eidos/` 與 `~/.local/state/`;升級後的第一次啟動會把它們搬過來,在日誌裡說明,並讓舊目錄原封不動留著。搬移完成之前,Eidos 會繼續使用舊檔案。詳情見 [internals/paths.md](../../internals/paths.md)（英文）。
 
 關於替換保護、BSA/BA2 內部檔案衝突、SKSE 靜態診斷、產生紀錄及其限制，請參閱[完整性檢查與產生檔案](../../../docs/internals/integrity.md)（英文）。
 
@@ -140,7 +136,7 @@ Arch 套件與發行壓縮檔、你需要先裝好的東西,以及命令列這�
 | 搭配 Community Shaders 的 DLSS | `PROTON_ENABLE_NVAPI=1` - 沒有它,DLSS 會靜悄悄地永遠不初始化;完整檢查清單在 [guide/graphics.zh-TW.md](docs/guide/graphics.md) |
 | 畫面上的 FPS 計數器 | `DXVK_HUD=fps` |
 | 驅動層級的影格插補,零模組(RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - 絕不要和 Community Shaders 自己的影格生成一起用 |
-| 給錯誤回報用的詳細日誌 | `EIDOS_LOG=debug`(工作階段日誌落在 `~/.local/state/Colony/Eidos/logs/`) |
+| 給錯誤回報用的詳細日誌 | `EIDOS_LOG=debug`(工作階段日誌落在 `~/.local/share/Colony/Eidos/logs/`) |
 | 掛載端每個工作階段的 I/O 報告 | `EIDOS_FUSE_STATS=1` |
 | 不同的 FUSE 工作執行緒數量 | `EIDOS_FUSE_THREADS=8`(預設 4;追查併發問題時,`1` 是第一個該試的) |
 | 把這次啟動釘在某個可攜實例上 | `EIDOS_INSTANCE=/path/to/folder` - 沒有它,Eidos 會開啟你上次用的那個實例,那通常正是你要的 |

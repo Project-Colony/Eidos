@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -68,7 +68,7 @@ usunięcie, otwarcie - i podgląda obrazy oraz teksty, nic nie uruchamiając.
 modów takie, jakie wylicza gra, ostrzeżenia o brakujących masterach oraz twoje
 DLC i zawartość Creation Club pokazane jako niezarządzane wiersze, którymi są.
 
-**Instancje.** Globalne - zarządzane centralnie pod `~/.local/share/eidos` - albo
+**Instancje.** Globalne - zarządzane centralnie pod `~/.local/share/Colony/Eidos/instances/` - albo
 przenośne: samodzielny folder gdziekolwiek chcesz (drugi dysk, partycja z
 grami), przenoszalny i odizolowany, jak w MO2. Instancje przenośne są pamiętane
 między sesjami; GUI, uruchomienie ze Steama i każde polecenie wiersza poleceń
@@ -99,12 +99,16 @@ przez scalony widok, w ogóle nie otwierając Eidosa.
 uszkodzone zestawy wtyczek - a po uruchomieniu to, co własny log script
 extendera mówi, że faktycznie się wczytało.
 
-**Gdzie trzyma własne pliki.** `~/.config/Colony/Eidos/` na to, co wybrałeś -
-preferencje, twoja sesja Nexusa, twoja lista instancji, napisane przez ciebie
-definicje gier i dodatków - z logami pod `~/.local/state/Colony/Eidos/`. Układ,
-którego używa każdy program z rodziny Colony. Starszy Eidos trzymał to w
-`~/.config/eidos/`; pierwsze uruchomienie po aktualizacji kopiuje je, mówi o tym
-w logu i zostawia stary folder dokładnie takim, jaki był.
+**Gdzie trzyma własne pliki.** Układ, którego używa każdy program z rodziny
+Colony: `~/.config/Colony/Eidos/` na to, co wybrałeś - preferencje, twoja sesja
+Nexusa, twoja lista instancji, napisane przez ciebie definicje gier i dodatków -
+`~/.local/share/Colony/Eidos/` na instancje globalne, pobrane środowiska
+uruchomieniowe i logi sesji, a `~/.cache/Colony/Eidos/` na masterlisty LOOT.
+Starszy Eidos trzymał to w `~/.config/eidos/`, `~/.local/share/eidos/` i
+`~/.local/state/`; pierwsze uruchomienie po aktualizacji przenosi je, mówi o tym
+w logu i zostawia stare foldery dokładnie takimi, jakie były. Dopóki przenosiny
+się nie zakończą, Eidos dalej używa starych plików. Szczegóły w
+[internals/paths.md](../../internals/paths.md) (po angielsku).
 
 [Kontrole integralności i wygenerowane pliki](../../../docs/internals/integrity.md) (po angielsku) opisuje ochronę przy zastępowaniu modów, konflikty plików w BSA/BA2, statyczną diagnostykę SKSE i zapisy generowania wraz z ich ograniczeniami.
 
@@ -161,7 +165,7 @@ Wszystko inne to zmienne środowiskowe ustawiane przed nią i łączą się dowo
 | DLSS z Community Shaders | `PROTON_ENABLE_NVAPI=1` - bez niej DLSS po cichu nigdy się nie inicjalizuje; pełna lista kontrolna jest w [guide/graphics.pl.md](docs/guide/graphics.md) |
 | licznik FPS na ekranie | `DXVK_HUD=fps` |
 | interpolację klatek na poziomie sterownika, zero modów (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - nigdy razem z własną generacją klatek Community Shaders |
-| szczegółowe logi do zgłoszenia błędu | `EIDOS_LOG=debug` (logi sesji lądują w `~/.local/state/Colony/Eidos/logs/`) |
+| szczegółowe logi do zgłoszenia błędu | `EIDOS_LOG=debug` (logi sesji lądują w `~/.local/share/Colony/Eidos/logs/`) |
 | raport we/wy z montowania dla każdej sesji | `EIDOS_FUSE_STATS=1` |
 | inną liczbę wątków roboczych FUSE | `EIDOS_FUSE_THREADS=8` (domyślnie 4; `1` to pierwsza rzecz do wypróbowania przy tropieniu błędu współbieżności) |
 | przypiąć to uruchomienie do jednej instancji przenośnej | `EIDOS_INSTANCE=/path/to/folder` - bez niej Eidos otwiera ostatnio używaną instancję, co zwykle jest tym, czego chcesz |

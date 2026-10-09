@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -68,7 +68,7 @@ başlatmadan görselleri ve metinleri önizler.
 biçimde mod indeksleri, eksik master uyarıları ve DLC'lerinizle Creation Club
 içeriğinizin oldukları gibi, yönetilmeyen satırlar olarak gösterilmesi.
 
-**Örnekler.** Genel - `~/.local/share/eidos` altında merkezî olarak yönetilir -
+**Örnekler.** Genel - `~/.local/share/Colony/Eidos/instances/` altında merkezî olarak yönetilir -
 ya da taşınabilir: istediğiniz her yerde kendi kendine yeten bir klasör (ikinci
 bir disk, bir oyun bölümü), taşınabilir ve yalıtılmış, MO2'ninkiler gibi.
 Taşınabilir örnekler oturumlar arasında hatırlanır; GUI, Steam başlatması ve her
@@ -99,13 +99,17 @@ başlatan bir `.desktop` kısayolu yazın.
 eklenti kümeleri - bir de bir çalıştırmadan sonra, script extender'ın kendi
 günlüğünün gerçekte neyin yüklendiğine dair söyledikleri.
 
-**Kendi dosyalarını nerede tutar.** Seçtikleriniz için
-`~/.config/Colony/Eidos/` - tercihler, Nexus oturumunuz, örnek listeniz,
-yazdığınız oyun ve eklenti tanımları - günlükler ise
-`~/.local/state/Colony/Eidos/` altında. Colony ailesindeki her programın
-kullandığı düzen. Daha eski bir Eidos bunları `~/.config/eidos/` içinde
-tutuyordu; yükseltmeden sonraki ilk başlatma onları kopyalar, bunu günlükte
-söyler ve eski klasörü tam olarak eskisi gibi bırakır.
+**Kendi dosyalarını nerede tutar.** Colony ailesindeki her programın kullandığı
+düzen: seçtikleriniz için `~/.config/Colony/Eidos/` - tercihler, Nexus
+oturumunuz, örnek listeniz, yazdığınız oyun ve eklenti tanımları - global
+örnekler, indirilen çalışma zamanları ve oturum günlükleri için
+`~/.local/share/Colony/Eidos/`, LOOT ana listeleri için
+`~/.cache/Colony/Eidos/`. Daha eski bir Eidos bunları `~/.config/eidos/`,
+`~/.local/share/eidos/` ve `~/.local/state/` içinde tutuyordu; yükseltmeden
+sonraki ilk başlatma onları taşır, bunu günlükte söyler ve eski klasörleri tam
+olarak eskisi gibi bırakır. Bir taşıma tamamlanana kadar Eidos eski dosyaları
+kullanmaya devam eder. Ayrıntılar için
+[internals/paths.md](../../internals/paths.md) sayfasına bakın (İngilizce).
 
 Değiştirme koruması, BSA/BA2 içindeki dosya çakışmaları, statik SKSE tanılamaları ve üretim kayıtları ile bunların sınırları için [Bütünlük denetimleri ve üretilen dosyalar](../../../docs/internals/integrity.md) sayfasına bakın (İngilizce).
 
@@ -162,7 +166,7 @@ birleşirler:
 | Community Shaders ile DLSS | `PROTON_ENABLE_NVAPI=1` - onsuz DLSS sessizce hiç başlatılmaz; tam denetim listesi [guide/graphics.tr.md](docs/guide/graphics.md) |
 | ekranda bir FPS sayacı | `DXVK_HUD=fps` |
 | sürücü düzeyinde kare aradeğerleme, sıfır mod (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - asla Community Shaders'ın kendi kare üretimiyle birlikte değil |
-| bir hata bildirimi için ayrıntılı günlükler | `EIDOS_LOG=debug` (oturum günlükleri `~/.local/state/Colony/Eidos/logs/` içine iner) |
+| bir hata bildirimi için ayrıntılı günlükler | `EIDOS_LOG=debug` (oturum günlükleri `~/.local/share/Colony/Eidos/logs/` içine iner) |
 | bağlamadan oturum başına bir G/Ç raporu | `EIDOS_FUSE_STATS=1` |
 | farklı bir FUSE işçi sayısı | `EIDOS_FUSE_THREADS=8` (öntanımlı 4; bir eşzamanlılık hatası kovalarken ilk denenecek şey `1`) |
 | bu başlatmanın tek bir taşınabilir örneğe sabitlenmesi | `EIDOS_INSTANCE=/path/to/folder` - onsuz Eidos en son kullandığınız örneği açar, ki genelde istediğiniz de budur |

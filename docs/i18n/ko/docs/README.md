@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Eidos 문서
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | 왜 FUSE인가, 데몬의 설계, 캐싱, 쓰기 의미론 |
 | [internals/performance.md](../../../internals/performance.md) | 무엇이 느렸는지, 각 변경이 무엇을 벌어줬는지, 직접 측정하는 법 |
+| [internals/paths.md](../../../internals/paths.md) | Eidos가 파일을 어디에 두는지, 그리고 업그레이드가 아무것도 잃지 않고 그것들을 옮기는 방법 |
 | [internals/contributing.md](../../../internals/contributing.md) | 빌드, 테스트, 그리고 모든 것이 어디에 있는지 |
 | [internals/adding-games.md](../../../internals/adding-games.md) | 새 게임 계열 연결하기 |
 | [internals/packaging.md](../../../internals/packaging.md) | 배포, 그리고 뻔한 형식들이 통하지 않는 이유 |

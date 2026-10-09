@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=c8da2cf4ab18af8646044ab0b918ffc5202099db -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
 
 # Eidos 사용하기
 
@@ -12,7 +12,7 @@
 eidos games                       # 여기 설치된 지원 게임들 (MO2의 목록처럼)
 eidos init skyrimse               # 모딩 인스턴스 만들기
 # ...각 모드를 폴더째로 <instance>/mods/ 에 넣으세요 (전역 인스턴스는
-#    ~/.local/share/eidos/skyrimse 에 있습니다; `eidos init`이 여러분 것을 알려줍니다)...
+#    ~/.local/share/Colony/Eidos/instances/skyrimse 에 있습니다; `eidos init`이 여러분 것을 알려줍니다)...
 eidos install skyrimse mod.7z     # 또는 내려받은 압축 파일 설치 (Simple / FOMOD)
 eidos import skyrimse <mo2-profile>  # 기존 MO2 프로필의 순서 + 플러그인 상태 가져오기
 eidos sort skyrimse               # 플러그인 로드 순서를 LOOT로 정렬
@@ -29,7 +29,7 @@ eidos unpack backup.eidos <folder>   # 다른 기계에서 되돌려 놓기
 ### 인스턴스: 전역과 휴대용
 
 위의 모든 명령은 인스턴스를 대상으로 합니다. `skyrimse`는 **전역** 인스턴스를
-가리킵니다 - `~/.local/share/eidos/skyrimse`에 중앙 집중식으로 저장되고 Eidos가
+가리킵니다 - `~/.local/share/Colony/Eidos/instances/skyrimse`에 중앙 집중식으로 저장되고 Eidos가
 관리합니다. 다른 한 종류는 **휴대용**입니다: 원하는 곳 어디에나 두는 자족적인
 폴더(두 번째 드라이브, 게임용 파티션)로, 옮길 수 있고 격리되어 있으며, MO2의
 휴대용 인스턴스와 똑같습니다. 게임 id를 받는 명령은 어디서든 휴대용 인스턴스의
@@ -54,20 +54,20 @@ GUI의 환영 화면이 한 번의 클릭으로 열 수 있게 이들을 나열�
 캐시(`~/.local/share/Colony/Eidos/runtimes/`)는 의도적으로 기계 전역으로
 남습니다 - 78 MB짜리 .NET 호스트는 인스턴스마다 둘 것이 아닙니다.
 
-Eidos는 자기 파일을 `Colony/Eidos` 아래에 둡니다. Colony 계열의 모든 프로그램이
-쓰는 배치입니다: 여러분이 고른 것(설정, Nexus 세션, 인스턴스 목록, 여러분이 쓴
-게임과 애드온 정의)은 `~/.config/Colony/Eidos/`에, 세션 로그는
-`~/.local/state/Colony/Eidos/logs/`에, Eidos가 내려받은 것은
-`~/.local/share/Colony/Eidos/`에 들어갑니다. 예전의 Eidos는 이것들을
-`~/.config/eidos/`와 `~/.local/state/eidos/`에 두었습니다. 업그레이드 후 첫
-실행이 이들을 **복사해** 옮기고 로그에 그렇게 적습니다. 옛 디렉터리는 있던 그대로
-남습니다 - 아무것도 지우지 않으므로 잘못된 업그레이드가 로그인을 앗아갈 수
-없습니다 - 그리고 만족스러우면 직접 지우면 됩니다.
+Eidos는 자기 파일을 `Colony/Eidos` 아래에 둡니다. Colony 계열의 모든 프로그램이 쓰는 배치입니다: 여러분이 고른
+것(설정, Nexus 세션, 인스턴스 목록, 여러분이 쓴 게임과 애드온 정의)은 `~/.config/Colony/Eidos/`에, 전역
+인스턴스(`instances/`)와 내려받은 런타임, 세션 로그(`logs/`)는 `~/.local/share/Colony/Eidos/`에,
+LOOT 마스터리스트는 `~/.cache/Colony/Eidos/`에 들어가며, 마스터리스트는 없어질 때마다 다시 내려받습니다.
 
-여러분의 모드는 거기에 속하지 않습니다. 전역 인스턴스는 여전히
-`~/.local/share/eidos/<game>/`에, 휴대용 인스턴스는 여러분이 둔 곳에 있습니다.
-그 경로들은 인스턴스 목록에, 어쩌면 Steam 실행 옵션에까지 적혀 있기 때문입니다:
-옮기면 Eidos가 양쪽 끝을 다 쥐고 있지 않은 연결이 끊어집니다.
+예전의 Eidos는 이것들을 `~/.config/eidos/`, `~/.local/share/eidos/`, `~/.local/state/`에
+두었습니다. 업그레이드 후 첫 실행이 이들을 **복사해** 옮기고 로그에 그렇게 적습니다. 전역 인스턴스는 바이트 복사 대신 하드 링크로
+옮기므로, 수십 기가바이트의 모드도 순식간에 옮겨지고 추가 공간을 차지하지 않으며, 도구 항목은 새 폴더를 가리키도록 바뀝니다. 옛 디렉터리는
+있던 그대로 남습니다 - 아무것도 지우지 않으므로 잘못된 업그레이드가 로그인이나 세이브를 앗아갈 수 없습니다 - 그리고 만족스러우면 직접 지우면
+됩니다. 복사를 할 수 없으면(디스크가 가득 찼거나 읽기 전용, 예전 인스턴스 폴더가 다른 드라이브에 있음, 그곳에서 게임이 아직 실행 중)
+Eidos는 예전 위치를 계속 쓰고 다음 실행 때 다시 시도합니다. 아직 예전 인스턴스 폴더를 가리키는 Steam 실행 옵션은 옮겨진 인스턴스를
+엽니다.
+
+휴대용 인스턴스는 절대 옮기지 않습니다: 여러분이 둔 곳에 그대로 있습니다.
 
 한 곳만은 딱 잘라 거부합니다: **게임 설치 폴더 안**(MO2 경험자의 반사
 행동입니다). 그 트리는 Steam의 것이고 - 업데이트, "파일 무결성 확인",

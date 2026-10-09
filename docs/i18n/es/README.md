@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=README.md sha=a1e4f20f7e5b29579331ed2198337ca2153f9216 -->
+<!-- eidos-i18n: source=README.md sha=0dcb88f3084e8fd1db8725e83f23670a6f88b578 -->
 
 <div align="center">
 
@@ -71,7 +71,7 @@ de mods tal como los calcula el juego, avisos de masters ausentes, y tus DLC y
 contenidos de Creation Club mostrados como las filas no gestionadas que son.
 
 **Instancias.** Globales - gestionadas de forma centralizada bajo
-`~/.local/share/eidos` - o portátiles: una carpeta autónoma donde quieras (un
+`~/.local/share/Colony/Eidos/instances/` - o portátiles: una carpeta autónoma donde quieras (un
 segundo disco, una partición de juegos), movible y aislada, como las de MO2. Las
 instancias portátiles se recuerdan entre sesiones; la GUI, el lanzamiento de
 Steam y toda orden de la línea de órdenes siguen la que usaste por última vez, y
@@ -101,13 +101,17 @@ absoluto.
 mods, conjuntos de plugins dañados - y, tras una ejecución, lo que el propio
 registro del script extender dice que se cargó realmente.
 
-**Dónde guarda sus propios archivos.** `~/.config/Colony/Eidos/` para lo que has
-elegido - preferencias, tu sesión de Nexus, tu lista de instancias, las
-definiciones de juegos y de extensiones que hayas escrito - con los registros
-bajo `~/.local/state/Colony/Eidos/`. La disposición que usa todo programa de la
-familia Colony. Un Eidos más antiguo los guardaba en `~/.config/eidos/`; el
-primer lanzamiento tras actualizar los copia, lo dice en el registro, y deja el
-directorio antiguo exactamente como estaba.
+**Dónde guarda sus propios archivos.** La disposición que usa todo programa de
+la familia Colony: `~/.config/Colony/Eidos/` para lo que has elegido -
+preferencias, tu sesión de Nexus, tu lista de instancias, las definiciones de
+juegos y de extensiones que hayas escrito - `~/.local/share/Colony/Eidos/` para
+las instancias globales, los runtimes descargados y los registros de sesión, y
+`~/.cache/Colony/Eidos/` para las masterlists de LOOT. Un Eidos más antiguo los
+guardaba en `~/.config/eidos/`, `~/.local/share/eidos/` y `~/.local/state/`; el
+primer lanzamiento tras actualizar los traslada, lo dice en el registro, y deja
+los directorios antiguos exactamente como estaban. Mientras un traslado no haya
+terminado, Eidos sigue usando los archivos antiguos. Detalles en
+[internals/paths.md](../../internals/paths.md) (en inglés).
 
 Consulta [Comprobaciones de integridad y archivos generados](../../../docs/internals/integrity.md) (en inglés) para conocer la protección al reemplazar mods, los conflictos de archivos BSA/BA2, los diagnósticos estáticos de SKSE y los registros de generación, con sus límites.
 
@@ -165,7 +169,7 @@ libremente:
 | DLSS con Community Shaders | `PROTON_ENABLE_NVAPI=1` - sin ella DLSS nunca se inicializa, en silencio; la lista completa está en [guide/graphics.es.md](docs/guide/graphics.md) |
 | un contador de FPS en pantalla | `DXVK_HUD=fps` |
 | interpolación de fotogramas a nivel de controlador, cero mods (RTX 40/50) | `NVPRESENT_ENABLE_SMOOTH_MOTION=1` - nunca junto con la generación de fotogramas de Community Shaders |
-| registros detallados para un informe de fallo | `EIDOS_LOG=debug` (los registros de sesión aterrizan en `~/.local/state/Colony/Eidos/logs/`) |
+| registros detallados para un informe de fallo | `EIDOS_LOG=debug` (los registros de sesión aterrizan en `~/.local/share/Colony/Eidos/logs/`) |
 | un informe de E/S por sesión desde el montaje | `EIDOS_FUSE_STATS=1` |
 | otro número de hilos de FUSE | `EIDOS_FUSE_THREADS=8` (4 por defecto; `1` es lo primero que probar cuando persigues un fallo de concurrencia) |
 | este lanzamiento fijado a una instancia portátil | `EIDOS_INSTANCE=/path/to/folder` - sin ella Eidos abre la instancia que usaste por última vez, que suele ser lo que quieres |

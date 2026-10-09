@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/README.md sha=593941650336390fe5bdcf944ae926180d083fae -->
+<!-- eidos-i18n: source=docs/README.md sha=90a0a24e5ea8b9486d85c2b00959ece00dab0390 -->
 
 # Eidos のドキュメント
 
@@ -21,6 +21,7 @@
 |---|---|
 | [internals/architecture.md](../../../internals/architecture.md) | なぜ FUSE か、デーモンの設計、キャッシュ、書き込みの意味論 |
 | [internals/performance.md](../../../internals/performance.md) | 何が遅かったか、各変更が何を買ったか、自分で測る方法 |
+| [internals/paths.md](../../../internals/paths.md) | Eidos がファイルをどこに置くか、そして更新が何も失わずにそれらを移す方法 |
 | [internals/contributing.md](../../../internals/contributing.md) | ビルド、テスト、どこに何があるか |
 | [internals/adding-games.md](../../../internals/adding-games.md) | 新しいゲームファミリを繋ぎ込む |
 | [internals/packaging.md](../../../internals/packaging.md) | 配布と、当たり前の形式が通らない理由 |
