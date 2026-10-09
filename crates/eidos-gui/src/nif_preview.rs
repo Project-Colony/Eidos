@@ -353,7 +353,7 @@ pub(crate) mod tests {
     pub(crate) fn fixture_model() -> Model {
         Model {
             scene: Arc::new(
-                nif_render::parse(include_bytes!("nif_render_fixtures/sse.json")).unwrap(),
+                nif_render::parse(include_bytes!("../tests/fixtures/nif_render_sse.json")).unwrap(),
             ),
             textures: Arc::new(HashMap::new()),
             view: Default::default(),

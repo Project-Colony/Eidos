@@ -741,11 +741,11 @@ mod tests {
     fn native_le_and_sse_fixtures_preserve_world_geometry_and_texture_slots() {
         for (json, kind) in [
             (
-                include_bytes!("nif_render_fixtures/le.json").as_slice(),
+                include_bytes!("../tests/fixtures/nif_render_le.json").as_slice(),
                 "NiTriShape",
             ),
             (
-                include_bytes!("nif_render_fixtures/sse.json").as_slice(),
+                include_bytes!("../tests/fixtures/nif_render_sse.json").as_slice(),
                 "BSTriShape",
             ),
         ] {
