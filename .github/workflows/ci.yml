@@ -37,7 +37,7 @@ jobs:
     name: build, clippy, test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Only first-party `actions/*` are used in this repo's workflows, so the
       # set of third parties with a foothold in CI stays empty.
@@ -54,7 +54,7 @@ jobs:
       # cold cache instead of a stale one; the toolchain is in the key too since
       # `target/` artifacts are not portable across rustc versions.
       - name: Cache cargo registry and build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry/index
@@ -123,7 +123,7 @@ jobs:
       # alternative - `git log` on the source - reports a single commit on the
       # depth-1 clone Actions makes by default, so every comparison would come
       # out equal and this job would pass green forever while translations rot.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check every translation against its English source
         run: ./scripts/i18n-check.sh
@@ -144,7 +144,7 @@ jobs:
     # the mass reformat and pins the width in a rustfmt.toml.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the pinned toolchain
         run: |
