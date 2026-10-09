@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.18.5](https://github.com/Project-Colony/Eidos/compare/v1.18.4...v1.18.5) (2026-10-09)
+
+
+### Fixes
+
+* **paths:** migrate data safely into the Colony layout and keep legacy files as fallback ([#76](https://github.com/Project-Colony/Eidos/issues/76)) ([acbc0f2](https://github.com/Project-Colony/Eidos/commit/acbc0f2c61a8d2e6507a90318540d89bb72afc0b))
+* **paths:** never move an instance under a running Eidos, and clean up after a crashed move ([#78](https://github.com/Project-Colony/Eidos/issues/78)) ([4552027](https://github.com/Project-Colony/Eidos/commit/4552027ac4273c8a00cc34529da11c5e275fdf91))
+
+
+### Documentation
+
+* remove agent artefacts and translated copies and bring the docs up to date ([#86](https://github.com/Project-Colony/Eidos/issues/86)) ([97cca9b](https://github.com/Project-Colony/Eidos/commit/97cca9bd1dd0e938bbf505f5ba85d647dbdbd697))
+
 ## [1.18.4](https://github.com/Project-Colony/Eidos/compare/v1.18.3...v1.18.4) (2026-10-08)
 
 
