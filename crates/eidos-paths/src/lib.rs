@@ -63,8 +63,20 @@ pub const PROGRAM: &str = "Eidos";
 /// Every caller then goes on to `create_dir_all` and write, which works in the
 /// temp dir where it would fail on `/`. The `kind` level keeps config, data and
 /// cache apart even there, so clearing one can never take the others with it.
+///
+/// A relative answer counts as none. `dirs` checks the `XDG_*` variables for
+/// that but takes `$HOME` as given, and a relative one would resolve against
+/// the working directory, which for Eidos under Proton is the game's folder.
 fn root(found: io::Result<PathBuf>, kind: &str) -> PathBuf {
-    found.unwrap_or_else(|_| std::env::temp_dir().join(kind).join(VENDOR).join(PROGRAM))
+    found
+        .ok()
+        .filter(|p| p.is_absolute())
+        .unwrap_or_else(|| std::env::temp_dir().join(kind).join(VENDOR).join(PROGRAM))
+}
+
+/// An old-layout root, or `None` where there can be nothing to carry over.
+fn legacy(base: Option<PathBuf>, rel: &str) -> Option<PathBuf> {
+    base.filter(|p| p.is_absolute()).map(|p| p.join(rel))
 }
 
 /// `~/.config/Colony/Eidos` - preferences, credentials, and what the user wrote.
@@ -143,6 +155,7 @@ pub fn moved_global_instance(root: &Path) -> Option<PathBuf> {
 /// which is not ours to choose.
 pub fn desktop_entries_dir() -> PathBuf {
     dirs::data_dir()
+        .filter(|p| p.is_absolute())
         .unwrap_or_else(std::env::temp_dir)
         .join("applications")
 }
@@ -153,25 +166,25 @@ pub fn desktop_entries_dir() -> PathBuf {
 
 /// Where Eidos kept its config before the Colony layout: `~/.config/eidos`.
 pub fn legacy_config_dir() -> Option<PathBuf> {
-    dirs::config_dir().map(|d| d.join("eidos"))
+    legacy(dirs::config_dir(), "eidos")
 }
 
 /// Where Eidos kept global instances and runtimes before: `~/.local/share/eidos`.
 pub fn legacy_data_dir() -> Option<PathBuf> {
-    dirs::data_dir().map(|d| d.join("eidos"))
+    legacy(dirs::data_dir(), "eidos")
 }
 
 /// Where earlier versions wrote session logs, newest layout first:
 /// `~/.local/state/Colony/Eidos/logs` (1.18), then `~/.local/state/eidos/logs`.
 fn legacy_logs_dirs() -> Vec<PathBuf> {
-    dirs::state_dir()
-        .map(|s| {
-            vec![
-                s.join(VENDOR).join(PROGRAM).join("logs"),
-                s.join("eidos").join("logs"),
-            ]
-        })
-        .unwrap_or_default()
+    let state = dirs::state_dir();
+    [
+        legacy(state.clone(), &format!("{VENDOR}/{PROGRAM}/logs")),
+        legacy(state, "eidos/logs"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The marker left in a migrated directory, naming where it came from.
@@ -241,7 +254,12 @@ pub fn migrate_legacy_layout() -> Vec<String> {
         match migrate_tree(&from, &to, how) {
             Ok(0) => {}
             Ok(n) => notes.push(format!(
-                "copied {n} {what} file(s) from {} to {} - the old directory is left as it was",
+                "{} {n} {what} file(s) from {} to {} - the old directory is left as it was",
+                if how == Carry::Link {
+                    "linked"
+                } else {
+                    "copied"
+                },
                 from.display(),
                 to.display()
             )),
@@ -338,7 +356,7 @@ fn carry(from: &Path, to: &Path, root: &Path, how: Carry) -> io::Result<usize> {
             match how {
                 Carry::Copy => {
                     fs::copy(&src, &dst)?;
-                    keep_mtime(&src, fs::OpenOptions::new().write(true).open(&dst));
+                    keep_mtime(&src, fs::File::open(&dst));
                 }
                 Carry::Link => fs::hard_link(&src, &dst)?,
             }
@@ -354,7 +372,8 @@ fn carry(from: &Path, to: &Path, root: &Path, how: Carry) -> io::Result<usize> {
 }
 
 /// Give `dst` the modification time of `src`. Best effort: a date is not worth
-/// failing a migration over.
+/// failing a migration over. A read-only handle is enough, because setting an
+/// explicit time asks for ownership, not write permission.
 fn keep_mtime(src: &Path, dst: io::Result<fs::File>) {
     if let (Ok(time), Ok(dst)) = (fs::metadata(src).and_then(|m| m.modified()), dst) {
         let _ = dst.set_modified(time);
@@ -646,6 +665,21 @@ mod tests {
             legacy_logs_dirs()[0],
             h.join(".local/state/Colony/Eidos/logs")
         );
+
+        // Nor is a relative HOME, which `dirs` takes as given.
+        // SAFETY: as above.
+        unsafe {
+            std::env::set_var("HOME", "relative/home");
+            std::env::remove_var("XDG_DATA_HOME");
+            std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_STATE_HOME");
+        }
+        for dir in [config_dir(), data_dir(), cache_dir(), logs_dir()] {
+            assert!(dir.is_absolute(), "{}", dir.display());
+        }
+        assert!(desktop_entries_dir().is_absolute());
+        assert_eq!(legacy_data_dir(), None);
+        assert!(migrate_legacy_layout().is_empty());
     }
 
     #[test]
