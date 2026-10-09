@@ -70,7 +70,7 @@ fn nexus_client() -> eidos_nexus::Nexus {
     }
 }
 
-/// `eidos nexus key|status|update` - account + update checks.
+/// `eidos nexus status|update` - account + update checks.
 fn cmd_nexus(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("status") => {

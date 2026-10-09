@@ -5,7 +5,7 @@ Eidos knows a game from a small declarative descriptor (modelled on Mod Organize
 
 ## 1. A built-in game (ships with Eidos)
 
-Add a row to `GAMES` in [`crates/eidos-gamedef/src/lib.rs`](../crates/eidos-gamedef/src/lib.rs)
+Add a row to `GAMES` in [`crates/eidos-gamedef/src/lib.rs`](../../crates/eidos-gamedef/src/lib.rs)
 and recompile. This is for the games Eidos supports out of the box: the
 Bethesda/Creation family, plus Stellar Blade as the first Unreal title and the
 worked example of a game declaring its own mod vocabulary.
