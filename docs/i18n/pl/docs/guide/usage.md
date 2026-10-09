@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Używanie Eidos
 
@@ -76,6 +76,10 @@ instancji na innym dysku, gra wciąż z niego uruchomiona), Eidos dalej używa
 starej lokalizacji i próbuje ponownie przy następnym uruchomieniu. Opcja
 uruchamiania Steama, która wciąż wskazuje stary folder instancji, otwiera
 przeniesioną.
+Przeniesienie nie zajmuje dodatkowego miejsca tylko na początku: mod lub pobrany
+plik, który potem usuniesz albo zainstalujesz ponownie, zachowuje przez stary
+folder instancji swoją starą kopię na dysku, więc to miejsce odzyskasz dopiero,
+usuwając `~/.local/share/eidos/<game>/`.
 
 Instancja przenośna nigdy nie jest przenoszona: zostaje tam, gdzie ją
 umieściłeś.

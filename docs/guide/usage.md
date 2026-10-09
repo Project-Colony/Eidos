@@ -70,6 +70,9 @@ are satisfied. If a copy cannot be made (a full or read-only disk, an old
 instance folder on another drive, a game still running from it), Eidos keeps
 using the old location and tries again on the next launch. A Steam launch
 option that still names the old instance folder opens the moved one.
+The move takes no extra space only at first: a mod or download you remove or
+reinstall afterwards keeps its old copy on disk through the old instance folder,
+so deleting `~/.local/share/eidos/<game>/` is what gives that space back.
 
 A portable instance is never moved: it stays wherever you put it.
 

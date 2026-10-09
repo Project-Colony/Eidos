@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Usar Eidos
 
@@ -78,6 +78,10 @@ carpeta de instancia antigua en otra unidad, un juego que aún se ejecuta desde
 ella), Eidos sigue usando la ubicación antigua y lo vuelve a intentar en el
 siguiente lanzamiento. Una opción de lanzamiento de Steam que todavía nombre la
 carpeta antigua de la instancia abre la trasladada.
+El traslado no ocupa espacio extra solo al principio: un mod o una descarga que
+quites o reinstales después conserva su copia antigua en el disco a través de la
+carpeta antigua de la instancia, así que borrar `~/.local/share/eidos/<game>/` es
+lo que recupera ese espacio.
 
 Una instancia portátil nunca se mueve: se queda donde la pusiste.
 

@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Eidos gebruiken
 
@@ -74,6 +74,10 @@ een kopie niet (een volle of alleen-lezen schijf, een oude instantiemap op een
 andere schijf, een spel dat er nog vanuit draait), dan blijft Eidos de oude
 locatie gebruiken en probeert het bij de volgende start opnieuw. Een
 Steam-opstartoptie die nog de oude instantiemap noemt, opent de verplaatste.
+Alleen in het begin neemt de verhuizing geen extra ruimte in: een mod of download
+die je daarna verwijdert of opnieuw installeert, houdt via de oude instantiemap
+zijn oude kopie op de schijf, dus pas het verwijderen van
+`~/.local/share/eidos/<game>/` geeft die ruimte terug.
 
 Een draagbare instantie wordt nooit verplaatst: ze blijft waar jij ze gezet
 hebt.

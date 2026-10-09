@@ -1,4 +1,4 @@
-<!-- eidos-i18n: source=docs/guide/usage.md sha=0ad34d5b5223fe780cb8e2c6bdf8c8fc60cfc18e -->
+<!-- eidos-i18n: source=docs/guide/usage.md sha=5c1396f03f352fe3d3bc10c23662ec659cb9eec2 -->
 
 # Eidos kullanımı
 
@@ -76,6 +76,10 @@ başka bir sürücüdeki eski bir örnek klasörü, hâlâ oradan çalışan bir
 Eidos eski konumu kullanmaya devam eder ve bir sonraki başlatmada yeniden dener.
 Hâlâ eski örnek klasörünü gösteren bir Steam başlatma seçeneği, taşınmış örneği
 açar.
+Taşıma yalnızca başta fazladan yer kaplamaz: sonradan kaldırdığınız ya da
+yeniden kurduğunuz bir mod veya indirme, eski örnek klasörü üzerinden eski
+kopyasını diskte tutar; o yeri geri almak için `~/.local/share/eidos/<game>/`
+klasörünü silmeniz gerekir.
 
 Taşınabilir bir örnek asla taşınmaz: onu koyduğunuz yerde kalır.
 

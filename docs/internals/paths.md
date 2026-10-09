@@ -46,7 +46,8 @@ carries them across:
 Every move follows the same rule (`eidos_paths::migrate_tree`):
 
 1. Build the copy in a staging directory beside the destination
-   (`.<name>.migrating-<pid>`).
+   (`.<name>.migrating-<pid>`). One left by a run that crashed (its pid is no
+   longer running) is removed first.
 2. Write the marker `.migrated-from` into the copy, then rename the copy into
    place. The new directory appears complete, or not at all.
 3. Never remove, rename or write to the old directory. It stays exactly as it
@@ -69,14 +70,25 @@ and before anything reads a setting, and its notes are written to that log.
 ### Global instances
 
 A global instance is tens of gigabytes, so it is hard-linked rather than copied
-(`Carry::Link`): the move is near instant and takes no extra space. Each side
-keeps its own directory entries, so deleting a file on one side never removes it
-from the other. Eidos writes its own files by replacing them, which leaves the
-old side as it was; a file a game edits in place through the merged view
-changes on both sides, since both name the same data.
+(`Carry::Link`): the move is near instant and takes no extra space at first.
+Each side keeps its own directory entries, so deleting a file on one side never
+removes it from the other. Eidos writes its own files by replacing them, which
+leaves the old side as it was; a file a game edits in place through the merged
+view changes on both sides, since both name the same data. The cost comes later:
+every mod or download removed or reinstalled after the move keeps its old copy
+on disk through the old folder, until the user deletes that folder. The log line
+that reports the move says so and names the folder.
 
-`eidos_transfer::migrate_global_instances` adds three things around the move:
+`eidos_transfer::migrate_global_instances` adds four things around the move:
 
+- It moves nothing while another Eidos process runs. Each process resolves an
+  instance once and keeps that answer, so a window that opened an old folder
+  (its move was put off) must not have the move happen under it, from a child
+  it spawns or a link clicked in the browser: the two would then write into two
+  different trees. Every process that finds an instance still to move takes
+  `instances/.move.lock`: exclusively for the move, then shared until it exits.
+  A process that cannot take it exclusively moves nothing, waits only for a
+  move already under way, and the instances move on a later launch.
 - It takes the instance lock on the old folder first. If a game started by an
   older Eidos is still running from it, the instance is left for a later launch
   rather than linked across mid-write. Taking the lock creates the old
@@ -87,7 +99,8 @@ changes on both sides, since both name the same data.
   clean it leaves a second marker, `.migrated-repointed`. Until then (the pass
   hit a file it could not rewrite, or the launch was killed between the move and
   the pass), every launch runs it again on the moved instance. It only rewrites
-  values that still name the old folder, so a second run changes nothing else.
+  values that still name the old folder, so a second run changes nothing else,
+  and a file that never names the old folder is skipped whatever its encoding.
 - If the new folder already exists without a marker, it does not merge two
   instances: it keeps using the old one and says so in the log.
 
