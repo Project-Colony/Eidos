@@ -17,9 +17,9 @@ pub(crate) fn satisfied_prereqs_in(
 }
 
 /// `eidos prereqs <game-id> [--install]`: show, or install, the runtime
-/// prerequisites the instance's tools declare. Tier-1 (bundled DirectX DLLs) copy
-/// with no network; Tier-2 (vcrun/dotnet) DOWNLOAD from Microsoft via winetricks and
-/// so run only on the explicit `--install`.
+/// prerequisites the instance's tools declare, plus Microsoft's d3dcompiler_47
+/// when an enabled mod imports it. Winetricks verbs (DirectX DLLs, vcrun, dotnet)
+/// and runtimes both DOWNLOAD, so they install only on the explicit `--install`.
 pub(crate) fn cmd_prereqs(args: &[String]) {
     let Some(id) = args.first() else {
         eidos_log::info!("usage: eidos prereqs <game-id> [--install]");
@@ -42,21 +42,23 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     for t in &tools {
         verbs.extend(t.prereqs.iter().cloned());
     }
-    let tier1: Vec<String> = verbs
-        .iter()
-        .filter(|v| eidos_gamefeatures::is_tier1_dll(v))
-        .cloned()
-        .collect();
+    // The launch forces d3dcompiler_47 for a mod that imports it; this is where
+    // Microsoft's DLL itself gets installed.
+    let mod_needs_d3dcompiler =
+        eidos_gamefeatures::scan_imports_provisionable(&active_mod_roots(&inst));
+    if mod_needs_d3dcompiler {
+        verbs.insert("d3dcompiler_47".to_string());
+    }
     let tier2: Vec<String> = verbs
         .iter()
         .filter(|v| eidos_gamefeatures::is_tier2_verb(v))
         .cloned()
         .collect();
-    // A verb that is neither a bundled DLL nor a known winetricks verb (a tools.ini
+    // A verb that is neither a known winetricks verb nor a runtime (a tools.ini
     // typo, or one Eidos hasn't catalogued): surface it rather than silently drop it.
-    // Tier 3: a self-contained runtime Eidos fetches itself. Not a bundled DLL
-    // and not a winetricks verb, so it needs its own bucket - and must not fall
-    // into `unknown`, which exists to catch typos.
+    // Tier 3: a self-contained runtime Eidos fetches itself. Not a winetricks
+    // verb, so it needs its own bucket - and must not fall into `unknown`, which
+    // exists to catch typos.
     let tier3: Vec<String> = verbs
         .iter()
         .filter(|v| eidos_gamefeatures::is_runtime_verb(v))
@@ -65,9 +67,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     let unknown: Vec<String> = verbs
         .iter()
         .filter(|v| {
-            !eidos_gamefeatures::is_tier1_dll(v)
-                && !eidos_gamefeatures::is_tier2_verb(v)
-                && !eidos_gamefeatures::is_runtime_verb(v)
+            !eidos_gamefeatures::is_tier2_verb(v) && !eidos_gamefeatures::is_runtime_verb(v)
         })
         .cloned()
         .collect();
@@ -94,12 +94,9 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 println!("  {:<16} {}", t.title, t.prereqs.join(", "));
             }
         }
-        let t1 = if tier1.is_empty() {
-            "(none)".to_string()
-        } else {
-            tier1.join(", ")
-        };
-        println!("\nTier 1 (bundled, applied at launch, no download): {t1}");
+        if mod_needs_d3dcompiler {
+            println!("  {:<16} d3dcompiler_47", "(an enabled mod)");
+        }
         let t2 = if tier2.is_empty() {
             "(none)".to_string()
         } else {
@@ -118,7 +115,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        println!("Tier 2 (winetricks, DOWNLOADS from Microsoft): {t2}");
+        println!("\nWinetricks (DOWNLOADS, into the game's prefix): {t2}");
         if !tier3.is_empty() {
             let t3 = tier3
                 .iter()
@@ -129,7 +126,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            println!("Tier 3 (runtime, DOWNLOADS once, shared by every instance): {t3}");
+            println!("Runtimes (DOWNLOAD once, shared by every instance): {t3}");
         }
         if !unknown.is_empty() {
             println!(
@@ -168,7 +165,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
         eidos_log::warn!("Cannot prepare the instance: {e}");
         exit(1);
     }
-    // Inspect the prefix before changing any bundled DLL or launching winetricks.
+    // Inspect the prefix before launching winetricks.
     if let Some(prefix) = prefix.as_deref() {
         let compat = game
             .is_steam()
@@ -192,39 +189,19 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
             }
         }
     }
-    if tier1.is_empty() && pending2.is_empty() {
-        if failed {
-            exit(1);
-        }
+    if failed {
+        exit(1);
+    }
+    if pending2.is_empty() {
+        println!("Tool prerequisites are ready.");
         return;
     }
     let Some(prefix) = prefix.as_deref() else {
         eidos_log::warn!("No Wine prefix is configured for {id}. Launch the game with its selected runner or configure its actual prefix first.");
         exit(1);
     };
-    let win = prefix.join("drive_c").join("windows");
-    for v in &tier1 {
-        match eidos_gamefeatures::ensure_native_dll(&win, v) {
-            Ok(true) => println!("provisioned {v} (bundled)"),
-            Ok(false) => {}
-            Err(e) => {
-                eidos_log::warn!("could not provision {v}: {e}");
-                failed = true;
-            }
-        }
-    }
-    if pending2.is_empty() {
-        if failed {
-            exit(1);
-        }
-        println!("Tool prerequisites are ready.");
-        return;
-    }
-    if failed {
-        exit(1);
-    }
     if !game.is_steam() {
-        eidos_log::warn!("Bundled DLLs were handled in the selected prefix. Installing Tier-2 prerequisites for an external copy requires its actual Wine runner; use that runner's winetricks integration. Eidos will read its winetricks.log on the next check.");
+        eidos_log::warn!("Installing winetricks prerequisites ({}) for an external copy requires its actual Wine runner; use that runner's winetricks integration. Eidos will read its winetricks.log on the next check.", pending2.join(", "));
         exit(1);
     }
     let Some(compat) = game.compatdata.as_ref() else {
@@ -241,10 +218,7 @@ pub(crate) fn cmd_prereqs(args: &[String]) {
     if !eidos_gamefeatures::cabextract_available() {
         eidos_log::info!("warning: cabextract not on PATH - some winetricks verbs need it (e.g. `pacman -S cabextract`).");
     }
-    println!(
-        "Installing {} via winetricks (downloads from Microsoft).",
-        pending2.join(", ")
-    );
+    println!("Installing {} via winetricks (downloads).", pending2.join(", "));
     // One verb at a time, recording each success, so a later failure does not lose
     // the earlier installs (a single batched winetricks call would).
     let mut done = satisfied;

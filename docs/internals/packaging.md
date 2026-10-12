@@ -18,6 +18,12 @@ custom destination or `--system` for `/usr/local/bin`. A system destination may
 require sudo. Release packaging copies this same tracked installer; there is no
 second generated implementation to drift out of date.
 
+The Arch package and the tarball install the license notices next to the
+binaries: the GPL text, the OMOD and nifly credits, and under `crates/` the
+notices of every Rust crate linked into the binaries, with `INDEX.tsv` naming
+each crate and its declared license. `scripts/third-party-licenses.sh` collects
+them from the fetched crate sources; it builds nothing.
+
 ## The constraint
 
 Kernel FUSE passthrough is **off by default**. The implementation records observed

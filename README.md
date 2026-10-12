@@ -224,7 +224,21 @@ Adding a family is one descriptor row:
 
 ## License
 
-Eidos's original code is GPL-3.0-or-later. Bundled OMOD translations are
-GPL-3.0-only; see their [upstream credits](crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md).
-The NIF helper retains its [component licenses and credits](native/eidos-nif-preview/UPSTREAM.md).
+Eidos's original code is GPL-3.0-or-later; see [LICENSE](LICENSE). These parts
+are GPL-3.0 without the "or later" option:
+
+- the OMOD script translations in `eidos-install`; see their
+  [upstream credits](crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md);
+- the `eidos-nif-preview` helper, built on the vendored nifly library; see its
+  [component licenses and credits](native/eidos-nif-preview/UPSTREAM.md);
+- the `esplugin` and `libloadorder` crates the load-order code links, which
+  declare `GPL-3.0`.
+
+The other Rust crates in the binaries keep their own licenses (MIT, Apache-2.0,
+BSD and similar). Release tarballs carry their notices in `licenses/crates/`,
+with an index of every crate and its license.
+
+Eidos ships no Microsoft binary. The DirectX DLLs some mods and tools need are
+installed into the game's prefix by winetricks, when you ask for them.
+
 Mod management belongs to everyone.

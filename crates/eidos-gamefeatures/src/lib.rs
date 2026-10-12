@@ -26,8 +26,8 @@ mod native_dll;
 pub mod preflight;
 
 pub use native_dll::{
-    community_shaders_in_roots, enb_cs_conflict, enb_in_game_root, ensure_d3dcompiler_47,
-    ensure_native_dll, imported_dlls, is_tier1_dll, scan_imports_provisionable, NativeDllError,
+    community_shaders_in_roots, enb_cs_conflict, enb_in_game_root, imported_dlls,
+    is_native_dll_verb, native_dll_present, scan_imports_provisionable, NativeDllError,
 };
 
 mod prefix_registry;
