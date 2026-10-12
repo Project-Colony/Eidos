@@ -49,6 +49,7 @@ mod modinfo;
 mod nif_preview;
 mod nif_render;
 mod preferences;
+mod startup;
 mod state;
 mod subscription;
 #[cfg(test)]
@@ -74,8 +75,22 @@ use view::*;
 use wizard::*;
 
 fn main() -> iced::Result {
+    // The window, or the CLI this same file carries: see `startup`. Decided
+    // first, so `--version` and the CLI touch nothing the window would.
+    let mut argv = std::env::args();
+    let argv0 = argv.next().unwrap_or_default();
     // Steam passes the Proton command as our arguments via `eidos-gui %command%`.
-    let launch_command: Vec<String> = std::env::args().skip(1).collect();
+    let launch_command = match startup::start_as(&argv0, argv.collect()) {
+        startup::Start::Cli(args) => {
+            eidos::run(args);
+            return Ok(());
+        }
+        startup::Start::Window(args) => args,
+    };
+    if let Err(e) = startup::drop_capabilities() {
+        eprintln!("eidos-gui: {e}");
+        std::process::exit(1);
+    }
     // Onto the ecosystem's layout - `~/.config/Colony/Eidos` - before anything
     // reads a setting, and before the log opens, so the log already lands in
     // the folder it will be read from. Copies rather than moves, runs once, and

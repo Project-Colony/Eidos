@@ -483,10 +483,7 @@ pub(crate) fn passthrough_requested() -> bool {
 /// passthrough and the launch binary cannot deliver it (every rebuild wipes the
 /// file capability). Shows the exact fix command; F5 rechecks after running it.
 pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
-    let cmd = format!(
-        "sudo setcap cap_sys_admin+ep {}",
-        find_eidos_binary().display()
-    );
+    let cmd = setcap_hint();
     let row = Row::new()
         .spacing(10)
         .align_y(iced::Alignment::Center)

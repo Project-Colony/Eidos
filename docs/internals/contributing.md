@@ -13,7 +13,7 @@ cargo build -p eidos-fuse  # the union daemon on its own
 
 The complete application also needs CMake 3.20+, a C++17 compiler and Python 3
 for the native helper's tests. `just build` builds the helper beside the Rust
-binaries. Without `just`, follow the [native build instructions](../../native/eidos-nif-preview/README.md)
+binaries. Without `just`, follow the [native build instructions](../../crates/eidos-nif-preview/README.md)
 and add the helper's absolute output directory to `PATH` before GUI tests.
 Those tests require the real helper and do not silently skip model parsing.
 
@@ -55,8 +55,8 @@ crates/eidos-nexus         Nexus Mods: OAuth, v1 API, nxm:// downloads, update c
 crates/eidos-collections   Nexus collections: install one the way its author built it
 crates/eidos-transfer      eidos pack / unpack: one instance in one .eidos file
 crates/eidos-addons        user extensions, read as out-of-process TOML manifests
-native/eidos-nif-preview   the C++ NIF preview helper (CMake, vendored nifly)
-packaging/                 the tarball installer, its tests and the Arch PKGBUILD
+crates/eidos-nif-preview   the C++ NIF preview helper (CMake, vendored nifly)
+packaging/                 the bundle installer, its tests and the Arch PKGBUILD
 docs/                      user guide, internals and project pages (index: docs/README.md)
 scripts/                   CI helpers, and poc-overlay.sh: runnable proof that the
                            "virtualize under Wine" thesis holds with native
@@ -70,17 +70,20 @@ request.
 
 ## Releasing
 
-Two workflows, and they do different jobs.
+One workflow, `release.yml`, runs on every push to `main`.
 
-**release-please** watches `main` and keeps a pull request open with the next
-version and a changelog, both derived from the conventional-commit messages since
-the last release. It decides *what* the release is; it builds nothing.
+Its **release-please** job keeps a pull request open with the next version and
+a changelog, both derived from the conventional-commit messages since the last
+release. It decides *what* the release is; it builds nothing.
 
-**release.yml** triggers on a `vX.Y.Z` tag and does the building, testing and
-publishing.
+Merging that pull request makes release-please tag the commit and create the
+release, held as a draft. The same run then builds the tag, tests it, checks
+`colony.json` and hands the two assets to the organisation's shared
+sign-and-publish workflow, which signs them and publishes the release. What runs
+where: [packaging.md](packaging.md#how-a-release-is-built).
 
 So a release is: land conventional commits on `main`, then merge the release PR
-when you want one. Merging creates the tag, the tag builds the artifacts.
+when you want one.
 
 The prefixes that move the version: `feat:` bumps the minor, `fix:` and `perf:`
 the patch, and a `!` or a `BREAKING CHANGE:` footer bumps the major. `docs:`,
@@ -90,7 +93,7 @@ The workspace is a virtual manifest: one `[workspace.package]` version that all
 22 crates inherit. So release-please runs with `release-type: simple` and bumps
 that one line through `extra-files` (`Cargo.toml`, the line marked
 `x-release-please-version`); no Cargo plugin is involved. The workflow then runs
-`cargo update --workspace` on the release branch, so the release pull request
+`cargo update --workspace` on the open release pull request's branch, so it
 carries the matching `Cargo.lock` bump that `--locked` builds need.
 `.release-please-manifest.json` records where the version currently stands, and
 `CHANGELOG.md` is written by release-please from the commit messages. Nobody

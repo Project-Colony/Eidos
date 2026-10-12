@@ -1,4 +1,5 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Project-Colony/Project-Colony-Resources/main/generated/colony.schema.json",
   "name": "Eidos",
-  "category": "System"
+  "category": "system"
 }

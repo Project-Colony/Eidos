@@ -33,7 +33,7 @@ build: build-nif
 
 # Build the bundled, bounded static-model parser and keep it beside the GUI.
 build-nif:
-    cmake -S native/eidos-nif-preview -B "{{ target_dir }}/nif-preview" -DCMAKE_BUILD_TYPE=Release
+    cmake -S crates/eidos-nif-preview -B "{{ target_dir }}/nif-preview" -DCMAKE_BUILD_TYPE=Release
     cmake --build "{{ target_dir }}/nif-preview" --parallel 2
     mkdir -p "{{ out_dir }}"
     cp "{{ target_dir }}/nif-preview/eidos-nif-preview" "{{ out_dir }}/"

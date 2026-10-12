@@ -7,6 +7,9 @@ repository.workspace = true
 edition.workspace = true
 
 [dependencies]
+# The CLI, linked in: one file then serves as both programs (see startup.rs),
+# which is what a Colony install is.
+eidos = { path = "../eidos" }
 eidos-paths = { path = "../eidos-paths" }
 # utimensat(2): a transferred save has to keep its own timestamp, and std has
 # no portable setter for one.

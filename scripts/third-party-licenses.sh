@@ -3,7 +3,7 @@
 # into OUT_DIR: one folder per crate holding the LICENSE / COPYING / NOTICE
 # files its package carries, plus INDEX.tsv with each crate's declared SPDX
 # expression. MIT, BSD and Apache-2.0 all require these notices to travel with
-# a binary, and the release tarball and the Arch package both ship one.
+# a binary, and the release bundle and the Arch package both ship one.
 #
 # Usage: scripts/third-party-licenses.sh OUT_DIR [CARGO_FLAG...]
 # Extra flags (for example --frozen) go to cargo; --locked is the default.

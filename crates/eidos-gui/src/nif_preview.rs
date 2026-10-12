@@ -100,7 +100,7 @@ fn parse_with_helper(
 }
 
 pub(crate) fn from_bytes(path: &Path, bytes: &[u8], cancel: &AtomicBool) -> Preview {
-    let scene = helper().ok_or_else(|| "NIF preview helper is unavailable. Install the complete Eidos package or build the native helper.".to_string())
+    let scene = helper().ok_or_else(|| "NIF preview needs eidos-nif-preview beside Eidos or on PATH. The single eidos-linux file does not carry it: install eidos-linux-bundle.tar.gz, or build the native helper.".to_string())
         .and_then(|helper| parse_with_helper(bytes, &helper, cancel));
     match scene {
         Ok(scene) => {
@@ -424,13 +424,13 @@ pub(crate) mod tests {
     #[test]
     fn real_nif_helper_parses_both_native_fixtures_and_rejects_invalid_input() {
         let helper = helper().expect(
-            "Build native/eidos-nif-preview and put its output directory on PATH before GUI tests",
+            "Build crates/eidos-nif-preview and put its output directory on PATH before GUI tests",
         );
         let cancel = AtomicBool::new(false);
         for bytes in [
-            include_bytes!("../../../native/eidos-nif-preview/tests/fixtures/le-valid.nif")
+            include_bytes!("../../../crates/eidos-nif-preview/tests/fixtures/le-valid.nif")
                 .as_slice(),
-            include_bytes!("../../../native/eidos-nif-preview/tests/fixtures/sse-valid.nif")
+            include_bytes!("../../../crates/eidos-nif-preview/tests/fixtures/sse-valid.nif")
                 .as_slice(),
         ] {
             let scene = parse_with_helper(bytes, &helper, &cancel).unwrap();

@@ -46,6 +46,13 @@ The capability lives on the file, so replacing the file drops it. A rebuild or a
 reinstall silently returns you to the rootless path.
 `getcap "$(command -v eidos)"` is the check.
 
+**Never set the capability on `eidos-linux`**, the single-file release asset
+Colony installs. That file is the window as well as the CLI, so a capability on
+it would cover a GUI toolkit, image decoders and archive previews that have no
+use for one. The window clears every capability it holds before it opens, but
+the opt-in belongs on the separate `eidos` binary of the release bundle or a
+source build, and nowhere else.
+
 ## Supported versions
 
 Eidos follows semantic versioning and is past 1.0. Only the most recent release
@@ -134,14 +141,19 @@ The interesting attack surface, roughly in order of severity:
 
 ## Build and release integrity
 
-- Releases are produced by the tagged workflow in `.github/workflows/release.yml`
-  and nowhere else. Each release publishes a SHA-256 checksum next to the
-  tarball; verify with `sha256sum -c`.
-- Every action in the workflows is pinned to a full commit SHA, and each
-  workflow's own token is read-only. The write token is used only by the
-  release-please job, the one place a third-party action
-  (`googleapis/release-please-action`) runs, and by the job that creates the
-  release.
+- Releases are produced by `.github/workflows/release.yml` and nowhere else:
+  merging the release pull request tags the commit, and the same run builds the
+  tag, tests it and hands the files to the organisation's shared signing
+  workflow. Every asset is published with an ed25519 `.sig`, a `.meta` naming
+  its version, file name and sha256, and a `.meta.sig`. How to check them is in
+  the README's [Code signing policy](README.md#code-signing-policy).
+- The signing key is an organisation secret that only the shared workflow's
+  publishing job receives. That job checks out nothing and builds nothing, so
+  no code from this repository or its dependencies ever runs next to the key.
+- Every action in the workflows is pinned to a full commit SHA, and so is the
+  shared signing workflow. Each job's token is read-only unless it publishes:
+  the release-please job, the one place a third-party action
+  (`googleapis/release-please-action`) runs, and the shared publishing job.
 - The Rust toolchain version is pinned in the workflows, so a release is built by
   a known compiler rather than by whatever was current that day.
 - There is no Flatpak or AppImage build. Both formats strip or ignore the file
