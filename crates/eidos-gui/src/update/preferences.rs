@@ -25,7 +25,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 app.toast = Some(colony_ui::i18n::t("theme_applied"));
             }
             if let Err(e) = app.ui_prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::DismissToast => app.toast = None,
@@ -33,7 +33,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.ui_prefs.language = language.to_string();
             crate::i18n::apply(language);
             if let Err(e) = app.ui_prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::NexusSignInStart => {
@@ -50,7 +50,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             app.nexus_signing_in = true;
             app.nexus_error = None;
-            app.status = Some("Opening your browser to sign in to Nexus...".to_string());
+            app.status = Some(t("status_nexus_opening_browser").to_string());
             // The whole dance on a worker: browser hand-off, loopback listener,
             // code exchange. Blocking calls inside the async closure, like the
             // other network work here.
@@ -60,14 +60,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.nexus_signing_in = false;
             match result {
                 Ok(account) => {
-                    app.status = Some(format!(
-                        "Signed in to Nexus as {} ({}).",
-                        account.name,
-                        if account.is_premium {
-                            "Premium"
-                        } else {
-                            "free"
-                        }
+                    app.status = Some(tf(
+                        "status_nexus_signed_in",
+                        &[
+                            ("name", &account.name),
+                            (
+                                "tier",
+                                &if account.is_premium {
+                                    t("settings_tier_premium")
+                                } else {
+                                    t("settings_tier_free")
+                                },
+                            ),
+                        ],
                     ));
                     app.nexus_account = Some(account);
                 }
@@ -77,14 +82,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::NexusSignOut => match eidos_instance::settings::clear_nexus_tokens() {
             Ok(()) => {
                 app.nexus_account = None;
-                app.status = Some("Signed out of Nexus.".to_string());
+                app.status = Some(t("status_nexus_signed_out").to_string());
             }
-            Err(e) => app.nexus_error = Some(format!("could not sign out: {e}")),
+            Err(e) => app.nexus_error = Some(tf("status_nexus_sign_out_failed", &[("error", &e)])),
         },
         Message::DragScrollSpeedChanged(v) => {
             app.prefs.drag_scroll_speed = v.clamp(0.25, 4.0);
             if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::SettingsToggleSection(key) => {
@@ -95,13 +100,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::ToggleRememberWindow(on) => {
             app.prefs.remember_window = on;
             if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::ToggleOffline(on) => {
             app.prefs.offline = on;
             if let Err(e) = app.prefs.save() {
-                app.error = Some(format!("Could not save settings: {e}"));
+                app.error = Some(tf("status_settings_save_failed", &[("error", &e)]));
             }
             // The status bar's account line is now wrong either way: offline
             // means Eidos will not check, and coming back online means it can.
@@ -120,19 +125,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .collect();
             app.servers_edit = t;
             if let Err(e) = app.prefs.save() {
-                app.error = Some(format!("Could not save settings: {e}"));
+                app.error = Some(tf("status_settings_save_failed", &[("error", &e)]));
             }
         }
         Message::DefaultGameChanged(g) => {
             app.prefs.default_game = g;
             if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::ToggleLockGui(v) => {
             app.prefs.lock_gui = v;
             if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
+                app.status = Some(tf("status_prefs_save_failed", &[("error", &e)]));
             }
         }
         Message::ToolsDirChanged(t) => {
@@ -144,7 +149,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.prefs.tools_dir = Some(dir).filter(|d| !d.is_empty());
             app.tools_dir_edit = t;
             if let Err(e) = app.prefs.save() {
-                app.error = Some(format!("Could not save settings: {e}"));
+                app.error = Some(tf("status_settings_save_failed", &[("error", &e)]));
             }
             // The list is built from this, so it is rebuilt as soon as the box
             // names a folder (or nothing), not on every half-typed path.

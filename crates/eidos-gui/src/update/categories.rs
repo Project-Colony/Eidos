@@ -12,7 +12,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::ShowCategoriesDialog(row) => {
             app.menu_mod = None;
             let Some(inst) = app.created.clone() else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             // The right-clicked row, or the whole selection when it is part of
@@ -31,7 +31,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if targets.is_empty() {
                 app.status =
-                    Some("Separators and the game's own content have no categories.".to_string());
+                    Some(t("status_no_categories_here").to_string());
                 return Task::none();
             }
             let names: Vec<String> = targets
@@ -106,12 +106,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(d) = &mut app.categories_dialog {
                 let name = d.new_name.trim().to_string();
                 if name.is_empty() {
-                    app.status = Some("Give the category a name first.".to_string());
+                    app.status = Some(t("status_category_needs_name").to_string());
                     return Task::none();
                 }
                 let id = d.catalog.add(&name, d.new_parent);
                 d.new_name.clear();
-                app.status = Some(format!("Added category '{name}' (#{id}). Apply to save."));
+                app.status = Some(tf("status_category_added", &[("name", &name), ("id", &id)]));
             }
         }
         Message::RenameCategoryStart(id) => {
@@ -153,15 +153,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::FetchNexusCategories => {
             if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
-                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
-                        .to_string(),
+                    t("status_connect_nexus_first").to_string(),
                 );
                 return Task::none();
             }
             let Some(domain) = selected_game(app).map(|g| g.def.nexus_game.to_string()) else {
                 return Task::none();
             };
-            app.status = Some("Fetching the category list from Nexus...".to_string());
+            app.status = Some(t("status_fetching_categories").to_string());
             return Task::perform(
                 async move {
                     let nexus = eidos_nexus::Nexus::connect()?;
@@ -177,7 +176,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let remote = match result {
                 Ok(r) => r,
                 Err(e) => {
-                    app.status = Some(format!("Could not fetch categories: {e}"));
+                    app.status = Some(tf("status_fetch_categories_failed", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -228,9 +227,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     d.catalog.set_parent(local, local_parent);
                 }
             }
-            app.status = Some(format!(
-                "Nexus: {} categories, {created} new, {mapped} mapping(s) learned. Apply to save.",
-                remote.len()
+            app.status = Some(tf(
+                "status_categories_fetched",
+                &[("n", &remote.len()), ("created", &created), ("mapped", &mapped)],
             ));
         }
         Message::AssignCategoriesFromNexus => {
@@ -242,7 +241,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if d.catalog.all().iter().all(|c| c.nexus.is_empty()) {
                 app.status =
-                    Some("No Nexus mappings yet - use 'Fetch from Nexus' first.".to_string());
+                    Some(t("status_no_nexus_mappings").to_string());
                 return Task::none();
             }
             // Only the targeted mods, so this stays the dialog's own action and
@@ -265,19 +264,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     d.chosen = vec![first];
                     let label = d.catalog.name_for_id(first).unwrap_or("?").to_string();
                     app.status = Some(if all_same {
-                        format!("Nexus says '{label}'. Apply to set it.")
+                        tf("status_nexus_category_one", &[("name", &label)])
                     } else {
-                        format!(
-                            "The selection spans several Nexus categories; '{label}' is the first. \
-                             Apply sets it on all of them."
-                        )
+                        tf("status_nexus_category_many", &[("name", &label)])
                     });
                 }
                 None => {
                     app.status = Some(
-                        "None of these mods records a Nexus category (no download .meta, or an \
-                         unmapped id)."
-                            .to_string(),
+                        t("status_no_nexus_category").to_string(),
                     );
                 }
             }
@@ -297,7 +291,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // meant a failed write - a read-only instance, a full disk - threw
             // away every pending edit with nothing to retry from.
             if let Err(e) = d.catalog.save(inst.categories_root()) {
-                app.status = Some(format!("Could not save the category list: {e}"));
+                app.status = Some(tf("status_category_list_save_failed", &[("error", &e)]));
                 return Task::none();
             }
             let Some(d) = app.categories_dialog.take() else {
@@ -326,17 +320,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             forget_hidden_rows(app);
             app.status = Some(if failed.is_empty() {
                 match (primary, written) {
-                    (None, n) => format!("Cleared the category on {n} mod(s)."),
+                    (None, n) => tf("status_category_cleared", &[("n", &n)]),
                     (Some(p), n) => {
                         let label = d.catalog.name_for_id(p).unwrap_or("?");
-                        format!("Set category '{label}' on {n} mod(s).")
+                        tf("status_category_set", &[("name", &label), ("n", &n)])
                     }
                 }
             } else {
-                format!(
-                    "{written} mod(s) updated, {} failed: {}",
-                    failed.len(),
-                    failed.join("; ")
+                tf(
+                    "status_categories_partial",
+                    &[("n", &written), ("failed", &failed.len()), ("errors", &failed.join("; "))],
                 )
             });
         }

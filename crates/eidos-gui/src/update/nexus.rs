@@ -19,13 +19,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(game) = selected_game(app) else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             let (path, domain, short) =
                 (row.path.clone(), game.def.nexus_game, game.def.short_name);
             app.identifying_download = Some(name.clone());
-            app.status = Some(format!("Identifying {name} by checksum..."));
+            app.status = Some(tf("status_identifying", &[("name", &name)]));
             // Hashing hundreds of megabytes and a round trip to Nexus: off the
             // draw thread, or the window freezes for the duration.
             // Hashing hundreds of megabytes and a blocking HTTP round trip do
@@ -37,12 +37,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             std::thread::spawn(move || {
                 let outcome = (|| {
                     let md5 = eidos_nexus::md5_file(&path)
-                        .map_err(|e| format!("could not read the archive: {e}"))?;
+                        .map_err(|e| tf("status_identify_read_failed", &[("error", &e)]))?;
                     let nexus = eidos_nexus::Nexus::connect()?;
                     let found = nexus.md5_search(domain, &md5)?;
                     let label = found.remote.name.clone();
                     eidos_nexus::write_recovered_meta(&path, short, &found).map_err(|e| {
-                        format!("identified it, but could not write the sidecar: {e}")
+                        tf("status_identify_sidecar_failed", &[("error", &e)])
                     })?;
                     Ok(label)
                 })();
@@ -51,7 +51,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             return Task::perform(
                 async move {
                     rx.recv()
-                        .unwrap_or_else(|_| Err("the lookup stopped unexpectedly".into()))
+                        .unwrap_or_else(|_| Err(t("status_lookup_stopped").into()))
                 },
                 Message::IdentifiedDownload,
             );
@@ -60,11 +60,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.identifying_download = None;
             match result {
                 Ok(name) => {
-                    app.status = Some(format!("Identified as '{name}'."));
+                    app.status = Some(tf("status_identified", &[("name", &name)]));
                     // The row reads its state from the sidecar that now exists.
                     load_downloads(app);
                 }
-                Err(e) => app.status = Some(format!("Could not identify it: {e}")),
+                Err(e) => app.status = Some(tf("status_identify_failed", &[("error", &e)])),
             }
         }
         // ---- Endorse ---------------------------------------------------------
@@ -77,8 +77,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // and must not run on the UI thread.
             if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
-                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
-                        .to_string(),
+                    t("status_connect_nexus_first").to_string(),
                 );
                 return Task::none();
             }
@@ -98,7 +97,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     )
                 });
             let (Some(domain), Some((Some(mod_id), version, endorsed))) = (domain, info) else {
-                app.status = Some("This mod has no Nexus id to endorse.".to_string());
+                app.status = Some(t("status_no_nexus_id_endorse").to_string());
                 return Task::none();
             };
             // Toggle: endorse when not yet endorsed, abstain when already endorsed.
@@ -108,9 +107,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let endorse = !endorsed;
             app.endorsing = Some(i);
             app.status = Some(if endorse {
-                "Endorsing on Nexus...".to_string()
+                t("status_endorsing").to_string()
             } else {
-                "Abstaining on Nexus...".to_string()
+                t("status_abstaining").to_string()
             });
             return Task::perform(
                 async move {
@@ -135,9 +134,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         let _lock = match inst.try_lock("saving a Nexus endorsement") {
                             Ok(lock) => lock,
                             Err(e) => {
-                                app.status = Some(format!(
-                                    "Endorsement saved on Nexus, but local metadata is busy: {e}"
-                                ));
+                                app.status = Some(tf("status_endorse_meta_busy", &[("error", &e)]));
                                 return Task::none();
                             }
                         };
@@ -145,8 +142,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             eidos_instance::ModMeta::read_checked(&inst.meta_path(&m.name))
                         else {
                             app.status = Some(
-                                "Endorsement saved on Nexus, but local metadata could not be read."
-                                    .into(),
+                                t("status_endorse_meta_unreadable").into(),
                             );
                             return Task::none();
                         };
@@ -155,22 +151,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         }
                         meta.set("endorsed", if now_endorsed { "1" } else { "0" });
                         if let Err(e) = meta.write(&inst.meta_path(&m.name)) {
-                            app.status = Some(format!("Endorsement saved on Nexus, but local metadata could not be saved: {e}"));
+                            app.status = Some(tf("status_endorse_meta_save_failed", &[("error", &e)]));
                             return Task::none();
                         }
-                        app.status = Some(format!(
-                            "{} '{}' on Nexus.",
-                            if now_endorsed {
-                                "Endorsed"
-                            } else {
-                                "Abstained from"
-                            },
-                            m.display_name()
+                        app.status = Some(tf(
+                            if now_endorsed { "status_endorsed" } else { "status_abstained" },
+                            &[("name", &m.display_name())],
                         ));
                     }
                     recompute_counts(app);
                 }
-                Err(e) => app.status = Some(format!("Endorse failed: {e}")),
+                Err(e) => app.status = Some(tf("status_endorse_failed", &[("error", &e)])),
             }
         }
         // ---- Mod update check ------------------------------------------------
@@ -180,8 +171,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             if !eidos_nexus::Nexus::have_credentials() {
                 app.status = Some(
-                    "Connect a Nexus account first (Settings, or `eidos nexus key <KEY>`)."
-                        .to_string(),
+                    t("status_connect_nexus_first").to_string(),
                 );
                 return Task::none();
             }
@@ -189,11 +179,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             let Some(inst) = app.created.clone() else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             app.update_in_progress = true;
-            app.status = Some("Checking Nexus for mod updates...".to_string());
+            app.status = Some(t("status_checking_nexus_updates").to_string());
             return Task::perform(
                 async move {
                     let nexus = eidos_nexus::Nexus::connect()?;
@@ -218,42 +208,41 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // out how much of the hour is left.
                     app.nexus_hourly_left = r.hourly_remaining;
                     app.nexus_daily_left = r.daily_remaining;
-                    let mut msg = format!(
-                        "Update check: {} mods considered, {} update(s) found.",
-                        r.checked, r.updates_found
+                    let mut msg = tf(
+                        "status_update_check",
+                        &[("checked", &r.checked), ("found", &r.updates_found)],
                     );
                     if !r.unavailable.is_empty() {
                         // Said out loud rather than left to a glyph: an
                         // unavailable mod never shows an update, so nothing else
                         // in this check would ever mention it.
-                        msg.push_str(&format!(
-                            " {} mod(s) are no longer on Nexus: {}.",
-                            r.unavailable.len(),
-                            r.unavailable
-                                .iter()
-                                .take(3)
-                                .cloned()
-                                .collect::<Vec<_>>()
-                                .join(", ")
+                        let names = r
+                            .unavailable
+                            .iter()
+                            .take(3)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        msg.push(' ');
+                        msg.push_str(&tf(
+                            "status_update_gone",
+                            &[("n", &r.unavailable.len()), ("names", &names)],
                         ));
                     }
                     if !r.failures.is_empty() {
                         for (name, error) in &r.failures {
                             eidos_log::warn!("Update not checked for {name}: {error}");
                         }
-                        msg.push_str(&format!(
-                            " {} mod(s) could not be checked; see the log for details.",
-                            r.failures.len()
-                        ));
+                        msg.push(' ');
+                        msg.push_str(&tf("status_update_failures", &[("n", &r.failures.len())]));
                     }
                     if r.rate_limited {
-                        msg.push_str(
-                            " Hourly Nexus limit reached - some mods were left unchecked.",
-                        );
+                        msg.push(' ');
+                        msg.push_str(t("status_update_rate_limited"));
                     }
                     app.status = Some(msg);
                 }
-                Err(e) => app.status = Some(format!("Update check failed: {e}")),
+                Err(e) => app.status = Some(tf("status_update_check_failed", &[("error", &e)])),
             }
         }
         // ---- Nexus collections ------------------------------------------------
@@ -297,9 +286,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Ok(eidos_nexus::NxmLink::Collection(c)) => c,
                 Ok(eidos_nexus::NxmLink::Mod(_)) => {
                     c.error = Some(
-                        "That is a link to a single mod, not a collection. Use the Install button \
-                         for one mod."
-                            .to_string(),
+                        t("collection_single_mod_link").to_string(),
                     );
                     return Task::none();
                 }
@@ -319,22 +306,21 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Some((domain, _)) if domain.eq_ignore_ascii_case(&parsed.game) => {}
                 Some((_, name)) => {
                     let c = app.collection.as_mut().expect("checked above");
-                    c.error = Some(format!(
-                        "That collection is for '{}', but the open instance is {name}. Open a {} \
-                         instance first - a collection can only be compared against its own game.",
-                        parsed.game, name
+                    c.error = Some(tf(
+                        "collection_wrong_game",
+                        &[("game", &parsed.game), ("open", &name)],
                     ));
                     return Task::none();
                 }
                 None => {
                     let c = app.collection.as_mut().expect("checked above");
-                    c.error = Some("Open a game instance first.".to_string());
+                    c.error = Some(t("status_open_instance_first").to_string());
                     return Task::none();
                 }
             }
             let c = app.collection.as_mut().expect("checked above");
             if !eidos_nexus::Nexus::have_credentials() {
-                c.error = Some("Connect a Nexus account first (Settings).".to_string());
+                c.error = Some(t("status_connect_nexus_first_short").to_string());
                 return Task::none();
             }
             c.loading = true;
@@ -411,7 +397,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // one game it can send a collection's downloads somewhere other than
             // the window that asked for them.
             let Some(inst) = app.created.as_ref().map(|i| i.root.clone()) else {
-                app.status = Some("Open an instance first.".to_string());
+                app.status = Some(t("status_open_an_instance_first").to_string());
                 return Task::none();
             };
             let (batch, left) = next_fetch_batch(rev, &c.states, &c.asked, FETCH_BATCH);
@@ -421,9 +407,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // member missing AND already-asked, so without saying this the
                 // pane looks stuck.
                 app.status = Some(
-                    "Nothing left to ask for - the rest were already started. Look up again to \
-                     retry any that did not land."
-                        .to_string(),
+                    t("collection_nothing_left").to_string(),
                 );
                 return Task::none();
             }
@@ -452,7 +436,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         }
                     }
                     Err(e) => {
-                        app.status = Some(format!("Could not start the downloads: {e}"));
+                        app.status = Some(tf("collection_downloads_failed", &[("error", &e)]));
                         if let Some(c) = app.collection.as_mut() {
                             c.confirm_fetch = false;
                         }
@@ -464,21 +448,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 c.confirm_fetch = false;
             }
             app.status = Some(if left > 0 {
-                format!(
-                    "Started {started}, {left} still to go. Click again for the next batch. A \
-                     free Nexus account cannot mint links without the site's own button - if \
-                     they do not start, use Open on each row."
-                )
+                tf("collection_started_batch", &[("n", &started), ("left", &left)])
             } else {
-                format!(
-                    "Started {started} download(s). A free Nexus account cannot mint links \
-                     without the site's own button - if they do not start, use Open on each row."
-                )
+                tf("collection_started_all", &[("n", &started)])
             });
         }
         Message::CollectionInstall => {
             if app.transfer_job.is_some() {
-                app.status = Some("Something is already running on this instance.".into());
+                app.status = Some(t("status_instance_busy").into());
                 return Task::none();
             }
             let (Some(inst), Some(game), Some(target)) = (
@@ -486,7 +463,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 selected_game(app).cloned(),
                 collection_target(app),
             ) else {
-                app.status = Some("Open a game instance first.".into());
+                app.status = Some(t("status_open_instance_first").into());
                 return Task::none();
             };
             let Some(c) = app.collection.as_mut() else {

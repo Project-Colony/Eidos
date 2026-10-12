@@ -57,7 +57,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .is_some_and(|m| m.is_unmanaged())
             {
                 app.status =
-                    Some("The game's own content has no Eidos metadata to write.".to_string());
+                    Some(t("status_game_content_no_meta").to_string());
                 return Task::none();
             }
             let typed = app.url_edit.trim().to_string();
@@ -68,7 +68,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let is_web_link = typed.starts_with("http://") || typed.starts_with("https://");
             if !typed.is_empty() && !is_web_link {
                 app.status =
-                    Some("A mod page has to be an http:// or https:// address.".to_string());
+                    Some(t("status_page_must_be_http").to_string());
                 return Task::none();
             }
             let result = match (app.info_mod, app.created.as_ref()) {
@@ -82,9 +82,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if let Some((name, r)) = result {
                 app.status = Some(match r {
-                    Ok(()) if typed.is_empty() => format!("Cleared the page link for '{name}'."),
-                    Ok(()) => format!("Saved the page link for '{name}'."),
-                    Err(e) => format!("Could not save the link: {e}"),
+                    Ok(()) if typed.is_empty() => tf("status_page_cleared", &[("name", &name)]),
+                    Ok(()) => tf("status_page_saved", &[("name", &name)]),
+                    Err(e) => tf("status_page_save_failed", &[("error", &e)]),
                 });
             }
         }
@@ -95,7 +95,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .is_some_and(|m| m.is_unmanaged())
             {
                 app.status =
-                    Some("The game's own content has no Eidos metadata to write.".to_string());
+                    Some(t("status_game_content_no_meta").to_string());
                 return Task::none();
             }
             let result = match (app.info_mod, app.created.as_ref()) {
@@ -114,8 +114,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 invalidate_meta(app, &name);
                 refresh_meta_cache(app);
                 app.status = Some(match r {
-                    Ok(()) => format!("Saved notes for '{name}'."),
-                    Err(e) => format!("Could not save notes: {e}"),
+                    Ok(()) => tf("status_notes_saved", &[("name", &name)]),
+                    Err(e) => tf("status_notes_save_failed", &[("error", &e)]),
                 });
             }
         }

@@ -30,10 +30,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.addon_failed.clear();
             app.diag_dirty = true;
             app.status = Some(match app.addon_rejected.len() {
-                0 => format!("Loaded {} extension(s).", app.addons.len()),
-                n => format!(
-                    "Loaded {} extension(s); {n} manifest(s) refused.",
-                    app.addons.len()
+                0 => tf("status_extensions_loaded", &[("n", &app.addons.len())]),
+                n => tf(
+                    "status_extensions_loaded_refused",
+                    &[("n", &app.addons.len()), ("refused", &n)],
                 ),
             });
         }
@@ -42,7 +42,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if let Some(why) = a.unavailable() {
-                app.status = Some(format!("Cannot run '{}': {why}.", a.name));
+                app.status = Some(tf("status_cannot_run", &[("name", &a.name), ("reason", &why)]));
                 return Task::none();
             }
             let ctx = addon_context(app);
@@ -57,10 +57,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .flat_map(|s| ctx.missing(s))
                 .collect();
             if !missing.is_empty() {
-                app.status = Some(format!(
-                    "'{}' needs {} - open a game instance first.",
-                    a.name,
-                    missing.join(", ")
+                app.status = Some(tf(
+                    "status_extension_needs_instance",
+                    &[("name", &a.name), ("needs", &missing.join(", "))],
                 ));
                 return Task::none();
             }
@@ -81,16 +80,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .spawn()
             {
                 Ok(child) => {
-                    app.status = Some(format!("Started '{}' (pid {}).", a.name, child.id()))
+                    app.status = Some(tf("status_started_pid", &[("name", &a.name), ("pid", &child.id())]))
                 }
-                Err(e) => app.status = Some(format!("Could not start '{}': {e}", a.name)),
+                Err(e) => app.status = Some(tf("status_start_failed", &[("name", &a.name), ("error", &e)])),
             }
         }
         Message::OpenAddonsFolder => {
             let dir = eidos_addons::user_addons_dir();
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
-            app.status = Some(format!("Opened {}", dir.display()));
+            app.status = Some(tf("status_opened", &[("path", &dir.display())]));
         }
         // ---- Log pane ---------------------------------------------------------
         Message::ShowLogPane => {
@@ -98,9 +97,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.view_menu_open = false;
             app.file_menu_open = false;
             let Some(newest) = files.first().cloned() else {
-                app.status = Some(format!(
-                    "No session logs yet. They appear in {} once Eidos runs a game or a tool.",
-                    eidos_log::log_dir().display()
+                app.status = Some(tf(
+                    "status_no_session_logs",
+                    &[("path", &eidos_log::log_dir().display())],
                 ));
                 return Task::none();
             };
@@ -150,7 +149,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .map(|(lvl, msg)| format!("{:<5} {msg}", lvl.as_str()))
                 .collect::<Vec<_>>()
                 .join("\n");
-            app.status = Some(format!("Copied {} log line(s).", pane.lines.len()));
+            app.status = Some(tf("status_log_copied", &[("n", &pane.lines.len())]));
             // The level is kept in the copied text: a pasted log with the
             // severities stripped is the half that stops being diagnosable.
             return iced::clipboard::write(text);
@@ -159,7 +158,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let dir = eidos_log::log_dir();
             let _ = std::fs::create_dir_all(&dir);
             let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
-            app.status = Some(format!("Opened {}", dir.display()));
+            app.status = Some(tf("status_opened", &[("path", &dir.display())]));
         }
         // ---- INI editor -------------------------------------------------------
         Message::ShowIniEditor => {
@@ -168,12 +167,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // up over the dialog and swallows the first click aimed at it.
             app.view_menu_open = false;
             let (Some(inst), Some(game)) = (app.created.as_ref(), selected_game(app)) else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             let files: Vec<String> = game.def.ini_files.iter().map(|f| f.to_string()).collect();
             let Some(first) = files.first().cloned() else {
-                app.status = Some(format!("{} has no INI files Eidos manages.", game.def.name));
+                app.status = Some(tf("status_no_managed_inis", &[("game", &game.def.name)]));
                 return Task::none();
             };
             let inst = inst.clone();
@@ -197,10 +196,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Switching away from unsaved edits would lose them silently, and
             // this is a file the game reads - say so and stay put.
             if ed.dirty {
-                app.status = Some(format!(
-                    "Save or revert {} before switching - it has unsaved changes.",
-                    ed.current
-                ));
+                app.status = Some(tf("status_ini_unsaved_switch", &[("file", &ed.current)]));
                 return Task::none();
             }
             let files = ed.files.clone();
@@ -231,11 +227,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let path = inst.active().ini_path(&ed.current);
             if ed.unreadable {
-                app.status = Some(format!(
-                    "{} could not be read, so saving would replace it with an empty file. \
-                     Fix its permissions first.",
-                    ed.current
-                ));
+                app.status = Some(tf("status_ini_unreadable", &[("file", &ed.current)]));
                 return Task::none();
             }
             // Under the lock, and only over the file the buffer was read from.
@@ -247,16 +239,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Not saved: {e}."));
+                    app.status = Some(tf("status_not_saved", &[("error", &e)]));
                     return Task::none();
                 }
             };
             if content_hash(&std::fs::read(&path).ok()) != ed.on_disk {
-                app.status = Some(format!(
-                    "Not saved: {} changed on disk since the editor opened it. \
-                     Copy your edits, then close the editor and open it again.",
-                    ed.current
-                ));
+                app.status = Some(tf("status_ini_changed_on_disk", &[("file", &ed.current)]));
                 return Task::none();
             }
             // No trailing-newline surgery. iced 0.14's `Content::text()`
@@ -272,10 +260,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     ed.on_disk = content_hash(&std::fs::read(&path).ok());
                     app.archive_epoch
                         .set(app.archive_epoch.get().wrapping_add(1));
-                    app.status = Some(format!(
-                        "Saved {} into profile '{}'. It is deployed at the next launch.",
-                        ed.current,
-                        inst.active().name
+                    app.status = Some(tf(
+                        "status_ini_saved",
+                        &[("file", &ed.current), ("profile", &inst.active().name)],
                     ));
                     // Morrowind.ini (and plugins.txt) live in the profile's plugin
                     // state: the cached load order and the hash its next write is
@@ -286,14 +273,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         invalidate_plugins(app);
                     }
                 }
-                Err(e) => app.status = Some(format!("Could not save {}: {e}", ed.current)),
+                Err(e) => app.status = Some(tf("status_ini_save_failed", &[("file", &ed.current), ("error", &e)])),
             }
         }
         Message::IniEditorRevert => {
             if let Some(ed) = &mut app.ini_editor {
                 ed.content = iced::widget::text_editor::Content::with_text(&ed.original);
                 ed.dirty = false;
-                app.status = Some(format!("Reverted {}.", ed.current));
+                app.status = Some(tf("status_ini_reverted", &[("file", &ed.current)]));
             }
         }
         Message::IniEditorOpenExternal => {
@@ -305,21 +292,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let path = inst.active().ini_path(&ed.current);
             if !path.is_file() {
-                app.status = Some(format!(
-                    "{} does not exist yet - save once to create it.",
-                    ed.current
-                ));
+                app.status = Some(tf("status_ini_not_yet", &[("file", &ed.current)]));
                 return Task::none();
             }
             let _ = std::process::Command::new("xdg-open").arg(&path).spawn();
-            app.status = Some(format!("Opened {} externally.", path.display()));
+            app.status = Some(tf("status_opened_externally", &[("path", &path.display())]));
         }
         // ---- Executables dialog ----------------------------------------------
         Message::ShowExecutablesDialog => {
             app.menu_mod = None;
             match open_executables_dialog(app) {
                 Some(state) => app.executables = Some(state),
-                None => app.status = Some("Open a game instance first.".to_string()),
+                None => app.status = Some(t("status_open_instance_first").to_string()),
             }
         }
         Message::CloseExecutablesDialog => app.executables = None,
@@ -334,7 +318,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(state) = &mut app.executables {
                 state.commit_buffers();
                 let tool = Tool {
-                    title: "New Tool".to_string(),
+                    title: t("new_tool_name").to_string(),
                     ..Default::default()
                 };
                 // User tools sit at the front, ahead of the read-only defaults.
@@ -422,8 +406,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Start the picker in the game install dir (where tool exes usually live).
             let start = selected_game(app).map(|g| g.install_path.clone());
             let mut dlg = rfd::AsyncFileDialog::new()
-                .add_filter("Executables", &["exe"])
-                .set_title("Select the tool executable");
+                .add_filter(t("dialog_executables"), &["exe"])
+                .set_title(t("dialog_pick_tool"));
             if let Some(dir) = start {
                 dlg = dlg.set_directory(dir);
             }
@@ -454,7 +438,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 });
                 if bad.is_some() {
                     app.status =
-                        Some("Every tool needs a non-empty, single-line title.".to_string());
+                        Some(t("status_tool_title_required").to_string());
                     return Task::none();
                 }
                 // A tool with no executable is a row that write_tools drops on
@@ -464,7 +448,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .find(|t| t.exe.as_os_str().is_empty())
                     .map(|t| t.title.clone());
                 if let Some(title) = blank {
-                    app.status = Some(format!("'{title}' has no executable - it would not save."));
+                    app.status = Some(tf("status_tool_no_exe", &[("title", &title)]));
                     return Task::none();
                 }
                 let mut user_tools: Vec<Tool> = state.merged[..state.user_len].to_vec();
@@ -489,9 +473,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         Ok(()) => {
                             app.executables = None;
                             load_tools(app); // refresh the run-target picker
-                            app.status = Some("Saved executables.".to_string());
+                            app.status = Some(t("status_tools_saved").to_string());
                         }
-                        Err(e) => app.status = Some(format!("Could not save executables: {e}")),
+                        Err(e) => app.status = Some(tf("status_tools_save_failed", &[("error", &e)])),
                     }
                 }
             }
@@ -543,9 +527,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             match write_desktop_entry(inst, game.def.id, &tool) {
                 Ok(path) => {
-                    app.status = Some(format!("Shortcut written to {}", path.display()));
+                    app.status = Some(tf("status_shortcut_written", &[("path", &path.display())]));
                 }
-                Err(e) => app.error = Some(format!("Could not write the shortcut: {e}")),
+                Err(e) => app.error = Some(tf("status_shortcut_failed", &[("error", &e)])),
             }
         }
         _ => unreachable!("routed by update_inner"),

@@ -59,19 +59,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .read_manifest()
                     .filter(|m| game_id.as_deref().is_some_and(|id| m.game_id != id));
                 if let Some(g) = inside {
-                    app.error = Some(format!(
-                        "'{}' is inside {}'s own folder. Steam owns that tree (an update or \
-                         uninstall can wipe it) and Eidos mounts over the game root, so the \
-                         instance would live inside its own mount target. Put it NEXT to the \
-                         game instead - a sibling folder on the same drive works great.",
-                        inst.root.display(),
-                        g.def.name
+                    app.error = Some(tf(
+                        "wizard_inside_game",
+                        &[("path", &inst.root.display()), ("game", &g.def.name)],
                     ));
                 } else if let Some(m) = foreign {
-                    app.error = Some(format!(
-                        "'{}' already holds a '{}' instance. Pick that game in the wizard, or choose another folder.",
-                        inst.root.display(),
-                        m.game_id
+                    app.error = Some(tf(
+                        "wizard_folder_taken",
+                        &[("path", &inst.root.display()), ("game", &m.game_id)],
                     ));
                 } else {
                     let kind = app.kind;
@@ -86,7 +81,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                                     );
                                 if let Err(e) = saved {
                                     app.error =
-                                        Some(format!("Could not save the instance identity: {e}"));
+                                        Some(tf("wizard_identity_failed", &[("error", &e)]));
                                     return Task::none();
                                 }
                                 // Into the registry BEFORE opening: a portable
@@ -117,16 +112,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         .ensure_manifest(id, InstanceKind::Global)
                         .and_then(|_| k.inst.ensure_profiles())
                     {
-                        app.status = Some(format!("Cannot open this instance: {error}"));
+                        app.status = Some(tf("status_cannot_open_instance", &[("error", &error)]));
                         return Task::none();
                     }
                     app.selected = Some(index);
                     remember_open(&k.inst, id);
                     open_instance(app, k.inst);
                 } else {
-                    app.status = Some(format!(
-                        "'{}' is not reachable right now or its selected installation changed.",
-                        k.inst.root.display()
+                    app.status = Some(tf(
+                        "status_instance_unreachable",
+                        &[("path", &k.inst.root.display())],
                     ));
                 }
             }

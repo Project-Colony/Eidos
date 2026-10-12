@@ -9,13 +9,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         Message::ImportMo2Pick => {
             if app.created.is_none() {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             }
             app.profile_menu = None;
             return Task::perform(
                 rfd::AsyncFileDialog::new()
-                    .set_title("Select the MO2 profile folder (the one holding modlist.txt)")
+                    .set_title(t("dialog_pick_mo2_profile"))
                     .pick_folder(),
                 |h| Message::ImportMo2Picked(h.map(|h| h.path().to_path_buf())),
             );
@@ -29,7 +29,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // session - importing under the game's feet mixed the two states and
             // half-undid the import at the next launch.
             if app.running.is_some() {
-                app.status = Some("Cannot import while the game is running.".to_string());
+                app.status = Some(t("status_import_while_running").to_string());
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {
@@ -38,7 +38,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot import: {e}."));
+                    app.status = Some(tf("status_cannot_import", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -57,19 +57,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     recompute_counts(app);
                     app.selected_mod = None;
                     app.selected_mods.clear();
-                    let mut s = format!("Imported {} mod(s) from MO2.", r.matched);
+                    let mut s = tf("status_mo2_imported", &[("n", &r.matched)]);
                     if r.plugin_files > 0 {
-                        s.push_str(" Load order imported.");
+                        s.push(' ');
+                        s.push_str(t("status_mo2_load_order_imported"));
                     }
                     if !r.missing.is_empty() {
-                        s.push_str(&format!(
-                            " {} mod(s) MO2 listed are not installed here (install them, then import again).",
-                            r.missing.len()
-                        ));
+                        s.push(' ');
+                        s.push_str(&tf("status_mo2_missing", &[("n", &r.missing.len())]));
                     }
                     app.status = Some(s);
                 }
-                Err(e) => app.status = Some(format!("MO2 import failed: {e}")),
+                Err(e) => app.status = Some(tf("status_mo2_import_failed", &[("error", &e)])),
             }
         }
         // ---- Instance manager (MO2's Manage Instances) -----------------------
@@ -103,8 +102,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if !k.portable {
                 app.status = Some(
-                    "A global instance is derived from the game id - there is nothing to forget."
-                        .to_string(),
+                    t("status_global_nothing_to_forget").to_string(),
                 );
                 return Task::none();
             }
@@ -117,12 +115,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // point: an instance holds a mod pool that can run to
                     // hundreds of gigabytes, and no button here is going to
                     // remove that on one confirmation.
-                    app.status = Some(format!(
-                        "No longer listing {}. Nothing on disk was touched.",
-                        k.inst.root.display()
+                    app.status = Some(tf(
+                        "status_instance_forgotten",
+                        &[("path", &k.inst.root.display())],
                     ));
                 }
-                Err(e) => app.status = Some(format!("Could not update the instance list: {e}")),
+                Err(e) => app.status = Some(tf("status_instance_list_failed", &[("error", &e)])),
             }
         }
         Message::InstanceRenameStart(i) => {
@@ -153,14 +151,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let name = typed.trim().to_string();
             if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
-                app.status = Some("That is not a folder name.".to_string());
+                app.status = Some(t("status_not_a_folder_name").to_string());
                 return Task::none();
             }
             if !k.portable {
                 app.status = Some(
-                    "A global instance lives at a path derived from the game id; it has no folder \
-                     to rename."
-                        .to_string(),
+                    t("status_global_no_folder").to_string(),
                 );
                 return Task::none();
             }
@@ -169,7 +165,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // longer exists - including the lock it is holding.
             if app.created.as_ref().is_some_and(|c| c.root == k.inst.root) {
                 app.status = Some(
-                    "That is the instance you have open. Switch to another one first.".to_string(),
+                    t("status_instance_is_open").to_string(),
                 );
                 return Task::none();
             }
@@ -178,7 +174,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // a running game, or a CLI session - all of which hold paths into
             // the folder about to move.
             if let Err(e) = probe_lock(&k.inst) {
-                app.status = Some(format!("That instance is in use: {e}."));
+                app.status = Some(tf("status_instance_in_use", &[("error", &e)]));
                 return Task::none();
             }
             let Some(parent) = k.inst.root.parent() else {
@@ -186,7 +182,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let dest = parent.join(&name);
             if dest.exists() {
-                app.status = Some(format!("{} already exists.", dest.display()));
+                app.status = Some(tf("status_path_exists", &[("path", &dest.display())]));
                 return Task::none();
             }
             match std::fs::rename(&k.inst.root, &dest) {
@@ -204,18 +200,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     match reg.save_to(&app.registry_path) {
                         Ok(()) => {
                             app.known = known_instances(&app.games);
-                            app.status = Some(format!("Renamed to {}.", dest.display()));
+                            app.status = Some(tf("status_renamed_plain", &[("name", &dest.display())]));
                         }
                         Err(e) => {
-                            app.status = Some(format!(
-                                "Renamed the folder to {}, but the instance list could not be \
-                                 updated: {e}. Open it from that path to re-register it.",
-                                dest.display()
+                            app.status = Some(tf(
+                                "status_instance_renamed_list_failed",
+                                &[("path", &dest.display()), ("error", &e)],
                             ));
                         }
                     }
                 }
-                Err(e) => app.status = Some(format!("Could not rename: {e}")),
+                Err(e) => app.status = Some(tf("status_rename_failed", &[("error", &e)])),
             }
         }
         // ---- move an instance to another machine (eidos pack / eidos unpack) ----
@@ -223,11 +218,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.file_menu_open = false;
             app.view_menu_open = false;
             let Some(inst) = app.created.clone() else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             if app.transfer_job.is_some() {
-                app.status = Some("Something is already being packed or unpacked.".to_string());
+                app.status = Some(t("status_transfer_busy").to_string());
                 return Task::none();
             }
             let opt = eidos_transfer::Options::default();
@@ -288,9 +283,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| format!("backup.{}", eidos_transfer::EXTENSION));
             let mut dlg = rfd::AsyncFileDialog::new()
-                .add_filter("Eidos backup", &[eidos_transfer::EXTENSION])
+                .add_filter(t("dialog_eidos_backup"), &[eidos_transfer::EXTENSION])
                 .set_file_name(name)
-                .set_title("Where should the backup go?");
+                .set_title(t("dialog_where_backup"));
             if let Some(parent) = start.parent().filter(|p| p.is_dir()) {
                 dlg = dlg.set_directory(parent);
             }
@@ -307,7 +302,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::PackRun => {
             let Some(inst) = app.created.clone() else {
-                app.status = Some("Open a game instance first.".to_string());
+                app.status = Some(t("status_open_instance_first").to_string());
                 return Task::none();
             };
             if app.transfer_job.is_some() {
@@ -319,7 +314,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // is still a handler that loses it.
             let empty = app.pack.as_ref().is_none_or(|d| d.dest.trim().is_empty());
             if empty {
-                app.status = Some("Give the backup a file name first.".to_string());
+                app.status = Some(t("status_backup_needs_name").to_string());
                 return Task::none();
             }
             let Some(d) = app.pack.take() else {
@@ -341,7 +336,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Deliberately NO "open an instance first" guard. Restoring onto a
             // machine that has none is the entire point of the file.
             if app.transfer_job.is_some() {
-                app.status = Some("Something is already being packed or unpacked.".to_string());
+                app.status = Some(t("status_transfer_busy").to_string());
                 return Task::none();
             }
             app.unpack = Some(UnpackDialogState {
@@ -356,8 +351,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::UnpackBrowseArchive => {
             return Task::perform(
                 rfd::AsyncFileDialog::new()
-                    .add_filter("Eidos backup", &[eidos_transfer::EXTENSION])
-                    .set_title("Choose a backup to unpack")
+                    .add_filter(t("dialog_eidos_backup"), &[eidos_transfer::EXTENSION])
+                    .set_title(t("dialog_pick_backup"))
                     .pick_file(),
                 |h| Message::UnpackArchivePicked(h.map(|h| h.path().to_path_buf())),
             );
@@ -397,7 +392,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::UnpackBrowseDest => {
             return Task::perform(
                 rfd::AsyncFileDialog::new()
-                    .set_title("Where should the instance go?")
+                    .set_title(t("dialog_where_instance"))
                     .pick_folder(),
                 |h| Message::UnpackDestPicked(h.map(|h| h.path().to_path_buf())),
             );
@@ -431,7 +426,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if archive.as_os_str().is_empty() || dest.as_os_str().is_empty() {
                 // Put it back rather than losing what they had typed.
                 app.unpack = Some(UnpackDialogState {
-                    error: Some("Choose a backup file and a folder to put it in.".to_string()),
+                    error: Some(t("status_unpack_needs_both").to_string()),
                     ..d
                 });
                 return Task::none();
@@ -460,7 +455,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .and_then(|mut o| o.take())
                 // A poisoned mutex means the worker panicked. Say so: the user
                 // is watching a dialog that would otherwise never finish.
-                .unwrap_or_else(|| Err("The worker stopped without a result.".to_string()));
+                .unwrap_or_else(|| Err(t("status_worker_stopped").to_string()));
             if kind == crate::TransferKind::Unpack {
                 if let Ok(summary) = &mut result {
                     if let Some(note) = open_unpacked(app, &target) {

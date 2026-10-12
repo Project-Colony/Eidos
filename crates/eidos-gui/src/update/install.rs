@@ -14,8 +14,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // promise the download drop makes, made the same way.
             if is_filtering(app) {
                 app.pending_note = Some(
-                    "installed at the end of the list - a filtered list cannot say what a gap means"
-                        .to_string(),
+                    t("note_installed_at_end").to_string(),
                 );
                 return update(app, Message::InstallMod);
             }
@@ -49,7 +48,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
                 Ok(None) => return pick_mod_archive(app, Some(name), false),
                 Err(error) => {
-                    app.status = Some(format!("Cannot reopen collection installer: {error}"))
+                    app.status = Some(tf("status_reopen_collection_failed", &[("error", &error)]))
                 }
             }
         }
@@ -105,7 +104,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     p.mode = PickerMode::Manual {
                         root: String::new(),
                     };
-                    app.status = Some("Pick the folder that holds the game data.".to_string());
+                    app.status = Some(t("status_pick_data_folder").to_string());
                 }
                 _ => {}
             }
@@ -128,7 +127,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // A cancelled install must not leave its target priority behind for
             // the NEXT one to pick up.
             app.install_at = None;
-            app.status = Some("Install cancelled.".to_string());
+            app.status = Some(t("status_install_cancelled").to_string());
         }
         Message::FomodToggle(gi, pi) => {
             if let Some(w) = &mut app.fomod {
@@ -230,7 +229,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         tree: None,
                         pick: None,
                     });
-                    app.status = Some(format!("'{name}' already exists - choose how to install."));
+                    app.status = Some(tf("status_already_exists_choose", &[("name", &name)]));
                     return Task::none();
                 }
             }
@@ -245,14 +244,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     eidos_install::OverwritePolicy::Fail,
                 ) {
                     Ok(r) => after_install(app, &r.name, r.dest, true, Some(&archive)),
-                    Err(e) => app.status = Some(format!("Install failed: {e}")),
+                    Err(e) => app.status = Some(tf("status_install_failed", &[("error", &e)])),
                 }
             }
         }
         Message::FomodCancel => {
             app.fomod = None;
             app.install_at = None;
-            app.status = Some("FOMOD install cancelled.".to_string());
+            app.status = Some(t("status_fomod_cancelled").to_string());
         }
         // Merge and Replace land on a mod that ALREADY has a place in the load
         // order. Honouring a drop's target priority there would yank an
@@ -264,7 +263,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 collision.backup = enabled;
                 app.prefs.retain_install_backup = enabled;
                 if let Err(error) = app.prefs.save() {
-                    app.status = Some(format!("Could not remember the backup choice: {error}"));
+                    app.status = Some(tf("status_backup_choice_failed", &[("error", &error)]));
                 }
             }
         }
@@ -288,7 +287,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .map(|c| c.rename_to.trim().to_string())
             {
                 if new.is_empty() {
-                    app.status = Some("Enter a name to install under.".to_string());
+                    app.status = Some(t("status_enter_install_name").to_string());
                 } else {
                     run_collision_install(app, eidos_install::OverwritePolicy::Rename(new));
                 }
@@ -297,7 +296,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         Message::CollisionCancel => {
             app.collision = None;
             app.install_at = None;
-            app.status = Some("Install cancelled.".to_string());
+            app.status = Some(t("status_install_cancelled").to_string());
         }
         // ---- Files dropped in from a file manager ----------------------------
         Message::FilesHovering(on) => app.files_hovering = on,
@@ -330,7 +329,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.dropped.remove(0);
             if app.created.is_none() {
                 app.dropped.clear();
-                app.status = Some("Open a game instance before installing anything.".to_string());
+                app.status = Some(t("status_open_instance_before_install").to_string());
                 return Task::none();
             }
             // Refuse anything already inside the instance. Installing a mod from
@@ -353,9 +352,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     || entangled(inst.root.clone())
                 {
                     app.status = Some(
-                        "That folder is part of this instance (or contains it) - it cannot be \
-                         installed into itself."
-                            .to_string(),
+                        t("status_folder_is_instance").to_string(),
                     );
                     return Task::done(Message::DrainDrops);
                 }
@@ -373,9 +370,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if matches!(ext.as_str(), "7z" | "zip" | "rar") {
                 return update(app, Message::ModPicked(Some(path)));
             }
-            app.status = Some(format!(
-                "Not a mod archive: {}. Drop a .7z, .zip or .rar, or a folder.",
-                path.file_name().unwrap_or_default().to_string_lossy()
+            app.status = Some(tf(
+                "status_not_a_mod_archive",
+                &[("name", &path.file_name().unwrap_or_default().to_string_lossy())],
             ));
             return Task::done(Message::DrainDrops);
         }
@@ -426,8 +423,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // own status a moment later and would overwrite this one before
                 // it could ever be read.
                 app.pending_note = Some(
-                    "installed at the end of the list - a filtered list cannot say what a gap means"
-                        .to_string(),
+                    t("note_installed_at_end").to_string(),
                 );
             } else {
                 app.install_at = Some((d.gap, d.path.clone()));
@@ -450,7 +446,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // rather than silently doing nothing: the user is watching a dialog.
             match result {
                 Some(Err(error)) => {
-                    app.status = Some(format!("Install failed: {error}"));
+                    app.status = Some(tf("status_install_failed", &[("error", &error)]));
                 }
                 Some(Ok(opened)) => {
                     if let Some(target) = job.target.clone() {
@@ -464,14 +460,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                         );
                     } else {
                         app.status =
-                            Some("Installation has no original target; reopen the archive.".into());
+                            Some(t("status_install_no_target").into());
                     }
                 }
                 None => {
-                    app.status = Some(format!(
-                        "Install failed: the worker opening '{}' stopped without a result.",
-                        job.name
-                    ))
+                    app.status = Some(tf("status_install_worker_stopped", &[("name", &job.name)]))
                 }
             }
         }

@@ -9,7 +9,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- Saves tab ----
         Message::RefreshSaves => {
             load_saves(app);
-            app.status = Some(format!("Found {} save file(s).", app.saves.len()));
+            app.status = Some(tf("status_found_saves", &[("n", &app.saves.len())]));
         }
         Message::DeleteSave(i) => {
             // First click arms the confirm; clicking a different row re-arms it.
@@ -91,8 +91,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             load_saves(app);
             app.status = Some(match failed {
-                0 => format!("Deleted {gone} save(s)."),
-                f => format!("Deleted {gone} save(s); {f} could not be removed."),
+                0 => tf("status_saves_deleted", &[("n", &gone)]),
+                f => tf("status_saves_deleted_partial", &[("n", &gone), ("failed", &f)]),
             });
         }
         Message::SavesCopyToProfile(target) => {
@@ -101,12 +101,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let targets: Vec<usize> = app.selected_saves.iter().copied().collect();
             if targets.is_empty() {
-                app.status = Some("Select the saves to copy first (Ctrl+click).".to_string());
+                app.status = Some(t("status_select_saves_first").to_string());
                 return Task::none();
             }
             let dest_dir = inst.profile(&target).saves_dir();
             if let Err(e) = std::fs::create_dir_all(&dest_dir) {
-                app.status = Some(format!("Could not open profile '{target}': {e}"));
+                app.status = Some(tf("status_open_profile_failed", &[("profile", &target), ("error", &e)]));
                 return Task::none();
             }
             let mut copied = 0usize;
@@ -167,11 +167,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             app.status = Some(match (copied, skipped, failed.len()) {
-                (n, 0, 0) => format!("Copied {n} save(s) to '{target}'."),
-                (n, s, 0) => format!(
-                    "Copied {n} save(s) to '{target}'; {s} already existed there and were left alone."
+                (n, 0, 0) => tf("status_saves_copied", &[("n", &n), ("profile", &target)]),
+                (n, s, 0) => tf(
+                    "status_saves_copied_skipped",
+                    &[("n", &n), ("profile", &target), ("skipped", &s)],
                 ),
-                (n, _, f) => format!("Copied {n} save(s); {f} file(s) failed, e.g. {}", failed[0]),
+                (n, _, f) => tf(
+                    "status_saves_copied_failed",
+                    &[("n", &n), ("failed", &f), ("example", &failed[0])],
+                ),
             });
         }
         Message::SelectSave(i) => {
@@ -200,7 +204,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             if enabled == 0 {
                 app.status =
-                    Some("Those mods are already enabled - the plugins still need turning on in the Plugins tab.".to_string());
+                    Some(t("status_save_mods_already_enabled").to_string());
                 return Task::none();
             }
             let saved = mods_changed(app);
@@ -222,9 +226,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             let left = app.save_missing.len();
             app.status = Some(if left == 0 {
-                format!("Enabled {enabled} mod(s); this save's plugins are all available now.")
+                tf("status_save_mods_enabled", &[("n", &enabled)])
             } else {
-                format!("Enabled {enabled} mod(s); {left} plugin(s) still need enabling in the Plugins tab.")
+                tf("status_save_mods_enabled_left", &[("n", &enabled), ("left", &left)])
             });
         }
         Message::RestorePreSessionPlugins => {
@@ -232,7 +236,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // into a running session, and restoring under the game's feet races
             // its own writes.
             if app.running.is_some() {
-                app.status = Some("Cannot restore while the game is running.".to_string());
+                app.status = Some(t("status_restore_while_running").to_string());
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {
@@ -241,7 +245,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot restore: {e}."));
+                    app.status = Some(tf("status_cannot_restore", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -250,16 +254,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // The on-disk state changed under the in-memory list: recompute
                     // rather than patch, same as every other external change.
                     app.plugins = compute_plugins(app);
-                    app.status = Some("Restored the pre-session plugin order.".to_string());
+                    app.status = Some(t("status_presession_restored").to_string());
                 }
                 Err(e) => {
-                    app.status = Some(format!("Could not restore the pre-session order: {e}"));
+                    app.status = Some(tf("status_presession_restore_failed", &[("error", &e)]));
                 }
             }
         }
         Message::AcceptPluginState => {
             if app.running.is_some() {
-                app.status = Some("Cannot do that while the game is running.".to_string());
+                app.status = Some(t("status_not_while_running").to_string());
                 return Task::none();
             }
             let Some(inst) = app.created.as_ref() else {
@@ -268,13 +272,13 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot do that: {e}."));
+                    app.status = Some(tf("status_cannot_do_that", &[("error", &e)]));
                     return Task::none();
                 }
             };
             app.status = Some(match inst.active().snapshot_plugin_state() {
-                Ok(()) => "Kept the current plugin set; the warning is cleared.".to_string(),
-                Err(e) => format!("Could not accept the current set: {e}"),
+                Ok(()) => t("status_plugin_set_kept").to_string(),
+                Err(e) => tf("status_plugin_set_keep_failed", &[("error", &e)]),
             });
         }
         Message::ConfirmDeleteSave(i) => {
@@ -291,7 +295,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             for co in eidos_instance::cosave_siblings(&save.path) {
                                 let _ = std::fs::remove_file(co);
                             }
-                            app.status = Some(format!("Deleted save '{name}'."))
+                            app.status = Some(tf("status_save_deleted", &[("name", &name)]))
                         }
                         // Already gone is success enough; surface real errors.
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -301,9 +305,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             for co in eidos_instance::cosave_siblings(&save.path) {
                                 let _ = std::fs::remove_file(co);
                             }
-                            app.status = Some(format!("Save '{name}' was already gone."));
+                            app.status = Some(tf("status_save_gone", &[("name", &name)]));
                         }
-                        Err(e) => app.status = Some(format!("Could not delete '{name}': {e}")),
+                        Err(e) => app.status = Some(tf("status_delete_named_failed", &[("name", &name), ("error", &e)])),
                     }
                 }
                 load_saves(app);

@@ -9,7 +9,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         // ---- Downloads manager ----
         Message::RefreshDownloads => {
             load_downloads(app);
-            app.status = Some(format!("Found {} download(s).", app.downloads.len()));
+            app.status = Some(tf("status_found_downloads", &[("n", &app.downloads.len())]));
         }
         Message::CleanInstallDebris => {
             let Some(inst) = app.created.as_ref() else {
@@ -49,16 +49,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
             }
             let busy = if in_use > 0 {
-                format!(" ({in_use} in use by a running install, left alone)")
+                format!(" {}", tf("status_extraction_in_use", &[("n", &in_use)]))
             } else {
                 String::new()
             };
             app.status = Some(if failed.is_empty() {
-                format!("Removed {gone} leftover extraction folder(s).{busy}")
+                tf("status_extraction_removed", &[("n", &gone), ("busy", &busy)])
             } else {
-                format!(
-                    "Removed {gone}; could not remove {}{busy}",
-                    failed.join(", ")
+                tf(
+                    "status_extraction_partial",
+                    &[("n", &gone), ("failed", &failed.join(", ")), ("busy", &busy)],
                 )
             });
             app.diag_dirty = true;
@@ -83,9 +83,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             .lines()
                             .rev()
                             .find(|l| !l.trim().is_empty())
-                            .unwrap_or("no reason given")
+                            .unwrap_or(t("status_no_reason"))
                             .to_string();
-                        app.status = Some(format!("Could not resume '{name}': {why}"));
+                        app.status = Some(tf("status_resume_failed", &[("name", &name), ("error", &why)]));
                     }
                 }
             }
@@ -104,13 +104,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // to tell the user, and the one that says something went wrong.
             let _ = eidos_nexus::set_download_meta_key(&path, "paused", "true");
             if eidos_nexus::stop_download(&path) {
-                app.status = Some(format!(
-                    "Paused '{name}'. Resume picks up where it stopped."
-                ));
+                app.status = Some(tf("status_download_paused", &[("name", &name)]));
             } else {
                 // No live process: it had already stopped. The flag still tells
                 // the truth about what the user wants.
-                app.status = Some(format!("'{name}' was not running; marked paused."));
+                app.status = Some(tf("status_download_marked_paused", &[("name", &name)]));
             }
             load_downloads(app);
         }
@@ -120,7 +118,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let path = row.path.clone();
             if eidos_nexus::live_download_pid(&path).is_some() {
-                app.status = Some(format!("'{name}' is already downloading."));
+                app.status = Some(tf("status_already_downloading", &[("name", &name)]));
                 return Task::none();
             }
             let _ = eidos_nexus::set_download_meta_key(&path, "paused", "false");
@@ -156,9 +154,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             match cmd.spawn() {
                 Ok(child) => {
                     app.resuming = Some((name.clone(), child, log));
-                    app.status = Some(format!("Resuming '{name}'..."));
+                    app.status = Some(tf("status_resuming", &[("name", &name)]));
                 }
-                Err(e) => app.status = Some(format!("Could not resume '{name}': {e}")),
+                Err(e) => app.status = Some(tf("status_resume_failed", &[("name", &name), ("error", &e)])),
             }
             load_downloads(app);
         }
@@ -188,14 +186,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let _ = std::fs::remove_file(&partial);
                     let _ = std::fs::remove_file(&meta);
                     match archive_res {
-                        Ok(()) => app.status = Some(format!("Deleted download '{name}'.")),
+                        Ok(()) => app.status = Some(tf("status_download_deleted", &[("name", &name)])),
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound && had_partial => {
-                            app.status = Some(format!("Removed the unfinished download '{name}'."));
+                            app.status = Some(tf("status_download_partial_removed", &[("name", &name)]));
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                            app.status = Some(format!("Download '{name}' was already gone."));
+                            app.status = Some(tf("status_download_gone", &[("name", &name)]));
                         }
-                        Err(e) => app.status = Some(format!("Could not delete '{name}': {e}")),
+                        Err(e) => app.status = Some(tf("status_delete_named_failed", &[("name", &name), ("error", &e)])),
                     }
                 }
                 load_downloads(app);
@@ -223,12 +221,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Ok(()) => {
                     load_downloads(app);
                     app.status = Some(if hiding {
-                        format!("{name} hidden. Show hidden to bring it back.")
+                        tf("status_download_hidden", &[("name", &name)])
                     } else {
-                        format!("{name} is back in the list.")
+                        tf("status_download_unhidden", &[("name", &name)])
                     });
                 }
-                Err(e) => app.error = Some(format!("Could not update {name}: {e}")),
+                Err(e) => app.error = Some(tf("status_update_named_failed", &[("name", &name), ("error", &e)])),
             }
         }
         Message::ToggleShowHiddenDownloads => {
@@ -266,7 +264,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 .map(|r| r.name.clone())
                 .collect();
             if doomed.is_empty() {
-                app.status = Some("Nothing installed in this list to remove.".to_string());
+                app.status = Some(t("status_nothing_installed_to_remove").to_string());
                 return Task::none();
             }
             let (mut gone, mut failed) = (0usize, 0usize);
@@ -285,9 +283,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             }
             load_downloads(app);
             app.status = Some(if failed == 0 {
-                format!("Removed {gone} installed archive(s).")
+                tf("status_archives_removed", &[("n", &gone)])
             } else {
-                format!("Removed {gone}; {failed} could not be deleted.")
+                tf("status_archives_removed_partial", &[("n", &gone), ("failed", &failed)])
             });
         }
         _ => unreachable!("routed by update_inner"),

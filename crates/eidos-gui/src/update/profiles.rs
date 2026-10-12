@@ -13,23 +13,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // bind-mounted into the live session - switching under it corrupted
             // the profile that was never played.
             if app.running.is_some() {
-                app.status = Some("Cannot switch profiles while the game is running.".to_string());
+                app.status = Some(t("status_switch_while_running").to_string());
                 return Task::none();
             }
             // One shared path (switch_to_profile) so the reload steps - incl.
             // recompute_counts, which this handler used to skip - never drift.
             if app.created.is_some() && switch_to_profile(app, &name) {
-                app.status = Some(format!("Switched to profile '{name}'."));
+                app.status = Some(tf("status_switched_profile", &[("name", &name)]));
             }
         }
         Message::NewProfile => {
             let created = app.created.as_ref().map(|inst| {
                 let existing = inst.profiles();
                 let mut n = existing.len() + 1;
-                let mut name = format!("Profile {n}");
+                let mut name = tf("new_profile_name", &[("n", &n)]);
                 while existing.contains(&name) {
                     n += 1;
-                    name = format!("Profile {n}");
+                    name = tf("new_profile_name", &[("n", &n)]);
                 }
                 let src = inst.active();
                 let ok = inst.profile(&name).create_from(&src).is_ok();
@@ -37,7 +37,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             });
             if let Some((name, src_name, true)) = created {
                 if switch_to_profile(app, &name) {
-                    app.status = Some(format!("Created '{name}' (copy of '{src_name}')."));
+                    app.status = Some(tf("status_profile_copied", &[("name", &name), ("source", &src_name)]));
                 }
             }
         }
@@ -71,7 +71,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let (Some(inst), Some((old, edited))) = (&app.created, app.profile_rename.clone()) {
                 let new = edited.trim().to_string();
                 if new.is_empty() || new.contains('/') || new.contains('\\') {
-                    app.status = Some("Invalid profile name.".to_string());
+                    app.status = Some(t("status_invalid_profile_name").to_string());
                 } else if new == old {
                     // no-op: just close the editor
                     app.profile_rename = None;
@@ -80,11 +80,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // A rename mid-run would pull the played profile out from
                     // under the session's post-exit steps (and the bound dirs).
                     app.status =
-                        Some("Cannot rename a profile while the game is running.".to_string());
+                        Some(t("status_rename_profile_while_running").to_string());
                 } else if let Err(e) = probe_lock(inst) {
                     // app.running only sees runs THIS window started; the flock
                     // also covers a session launched from the CLI or Steam.
-                    app.status = Some(format!("Cannot rename: {e}."));
+                    app.status = Some(tf("status_cannot_rename", &[("error", &e)]));
                 } else {
                     let was_active = inst.active_profile() == old;
                     match inst.rename_profile(&old, &new) {
@@ -94,11 +94,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             // rename_profile already followed the active pointer; reload
                             // the view when the renamed profile was the active one.
                             if !was_active || switch_to_profile(app, &new) {
-                                app.status = Some(format!("Renamed profile to '{new}'."));
+                                app.status = Some(tf("status_profile_renamed", &[("name", &new)]));
                             }
                         }
                         // Keep the editor open on a collision so the user can retype.
-                        Err(e) => app.status = Some(format!("Rename failed: {e}")),
+                        Err(e) => app.status = Some(tf("status_rename_failed", &[("error", &e)])),
                     }
                 }
             }
@@ -108,8 +108,8 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let suggested = app
                 .created
                 .as_ref()
-                .map(|inst| suggest_free_profile_name(inst, &format!("{name} Copy")))
-                .unwrap_or_else(|| format!("{name} Copy"));
+                .map(|inst| suggest_free_profile_name(inst, &tf("profile_copy_name", &[("name", &name)])))
+                .unwrap_or_else(|| tf("profile_copy_name", &[("name", &name)]));
             app.profile_copy = Some((name, suggested));
             app.profile_rename = None;
             app.profile_delete_confirm = None;
@@ -125,9 +125,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             {
                 let new = edited.trim().to_string();
                 if new.is_empty() || new.contains('/') || new.contains('\\') {
-                    app.status = Some("Invalid profile name.".to_string());
+                    app.status = Some(t("status_invalid_profile_name").to_string());
                 } else if inst.profile(&new).dir().exists() {
-                    app.status = Some(format!("Profile '{new}' already exists."));
+                    app.status = Some(tf("status_profile_exists", &[("name", &new)]));
                 } else {
                     let src = inst.profile(&src_name);
                     let dest = inst.profile(&new);
@@ -137,10 +137,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                             app.profile_menu = None;
                             if switch_to_profile(app, &new) {
                                 app.status =
-                                    Some(format!("Created '{new}' (copy of '{src_name}')."));
+                                    Some(tf("status_profile_copied", &[("name", &new), ("source", &src_name)]));
                             }
                         }
-                        Err(e) => app.status = Some(format!("Copy failed: {e}")),
+                        Err(e) => app.status = Some(tf("status_copy_failed", &[("error", &e)])),
                     }
                 }
             }
@@ -157,10 +157,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 match inst.delete_profile(&name) {
                     Ok(()) => {
                         app.profile_menu = None;
-                        app.status = Some(format!("Deleted profile '{name}'."));
+                        app.status = Some(tf("status_profile_deleted", &[("name", &name)]));
                     }
                     // Backend guards the active / last profile; surface its reason.
-                    Err(e) => app.status = Some(format!("Delete failed: {e}")),
+                    Err(e) => app.status = Some(tf("status_delete_failed_plain", &[("error", &e)])),
                 }
             }
         }
@@ -168,7 +168,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.menu_mod = None;
             match load_backups(app) {
                 Some(state) => app.backups = Some(state),
-                None => app.status = Some("Open a game instance first.".to_string()),
+                None => app.status = Some(t("status_open_instance_first").to_string()),
             }
         }
         Message::CloseBackupsDialog => app.backups = None,
@@ -178,10 +178,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             match prof.create_backup(kind) {
                 Ok(b) => {
-                    app.status = Some(format!("Backed up the {} ({}).", kind.label(), b.when()));
+                    app.status = Some(tf(
+                        "status_backed_up",
+                        &[("what", &backup_what(kind)), ("when", &b.when())],
+                    ));
                     app.backups = load_backups(app);
                 }
-                Err(e) => app.status = Some(format!("Could not back up the {}: {e}", kind.label())),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_back_up_failed",
+                        &[("what", &backup_what(kind)), ("error", &e)],
+                    ))
+                }
             }
         }
         Message::RestoreBackup(kind, stamp) => {
@@ -193,16 +201,16 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let _lock = match inst.try_lock("the Eidos window") {
                 Ok(l) => l,
                 Err(e) => {
-                    app.status = Some(format!("Cannot restore now: {e}."));
+                    app.status = Some(tf("status_cannot_restore_now", &[("error", &e)]));
                     return Task::none();
                 }
             };
             match inst.active().restore_backup(kind, stamp) {
                 Ok(()) => {
                     let when = eidos_instance::format_stamp(stamp);
-                    app.status = Some(format!(
-                        "Restored the {} from {when}. The state it replaced was backed up first.",
-                        kind.label()
+                    app.status = Some(tf(
+                        "status_backup_restored",
+                        &[("what", &backup_what(kind)), ("when", &when)],
                     ));
                     app.backups = None;
                     drop(_lock);
@@ -212,10 +220,23 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     refresh_after_tree_change(app);
                     recompute_counts(app);
                 }
-                Err(e) => app.status = Some(format!("Could not restore the {}: {e}", kind.label())),
+                Err(e) => {
+                    app.status = Some(tf(
+                        "status_backup_restore_failed",
+                        &[("what", &backup_what(kind)), ("error", &e)],
+                    ))
+                }
             }
         }
         _ => unreachable!("routed by update_inner"),
     }
     Task::none()
+}
+
+/// What a backup of `kind` holds, as the status line names it.
+fn backup_what(kind: eidos_instance::BackupKind) -> &'static str {
+    match kind {
+        eidos_instance::BackupKind::ModList => t("backup_what_mod_list"),
+        eidos_instance::BackupKind::LoadOrder => t("backup_what_load_order"),
+    }
 }

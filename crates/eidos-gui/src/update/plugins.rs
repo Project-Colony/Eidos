@@ -38,9 +38,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .iter()
                     .any(|p| p.eq_ignore_ascii_case(&name))
                 {
-                    app.status = Some(format!(
-                        "{name} is a base-game master and is always loaded."
-                    ));
+                    app.status = Some(tf("status_plugin_base_master", &[("name", &name)]));
                 } else if implicit {
                     // Creation Club content the engine loads from the .ccc file.
                     // It is deliberately kept out of plugins.txt (writing it in
@@ -48,13 +46,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // file), so a toggle here had nothing to write: the checkbox
                     // came straight back on at the next refresh with no
                     // explanation, which reads as the click being ignored.
-                    app.status = Some(format!(
-                        "{name} is Creation Club content the engine loads itself - it cannot be turned off here."
-                    ));
+                    app.status = Some(tf("status_plugin_creation_club", &[("name", &name)]));
                 } else if forced {
-                    app.status = Some(format!(
-                        "{name} is a light plugin this game can't load and stays off."
-                    ));
+                    app.status = Some(tf("status_plugin_light_unsupported", &[("name", &name)]));
                 } else if app.plugins.is_some() {
                     let held = hold_plugin_selection(app);
                     let mut now = false;
@@ -75,11 +69,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // A toggled plugin changes which archives the engine loads.
                     plugin_state_changed(app);
                     app.status = Some(match written {
-                        Ok(_) => format!("{} {name}.", if now { "Disabled" } else { "Enabled" }),
+                        Ok(_) => tf(
+                            if now { "status_plugin_disabled" } else { "status_plugin_enabled" },
+                            &[("name", &name)],
+                        ),
                         Err(e) => {
                             // Refused write: drop the phantom toggle, resync to disk.
                             app.plugins = compute_plugins(app);
-                            format!("Could not write the load order: {e}")
+                            tf("status_load_order_write_failed", &[("error", &e)])
                         }
                     });
                 }
@@ -91,7 +88,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // starting it just wastes a masterlist download to throw the result
             // away - and shows a "Sorting..." status for a sort that cannot land.
             if app.running.is_some() {
-                app.status = Some("Cannot sort while the game is running.".to_string());
+                app.status = Some(t("status_sort_while_running").to_string());
                 return Task::none();
             }
             // One at a time. Without this every impatient click during the
@@ -99,7 +96,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // re-opened the report over a dialog the user had already closed -
             // minutes later, since they run strictly one after another.
             if app.sorting {
-                app.status = Some("A LOOT sort is already running.".to_string());
+                app.status = Some(t("status_sort_already_running").to_string());
                 return Task::none();
             }
             // Gather everything the (static) async closure needs, cloned out of
@@ -109,7 +106,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let id = game.def.id;
             if !eidos_loot::is_supported(id) {
-                app.status = Some(format!("LOOT sorting is not available for {id}."));
+                app.status = Some(tf("status_loot_unsupported", &[("game", &id)]));
                 return Task::none();
             }
             let Some(spec) = game.plugin_spec() else {
@@ -117,12 +114,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let Some(prefix) = game.prefix() else {
                 app.status = Some(
-                    "No usable prefix found for this installation. Check its Steam or Heroic configuration.".to_string(),
+                    t("status_no_prefix").to_string(),
                 );
                 return Task::none();
             };
             let Some(list) = app.plugins.as_ref() else {
-                app.status = Some("No plugins computed yet.".to_string());
+                app.status = Some(t("status_no_plugins_yet").to_string());
                 return Task::none();
             };
             let id = id.to_string();
@@ -173,7 +170,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 names: list.plugins.iter().map(|p| p.name.clone()).collect(),
             };
             app.sorting = true;
-            app.status = Some("Sorting plugins with LOOT (updating the masterlist)...".to_string());
+            app.status = Some(t("status_sorting").to_string());
             return Task::perform(
                 async move {
                     // `is_supported(id)` was checked above and loot_support is a pure
@@ -181,7 +178,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     // rather than unwrap (robust to any future refactor of the guard).
                     let repo = match eidos_loot::loot_support(&id) {
                         Some((_, repo)) => repo,
-                        None => return Err(format!("LOOT sorting is not available for {id}.")),
+                        None => return Err(tf("status_loot_unsupported", &[("game", &id)])),
                     };
                     // Refresh the masterlist on every sort, like MO2/LOOT; a failed
                     // download falls back to the cached copy.
@@ -241,7 +238,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             let (asked_about, sorted, report_res) = match result {
                 Ok(x) => x,
                 Err(e) => {
-                    app.status = Some(format!("LOOT sort failed: {e}"));
+                    app.status = Some(tf("status_sort_failed", &[("error", &e)]));
                     return Task::none();
                 }
             };
@@ -275,18 +272,17 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if now != asked_about {
                 app.status = Some(if now.game != asked_about.game {
-                    format!(
-                        "Discarded the LOOT sort: it was computed for {}, and {} is open now.",
-                        asked_about.game, now.game
+                    tf(
+                        "status_sort_discarded_game",
+                        &[("then", &asked_about.game), ("now", &now.game)],
                     )
                 } else if now.profile != asked_about.profile {
-                    format!(
-                        "Discarded the LOOT sort: it was computed for profile '{}', and '{}' is active now.",
-                        asked_about.profile, now.profile
+                    tf(
+                        "status_sort_discarded_profile",
+                        &[("then", &asked_about.profile), ("now", &now.profile)],
                     )
                 } else {
-                    "Discarded the LOOT sort: the plugin list changed while it ran. Sort again."
-                        .to_string()
+                    t("status_sort_discarded_list").to_string()
                 });
                 return Task::none();
             }
@@ -327,7 +323,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // clean LOOT sort the list does not actually match.
             let pinned = app.plugins.as_ref().map(|l| l.locked.len()).unwrap_or(0);
             let held = if pinned > 0 {
-                format!(" ({pinned} pinned position(s) kept)")
+                format!(" {}", tf("status_sort_pinned_kept", &[("n", &pinned)]))
             } else {
                 String::new()
             };
@@ -357,21 +353,18 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             app.status = Some(match written {
                 Ok(_) => {
                     if changed == 0 {
-                        format!(
-                            "LOOT checked {} plugins - the load order was already correct, nothing moved.{held}",
-                            sorted.len()
-                        )
+                        tf("status_sort_unchanged", &[("n", &sorted.len()), ("held", &held)])
                     } else {
-                        format!(
-                            "LOOT sorted {} plugins - {changed} moved.{held}",
-                            sorted.len()
+                        tf(
+                            "status_sorted",
+                            &[("n", &sorted.len()), ("moved", &changed), ("held", &held)],
                         )
                     }
                 }
                 Err(e) => {
                     // Refused write: drop the phantom sort, resync to disk.
                     app.plugins = compute_plugins(app);
-                    format!("Sorted, but writing the load order failed: {e}")
+                    tf("status_sorted_write_failed", &[("error", &e)])
                 }
             });
             // A refused write means the sort was rolled back and the list on
@@ -399,7 +392,10 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     app.loot_meta = None;
                     app.diag_dirty = true;
                     let base = app.status.take().unwrap_or_default();
-                    app.status = Some(format!("{base} (LOOT report unavailable: {e})"));
+                    app.status = Some(format!(
+                        "{base} {}",
+                        tf("status_loot_report_unavailable", &[("error", &e)])
+                    ));
                 }
             }
         }
@@ -437,7 +433,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 }
                 None => {
                     app.status =
-                        Some("That plugin comes from the game's own Data, not from a mod.".into())
+                        Some(t("status_plugin_from_game").into())
                 }
             }
         }
@@ -447,7 +443,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 Some(row) => return update(app, Message::ShowModInfo(row)),
                 None => {
                     app.status =
-                        Some("That plugin comes from the game's own Data, not from a mod.".into())
+                        Some(t("status_plugin_from_game").into())
                 }
             }
         }
@@ -490,10 +486,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             put_plugin_selection(app, held);
             if !moved {
                 app.status = Some(if already {
-                    "Those plugins are already as far as the load order allows.".to_string()
+                    t("status_plugins_already_there").to_string()
                 } else {
-                    "The load order will not take that move: a master or a pin is in the way."
-                        .to_string()
+                    t("status_plugins_move_refused").to_string()
                 });
                 return Task::none();
             }
@@ -524,7 +519,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // pane draws is the game's hex load index (00, FE:003, `--` for
                 // a disabled plugin), and that is NOT what this takes. Asking
                 // for one thing and meaning another is worse than asking plainly.
-                app.status = Some("Enter a row number (1 = the first plugin).".to_string());
+                app.status = Some(t("status_enter_row_number").to_string());
                 return Task::none();
             };
             let Some(spec) = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id)) else {
@@ -554,9 +549,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if !moved {
                 // `move_plugins_to` refuses a destination the tiers forbid. Say
                 // which rule stopped it rather than "no".
-                app.status = Some(format!(
-                    "Cannot put {} plugin(s) at {dest}: a master tier or a pin is in the way.",
-                    rows.len()
+                app.status = Some(tf(
+                    "status_plugins_cannot_put",
+                    &[("n", &rows.len()), ("row", &dest)],
                 ));
                 return Task::none();
             }
@@ -567,7 +562,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // a running game holds the lock - and overwriting that turned "your
             // change was not saved" into "moved".
             if app.status == before {
-                app.status = Some(format!("Moved {} plugin(s) to {dest}.", rows.len()));
+                app.status = Some(tf("status_plugins_moved", &[("n", &rows.len()), ("row", &dest)]));
             }
         }
         Message::PluginsSetAll(on) => {
@@ -599,10 +594,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if names.is_empty() {
                 app.status = Some(if on {
-                    "Every plugin that can be active already is.".to_string()
+                    t("status_plugins_all_active").to_string()
                 } else {
-                    "Nothing left to deactivate: the rest are loaded by the game itself."
-                        .to_string()
+                    t("status_plugins_none_to_deactivate").to_string()
                 });
                 return Task::none();
             }
@@ -614,10 +608,9 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 list.refresh(&spec);
             }
             put_plugin_selection(app, held);
-            app.status = Some(format!(
-                "{} {} plugin(s).",
-                if on { "Activated" } else { "Deactivated" },
-                names.len()
+            app.status = Some(tf(
+                if on { "status_plugins_activated" } else { "status_plugins_deactivated" },
+                &[("n", &names.len())],
             ));
             commit_plugin_order(app, &spec);
         }
@@ -693,7 +686,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             rows.retain(|&i| i < len);
             rows.sort_unstable();
             if rows.is_empty() {
-                app.status = Some("Select a plugin first.".to_string());
+                app.status = Some(t("status_select_plugin_first").to_string());
                 return Task::none();
             }
             // Collect names first: the indices shift under refresh(), the names
@@ -724,7 +717,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             if names.is_empty() {
                 app.status =
-                    Some("Nothing to change: the game loads those plugins itself.".to_string());
+                    Some(t("status_plugins_game_loads").to_string());
                 return Task::none();
             }
             let held = hold_plugin_selection(app);
@@ -737,13 +730,15 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 list.refresh(&spec);
             }
             put_plugin_selection(app, held);
-            let verb = if on { "Enabled" } else { "Disabled" };
             let tail = if refused > 0 {
-                format!(" ({refused} left alone - the game loads them itself)")
+                format!(" {}", tf("status_plugins_left_alone", &[("n", &refused)]))
             } else {
                 String::new()
             };
-            app.status = Some(format!("{verb} {} plugin(s).{tail}", names.len()));
+            app.status = Some(tf(
+                if on { "status_plugins_enabled_n" } else { "status_plugins_disabled_n" },
+                &[("n", &names.len()), ("tail", &tail)],
+            ));
             commit_plugin_order(app, &spec);
         }
         Message::PluginDragStart(i) => {

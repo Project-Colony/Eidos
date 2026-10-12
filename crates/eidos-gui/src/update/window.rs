@@ -43,7 +43,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // Only ever hand a real web link to the browser.
             if url.starts_with("https://") || url.starts_with("http://") {
                 let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-                app.status = Some(format!("Opened {url}"));
+                app.status = Some(tf("status_opened", &[("path", &url)]));
             }
         }
         Message::Refresh => {
@@ -61,7 +61,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // The list was rebuilt; selection / drag indices no longer hold.
                 app.selected_mods.clear();
                 app.drag_state = None;
-                app.status = Some("Refreshed mod list.".to_string());
+                app.status = Some(t("status_refreshed").to_string());
             }
             load_tools(app);
             // F5 is also the "I just ran setcap" recheck for the warning banner.
@@ -81,11 +81,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 let _ = std::fs::create_dir_all(&p);
             }
             if !p.is_dir() {
-                app.status = Some(format!("{} does not exist.", p.display()));
+                app.status = Some(tf("status_does_not_exist", &[("path", &p.display())]));
                 return Task::none();
             }
             let _ = std::process::Command::new("xdg-open").arg(&p).spawn();
-            app.status = Some(format!("Opened {} in your file manager.", p.display()));
+            app.status = Some(tf("status_opened_in_file_manager_path", &[("path", &p.display())]));
         }
         // ---- menu bar --------------------------------------------------------
         Message::ShowAbout => {
@@ -193,7 +193,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             // drag emits a message per frame and settings.ini is a file.
             app.prefs.split = app.split;
             if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save the pane width: {e}"));
+                app.status = Some(tf("status_pane_width_failed", &[("error", &e)]));
             }
         }
         Message::PointerReleased => {

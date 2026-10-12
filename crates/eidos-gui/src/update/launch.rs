@@ -22,9 +22,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .as_ref()
                     .map(|r| r.title.clone())
                     .unwrap_or_default();
-                app.status = Some(format!(
-                    "{what} is still running. Eidos re-enables launching and LOOT sorting when it exits."
-                ));
+                app.status = Some(tf("status_still_running", &[("title", &what)]));
             } else if let Some(title) = app.tool_choice.clone() {
                 // A tool: the CLI resolves Proton itself, no Steam command needed.
                 // The owned arg ends the immutable borrow before `start_run`.
@@ -32,12 +30,12 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     let cmd = tool_command(&arg, &title);
                     start_run(app, title, cmd);
                 } else {
-                    app.status = Some("Create or open an instance first.".to_string());
+                    app.status = Some(t("status_create_or_open_instance").to_string());
                 }
             } else if selected_game(app).is_some_and(|g| !g.is_steam())
                 && app.launch_command.is_empty()
             {
-                app.status = Some("This installation needs a manual launch command. Add a native tool with the correct Heroic/Legendary runner and prefix, or use eidos play <instance> -- <runner> <game>. Eidos does not infer a Steam command for this copy.".into());
+                app.status = Some(t("status_manual_launch_needed").into());
             } else if app.launch_command.is_empty() {
                 // Standalone: we don't have Steam's Proton command, so we cannot
                 // build the launch environment. Point the user at the option, with
@@ -49,9 +47,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                     .ok()
                     .and_then(|p| p.to_str().map(str::to_string))
                     .unwrap_or_else(|| "eidos-gui".to_string());
-                app.status = Some(format!(
-                    "Set the game's Steam launch option to:  WINEDLLOVERRIDES=\"d3dcompiler_47=n\" {exe} %command%  then press Play in Steam (Eidos opens, then click Run)."
-                ));
+                app.status = Some(tf("status_set_steam_launch_option", &[("exe", &exe)]));
             } else if let (Some(game), Some(inst)) = (selected_game(app), &app.created) {
                 let id = game.def.id;
                 let game_name = game.def.name.to_string();
@@ -77,14 +73,14 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 start_run(app, game_name, cmd);
                 // Prepend advisories to whatever status start_run set.
                 for note in [se_warning, both_active.then(|| {
-                    "Note: ENB and Community Shaders are both active (if visuals look wrong, disable one in its INI).".to_string()
+                    t("status_enb_and_cs").to_string()
                 })].into_iter().flatten() {
                     if let Some(s) = app.status.take() {
                         app.status = Some(format!("{note} {s}"));
                     }
                 }
             } else {
-                app.status = Some("Create or open an instance first.".to_string());
+                app.status = Some(t("status_create_or_open_instance").to_string());
             }
         }
         Message::PollRunning => {
@@ -107,7 +103,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             if let Some(r) = app.running.as_mut() {
                 r.lock = false;
                 let title = r.title.clone();
-                app.status = Some(format!("Unlocked - {title} is still running."));
+                app.status = Some(tf("status_unlocked", &[("title", &title)]));
             }
         }
         Message::CloseLootReport => {
@@ -121,7 +117,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
             };
             let text = loot_report_text(report);
             let lines = text.lines().count();
-            app.status = Some(format!("LOOT report copied ({lines} lines)."));
+            app.status = Some(tf("status_loot_report_copied", &[("n", &lines)]));
             return iced::clipboard::write(text);
         }
         Message::ChangeGame => {
@@ -148,7 +144,7 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 None => "https://www.nexusmods.com".to_string(),
             };
             let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-            app.status = Some(format!("Opening {url}"));
+            app.status = Some(tf("status_opening", &[("url", &url)]));
         }
         Message::SetupPrereqs => {
             let arg = instance_arg(app);
@@ -159,20 +155,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
                 // an environment variable - so a missing prefix must not block it.
                 (Some(_), _) if !has_prefix && !any_runtime_pending(app) => {
                     app.status = Some(
-                        "Set up the selected installation’s Wine prefix before installing prefix prerequisites."
-                            .to_string(),
+                        t("status_prefix_needed_for_prereqs").to_string(),
                     );
                 }
                 (Some(arg), Some(log)) => match run_prereqs_setup(&arg, &log) {
                     Ok(()) => {
-                        app.status = Some(format!(
-                            "Installing prerequisites: DirectX DLLs, .NET and vcrun download through winetricks. Progress + errors -> {}",
-                            log.display()
+                        app.status = Some(tf(
+                            "status_installing_prereqs",
+                            &[("log", &log.display())],
                         ));
                     }
-                    Err(e) => app.status = Some(format!("Could not start prereq setup: {e}")),
+                    Err(e) => app.status = Some(tf("status_prereqs_failed", &[("error", &e)])),
                 },
-                _ => app.status = Some("Open a game instance first.".to_string()),
+                _ => app.status = Some(t("status_open_instance_first").to_string()),
             }
         }
         _ => unreachable!("routed by update_inner"),
