@@ -1956,7 +1956,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 title: "An enabled mod needs Microsoft's d3dcompiler_47".to_string(),
                 detail: "A mod's DLL imports d3dcompiler_47.dll (Community Shaders, ENB and ReShade \
                          compile shaders with it), and the Wine prefix only has Wine's builtin, \
-                         which those mods reject. Install downloads Microsoft's DLL through \
+                         which those mods reject. Install runs the prerequisite setup, which \
+                         downloads it, and any other missing tool prerequisite, through \
                          winetricks."
                     .to_string(),
                 actions: vec![("Install", Message::SetupPrereqs)],
