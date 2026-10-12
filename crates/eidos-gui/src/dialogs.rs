@@ -1755,7 +1755,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let name = match p {
-        Preview::Archive { source, .. } => format!("{} — {}", source.member, name),
+        Preview::Archive { source, .. } => format!("{} - {}", source.member, name),
         _ => name,
     };
     let header = Row::new()

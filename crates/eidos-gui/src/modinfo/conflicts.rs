@@ -128,7 +128,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
             text(format!(
                 "Conflicts: {summary}{}",
                 if app.archive_job.is_some() {
-                    " — archive analysis running"
+                    " (archive analysis running)"
                 } else {
                     ""
                 }
