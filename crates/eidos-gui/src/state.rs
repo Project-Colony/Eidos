@@ -1035,7 +1035,11 @@ pub(crate) fn write_desktop_entry(
 /// is a Colony install: one file, `eidos-linux`, with nothing beside it.
 pub(crate) fn find_eidos_binary() -> (PathBuf, Option<&'static str>) {
     let exe = std::env::current_exe().ok();
-    if let Some(sib) = exe.as_ref().map(|e| e.with_file_name("eidos")).filter(|p| p.is_file()) {
+    if let Some(sib) = exe
+        .as_ref()
+        .map(|e| e.with_file_name("eidos"))
+        .filter(|p| p.is_file())
+    {
         return (sib, None);
     }
     let cargo = home().join(".cargo").join("bin").join("eidos");
@@ -2888,10 +2892,14 @@ mod cli_lookup_tests {
         let (bin, marker) = find_eidos_binary();
         let cmd = tool_command("skyrimse", "SSEEdit");
         assert_eq!(cmd.get_program(), bin.as_os_str());
-        let args: Vec<String> =
-            cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
-        let expected: Vec<&str> =
-            marker.into_iter().chain(["tool", "skyrimse", "run", "SSEEdit"]).collect();
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let expected: Vec<&str> = marker
+            .into_iter()
+            .chain(["tool", "skyrimse", "run", "SSEEdit"])
+            .collect();
         assert_eq!(args, expected);
         // Under `cargo test` nothing named `eidos` sits beside the test binary,
         // so unless ~/.cargo/bin/eidos exists this is the single-file case.
