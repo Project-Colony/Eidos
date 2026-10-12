@@ -2148,7 +2148,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             }
             load_tools(app);
             // F5 is also the "I just ran setcap" recheck for the warning banner.
-            app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
+            app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0);
         }
         Message::OpenFolder(p) => {
             // Every other entry in either dropdown dismisses it. Leaving this
@@ -5397,11 +5397,10 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 c.confirm_fetch = true;
                 return Task::none();
             }
-            let bin = find_eidos_binary();
             let mut started = 0usize;
             for (mod_id, file_id, domain) in &missing {
                 let link = format!("nxm://{domain}/mods/{mod_id}/files/{file_id}");
-                match std::process::Command::new(&bin)
+                match eidos_command()
                     .arg("nxm")
                     .arg(&link)
                     .env("EIDOS_INSTANCE", &inst)
@@ -6185,7 +6184,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
             let log = eidos_log::log_dir().join("resume.log");
             let _ = std::fs::create_dir_all(eidos_log::log_dir());
             let sink = std::fs::File::create(&log).ok();
-            let mut cmd = std::process::Command::new(find_eidos_binary());
+            let mut cmd = eidos_command();
             cmd.arg("nxm")
                 .arg("--resume")
                 .arg(&path)

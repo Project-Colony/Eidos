@@ -1709,8 +1709,8 @@ pub(crate) fn diagnostics(app: &App) -> Vec<Diagnostic> {
                 title: "Passthrough requested but unavailable (launch capability missing)"
                     .to_string(),
                 detail: format!(
-                    "EIDOS_FUSE_PASSTHROUGH is set, but the launch binary has no CAP_SYS_ADMIN, so reads go through the daemon anyway. Run:  sudo setcap cap_sys_admin+ep {}  then press F5. Every rebuild of that binary wipes it.",
-                    find_eidos_binary().display()
+                    "EIDOS_FUSE_PASSTHROUGH is set, but the launch binary has no CAP_SYS_ADMIN, so reads go through the daemon anyway. Run:  {}  then press F5. Every rebuild of that binary wipes it.",
+                    setcap_hint()
                 ),
                 actions: Vec::new(),
             }
