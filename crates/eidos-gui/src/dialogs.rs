@@ -153,7 +153,7 @@ pub(crate) fn executables_dialog<'a>(
         list = list.push(text(t("exe_none_yet")).size(sz(11)));
     }
     let list_pane = container(scrollable(list).height(Length::Fill))
-        .width(Length::Fixed(200.0))
+        .width(Length::Fixed(scaled(200.0)))
         .height(Length::Fixed(280.0))
         .padding(4)
         .style(panel_style);
@@ -406,7 +406,7 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 
         let row = Row::new()
             .spacing(8)
-            .push(text(v.clone()).size(sz(11)).width(Length::Fixed(150.0)))
+            .push(text(v.clone()).size(sz(11)).width(Length::Fixed(scaled(150.0))))
             .push(text(label).size(sz(11)).color(if missing {
                 pal().error
             } else {
@@ -2119,7 +2119,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             };
             let mut status = text(label.to_string())
                 .size(sz(11))
-                .width(Length::Fixed(84.0));
+                .width(Length::Fixed(scaled(120.0)));
             if let Some(c) = colour {
                 status = status.color(c);
             }
@@ -2135,7 +2135,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 .push(
                     text(m.version.clone())
                         .size(sz(11))
-                        .width(Length::Fixed(70.0)),
+                        .width(Length::Fixed(scaled(70.0))),
                 )
                 .push(status)
                 .push(

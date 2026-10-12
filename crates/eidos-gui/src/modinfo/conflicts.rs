@@ -113,7 +113,7 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
         let row = Row::new()
             .spacing(6)
             .push(text(m.name.clone()).size(sz(12)).width(Length::Fill))
-            .push(text(tag).size(sz(11)).width(Length::Fixed(160.0)))
+            .push(text(tag).size(sz(11)).width(Length::Fixed(scaled(170.0))))
             .push(text(detail).size(sz(10)).width(Length::Fixed(scaled(80.0))));
         rows = rows.push(striped(row.into(), i % 2 == 0));
     }
@@ -205,7 +205,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
             .push(
                 text(verdict)
                     .size(sz(11))
-                    .width(Length::Fixed(260.0))
+                    .width(Length::Fixed(scaled(260.0)))
                     .color(if wins {
                         conflict_wins_fg()
                     } else {

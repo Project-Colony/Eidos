@@ -567,7 +567,7 @@ pub(crate) fn fomod_btn<'a>(
     let mut b = button(text(label).size(sz(12)).width(Length::Fill).center())
         .padding([7, 16])
         .width(if primary {
-            Length::Fixed(104.0)
+            Length::Fixed(scaled(104.0))
         } else {
             Length::Shrink
         })
