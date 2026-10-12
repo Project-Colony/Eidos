@@ -76,9 +76,9 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(map) = &app.conflicts else {
         return Column::new()
             .spacing(4)
-            .push(text("Conflicts").size(13.0))
+            .push(text("Conflicts").size(sz(13)))
             .push(
-                text("Open a game instance to analyse file conflicts across your mods.").size(12.0),
+                text("Open a game instance to analyse file conflicts across your mods.").size(sz(12)),
             )
             .into();
     };
@@ -112,9 +112,9 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
             .unwrap_or_default();
         let row = Row::new()
             .spacing(6)
-            .push(text(m.name.clone()).size(12.0).width(Length::Fill))
-            .push(text(tag).size(11.0).width(Length::Fixed(160.0)))
-            .push(text(detail).size(10.0).width(Length::Fixed(80.0)));
+            .push(text(m.name.clone()).size(sz(12)).width(Length::Fill))
+            .push(text(tag).size(sz(11)).width(Length::Fixed(160.0)))
+            .push(text(detail).size(sz(10)).width(Length::Fixed(scaled(80.0))));
         rows = rows.push(striped(row.into(), i % 2 == 0));
     }
 
@@ -133,10 +133,10 @@ pub(crate) fn conflicts_panel<'a>(app: &App) -> Element<'a, Message> {
                     ""
                 }
             ))
-            .size(12.0),
+            .size(sz(12)),
         )
-        .push(text(app.archive_warnings.join("\n")).size(11.0))
-        .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(10.0))
+        .push(text(app.archive_warnings.join("\n")).size(sz(11)))
+        .push(text("(only conflicting mods shown; flags also appear in the mod list)").size(sz(10)))
         .push(scrollable(rows).height(Length::FillPortion(2)))
         .push(conflicting_files(app, map))
         .into()
@@ -156,7 +156,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
     const SHOWN: usize = 40;
     let Some(focus) = app.selected_mod else {
         return text("Select a mod to see which files it contests.")
-            .size(11.0)
+            .size(sz(11))
             .into();
     };
     let origin = (focus + 1) as u32;
@@ -194,12 +194,12 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
             .spacing(6)
             .push(
                 text(node.display_path.clone())
-                    .size(11.0)
+                    .size(sz(11))
                     .width(Length::Fill),
             )
             .push(
                 text(verdict)
-                    .size(11.0)
+                    .size(sz(11))
                     .width(Length::Fixed(260.0))
                     .color(if wins {
                         conflict_wins_fg()
@@ -220,7 +220,7 @@ pub(crate) fn conflicting_files<'a>(app: &App, map: &ConflictMap) -> Element<'a,
     Column::new()
         .spacing(4)
         .height(Length::FillPortion(3))
-        .push(text(head).size(12.0))
+        .push(text(head).size(sz(12)))
         .push(scrollable(rows).height(Length::Fill))
         .push(archive_member_rows(app, map, origin, 100))
         .into()

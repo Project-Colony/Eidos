@@ -30,16 +30,16 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
     ) -> Element<'a, Message> {
         let mut col = Column::new()
             .spacing(6)
-            .push(text(title).size(13.0))
-            .push(text(what).size(11.0))
+            .push(text(title).size(sz(13)))
+            .push(text(what).size(sz(11)))
             .push(
-                button(text("Back up now").size(12.0))
+                button(text("Back up now").size(sz(12)))
                     .padding([4, 10])
                     .style(button::primary)
                     .on_press(Message::CreateBackup(kind)),
             );
         if list.is_empty() {
-            col = col.push(text("No restore points yet.").size(11.0));
+            col = col.push(text("No restore points yet.").size(sz(11)));
         } else {
             let mut rows = Column::new().spacing(3);
             for b in list {
@@ -47,9 +47,9 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
                     Row::new()
                         .spacing(8)
                         .align_y(iced::Alignment::Center)
-                        .push(text(b.when()).size(12.0).width(Length::Fill))
+                        .push(text(b.when()).size(sz(12)).width(Length::Fill))
                         .push(
-                            button(text("Restore").size(11.0))
+                            button(text("Restore").size(sz(11)))
                                 .padding([3, 8])
                                 .style(button::secondary)
                                 .on_press(Message::RestoreBackup(kind, b.stamp)),
@@ -81,9 +81,9 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .push(
             Row::new()
                 .align_y(iced::Alignment::Center)
-                .push(text("Backups").size(18.0).width(Length::Fill))
+                .push(text("Backups").size(sz(18)).width(Length::Fill))
                 .push(
-                    button(text("Close").size(12.0))
+                    button(text("Close").size(sz(12)))
                         .padding([4, 12])
                         .style(button::secondary)
                         .on_press(Message::CloseBackupsDialog),
@@ -92,7 +92,7 @@ pub(crate) fn backups_dialog<'a>(state: &BackupsDialogState) -> Element<'a, Mess
         .push(body)
         .push(
             text("Restoring backs up the current state first, so a wrong pick can be undone.")
-                .size(11.0),
+                .size(sz(11)),
         );
 
     container(card)
@@ -108,9 +108,9 @@ pub(crate) fn executables_dialog<'a>(
 ) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(6)
-        .push(text("Executables").size(16.0).width(Length::Fill))
+        .push(text("Executables").size(sz(16)).width(Length::Fill))
         .push(
-            button(text("x").size(14.0))
+            button(text("x").size(sz(14)))
                 .padding([1, 8])
                 .on_press(Message::CloseExecutablesDialog)
                 .style(button::text),
@@ -123,7 +123,7 @@ pub(crate) fn executables_dialog<'a>(
     let mut list = Column::new();
     for (i, t) in state.merged.iter().enumerate() {
         if i == state.user_len && i < state.merged.len() {
-            list = list.push(text("Defaults (read-only)").size(10.0));
+            list = list.push(text("Defaults (read-only)").size(sz(10)));
         }
         let selected = state.selected == Some(i);
         let label = if t.title.trim().is_empty() {
@@ -138,7 +138,7 @@ pub(crate) fn executables_dialog<'a>(
             label.to_string()
         };
         list = list.push(
-            button(text(display).size(12.0))
+            button(text(display).size(sz(12)))
                 .width(Length::Fill)
                 .padding([3, 6])
                 .on_press(Message::SelectExecutableTool(i))
@@ -150,7 +150,7 @@ pub(crate) fn executables_dialog<'a>(
         );
     }
     if state.merged.is_empty() {
-        list = list.push(text("No tools yet. Click Add to create one.").size(11.0));
+        list = list.push(text("No tools yet. Click Add to create one.").size(sz(11)));
     }
     let list_pane = container(scrollable(list).height(Length::Fill))
         .width(Length::Fixed(200.0))
@@ -196,7 +196,7 @@ pub(crate) fn executables_dialog<'a>(
             // newline: a `text_input` drops them, so the label promised
             // something the field refused, and a tool needing two arguments
             // could not be created through this dialog at all.
-            .push(text("Arguments (one per line)").size(11.0))
+            .push(text("Arguments (one per line)").size(sz(11)))
             .push(
                 iced::widget::text_editor::TextEditor::new(&state.args_editor)
                     .on_action(Message::ToolArgsAction)
@@ -223,14 +223,14 @@ pub(crate) fn executables_dialog<'a>(
         // list of eight defaults is exactly what somebody wants to prune.
         Column::new()
             .spacing(8)
-            .push(text("This is a per-game default and cannot be edited.").size(12.0))
-            .push(text("Add a user tool with the same title to override it.").size(10.0))
+            .push(text("This is a per-game default and cannot be edited.").size(sz(12)))
+            .push(text("Add a user tool with the same title to override it.").size(sz(10)))
             .push(tool_flags_row(state))
             .into()
     } else {
         Column::new()
             .spacing(8)
-            .push(text("Select a tool to edit, or click Add to create one.").size(12.0))
+            .push(text("Select a tool to edit, or click Add to create one.").size(sz(12)))
             .into()
     };
     let right = container(editor).width(Length::Fill).padding(4);
@@ -242,7 +242,7 @@ pub(crate) fn executables_dialog<'a>(
         .push(Space::new().width(Length::Fill))
         .push(tool_btn("Cancel", Message::CloseExecutablesDialog))
         .push(
-            button(text("Save").size(12.0))
+            button(text("Save").size(sz(12)))
                 .padding([5, 14])
                 .on_press(Message::SaveExecutablesDialog)
                 .style(button::primary),
@@ -268,12 +268,12 @@ pub(crate) fn exe_field<'a>(
 ) -> Element<'a, Message> {
     Column::new()
         .spacing(2)
-        .push(text(label).size(11.0))
+        .push(text(label).size(sz(11)))
         .push(
             text_input("", value)
                 .on_input(on_input)
                 .padding(6)
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         )
         .into()
@@ -293,25 +293,25 @@ pub(crate) fn exe_field_browse<'a>(
             text_input("", value)
                 .on_input(on_input)
                 .padding(6)
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Browse...").size(11.0))
+            button(text("Browse...").size(sz(11)))
                 .padding([5, 8])
                 .on_press(browse)
                 .style(button::secondary),
         );
     Column::new()
         .spacing(2)
-        .push(text(label).size(11.0))
+        .push(text(label).size(sz(11)))
         .push(row)
         .into()
 }
 
 /// The Delete button: active only when a user tool is selected.
 pub(crate) fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
-    let mut b = button(text("Delete").size(12.0))
+    let mut b = button(text("Delete").size(sz(12)))
         .padding(6)
         .style(button::danger);
     if state.selected_is_user() {
@@ -322,7 +322,7 @@ pub(crate) fn del_button<'a>(state: &ExecutablesDialogState) -> Element<'a, Mess
 
 /// A reorder button, greyed when the move is not possible.
 pub(crate) fn move_button<'a>(label: &'a str, msg: Message, enabled: bool) -> Element<'a, Message> {
-    let mut b = button(text(label).size(12.0))
+    let mut b = button(text(label).size(sz(12)))
         .padding(6)
         .style(button::secondary);
     if enabled {
@@ -398,7 +398,7 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 
     let mut col = Column::new()
         .spacing(2)
-        .push(text("Status").size(11.0).color(fomod_ink_faint()));
+        .push(text("Status").size(sz(11)).color(fomod_ink_faint()));
     let mut any_missing = false;
     for v in verbs {
         let (label, missing) = prereq_state(&v, &done);
@@ -406,8 +406,8 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 
         let row = Row::new()
             .spacing(8)
-            .push(text(v.clone()).size(11.0).width(Length::Fixed(150.0)))
-            .push(text(label).size(11.0).color(if missing {
+            .push(text(v.clone()).size(sz(11)).width(Length::Fixed(150.0)))
+            .push(text(label).size(sz(11)).color(if missing {
                 pal().error
             } else {
                 fomod_ink_soft()
@@ -426,7 +426,7 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
     if any_missing {
         col = col.push(
             text("Downloads run in the background; the status bar reports when they finish.")
-                .size(10.0)
+                .size(sz(10))
                 .color(fomod_ink_faint()),
         );
     }
@@ -438,21 +438,21 @@ pub(crate) fn prereq_status_rows<'a>(app: &App, prereqs: &str) -> Element<'a, Me
 pub(crate) fn about_dialog<'a>() -> Element<'a, Message> {
     let card = Column::new()
         .spacing(8)
-        .push(text("Eidos").size(20.0))
-        .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(12.0))
+        .push(text("Eidos").size(sz(20)))
+        .push(text(format!("Version {}", env!("CARGO_PKG_VERSION"))).size(sz(12)))
         .push(
             text("A Linux-native mod manager modelled on Mod Organizer 2: isolated instances, a virtual file system over the game, FOMOD installs, LOOT sorting, and Nexus integration.")
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
-        .push(text("Shortcuts").size(13.0))
+        .push(text("Shortcuts").size(sz(13)))
         .push(
             text("Ctrl+R run   ·   F5 refresh   ·   Ctrl+click multi-select   ·   Shift+click range   ·   Esc clear   ·   drag a row to reorder")
-                .size(11.0),
+                .size(sz(11)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([5, 14])
                 .on_press(Message::CloseAbout)
                 .style(button::primary),
@@ -487,9 +487,9 @@ pub(crate) fn cap_warning_banner<'a>() -> Element<'a, Message> {
     let row = Row::new()
         .spacing(10)
         .align_y(iced::Alignment::Center)
-        .push(text("Passthrough was requested but the launch binary has no CAP_SYS_ADMIN (a rebuild wipes it), so reads go through the daemon. Fix, then press F5:").size(11.0))
+        .push(text("Passthrough was requested but the launch binary has no CAP_SYS_ADMIN (a rebuild wipes it), so reads go through the daemon. Fix, then press F5:").size(sz(11)))
         .push(
-            container(text(cmd).size(11.0))
+            container(text(cmd).size(sz(11)))
                 .padding([2, 8])
                 .style(|_| container::Style {
                     background: Some(Background::Color(pal().bg_card)),
@@ -526,22 +526,22 @@ pub(crate) fn running_lock_card<'a>(run: &RunningState) -> Element<'a, Message> 
     let card = Column::new()
         .spacing(10)
         .align_x(iced::alignment::Horizontal::Center)
-        .push(text("Eidos is locked while the application runs").size(18.0))
-        .push(text(format!("{}  (pid {})", run.title, run.pid)).size(13.0))
+        .push(text("Eidos is locked while the application runs").size(sz(18)))
+        .push(text(format!("{}  (pid {})", run.title, run.pid)).size(sz(13)))
         .push(
             text("It is being run through the merged mod view. Loading a save or starting a new game writes the load order; Eidos refreshes when it exits.")
-                .size(11.0),
+                .size(sz(11)),
         )
         .push(Space::new().height(Length::Fixed(6.0)))
         .push(
-            button(text("Unlock").size(13.0))
+            button(text("Unlock").size(sz(13)))
                 .padding([6, 22])
                 .on_press(Message::ForceUnlock)
                 .style(button::primary),
         )
         .push(
             text("Unlock re-enables the GUI but leaves the game running.")
-                .size(10.0)
+                .size(sz(10))
                 .color(text_muted()),
         );
     container(card)
@@ -601,23 +601,23 @@ pub(crate) fn loot_message_row<'a>(m: &eidos_loot::LootMessage) -> Element<'a, M
     let parts = split_markdown_links(&m.text);
     if parts.iter().all(|(_, url)| url.is_none()) {
         return text(format!("{prefix}{}", m.text))
-            .size(11.0)
+            .size(sz(11))
             .color(color)
             .into();
     }
     let mut row = Row::new().spacing(0).align_y(iced::Alignment::Center);
     if !prefix.is_empty() {
-        row = row.push(text(prefix).size(11.0).color(color));
+        row = row.push(text(prefix).size(sz(11)).color(color));
     }
     for (label, url) in parts {
         row = match url {
             Some(u) => row.push(
-                button(text(label).size(11.0).color(accent()))
+                button(text(label).size(sz(11)).color(accent()))
                     .padding(0)
                     .on_press(Message::OpenUrl(u))
                     .style(button::text),
             ),
-            None => row.push(text(label).size(11.0).color(color)),
+            None => row.push(text(label).size(sz(11)).color(color)),
         };
     }
     // `wrap` keeps a long advisory readable instead of running off the dialog.
@@ -659,7 +659,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
     if !report.general.is_empty() {
         let mut sec = Column::new()
             .spacing(3)
-            .push(text("General messages").size(14.0));
+            .push(text("General messages").size(sz(14)));
         for m in &report.general {
             sec = sec.push(loot_message_row(m));
         }
@@ -669,11 +669,11 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
     for p in &report.plugins {
         let mut sec = Column::new()
             .spacing(2)
-            .push(text(p.name.clone()).size(13.0));
+            .push(text(p.name.clone()).size(sz(13)));
         if !p.missing_masters.is_empty() {
             sec = sec.push(
                 text(format!("Missing masters: {}", p.missing_masters.join(", ")))
-                    .size(11.0)
+                    .size(sz(11))
                     .color(pal().error),
             );
         }
@@ -691,7 +691,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                     "Dirty - {util} found {} ITM, {} deleted refs, {} deleted navmeshes (clean with xEdit)",
                     d.itm_count, d.deleted_reference_count, d.deleted_navmesh_count
                 ))
-                .size(11.0)
+                .size(sz(11))
                 .color(pal().warning),
             );
         }
@@ -700,14 +700,14 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
 
     let card = Column::new()
         .spacing(10)
-        .push(text("LOOT report").size(20.0))
-        .push(text(summary).size(12.0))
+        .push(text("LOOT report").size(sz(20)))
+        .push(text(summary).size(sz(12)))
         .push(scrollable(body).height(Length::Fixed(360.0)))
         .push(
             Row::new()
                 .spacing(8)
                 .push(
-                    button(text("Close").size(12.0))
+                    button(text("Close").size(sz(12)))
                         .padding([5, 14])
                         .on_press(Message::CloseLootReport)
                         .style(button::primary),
@@ -718,7 +718,7 @@ pub(crate) fn loot_report_dialog<'a>(report: &eidos_loot::LootReport) -> Element
                 // thing in one press - which is what the Ctrl+A/Ctrl+C people are
                 // really after anyway. Ctrl+C does the same while this is open.
                 .push(
-                    button(text("Copy report").size(12.0))
+                    button(text("Copy report").size(sz(12)))
                         .padding([5, 14])
                         .on_press(Message::CopyLootReport)
                         .style(button::secondary),
@@ -797,7 +797,7 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text(title).size(18.0).width(Length::Fill))
+        .push(text(title).size(sz(18)).width(Length::Fill))
         .push(
             button(
                 text(if state.editing {
@@ -805,14 +805,14 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
                 } else {
                     "Edit list..."
                 })
-                .size(12.0),
+                .size(sz(12)),
             )
             .padding([4, 10])
             .style(button::secondary)
             .on_press(Message::ToggleCategoryEditor),
         )
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseCategoriesDialog),
@@ -839,9 +839,9 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
         }
     };
     foot = foot
-        .push(text(summary).size(12.0).width(Length::Fill))
+        .push(text(summary).size(sz(12)).width(Length::Fill))
         .push(
-            button(text("Apply").size(12.0))
+            button(text("Apply").size(sz(12)))
                 .padding([4, 14])
                 .style(button::primary)
                 .on_press(Message::ApplyCategories),
@@ -853,7 +853,7 @@ pub(crate) fn categories_dialog<'a>(state: &CategoriesDialogState) -> Element<'a
             text(
                 "Applying sets the same categories on every selected mod, replacing what they had.",
             )
-            .size(11.0),
+            .size(sz(11)),
         );
     }
 
@@ -884,7 +884,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
             .align_y(iced::Alignment::Center)
             .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
             .push(
-                button(text(format!("{mark} {name}")).size(12.0))
+                button(text(format!("{mark} {name}")).size(sz(12)))
                     .padding([2, 6])
                     .width(Length::Fill)
                     .style(if checked {
@@ -897,10 +897,10 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         // Primary is what the mod list column shows, so it needs to be both
         // visible and settable without unchecking everything else first.
         if is_primary {
-            row = row.push(text("primary").size(10.0));
+            row = row.push(text("primary").size(sz(10)));
         } else if checked {
             row = row.push(
-                button(text("make primary").size(10.0))
+                button(text("make primary").size(sz(10)))
                     .padding([2, 6])
                     .style(button::text)
                     .on_press(Message::SetPrimaryCategory(id)),
@@ -909,13 +909,13 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         rows = rows.push(row);
     }
     if shown == 0 {
-        rows = rows.push(text("No category matches.").size(12.0));
+        rows = rows.push(text("No category matches.").size(sz(12)));
     }
 
     let search = text_input("Filter categories", &state.query)
         .on_input(Message::CategoryQueryChanged)
         .padding(5)
-        .size(12.0);
+        .size(sz(12));
 
     let nexus = Row::new()
         .spacing(6)
@@ -935,7 +935,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 "Fetch pulls this game's official category list; Use Nexus sets the pick from what \
                  the download recorded.",
             )
-            .size(10.0),
+            .size(sz(10)),
         )
         .into()
 }
@@ -957,10 +957,10 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                                 .on_input(Message::RenameCategoryChanged)
                                 .on_submit(Message::RenameCategoryCommit)
                                 .padding(4)
-                                .size(12.0),
+                                .size(sz(12)),
                         )
                         .push(
-                            button(text("Save").size(11.0))
+                            button(text("Save").size(sz(11)))
                                 .padding([2, 8])
                                 .style(button::primary)
                                 .on_press(Message::RenameCategoryCommit),
@@ -975,16 +975,16 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 .spacing(6)
                 .align_y(iced::Alignment::Center)
                 .push(Space::new().width(Length::Fixed(14.0 * depth as f32)))
-                .push(text(name).size(12.0).width(Length::Fill))
-                .push(text(format!("#{id}")).size(10.0))
+                .push(text(name).size(sz(12)).width(Length::Fill))
+                .push(text(format!("#{id}")).size(sz(10)))
                 .push(
-                    button(text("Rename").size(10.0))
+                    button(text("Rename").size(sz(10)))
                         .padding([2, 6])
                         .style(button::text)
                         .on_press(Message::RenameCategoryStart(id)),
                 )
                 .push(
-                    button(text(if armed { "Confirm?" } else { "Delete" }).size(10.0))
+                    button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(10)))
                         .padding([2, 6])
                         .style(if armed { button::danger } else { button::text })
                         .on_press(Message::DeleteCategory(id)),
@@ -1017,17 +1017,17 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 .on_input(Message::NewCategoryNameChanged)
                 .on_submit(Message::AddCategory)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
             pick_list(parents, selected, |c: CategoryChoice| {
                 Message::NewCategoryParentChanged(c.id)
             })
-            .text_size(12.0)
+            .text_size(sz(12))
             .padding(4),
         )
         .push(
-            button(text("Add").size(12.0))
+            button(text("Add").size(sz(12)))
                 .padding([4, 12])
                 .style(button::primary)
                 .on_press(Message::AddCategory),
@@ -1042,7 +1042,7 @@ fn catalog_editor<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
                 "Deleting a category lifts its children onto its parent and leaves the mods using \
                  it alone - they show a bare id until re-categorised. Nothing is written until Apply.",
             )
-            .size(10.0),
+            .size(sz(10)),
         )
         .into()
 }
@@ -1076,7 +1076,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
         .spacing(8)
         .align_y(iced::Alignment::Center)
         .push(
-            button(text(if pinned { "Unpin" } else { "Pin to top" }).size(11.0))
+            button(text(if pinned { "Unpin" } else { "Pin to top" }).size(sz(11)))
                 .padding([4, 10])
                 .style(if pinned {
                     button::primary
@@ -1092,7 +1092,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
                 } else {
                     "Hide from picker"
                 })
-                .size(11.0),
+                .size(sz(11)),
             )
             .padding([4, 10])
             .style(if hidden {
@@ -1103,7 +1103,7 @@ fn tool_flags_row<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> {
             .on_press(Message::ExecToggleHidden),
         )
         .push(
-            button(text("Desktop shortcut").size(11.0))
+            button(text("Desktop shortcut").size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::ExecMakeShortcut),
@@ -1122,12 +1122,12 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
     };
     Column::new()
         .spacing(4)
-        .push(text("Capture output into").size(11.0))
+        .push(text("Capture output into").size(sz(11)))
         .push(
             pick_list(choices, selected, |c: String| {
                 Message::ToolOutputModChanged(if c == NONE { String::new() } else { c })
             })
-            .text_size(12.0)
+            .text_size(sz(12))
             .padding(5)
             .width(Length::Fill),
         )
@@ -1136,7 +1136,7 @@ fn output_mod_field<'a>(state: &ExecutablesDialogState) -> Element<'a, Message> 
                 "What this run writes goes into that mod instead of the Overwrite. Only the files \
                  THIS run produced move - anything already in the Overwrite stays put.",
             )
-            .size(10.0),
+            .size(sz(10)),
         )
         .into()
 }
@@ -1159,7 +1159,7 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     for f in &state.files {
         let on = *f == state.current;
         tabs = tabs.push(
-            button(text(f.clone()).size(12.0))
+            button(text(f.clone()).size(sz(12)))
                 .padding([3, 10])
                 .style(if on {
                     button::primary
@@ -1175,11 +1175,11 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
         .spacing(8)
         .push(
             text(format!("INI editor - profile '{profile}'"))
-                .size(18.0)
+                .size(sz(18))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseIniEditor),
@@ -1188,8 +1188,8 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     let editor = iced::widget::text_editor(&state.content)
         .on_action(Message::IniEditorAction)
         .height(Length::Fixed(420.0))
-        .font(iced::Font::MONOSPACE)
-        .size(12.0)
+        .font(colony_ui::ui_font())
+        .size(sz(12))
         .padding(8);
 
     // Say what this file IS before the user changes it: which one, whether it
@@ -1216,14 +1216,14 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
     actions = actions
         .push(
             text(if state.dirty { "Unsaved changes" } else { "" })
-                .size(11.0)
+                .size(sz(11))
                 .width(Length::Fill),
         )
         .push(tool_btn("Open externally", Message::IniEditorOpenExternal));
     if state.dirty {
         actions = actions.push(tool_btn("Revert", Message::IniEditorRevert));
     }
-    let save = button(text("Save").size(12.0))
+    let save = button(text("Save").size(sz(12)))
         .padding([4, 14])
         .style(if state.dirty {
             button::primary
@@ -1244,7 +1244,7 @@ pub(crate) fn ini_editor_dialog<'a>(app: &App, state: &'a IniEditorState) -> Ele
         .push(header)
         .push(tabs)
         .push(editor)
-        .push(text(note).size(10.0))
+        .push(text(note).size(sz(10)))
         .push(actions);
 
     container(card)
@@ -1261,12 +1261,12 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Log").size(18.0).width(Length::Fill))
+        .push(text("Log").size(sz(18)).width(Length::Fill))
         .push(tool_btn("Open folder", Message::LogOpenFolder))
         .push(tool_btn("Copy", Message::LogCopy))
         .push(tool_btn("Refresh", Message::LogRefresh))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseLogPane),
@@ -1275,10 +1275,10 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
     // The level floor. Four buttons rather than a dropdown: the whole point is
     // to flip between them while reading, which a dropdown costs two clicks.
     let mut levels = Row::new().spacing(4).align_y(iced::Alignment::Center);
-    levels = levels.push(text("Show").size(11.0));
+    levels = levels.push(text("Show").size(sz(11)));
     for lvl in [Level::Debug, Level::Info, Level::Warn, Level::Error] {
         levels = levels.push(
-            button(text(lvl.as_str()).size(11.0))
+            button(text(lvl.as_str()).size(sz(11)))
                 .padding([2, 8])
                 .style(if state.level == lvl {
                     button::primary
@@ -1294,7 +1294,7 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
             state.lines.len(),
             state.total
         ))
-        .size(10.0)
+        .size(sz(10))
         .width(Length::Fill),
     );
 
@@ -1308,7 +1308,7 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
         // The instance and the time; the pid is noise on a button.
         let short: String = label.split('.').take(2).collect::<Vec<_>>().join(" ");
         sessions = sessions.push(
-            button(text(short).size(10.0))
+            button(text(short).size(sz(10)))
                 .padding([2, 6])
                 .style(if *f == state.current {
                     button::primary
@@ -1321,7 +1321,7 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
 
     let mut body = Column::new().spacing(1);
     if state.truncated {
-        body = body.push(text("(showing the end of the file)").size(10.0));
+        body = body.push(text("(showing the end of the file)").size(sz(10)));
     }
     if state.lines.is_empty() {
         body = body.push(
@@ -1330,7 +1330,7 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
             } else {
                 "Nothing at this level. Lower it to see more."
             })
-            .size(12.0),
+            .size(sz(12)),
         );
     }
     for (lvl, msg) in &state.lines {
@@ -1340,8 +1340,8 @@ pub(crate) fn log_pane_dialog<'a>(state: &LogPaneState) -> Element<'a, Message> 
             _ => None,
         };
         let mut line = text(format!("{:<5} {msg}", lvl.as_str()))
-            .size(11.0)
-            .font(iced::Font::MONOSPACE);
+            .size(sz(11))
+            .font(colony_ui::ui_font());
         if let Some(c) = colour {
             line = line.color(c);
         }
@@ -1381,21 +1381,21 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Extensions").size(18.0).width(Length::Fill))
+        .push(text("Extensions").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Preview file").size(11.0)).on_press(Message::ChooseExtensionFile(
+            button(text("Preview file").size(sz(11))).on_press(Message::ChooseExtensionFile(
                 eidos_addons::protocol::Operation::Preview,
             )),
         )
         .push(
-            button(text("Read save file").size(11.0)).on_press(Message::ChooseExtensionFile(
+            button(text("Read save file").size(sz(11))).on_press(Message::ChooseExtensionFile(
                 eidos_addons::protocol::Operation::SaveInfo,
             )),
         )
         .push(tool_btn("Open folder", Message::OpenAddonsFolder))
         .push(tool_btn("Reload", Message::ReloadAddons))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseAddons),
@@ -1415,10 +1415,10 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                             .map(|n| n.to_string_lossy().into_owned())
                             .unwrap_or_default(),
                     )
-                    .size(13.0)
+                    .size(sz(13))
                     .color(conflict_loses_fg()),
                 )
-                .push(text(format!("refused: {why}")).size(11.0)),
+                .push(text(format!("refused: {why}")).size(sz(11))),
         );
     }
     if app.addons.is_empty() && app.addon_rejected.is_empty() {
@@ -1427,7 +1427,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                 "No extensions yet. Drop a .toml manifest into the folder above; the format is in \
                  docs/guide/extensions.md.",
             )
-            .size(12.0),
+            .size(sz(12)),
         );
     }
     for a in &app.addons {
@@ -1441,10 +1441,10 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
         let mut title = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text(a.name.clone()).size(13.0))
-            .push(text(format!("({kind})")).size(10.0));
+            .push(text(a.name.clone()).size(sz(13)))
+            .push(text(format!("({kind})")).size(sz(10)));
         if !a.version.is_empty() {
-            title = title.push(text(format!("v{}", a.version)).size(10.0));
+            title = title.push(text(format!("v{}", a.version)).size(sz(10)));
         }
         title = title.push(Space::new().width(Length::Fill));
 
@@ -1457,33 +1457,33 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                 .map(|_| "not for this game".to_string())
         });
         match (&blocked, a.kind) {
-            (Some(why), _) => title = title.push(text(why.clone()).size(10.0)),
+            (Some(why), _) => title = title.push(text(why.clone()).size(sz(10))),
             (None, AddonKind::Tool) => {
                 title = title.push(
-                    button(text("Run").size(11.0))
+                    button(text("Run").size(sz(11)))
                         .padding([3, 10])
                         .style(button::primary)
                         .on_press(Message::RunAddon(a.id.clone())),
                 );
             }
             (None, AddonKind::Diagnose) => {
-                title = title.push(text("runs on refresh").size(10.0));
+                title = title.push(text("runs on refresh").size(sz(10)));
             }
             (None, _) => {
-                title = title.push(text("runs for matching files").size(10.0));
+                title = title.push(text("runs for matching files").size(sz(10)));
             }
         }
 
         let mut col = Column::new().spacing(2).push(title);
         if !a.description.is_empty() {
-            col = col.push(text(a.description.clone()).size(11.0));
+            col = col.push(text(a.description.clone()).size(sz(11)));
         }
         let by = if a.author.is_empty() {
             a.source.display().to_string()
         } else {
             format!("{} - {}", a.author, a.source.display())
         };
-        col = col.push(text(by).size(9.5));
+        col = col.push(text(by).size(sz(10)));
         rows = rows.push(col);
     }
 
@@ -1501,7 +1501,7 @@ pub(crate) fn addons_dialog<'a>(app: &App) -> Element<'a, Message> {
                  Eidos itself. A 'tool' gets a Run button; a 'check' runs on every refresh and \
                  its output appears in Health, under its own name.",
             )
-            .size(10.0),
+            .size(sz(10)),
         );
 
     container(card)
@@ -1519,9 +1519,9 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Export the mod list").size(18.0).width(Length::Fill))
+        .push(text("Export the mod list").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseExportDialog),
@@ -1538,9 +1538,9 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     let scope = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Rows").size(11.0))
+        .push(text("Rows").size(sz(11)))
         .push(
-            button(text(format!("All ({total})")).size(12.0))
+            button(text(format!("All ({total})")).size(sz(12)))
                 .padding([3, 10])
                 .style(if state.scope == ExportScope::All {
                     button::primary
@@ -1550,7 +1550,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
                 .on_press(Message::ExportScopeChanged(ExportScope::All)),
         )
         .push(
-            button(text(format!("Enabled only ({active})")).size(12.0))
+            button(text(format!("Enabled only ({active})")).size(sz(12)))
                 .padding([3, 10])
                 .style(if state.scope == ExportScope::Active {
                     button::primary
@@ -1574,10 +1574,10 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
                         .spacing(6)
                         .push(
                             text(if *on { "[x]" } else { "[ ]" })
-                                .size(11.0)
-                                .font(iced::Font::MONOSPACE),
+                                .size(sz(11))
+                                .font(colony_ui::ui_font()),
                         )
-                        .push(text(label).size(12.0)),
+                        .push(text(label).size(sz(12))),
                 )
                 .width(Length::Fill)
                 .padding([2, 6])
@@ -1589,12 +1589,12 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
     if state.picked().is_empty() {
         cols = cols.push(
             text("Tick at least one column.")
-                .size(11.0)
+                .size(sz(11))
                 .color(conflict_loses_fg()),
         );
     }
 
-    let run = button(text("Export...").size(12.0))
+    let run = button(text("Export...").size(sz(12)))
         .padding([4, 14])
         .style(button::primary);
     let footer = Row::new()
@@ -1605,7 +1605,7 @@ pub(crate) fn export_dialog<'a>(app: &App, state: &ExportDialogState) -> Element
                 "MO2's own CSV format: CRLF line endings, every string quoted, the Nexus id bare - \
                  so a sheet or a script written for MO2 reads it unchanged.",
             )
-            .size(10.0)
+            .size(sz(10))
             .width(Length::Fill),
         )
         .push(if state.picked().is_empty() { run } else { run.on_press(Message::ExportRun) });
@@ -1634,9 +1634,9 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Instances").size(18.0).width(Length::Fill))
+        .push(text("Instances").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseInstanceManager),
@@ -1644,7 +1644,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
 
     let mut rows = Column::new().spacing(6);
     if app.known.is_empty() {
-        rows = rows.push(text("No instances found yet.").size(12.0));
+        rows = rows.push(text("No instances found yet.").size(sz(12)));
     }
     for (i, k) in app.known.iter().enumerate() {
         // Rename takes over the row while it is armed, exactly as the profile
@@ -1660,10 +1660,10 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
                                 .on_input(Message::InstanceRenameChanged)
                                 .on_submit(Message::InstanceRenameCommit)
                                 .padding(5)
-                                .size(12.0),
+                                .size(sz(12)),
                         )
                         .push(
-                            button(text("Save").size(11.0))
+                            button(text("Save").size(sz(11)))
                                 .padding([3, 10])
                                 .style(button::primary)
                                 .on_press(Message::InstanceRenameCommit),
@@ -1677,12 +1677,12 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
         let mut title = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text(k.label.clone()).size(12.0).width(Length::Fill));
+            .push(text(k.label.clone()).size(sz(12)).width(Length::Fill));
         if open_now {
-            title = title.push(text("open").size(10.0));
+            title = title.push(text("open").size(sz(10)));
         } else {
             title = title.push(
-                button(text("Open").size(11.0))
+                button(text("Open").size(sz(11)))
                     .padding([3, 10])
                     .style(button::primary)
                     .on_press(Message::InstanceOpen(i)),
@@ -1693,14 +1693,14 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
         // the registry to drop.
         if k.portable && !open_now {
             title = title.push(
-                button(text("Rename").size(11.0))
+                button(text("Rename").size(sz(11)))
                     .padding([3, 8])
                     .style(button::secondary)
                     .on_press(Message::InstanceRenameStart(i)),
             );
             let armed = app.confirm_forget == Some(i);
             title = title.push(
-                button(text(if armed { "Confirm?" } else { "Forget" }).size(11.0))
+                button(text(if armed { "Confirm?" } else { "Forget" }).size(sz(11)))
                     .padding([3, 8])
                     .style(if armed {
                         button::danger
@@ -1711,7 +1711,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             );
         }
         title = title.push(
-            button(text("Folder").size(11.0))
+            button(text("Folder").size(sz(11)))
                 .padding([3, 8])
                 .style(button::text)
                 .on_press(Message::OpenFolder(k.inst.root.clone())),
@@ -1729,7 +1729,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
                  no Delete: an instance holds your whole mod pool, and that is not something to \
                  lose to one confirmation - use Folder and delete it yourself if you mean it.",
             )
-            .size(10.0),
+            .size(sz(10)),
         );
 
     container(card)
@@ -1761,8 +1761,8 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text(name).size(15.0).width(Length::Fill))
-        .push(button(text("Extension").size(11.0)).on_press_maybe(
+        .push(text(name).size(sz(15)).width(Length::Fill))
+        .push(button(text("Extension").size(sz(11))).on_press_maybe(
             (!matches!(p, Preview::Archive { .. })).then(|| {
                 Message::RunFileExtension(
                     eidos_addons::protocol::Operation::Preview,
@@ -1771,13 +1771,13 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             }),
         ))
         .push(
-            button(text("Reveal").size(11.0))
+            button(text("Reveal").size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::DataReveal(p.path().to_path_buf())),
         )
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::ClosePreview),
@@ -1812,7 +1812,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                 };
                 controls = controls
                     .push(button(text("−")).on_press_maybe(value.checked_sub(1).map(change)))
-                    .push(text(format!("{label} {value}/{}", count - 1)).size(11.0))
+                    .push(text(format!("{label} {value}/{}", count - 1)).size(sz(11)))
                     .push(
                         button(text("+"))
                             .on_press_maybe((value + 1 < count).then(|| change(value + 1))),
@@ -1857,7 +1857,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                         "{} × {} · {}{note}",
                         info.width, info.height, info.format
                     ))
-                    .size(10.0),
+                    .size(sz(10)),
                 )
                 .push(body)
                 .into()
@@ -1867,7 +1867,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             let orbit = Row::new()
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .push(text("Orbit").size(11.0))
+                .push(text("Orbit").size(sz(11)))
                 .push(
                     slider(
                         -std::f32::consts::PI..=std::f32::consts::PI,
@@ -1877,7 +1877,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     .step(0.03_f32)
                     .width(Length::Fill),
                 )
-                .push(text("Tilt").size(11.0))
+                .push(text("Tilt").size(sz(11)))
                 .push(
                     slider(-1.5..=1.5, view.pitch, move |pitch| {
                         Message::PreviewNifView(crate::nif_render::View { pitch, ..view })
@@ -1888,7 +1888,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             let controls = Row::new()
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .push(text("Zoom").size(11.0))
+                .push(text("Zoom").size(sz(11)))
                 .push(
                     slider(0.1..=10.0, view.zoom, move |zoom| {
                         Message::PreviewNifView(crate::nif_render::View { zoom, ..view })
@@ -1916,11 +1916,11 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     .into(),
             };
             let mut body = Column::new().spacing(8).push(orbit).push(controls)
-                .push(text(format!("{} static shapes · orthographic view · diffuse textures and approximate lighting", model.scene.meshes.len())).size(10.0))
+                .push(text(format!("{} static shapes · orthographic view · diffuse textures and approximate lighting", model.scene.meshes.len())).size(sz(10)))
                 .push(image);
             if !model.warnings.is_empty() {
                 body = body.push(
-                    scrollable(text(model.warnings.as_ref()).size(10.0))
+                    scrollable(text(model.warnings.as_ref()).size(sz(10)))
                         .height(Length::Fixed(58.0)),
                 );
             }
@@ -1937,7 +1937,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
             let mut col = Column::new().spacing(4).push(
                 // Monospaced, because everything that reaches here - an INI, a
                 // log, a Papyrus source - is written in columns.
-                text(body.clone()).size(11.0).font(iced::Font::MONOSPACE),
+                text(body.clone()).size(sz(11)).font(colony_ui::ui_font()),
             );
             if *truncated {
                 col = col.push(
@@ -1945,12 +1945,12 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                         "Showing the first {} KB. The rest is there, just not here.",
                         PREVIEW_TEXT_CAP / 1024
                     ))
-                    .size(10.0),
+                    .size(sz(10)),
                 );
             }
             scrollable(col).height(Length::Fill).into()
         }
-        Preview::Unsupported { why, .. } => container(text(why.clone()).size(12.0))
+        Preview::Unsupported { why, .. } => container(text(why.clone()).size(sz(12)))
             .center(Length::Fill)
             .into(),
     };
@@ -1966,9 +1966,9 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Nexus collection").size(18.0).width(Length::Fill))
+        .push(text("Nexus collection").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseCollection),
@@ -1985,10 +1985,10 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .on_input(Message::CollectionLinkChanged)
             .on_submit(Message::CollectionFetch)
             .padding(5)
-            .size(12.0),
+            .size(sz(12)),
         )
         .push(
-            button(text(if state.loading { "..." } else { "Look up" }).size(12.0))
+            button(text(if state.loading { "..." } else { "Look up" }).size(sz(12)))
                 .padding([4, 12])
                 .style(button::primary)
                 .on_press_maybe((!state.loading).then_some(Message::CollectionFetch)),
@@ -1997,14 +1997,14 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
     let mut card = Column::new().spacing(10).push(header).push(field);
 
     if let Some(e) = &state.error {
-        card = card.push(text(e.clone()).size(12.0).color(conflict_loses_fg()));
+        card = card.push(text(e.clone()).size(sz(12)).color(conflict_loses_fg()));
     }
 
     if let Some(rev) = &state.revision {
         if !rev.visible() {
             // The gate answered. Say which rule, not "no".
             let why = rev.hidden.map(|h| h.message()).unwrap_or("");
-            card = card.push(text(why.to_string()).size(12.0));
+            card = card.push(text(why.to_string()).size(sz(12)));
             return container(card)
                 .width(Length::Fixed(720.0))
                 .padding(18)
@@ -2040,12 +2040,12 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
 
         let mut title = Column::new()
             .spacing(2)
-            .push(text(format!("{}  ·  revision {}", rev.name, rev.revision_number)).size(15.0));
+            .push(text(format!("{}  ·  revision {}", rev.name, rev.revision_number)).size(sz(15)));
         if !rev.author.is_empty() {
-            title = title.push(text(format!("by {}", rev.author)).size(11.0));
+            title = title.push(text(format!("by {}", rev.author)).size(sz(11)));
         }
         if !rev.summary.is_empty() {
-            title = title.push(text(rev.summary.clone()).size(11.0));
+            title = title.push(text(rev.summary.clone()).size(sz(11)));
         }
         card = card.push(title);
 
@@ -2054,7 +2054,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             .align_y(iced::Alignment::Center)
             .push(
                 text(format!("{installed} installed  ·  {other_version} other file/version  ·  {unverified} unverified  ·  {downloaded} downloaded  ·  {missing} missing"))
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
             );
         // The real action. It sits ahead of "fetch missing" because fetching is
@@ -2066,7 +2066,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 } else {
                     "Install this collection"
                 })
-                .size(11.0),
+                .size(sz(11)),
             )
             .padding([3, 10])
             .style(button::primary)
@@ -2079,7 +2079,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 format!("Try to fetch {missing} missing")
             };
             summary = summary.push(
-                button(text(label).size(11.0))
+                button(text(label).size(sz(11)))
                     .padding([3, 10])
                     .style(if state.confirm_fetch {
                         button::danger
@@ -2098,8 +2098,8 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 container(
                     Column::new()
                         .spacing(3)
-                        .push(text("The collection's own instructions").size(10.0))
-                        .push(text(rev.instructions.clone()).size(11.0)),
+                        .push(text("The collection's own instructions").size(sz(10)))
+                        .push(text(rev.instructions.clone()).size(sz(11))),
                 )
                 .padding(8)
                 .style(card_style),
@@ -2118,7 +2118,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                 MemberState::Missing => ("missing", Some(conflict_loses_fg())),
             };
             let mut status = text(label.to_string())
-                .size(11.0)
+                .size(sz(11))
                 .width(Length::Fixed(84.0));
             if let Some(c) = colour {
                 status = status.color(c);
@@ -2131,15 +2131,15 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
             let row = Row::new()
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .push(text(name).size(12.0).width(Length::Fill))
+                .push(text(name).size(sz(12)).width(Length::Fill))
                 .push(
                     text(m.version.clone())
-                        .size(11.0)
+                        .size(sz(11))
                         .width(Length::Fixed(70.0)),
                 )
                 .push(status)
                 .push(
-                    button(text("Open").size(10.0))
+                    button(text("Open").size(sz(10)))
                         .padding([2, 8])
                         .style(button::text)
                         .on_press(Message::CollectionOpenMod(i)),
@@ -2156,7 +2156,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
                     rev.mod_count as usize - rev.mods.len(),
                     rev.mod_count
                 ))
-                .size(11.0),
+                .size(sz(11)),
             );
         }
         card = card.push(scrollable(rows).height(Length::Fixed(320.0)));
@@ -2173,7 +2173,7 @@ pub(crate) fn collection_dialog<'a>(state: &CollectionState) -> Element<'a, Mess
              says so rather than passing over it. Open takes you to the exact file the \
              collection pins.",
         )
-        .size(10.0),
+        .size(sz(10)),
     );
 
     // Scrollable, and capped. A collection's own installation notes are free
@@ -2213,9 +2213,9 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Pack this instance").size(18.0).width(Length::Fill))
+        .push(text("Pack this instance").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::ClosePackDialog),
@@ -2231,21 +2231,21 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
          profiles, the Overwrite with your saves in it, and the archives they were \
          installed from. Move that file to the other machine and unpack it there."
     ))
-    .size(11.0)
+    .size(sz(11))
     .color(text_muted());
 
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("File").size(11.0).width(Length::Fixed(46.0)))
+        .push(text("File").size(sz(11)).width(Length::Fixed(46.0)))
         .push(
             text_input("/home/you/skyrimse.eidos", &state.dest)
                 .on_input(Message::PackDestChanged)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
-            button(text("Browse").size(11.0))
+            button(text("Browse").size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::PackBrowse),
@@ -2268,16 +2268,16 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
             eidos_transfer::human_bytes(state.plan.downloads_bytes)
         ))
         .on_toggle(|_| Message::PackToggleDownloads)
-        .size(13.0)
-        .text_size(12.0);
+        .size(sz(13))
+        .text_size(sz(12));
 
     let mut levels = Row::new()
         .spacing(4)
         .align_y(iced::Alignment::Center)
-        .push(text("Compression").size(11.0).width(Length::Fixed(76.0)));
+        .push(text("Compression").size(sz(11)).width(Length::Fixed(76.0)));
     for n in eidos_transfer::LEVELS {
         levels = levels.push(
-            button(text(n.to_string()).size(11.0))
+            button(text(n.to_string()).size(sz(11)))
                 .padding([3, 9])
                 .style(if state.level == n {
                     button::primary
@@ -2295,7 +2295,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         } else {
             "  slower".to_string()
         })
-        .size(10.0)
+        .size(sz(10))
         .color(text_muted()),
     );
 
@@ -2309,14 +2309,14 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
                 state.plan.empty_dirs,
                 eidos_transfer::human_bytes(bytes)
             ))
-            .size(12.0),
+            .size(sz(12)),
         )
         .push(
             text(format!(
                 "expect roughly {}",
                 eidos_transfer::human_bytes(expect)
             ))
-            .size(11.0)
+            .size(sz(11))
             .color(text_muted()),
         );
 
@@ -2326,7 +2326,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
              itself, tools that live outside the instance, and this machine's own logs \
              and caches. The file lists every one of them with its reason.",
         )
-        .size(10.0)
+        .size(sz(10))
         .color(text_muted()),
     );
     if !state.plan.tools_outside.is_empty() {
@@ -2342,7 +2342,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
                     .collect::<Vec<_>>()
                     .join(", ")
             ))
-            .size(10.0)
+            .size(sz(10))
             .color(text_muted()),
         );
     }
@@ -2351,12 +2351,12 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
     if ready && path.is_file() {
         notes = notes.push(
             text("That file already exists and will be replaced.")
-                .size(10.0)
+                .size(sz(10))
                 .color(pal().warning),
         );
     }
 
-    let run = button(text("Pack").size(12.0))
+    let run = button(text("Pack").size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
     let footer = Row::new()
@@ -2364,7 +2364,7 @@ pub(crate) fn pack_dialog<'a>(app: &App, state: &PackDialogState) -> Element<'a,
         .align_y(iced::Alignment::Center)
         .push(
             text("The instance is locked while this runs, and it takes a while.")
-                .size(10.0)
+                .size(sz(10))
                 .color(text_muted())
                 .width(Length::Fill),
         )
@@ -2396,9 +2396,9 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let header = Row::new()
         .align_y(iced::Alignment::Center)
         .spacing(8)
-        .push(text("Unpack a backup").size(18.0).width(Length::Fill))
+        .push(text("Unpack a backup").size(sz(18)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([4, 12])
                 .style(button::secondary)
                 .on_press(Message::CloseUnpackDialog),
@@ -2407,14 +2407,14 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let archive = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Backup").size(11.0).width(Length::Fixed(52.0)))
+        .push(text("Backup").size(sz(11)).width(Length::Fixed(scaled(52.0))))
         .push(
             text_input("/home/you/skyrimse.eidos", &state.archive)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
-            button(text("Choose...").size(11.0))
+            button(text("Choose...").size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::UnpackBrowseArchive),
@@ -2425,7 +2425,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     // "is this the right backup" is a question only the file can answer.
     let mut about = Column::new().spacing(2);
     if let Some(e) = &state.error {
-        about = about.push(text(e.clone()).size(11.0).color(pal().warning));
+        about = about.push(text(e.clone()).size(sz(11)).color(pal().warning));
     }
     if let Some(m) = &state.manifest {
         about = about
@@ -2434,7 +2434,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
                     "{} instance, made {} by Eidos {}",
                     m.game_id, m.created, m.eidos_version
                 ))
-                .size(11.0),
+                .size(sz(11)),
             )
             .push(
                 text(format!(
@@ -2443,18 +2443,18 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
                     eidos_transfer::human_bytes(m.bytes),
                     m.profiles.join(", ")
                 ))
-                .size(11.0)
+                .size(sz(11))
                 .color(text_muted()),
             )
             .push(
                 text(format!("was at {}", m.source_root))
-                    .size(10.0)
+                    .size(sz(10))
                     .color(text_muted()),
             );
         if !m.downloads {
             about = about.push(
                 text("downloads/ was left out of this backup")
-                    .size(10.0)
+                    .size(sz(10))
                     .color(text_muted()),
             );
         }
@@ -2470,7 +2470,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
                     "Tools it uses that are not on this machine: {}.",
                     missing.join(", ")
                 ))
-                .size(10.0)
+                .size(sz(10))
                 .color(pal().warning),
             );
         }
@@ -2479,15 +2479,15 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let dest = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Folder").size(11.0).width(Length::Fixed(52.0)))
+        .push(text("Folder").size(sz(11)).width(Length::Fixed(scaled(52.0))))
         .push(
             text_input("/mnt/games/EidosSkyrim", &state.dest)
                 .on_input(Message::UnpackDestChanged)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
-            button(text("Choose...").size(11.0))
+            button(text("Choose...").size(sz(11)))
                 .padding([4, 10])
                 .style(button::secondary)
                 .on_press(Message::UnpackBrowseDest),
@@ -2496,11 +2496,11 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
     let force = checkbox(state.force)
         .label("Unpack into a folder that is not empty".to_string())
         .on_toggle(|_| Message::UnpackToggleForce)
-        .size(13.0)
-        .text_size(12.0);
+        .size(sz(13))
+        .text_size(sz(12));
 
     let ready = state.manifest.is_some() && !state.dest.trim().is_empty();
-    let run = button(text("Unpack").size(12.0))
+    let run = button(text("Unpack").size(sz(12)))
         .padding([4, 16])
         .style(button::primary);
     let footer = Row::new()
@@ -2511,7 +2511,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
                 "The Proton prefix is rebuilt afterwards; the game itself comes from \
                  Steam.",
             )
-            .size(10.0)
+            .size(sz(10))
             .color(text_muted())
             .width(Length::Fill),
         )
@@ -2545,7 +2545,7 @@ pub(crate) fn unpack_dialog<'a>(state: &UnpackDialogState) -> Element<'a, Messag
 pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Message> {
     let mut card = Column::new()
         .spacing(10)
-        .push(text(job.title.clone()).size(15.0));
+        .push(text(job.title.clone()).size(sz(15)));
     match &job.finished {
         None => {
             let pct = job
@@ -2564,7 +2564,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                     } else {
                         format!("{pct}%")
                     })
-                    .size(12.0),
+                    .size(sz(12)),
                 )
                 .push(
                     text(
@@ -2572,7 +2572,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                          responsive, and nothing else may touch the instance until it \
                          is done.",
                     )
-                    .size(10.0)
+                    .size(sz(10))
                     .color(text_muted()),
                 );
         }
@@ -2581,7 +2581,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                 Ok(summary) => (summary.clone(), None),
                 Err(why) => (why.clone(), Some(pal().warning)),
             };
-            let mut line = text(body).size(12.0);
+            let mut line = text(body).size(sz(12));
             if let Some(c) = colour {
                 line = line.color(c);
             }
@@ -2589,7 +2589,7 @@ pub(crate) fn transfer_dialog<'a>(job: &crate::TransferJob) -> Element<'a, Messa
                 .push(scrollable(line).height(Length::Fixed(180.0)))
                 .push(
                     Row::new().push(Space::new().width(Length::Fill)).push(
-                        button(text("Close").size(12.0))
+                        button(text("Close").size(sz(12)))
                             .padding([4, 16])
                             .style(button::primary)
                             .on_press(Message::CloseTransferResult),

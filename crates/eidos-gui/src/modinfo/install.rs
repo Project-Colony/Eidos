@@ -393,7 +393,7 @@ pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a
         .min(100);
     let card = Column::new()
         .spacing(10)
-        .push(text(format!("Extracting \"{}\"", job.name)).size(15.0))
+        .push(text(format!("Extracting \"{}\"", job.name)).size(sz(15)))
         .push(
             iced::widget::progress_bar(0.0..=100.0, pct as f32)
                 .length(Length::Fill)
@@ -405,11 +405,11 @@ pub(crate) fn install_progress_dialog<'a>(job: &crate::InstallJob) -> Element<'a
             } else {
                 format!("{pct}%")
             })
-            .size(12.0),
+            .size(sz(12)),
         )
         .push(
             text("Large archives take a while. The window stays responsive.")
-                .size(10.0)
+                .size(sz(10))
                 .color(text_muted()),
         );
     container(card)
@@ -423,13 +423,13 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
     let buttons = Row::new()
         .spacing(8)
         .push(
-            button(text("Merge").size(12.0))
+            button(text("Merge").size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionMerge)
                 .style(button::secondary),
         )
         .push(
-            button(text("Replace").size(12.0))
+            button(text("Replace").size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionReplace)
                 .style(button::danger),
@@ -437,35 +437,35 @@ pub(crate) fn collision_dialog<'a>(c: &CollisionPrompt) -> Element<'a, Message> 
     let rename = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Rename:").size(12.0))
+        .push(text("Rename:").size(sz(12)))
         .push(
             text_input("new name", &c.rename_to)
                 .on_input(Message::CollisionRenameChanged)
                 .on_submit(Message::CollisionRenameCommit)
                 .padding(5)
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Install").size(12.0))
+            button(text("Install").size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionRenameCommit)
                 .style(button::primary),
         );
     let card = Column::new()
         .spacing(10)
-        .push(text(format!("\"{}\" already exists", c.name)).size(15.0))
-        .push(text("A mod with this name is already installed. Choose how to install it:").size(12.0))
+        .push(text(format!("\"{}\" already exists", c.name)).size(sz(15)))
+        .push(text("A mod with this name is already installed. Choose how to install it:").size(sz(12)))
         .push(checkbox(c.backup).label("Keep a backup of the existing mod")
-            .on_toggle(Message::CollisionBackupChanged).text_size(12.0))
+            .on_toggle(Message::CollisionBackupChanged).text_size(sz(12)))
         .push(buttons)
         .push(
             text("Merge installs over the existing files. Replace wipes the mod and reinstalls (your endorsement and category are kept).")
-                .size(10.0),
+                .size(sz(10)),
         )
         .push(rename)
         .push(
-            button(text("Cancel").size(12.0))
+            button(text("Cancel").size(sz(12)))
                 .padding([4, 10])
                 .on_press(Message::CollisionCancel)
                 .style(button::text),
@@ -517,13 +517,13 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
     let name_row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Install as:").size(12.0))
+        .push(text("Install as:").size(sz(12)))
         .push(
             text_input("mod name", &p.name)
                 .on_input(Message::PickerNameChanged)
                 .on_submit(Message::PickerInstall)
                 .padding(5)
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         );
 
@@ -544,19 +544,19 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                          and others that do not. Install it as a BAIN package?",
                         subpackages.len()
                     ))
-                    .size(12.0),
+                    .size(sz(12)),
                 )
                 .push(
                     Row::new()
                         .spacing(8)
                         .push(
-                            button(text("Yes, pick sub-packages").size(12.0))
+                            button(text("Yes, pick sub-packages").size(sz(12)))
                                 .padding([4, 10])
                                 .on_press(Message::PickerBainConfirm(true))
                                 .style(button::primary),
                         )
                         .push(
-                            button(text("No, choose the data folder").size(12.0))
+                            button(text("No, choose the data folder").size(sz(12)))
                                 .padding([4, 10])
                                 .on_press(Message::PickerBainConfirm(false))
                                 .style(button::secondary),
@@ -577,8 +577,8 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                     checkbox(on)
                         .label(name.clone())
                         .on_toggle(move |_| Message::PickerBainToggle(i))
-                        .size(13.0)
-                        .text_size(12.0),
+                        .size(sz(13))
+                        .text_size(sz(12)),
                 );
             }
             (
@@ -587,7 +587,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                     .spacing(8)
                     .push(
                         text("Ticked sub-packages are merged top to bottom, so a later one wins.")
-                            .size(11.0),
+                            .size(sz(11)),
                     )
                     .push(scrollable(list).height(Length::Fixed(240.0)))
                     .into(),
@@ -605,7 +605,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             };
 
             let mut list = Column::new().spacing(1).push(
-                button(text("<archive root>").size(12.0))
+                button(text("<archive root>").size(sz(12)))
                     .padding([1, 4])
                     .on_press(Message::PickerSetRoot(String::new()))
                     .style(if root.is_empty() {
@@ -618,7 +618,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                 let selected = *root == r.path;
                 let label = format!("{}{}", "    ".repeat(r.depth + 1), r.name);
                 list = list.push(
-                    button(text(label).size(12.0))
+                    button(text(label).size(sz(12)))
                         .padding([1, 4])
                         .on_press(Message::PickerSetRoot(r.path.clone()))
                         .style(if selected {
@@ -639,7 +639,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                         } else {
                             format!("The content of {chosen} does NOT look valid.")
                         })
-                        .size(11.0)
+                        .size(sz(11))
                         .color(if valid {
                             pal().success
                         } else {
@@ -659,14 +659,14 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
                             "You can install anyway - the check only recognises this game's \
                              own folder names and file types.",
                         )
-                        .size(10.0),
+                        .size(sz(10)),
                     )
                     // The case that sends people round in circles: an archive whose
                     // real content is another archive. Nothing here can install it,
                     // and without saying so the dialog just repeats that nothing
                     // looks valid at every level the user tries.
                     .push(match nested_archive_hint(&p.rows) {
-                        Some(h) => Element::from(text(h).size(10.0)),
+                        Some(h) => Element::from(text(h).size(sz(10))),
                         None => Space::new().into(),
                     })
                     .into(),
@@ -676,7 +676,7 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
 
     let mut card = Column::new()
         .spacing(10)
-        .push(text(title).size(15.0))
+        .push(text(title).size(sz(15)))
         .push(name_row)
         .push(body);
 
@@ -687,13 +687,13 @@ pub(crate) fn install_picker_dialog<'a>(p: &InstallPicker) -> Element<'a, Messag
             Row::new()
                 .spacing(8)
                 .push(
-                    button(text("Install").size(12.0))
+                    button(text("Install").size(sz(12)))
                         .padding([4, 10])
                         .on_press(Message::PickerInstall)
                         .style(button::primary),
                 )
                 .push(
-                    button(text("Cancel").size(12.0))
+                    button(text("Cancel").size(sz(12)))
                         .padding([4, 10])
                         .on_press(Message::PickerCancel)
                         .style(button::text),

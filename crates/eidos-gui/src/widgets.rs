@@ -7,10 +7,12 @@
 
 use std::collections::HashMap;
 
-use iced::widget::{button, container, image, mouse_area, text, Column, Row, Space};
+use iced::widget::{button, container, image, mouse_area, Column, Row, Space};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
-use crate::theme::{accent, conflict_loses_bg, conflict_wins_bg, row_bg, sel_bg, sel_fg};
+use colony_ui::sz;
+
+use crate::theme::{accent, conflict_loses_bg, conflict_wins_bg, row_bg, sel_bg, sel_fg, text};
 use crate::{App, Message};
 
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
@@ -176,7 +178,7 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
                     ..Default::default()
                 }),
             )
-            .push(text(label).size(11.0))
+            .push(text(label).size(sz(11)))
             .into()
     };
     let name = app
@@ -185,7 +187,7 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
         .map(|m| m.display_name().to_string())
         .unwrap_or_default();
     let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
-    row = row.push(text(format!("{name} conflicts:")).size(11.0));
+    row = row.push(text(format!("{name} conflicts:")).size(sz(11)));
     if over > 0 {
         row = row.push(swatch(conflict_wins_bg(), format!("{over} it overwrites")));
     }
@@ -364,7 +366,7 @@ pub(crate) fn list_row<'a>(
 // ---- shared widgets ----------------------------------------------------------
 
 pub(crate) fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> Element<'a, Message> {
-    let mut b = button(text(label).size(13.0)).padding(8);
+    let mut b = button(text(label).size(sz(13))).padding(8);
     if let Some(m) = msg {
         b = b.on_press(m);
     }
@@ -376,7 +378,7 @@ pub(crate) fn nav<'a>(label: &'a str, msg: Option<Message>, primary: bool) -> El
 }
 
 pub(crate) fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .padding(6)
         .on_press(msg)
         .style(button::secondary)
@@ -385,7 +387,7 @@ pub(crate) fn tool_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message>
 
 /// A flat, menu/toolbar-style button (no chrome until hovered).
 pub(crate) fn flat_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(13.0))
+    button(text(label).size(sz(13)))
         .padding(6)
         .on_press(msg)
         .style(button::text)
@@ -431,7 +433,7 @@ pub(crate) fn icon_text_btn<'a>(
     let content = Row::new()
         .spacing(5)
         .push(icon(bytes, 16.0))
-        .push(text(label).size(12.0));
+        .push(text(label).size(sz(12)));
     button(content)
         .padding(5)
         .on_press(msg)
@@ -443,7 +445,7 @@ pub(crate) fn icon_text_btn<'a>(
 /// Eidos borrows. Same padding and style as [`icon_text_btn`] so the row does
 /// not visibly change height where one appears.
 pub(crate) fn text_btn<'a>(label: &'a str, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .padding(5)
         .on_press(msg)
         .style(button::text)

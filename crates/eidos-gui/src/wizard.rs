@@ -4,10 +4,12 @@
 //! Split out of `main.rs` unchanged. Each screen is a pure function of `App`;
 //! the `Message`s they emit are handled where they always were.
 
-use iced::widget::{button, container, scrollable, text, text_input, Column, Row, Space};
+use iced::widget::{button, container, scrollable, text_input, Column, Row, Space};
 use iced::{Element, Length};
 
-use crate::theme::card_style;
+use colony_ui::sz;
+
+use crate::theme::{card_style, text};
 use crate::widgets::nav;
 use crate::{planned_instance, selected_game, App, InstanceKind, Message};
 
@@ -21,8 +23,8 @@ pub(crate) fn frame<'a>(
 ) -> Element<'a, Message> {
     let header = Column::new()
         .spacing(2)
-        .push(text("Eidos").size(26.0))
-        .push(text(step).size(12.0));
+        .push(text("Eidos").size(sz(26)))
+        .push(text(step).size(sz(12)));
 
     let card = container(content)
         .width(Length::Fill)
@@ -37,7 +39,7 @@ pub(crate) fn frame<'a>(
     Column::new()
         .spacing(16)
         .push(header)
-        .push(text(title).size(20.0))
+        .push(text(title).size(sz(20)))
         .push(card)
         .push(Space::new().height(Length::Fill))
         .push(footer)
@@ -47,9 +49,9 @@ pub(crate) fn frame<'a>(
 pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
     let mut content = Column::new()
         .spacing(10)
-        .push(text("Eidos creates an isolated modding setup for your game,").size(15.0))
-        .push(text("mounting your mods over the game without touching its files.").size(15.0))
-        .push(text("Let's set up an instance.").size(13.0));
+        .push(text("Eidos creates an isolated modding setup for your game,").size(sz(15)))
+        .push(text("mounting your mods over the game without touching its files.").size(sz(15)))
+        .push(text("Let's set up an instance.").size(sz(13)));
     // Existing instances open with one click - this doubles as the instance
     // switcher (the toolbar's switch action lands here via Restart). Portable
     // roots come from the registry; without this list they were orphaned the
@@ -58,7 +60,7 @@ pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
         let mut list = Column::new().spacing(6);
         for (i, k) in app.known.iter().enumerate() {
             list = list.push(
-                button(text(k.label.clone()).size(13.0))
+                button(text(k.label.clone()).size(sz(13)))
                     .width(Length::Fill)
                     .padding(8)
                     .on_press(Message::OpenKnown(i))
@@ -67,7 +69,7 @@ pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
         }
         content = content
             .push(Space::new().height(Length::Fixed(6.0)))
-            .push(text("Or open an existing instance:").size(13.0))
+            .push(text("Or open an existing instance:").size(sz(13)))
             .push(scrollable(list).height(Length::Fixed(160.0)));
     }
     // OUTSIDE the `known` block above, deliberately: a machine that has just
@@ -75,9 +77,9 @@ pub(crate) fn welcome(app: &App) -> Element<'_, Message> {
     // somebody arrives at holding a .eidos file.
     content = content
         .push(Space::new().height(Length::Fixed(6.0)))
-        .push(text("Or restore one you packed on another machine:").size(13.0))
+        .push(text("Or restore one you packed on another machine:").size(sz(13)))
         .push(
-            button(text("Unpack a backup...").size(13.0))
+            button(text("Unpack a backup...").size(sz(13)))
                 .width(Length::Fill)
                 .padding(8)
                 .on_press(Message::ShowUnpackDialog)
@@ -101,8 +103,8 @@ pub(crate) fn kind_card<'a>(
 ) -> Element<'a, Message> {
     let inner = Column::new()
         .spacing(4)
-        .push(text(label).size(16.0))
-        .push(text(desc).size(12.0));
+        .push(text(label).size(sz(16)))
+        .push(text(desc).size(sz(12)));
     button(inner)
         .width(Length::Fill)
         .padding(12)
@@ -143,12 +145,12 @@ pub(crate) fn kind_screen<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
     let content: Element<Message> = if app.games.is_empty() {
         Column::new()
-            .push(text("No supported games detected.").size(15.0))
+            .push(text("No supported games detected.").size(sz(15)))
             .push(
                 text(
                     "Install a supported game via Steam, Heroic or Legendary, then restart Eidos.",
                 )
-                .size(12.0),
+                .size(sz(12)),
             )
             .into()
     } else {
@@ -162,7 +164,7 @@ pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
                         g.source_name(),
                         g.install_path.display()
                     ))
-                    .size(14.0),
+                    .size(sz(14)),
                 )
                 .width(Length::Fill)
                 .padding(10)
@@ -190,14 +192,14 @@ pub(crate) fn game_screen<'a>(app: &App) -> Element<'a, Message> {
 pub(crate) fn nameloc_screen<'a>(app: &App) -> Element<'a, Message> {
     let mut content = Column::new()
         .spacing(8)
-        .push(text("Instance name").size(13.0))
+        .push(text("Instance name").size(sz(13)))
         .push(
             text_input("My Skyrim setup", &app.name)
                 .on_input(Message::NameChanged)
                 .padding(8),
         );
     if app.kind == InstanceKind::Portable {
-        content = content.push(text("Portable folder").size(13.0)).push(
+        content = content.push(text("Portable folder").size(sz(13))).push(
             text_input("~/Eidos/skyrimse", &app.portable_path)
                 .on_input(Message::PortableChanged)
                 .padding(8),
@@ -226,18 +228,18 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
 
     let mut content = Column::new()
         .spacing(8)
-        .push(text(format!("Name:     {}", app.name)).size(14.0))
-        .push(text(format!("Type:     {kind}")).size(14.0))
+        .push(text(format!("Name:     {}", app.name)).size(sz(14)))
+        .push(text(format!("Type:     {kind}")).size(sz(14)))
         .push(
             text(format!(
                 "Game:     {}",
                 game.map(|g| g.def.name).unwrap_or("(none)")
             ))
-            .size(14.0),
+            .size(sz(14)),
         )
-        .push(text(format!("Location: {location}")).size(13.0));
+        .push(text(format!("Location: {location}")).size(sz(13)));
     if let Some(g) = game {
-        content = content.push(text(format!("Game data: {}", g.data_path.display())).size(12.0));
+        content = content.push(text(format!("Game data: {}", g.data_path.display())).size(sz(12)));
     }
     // Say when Finish will ADOPT rather than create: the folder already
     // declares this game, and nothing in it will be overwritten. (A folder
@@ -249,11 +251,11 @@ pub(crate) fn summary_screen<'a>(app: &App) -> Element<'a, Message> {
     if adopts {
         content = content.push(
             text("This folder already holds an instance for this game - it will be opened as-is.")
-                .size(12.0),
+                .size(sz(12)),
         );
     }
     if let Some(err) = &app.error {
-        content = content.push(text(format!("Error: {err}")).size(13.0));
+        content = content.push(text(format!("Error: {err}")).size(sz(13)));
     }
     let next_label = if adopts {
         "Open instance"

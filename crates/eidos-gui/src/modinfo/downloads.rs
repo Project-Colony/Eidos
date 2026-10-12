@@ -73,15 +73,15 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Downloads").size(13.0))
+        .push(text("Downloads").size(sz(13)))
         .push(Space::new().width(Length::Fill))
         .push(
-            button(text("Open folder").size(11.0))
+            button(text("Open folder").size(sz(11)))
                 .padding(4)
                 .on_press(Message::OpenFolder(dir.clone())),
         )
         .push(
-            button(text("Refresh").size(11.0))
+            button(text("Refresh").size(sz(11)))
                 .padding(4)
                 .on_press(Message::RefreshDownloads),
         );
@@ -100,7 +100,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             text_input("Filter by name...", &app.dl_filter)
                 .on_input(Message::DownloadFilterChanged)
                 .padding(4)
-                .size(11.0)
+                .size(sz(11))
                 .width(Length::Fill),
         )
         .push(
@@ -109,7 +109,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 Some(app.dl_sort),
                 Message::DownloadSortChanged,
             )
-            .text_size(11.0)
+            .text_size(sz(11))
             .padding(4),
         )
         .push(
@@ -119,7 +119,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     "Show hidden"
                 })
-                .size(11.0),
+                .size(sz(11)),
             )
             .padding(4)
             .style(button::secondary)
@@ -136,7 +136,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     format!("Remove {installed_here} installed")
                 })
-                .size(11.0),
+                .size(sz(11)),
             )
             .padding(4)
             .style(if armed {
@@ -154,21 +154,21 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Name").size(11.0).width(Length::Fill))
+        .push(text("Name").size(sz(11)).width(Length::Fill))
         .push(
             text("Version")
-                .size(11.0)
-                .width(Length::Fixed(DL_C_VERSION)),
+                .size(sz(11))
+                .width(Length::Fixed(scaled(DL_C_VERSION))),
         )
-        .push(text("Size").size(11.0).width(Length::Fixed(DL_C_SIZE)))
-        .push(text("Status").size(11.0).width(Length::Fixed(DL_C_STATUS)))
-        .push(Space::new().width(Length::Fixed(DL_C_ACTIONS)));
+        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(DL_C_SIZE))))
+        .push(text("Status").size(sz(11)).width(Length::Fixed(scaled(DL_C_STATUS))))
+        .push(Space::new().width(Length::Fixed(scaled(DL_C_ACTIONS))));
 
     let mut rows = Column::new().spacing(2);
     if app.downloads.is_empty() {
         rows = rows.push(
             text("No downloads yet. On Nexus, use \"Mod Manager Download\" once the handler is registered (eidos nxm --register), or drop archives here.")
-                .size(11.0),
+                .size(sz(11)),
         );
     }
     for (i, row) in app.downloads.iter().enumerate() {
@@ -224,15 +224,15 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // monotonic value, and the fill would visibly step BACKWARDS while
             // the download went forwards.
             let readout = text(label)
-                .size(9.5)
+                .size(sz(10))
                 .color(fomod_ink_soft())
-                .width(Length::Fixed(DL_READOUT_W))
+                .width(Length::Fixed(scaled(DL_READOUT_W)))
                 .align_x(iced::alignment::Horizontal::Right);
             let cell = Row::new()
                 .spacing(5)
                 .align_y(iced::Alignment::Center)
-                .width(Length::Fixed(DL_C_ACTIONS))
-                .height(Length::Fixed(DL_ACTION_H));
+                .width(Length::Fixed(scaled(DL_C_ACTIONS)))
+                .height(Length::Fixed(scaled(DL_ACTION_H)));
             // A live transfer offers nothing: there is nothing to do but wait,
             // and Install on a partial file would be a lie. A STALLED one has to
             // be removable, or an abandoned download becomes a row that can never
@@ -245,13 +245,13 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             if stalled {
                 cell.push(readout)
                     .push(
-                        button(text("Resume").size(10.0))
+                        button(text("Resume").size(sz(10)))
                             .padding(3)
                             .on_press(Message::ResumeDownload(row.name.clone()))
                             .style(button::primary),
                     )
                     .push(
-                        button(text(if armed { "Confirm?" } else { "Delete" }).size(10.0))
+                        button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(10)))
                             .padding(3)
                             .on_press(if armed {
                                 Message::ConfirmDeleteDownload(row.name.clone())
@@ -278,7 +278,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 // deliberately absent - a partial cannot be installed, and the
                 // safe order is always pause first, then decide.
                 .push(
-                    button(text("Pause").size(10.0))
+                    button(text("Pause").size(sz(10)))
                         .padding(3)
                         .on_press(Message::PauseDownload(row.name.clone()))
                         .style(button::secondary),
@@ -286,7 +286,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 .into()
             }
         } else {
-            let install = button(text(if installed { "Reinstall" } else { "Install" }).size(11.0))
+            let install = button(text(if installed { "Reinstall" } else { "Install" }).size(sz(11)))
                 .padding(4)
                 .on_press(Message::ModPicked(Some(row.path.clone())))
                 .style(if installed {
@@ -294,7 +294,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     button::primary
                 });
-            let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
+            let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(11)))
                 .padding(4)
                 .on_press(if armed {
                     Message::ConfirmDeleteDownload(row.name.clone())
@@ -309,8 +309,8 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             let mut actions = Row::new()
                 .spacing(4)
                 .align_y(iced::Alignment::Center)
-                .width(Length::Fixed(DL_C_ACTIONS))
-                .height(Length::Fixed(DL_ACTION_H));
+                .width(Length::Fixed(scaled(DL_C_ACTIONS)))
+                .height(Length::Fixed(scaled(DL_ACTION_H)));
             // An archive with no sidecar has no mod id, so no version, no update
             // check and no Nexus page - and every archive copied in by hand
             // arrives that way. Nexus can identify it from its MD5, which is the
@@ -321,7 +321,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // nobody has identified, which is exactly "no mod id".
             if row.mod_id.is_none() {
                 actions = actions.push(
-                    button(text(if identifying { "..." } else { "Identify" }).size(11.0))
+                    button(text(if identifying { "..." } else { "Identify" }).size(sz(11)))
                         .padding(4)
                         .style(button::secondary)
                         .on_press_maybe(
@@ -338,7 +338,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                     .filter(|d| !d.is_empty()),
             ) {
                 actions = actions.push(
-                    button(text("Nexus").size(11.0))
+                    button(text("Nexus").size(sz(11)))
                         .padding(4)
                         .style(button::text)
                         .on_press(Message::OpenUrl(format!(
@@ -349,7 +349,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
             // Hiding is not deleting, which is why both are offered: an archive
             // somebody is done with but does not want to lose is the common case
             // this list had no answer for.
-            let hide = button(text(if row.hidden { "Unhide" } else { "Hide" }).size(11.0))
+            let hide = button(text(if row.hidden { "Unhide" } else { "Hide" }).size(sz(11)))
                 .padding(4)
                 .style(button::text)
                 .on_press(Message::HideDownload(row.name.clone()));
@@ -360,16 +360,16 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
         let r = Row::new()
             .spacing(8)
             .align_y(iced::Alignment::Center)
-            .push(text(display).size(12.0).width(Length::Fill))
+            .push(text(display).size(sz(12)).width(Length::Fill))
             .push(
                 text(row.version.clone())
-                    .size(11.0)
-                    .width(Length::Fixed(DL_C_VERSION)),
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(DL_C_VERSION))),
             )
             .push(
                 text(format_size(row.size))
-                    .size(11.0)
-                    .width(Length::Fixed(DL_C_SIZE)),
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(DL_C_SIZE))),
             )
             .push({
                 let st = row.state;
@@ -380,8 +380,8 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
                     _ => download_state_label(st).to_string(),
                 };
                 text(label)
-                    .size(11.0)
-                    .width(Length::Fixed(DL_C_STATUS))
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(DL_C_STATUS)))
                     .style(move |t: &Theme| iced::widget::text::Style {
                         color: download_state_color(st, t),
                     })
@@ -405,7 +405,7 @@ pub(crate) fn downloads_panel<'a>(app: &App) -> Element<'a, Message> {
     Column::new()
         .spacing(6)
         .push(header)
-        .push(text(dir.display().to_string()).size(10.0))
+        .push(text(dir.display().to_string()).size(sz(10)))
         .push(tools)
         .push(col_header)
         .push(scrollable(rows).height(Length::Fill))

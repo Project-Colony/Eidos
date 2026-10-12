@@ -358,7 +358,7 @@ pub(crate) fn archive_member_rows<'a>(
     {
         let mut row = Column::new()
             .spacing(3)
-            .push(text(node.display_path.clone()).size(11.0));
+            .push(text(node.display_path.clone()).size(sz(11)));
         for (index, provider) in std::iter::once(&node.winner)
             .chain(&node.alternatives)
             .enumerate()
@@ -382,14 +382,14 @@ pub(crate) fn archive_member_rows<'a>(
                     .spacing(6)
                     .push(
                         text(format!("{label}: {}", provider_label(map, provider)))
-                            .size(10.0)
+                            .size(sz(10))
                             .width(Length::Fill),
                     )
                     .push(
-                        button(text("Preview").size(10.0))
+                        button(text("Preview").size(sz(10)))
                             .on_press_maybe(active.then(|| action(false))),
                     )
-                    .push(button(text("Export").size(10.0)).on_press_maybe(
+                    .push(button(text("Export").size(sz(10))).on_press_maybe(
                         (active && provider.archive.is_some()).then(|| action(true)),
                     )),
             );
@@ -404,7 +404,7 @@ pub(crate) fn archive_member_rows<'a>(
                 page + 1,
                 pages
             ))
-            .size(12.0),
+            .size(sz(12)),
         )
         .push(
             button(text("Previous")).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),

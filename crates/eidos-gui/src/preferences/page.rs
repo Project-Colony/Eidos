@@ -12,11 +12,11 @@ use colony_ui::widgets::{
     section_description, setting_row, PreferencesView,
 };
 use colony_ui::Typography;
-use iced::widget::{button, slider, text, text_input, Column, Row};
+use iced::widget::{button, slider, text_input, Column, Row};
 use iced::{Alignment, Element, Length};
 
 use crate::preferences::UiPreferences;
-use crate::theme::{pal, text_muted};
+use crate::theme::{pal, text, text_muted};
 use crate::{App, Message, SettingsTab};
 
 /// The cached "show adult content" answer for the signed-in account: `Some(true)`

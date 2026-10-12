@@ -24,7 +24,7 @@ fn main_mix(app: &App, this: Tab) -> f32 {
 /// somewhere in between. A window with motion off only ever passes 0.0 or 1.0,
 /// and then this draws exactly what it drew before animation existed.
 pub(crate) fn tab_btn<'a>(label: String, t: Tab, mix: f32) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .padding(6)
         .on_press(Message::SelectTab(t))
         // Both ends are iced's own styles, resolved against the live theme, so
@@ -60,10 +60,10 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
     let top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Run:").size(13.0))
+        .push(text("Run:").size(sz(13)))
         .push(
             pick_list(run_options, Some(run_choice), Message::ToolPicked)
-                .text_size(13.0)
+                .text_size(sz(13))
                 .padding(8),
         )
         .push(Space::new().width(Length::Fill))
@@ -72,7 +72,7 @@ pub(crate) fn right_pane<'a>(app: &App) -> Element<'a, Message> {
                 Row::new()
                     .spacing(6)
                     .push(icon(IC_RUN, 18.0))
-                    .push(text("Run").size(15.0)),
+                    .push(text("Run").size(sz(15))),
             )
             .padding(10)
             .on_press(Message::Run)
@@ -196,18 +196,18 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
     );
     let mut row = Row::new()
         .align_y(iced::Alignment::Center)
-        .push(text(left).size(11.0).color(ink).width(Length::Fill));
+        .push(text(left).size(sz(11)).color(ink).width(Length::Fill));
     if showing_status {
         // A tiny dismiss so a stale message stops masking the selection count and
         // instance summary.
         row = row.push(
-            button(text("x").size(10.0))
+            button(text("x").size(sz(10)))
                 .padding([0, 6])
                 .on_press(Message::ClearStatus)
                 .style(button::text),
         );
     }
-    row = row.push(text(account).size(11.0));
+    row = row.push(text(account).size(sz(11)));
     container(row)
         .width(Length::Fill)
         .padding(4)
@@ -470,7 +470,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // feedback at all - the user could not tell the window from any other.
     if app.files_hovering {
         let banner = container(
-            container(text("Drop to install").size(15.0))
+            container(text("Drop to install").size(sz(15)))
                 .padding([10, 20])
                 .style(|t: &Theme| container::Style {
                     background: Some(Background::Color(t.extended_palette().primary.base.color)),
@@ -657,7 +657,7 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
                 .on_input(Message::SendToPriorityChanged)
                 .on_submit(Message::SendToPriorityCommit)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         );
         return col.into();
     }
@@ -673,7 +673,7 @@ pub(crate) fn send_to_targets<'a>(app: &App, i: usize) -> Element<'a, Message> {
             list = list.push(menu_item_owned(label, Message::SendToSeparatorPick(idx)));
         }
         col = col
-            .push(text("Move into group:").size(11.0))
+            .push(text("Move into group:").size(sz(11)))
             .push(scrollable(list).height(Length::Fixed(160.0)))
             .push(menu_item("Cancel", Message::SendToTargetCancel));
         return col.into();
@@ -710,11 +710,11 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
         .spacing(6)
         .push(
             text(format!("Profile: {name}"))
-                .size(13.0)
+                .size(sz(13))
                 .width(Length::Fill),
         )
         .push(
-            button(text("x").size(13.0))
+            button(text("x").size(sz(13)))
                 .padding([1, 6])
                 .on_press(Message::ProfileCloseMenu)
                 .style(button::text),
@@ -729,7 +729,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
                     .on_input(Message::ProfileRenameChanged)
                     .on_submit(Message::ProfileRenameCommit)
                     .padding(5)
-                    .size(12.0),
+                    .size(sz(12)),
             );
         }
         _ => {
@@ -748,7 +748,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
                     .on_input(Message::ProfileCopyChanged)
                     .on_submit(Message::ProfileCopyCommit)
                     .padding(5)
-                    .size(12.0),
+                    .size(sz(12)),
             );
         }
         _ => {
@@ -767,7 +767,7 @@ pub(crate) fn profile_menu_card<'a>(app: &App, name: &str) -> Element<'a, Messag
     col = col.push(menu_sep());
     // Delete: two-click confirm (backend refuses the active / last profile).
     let delete: Element<'a, Message> = if app.profile_delete_confirm.as_deref() == Some(name) {
-        button(text("Click again to delete").size(12.0))
+        button(text("Click again to delete").size(sz(12)))
             .padding([2, 6])
             .width(Length::Fill)
             .on_press(Message::ProfileDeleteCommit(name.to_string()))

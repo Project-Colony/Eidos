@@ -24,11 +24,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
             text_input("Filter files", &app.data_query)
                 .on_input(Message::DataQueryChanged)
                 .padding(5)
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         )
         .push(
-            button(text("Conflicts only").size(11.0))
+            button(text("Conflicts only").size(sz(11)))
                 .padding([3, 8])
                 .style(if app.data_conflicts_only {
                     button::primary
@@ -42,11 +42,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let header = Row::new()
         .spacing(6)
-        .push(text("Name").size(11.0).width(Length::FillPortion(3)))
-        .push(text("Provided by").size(11.0).width(Length::FillPortion(2)))
-        .push(text("Size").size(11.0).width(Length::Fixed(C_SIZE)))
-        .push(text("Modified").size(11.0).width(Length::Fixed(C_DATE)))
-        .push(text("").size(11.0).width(Length::Fixed(C_ACTION)));
+        .push(text("Name").size(sz(11)).width(Length::FillPortion(3)))
+        .push(text("Provided by").size(sz(11)).width(Length::FillPortion(2)))
+        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(C_SIZE))))
+        .push(text("Modified").size(sz(11)).width(Length::Fixed(scaled(C_DATE))))
+        .push(text("").size(sz(11)).width(Length::Fixed(scaled(C_ACTION))));
 
     // No spacing: the insertion strips below provide the separation, and they
     // must be part of the flow so the layout is identical with and without a drag.
@@ -61,7 +61,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
                     "Nothing in the merged view matches."
                 },
             )
-            .size(12.0),
+            .size(sz(12)),
         );
     }
     let truncated = rows.len() >= DATA_TREE_ROWS;
@@ -70,11 +70,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // the same width so names stay in one column.
         let lead: Element<'a, Message> = if r.row.is_dir {
             let glyph = if app.data_expanded.contains(&r.rel) {
-                "\u{25BE}"
+                colony_ui::widgets::icons::CHEVRON_DOWN
             } else {
-                "\u{25B8}"
+                colony_ui::widgets::icons::CHEVRON_RIGHT
             };
-            button(text(glyph).size(11.0))
+            button(text(glyph).size(sz(9)).font(colony_ui::fonts::glyph_font()))
                 .padding([0, 4])
                 .on_press(Message::DataToggleDir(r.rel.clone()))
                 .style(button::text)
@@ -88,11 +88,11 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // file", because that is exactly what the row is saying.
         let label: Element<'a, Message> = if r.row.conflicted {
             text(format!("{} *", r.row.name))
-                .size(12.0)
+                .size(sz(12))
                 .color(conflict_wins_fg())
                 .into()
         } else {
-            text(r.row.name.clone()).size(12.0).into()
+            text(r.row.name.clone()).size(sz(12)).into()
         };
         let name = Row::new()
             .spacing(2)
@@ -113,14 +113,14 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         // find out WHICH copy of a file the game gets, and the next question is
         // always "where is it".
         action = action.push(
-            button(text("Reveal").size(10.0))
+            button(text("Reveal").size(sz(10)))
                 .padding([1, 5])
                 .on_press(Message::DataReveal(r.row.real.clone()))
                 .style(button::secondary),
         );
         if !r.row.is_dir {
             action = action.push(
-                button(text("View").size(10.0))
+                button(text("View").size(sz(10)))
                     .padding([1, 5])
                     .on_press(Message::PreviewFile(r.row.real.clone()))
                     .style(button::text),
@@ -128,7 +128,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
         }
         if let Some(i) = owner {
             action = action.push(
-                button(text("Hide").size(10.0))
+                button(text("Hide").size(sz(10)))
                     .padding([1, 5])
                     .on_press(Message::ToggleFileHidden(i, r.rel.clone()))
                     .style(button::secondary),
@@ -141,21 +141,21 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(name).width(Length::FillPortion(3)))
             .push(
                 text(r.row.source.clone())
-                    .size(12.0)
+                    .size(sz(12))
                     .width(Length::FillPortion(2)),
             )
             .push(
                 text(r.row.size.map(format_size).unwrap_or_default())
-                    .size(11.0)
-                    .width(Length::Fixed(C_SIZE))
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(C_SIZE)))
                     .align_x(iced::alignment::Horizontal::Right),
             )
             .push(
                 text(r.row.mtime.map(format_when).unwrap_or_default())
-                    .size(11.0)
-                    .width(Length::Fixed(C_DATE)),
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(C_DATE))),
             )
-            .push(container(action).width(Length::Fixed(C_ACTION)));
+            .push(container(action).width(Length::Fixed(scaled(C_ACTION))));
         list = list.push(striped(row.into(), idx % 2 == 0));
     }
     if truncated {
@@ -163,7 +163,7 @@ pub(crate) fn data_panel<'a>(app: &App) -> Element<'a, Message> {
             text(format!(
                 "Showing the first {DATA_TREE_ROWS} entries - collapse a folder to see more."
             ))
-            .size(11.0),
+            .size(sz(11)),
         );
     }
     Column::new()
@@ -201,7 +201,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .push(
             text("Everything the game writes (configs, new saves, generated files) lands here.")
-                .size(12.0)
+                .size(sz(12))
                 .width(Length::Fill),
         )
         // MO2's central Overwrite workflow: turn what the game/tools generated into
@@ -216,7 +216,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     "Send back to mods"
                 })
-                .size(12.0),
+                .size(sz(12)),
             )
             .padding(5)
             .on_press(Message::OverwriteSyncToMods)
@@ -234,7 +234,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     "Clear"
                 })
-                .size(12.0),
+                .size(sz(12)),
             )
             .padding(5)
             .on_press(Message::ClearOverwrite)
@@ -257,18 +257,18 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text("Mod name").size(12.0))
+            .push(text("Mod name").size(sz(12)))
             .push(
                 text_input("Mod name", name)
                     .on_input(Message::OverwriteToModName)
                     .on_submit(Message::OverwriteToModCommit)
                     .padding(5)
-                    .size(12.0)
-                    .width(Length::Fixed(260.0)),
+                    .size(sz(12))
+                    .width(Length::Fixed(scaled(260.0))),
             )
-            .push(text(hint).size(10.0).width(Length::Fill))
+            .push(text(hint).size(sz(10)).width(Length::Fill))
             .push(
-                button(text("Create").size(12.0))
+                button(text("Create").size(sz(12)))
                     .padding([4, 12])
                     .on_press(Message::OverwriteToModCommit)
                     .style(button::primary),
@@ -282,9 +282,9 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
     let entries = cached_entries(app, &dir);
     let mut c = Column::new().spacing(2);
     if entries.is_empty() {
-        c = c.push(text("(empty)").size(12.0));
+        c = c.push(text("(empty)").size(sz(12)));
     } else {
-        c = c.push(text(format!("{} file(s):", entries.len())).size(11.0));
+        c = c.push(text(format!("{} file(s):", entries.len())).size(sz(11)));
     }
     let rows = overwrite_tree_rows(app, &entries, DATA_TREE_ROWS);
     let truncated = rows.len() >= DATA_TREE_ROWS;
@@ -292,11 +292,11 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
         let lead: Element<'a, Message> = match r.files {
             Some(_) => {
                 let glyph = if app.overwrite_expanded.contains(&r.rel) {
-                    "\u{25BE}"
+                    colony_ui::widgets::icons::CHEVRON_DOWN
                 } else {
-                    "\u{25B8}"
+                    colony_ui::widgets::icons::CHEVRON_RIGHT
                 };
-                button(text(glyph).size(11.0))
+                button(text(glyph).size(sz(9)).font(colony_ui::fonts::glyph_font()))
                     .padding([0, 4])
                     .on_press(Message::OverwriteToggleDir(r.rel.clone()))
                     .style(button::text)
@@ -310,10 +310,10 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             .align_y(iced::Alignment::Center)
             .push(Space::new().width(Length::Fixed(r.depth as f32 * 14.0)))
             .push(lead)
-            .push(text(r.name).size(11.5));
+            .push(text(r.name).size(sz(12)));
         if let Some(n) = r.files {
             // How much is under a folder, so a closed one still says something.
-            row = row.push(text(format!("  {n}")).size(10.0).color(fomod_ink_faint()));
+            row = row.push(text(format!("  {n}")).size(sz(10)).color(fomod_ink_faint()));
         }
         c = c.push(row);
     }
@@ -322,7 +322,7 @@ pub(crate) fn overwrite_panel<'a>(app: &App) -> Element<'a, Message> {
             text(format!(
                 "Showing the first {DATA_TREE_ROWS} rows - collapse a folder to see more."
             ))
-            .size(11.0),
+            .size(sz(11)),
         );
     }
 

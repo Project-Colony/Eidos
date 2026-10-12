@@ -236,10 +236,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let current = current.or_else(|| step.and_then(|s| (!s.groups.is_empty()).then_some((0, 0))));
 
     // ---- header: which mod, which step ----
-    let bold = iced::Font {
-        weight: iced::font::Weight::Bold,
-        ..iced::Font::DEFAULT
-    };
+    let bold = colony_ui::ui_font_bold();
     // The name takes Length::Fill and the chip stays Shrink. iced's flex measures
     // the Shrink children first and hands what is left to the Fill ones, so the
     // chip is always laid out at its full size; with the name left as Shrink it was
@@ -249,19 +246,19 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         .align_y(iced::Alignment::Center)
         .push(
             text(config.module_name.clone())
-                .size(17.0)
+                .size(sz(17))
                 .font(bold)
                 .width(Length::Fill),
         );
     if let Some(s) = step {
-        title = title.push(text(s.name.clone()).size(12.0).color(fomod_ink_faint()));
+        title = title.push(text(s.name.clone()).size(sz(12)).color(fomod_ink_faint()));
     }
     let head = title.push(
         // The step counter as a chip, so it reads as status rather than as one
         // more sentence competing with the mod's name.
         container(
             text(format!("Step {shown_no} of {total}"))
-                .size(11.0)
+                .size(sz(11))
                 .color(fomod_on_accent()),
         )
         .padding([3, 9])
@@ -295,14 +292,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                         // width by a long group name and pushed out of the column.
                         .push(
                             text(group.name.clone())
-                                .size(11.0)
+                                .size(sz(11))
                                 .color(fomod_ink_soft())
                                 .width(Length::Fill),
                         )
-                        .push(text("·").size(11.0).color(fomod_ink_faint()))
+                        .push(text("·").size(sz(11)).color(fomod_ink_faint()))
                         .push(
                             text(group_type_label(group.group_type))
-                                .size(11.0)
+                                .size(sz(11))
                                 .color(fomod_ink_faint()),
                         ),
                 )
@@ -364,13 +361,13 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     .push(fomod_marker(on, usable, radio))
                     .push(
                         text(plugin.name.clone())
-                            .size(12.5)
+                            .size(sz(12))
                             .color(label)
                             .width(Length::Fill),
                     )
                     // 10px, not 9.5, and in the darker ink: this string carries the
                     // author's own guidance and was being rendered at 2.7:1.
-                    .push(text(tag).size(10.0).color(if on {
+                    .push(text(tag).size(sz(10)).color(if on {
                         fomod_on_accent()
                     } else {
                         fomod_ink_soft()
@@ -445,7 +442,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // the page, so the faint ink fell to 2.4:1 and the box just read as blank.
         None => container(
             text("No preview for this option.")
-                .size(12.0)
+                .size(sz(12))
                 .color(fomod_ink_soft()),
         )
         .center_x(Length::Fill)
@@ -473,14 +470,14 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // paragraphs - CBBE's run to several lines.
         let mut d = Column::new().spacing(4).push(
             text(p.name.clone())
-                .size(13.0)
+                .size(sz(13))
                 .font(bold)
                 .width(Length::Fill),
         );
         if !p.description.is_empty() {
             d = d.push(
                 text(p.description.clone())
-                    .size(12.0)
+                    .size(sz(12))
                     .color(fomod_ink_soft())
                     .width(Length::Fill),
             );
@@ -503,7 +500,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     if !valid {
         nav = nav.push(
             text("Select the required option(s) to continue.")
-                .size(11.0)
+                .size(sz(11))
                 .color(fomod_ink_faint()),
         );
     }
@@ -567,7 +564,7 @@ pub(crate) fn fomod_btn<'a>(
     primary: bool,
 ) -> Element<'a, Message> {
     let live = msg.is_some();
-    let mut b = button(text(label).size(12.5).width(Length::Fill).center())
+    let mut b = button(text(label).size(sz(12)).width(Length::Fill).center())
         .padding([7, 16])
         .width(if primary {
             Length::Fixed(104.0)

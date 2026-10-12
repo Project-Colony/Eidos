@@ -15,6 +15,22 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::{App, Message};
 
+/// Every text in the window: iced's `text` in the Colony UI font, which is
+/// OpenDyslexic while the dyslexia-friendly font is on. Drawing all text
+/// through here is what lets that switch reach the whole window at once.
+pub(crate) fn text<'a>(
+    content: impl iced::widget::text::IntoFragment<'a>,
+) -> iced::widget::Text<'a, Theme> {
+    iced::widget::text(content).font(colony_ui::ui_font())
+}
+
+/// A fixed width or height that holds text, grown and shrunk with the text
+/// size (Appearance and Accessibility multiply, 0.7225x to 1.68x) so a column
+/// or a row keeps fitting what it holds.
+pub(crate) fn scaled(px: f32) -> f32 {
+    px * colony_ui::font_scale()
+}
+
 /// The palette to draw with, high contrast already applied.
 pub(crate) fn pal() -> ThemePalette {
     colony_ui::active_palette()
@@ -230,6 +246,35 @@ mod tests {
         let (family, variant) = (prefs.selected_theme, prefs.selected_variant);
         colony_ui::set_active_theme(&family, &variant);
         assert_ne!(pal(), colony_ui::FALLBACK_PALETTE, "{family}/{variant} is not in the catalogue");
+    }
+
+    /// TYP-3: every text size scales with the user's two text sizes, so none
+    /// may be a bare number. Scans the sources rather than trusting review.
+    #[test]
+    fn no_text_size_is_a_raw_number() {
+        fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let body = std::fs::read_to_string(&path).unwrap();
+                    for (n, line) in body.lines().enumerate() {
+                        for call in [".size(", ".text_size("] {
+                            let raw = line.match_indices(call).any(|(i, _)| {
+                                line[i + call.len()..].starts_with(|c: char| c.is_ascii_digit())
+                            });
+                            if raw {
+                                out.push(format!("{}:{}: {}", path.display(), n + 1, line.trim()));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut raw = Vec::new();
+        walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut raw);
+        assert!(raw.is_empty(), "sizes that skip sz():\n{}", raw.join("\n"));
     }
 
     /// The list tints answer different questions and must never be confusable,

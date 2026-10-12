@@ -13,35 +13,35 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     let header = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text("Save").size(13.0))
+        .push(text("Save").size(sz(13)))
         .push(Space::new().width(Length::Fill))
         .push(
-            button(text("Open folder").size(11.0))
+            button(text("Open folder").size(sz(11)))
                 .padding(4)
                 .on_press(Message::OpenFolder(dir.clone())),
         )
         .push(
-            button(text("Refresh").size(11.0))
+            button(text("Refresh").size(sz(11)))
                 .padding(4)
                 .on_press(Message::RefreshSaves),
         );
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Name").size(11.0).width(Length::Fill))
-        .push(text("Date").size(11.0).width(Length::Fixed(130.0)))
-        .push(text("Size").size(11.0).width(Length::Fixed(80.0)))
-        .push(Space::new().width(Length::Fixed(80.0)));
+        .push(text("Name").size(sz(11)).width(Length::Fill))
+        .push(text("Date").size(sz(11)).width(Length::Fixed(scaled(130.0))))
+        .push(text("Size").size(sz(11)).width(Length::Fixed(scaled(80.0))))
+        .push(Space::new().width(Length::Fixed(scaled(80.0))));
 
     let mut rows = Column::new().spacing(2);
     if app.saves.is_empty() {
         rows = rows.push(
-            text("(no saves yet) Saves your game writes for this profile appear here.").size(12.0),
+            text("(no saves yet) Saves your game writes for this profile appear here.").size(sz(12)),
         );
     }
     for (i, save) in app.saves.iter().take(SAVES_LIST_CAP).enumerate() {
         let armed = app.confirm_delete_save == Some(i);
-        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(11.0))
+        let del = button(text(if armed { "Confirm?" } else { "Delete" }).size(sz(11)))
             .padding(4)
             .on_press(if armed {
                 Message::ConfirmDeleteSave(i)
@@ -55,7 +55,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             });
         // The name is the click target for the details pane; the row's other
         // controls keep working (a Delete click must not also select).
-        let name = button(text(save.filename.clone()).size(12.0))
+        let name = button(text(save.filename.clone()).size(sz(12)))
             .padding(0)
             .width(Length::Fill)
             .on_press(Message::SelectSave(i))
@@ -66,8 +66,8 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         let picked = app.selected_saves.contains(&i);
         let tick = button(
             text(if picked { "[x]" } else { "[ ]" })
-                .size(11.0)
-                .font(iced::Font::MONOSPACE),
+                .size(sz(11))
+                .font(colony_ui::ui_font()),
         )
         .padding([0, 4])
         .on_press(Message::SaveToggleSelect(i))
@@ -79,15 +79,15 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(name)
             .push(
                 text(format_mtime(save.mtime))
-                    .size(11.0)
-                    .width(Length::Fixed(130.0)),
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(130.0))),
             )
             .push(
                 text(format_size(save.size))
-                    .size(11.0)
-                    .width(Length::Fixed(80.0)),
+                    .size(sz(11))
+                    .width(Length::Fixed(scaled(80.0))),
             )
-            .push(container(del).width(Length::Fixed(80.0)));
+            .push(container(del).width(Length::Fixed(scaled(80.0))));
         rows = rows.push(list_row(
             container(row).padding(3).into(),
             i % 2 == 0,
@@ -105,7 +105,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
         let mut bar = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text(format!("{n} selected")).size(11.0));
+            .push(text(format!("{n} selected")).size(sz(11)));
         // Copy to another profile - MO2's Transfer Save Games. Only profiles
         // that are not this one: copying a save onto itself is not a thing.
         if app.created.is_some() {
@@ -114,7 +114,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
             let (names, here) = cached_profiles(app);
             for name in names.into_iter().filter(|p| *p != here) {
                 bar = bar.push(
-                    button(text(format!("Copy to {name}")).size(11.0))
+                    button(text(format!("Copy to {name}")).size(sz(11)))
                         .padding([3, 8])
                         .style(button::secondary)
                         .on_press(Message::SavesCopyToProfile(name)),
@@ -128,7 +128,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
                 } else {
                     format!("Delete {n}")
                 })
-                .size(11.0),
+                .size(sz(11)),
             )
             .padding([3, 8])
             .on_press(Message::SavesDeleteSelected)
@@ -144,7 +144,7 @@ pub(crate) fn saves_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut list = Column::new()
         .spacing(6)
         .push(header)
-        .push(text(dir.display().to_string()).size(10.0));
+        .push(text(dir.display().to_string()).size(sz(10)));
     if let Some(bar) = batch {
         list = list.push(bar);
     }
@@ -174,9 +174,9 @@ pub(crate) fn save_details<'a>(
 ) -> Element<'a, Message> {
     let mut col = Column::new()
         .spacing(4)
-        .push(text(save.filename.clone()).size(13.0))
+        .push(text(save.filename.clone()).size(sz(13)))
         .push(
-            button(text("Extension details").size(11.0)).on_press(Message::RunFileExtension(
+            button(text("Extension details").size(sz(11))).on_press(Message::RunFileExtension(
                 eidos_addons::protocol::Operation::SaveInfo,
                 save.path.clone(),
             )),
@@ -186,14 +186,14 @@ pub(crate) fn save_details<'a>(
         Some((_, Ok(info))) => info,
         Some((_, Err(e))) => {
             return col
-                .push(text(format!("Cannot read this save: {e}")).size(11.0))
+                .push(text(format!("Cannot read this save: {e}")).size(sz(11)))
                 .push(
-                    text("The list below is unavailable; the file itself is untouched.").size(10.0),
+                    text("The list below is unavailable; the file itself is untouched.").size(sz(10)),
                 )
                 .into();
         }
         // Parsed on selection, so this only shows for the frame in between.
-        None => return col.push(text("Reading...").size(11.0)).into(),
+        None => return col.push(text("Reading...").size(sz(11))).into(),
     };
 
     // The save's own screenshot, above the facts: it is what identifies a save
@@ -241,19 +241,19 @@ pub(crate) fn save_details<'a>(
     col = col.push(Space::new().height(Length::Fixed(6.0)));
     if missing.is_empty() {
         return col
-            .push(text("Every plugin this save uses is active.").size(11.0))
+            .push(text("Every plugin this save uses is active.").size(sz(11)))
             .push(
                 text(if info.truncated {
                     "(the save's plugin list was truncated, so this is advisory)"
                 } else {
                     ""
                 })
-                .size(10.0),
+                .size(sz(10)),
             )
             .into();
     }
 
-    col = col.push(text(format!("{} plugin(s) missing:", missing.len())).size(12.0));
+    col = col.push(text(format!("{} plugin(s) missing:", missing.len())).size(sz(12)));
     for m in missing.iter().take(40) {
         let what = match m.state {
             eidos_gamefeatures::SavePluginState::Inactive => "inactive",
@@ -265,8 +265,8 @@ pub(crate) fn save_details<'a>(
             format!("  in: {}", m.providers.join(", "))
         };
         col = col
-            .push(text(format!("{} ({what})", m.name)).size(11.0))
-            .push(text(who).size(10.0));
+            .push(text(format!("{} ({what})", m.name)).size(sz(11)))
+            .push(text(who).size(sz(10)));
     }
     // Only offer the fix when something on disk can actually supply the plugins;
     // otherwise the button would enable nothing and look broken.
@@ -281,7 +281,7 @@ pub(crate) fn save_details<'a>(
     }
     if info.truncated {
         col = col.push(
-            text("The save's plugin list was truncated, so treat this as advisory.").size(10.0),
+            text("The save's plugin list was truncated, so treat this as advisory.").size(sz(10)),
         );
     }
     col.into()

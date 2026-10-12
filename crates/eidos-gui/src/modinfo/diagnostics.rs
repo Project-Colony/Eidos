@@ -701,8 +701,8 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
     };
     let mut col = Column::new()
         .spacing(8)
-        .push(text("Diagnostics").size(13.0))
-        .push(text(summary).size(12.0));
+        .push(text("Diagnostics").size(sz(13)))
+        .push(text(summary).size(sz(12)));
     for d in checks {
         let (tag, color) = match d.level {
             DiagLevel::Problem => ("PROBLEM", pal().error),
@@ -715,10 +715,10 @@ pub(crate) fn diagnostics_panel<'a>(app: &App) -> Element<'a, Message> {
                 Row::new()
                     .spacing(6)
                     .align_y(iced::Alignment::Center)
-                    .push(text(tag).size(9.0).color(color).width(Length::Fixed(58.0)))
-                    .push(text(d.title).size(12.0).width(Length::Fill)),
+                    .push(text(tag).size(sz(9)).color(color).width(Length::Fixed(scaled(58.0))))
+                    .push(text(d.title).size(sz(12)).width(Length::Fill)),
             )
-            .push(text(d.detail).size(10.5).color(text_muted()));
+            .push(text(d.detail).size(sz(10)).color(text_muted()));
         if !d.actions.is_empty() {
             let mut row = Row::new().spacing(6);
             for (label, msg) in d.actions {

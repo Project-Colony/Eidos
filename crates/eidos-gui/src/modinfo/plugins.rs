@@ -234,8 +234,8 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(list) = &app.plugins else {
         return Column::new()
             .spacing(4)
-            .push(text("Plugins (ESP / ESM / ESL load order)").size(13.0))
-            .push(text("Open a game instance to compute the plugin load order.").size(12.0))
+            .push(text("Plugins (ESP / ESM / ESL load order)").size(sz(13)))
+            .push(text("Open a game instance to compute the plugin load order.").size(sz(12)))
             .into();
     };
 
@@ -250,7 +250,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     let mut top = Row::new()
         .spacing(8)
         .align_y(iced::Alignment::Center)
-        .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(12.0));
+        .push(text(format!("{} plugins - {active} active", list.plugins.len())).size(sz(12)));
     if loot_ok {
         // No `on_press` while a sort runs, nor while a run is tracked: the button
         // greys itself. That is the only sign of work a multi-second masterlist
@@ -265,7 +265,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         } else {
             "Sort with LOOT"
         };
-        let mut b = button(text(label).size(11.0))
+        let mut b = button(text(label).size(sz(11)))
             .padding([3, 8])
             .style(button::secondary);
         if !busy {
@@ -282,15 +282,15 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
     };
     if picked > 0 {
         top = top
-            .push(text(format!("{picked} selected")).size(11.0))
+            .push(text(format!("{picked} selected")).size(sz(11)))
             .push(
-                button(text("Enable").size(11.0))
+                button(text("Enable").size(sz(11)))
                     .padding([3, 8])
                     .on_press(Message::SetSelectedPluginsEnabled(true))
                     .style(button::secondary),
             )
             .push(
-                button(text("Disable").size(11.0))
+                button(text("Disable").size(sz(11)))
                     .padding([3, 8])
                     .on_press(Message::SetSelectedPluginsEnabled(false))
                     .style(button::secondary),
@@ -303,7 +303,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 "! {} missing master(s) - the game would crash",
                 missing.len()
             ))
-            .size(12.0),
+            .size(sz(12)),
         );
     }
 
@@ -328,18 +328,18 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 violated.len(),
                 names.join(", ")
             ))
-            .size(11.0),
+            .size(sz(11)),
         );
     }
 
     let header = Row::new()
         .spacing(6)
-        .push(text("Index").size(11.0).width(Length::Fixed(52.0)))
-        .push(text("On").size(11.0).width(Length::Fixed(28.0)))
-        .push(text("Plugin").size(11.0).width(Length::Fill))
-        .push(text("Type").size(11.0).width(Length::Fixed(36.0)))
-        .push(text("LOOT").size(11.0).width(Length::Fixed(40.0)))
-        .push(text("Pin").size(11.0).width(Length::Fixed(26.0)));
+        .push(text("Index").size(sz(11)).width(Length::Fixed(scaled(52.0))))
+        .push(text("On").size(sz(11)).width(Length::Fixed(scaled(28.0))))
+        .push(text("Plugin").size(sz(11)).width(Length::Fill))
+        .push(text("Type").size(sz(11)).width(Length::Fixed(scaled(36.0))))
+        .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(40.0))))
+        .push(text("Pin").size(sz(11)).width(Length::Fixed(scaled(26.0))));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
     let spec = selected_game(app).and_then(|g| GameSpec::for_id(g.def.id));
@@ -396,7 +396,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 (None, None) => "Free to move anywhere in its section.".to_string(),
             }
         };
-        head = head.push(text(msg).size(11.0));
+        head = head.push(text(msg).size(sz(11)));
     }
     let dragging = drag.is_some();
     for (i, p) in list.plugins.iter().enumerate() {
@@ -424,14 +424,14 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // which is exactly the look for the non-togglable cases.
         let toggle: Element<'a, Message> = if engine_owned {
             // A forced game master: always on, never togglable (checked + greyed).
-            checkbox(true).size(15).into()
+            checkbox(true).size(sz(15)).into()
         } else if p.force_disabled {
             // An .esl on a no-light engine: can never load (unchecked + greyed).
-            checkbox(false).size(15).into()
+            checkbox(false).size(sz(15)).into()
         } else {
             checkbox(p.enabled)
                 .on_toggle(move |_| Message::TogglePlugin(i))
-                .size(15)
+                .size(sz(15))
                 .into()
         };
         // Manual reorder (MO2 lets the load order be moved by hand, not only
@@ -439,9 +439,9 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // top by the engine, so offering to pin it would be theatre.
         let locked = list.is_locked(i);
         let pin: Element<'a, Message> = if engine_owned {
-            text("").width(Length::Fixed(26.0)).into()
+            text("").width(Length::Fixed(scaled(26.0))).into()
         } else {
-            button(text(if locked { "[*]" } else { "[ ]" }).size(10.0))
+            button(text(if locked { "[*]" } else { "[ ]" }).size(sz(10)))
                 .padding([0, 3])
                 .style(button::text)
                 .on_press(Message::TogglePluginLock(i))
@@ -525,8 +525,8 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             None => "",
         };
         let name_cell = tooltip(
-            text(p.name.clone()).size(12.0).width(Length::Fill),
-            container(text(tip).size(11.0))
+            text(p.name.clone()).size(sz(12)).width(Length::Fill),
+            container(text(tip).size(sz(11)))
                 .padding(6)
                 .style(|t: &Theme| container::Style {
                     background: Some(Background::Color(
@@ -540,12 +540,12 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         let row = Row::new()
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .push(text(idx).size(11.0).width(Length::Fixed(52.0)))
-            .push(container(toggle).width(Length::Fixed(28.0)))
+            .push(text(idx).size(sz(11)).width(Length::Fixed(scaled(52.0))))
+            .push(container(toggle).width(Length::Fixed(scaled(28.0))))
             .push(container(name_cell).width(Length::Fill))
-            .push(text(kind).size(10.0).width(Length::Fixed(36.0)))
-            .push(text(loot_badge).size(10.0).width(Length::Fixed(40.0)))
-            .push(container(pin).width(Length::Fixed(26.0)));
+            .push(text(kind).size(sz(10)).width(Length::Fixed(scaled(36.0))))
+            .push(text(loot_badge).size(sz(10)).width(Length::Fixed(scaled(40.0))))
+            .push(container(pin).width(Length::Fixed(scaled(26.0))));
         // Grabbing the row arms the drag AND selects it, the same press doing
         // both exactly as in the mod list; hovering it during a drag means
         // "insert above me".

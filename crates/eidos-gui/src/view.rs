@@ -612,7 +612,7 @@ fn bar_item<'a>(label: &'a str, msg: Message, open: bool) -> Element<'a, Message
     if !open {
         return flat_btn(label, msg);
     }
-    button(text(label).size(13.0))
+    button(text(label).size(sz(13)))
         .padding(6)
         .on_press(msg)
         .style(|_t: &Theme, _s| button::Style {
@@ -831,7 +831,7 @@ fn set_all_item<'a>(app: &App, enable: bool) -> Element<'a, Message> {
     } else {
         format!("{verb} all{scope} ({n})")
     };
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(Message::SetAllModsEnabled(enable))
@@ -902,7 +902,7 @@ pub(crate) fn name_cell<'a>(name: String, bg: Color) -> Element<'a, Message> {
         // the clip below, the text would instead paint over the next column -
         // iced does not clip text to its node.
         text(name)
-            .size(13.0)
+            .size(sz(13))
             .wrapping(iced::widget::text::Wrapping::None),
     )
     .width(Length::Fill)
@@ -945,11 +945,11 @@ pub(crate) fn mod_row<'a>(
     // greyed, inert. A checkbox with no `on_toggle` draws disabled, which is
     // exactly the look.
     let toggle = if m.unmanaged {
-        checkbox(true).size(16)
+        checkbox(true).size(sz(16))
     } else {
         checkbox(m.enabled)
             .on_toggle(move |_| Message::ToggleMod(i))
-            .size(16)
+            .size(sz(16))
     };
 
     // MO2's conflict emblem plus an optional hidden-files glyph (a mod can be both).
@@ -970,10 +970,13 @@ pub(crate) fn mod_row<'a>(
     if meta.is_some_and(|r| r.nexus_gone) {
         flags = flags.push(
             tooltip(
-                text("\u{2298}").size(12.0).color(conflict_loses_fg()),
+                text("\u{2298}")
+                    .size(sz(12))
+                    .font(colony_ui::fonts::glyph_font())
+                    .color(conflict_loses_fg()),
                 container(
                     text("Nexus no longer serves this mod's page. Keep your archive: you will not be able to download it again.")
-                        .size(11.0),
+                        .size(sz(11)),
                 )
                 .padding(6)
                 .style(card_style),
@@ -988,14 +991,17 @@ pub(crate) fn mod_row<'a>(
     if meta.is_some_and(|r| r.invalid_data) {
         flags = flags.push(
             tooltip(
-                text("\u{26A0}").size(12.0).color(conflict_loses_fg()),
+                text("\u{26A0}")
+                    .size(sz(12))
+                    .font(colony_ui::fonts::glyph_font())
+                    .color(conflict_loses_fg()),
                 container(
                     text(
                         "Nothing at the top of this mod looks like data this game loads. It \
                          may need its folders moved up a level, or it may simply not be a mod \
                          for this game. Right-click and Mark as valid to stop asking.",
                     )
-                    .size(11.0),
+                    .size(sz(11)),
                 )
                 .padding(6)
                 .style(card_style),
@@ -1007,14 +1013,17 @@ pub(crate) fn mod_row<'a>(
     if let Some(other) = meta.and_then(|r| r.other_game.clone()) {
         flags = flags.push(
             tooltip(
-                text("\u{25C6}").size(12.0).color(conflict_loses_fg()),
+                text("\u{25C6}")
+                    .size(sz(12))
+                    .font(colony_ui::fonts::glyph_font())
+                    .color(conflict_loses_fg()),
                 container(
                     text(format!(
                         "Downloaded for {other}, not for this game. It may still work - many \
                          mods do - but nothing here checked. Right-click and Mark as valid to \
                          stop asking."
                     ))
-                    .size(11.0),
+                    .size(sz(11)),
                 )
                 .padding(6)
                 .style(card_style),
@@ -1029,8 +1038,8 @@ pub(crate) fn mod_row<'a>(
     {
         flags = flags.push(
             tooltip(
-                text("\u{270E}").size(12.0),
-                container(text(note).size(11.0))
+                text("\u{270E}").size(sz(12)).font(colony_ui::fonts::glyph_font()),
+                container(text(note).size(sz(11)))
                     .padding(6)
                     .style(card_style),
                 tooltip::Position::Left,
@@ -1057,16 +1066,16 @@ pub(crate) fn mod_row<'a>(
     // a tick that deployed two copies of one mod over each other would be worse
     // than no tick at all. Drawn inert, like unmanaged content.
     let toggle: Element<'a, Message> = if m.is_backup() {
-        checkbox(false).size(16).into()
+        checkbox(false).size(sz(16)).into()
     } else {
         toggle.into()
     };
     let mut row = Row::new()
         .spacing(6)
-        .height(Length::Fixed(MOD_ROW_H))
+        .height(Length::Fixed(scaled(MOD_ROW_H)))
         .align_y(iced::Alignment::Center)
         .push(container(toggle).width(C_CHECK))
-        .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
+        .push(text(format!("{:>2}", i + 1)).size(sz(12)).width(C_PRIO))
         .push(name_cell(m.name.clone(), bg));
     let mut flag_cell = Some(flag_cell);
     for col in columns {
@@ -1078,14 +1087,14 @@ pub(crate) fn mod_row<'a>(
                 } else {
                     category.clone()
                 })
-                .size(11.0)
+                .size(sz(11))
                 .width(w),
             ),
-            ModColumn::Content => row.push(text(content.clone()).size(10.0).width(w)),
-            ModColumn::Version => row.push(text(version.clone()).size(11.0).width(w)),
+            ModColumn::Content => row.push(text(content.clone()).size(sz(10)).width(w)),
+            ModColumn::Version => row.push(text(version.clone()).size(sz(11)).width(w)),
             ModColumn::Author => row.push(
                 text(meta.and_then(|r| r.author.clone()).unwrap_or_default())
-                    .size(11.0)
+                    .size(sz(11))
                     .width(w),
             ),
             ModColumn::Installed => row.push(
@@ -1094,7 +1103,7 @@ pub(crate) fn mod_row<'a>(
                         .map(fmt_day)
                         .unwrap_or_default(),
                 )
-                .size(11.0)
+                .size(sz(11))
                 .width(w),
             ),
             ModColumn::ModId => row.push(
@@ -1103,12 +1112,12 @@ pub(crate) fn mod_row<'a>(
                         .map(|n| n.to_string())
                         .unwrap_or_default(),
                 )
-                .size(11.0)
+                .size(sz(11))
                 .width(w),
             ),
             ModColumn::Game => row.push(
                 text(meta.and_then(|r| r.game_name.clone()).unwrap_or_default())
-                    .size(11.0)
+                    .size(sz(11))
                     .width(w),
             ),
             // Taken rather than cloned: the flags cell is built once above and
@@ -1149,15 +1158,15 @@ fn group_header_row<'a>(label: String, count: usize, folded: bool) -> Element<'a
     let msg = Message::ToggleGroupFold(label.clone());
     let row = Row::new()
         .spacing(6)
-        .height(Length::Fixed(MOD_ROW_H))
+        .height(Length::Fixed(scaled(MOD_ROW_H)))
         .align_y(iced::Alignment::Center)
         .push(
             text(if folded { "[+]" } else { "[-]" })
-                .size(11.0)
+                .size(sz(11))
                 .width(C_CHECK),
         )
-        .push(text(label).size(12.0).width(Length::Fill))
-        .push(text(format!("{count}")).size(11.0).width(C_PRIO));
+        .push(text(label).size(sz(12)).width(Length::Fill))
+        .push(text(format!("{count}")).size(sz(11)).width(C_PRIO));
     mouse_area(
         container(row)
             .padding([0, 4])
@@ -1203,7 +1212,7 @@ pub(crate) fn separator_row<'a>(
 
     // The collapse/expand toggle sits in the checkbox column (a separator has no
     // checkbox); it hides/shows the mods grouped beneath this separator.
-    let collapse = button(text(if collapsed { "[+]" } else { "[-]" }).size(11.0))
+    let collapse = button(text(if collapsed { "[+]" } else { "[-]" }).size(sz(11)))
         .padding([1, 4])
         .on_press(Message::ToggleCollapse(m.display_name().to_string()))
         .style(button::text);
@@ -1213,7 +1222,7 @@ pub(crate) fn separator_row<'a>(
     // a separator whose name should be shorter.
     let name = container(
         text(m.display_name().to_string())
-            .size(13.0)
+            .size(sz(13))
             .wrapping(iced::widget::text::Wrapping::None),
     )
     .width(Length::Fill)
@@ -1222,10 +1231,10 @@ pub(crate) fn separator_row<'a>(
 
     let row = Row::new()
         .spacing(6)
-        .height(Length::Fixed(MOD_ROW_H))
+        .height(Length::Fixed(scaled(MOD_ROW_H)))
         .align_y(iced::Alignment::Center)
         .push(container(collapse).width(C_CHECK))
-        .push(text(format!("{:>2}", i + 1)).size(12.0).width(C_PRIO))
+        .push(text(format!("{:>2}", i + 1)).size(sz(12)).width(C_PRIO))
         .push(name);
 
     container(
@@ -1252,13 +1261,13 @@ pub(crate) fn separator_row<'a>(
 pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let active = app.mods.iter().filter(|m| m.is_active()).count();
     let (names, active_name) = cached_profiles(app);
-    let mut profile = Row::new().spacing(6).push(text("Profile:").size(12.0));
+    let mut profile = Row::new().spacing(6).push(text("Profile:").size(sz(12)));
     if app.created.is_some() {
         for name in names {
             let selected = name == active_name;
             // Left-click switches (MO2's profile selector); right-click opens the
             // rename / copy / delete menu (MO2's Profiles dialog actions).
-            let chip = button(text(name.clone()).size(12.0))
+            let chip = button(text(name.clone()).size(sz(12)))
                 .padding(4)
                 .on_press(Message::SwitchProfile(name.clone()))
                 .style(if selected {
@@ -1280,7 +1289,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 app.updated_count,
                 nexus_budget_suffix(app)
             ))
-            .size(12.0),
+            .size(sz(12)),
         );
 
     // The category catalog (resolves ids -> names; drives the filter + the column).
@@ -1326,13 +1335,13 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 .id(filter_input_id())
                 .on_input(Message::SearchChanged)
                 .padding(5)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
             pick_list(choices, selected, |c: CategoryChoice| {
                 Message::CategoryFilterChanged(c.id)
             })
-            .text_size(12.0)
+            .text_size(sz(12))
             .padding(5),
         )
         .push(filter_button(app))
@@ -1345,14 +1354,20 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     // the only one where dragging works.
     let head = |label: &str, key: Option<SortKey>, width: Length| -> Element<'a, Message> {
         let Some(key) = key else {
-            return text(label.to_string()).size(11.0).width(width).into();
+            return text(label.to_string()).size(sz(11)).width(width).into();
         };
+        // Nerd Font carets, in the glyph font so the dyslexia font cannot drop them.
         let arrow = match app.mod_sort {
-            Some(s) if s.by == key && s.ascending => " \u{25B2}",
-            Some(s) if s.by == key => " \u{25BC}",
+            Some(s) if s.by == key && s.ascending => "\u{f0d8}",
+            Some(s) if s.by == key => "\u{f0d7}",
             _ => "",
         };
-        button(text(format!("{label}{arrow}")).size(11.0))
+        button(
+            Row::new()
+                .spacing(4)
+                .push(text(label.to_string()).size(sz(11)))
+                .push(text(arrow).size(sz(10)).font(colony_ui::fonts::glyph_font())),
+        )
             .padding(0)
             .width(width)
             .style(button::text)
@@ -1381,7 +1396,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
     let mut shown = 0usize;
     if app.mods.is_empty() {
         list = list
-            .push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(12.0));
+            .push(text("No mods yet. Drop mod folders into the instance's mods/ dir.").size(sz(12)));
     }
     // Decided up front, because whether a separator draws depends on whether any
     // mod BELOW it survives the filter - which the single downward pass this used
@@ -1559,7 +1574,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
                 app.filters.active_count()
             ));
         }
-        list = list.push(text(format!("No mods {}.", by.join(", "))).size(12.0));
+        list = list.push(text(format!("No mods {}.", by.join(", "))).size(sz(12)));
     }
 
     let overwrite = button(
@@ -1567,7 +1582,7 @@ pub(crate) fn modlist_pane<'a>(app: &App) -> Element<'a, Message> {
             .spacing(6)
             .push(text("").width(C_CHECK))
             .push(text("").width(C_PRIO))
-            .push(text("Overwrite").size(13.0).width(Length::Fill)),
+            .push(text("Overwrite").size(sz(13)).width(Length::Fill)),
     )
     .padding(2)
     .on_press(Message::SelectTab(Tab::Overwrite))
@@ -1697,9 +1712,9 @@ pub(crate) fn menu_item<'a>(label: &'a str, msg: Message) -> Element<'a, Message
 /// iced wraps text by word, and a menu whose rows are not all the same height
 /// reads as broken rather than as truncated. Clipping is the lesser answer for a
 /// list somebody is scanning down.
-fn menu_label<'a>(label: impl text::IntoFragment<'a>) -> iced::widget::Text<'a, Theme> {
+fn menu_label<'a>(label: impl iced::widget::text::IntoFragment<'a>) -> iced::widget::Text<'a, Theme> {
     text(label)
-        .size(12.0)
+        .size(sz(12))
         .wrapping(iced::widget::text::Wrapping::None)
 }
 
@@ -1747,7 +1762,7 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
     let picked = app.selected_plugins.len().max(1);
     let mut col = Column::new()
         .spacing(1)
-        .push(text(p.name.clone()).size(13.0))
+        .push(text(p.name.clone()).size(sz(13)))
         .push(menu_sep());
 
     // The origin actions are only offered when there IS an origin: vanilla
@@ -1768,7 +1783,7 @@ pub(crate) fn plugin_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> 
                 .push(menu_item("Mod info", Message::ShowPluginOriginInfo(i)));
         }
         None => {
-            col = col.push(container(text("From the game's own Data").size(11.0)).padding([4, 8]));
+            col = col.push(container(text("From the game's own Data").size(sz(11))).padding([4, 8]));
         }
     }
 
@@ -1877,7 +1892,7 @@ fn send_to_plugin_priority<'a>(app: &App, i: usize) -> Element<'a, Message> {
             .on_input(Message::PluginSendToPriorityChanged)
             .on_submit(Message::PluginSendToPriorityCommit)
             .padding(5)
-            .size(12.0)
+            .size(sz(12))
             .into(),
         None => menu_item("Send to priority...", Message::PluginSendToPriorityStart),
     }
@@ -1893,7 +1908,7 @@ pub(crate) fn filter_button<'a>(app: &App) -> Element<'a, Message> {
         "Filters".to_string()
     };
     container(
-        button(text(label).size(12.0))
+        button(text(label).size(sz(12)))
             .padding(5)
             .on_press(Message::ToggleFilterPane)
             .style(if n > 0 { button::primary } else { button::text }),
@@ -1911,9 +1926,9 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
     let mut col = Column::new().spacing(2).push(
         Row::new()
             .align_y(iced::Alignment::Center)
-            .push(text("Show mods that are...").size(11.0).width(Length::Fill))
+            .push(text("Show mods that are...").size(sz(11)).width(Length::Fill))
             .push(
-                button(text("Clear").size(11.0))
+                button(text("Clear").size(sz(11)))
                     .padding([2, 8])
                     .style(button::text)
                     .on_press(Message::ClearFilters),
@@ -1924,15 +1939,15 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
             button(
                 Row::new()
                     .spacing(6)
-                    .push(text(state.mark()).size(11.0).font(iced::Font::MONOSPACE))
-                    .push(text(label).size(12.0).width(Length::Fill))
+                    .push(text(state.mark()).size(sz(11)).font(colony_ui::ui_font()))
+                    .push(text(label).size(sz(12)).width(Length::Fill))
                     .push(
                         text(match state {
                             Criterion::Off => "",
                             Criterion::Require => "only",
                             Criterion::Exclude => "except",
                         })
-                        .size(10.0),
+                        .size(sz(10)),
                     ),
             )
             .width(Length::Fill)
@@ -1951,7 +1966,7 @@ pub(crate) fn filter_pane<'a>(app: &App) -> Element<'a, Message> {
     // pane and opened a context menu underneath it.
     mouse_area(
         container(col)
-            .width(Length::Fixed(260.0))
+            .width(Length::Fixed(scaled(260.0)))
             .padding(6)
             .style(card_style),
     )
@@ -1998,11 +2013,11 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .spacing(6)
         .push(
             text(m.display_name().to_string())
-                .size(13.0)
+                .size(sz(13))
                 .width(Length::Fill),
         )
         .push(
-            button(text("x").size(13.0))
+            button(text("x").size(sz(13)))
                 .padding([1, 6])
                 .on_press(Message::CloseMenu)
                 .style(button::text),
@@ -2023,7 +2038,7 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
             bits.push(format!("Nexus #{id}"));
         }
         if !bits.is_empty() {
-            col = col.push(text(bits.join("  ·  ")).size(10.0));
+            col = col.push(text(bits.join("  ·  ")).size(sz(10)));
         }
     }
 
@@ -2036,7 +2051,7 @@ pub(crate) fn mod_menu_card<'a>(app: &App, i: usize) -> Element<'a, Message> {
                 .on_input(Message::RenameChanged)
                 .on_submit(Message::RenameCommit)
                 .padding(5)
-                .size(12.0);
+                .size(sz(12));
             let actions = Row::new()
                 .spacing(6)
                 .push(tool_btn("Save", Message::RenameCommit))
@@ -2239,11 +2254,11 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
         .spacing(6)
         .push(
             text(format!("{n} mods selected"))
-                .size(13.0)
+                .size(sz(13))
                 .width(Length::Fill),
         )
         .push(
-            button(text("x").size(13.0))
+            button(text("x").size(sz(13)))
                 .padding([1, 6])
                 .on_press(Message::CloseMenu)
                 .style(button::text),
@@ -2256,7 +2271,7 @@ pub(crate) fn batch_mod_menu_card<'a>(app: &App) -> Element<'a, Message> {
     } else {
         ("Remove selected", Message::BatchRemoveMods)
     };
-    let remove = button(text(remove_label).size(12.0))
+    let remove = button(text(remove_label).size(sz(12)))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(remove_msg)
@@ -2297,7 +2312,7 @@ pub(crate) fn remove_button<'a>(app: &App, i: usize) -> Element<'a, Message> {
     } else {
         "Remove"
     };
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .width(Length::Fill)
         .padding([4, 8])
         .on_press(Message::ModRemove(i))
@@ -2318,7 +2333,7 @@ pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Elem
     let mut row = Row::new()
         .spacing(3)
         .align_y(iced::Alignment::Center)
-        .push(text("Colour").size(10.0));
+        .push(text("Colour").size(sz(10)));
     for a in colony_ui::ACCENT_OVERRIDES {
         // Stored as the bytes MO2 writes into meta.ini, not as an accent key.
         let [_, r, g, b] = a.color.to_be_bytes();
@@ -2343,7 +2358,7 @@ pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Elem
         row = row.push(sw);
     }
     row.push(
-        button(text("x").size(10.0))
+        button(text("x").size(sz(10)))
             .padding([1, 4])
             .on_press(Message::SetSeparatorColor(i, None))
             .style(button::text),
@@ -2359,7 +2374,7 @@ pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Messa
     // wrapping to a second line inside a list of single-line rows.
     mouse_area(
         container(content)
-            .width(Length::Fixed(240.0))
+            .width(Length::Fixed(scaled(240.0)))
             .padding(6)
             .style(|_t: &Theme| container::Style {
                 background: Some(Background::Color(pal().bg_card)),

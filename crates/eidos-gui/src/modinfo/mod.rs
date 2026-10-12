@@ -31,7 +31,7 @@ pub(crate) use saves::*;
 
 /// One tab of the mod-information strip. Same contract as [`tab_btn`].
 pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, mix: f32) -> Element<'a, Message> {
-    button(text(label).size(12.0))
+    button(text(label).size(sz(12)))
         .padding([4, 10])
         .on_press(Message::InfoSelectTab(tab))
         .style(move |theme, status| {
@@ -47,8 +47,8 @@ pub(crate) fn info_tab_btn<'a>(label: &'a str, tab: InfoTab, mix: f32) -> Elemen
 pub(crate) fn info_kv<'a>(k: &'a str, v: String) -> Element<'a, Message> {
     Row::new()
         .spacing(8)
-        .push(text(k).size(12.0).width(Length::Fixed(120.0)))
-        .push(text(v).size(12.0).width(Length::Fill))
+        .push(text(k).size(sz(12)).width(Length::Fixed(scaled(120.0))))
+        .push(text(v).size(sz(12)).width(Length::Fill))
         .into()
 }
 
@@ -132,16 +132,16 @@ pub(crate) fn info_general<'a>(app: &App, m: &ModEntry) -> Element<'a, Message> 
     let url_row = Row::new()
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .push(text("Page").size(11.0).width(Length::Fixed(90.0)))
+        .push(text("Page").size(sz(11)).width(Length::Fixed(scaled(90.0))))
         .push(
             text_input("https://...", &app.url_edit)
                 .on_input(Message::ModUrlChanged)
                 .on_submit(Message::ModUrlSave)
                 .padding(4)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(
-            button(text("Save").size(11.0))
+            button(text("Save").size(sz(11)))
                 .padding([3, 8])
                 .style(button::secondary)
                 .on_press(Message::ModUrlSave),
@@ -191,7 +191,7 @@ pub(crate) fn generated_summary(app: &App, name: &str) -> String {
 /// Conflicts tab: which files this mod overrides, and which it loses, by mod name.
 pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
     let Some(cmap) = &app.conflicts else {
-        return text("Conflicts not computed yet.").size(12.0).into();
+        return text("Conflicts not computed yet.").size(sz(12)).into();
     };
     let origin = (i + 1) as u32;
     // Only what will be DRAWN is materialised. This runs in view(), once per
@@ -226,21 +226,21 @@ pub(crate) fn info_conflicts<'a>(app: &App, i: usize) -> Element<'a, Message> {
         }
     }
     let mut col = Column::new().spacing(2);
-    col = col.push(text(format!("Overrides ({wins_n}):")).size(13.0));
+    col = col.push(text(format!("Overrides ({wins_n}):")).size(sz(13)));
     if wins.is_empty() {
-        col = col.push(text("  (none)").size(11.0));
+        col = col.push(text("  (none)").size(sz(11)));
     }
     for (p, who) in &wins {
-        col = col.push(text(format!("  {p}   >   {who}")).size(11.0));
+        col = col.push(text(format!("  {p}   >   {who}")).size(sz(11)));
     }
     col = col
         .push(Space::new().height(Length::Fixed(8.0)))
-        .push(text(format!("Overridden by ({loses_n}):")).size(13.0));
+        .push(text(format!("Overridden by ({loses_n}):")).size(sz(13)));
     if loses.is_empty() {
-        col = col.push(text("  (none)").size(11.0));
+        col = col.push(text("  (none)").size(sz(11)));
     }
     for (p, who) in &loses {
-        col = col.push(text(format!("  {p}   <   {who}")).size(11.0));
+        col = col.push(text(format!("  {p}   <   {who}")).size(sz(11)));
     }
     col.push(archive_member_rows(app, cmap, origin, 100)).into()
 }
@@ -257,7 +257,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
     } else {
         format!("{} file(s), {hidden} hidden:", entries.len())
     };
-    let mut col = Column::new().spacing(1).push(text(summary).size(12.0));
+    let mut col = Column::new().spacing(1).push(text(summary).size(sz(12)));
     let mut tools = Row::new().spacing(6).align_y(iced::Alignment::Center);
     if hidden > 0 {
         tools = tools.push(tool_btn("Unhide all", Message::RestoreHiddenFiles(i)));
@@ -274,10 +274,10 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                         .on_input(Message::FiletreeNewFolderChanged)
                         .on_submit(Message::FiletreeNewFolderCommit)
                         .padding(4)
-                        .size(11.0),
+                        .size(sz(11)),
                 )
                 .push(
-                    button(text("Create").size(10.0))
+                    button(text("Create").size(sz(10)))
                         .padding([1, 5])
                         .style(button::primary)
                         .on_press(Message::FiletreeNewFolderCommit),
@@ -301,11 +301,11 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 .on_input(Message::FiletreeRenameChanged)
                 .on_submit(Message::FiletreeRenameCommit)
                 .padding(2)
-                .size(11.0)
+                .size(sz(11))
                 .width(Length::Fill)
                 .into()
         } else {
-            text(e.clone()).size(11.0).width(Length::Fill).into()
+            text(e.clone()).size(sz(11)).width(Length::Fill).into()
         };
         let mut row = Row::new()
             .spacing(6)
@@ -314,13 +314,13 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         if renaming {
             row = row
                 .push(
-                    button(text("Rename").size(10.0))
+                    button(text("Rename").size(sz(10)))
                         .padding([1, 5])
                         .style(button::primary)
                         .on_press(Message::FiletreeRenameCommit),
                 )
                 .push(
-                    button(text("Cancel").size(10.0))
+                    button(text("Cancel").size(sz(10)))
                         .padding([1, 5])
                         .style(button::secondary)
                         .on_press(Message::FiletreeRenameCancel),
@@ -328,25 +328,25 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
         } else {
             row = row
                 .push(
-                    button(text("View").size(10.0))
+                    button(text("View").size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press_maybe(resolve_in_mod(&m.path, e).map(Message::PreviewFile)),
                 )
                 .push(
-                    button(text("Open").size(10.0))
+                    button(text("Open").size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press(Message::FiletreeOpen(i, e.clone())),
                 )
                 .push(
-                    button(text("Rename").size(10.0))
+                    button(text("Rename").size(sz(10)))
                         .padding([1, 5])
                         .style(button::text)
                         .on_press(Message::FiletreeRenameStart(i, e.clone())),
                 )
                 .push(
-                    button(text(label).size(10.0))
+                    button(text(label).size(sz(10)))
                         .padding([1, 5])
                         .on_press(Message::ToggleFileHidden(i, e.clone()))
                         .style(if is_hidden {
@@ -359,7 +359,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 // be undone by clicking again - hiding renames, and renaming
                 // renames back. Two clicks, like everything else that removes.
                 .push(
-                    button(text(if armed { "Delete?" } else { "Delete" }).size(10.0))
+                    button(text(if armed { "Delete?" } else { "Delete" }).size(sz(10)))
                         .padding([1, 5])
                         .style(if armed {
                             button::danger
@@ -384,7 +384,7 @@ pub(crate) fn info_filetree<'a>(app: &App, i: usize, m: &ModEntry) -> Element<'a
                 "Showing the first 2000 of {} files - the rest exist but are not listed here.",
                 entries.len()
             ))
-            .size(11.0),
+            .size(sz(11)),
         );
     }
     col.into()
@@ -462,10 +462,10 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
     if available.is_empty() {
         return Column::new()
             .spacing(6)
-            .push(text("This mod ships no INI tweaks.").size(12.0))
+            .push(text("This mod ships no INI tweaks.").size(sz(12)))
             .push(
                 text("A mod with tweaks has an 'INI Tweaks' folder of small INI fragments.")
-                    .size(10.0),
+                    .size(sz(10)),
             )
             .into();
     }
@@ -476,7 +476,7 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
         .unwrap_or_default();
 
     let mut col = Column::new().spacing(3).push(
-        text("Enabled fragments are merged into this profile's game INI at launch.").size(11.0),
+        text("Enabled fragments are merged into this profile's game INI at launch.").size(sz(11)),
     );
     for name in available {
         let on = enabled.iter().any(|e| e.eq_ignore_ascii_case(&name));
@@ -485,8 +485,8 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
             checkbox(on)
                 .label(label)
                 .on_toggle(move |_| Message::ToggleIniTweak(i, name.clone()))
-                .size(13.0)
-                .text_size(12.0),
+                .size(sz(13))
+                .text_size(sz(12)),
         );
     }
     col.into()
@@ -496,13 +496,13 @@ pub(crate) fn info_ini_tweaks<'a>(app: &App, i: usize, m: &ModEntry) -> Element<
 pub(crate) fn info_notes<'a>(app: &App) -> Element<'a, Message> {
     Column::new()
         .spacing(8)
-        .push(text("Note (saved to the mod's meta.ini):").size(12.0))
+        .push(text("Note (saved to the mod's meta.ini):").size(sz(12)))
         .push(
             text_input("Add a note...", &app.notes_edit)
                 .on_input(Message::NotesChanged)
                 .on_submit(Message::NotesSave)
                 .padding(6)
-                .size(12.0),
+                .size(sz(12)),
         )
         .push(tool_btn("Save note", Message::NotesSave))
         .into()
@@ -520,9 +520,9 @@ pub(crate) fn mod_info_dialog<'a>(app: &App, i: usize) -> Element<'a, Message> {
 
     let title = Row::new()
         .spacing(8)
-        .push(text(m.name.clone()).size(16.0).width(Length::Fill))
+        .push(text(m.name.clone()).size(sz(16)).width(Length::Fill))
         .push(
-            button(text("Close").size(12.0))
+            button(text("Close").size(sz(12)))
                 .padding([3, 10])
                 .on_press(Message::CloseInfo)
                 .style(button::secondary),

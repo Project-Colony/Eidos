@@ -152,14 +152,14 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
     let Some(rows) = cached_archive_rows(app, game.def.id) else {
         return Column::new()
             .spacing(6)
-            .push(text("Archives").size(13.0))
+            .push(text("Archives").size(sz(13)))
             .push(
                 text(
                     "The active plugin list is not known yet, and without it Eidos cannot say \
                      which archives load - every one would look dead. Open the Plugins tab once, \
                      or launch the game, and come back.",
                 )
-                .size(12.0),
+                .size(sz(12)),
             )
             .into();
     };
@@ -176,7 +176,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                 "{} archive(s) across your enabled mods",
                 rows.len()
             ))
-            .size(13.0),
+            .size(sz(13)),
         )
         .push(Space::new().width(Length::Fill))
         .push(
@@ -185,7 +185,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
             } else {
                 format!("{orphans} will not load")
             })
-            .size(11.0)
+            .size(sz(11))
             .color(if orphans == 0 {
                 conflict_wins_fg()
             } else {
@@ -195,29 +195,29 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
 
     let col_header = Row::new()
         .spacing(8)
-        .push(text("Archive").size(11.0).width(Length::FillPortion(3)))
-        .push(text("From mod").size(11.0).width(Length::FillPortion(2)))
+        .push(text("Archive").size(sz(11)).width(Length::FillPortion(3)))
+        .push(text("From mod").size(sz(11)).width(Length::FillPortion(2)))
         .push(
             text("Loaded because")
-                .size(11.0)
+                .size(sz(11))
                 .width(Length::FillPortion(3)),
         );
 
     let mut list = Column::new();
     if rows.is_empty() {
-        list = list.push(text("None of your enabled mods ships a BSA or BA2.").size(12.0));
+        list = list.push(text("None of your enabled mods ships a BSA or BA2.").size(sz(12)));
     }
     for (i, r) in rows.iter().enumerate() {
         let why: Element<'a, Message> = if let Some(winner) = &r.overridden_by {
             text(format!("Physical archive overridden by {winner}"))
-                .size(11.0)
+                .size(sz(11))
                 .into()
         } else {
             match (&r.by_plugin, r.registered) {
-                (_, true) => text("the INI registers it").size(11.0).into(),
-                (Some(p), _) => text(format!("{p} is active")).size(11.0).into(),
+                (_, true) => text("the INI registers it").size(sz(11)).into(),
+                (Some(p), _) => text(format!("{p} is active")).size(sz(11)).into(),
                 (None, false) => text("nothing loads it - it is dead weight")
-                    .size(11.0)
+                    .size(sz(11))
                     .color(conflict_loses_fg())
                     .into(),
             }
@@ -227,12 +227,12 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
             .align_y(iced::Alignment::Center)
             .push(
                 text(r.archive.clone())
-                    .size(12.0)
+                    .size(sz(12))
                     .width(Length::FillPortion(3)),
             )
             .push(
                 text(r.mod_name.clone())
-                    .size(11.0)
+                    .size(sz(11))
                     .width(Length::FillPortion(2)),
             )
             .push(container(why).width(Length::FillPortion(3)));
@@ -256,7 +256,7 @@ pub(crate) fn archives_panel<'a>(app: &App) -> Element<'a, Message> {
                  \"<plugin> - Textures.bsa\"), or one the INI registers explicitly. Anything else \
                  is on disk and never read.",
             )
-            .size(10.0),
+            .size(sz(10)),
         )
         .into()
 }

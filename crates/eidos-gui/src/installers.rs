@@ -635,7 +635,7 @@ fn msg(a: Action) -> Message {
 
 pub(crate) fn view(w: &Wizard) -> Element<'_, Message> {
     let mut body = column![
-        text("Mod installer").size(24),
+        text("Mod installer").size(sz(24)),
         text(
             w.archive
                 .file_name()

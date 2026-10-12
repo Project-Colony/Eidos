@@ -13,13 +13,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use iced::widget::{
-    button, checkbox, container, image, mouse_area, operation, pick_list, scrollable, text,
-    text_input, tooltip, Column, Row, Space, Stack,
+    button, checkbox, container, image, mouse_area, operation, pick_list, scrollable, text_input,
+    tooltip, Column, Row, Space, Stack,
 };
 // For `widget::Id`, the shared handle every operation addresses a widget by.
 use iced::widget;
 use iced::{Background, Border, Color, Element, Length, Task, Theme};
 
+use colony_ui::sz;
 use eidos_conflicts::{ConflictMap, ConflictState, Layer};
 use eidos_games::{detect, home, DetectedGame};
 use eidos_instance::settings::Settings;
@@ -70,6 +71,7 @@ use modinfo::*;
 use preferences::*;
 use state::*;
 use subscription::subscription;
+use theme::text;
 use update::*;
 use view::*;
 use wizard::*;
@@ -113,7 +115,17 @@ fn main() -> iced::Result {
     // is now the boot function that `run_with` used to take. It must be `Fn`, not
     // `FnOnce` - which is why the `.clone()` stays: without it the closure would
     // consume the Vec and only be callable once.
-    iced::application(move || new(launch_command.clone()), update, view)
+    // The Colony fonts: JetBrainsMono Nerd Font for every text, OpenDyslexic for
+    // the dyslexia-friendly switch, Font Awesome for glyphs. Text drawn through
+    // `theme::text` follows that switch live; the default font, which only
+    // inputs and pick lists still fall back to, is chosen once here.
+    colony_ui::fonts::BYTES
+        .into_iter()
+        .fold(
+            iced::application(move || new(launch_command.clone()), update, view),
+            |app, font| app.font(font),
+        )
+        .default_font(colony_ui::ui_font())
         .title("Eidos")
         .theme(theme::theme)
         .subscription(subscription)
