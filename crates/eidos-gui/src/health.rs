@@ -35,6 +35,7 @@ use eidos_gamefeatures::RegistryStatus;
 use eidos_games::DetectedGame;
 
 use crate::modinfo::{DiagLevel, Diagnostic};
+use crate::{t, tf};
 
 /// Everything the prefix checks need, read once so the checks themselves stay
 /// pure and testable. Gathering is I/O; deciding is not.
@@ -84,34 +85,19 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
         RegistryStatus::NotApplicable | RegistryStatus::Correct => {}
         RegistryStatus::PrefixUninitialised => out.push(Diagnostic {
             level: DiagLevel::Problem,
-            title: format!("{game} has no Proton prefix yet"),
-            detail: format!(
-                "Steam has never created a Wine prefix for {game}, so there is nowhere to register \
-                 the game path and nowhere for a tool to run. Launch {game} once through Steam, \
-                 then press F5. If Steam refuses to create it, check that the game's folder under \
-                 steamapps/compatdata is writable - an empty one owned by root will block it \
-                 silently."
-            ),
+            title: tf("health_no_prefix", &[("game", game)]),
+            detail: tf("health_no_prefix_detail", &[("game", game)]),
             actions: Vec::new(),
         }),
         RegistryStatus::Stale { found, want } => out.push(Diagnostic {
             level: DiagLevel::Problem,
-            title: format!("Windows tools cannot find {game}"),
+            title: tf("health_registry_stale", &[("game", game)]),
             detail: match found {
                 // Showing the wrong value is the point: it is the exact path the
                 // tool is about to complain about, and the only thing that lets
                 // someone connect that complaint to Eidos.
-                Some(bad) => format!(
-                    "The prefix says the game is installed at  {bad}  which is not where it is. \
-                     xEdit, DynDOLOD, Wrye Bash and the Creation Kit all read that key, so they \
-                     will open on an empty folder. Eidos repairs this the next time you run a \
-                     tool; it should become  {want}"
-                ),
-                None => format!(
-                    "The prefix has no record of where {game} is installed, so xEdit, DynDOLOD, \
-                     Wrye Bash and the Creation Kit have nothing to read and will open on an empty \
-                     folder. Eidos writes it the next time you run a tool: {want}"
-                ),
+                Some(bad) => tf("health_registry_wrong", &[("found", &bad), ("want", &want)]),
+                None => tf("health_registry_missing", &[("game", game), ("want", &want)]),
             },
             actions: Vec::new(),
         }),
@@ -134,16 +120,15 @@ pub(crate) fn prefix_checks(f: &PrefixFacts) -> Vec<Diagnostic> {
         if found != want && *found != steam {
             out.push(Diagnostic {
                 level: DiagLevel::Problem,
-                title: "The prefix's S: drive points outside the Steam library".to_string(),
-                detail: format!(
-                    "S: points at  {}. Eidos points it at  {}  for a tool and Steam at  {}  for \
-                     {game}; it matches neither, so the library has probably moved, or this \
-                     prefix came from another machine. Anything that stored an S:-relative path \
-                     in it - the game's own launcher writes one - resolves nowhere until the \
-                     next launch through Eidos or Steam re-points it.",
-                    found.display(),
-                    want.display(),
-                    steam.display()
+                title: t("health_gamedrive").to_string(),
+                detail: tf(
+                    "health_gamedrive_detail",
+                    &[
+                        ("found", &found.display()),
+                        ("tool", &want.display()),
+                        ("steam", &steam.display()),
+                        ("game", game),
+                    ],
                 ),
                 actions: Vec::new(),
             });
@@ -172,20 +157,16 @@ pub(crate) fn nexus_checks(f: &NexusFacts) -> Vec<Diagnostic> {
     if !f.signed_in {
         out.push(Diagnostic {
             level: DiagLevel::Advice,
-            title: "Not signed in to Nexus".to_string(),
-            detail: "Mod Manager Download links will not reach Eidos and no mod updates will be \
-                     reported, both silently. Sign in from the Nexus button in the toolbar."
-                .to_string(),
+            title: t("health_nexus_signed_out").to_string(),
+            detail: t("health_nexus_signed_out_detail").to_string(),
             actions: Vec::new(),
         });
     }
     if let Some(e) = &f.last_error {
         out.push(Diagnostic {
             level: DiagLevel::Problem,
-            title: "The last Nexus request failed".to_string(),
-            detail: format!(
-                "{e}  Downloads and update checks will keep failing until this clears."
-            ),
+            title: t("health_nexus_failed").to_string(),
+            detail: tf("health_nexus_failed_detail", &[("error", &e)]),
             actions: Vec::new(),
         });
     }

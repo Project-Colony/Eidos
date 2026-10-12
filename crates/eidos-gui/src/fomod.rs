@@ -26,14 +26,14 @@ pub(crate) struct FomodWizard {
     pub(crate) hover: Option<(usize, usize)>,
 }
 
-pub(crate) fn group_type_label(t: eidos_fomod::GroupType) -> &'static str {
+pub(crate) fn group_type_label(kind: eidos_fomod::GroupType) -> &'static str {
     use eidos_fomod::GroupType::*;
-    match t {
-        SelectExactlyOne => "choose one",
-        SelectAtMostOne => "choose at most one",
-        SelectAtLeastOne => "choose at least one",
-        SelectAny => "choose any",
-        SelectAll => "all included",
+    match kind {
+        SelectExactlyOne => t("fomod_choose_one"),
+        SelectAtMostOne => t("fomod_choose_at_most_one"),
+        SelectAtLeastOne => t("fomod_choose_at_least_one"),
+        SelectAny => t("fomod_choose_any"),
+        SelectAll => t("fomod_all_included"),
     }
 }
 
@@ -257,7 +257,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // The step counter as a chip, so it reads as status rather than as one
         // more sentence competing with the mod's name.
         container(
-            text(format!("Step {shown_no} of {total}"))
+            text(tf("fomod_step", &[("n", &shown_no), ("total", &total)]))
                 .size(sz(11))
                 .color(fomod_on_accent()),
         )
@@ -343,9 +343,9 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
                     || matches!(group.group_type, GroupType::SelectAll)
                     || group_forced;
                 let tag = match ptype {
-                    PluginType::Required => "required",
-                    PluginType::Recommended => "recommended",
-                    PluginType::NotUsable => "not usable",
+                    PluginType::Required => t("fomod_required"),
+                    PluginType::Recommended => t("fomod_recommended"),
+                    PluginType::NotUsable => t("fomod_not_usable"),
                     _ => "",
                 };
                 let label = if on {
@@ -441,7 +441,7 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
         // INK_SOFT, not FAINT: this sits on the preview fill, which is darker than
         // the page, so the faint ink fell to 2.4:1 and the box just read as blank.
         None => container(
-            text("No preview for this option.")
+            text(t("fomod_no_preview"))
                 .size(sz(12))
                 .color(fomod_ink_soft()),
         )
@@ -499,20 +499,20 @@ pub(crate) fn fomod_wizard_view(w: &FomodWizard) -> Element<'_, Message> {
     let mut nav = Row::new().spacing(8).align_y(iced::Alignment::Center);
     if !valid {
         nav = nav.push(
-            text("Select the required option(s) to continue.")
+            text(t("fomod_select_required"))
                 .size(sz(11))
                 .color(fomod_ink_faint()),
         );
     }
     nav = nav.push(Space::new().width(Length::Fill));
-    nav = nav.push(fomod_btn("Cancel", Some(Message::FomodCancel), false));
+    nav = nav.push(fomod_btn(t("common_cancel"), Some(Message::FomodCancel), false));
     if has_prev {
-        nav = nav.push(fomod_btn("Back", Some(Message::FomodBack), false));
+        nav = nav.push(fomod_btn(t("installer_back"), Some(Message::FomodBack), false));
     }
     let (label, msg) = if has_next {
-        ("Next", Message::FomodNext)
+        (t("wizard_next"), Message::FomodNext)
     } else {
-        ("Install", Message::FomodInstall)
+        (t("install_install"), Message::FomodInstall)
     };
     // The one button that carries the flow gets the burgundy. When the step is
     // unsatisfied it keeps its place and its size and simply stops responding,

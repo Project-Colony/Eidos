@@ -85,10 +85,10 @@ impl DownloadSort {
     ];
     pub(crate) fn label(self) -> &'static str {
         match self {
-            DownloadSort::Newest => "Newest",
-            DownloadSort::Name => "Name",
-            DownloadSort::Size => "Size",
-            DownloadSort::State => "State",
+            DownloadSort::Newest => t("dl_sort_newest"),
+            DownloadSort::Name => t("info_name"),
+            DownloadSort::Size => t("col_size"),
+            DownloadSort::State => t("dl_sort_state"),
         }
     }
 }

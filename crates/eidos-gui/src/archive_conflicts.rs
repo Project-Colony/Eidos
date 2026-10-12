@@ -13,7 +13,7 @@ fn validate_sources(sources: &Sources) -> Result<(), String> {
     if sources.iter().any(|(path, identity)| {
         !eidos_conflicts::archive_identity(path).is_ok_and(|current| current == *identity)
     }) {
-        Err("Archives changed during analysis. Refresh to retry.".into())
+        Err(t("archc_changed").into())
     } else {
         Ok(())
     }
@@ -135,10 +135,7 @@ pub(crate) fn schedule_archive_conflicts(app: &mut App) {
             if let Some((text, _)) = eidos_instance::read_text_lossy(&path) {
                 texts.push(text)
             } else {
-                warnings.push(format!(
-                    "Could not read enabled INI tweak {}.",
-                    path.display()
-                ));
+                warnings.push(tf("archc_tweak_unreadable", &[("path", &path.display())]));
             }
         }
         let loose = ConflictMap::build_from(&parts);
@@ -206,7 +203,7 @@ pub(crate) fn poll_archive_conflicts(app: &mut App) {
         Ok(v) => Some(v),
         Err(TryRecvError::Empty) => None,
         Err(TryRecvError::Disconnected) => Some(Err(
-            "Archive analysis worker stopped without a result. Refresh to retry.".into(),
+            t("archc_worker_stopped").into(),
         )),
     };
     let Some(result) = result else { return };
@@ -314,10 +311,7 @@ pub(crate) fn archive_ini_texts(
     for path in paths {
         match eidos_instance::read_text_lossy(&path) {
             Some((text, _)) => texts.push(text),
-            None => warnings.push(format!(
-                "Could not read archive configuration {}.",
-                path.display()
-            )),
+            None => warnings.push(tf("archc_config_unreadable", &[("path", &path.display())])),
         }
     }
     (texts, warnings)
@@ -327,7 +321,7 @@ pub(crate) fn provider_label(map: &ConflictMap, p: &eidos_conflicts::AssetProvid
     match (&p.archive, &p.plugin) {
         (Some(a), Some(plugin)) => format!("{} / {a} / {plugin}", map.name(p.origin)),
         (Some(a), None) => format!("{} / {a} / INI", map.name(p.origin)),
-        (None, _) => format!("{} / loose", map.name(p.origin)),
+        (None, _) => format!("{} / {}", map.name(p.origin), t("archc_loose")),
     }
 }
 
@@ -364,11 +358,11 @@ pub(crate) fn archive_member_rows<'a>(
             .enumerate()
         {
             let label = if node.precedence_uncertain {
-                "Unresolved"
+                t("archc_unresolved")
             } else if index == 0 {
-                "Winner"
+                t("archc_winner")
             } else {
-                "Alternative"
+                t("archc_alternative")
             };
             let action = |export| Message::ArchiveProviderAction {
                 epoch: app.archive_completed_epoch.unwrap_or_default(),
@@ -386,10 +380,10 @@ pub(crate) fn archive_member_rows<'a>(
                             .width(Length::Fill),
                     )
                     .push(
-                        button(text("Preview").size(sz(10)))
+                        button(text(t("installer_preview")).size(sz(10)))
                             .on_press_maybe(active.then(|| action(false))),
                     )
-                    .push(button(text("Export").size(sz(10))).on_press_maybe(
+                    .push(button(text(t("archc_export")).size(sz(10))).on_press_maybe(
                         (active && provider.archive.is_some()).then(|| action(true)),
                     )),
             );
@@ -399,25 +393,24 @@ pub(crate) fn archive_member_rows<'a>(
     let header = Row::new()
         .spacing(6)
         .push(
-            text(format!(
-                "Archive member conflicts: {count} · page {}/{}",
-                page + 1,
-                pages
+            text(tf(
+                "archc_heading",
+                &[("n", &count), ("page", &(page + 1)), ("pages", &pages)],
             ))
             .size(sz(12)),
         )
         .push(
-            button(text("Previous")).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
+            button(text(t("archc_previous"))).on_press_maybe(page.checked_sub(1).map(Message::ArchivePage)),
         )
         .push(
-            button(text("Next"))
+            button(text(t("wizard_next")))
                 .on_press_maybe((page + 1 < pages).then_some(Message::ArchivePage(page + 1))),
         );
     Column::new()
         .spacing(4)
         .push(header)
         .push(
-            text_input("Filter archive member paths", &app.archive_filter)
+            text_input(t("archc_filter"), &app.archive_filter)
                 .on_input(Message::ArchiveFilterChanged),
         )
         .push(scrollable(rows).height(Length::Fill))
@@ -460,7 +453,7 @@ pub(crate) fn resolve_provider(
 ) -> Result<ProviderSource, String> {
     let layer = conflict_layers(app)
         .and_then(|layers| layers.into_iter().find(|l| l.origin == provider.origin))
-        .ok_or("The selected provider is no longer enabled")?;
+        .ok_or(t("archc_provider_disabled"))?;
     let relative = provider.archive.as_deref().unwrap_or(member);
     // Winning map paths already retain their physical spelling. Only losing
     // providers need the cached spelling fallback.
@@ -486,7 +479,7 @@ pub(crate) fn resolve_provider(
                 })?;
             resolve_in_mod(&layer.root, &actual).filter(|p| p.is_file())
         })
-        .ok_or("The selected provider is no longer present. Refresh the file list.")?;
+        .ok_or(t("archc_provider_gone"))?;
     if provider.archive.is_none() {
         return Ok(ProviderSource::Loose(path));
     }
@@ -495,7 +488,7 @@ pub(crate) fn resolve_provider(
         .get(&path)
         .cloned()
         .filter(|i| eidos_conflicts::archive_identity(&path).is_ok_and(|current| current == *i))
-        .ok_or("The archive changed since it was scanned. Refresh before reading it.")?;
+        .ok_or(t("archc_archive_changed"))?;
     Ok(ProviderSource::Archive(MemberSource {
         path,
         member: member.into(),
@@ -518,7 +511,7 @@ pub(crate) fn provider_action(
             .and_then(|m| m.asset_files.get(&member.to_ascii_lowercase()))
             .is_some_and(|node| node.winner == provider || node.alternatives.contains(&provider));
     if !valid {
-        app.status = Some("Archive analysis changed. Refresh before selecting a provider.".into());
+        app.status = Some(t("archc_analysis_changed").into());
         return Task::none();
     }
     let source = match resolve_provider(app, &member, &provider) {
@@ -548,7 +541,7 @@ pub(crate) fn provider_action(
     });
     Task::perform(
         rfd::AsyncFileDialog::new()
-            .set_title("Export archive member")
+            .set_title(t("archc_export_title"))
             .set_file_name(name)
             .save_file(),
         move |picked| Message::ArchiveExportDestination(id, picked.map(|h| h.path().to_path_buf())),
@@ -566,7 +559,7 @@ pub(crate) fn export_destination(
     if request.target != current_target(app) {
         app.archive_export = None;
         app.status =
-            Some("Export cancelled because the active profile or installation changed.".into());
+            Some(t("archc_export_cancelled").into());
         return Task::none();
     }
     let Some(destination) = destination else {
@@ -596,8 +589,8 @@ pub(crate) fn export_finished(app: &mut App, id: u64, result: Result<PathBuf, St
     }
     app.archive_export = None;
     app.status = Some(match result {
-        Ok(path) => format!("Archive member exported to {}", path.display()),
-        Err(error) => format!("Archive export failed: {error}"),
+        Ok(path) => tf("archc_exported", &[("path", &path.display())]),
+        Err(error) => tf("archc_export_failed", &[("error", &error)]),
     });
 }
 

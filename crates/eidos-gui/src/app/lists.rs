@@ -41,14 +41,14 @@ impl ModColumn {
     /// What the header says.
     pub(crate) fn title(self) -> &'static str {
         match self {
-            ModColumn::Category => "Category",
-            ModColumn::Content => "Content",
-            ModColumn::Version => "Version",
-            ModColumn::Author => "Author",
-            ModColumn::Installed => "Installed",
-            ModColumn::ModId => "Nexus id",
-            ModColumn::Game => "Game",
-            ModColumn::Flags => "Flags",
+            ModColumn::Category => t("col_category"),
+            ModColumn::Content => t("col_content"),
+            ModColumn::Version => t("col_version"),
+            ModColumn::Author => t("col_author"),
+            ModColumn::Installed => t("col_installed"),
+            ModColumn::ModId => t("col_nexus_id"),
+            ModColumn::Game => t("col_game"),
+            ModColumn::Flags => t("col_flags"),
         }
     }
     /// The key in `settings.ini`. Stable, and separate from the title so a
@@ -97,8 +97,8 @@ impl GroupBy {
     pub(crate) const ALL: [GroupBy; 2] = [GroupBy::Category, GroupBy::Source];
     pub(crate) fn label(self) -> &'static str {
         match self {
-            GroupBy::Category => "Group by category",
-            GroupBy::Source => "Group by source",
+            GroupBy::Category => t("group_by_category"),
+            GroupBy::Source => t("group_by_source"),
         }
     }
 }

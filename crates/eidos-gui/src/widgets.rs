@@ -13,7 +13,7 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 use colony_ui::sz;
 
 use crate::theme::{accent, conflict_loses_bg, conflict_wins_bg, row_bg, sel_bg, sel_fg, text};
-use crate::{App, Message};
+use crate::{tf, App, Message};
 
 // MO2's own toolbar icons (GPL-3.0, from ModOrganizer2/modorganizer src/resources).
 pub(crate) const IC_INSTALL: &[u8] = include_bytes!("../assets/icons/system-installer.png");
@@ -187,12 +187,12 @@ pub(crate) fn conflict_legend<'a>(app: &App) -> Option<Element<'a, Message>> {
         .map(|m| m.display_name().to_string())
         .unwrap_or_default();
     let mut row = Row::new().spacing(10).align_y(iced::Alignment::Center);
-    row = row.push(text(format!("{name} conflicts:")).size(sz(11)));
+    row = row.push(text(tf("legend_conflicts", &[("name", &name)])).size(sz(11)));
     if over > 0 {
-        row = row.push(swatch(conflict_wins_bg(), format!("{over} it overwrites")));
+        row = row.push(swatch(conflict_wins_bg(), tf("legend_it_overwrites", &[("n", &over)])));
     }
     if under > 0 {
-        row = row.push(swatch(conflict_loses_bg(), format!("{under} overwrite it")));
+        row = row.push(swatch(conflict_loses_bg(), tf("legend_overwrite_it", &[("n", &under)])));
     }
     Some(row.into())
 }
