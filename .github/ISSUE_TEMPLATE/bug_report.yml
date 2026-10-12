@@ -171,7 +171,8 @@ body:
       label: How did you install Eidos?
       description: Building from source rewrites the binary, which wipes the capability every single time - a very common cause of "it worked yesterday".
       options:
-        - "Release tarball + install.sh"
+        - "Colony (eidos-linux)"
+        - "Release bundle + install.sh"
         - "Built from source (cargo build)"
         - "Distro package"
         - "Other"

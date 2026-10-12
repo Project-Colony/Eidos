@@ -3205,7 +3205,7 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
                 (Some(arg), Some(log)) => match run_prereqs_setup(&arg, &log) {
                     Ok(()) => {
                         app.status = Some(format!(
-                            "Installing tool prerequisites: bundled DLLs copy now; .NET/vcrun download via winetricks. Progress + errors -> {}",
+                            "Installing prerequisites: DirectX DLLs, .NET and vcrun download through winetricks. Progress + errors -> {}",
                             log.display()
                         ));
                     }

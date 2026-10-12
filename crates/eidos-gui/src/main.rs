@@ -421,7 +421,7 @@ enum Message {
     /// Open the current game's Nexus page in the browser.
     OpenNexusGame,
     /// Install the modding tools' runtime prerequisites into the prefix
-    /// (`eidos prereqs <id> --install`); the Tier-2 verbs download from Microsoft.
+    /// (`eidos prereqs <id> --install`); the winetricks verbs and runtimes download.
     SetupPrereqs,
     // ---- manual / BAIN install picker (MO2 InstallDialog, BainComplexInstallerDialog) ----
     /// Tick or untick one BAIN sub-package.
@@ -3095,11 +3095,7 @@ fn any_runtime_pending(app: &App) -> bool {
 /// Pure so the wording and the classification can be tested: a verb reported as
 /// present when it is not sends the user to look for the fault in their mods.
 fn prereq_state(verb: &str, done: &std::collections::HashSet<String>) -> (&'static str, bool) {
-    if eidos_gamefeatures::is_tier1_dll(verb) {
-        // Shipped inside the binary and copied in at launch, so there is nothing
-        // that could be missing and nothing to click.
-        ("bundled with Eidos", false)
-    } else if eidos_gamefeatures::is_runtime_verb(verb) {
+    if eidos_gamefeatures::is_runtime_verb(verb) {
         let ok =
             eidos_gamefeatures::runtime(verb).is_some_and(eidos_gamefeatures::runtime_is_installed);
         if ok {
@@ -3114,7 +3110,7 @@ fn prereq_state(verb: &str, done: &std::collections::HashSet<String>) -> (&'stat
             ("NOT FOUND - click to install", true)
         }
     } else {
-        // Neither bundled, nor a runtime, nor a winetricks verb: almost always a
+        // Neither a runtime nor a winetricks verb: almost always a
         // typo. Saying so beats a tool that fails later for a reason that names
         // nothing the user recognises. Not offered as a click - there is nothing
         // to install.
@@ -11481,12 +11477,16 @@ mod tests {
     // the user hunting through their mods for a fault that is not there.
 
     #[test]
-    fn a_bundled_dll_is_never_something_to_click() {
+    fn a_directx_dll_is_installed_through_winetricks() {
+        // Eidos ships no Microsoft DLL, so a missing one is something to click,
+        // and one the prefix has reads as installed.
         let none = std::collections::HashSet::new();
         for v in ["d3dcompiler_47", "d3dx9_43", "d3dx11_43"] {
             let (label, missing) = prereq_state(v, &none);
-            assert!(!missing, "{v} offered an install it does not need");
-            assert!(label.contains("bundled"), "{v}: {label}");
+            assert!(missing, "{v} reported present with nothing installed");
+            assert!(label.contains("click"), "{v}: {label}");
+            let done = std::collections::HashSet::from([v.to_string()]);
+            assert_eq!(prereq_state(v, &done), ("installed", false), "{v}");
         }
     }
 

@@ -61,6 +61,12 @@ A failed run leaves the release a draft. To finish it once the cause is fixed,
 start the workflow from the tag: `gh workflow run release.yml --ref vX.Y.Z -f
 tag=vX.Y.Z`.
 
+The Arch package and the release bundle install the license notices next to the
+binaries: the GPL text, the OMOD and nifly credits, and under `crates/` the
+notices of every Rust crate linked into the binaries, with `INDEX.tsv` naming
+each crate and its declared license. `scripts/third-party-licenses.sh` collects
+them from the fetched crate sources; it builds nothing.
+
 ## The constraint
 
 Kernel FUSE passthrough is **off by default**. The implementation records observed

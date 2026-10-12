@@ -138,15 +138,14 @@ not certify later releases in gameplay.
       Proton flavour ships Microsoft's native `d3dcompiler_47.dll` (they symlink
       Wine's builtin HLSL stub, which Community Shaders / ENB / ReShade reject), so
       Eidos scans enabled mods' DLL import tables (the `object` crate) and, when one
-      imports it, deploys the bundled genuine MS redistributable into the prefix's
-      `system32`/`syswow64` and forces it native - unlinking Proton's builtin symlink
-      first, backing up any displaced file, idempotent and best-effort
+      imports it, forces it native and offers to install Microsoft's DLL through
+      winetricks (Eidos stopped shipping the Microsoft binaries itself)
 - [x] Modding-tool prerequisites (`eidos prereqs`) - tools run in the game's shared
       Proton prefix through the merged view, so one prereq set covers them all.
-      Tier 1 (bundled, zero network): the DirectX helpers BodySlide / DynDOLOD / CAO
-      need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`), declared per-tool in
-      `tools.ini` and provisioned at launch. Tier 2 (consented download): the .NET /
-      vcrun verbs Synthesis / Pandora / FNIS need, installed via the system
+      Consented winetricks downloads: the DirectX helpers BodySlide / DynDOLOD /
+      CAO need (`d3dx9_43` / `d3dx11_43` / `d3dcompiler_43`, declared per-tool in
+      `tools.ini` and forced native at launch) and the .NET / vcrun verbs
+      Synthesis / Pandora / FNIS need, installed via the system
       winetricks pointed straight at Proton's own wine (bypassing the protontricks +
       Proton-GE mismatch), behind an explicit `eidos prereqs <id> --install` / GUI
       "Tool Setup" button, recorded in a per-instance sentinel

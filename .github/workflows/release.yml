@@ -208,6 +208,8 @@ jobs:
             install -Dm644 "crates/eidos-nif-preview/${notice}" "$b/licenses/nifly/${notice}"
           done
           install -Dm644 crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "$b/licenses/omod/UPSTREAM.md"
+          # The Rust crates linked into the binaries carry their own notices.
+          bash scripts/third-party-licenses.sh "$b/licenses/crates"
           bash -n "$b/install.sh"
           # Deterministic archive: fixed order, no uid/gid or mtime from the
           # runner, gzip without its timestamp header. Two builds of the same

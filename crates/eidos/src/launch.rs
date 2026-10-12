@@ -451,7 +451,7 @@ pub(crate) fn run_through_view(
 
     // Force-load any mod-provided builtin-shadowing DLLs (ENB/ReShade/.asi loaders) -
     // the Linux equivalent of usvfs forced libraries, otherwise Wine's builtin wins -
-    // plus any Tier-1 DLL prerequisites a tool declares (d3dx for BodySlide etc.).
+    // plus the DirectX DLLs a mod imports or a tool declares (d3dx for BodySlide etc.).
     let mut env = env;
     if let Some(kv) = forced_dll_overrides(game, inst, opts.prereqs) {
         env.push(kv);
@@ -782,11 +782,14 @@ pub(crate) fn shipped_shadow_stems(
 /// 2. A mod (often a nested SKSE plugin) IMPORTS `d3dcompiler_47.dll` - Community
 ///    Shaders / ENB / ReShade need Microsoft's native HLSL compiler, which no
 ///    Proton flavour ships (they all link the Wine builtin, which those mods
-///    reject). Detect by import table and provision the bundled native MS DLL into
-///    the prefix's system32/syswow64 (best-effort - a missing/read-only prefix
-///    never blocks the launch).
-/// 3. A tool declares Tier-1 DLL prerequisites (`tool_prereqs`, e.g. `d3dx9_43` for
-///    BodySlide's 3D preview) - provision the bundled native and force it too.
+///    reject). Detected by import table.
+/// 3. A tool declares DirectX DLL prerequisites (`tool_prereqs`, e.g. `d3dx9_43`
+///    for BodySlide's 3D preview).
+///
+/// Cases 2 and 3 only force the DLL: Microsoft's file itself is installed by
+/// `eidos prereqs --install` through winetricks, which downloads and so needs
+/// the user's consent. A launch never downloads; it names what is missing and
+/// goes ahead with Wine's builtin.
 pub(crate) fn forced_dll_overrides(
     game: &DetectedGame,
     inst: &Instance,
@@ -814,13 +817,7 @@ pub(crate) fn forced_dll_overrides(
         "opengl32",
         "d3dx9_42",
     ];
-    let mut roots: Vec<PathBuf> = inst
-        .modlist()
-        .into_iter()
-        .filter(|m| m.is_active())
-        .map(|m| m.path)
-        .collect();
-    roots.push(inst.overwrite_dir());
+    let roots = active_mod_roots(inst);
 
     // A wrapper DLL sits at the mod's top level when the mod is Data-relative, and
     // in its `Root/` when the mod targets the game install root - which is where
@@ -834,40 +831,33 @@ pub(crate) fn forced_dll_overrides(
     scan.extend(inst.root_layers());
     let mut stems = shipped_shadow_stems(&scan, SHIPPED_SHADOWS);
 
-    // The prefix's windows dir, where bundled native DLLs get deployed.
-    let win = game.prefix().map(|prefix| prefix.join("drive_c/windows"));
-
-    // Case 2: provision the native d3dcompiler_47 if any mod DLL imports it.
+    // Case 2: an enabled mod imports d3dcompiler_47.
     if eidos_gamefeatures::scan_imports_provisionable(&roots) {
-        if let Some(win) = &win {
-            match eidos_gamefeatures::ensure_d3dcompiler_47(win) {
-                Ok(true) => eidos_log::info!(
-                    "eidos play: provisioned native d3dcompiler_47 into the prefix"
-                ),
-                Ok(false) => {}
-                Err(e) => eidos_log::warn!("eidos play: could not provision d3dcompiler_47: {e}"),
-            }
+        let missing = game.prefix().is_some_and(|prefix| {
+            !eidos_gamefeatures::native_dll_present(
+                &prefix.join("drive_c/windows"),
+                "d3dcompiler_47",
+            )
+        });
+        if missing {
+            eidos_log::warn!(
+                "eidos: an enabled mod imports d3dcompiler_47.dll, and the Wine prefix only \
+                 has Wine's builtin, which such mods reject. Install Microsoft's DLL with \
+                 `eidos prereqs {} --install` (downloads through winetricks).",
+                prereqs_arg(game, inst)
+            );
         }
         stems.insert("d3dcompiler_47".to_string());
     }
 
-    // Case 3: a tool's declared Tier-1 DLL prerequisites (the bundled DirectX
-    // helpers). Tier-2 verbs (vcrun/dotnet) are skipped here - they install via
-    // `eidos prereqs`, not WINEDLLOVERRIDES.
-    for verb in tool_prereqs {
-        if eidos_gamefeatures::is_tier1_dll(verb) {
-            if let Some(win) = &win {
-                match eidos_gamefeatures::ensure_native_dll(win, verb) {
-                    Ok(true) => {
-                        eidos_log::info!("eidos tool: provisioned native {verb} into the prefix")
-                    }
-                    Ok(false) => {}
-                    Err(e) => eidos_log::warn!("eidos tool: could not provision {verb}: {e}"),
-                }
-            }
-            stems.insert(verb.clone());
-        }
-    }
+    // Case 3: the DirectX DLLs a tool declares. `eidos tool` reports a missing
+    // one along with the tool's other prerequisites.
+    stems.extend(
+        tool_prereqs
+            .iter()
+            .filter(|v| eidos_gamefeatures::is_native_dll_verb(v))
+            .cloned(),
+    );
 
     if stems.is_empty() {
         return None;
@@ -876,6 +866,29 @@ pub(crate) fn forced_dll_overrides(
     let value =
         eidos_launch::wine_dll_overrides(&stems, std::env::var("WINEDLLOVERRIDES").ok().as_deref());
     Some(("WINEDLLOVERRIDES".to_string(), value))
+}
+
+/// The enabled mods' folders plus Overwrite: everything whose DLLs reach the
+/// game, so everything the d3dcompiler_47 import scan has to see.
+pub(crate) fn active_mod_roots(inst: &Instance) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = inst
+        .modlist()
+        .into_iter()
+        .filter(|m| m.is_active())
+        .map(|m| m.path)
+        .collect();
+    roots.push(inst.overwrite_dir());
+    roots
+}
+
+/// How `eidos prereqs` names this instance: the game id for the global one, the
+/// folder for a portable one.
+fn prereqs_arg(game: &DetectedGame, inst: &Instance) -> String {
+    if inst.root == Instance::global(game.def.id).root {
+        game.def.id.to_string()
+    } else {
+        inst.root.display().to_string()
+    }
 }
 
 fn steam_cloud_save_target(game: &DetectedGame, destination: &Path) -> bool {
@@ -900,7 +913,7 @@ mod extender_tests {
     use super::*;
 
     #[test]
-    fn tier_one_launch_dlls_use_the_selected_external_prefix() {
+    fn directx_prereqs_are_forced_but_never_copied_into_the_prefix() {
         let root = std::env::temp_dir().join(format!("eidos-launch-prefix-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let instance = Instance::portable(root.join("instance"));
@@ -921,9 +934,9 @@ mod extender_tests {
         };
         let overrides = forced_dll_overrides(&game, &instance, &["d3dx9_43".into()]).unwrap();
         assert!(overrides.1.contains("d3dx9_43=n,b"));
-        assert!(prefix
-            .join("drive_c/windows/system32/d3dx9_43.dll")
-            .is_file());
+        // Eidos ships no Microsoft DLL: the launch forces it and leaves the
+        // install to winetricks, on the user's consent.
+        assert!(!prefix.join("drive_c").exists());
         assert!(!game.compatdata.unwrap().exists());
         std::fs::remove_dir_all(root).unwrap();
     }
