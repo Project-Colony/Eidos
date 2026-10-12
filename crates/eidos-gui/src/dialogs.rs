@@ -908,7 +908,7 @@ fn category_picker<'a>(state: &CategoriesDialogState) -> Element<'a, Message> {
         // Primary is what the mod list column shows, so it needs to be both
         // visible and settable without unchecking everything else first.
         if is_primary {
-            row = row.push(text("primary").size(sz(10)));
+            row = row.push(text(t("cat_primary")).size(sz(10)));
         } else if checked {
             row = row.push(
                 button(text(t("cat_make_primary")).size(sz(10)))
@@ -1672,7 +1672,7 @@ pub(crate) fn instances_dialog<'a>(app: &App) -> Element<'a, Message> {
             .align_y(iced::Alignment::Center)
             .push(text(k.label.clone()).size(sz(12)).width(Length::Fill));
         if open_now {
-            title = title.push(text("open").size(sz(10)));
+            title = title.push(text(t("instances_open_now")).size(sz(10)));
         } else {
             title = title.push(
                 button(text(t("common_open")).size(sz(11)))

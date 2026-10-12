@@ -326,7 +326,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         .push(text(t("plugins_col_on")).size(sz(11)).width(Length::Fixed(scaled(28.0))))
         .push(text(t("plugins_col_plugin")).size(sz(11)).width(Length::Fill))
         .push(text(t("plugins_col_type")).size(sz(11)).width(Length::Fixed(scaled(36.0))))
-        .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(40.0))))
+        .push(text("LOOT").size(sz(11)).width(Length::Fixed(scaled(48.0))))
         .push(text(t("plugins_col_pin")).size(sz(11)).width(Length::Fixed(scaled(26.0))));
 
     // Base-game masters are implicit/always-on; show them as forced, not togglable.
@@ -507,12 +507,12 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
         // Worst thing first: a dirty plugin needs an action (xEdit QAC), which
         // outranks reading a message.
         let loot_badge = match bundle {
-            Some(b) if b.needs_cleaning() => "dirty",
+            Some(b) if b.needs_cleaning() => t("loot_badge_dirty"),
             Some(b) => match b.highest_severity() {
-                Some(eidos_loot::MessageType::Error) => "error",
-                Some(eidos_loot::MessageType::Warn) => "warn",
-                Some(eidos_loot::MessageType::Say) => "note",
-                None if !b.bash_tags.is_empty() => "tags",
+                Some(eidos_loot::MessageType::Error) => t("loot_badge_error"),
+                Some(eidos_loot::MessageType::Warn) => t("loot_badge_warn"),
+                Some(eidos_loot::MessageType::Say) => t("loot_badge_note"),
+                None if !b.bash_tags.is_empty() => t("loot_badge_tags"),
                 None => "",
             },
             None => "",
@@ -537,7 +537,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
             .push(container(toggle).width(Length::Fixed(scaled(28.0))))
             .push(container(name_cell).width(Length::Fill))
             .push(text(kind).size(sz(10)).width(Length::Fixed(scaled(36.0))))
-            .push(text(loot_badge).size(sz(10)).width(Length::Fixed(scaled(40.0))))
+            .push(text(loot_badge).size(sz(10)).width(Length::Fixed(scaled(48.0))))
             .push(container(pin).width(Length::Fixed(scaled(26.0))));
         // Grabbing the row arms the drag AND selects it, the same press doing
         // both exactly as in the mod list; hovering it during a drag means

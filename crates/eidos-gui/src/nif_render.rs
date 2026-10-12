@@ -3,6 +3,7 @@ use serde::{
     de::{self, SeqAccess, Visitor},
     Deserialize, Deserializer,
 };
+use crate::{t, tf};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -120,7 +121,7 @@ where
             let mut out = Vec::new();
             while let Some(item) = seq.next_element()? {
                 if out.len() == MAX {
-                    return Err(de::Error::custom("NIF sequence limit exceeded"));
+                    return Err(de::Error::custom(t("nif_sequence_limit")));
                 }
                 out.push(item);
             }
@@ -148,13 +149,13 @@ fn meshes<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Mesh>, D::Er
                     || (!mesh.uvs.is_empty() && mesh.uvs.len() != mesh.positions.len())
                 {
                     return Err(de::Error::custom(
-                        "Inconsistent NIF vertex/normal/UV counts",
+                        t("nif_inconsistent_counts"),
                     ));
                 }
                 vertices += mesh.positions.len();
                 triangles += mesh.triangles.len();
                 if out.len() == MAX_MESHES || vertices > MAX_VERTICES || triangles > MAX_TRIANGLES {
-                    return Err(de::Error::custom("NIF scene count limit exceeded"));
+                    return Err(de::Error::custom(t("nif_scene_limit")));
                 }
                 out.push(mesh);
             }
@@ -170,11 +171,11 @@ pub(crate) fn normalize_texture_path(path: &str) -> Result<String, String> {
         || path.chars().any(char::is_control)
         || path.contains(':')
     {
-        return Err("Invalid texture path".into());
+        return Err(t("nif_bad_texture_path").into());
     }
     let path = path.replace('\\', "/");
     if path.starts_with('/') || path.split('/').any(|p| p == "..") {
-        return Err("Texture path must stay relative to Data".into());
+        return Err(t("nif_texture_path_relative").into());
     }
     let normalized = path
         .split('/')
@@ -183,7 +184,7 @@ pub(crate) fn normalize_texture_path(path: &str) -> Result<String, String> {
         .join("/")
         .to_ascii_lowercase();
     if normalized.is_empty() {
-        return Err("Empty texture path".into());
+        return Err(t("nif_empty_texture_path").into());
     }
     Ok(normalized)
 }
@@ -197,19 +198,19 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
     if bytes.len() > MAX_JSON {
-        return Err("NIF helper JSON exceeds 64 MiB".into());
+        return Err(t("nif_json_too_big").into());
     }
     let mut scene: Scene =
-        serde_json::from_slice(bytes).map_err(|e| format!("Invalid NIF helper JSON: {e}"))?;
+        serde_json::from_slice(bytes).map_err(|e| tf("nif_bad_json", &[("error", &e)]))?;
     if scene.version != 1
         || scene.nif_version != "20.2.0.7"
         || scene.user_version != 12
         || ![83, 100].contains(&scene.stream_version)
     {
-        return Err("Unsupported NIF helper/version combination".into());
+        return Err(t("nif_unsupported_version").into());
     }
     if scene.warnings.iter().any(|s| s.len() > 4096) {
-        return Err("NIF warning string exceeds limit".into());
+        return Err(t("nif_warning_too_long").into());
     }
     let mut actual = Bounds {
         min: [f64::INFINITY; 3],
@@ -225,24 +226,24 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
             || mesh.material.shader.len() > 128
             || !["NiTriShape", "BSTriShape"].contains(&mesh.block_type.as_str())
         {
-            return Err("Unsupported mesh block or oversized string".into());
+            return Err(t("nif_unsupported_block").into());
         }
         if mesh.positions.is_empty()
             || mesh.normals.len() != mesh.positions.len()
             || (!mesh.uvs.is_empty() && mesh.uvs.len() != mesh.positions.len())
         {
-            return Err("Inconsistent NIF vertex/normal/UV counts".into());
+            return Err(t("nif_inconsistent_counts").into());
         }
         if !mesh.material.alpha.is_finite()
             || !(0.0..=1.0).contains(&mesh.material.alpha)
             || mesh.material.textures.iter().any(|s| s.len() > 4096)
         {
-            return Err("Invalid NIF material".into());
+            return Err(t("nif_bad_material").into());
         }
         vertex_count += mesh.positions.len();
         for p in &mesh.positions {
             if !finite(p) {
-                return Err("Invalid NIF position".into());
+                return Err(t("nif_bad_position").into());
             }
             for (axis, value) in p.iter().enumerate() {
                 actual.min[axis] = actual.min[axis].min(*value);
@@ -255,7 +256,7 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
             .any(|n| !finite(n) || dot(*n, *n) < 1e-20)
             || mesh.uvs.iter().any(|uv| !finite(uv))
         {
-            return Err("Invalid NIF normal or UV".into());
+            return Err(t("nif_bad_normal_uv").into());
         }
         if mesh
             .triangles
@@ -263,40 +264,28 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
             .flatten()
             .any(|&i| i as usize >= mesh.positions.len())
         {
-            return Err("NIF triangle index out of range".into());
+            return Err(t("nif_triangle_range").into());
         }
         if let Some(path) = mesh.material.textures.first().filter(|s| !s.is_empty()) {
             match normalize_texture_path(path) {
                 Ok(key) => mesh.diffuse_key = Some(key),
                 Err(e) => scene
                     .warnings
-                    .push(format!("Block {} diffuse texture omitted: {e}", mesh.block)),
+                    .push(tf("nif_block_texture_omitted", &[("block", &mesh.block), ("error", &e)])),
             }
             if mesh.uvs.is_empty() {
-                scene.warnings.push(format!(
-                    "Block {} has no UVs; showing neutral material",
-                    mesh.block
-                ));
+                scene.warnings.push(tf("nif_block_no_uvs", &[("block", &mesh.block)]));
             }
         }
         let flags = mesh.material.alpha_flags;
         if mesh.material.alpha < 1.0 && flags & 1 == 0 {
-            scene.warnings.push(format!(
-                "Block {}: material opacity shown with source-alpha blending",
-                mesh.block
-            ));
+            scene.warnings.push(tf("nif_block_opacity", &[("block", &mesh.block)]));
         }
         if flags & 1 != 0 && ((flags >> 1) & 15 != 6 || (flags >> 5) & 15 != 7) {
-            scene.warnings.push(format!(
-                "Block {}: nonstandard blend factors approximated by source-alpha blending",
-                mesh.block
-            ));
+            scene.warnings.push(tf("nif_block_blend", &[("block", &mesh.block)]));
         }
         if flags & 0xa000 != 0 {
-            scene.warnings.push(format!(
-                "Block {}: alpha sorter/editor-threshold override is not evaluated",
-                mesh.block
-            ));
+            scene.warnings.push(tf("nif_block_alpha_sorter", &[("block", &mesh.block)]));
         }
     }
     match (&scene.bounds, vertex_count) {
@@ -304,14 +293,14 @@ pub(crate) fn parse(bytes: &[u8]) -> Result<Scene, String> {
         (Some(bounds), n) if n > 0 && finite(&bounds.min) && finite(&bounds.max) => {
             for axis in 0..3 {
                 if bounds.min[axis] != actual.min[axis] || bounds.max[axis] != actual.max[axis] {
-                    return Err("NIF bounds do not match returned geometry".into());
+                    return Err(t("nif_bounds_mismatch").into());
                 }
             }
             scene.bounds = Some(actual);
         }
-        _ => return Err("Missing or inconsistent NIF bounds".into()),
+        _ => return Err(t("nif_bounds_missing").into()),
     }
-    scene.warnings.push("Static orthographic preview: diffuse/headlight shading only; engine shaders, animation, skinning and normal maps are not reproduced. Transparency uses triangle-center sorting and source-alpha blending in display RGB.".into());
+    scene.warnings.push(t("nif_preview_note").into());
     Ok(scene)
 }
 
@@ -332,7 +321,7 @@ struct Triangle {
 
 fn cancelled(cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) {
-        Err("NIF rendering cancelled".into())
+        Err(t("nif_render_cancelled").into())
     } else {
         Ok(())
     }
@@ -370,26 +359,26 @@ fn alpha_passes(material: &Material, alpha: u8) -> bool {
 
 fn validate_textures(textures: &HashMap<String, Texture>) -> Result<(), String> {
     if textures.len() > MAX_MESHES {
-        return Err("NIF texture count exceeds 1024".into());
+        return Err(t("nif_texture_count").into());
     }
     let mut total = 0;
     for (key, texture) in textures {
         if normalize_texture_path(key)? != *key {
-            return Err("Texture map keys must be normalized".into());
+            return Err(t("nif_texture_keys").into());
         }
         if texture.width == 0
             || texture.height == 0
             || texture.width > MAX_TEXTURE_SIDE
             || texture.height > MAX_TEXTURE_SIDE
         {
-            return Err("NIF texture dimensions must be within 1..4096".into());
+            return Err(t("nif_texture_dimensions").into());
         }
         let bytes = texture.width as usize * texture.height as usize * 4;
         if texture.rgba.len() != bytes {
-            return Err("NIF texture RGBA length mismatch".into());
+            return Err(t("nif_texture_rgba").into());
         }
         if bytes > MAX_TEXTURE_BYTES - total {
-            return Err("NIF textures exceed 64 MiB total".into());
+            return Err(t("nif_textures_total").into());
         }
         total += bytes;
     }
@@ -419,15 +408,15 @@ pub(crate) fn render(
 ) -> Result<Frame, String> {
     cancelled(cancel)?;
     if !view.yaw.is_finite() || !view.pitch.is_finite() || !view.zoom.is_finite() {
-        return Err("NIF camera values must be finite".into());
+        return Err(t("nif_camera_finite").into());
     }
     validate_textures(textures)?;
     let bounds = scene
         .bounds
         .as_ref()
-        .ok_or("No static NIF geometry is available")?;
+        .ok_or(t("nif_no_geometry"))?;
     if scene.meshes.iter().all(|m| m.triangles.is_empty()) {
-        return Err("No static NIF triangles are available".into());
+        return Err(t("nif_no_triangles").into());
     }
     let center = std::array::from_fn::<_, 3, _>(|i| (bounds.min[i] + bounds.max[i]) * 0.5);
     let extent = std::array::from_fn::<_, 3, _>(|i| (bounds.max[i] - bounds.min[i]) * 0.5);
@@ -521,7 +510,7 @@ pub(crate) fn render(
             // ponytail: cap bounding-box work before rasterizing, not elapsed time.
             let pixels = (xmax - xmin) as usize * (ymax - ymin) as usize;
             if pixels > MAX_PIXEL_WORK - work {
-                return Err("NIF pixel work limit exceeds 32 million samples".into());
+                return Err(t("nif_pixel_limit").into());
             }
             work += pixels;
             let triangle = Triangle {
