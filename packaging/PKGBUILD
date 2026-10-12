@@ -61,7 +61,7 @@ build() {
 	export RUSTUP_TOOLCHAIN=stable
 	export CARGO_TARGET_DIR=target
 	cargo build --frozen --release --workspace
-	cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+	cmake -S crates/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
 	cmake --build target/nif-preview --parallel 2
 }
 
@@ -96,13 +96,13 @@ package() {
 	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 	install -Dm644 crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md "$pkgdir/usr/share/licenses/$pkgname/omod/UPSTREAM.md"
 	for notice in UPSTREAM.md VENDORED-SHA256SUMS; do
-		install -Dm644 "native/eidos-nif-preview/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/$notice"
+		install -Dm644 "crates/eidos-nif-preview/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/$notice"
 	done
 	for notice in LICENSE README.md; do
-		install -Dm644 "native/eidos-nif-preview/vendor/nifly/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/$notice"
+		install -Dm644 "crates/eidos-nif-preview/vendor/nifly/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/$notice"
 	done
 	for notice in half.hpp Miniball.hpp; do
-		install -Dm644 "native/eidos-nif-preview/vendor/nifly/external/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/external/$notice"
+		install -Dm644 "crates/eidos-nif-preview/vendor/nifly/external/$notice" "$pkgdir/usr/share/licenses/$pkgname/nifly/vendor/nifly/external/$notice"
 	done
 	RUSTUP_TOOLCHAIN=stable bash scripts/third-party-licenses.sh "$pkgdir/usr/share/licenses/$pkgname/crates" --frozen
 	install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"

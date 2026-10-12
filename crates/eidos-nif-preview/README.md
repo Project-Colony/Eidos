@@ -3,7 +3,7 @@
 Build with a C++17 compiler and CMake 3.20 or newer on Linux. Python 3 is needed only for tests. No system installation, asset downloads, Rust dependency or graphics library is required.
 
 ```sh
-cmake -S native/eidos-nif-preview -B /tmp/eidos-nif-build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+cmake -S crates/eidos-nif-preview -B /tmp/eidos-nif-build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 cmake --build /tmp/eidos-nif-build --parallel 2
 ctest --test-dir /tmp/eidos-nif-build --output-on-failure
 /tmp/eidos-nif-build/eidos-nif-preview input.nif

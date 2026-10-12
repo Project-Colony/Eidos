@@ -79,9 +79,13 @@ jobs:
       - name: Build
         run: cargo build --workspace --locked
 
+      # From a clean build tree: the cached `target/` can hold one configured
+      # for another source path, which CMake refuses outright. The helper
+      # builds in seconds, so there is nothing to save by reusing it.
       - name: Build and test the native NIF helper
         run: |
-          cmake -S native/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
+          rm -rf target/nif-preview
+          cmake -S crates/eidos-nif-preview -B target/nif-preview -DCMAKE_BUILD_TYPE=Release
           cmake --build target/nif-preview --parallel 2
           ctest --test-dir target/nif-preview --output-on-failure
           echo "$PWD/target/nif-preview" >> "$GITHUB_PATH"

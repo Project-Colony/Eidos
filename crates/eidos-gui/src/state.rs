@@ -455,7 +455,7 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         profile_copy: None,
         profile_delete_confirm: None,
         running: None,
-        cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary()),
+        cap_missing: !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0),
         files_cache: std::cell::RefCell::new(HashMap::new()),
         view_generation: std::cell::Cell::new(0),
         diag: Vec::new(),
@@ -769,7 +769,7 @@ pub(crate) fn open_executables_dialog(app: &App) -> Option<ExecutablesDialogStat
 /// as `play`). Returned unspawned so `start_run` can route its output to a log.
 /// `inst_arg` is [`instance_arg`]'s output: the id or the portable folder.
 pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command {
-    let mut cmd = std::process::Command::new(find_eidos_binary());
+    let mut cmd = eidos_command();
     cmd.arg("tool").arg(inst_arg).arg("run").arg(title);
     cmd
 }
@@ -781,7 +781,7 @@ pub(crate) fn tool_command(inst_arg: &str, title: &str) -> std::process::Command
 pub(crate) fn run_prereqs_setup(inst_arg: &str, log: &Path) -> std::io::Result<()> {
     let out = std::fs::File::create(log)?;
     let err = out.try_clone()?;
-    std::process::Command::new(find_eidos_binary())
+    eidos_command()
         .arg("prereqs")
         .arg(inst_arg)
         .arg("--install")
@@ -1006,16 +1006,20 @@ pub(crate) fn write_desktop_entry(
                 .replace('%', "%%")
         )
     };
+    let (bin, marker) = find_eidos_binary();
+    let mut exec = q(&bin.display().to_string());
+    if let Some(marker) = marker {
+        exec = format!("{exec} {marker}");
+    }
     let body = format!(
         "[Desktop Entry]\n\
          Type=Application\n\
          Name={title}\n\
          Comment=Run {title} through Eidos, in the {game_id} instance\n\
-         Exec={} tool {} run {}\n\
+         Exec={exec} tool {} run {}\n\
          Terminal=false\n\
          Categories=Game;Utility;\n\
          StartupNotify=false\n",
-        q(&find_eidos_binary().display().to_string()),
         q(&target),
         q(&title),
     );
@@ -1023,18 +1027,48 @@ pub(crate) fn write_desktop_entry(
     Ok(path)
 }
 
-pub(crate) fn find_eidos_binary() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        let sib = exe.with_file_name("eidos");
-        if sib.is_file() {
-            return sib;
-        }
+/// How to run the `eidos` CLI: the program, plus [`eidos::CLI_MARKER`] when that
+/// program is this window's own binary.
+///
+/// A sibling `eidos` first, then `~/.cargo/bin/eidos`, and otherwise this very
+/// executable, which runs the CLI when the marker comes first. That last case
+/// is a Colony install: one file, `eidos-linux`, with nothing beside it.
+pub(crate) fn find_eidos_binary() -> (PathBuf, Option<&'static str>) {
+    let exe = std::env::current_exe().ok();
+    if let Some(sib) = exe
+        .as_ref()
+        .map(|e| e.with_file_name("eidos"))
+        .filter(|p| p.is_file())
+    {
+        return (sib, None);
     }
     let cargo = home().join(".cargo").join("bin").join("eidos");
     if cargo.is_file() {
-        return cargo;
+        return (cargo, None);
     }
-    PathBuf::from("eidos")
+    match exe {
+        Some(exe) => (exe, Some(eidos::CLI_MARKER)),
+        None => (PathBuf::from("eidos"), None),
+    }
+}
+
+/// A [`std::process::Command`] running the `eidos` CLI, marker included.
+pub(crate) fn eidos_command() -> std::process::Command {
+    let (bin, marker) = find_eidos_binary();
+    let mut cmd = std::process::Command::new(bin);
+    cmd.args(marker);
+    cmd
+}
+
+/// What to run to grant the optional launch capability, for the passthrough
+/// warnings. Never this window's own binary: SECURITY.md says why.
+pub(crate) fn setcap_hint() -> String {
+    match find_eidos_binary() {
+        (bin, None) => format!("sudo setcap cap_sys_admin+ep {}", bin.display()),
+        (_, Some(_)) => "install eidos-linux-bundle.tar.gz and run: sudo setcap \
+                         cap_sys_admin+ep <its eidos binary>"
+            .to_string(),
+    }
 }
 
 /// Launch the game through Eidos: spawn `eidos play <instance> -- <command>`
@@ -1093,7 +1127,7 @@ pub(crate) fn play_command(
             }
         }
     }
-    let mut cmd = std::process::Command::new(find_eidos_binary());
+    let mut cmd = eidos_command();
     cmd.arg("play").arg(inst_arg).arg("--").args(&swapped);
     (cmd, warning)
 }
@@ -1230,7 +1264,7 @@ pub(crate) fn finish_run(app: &mut App) {
     }
     // A rebuild may have wiped the launch capability while we played; re-check so
     // the warning banner is current for the next run.
-    app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary());
+    app.cap_missing = !eidos_launch::binary_has_cap_sys_admin(&find_eidos_binary().0);
     let Some(run) = run else {
         app.status = Some("Application exited. Refreshed plugins and load order.".to_string());
         return;
@@ -2843,5 +2877,35 @@ pub(crate) fn save_collapsed(app: &App) {
     if let Some(p) = collapsed_path(app) {
         let body: String = app.collapsed.iter().map(|n| format!("{n}\n")).collect();
         let _ = fs::write(p, body);
+    }
+}
+
+#[cfg(test)]
+mod cli_lookup_tests {
+    use super::*;
+
+    /// A Colony install is one file with no `eidos` beside it: every child the
+    /// window starts must then carry the marker, or that file would open a
+    /// second window instead of running the CLI.
+    #[test]
+    fn cli_children_carry_the_marker_when_the_cli_is_this_binary() {
+        let (bin, marker) = find_eidos_binary();
+        let cmd = tool_command("skyrimse", "SSEEdit");
+        assert_eq!(cmd.get_program(), bin.as_os_str());
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        let expected: Vec<&str> = marker
+            .into_iter()
+            .chain(["tool", "skyrimse", "run", "SSEEdit"])
+            .collect();
+        assert_eq!(args, expected);
+        // Under `cargo test` nothing named `eidos` sits beside the test binary,
+        // so unless ~/.cargo/bin/eidos exists this is the single-file case.
+        if !home().join(".cargo/bin/eidos").is_file() {
+            assert_eq!(marker, Some(eidos::CLI_MARKER));
+            assert_eq!(Some(bin), std::env::current_exe().ok());
+        }
     }
 }

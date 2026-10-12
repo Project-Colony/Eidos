@@ -395,13 +395,19 @@ pub fn launch(mut spec: LaunchSpec) -> std::io::Result<ExitStatus> {
     let privileged = unsafe { libc::unshare(libc::CLONE_NEWNS) } == 0;
     if !privileged {
         if std::env::var("EIDOS_FUSE_PASSTHROUGH").is_ok_and(|v| !v.trim().is_empty() && v != "0") {
-            let exe = std::env::current_exe()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "<this eidos binary>".to_string());
+            // Only ever the dedicated `eidos` binary: the single `eidos-linux`
+            // file is also the window, which must not carry it (SECURITY.md).
+            let exe = std::env::current_exe().ok();
+            let grant = match exe.filter(|p| p.file_name().is_some_and(|n| n == "eidos")) {
+                Some(exe) => format!("sudo setcap cap_sys_admin+ep {}", exe.display()),
+                None => "install eidos-linux-bundle.tar.gz, then sudo setcap \
+                         cap_sys_admin+ep <its eidos binary>"
+                    .to_string(),
+            };
             eprintln!(
                 "eidos: EIDOS_FUSE_PASSTHROUGH is set but this binary has no CAP_SYS_ADMIN \
                  (setcap is wiped by every rebuild) - running rootless, passthrough stays OFF.\n\
-                 eidos: grant it with:  sudo setcap cap_sys_admin+ep {exe}"
+                 eidos: grant it with:  {grant}"
             );
         }
         check(unsafe { libc::unshare(libc::CLONE_NEWUSER | libc::CLONE_NEWNS) })?;

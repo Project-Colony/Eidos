@@ -91,13 +91,18 @@ pub(crate) fn cmd_nxm(args: &[String]) {
             resume(&archive);
         }
         Some("--register") => {
-            let exe = std::env::current_exe().unwrap_or_else(|_| "eidos".into());
+            let (exe, needs_marker) = crate::this_exe();
+            let marker = if needs_marker {
+                format!(" {}", crate::CLI_MARKER)
+            } else {
+                String::new()
+            };
             let apps = eidos_paths::desktop_entries_dir();
             let _ = std::fs::create_dir_all(&apps);
             let desktop = apps.join("eidos-nxm.desktop");
             let body = format!(
                 "[Desktop Entry]\nType=Application\nName=Eidos (Nexus nxm handler)\n\
-                 Exec={} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
+                 Exec={}{marker} nxm %u\nMimeType=x-scheme-handler/nxm;\nNoDisplay=true\nTerminal=false\n",
                 exe.display()
             );
             if let Err(e) = std::fs::write(&desktop, body) {
@@ -422,11 +427,16 @@ fn resume(archive: &std::path::Path) {
 /// do. Launched detached, like every other GUI hand-off here - the browser is
 /// waiting on this process, and it should not wait for a window.
 fn show_collection_in_gui(link: &str, inst: &Instance) {
-    let exe = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("eidos-gui")))
-        .filter(|p| p.is_file())
-        .unwrap_or_else(|| std::path::PathBuf::from("eidos-gui"));
+    // Run from the window's own binary (`eidos-linux`), this process IS the
+    // window's executable, and started without the CLI marker it opens one.
+    let (this, in_gui_binary) = crate::this_exe();
+    let exe = if in_gui_binary {
+        this
+    } else {
+        Some(this.with_file_name("eidos-gui"))
+            .filter(|p| p.is_file())
+            .unwrap_or_else(|| std::path::PathBuf::from("eidos-gui"))
+    };
     match std::process::Command::new(&exe)
         .arg("--collection")
         .arg(link)

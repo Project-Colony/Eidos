@@ -113,9 +113,10 @@ and as a possible optimization later, not as the foundation.
 
 ## Crate map
 
-The workspace is 22 crates under `crates/`, plus one C++ helper under
-`native/`. They build into a few processes, and the process boundaries are what
-decide where a privilege, a crash or untrusted input can reach:
+The workspace is 22 crates under `crates/`, plus one C++ helper,
+`crates/eidos-nif-preview`, built with CMake. They build into a few processes,
+and the process boundaries are what decide where a privilege, a crash or
+untrusted input can reach:
 
 ```
 Steam (eidos-gui %command%) or the desktop
@@ -134,7 +135,15 @@ Steam (eidos-gui %command%) or the desktop
 
 The optional `cap_sys_admin` capability goes on `eidos` and on nothing else:
 the GUI hands every launch to the `eidos` binary beside it, so the privileged
-work stays in one file. Everything the GUI does besides launching (installs,
+work stays in one file.
+
+`eidos-gui` also links the CLI. Started as `eidos` (a link with that name) or
+with the hidden first argument `--eidos-cli`, it runs the CLI instead of a
+window. That is what lets one file, the `eidos-linux` release asset Colony
+installs, be the whole product: with no `eidos` beside it, the window runs
+itself with `--eidos-cli` for every launch. Before a window opens, the binary
+clears every capability it holds, so a capability set on that file never
+reaches the window; SECURITY.md still says never to set one there. Everything the GUI does besides launching (installs,
 Nexus, LOOT, conflicts, previews) runs in its own process through the library
 crates below.
 
@@ -142,11 +151,11 @@ crates below.
 
 | Crate | Builds | Role |
 |---|---|---|
-| `eidos` | `eidos` | The CLI: `games`, `init`, `play`, `install`, `collection`, `pack`/`unpack`, `tool`, `prereqs`, `export`, `sort`, `nexus`, `nxm`, `import`. The Steam launch path. |
-| `eidos-gui` | `eidos-gui` | The iced window, MO2-style. Finds `eidos` beside itself first, then in `~/.cargo/bin`, then on `PATH`. |
+| `eidos` | `eidos`, and a library `eidos-gui` links | The CLI: `games`, `init`, `play`, `install`, `collection`, `pack`/`unpack`, `tool`, `prereqs`, `export`, `sort`, `nexus`, `nxm`, `import`. The Steam launch path. |
+| `eidos-gui` | `eidos-gui` | The iced window, MO2-style. Finds `eidos` beside itself first, then in `~/.cargo/bin`, then runs the CLI it links itself (`--eidos-cli`). Answers `--version`. |
 | `eidos-fuse` | library, plus the dev CLI `eidos-fuse` | The read-write union daemon. Runs inside `eidos`; the binary mounts a union by hand for debugging. |
 | `eidos-launch` | library, plus the dev CLI `eidos-launch` | Namespace and mount orchestration. Runs inside `eidos`; the binary runs any command through a union given on the command line. |
-| `native/eidos-nif-preview` | `eidos-nif-preview` (CMake, not a workspace member) | Bounded static NIF parser on vendored nifly. A separate process so a hostile mesh costs the preview, not the window. |
+| `eidos-nif-preview` | `eidos-nif-preview` (CMake, not a workspace member) | Bounded static NIF parser on vendored nifly. A separate process so a hostile mesh costs the preview, not the window. |
 
 The two dev CLIs are optional in an installation; `eidos` and `eidos-gui` are
 the product.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Eidos tarball installer.
+# Eidos installer, for the release bundle and source builds.
 #
 # Copies the binaries and registers desktop/Nexus handlers. The default user
 # installation is unprivileged. --cap explicitly requests the optional capability;
@@ -61,7 +61,7 @@ done
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Where the binaries are. A release tarball puts them beside this script; a
+# Where the binaries are. The release bundle puts them beside this script; a
 # source checkout puts them under target/. Take the first layout that has them.
 if [[ -z "$srcdir" ]]; then
 	for candidate in "$here" "$here/bin" "$here/../target/release" "$here/../target/debug"; do
@@ -171,9 +171,9 @@ notices="${XDG_DATA_HOME:-$HOME/.local/share}/licenses/eidos"
 if [[ -d "$here/licenses" ]]; then
 	sudo_if_needed "$notices" install -d -m755 "$notices"
 	sudo_if_needed "$notices" cp -R "$here/licenses/." "$notices/"
-elif [[ -d "$here/../native/eidos-nif-preview" ]]; then
+elif [[ -d "$here/../crates/eidos-nif-preview" ]]; then
 	for notice in UPSTREAM.md VENDORED-SHA256SUMS vendor/nifly/LICENSE vendor/nifly/README.md vendor/nifly/external/half.hpp vendor/nifly/external/Miniball.hpp; do
-		sudo_if_needed "$notices" install -Dm644 "$here/../native/eidos-nif-preview/$notice" "$notices/nifly/$notice"
+		sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-nif-preview/$notice" "$notices/nifly/$notice"
 	done
 	sudo_if_needed "$notices" install -Dm644 "$here/../crates/eidos-install/src/install/omod/known_handlers/UPSTREAM.md" "$notices/omod/UPSTREAM.md"
 fi
@@ -247,7 +247,7 @@ else
 	fi
 	mkdir -p "$apps"
 
-	# Icons are optional: a release tarball may not carry the asset tree, and a
+	# Icons are optional: a release bundle may not carry the asset tree, and a
 	# missing icon must not cost the launcher entry.
 	icon_key=applications-games
 	art="$here/../assets/brand/png"
