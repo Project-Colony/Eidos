@@ -20,7 +20,10 @@ pub(crate) enum Start {
 /// Proton script followed by the game's own arguments, so a `--version` further
 /// along belongs to the game, never to Eidos.
 pub(crate) fn start_as(argv0: &str, args: Vec<String>) -> Start {
-    if Path::new(argv0).file_name().is_some_and(|name| name == "eidos") {
+    if Path::new(argv0)
+        .file_name()
+        .is_some_and(|name| name == "eidos")
+    {
         return Start::Cli(args);
     }
     match args.first().map(String::as_str) {
@@ -56,15 +59,24 @@ pub(crate) fn drop_capabilities() -> Result<(), String> {
         permitted: u32,
         inheritable: u32,
     }
-    let mut header = Header { version: 0x2008_0522, pid: 0 };
-    let data = [Data { effective: 0, permitted: 0, inheritable: 0 }; 2];
+    let mut header = Header {
+        version: 0x2008_0522,
+        pid: 0,
+    };
+    let data = [Data {
+        effective: 0,
+        permitted: 0,
+        inheritable: 0,
+    }; 2];
     // SAFETY: both pointers are to the layouts capset(2) documents for version 3,
     // and both outlive the call.
     let rc = unsafe { libc::syscall(libc::SYS_capset, &mut header as *mut Header, data.as_ptr()) };
     if rc == 0 {
         return Ok(());
     }
-    let exe = std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default();
+    let exe = std::env::current_exe()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
     Err(format!(
         "this binary carries a capability and could not drop it ({}), so the window \
          will not start with it. Remove it with: sudo setcap -r {exe}",
@@ -100,7 +112,10 @@ mod tests {
 
     #[test]
     fn a_link_named_eidos_is_the_cli() {
-        assert_eq!(start_as("/home/u/.local/bin/eidos", v(&["games"])), Start::Cli(v(&["games"])));
+        assert_eq!(
+            start_as("/home/u/.local/bin/eidos", v(&["games"])),
+            Start::Cli(v(&["games"]))
+        );
         assert_eq!(start_as("eidos", vec![]), Start::Cli(vec![]));
     }
 
@@ -113,10 +128,19 @@ mod tests {
             "/games/Skyrim/SkyrimSELauncher.exe",
             "--version",
         ]);
-        assert_eq!(start_as("/opt/eidos-linux", steam.clone()), Start::Window(steam));
-        assert_eq!(start_as("/usr/bin/eidos-gui", vec![]), Start::Window(vec![]));
+        assert_eq!(
+            start_as("/opt/eidos-linux", steam.clone()),
+            Start::Window(steam)
+        );
+        assert_eq!(
+            start_as("/usr/bin/eidos-gui", vec![]),
+            Start::Window(vec![])
+        );
         // A name that merely starts with `eidos` is not the CLI.
-        assert_eq!(start_as("/usr/bin/eidos-gui", v(&["x"])), Start::Window(v(&["x"])));
+        assert_eq!(
+            start_as("/usr/bin/eidos-gui", v(&["x"])),
+            Start::Window(v(&["x"]))
+        );
     }
 
     #[test]
