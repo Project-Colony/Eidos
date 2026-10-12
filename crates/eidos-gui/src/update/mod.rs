@@ -26,24 +26,6 @@ mod tools;
 mod window;
 mod wizard;
 
-/// Put a theme choice into force and write it down.
-///
-/// The palette lives in a global - a style closure inside `iced` cannot reach
-/// `App` - so changing the preference is not enough on its own: it has to be
-/// pushed into `theme::apply` or the window keeps drawing the old one until the
-/// next launch. One function, so the three pickers cannot each get it half right.
-fn repaint(app: &mut App) {
-    crate::theme::apply(
-        &app.prefs.theme_family,
-        &app.prefs.theme_variant,
-        app.prefs.accent.as_deref(),
-        app.prefs.high_contrast,
-    );
-    if let Err(e) = app.prefs.save() {
-        app.status = Some(format!("Could not save preferences: {e}"));
-    }
-}
-
 /// Open `archive` on a worker thread, reporting 7-Zip's percentage as it goes.
 ///
 /// Everything here used to happen inline in `update()`. The work is identical;
@@ -1406,26 +1388,21 @@ pub(crate) fn update_inner(app: &mut App, message: Message) -> Task<Message> {
         | Message::ExecToggleHidden
         | Message::ExecTogglePinned
         | Message::ExecMakeShortcut) => tools::handle(app, m),
-        m @ (Message::OpenSettings
-        | Message::CloseSettings
+        m @ (Message::TogglePreferences
         | Message::SettingsTabSelected(..)
         | Message::NexusSignInStart
         | Message::NexusSignInResult(..)
         | Message::NexusSignOut
+        | Message::Preference(..)
+        | Message::DismissToast
         | Message::DragScrollSpeedChanged(..)
         | Message::SettingsToggleSection(..)
         | Message::ToggleRememberWindow(..)
-        | Message::ToggleMotion(..)
         | Message::ToggleOffline(..)
         | Message::PreferredServersChanged(..)
-        | Message::PreferredServersSave
-        | Message::ThemeChanged(..)
-        | Message::AccentChanged(..)
-        | Message::ToggleHighContrast(..)
         | Message::DefaultGameChanged(..)
         | Message::ToggleLockGui(..)
         | Message::ToolsDirChanged(..)
-        | Message::ToolsDirSave
         | Message::BrowseToolsDir) => preferences::handle(app, m),
         m @ (Message::IdentifyDownload(..)
         | Message::IdentifiedDownload(..)

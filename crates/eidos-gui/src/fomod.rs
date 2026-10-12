@@ -77,8 +77,8 @@ pub(crate) const FOMOD_OPTIONS_W: f32 = 260.0;
 /// make the whole dialog jump on every hover.
 pub(crate) const FOMOD_PREVIEW_H: f32 = 420.0;
 
-// The parchment family, spelled out once. These are the same inks the rest of the
-// window uses; the wizard only ever looked out of place because it was drawn with
+// The wizard's inks, named once. These are the same palette fields the rest of
+// the window uses; the wizard only ever looked out of place because it was drawn with
 // iced's stock `button::secondary` and an ASCII `[x]`, not because it was missing
 // anything iced cannot do.
 /// The colour of the installer's hairlines and dividers. (`fomod_rule` below
@@ -93,7 +93,7 @@ pub(crate) fn fomod_row_bg() -> Color {
 pub(crate) fn fomod_row_hover() -> Color {
     pal().bg_card
 }
-// Both inks are measured against the page (0xECDFC2): SOFT reaches 6.2:1 and FAINT
+// Both inks were measured against the parchment page: SOFT reaches 6.2:1 and FAINT
 // 4.5:1, the WCAG floor for text this small. The first pass had FAINT at 2.9:1,
 // which is a decorative grey, not a legible one - and it was carrying "required"
 // and "recommended", the only guidance the mod author gives. Below ~10px there is

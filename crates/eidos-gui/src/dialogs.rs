@@ -1874,7 +1874,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                         view.yaw,
                         move |yaw| Message::PreviewNifView(crate::nif_render::View { yaw, ..view }),
                     )
-                    .step(0.03)
+                    .step(0.03_f32)
                     .width(Length::Fill),
                 )
                 .push(text("Tilt").size(11.0))
@@ -1882,7 +1882,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     slider(-1.5..=1.5, view.pitch, move |pitch| {
                         Message::PreviewNifView(crate::nif_render::View { pitch, ..view })
                     })
-                    .step(0.03)
+                    .step(0.03_f32)
                     .width(Length::Fill),
                 );
             let controls = Row::new()
@@ -1893,7 +1893,7 @@ pub(crate) fn preview_dialog<'a>(p: &'a Preview) -> Element<'a, Message> {
                     slider(0.1..=10.0, view.zoom, move |zoom| {
                         Message::PreviewNifView(crate::nif_render::View { zoom, ..view })
                     })
-                    .step(0.1)
+                    .step(0.1_f32)
                     .width(Length::Fill),
                 )
                 .push(

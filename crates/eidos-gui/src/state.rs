@@ -260,15 +260,18 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
     } else {
         Settings::load()
     };
-    // Before anything is drawn. The palette is a global that every style closure
-    // reads, so a window built before this call would paint its first frame in
-    // the previous theme and only correct itself on the next redraw.
-    crate::theme::apply(
-        &prefs.theme_family,
-        &prefs.theme_variant,
-        prefs.accent.as_deref(),
-        prefs.high_contrast,
-    );
+    let ui_prefs = if cfg!(test) {
+        crate::preferences::UiPreferences::default()
+    } else {
+        let ui_prefs = crate::preferences::UiPreferences::load();
+        // Before anything is drawn: the palette, fonts and sizes are globals
+        // every style closure reads, so a window built before this call would
+        // paint its first frame in the defaults. Not under test, where the
+        // harness's threads share those globals and a test that set a theme
+        // would see another test's App put it back.
+        ui_prefs.standard.apply();
+        ui_prefs
+    };
     let mut app = App {
         screen: Screen::Welcome,
         games,
@@ -318,9 +321,9 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         filters_open: false,
         settings_open: false,
         settings_tab: SettingsTab::General,
-        // Open on first sight: a settings page whose sections are all shut asks
-        // the user to click five times before it says anything.
-        settings_expanded: SettingsTab::DEFAULT_OPEN.iter().copied().collect(),
+        settings_expanded: HashSet::new(),
+        toast: None,
+        ui_prefs,
         // Prefill the key field from the shared store (the same key `eidos nexus
         // key` writes), so it survives across sessions without a network round trip.
         nexus_account: None,
@@ -412,7 +415,6 @@ pub(crate) fn new(launch_command: Vec<String>) -> (App, Task<Message>) {
         ui_toolbar_visible: true,
         split: prefs.split,
         split_drag: false,
-        motion: prefs.motion,
         tab_anim: crate::anim::Phase::default(),
         tab_prev: None,
         info_anim: crate::anim::Phase::default(),

@@ -4852,13 +4852,14 @@ fn a_new_status_message_fades_in_however_it_was_set() {
 fn with_motion_off_nothing_animates_and_no_frames_are_asked_for() {
     // "Reduced motion" has to mean none, not faster: every animated value is
     // drawn at its destination and the frame timer is never subscribed.
+    let _look = look_lock();
     let mut app = nav_app(&[]);
-    let _ = update(&mut app, Message::ToggleMotion(false));
-    assert!(!app.prefs.motion, "the preference is what gets saved");
-    assert!(
-        !app.motion,
-        "the live copy has to follow, or it keeps animating"
+    let _ = update(
+        &mut app,
+        Message::Preference(colony_ui::preferences::Change::ReduceMotion(true)),
     );
+    assert!(app.ui_prefs.standard.reduce_motion, "the preference is what gets saved");
+    assert!(!app.ui_prefs.motion(), "it has to stop the animations at once");
 
     app.tab = Tab::Data;
     let _ = update(&mut app, Message::SelectTab(Tab::Saves));

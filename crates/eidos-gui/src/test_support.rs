@@ -3,6 +3,25 @@
 
 use crate::*;
 
+/// Held by every test that sets or reads colony-ui's process-wide look (theme,
+/// accent, fonts, text sizes). The harness runs tests on parallel threads of
+/// one process, so without it a test that picks a theme repaints another that
+/// is mid-assertion. Dropping it puts the defaults back.
+pub(crate) fn look_lock() -> LookGuard {
+    static LOOK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let guard = LOOK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    crate::preferences::UiPreferences::default().standard.apply();
+    LookGuard(guard)
+}
+
+pub(crate) struct LookGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+impl Drop for LookGuard {
+    fn drop(&mut self) {
+        crate::preferences::UiPreferences::default().standard.apply();
+    }
+}
+
 pub(crate) fn mods(names: &[&str]) -> Vec<ModEntry> {
     names
         .iter()

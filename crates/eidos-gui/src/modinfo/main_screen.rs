@@ -216,17 +216,17 @@ pub(crate) fn status_bar<'a>(app: &App) -> Element<'a, Message> {
 }
 
 pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
-    // The name is the way into Settings, as Colony's is. It was decoration
-    // before, and the only route in was the toolbar button - which is a long way
-    // to travel for the thing a window's own title usually opens.
+    // The name is the way into Preferences, and the way out: the same button,
+    // the same message as the page's Close, showing whether the page is open.
     let header = Row::new()
         .spacing(10)
-        .push(
-            button(text("Eidos").size(20.0))
-                .padding([2, 6])
-                .on_press(Message::OpenSettings)
-                .style(button::text),
-        )
+        .push(colony_ui::widgets::identity_button(
+            &colony_ui::Typography::current(),
+            "Eidos",
+            20,
+            app.settings_open,
+            Message::TogglePreferences,
+        ))
         .push(Space::new().width(Length::Fill))
         .push(tool_btn("New instance", Message::Restart));
 
@@ -260,7 +260,22 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
     // all stay exactly where they are: the program's chrome does not move
     // because the user went to configure it.
     let body: Element<'_, Message> = if app.settings_open {
-        preferences_page(app)
+        match app.toast {
+            // "Theme applied.", over the bottom of the page until dismissed.
+            Some(note) => Stack::new()
+                .push(preferences_page(app))
+                .push(
+                    container(colony_ui::widgets::toast(
+                        &colony_ui::Typography::current(),
+                        note,
+                        Message::DismissToast,
+                    ))
+                    .padding(16)
+                    .align_bottom(Length::Fill),
+                )
+                .into(),
+            None => preferences_page(app),
+        }
     } else {
         Row::new()
             .spacing(4)
@@ -586,13 +601,7 @@ pub(crate) fn main_screen(app: &App) -> Element<'_, Message> {
         let scrim = mouse_area(
             container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_| {
                 container::Style {
-                    background: Some(
-                        iced::Color {
-                            a: 0.55,
-                            ..iced::Color::BLACK
-                        }
-                        .into(),
-                    ),
+                    background: Some(shade(0.55).into()),
                     ..Default::default()
                 }
             }),

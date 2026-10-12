@@ -5,14 +5,15 @@
 //! wording and the tests hold them to it.
 
 mod page;
+mod store;
 
 pub(crate) use page::preferences_page;
+pub(crate) use store::UiPreferences;
 
-/// Sections of the Settings screen, in sidebar order.
+/// Categories of the Preferences page, in rail order.
 ///
-/// A vertical rail rather than a row of tabs, matching Colony: five entries do
-/// not fit across a dialog, and the rail leaves room to add a sixth without
-/// re-laying anything out.
+/// The first three are the Colony standard ones, drawn by the shared kit; the
+/// rest are Eidos's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsTab {
     General,
@@ -40,19 +41,14 @@ impl SettingsTab {
         SettingsTab::About,
     ];
 
-    /// The sections open the first time Preferences is shown - one per category,
-    /// so every page says something without a click.
-    pub(crate) const DEFAULT_OPEN: [&'static str; 6] =
-        ["startup", "theme", "motion", "dragging", "account", "paths"];
-
     pub(crate) fn label(self) -> &'static str {
         match self {
-            SettingsTab::General => "General",
-            SettingsTab::Appearance => "Appearance",
-            SettingsTab::Accessibility => "Accessibility",
+            SettingsTab::General => colony_ui::i18n::t("settings_cat_general"),
+            SettingsTab::Appearance => colony_ui::i18n::t("settings_cat_appearance"),
+            SettingsTab::Accessibility => colony_ui::i18n::t("settings_cat_accessibility"),
             SettingsTab::ModList => "Mod list",
             SettingsTab::Nexus => "Nexus",
-            SettingsTab::About => "About",
+            SettingsTab::About => colony_ui::i18n::t(colony_ui::widgets::ABOUT_CATEGORY),
         }
     }
 
@@ -60,13 +56,12 @@ impl SettingsTab {
     /// said again.
     pub(crate) fn description(self) -> &'static str {
         match self {
-            // This sentence is imposed by the convention, near enough word for
-            // word, because it carries the contract that matters most on this
-            // page: there is no Save button, and its absence has to be explained
-            // somewhere rather than left to be discovered.
-            SettingsTab::General => "Preferences are saved automatically.",
-            SettingsTab::Appearance => "Applies immediately - nothing here needs a restart.",
-            SettingsTab::Accessibility => "Changes how the window behaves, on any theme.",
+            // General's line carries the contract that matters most on this
+            // page: there is no Save button, and its absence has to be
+            // explained somewhere rather than left to be discovered.
+            SettingsTab::General => colony_ui::i18n::t("settings_general_desc"),
+            SettingsTab::Appearance => colony_ui::i18n::t("settings_appearance_desc"),
+            SettingsTab::Accessibility => colony_ui::i18n::t("settings_accessibility_desc"),
             SettingsTab::ModList => "How the list of mods behaves under the pointer.",
             SettingsTab::Nexus => "The account downloads are fetched with, and what is cached.",
             SettingsTab::About => "Version, licence and where this instance lives.",

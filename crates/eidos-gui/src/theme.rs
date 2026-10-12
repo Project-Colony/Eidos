@@ -1,210 +1,28 @@
 //! The palette, and the container styles built on it.
 //!
-//! Every colour in this window comes from one [`ThemePalette`] - the Colony
-//! ecosystem's 38-field palette shape, from `colony-ui`. Two things can fill it:
+//! Every colour in this window comes from the active [`ThemePalette`] of the
+//! shared Colony catalogue: 25 families, 57 palettes, generated from the design
+//! tokens in Project-Colony-Resources and set through `colony_ui`
+//! ([`crate::preferences::UiPreferences`] applies the user's choice). Eidos's
+//! parchment is the catalogue's `parchment/light`.
 //!
-//! * [`PARCHMENT`], the look Eidos has always worn, written out here as those
-//!   same 38 fields rather than as scattered literals; and
-//! * any of the **57 palettes** in the shared catalogue, 25 families generated
-//!   from the design tokens in Project-Colony-Resources.
-//!
-//! Before this, the parchment was hard-coded in about seventy places across the
-//! GUI and the theme setting did nothing at all: `theme(_app)` ignored its
-//! argument, so the Light / Dark / System picker had never changed a pixel.
-//!
-//! **A literal hex outside this file is a bug.** It will be right on one palette
-//! and wrong on the other fifty-seven.
+//! **A literal hex outside the catalogue is a bug.** It will be right on one
+//! palette and wrong on the other fifty-six.
 
-use colony_ui::{hex, ThemePalette};
+use colony_ui::ThemePalette;
 use iced::widget::container;
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 use crate::{App, Message};
 
-/// The key that means "Eidos's own", as stored in `settings.ini`.
-///
-/// Not a family in the shared catalogue: the catalogue is the ecosystem's, and
-/// this parchment is this program's. Kept as the default so an upgrade changes
-/// nobody's window - what a user sees today is what they keep.
-pub(crate) const OWN_FAMILY: &str = "eidos";
-pub(crate) const OWN_VARIANT: &str = "parchment";
-pub(crate) const OWN_LABEL: &str = "Eidos";
-pub(crate) const OWN_VARIANT_LABEL: &str = "Parchment";
-
-/// Eidos's parchment, as the 38 fields every other palette also fills.
-///
-/// The values are the ones this window already used - the background, the card,
-/// the burgundy, the muted brown, the two conflict tints - with the fields that
-/// had no literal filled in from the same family so nothing reads as borrowed
-/// from another theme.
-pub(crate) const PARCHMENT: ThemePalette = ThemePalette {
-    bg_primary: hex(0xECDFC2),
-    bg_sidebar: hex(0xE3D6B6),
-    bg_card: hex(0xF3EAD3),
-    bg_card_hover: hex(0xEADDBF),
-    bg_card_pressed: hex(0xE0D2B2),
-    bg_selected: hex(0xCFB886),
-    bg_input: hex(0xF7F0DE),
-    bg_progress: hex(0xD8C9A6),
-
-    text_primary: hex(0x2B2018),
-    text_secondary: hex(0x4A3B2C),
-    text_muted: hex(0x6A5A40),
-    text_dim: hex(0x7C6C52),
-    text_dimmer: hex(0x8E7E64),
-    text_dimmest: hex(0xA09076),
-    text_placeholder: hex(0xA89A80),
-
-    accent_blue: hex(0x7A1F2B),
-    accent_icon: hex(0x7A1F2B),
-    accent_progress: hex(0x7A1F2B),
-
-    btn_default: hex(0xE3D6B6),
-    btn_hover: hex(0xEADDBF),
-    btn_pressed: hex(0xD8C9A6),
-
-    success: hex(0x216B29),
-    success_bg: hex(0xC8DAB4),
-    btn_success: hex(0x4A6B3A),
-    btn_success_hover: hex(0x577E45),
-    btn_success_pressed: hex(0x3D5930),
-
-    warning: hex(0xB06A1E),
-    warning_bg: hex(0xEDD9B4),
-
-    error: hex(0x8A2A2A),
-    error_light: hex(0x992929),
-    error_bg: hex(0xEBC4BD),
-    btn_danger_bg: hex(0x8A2A2A),
-    btn_danger_hover: hex(0x9C3232),
-    btn_trash_hover: hex(0x9C3232),
-    btn_trash_pressed: hex(0x742222),
-
-    bg_modal_section: hex(0xEFE5CC),
-    border_subtle: hex(0xC9B890),
-    divider: hex(0xC9B890),
-};
-
-/// The palette in force, before high contrast. Written at boot and whenever the
-/// user picks, read on every style call.
-///
-/// A global for the same reason `colony-ui` uses one: a style closure inside
-/// `iced` cannot reach `App`, and threading a palette through some seventy of
-/// them is how one of the seventy ends up different.
-/// One value process-wide.
-#[cfg(not(test))]
-mod store {
-    use super::{ThemePalette, PARCHMENT};
-    use iced::Color;
-    use std::sync::RwLock;
-
-    static ACTIVE: RwLock<ThemePalette> = RwLock::new(PARCHMENT);
-    /// The user's accent override, or `None` for the palette's own.
-    static ACCENT: RwLock<Option<Color>> = RwLock::new(None);
-    static CONTRAST: RwLock<bool> = RwLock::new(false);
-
-    pub(super) fn set(palette: ThemePalette, accent: Option<Color>, high_contrast: bool) {
-        *ACTIVE.write().unwrap() = palette;
-        *ACCENT.write().unwrap() = accent;
-        *CONTRAST.write().unwrap() = high_contrast;
-    }
-    pub(super) fn active() -> ThemePalette {
-        *ACTIVE.read().unwrap()
-    }
-    pub(super) fn accent() -> Option<Color> {
-        *ACCENT.read().unwrap()
-    }
-    pub(super) fn contrast() -> bool {
-        *CONTRAST.read().unwrap()
-    }
-}
-
-/// One value per THREAD, under test only.
-///
-/// The harness runs tests in parallel threads inside a single process, so a
-/// process-wide palette means any test that picks a theme repaints every other
-/// test that is mid-assertion. It did: roughly one run in three failed, on a
-/// different theme test each time, and the message was always about the colour
-/// being wrong rather than about interference - which is what made it read as
-/// several unrelated flaky tests instead of one shared cell.
-///
-/// Per-thread is not a weaker guarantee here, it is the accurate one: the
-/// program has exactly one thread that draws, and the tests have one each.
-#[cfg(test)]
-mod store {
-    use super::{ThemePalette, PARCHMENT};
-    use iced::Color;
-    use std::cell::Cell;
-
-    thread_local! {
-        static ACTIVE: Cell<ThemePalette> = const { Cell::new(PARCHMENT) };
-        static ACCENT: Cell<Option<Color>> = const { Cell::new(None) };
-        static CONTRAST: Cell<bool> = const { Cell::new(false) };
-    }
-
-    pub(super) fn set(palette: ThemePalette, accent: Option<Color>, high_contrast: bool) {
-        ACTIVE.with(|c| c.set(palette));
-        ACCENT.with(|c| c.set(accent));
-        CONTRAST.with(|c| c.set(high_contrast));
-    }
-    pub(super) fn active() -> ThemePalette {
-        ACTIVE.with(Cell::get)
-    }
-    pub(super) fn accent() -> Option<Color> {
-        ACCENT.with(Cell::get)
-    }
-    pub(super) fn contrast() -> bool {
-        CONTRAST.with(Cell::get)
-    }
-}
-
-/// Point the window at a theme.
-///
-/// An unknown family or variant resolves to the parchment rather than failing,
-/// so a `settings.ini` written by a later version - or naming a family that has
-/// since been removed upstream - degrades instead of stopping the program.
-pub(crate) fn apply(family: &str, variant: &str, accent: Option<&str>, high_contrast: bool) {
-    let resolved = if family == OWN_FAMILY {
-        PARCHMENT
-    } else {
-        // `resolve` never fails: an unknown pair gives the catalogue's own
-        // fallback. Checking membership first is what keeps an unknown family on
-        // EIDOS's default rather than on somebody else's.
-        if colony_ui::THEME_FAMILIES
-            .iter()
-            .any(|f| f.key == family && f.variants.iter().any(|v| v.key == variant))
-        {
-            colony_ui::resolve(family, variant)
-        } else {
-            PARCHMENT
-        }
-    };
-    store::set(
-        resolved,
-        accent.and_then(colony_ui::accent_key_to_color),
-        high_contrast,
-    );
-
-    // The shared catalogue's own globals, kept in step so anything drawn from
-    // `colony_ui` agrees with what this file draws.
-    colony_ui::set_high_contrast(high_contrast);
-}
-
 /// The palette to draw with, high contrast already applied.
 pub(crate) fn pal() -> ThemePalette {
-    let base = store::active();
-    if store::contrast() {
-        // Derived rather than shipped: no theme carries a high-contrast twin, so
-        // the boost works on the parchment and on all 57 alike.
-        base.with_high_contrast()
-    } else {
-        base
-    }
+    colony_ui::active_palette()
 }
 
 /// The accent: the user's override if they picked one, else the palette's own.
 pub(crate) fn accent() -> Color {
-    store::accent().unwrap_or_else(|| pal().accent_blue)
+    colony_ui::effective_accent()
 }
 
 pub(crate) fn palette() -> iced::theme::Palette {
@@ -280,12 +98,14 @@ pub(crate) fn text_muted() -> Color {
     pal().text_muted
 }
 
+/// The stripe behind a list row. The odd rows take a faint wash of the ink
+/// rather than `bg_card_hover`, which is what a hovered row looks like.
 pub(crate) fn row_bg(even: bool) -> Color {
     let p = pal();
     if even {
         p.bg_card
     } else {
-        p.bg_card_hover
+        mix(p.bg_card, p.text_primary, 0.05)
     }
 }
 
@@ -301,9 +121,33 @@ pub(crate) fn striped<'a>(content: Element<'a, Message>, even: bool) -> Element<
         .into()
 }
 
-/// The highlight behind the selected mod row.
+/// The highlight behind a selected row: the accent, as in every Colony list.
 pub(crate) fn sel_bg() -> Color {
-    pal().bg_selected
+    accent()
+}
+
+/// Text on [`sel_bg`]: `text_primary` is illegible on an accent fill on most
+/// palettes.
+pub(crate) fn sel_fg() -> Color {
+    colony_ui::contrast_on(sel_bg())
+}
+
+/// The darkest colour the palette has, the ink on a light theme and the ground
+/// on a dark one, at `alpha`: what a shadow or a scrim under a card is made of.
+pub(crate) fn shade(alpha: f32) -> Color {
+    let p = pal();
+    let weight = |c: Color| c.r + c.g + c.b;
+    let ink = if weight(p.text_primary) < weight(p.bg_primary) {
+        p.text_primary
+    } else {
+        p.bg_primary
+    };
+    Color { a: alpha, ..ink }
+}
+
+/// The background of a hovered row or menu entry.
+pub(crate) fn hover_bg() -> Color {
+    pal().bg_card_hover
 }
 
 /// A plugin that comes FROM the mod selected in the mod list (MO2 highlights the
@@ -324,7 +168,7 @@ pub(crate) fn sel_bg() -> Color {
 /// palette instead of on most of them.
 pub(crate) fn origin_bg() -> Color {
     let p = pal();
-    let rivals = [p.bg_selected, p.success_bg, p.error_bg];
+    let rivals = [sel_bg(), p.success_bg, p.error_bg];
     let gap = |a: Color, b: Color| (a.r - b.r).abs() + (a.g - b.g).abs() + (a.b - b.b).abs();
 
     let mut best = mix(p.bg_card, p.accent_icon, 0.28);
@@ -367,119 +211,36 @@ fn mix(from: Color, to: Color, t: f32) -> Color {
 mod tests {
     use super::*;
 
-    /// The parchment must fill every field. A hole would read as transparent
-    /// black on whatever it was used for, and only on the default theme.
+    /// A family this build has never heard of - a file from a later version, or
+    /// one removed upstream - degrades to the catalogue's fallback instead of
+    /// failing the start.
     #[test]
-    fn the_parchment_names_a_colour_for_every_field() {
-        let p = PARCHMENT;
-        for (name, c) in [
-            ("bg_primary", p.bg_primary),
-            ("bg_card", p.bg_card),
-            ("bg_selected", p.bg_selected),
-            ("text_primary", p.text_primary),
-            ("text_muted", p.text_muted),
-            ("accent_blue", p.accent_blue),
-            ("success", p.success),
-            ("success_bg", p.success_bg),
-            ("error", p.error),
-            ("error_bg", p.error_bg),
-            ("warning", p.warning),
-            ("divider", p.divider),
-            ("border_subtle", p.border_subtle),
-        ] {
-            assert_eq!(c.a, 1.0, "{name} is not opaque");
-        }
-    }
-
-    /// An upgrade must not repaint anybody's window: with nothing chosen, the
-    /// parchment is what is drawn.
-    #[test]
-    fn the_default_is_the_parchment_this_program_has_always_worn() {
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        assert_eq!(pal().bg_primary, hex(0xECDFC2));
-        assert_eq!(pal().bg_card, hex(0xF3EAD3));
-        assert_eq!(accent(), hex(0x7A1F2B));
-    }
-
-    #[test]
-    fn a_catalogue_theme_really_replaces_the_palette() {
-        apply("gruvbox", "dark", None, false);
-        assert_eq!(pal().bg_primary, hex(0x282828), "gruvbox dark did not take");
-        assert_ne!(pal().bg_primary, PARCHMENT.bg_primary);
-
-        // And back.
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        assert_eq!(pal().bg_primary, PARCHMENT.bg_primary);
-    }
-
-    /// A family this build has never heard of - a config from a later version,
-    /// or one removed upstream - must land on EIDOS's default, not on the
-    /// catalogue's, which would repaint the window for a typo.
-    #[test]
-    fn an_unknown_theme_degrades_to_the_parchment() {
-        for (family, variant) in [
-            ("no-such-family", "dark"),
-            ("gruvbox", "no-such-variant"),
-            ("", ""),
-        ] {
-            apply(family, variant, None, false);
-            assert_eq!(
-                pal().bg_primary,
-                PARCHMENT.bg_primary,
-                "{family}/{variant} did not degrade to the parchment"
-            );
+    fn an_unknown_theme_degrades_to_the_fallback_palette() {
+        let _look = crate::test_support::look_lock();
+        for (family, variant) in [("no-such-family", "dark"), ("gruvbox", "no-such-variant"), ("", "")] {
+            colony_ui::set_active_theme(family, variant);
+            assert_eq!(pal(), colony_ui::FALLBACK_PALETTE, "{family}/{variant}");
         }
     }
 
     #[test]
-    fn an_accent_override_wins_over_the_palettes_own() {
-        apply(OWN_FAMILY, OWN_VARIANT, Some("green"), false);
-        assert_ne!(accent(), PARCHMENT.accent_blue, "the override was ignored");
-        // An unknown accent key is not an accent: fall back to the theme's.
-        apply(OWN_FAMILY, OWN_VARIANT, Some("chartreuse"), false);
-        assert_eq!(accent(), PARCHMENT.accent_blue);
-        // And none means the theme's own.
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        assert_eq!(accent(), PARCHMENT.accent_blue);
+    fn the_parchment_is_in_the_catalogue() {
+        let _look = crate::test_support::look_lock();
+        let prefs = crate::preferences::UiPreferences::default().standard;
+        let (family, variant) = (prefs.selected_theme, prefs.selected_variant);
+        colony_ui::set_active_theme(&family, &variant);
+        assert_ne!(pal(), colony_ui::FALLBACK_PALETTE, "{family}/{variant} is not in the catalogue");
     }
 
-    /// Derived from the active palette, not shipped as a twin - so it works on
-    /// the parchment and on all 57 alike.
-    #[test]
-    fn high_contrast_moves_the_palette_and_is_reversible() {
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        let plain = pal();
-        apply(OWN_FAMILY, OWN_VARIANT, None, true);
-        let boosted = pal();
-
-        // It moves the INK and the lines, not the grounds: a high-contrast mode
-        // that repainted the backgrounds would be a different theme rather than
-        // the same one read more easily.
-        assert_ne!(
-            plain.text_primary, boosted.text_primary,
-            "the ink did not move"
-        );
-        assert_ne!(plain.divider, boosted.divider, "the lines did not move");
-        assert_eq!(
-            plain.bg_primary, boosted.bg_primary,
-            "the ground must not move"
-        );
-
-        // On a light palette the ink gets darker, not lighter.
-        assert!(boosted.text_primary.r < plain.text_primary.r);
-
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        assert_eq!(pal().text_primary, plain.text_primary);
-    }
-
-    /// The three list tints answer three different questions and must never be
-    /// confusable - on ANY palette, which is what a fixed hex could not promise.
+    /// The list tints answer different questions and must never be confusable,
+    /// on ANY palette, which is what a fixed hex could not promise.
     #[test]
     fn the_list_tints_stay_distinguishable_on_every_palette() {
+        let _look = crate::test_support::look_lock();
         let mut checked = 0;
         for family in colony_ui::THEME_FAMILIES {
             for variant in family.variants {
-                apply(family.key, variant.key, None, false);
+                colony_ui::set_active_theme(family.key, variant.key);
                 let tints = [
                     ("selection", sel_bg()),
                     ("origin", origin_bg()),
@@ -500,36 +261,8 @@ mod tests {
                 checked += 1;
             }
         }
-        // The real check is the distinctness loop above, which runs over
-        // whatever the catalogue holds; this only guards against it silently
-        // becoming empty.
+        // The real check is the loop above; this only guards against the
+        // catalogue silently becoming empty.
         assert!(checked >= 57, "the catalogue shrank to {checked} palettes");
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-    }
-
-    /// The harness runs tests in parallel threads inside ONE process. With the
-    /// palette in a process-wide global, any test that picked a theme repainted
-    /// every other test mid-assertion: roughly one run in three failed, on a
-    /// different theme test each time, which reads as "the boost never took
-    /// effect" rather than as interference.
-    #[test]
-    fn two_threads_picking_themes_do_not_repaint_each_other() {
-        use std::sync::{Arc, Barrier};
-        // Both threads apply, THEN both read: with shared state the second
-        // write lands before the first read and one of them sees the other's.
-        let gate = Arc::new(Barrier::new(2));
-        let mine = gate.clone();
-        let other = std::thread::spawn(move || {
-            apply("catppuccin", "frappe", None, false);
-            mine.wait();
-            pal()
-        });
-        apply(OWN_FAMILY, OWN_VARIANT, None, false);
-        gate.wait();
-        let here = pal();
-        let there = other.join().unwrap();
-
-        assert_eq!(here, PARCHMENT, "this thread kept the theme it picked");
-        assert_ne!(there, PARCHMENT, "and the other kept its own");
     }
 }

@@ -91,9 +91,8 @@ pub(crate) enum Message {
     /// which the closure that emits it cannot see - so it carries the row and
     /// `update` reads the live modifier set, the same way a plain click does.
     ModDoubleClick(usize),
-    /// The shared tools folder: typed, browsed, and saved.
+    /// The shared tools folder, typed or browsed. Saved as it is typed.
     ToolsDirChanged(String),
-    ToolsDirSave,
     BrowseToolsDir,
     /// Ctrl+F: put the caret in the filter box.
     FocusFilter,
@@ -267,14 +266,12 @@ pub(crate) enum Message {
     CollisionRenameCommit,
     /// Dismiss the collision prompt without installing.
     CollisionCancel,
-    // ---- Settings / Preferences (MO2's Settings dialog) ----
-    /// Open the Preferences modal (toolbar Settings button + File menu).
-    OpenSettings,
-    /// Dismiss the Preferences modal, discarding unsaved edits.
-    CloseSettings,
-    /// Switch the Preferences tab (General / Nexus).
+    // ---- Preferences ----
+    /// Open Preferences, or close them: sent by the "Eidos" button that opens
+    /// the page AND by its Close button, so the two cannot drift apart.
+    TogglePreferences,
+    /// Show one category of the Preferences page.
     SettingsTabSelected(SettingsTab),
-    /// Edit the Nexus API key field.
     /// Start the Nexus OAuth sign-in: open the browser, wait on the loopback
     /// listener, exchange the code, store the session.
     NexusSignInStart,
@@ -282,32 +279,25 @@ pub(crate) enum Message {
     NexusSignInResult(Result<eidos_nexus::Account, String>),
     /// Forget the stored Nexus session.
     NexusSignOut,
-    /// Set the preferred colour theme.
-    /// Pick a palette: a `(family, variant)` pair from the shared catalogue, or
-    /// Eidos's own parchment.
-    ThemeChanged(String, String),
-    /// Pick an accent override, or `None` to go back to the theme's own.
-    AccentChanged(Option<String>),
-    /// Boost the separation between surfaces and text on whatever theme is on.
-    ToggleHighContrast(bool),
+    /// A change from the shared Colony preferences: theme, accent, text sizes,
+    /// fonts, effects, high contrast, reduced motion.
+    Preference(colony_ui::preferences::Change),
+    /// Dismiss the "Theme applied." toast.
+    DismissToast,
     /// Set the default game id to open (`None` = none).
     DefaultGameChanged(Option<String>),
     /// Toggle "lock the GUI while a game/tool runs" (MO2's `lock_gui`).
     ToggleLockGui(bool),
     /// Set how fast the mod list scrolls when a drag rests on an edge.
     DragScrollSpeedChanged(f32),
-    /// Open or close one collapsible section of the Settings screen.
+    /// Open or close one collapsible section of the Preferences page.
     SettingsToggleSection(&'static str),
-    /// Toggle the conflict marks on the mod list's scrollbar.
     /// Toggle restoring the window to its last size.
     ToggleRememberWindow(bool),
-    /// Turn the window's animations on or off (Preferences -> Appearance).
-    ToggleMotion(bool),
     /// MO2's offline mode: cut every Nexus request.
     ToggleOffline(bool),
-    /// Editing the preferred-CDN list. Saved on submit, not per keystroke.
+    /// Editing the preferred-CDN list. Saved as it is typed.
     PreferredServersChanged(String),
-    PreferredServersSave,
     OpenPluginMenu(usize),
     ClosePluginMenu,
     /// Open the folder of the mod that ships the plugin at this row.

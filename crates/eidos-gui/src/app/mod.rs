@@ -234,21 +234,25 @@ pub(crate) struct App {
     /// Whether that pane is open.
     pub(crate) filters_open: bool,
     // ---- Settings / Nexus account (the status bar + endorse/update read these) ----
-    /// The Preferences modal is open.
+    /// The Preferences page is open in place of the panes.
     pub(crate) settings_open: bool,
-    /// The active Preferences tab.
+    /// The category the Preferences page shows.
     pub(crate) settings_tab: SettingsTab,
-    /// Which collapsible sections of the Settings screen are open. Keyed by the
-    /// same `&'static str` the section is built with, so a rename cannot drift.
-    pub(crate) settings_expanded: HashSet<&'static str>,
+    /// Which collapsible sections of the Preferences page are open. Emptied each
+    /// time the page opens, so every section arrives collapsed.
+    pub(crate) settings_expanded: HashSet<String>,
+    /// "Theme applied.", shown over the page until dismissed.
+    pub(crate) toast: Option<&'static str>,
     /// The validated Nexus account, if a stored session checked out.
     pub(crate) nexus_account: Option<eidos_nexus::Account>,
     /// A sign-in is in flight (guards the button + concurrent attempts).
     pub(crate) nexus_signing_in: bool,
     /// The last sign-in error, shown inline in the dialog.
     pub(crate) nexus_error: Option<String>,
-    /// The persisted app-global preferences (theme, default game).
+    /// The persisted app-global settings the CLI shares (default game, tools).
     pub(crate) prefs: Settings,
+    /// The window's look: theme, accent, fonts, text sizes, motion.
+    pub(crate) ui_prefs: crate::preferences::UiPreferences,
     // ---- Executables dialog ----
     /// The open Executables editor, if any (None = closed).
     pub(crate) executables: Option<ExecutablesDialogState>,
@@ -449,10 +453,6 @@ pub(crate) struct App {
     /// Whether the divider is being dragged right now.
     pub(crate) split_drag: bool,
     // ---- motion ----
-    /// Whether this window animates at all (Preferences -> Appearance -> Motion,
-    /// mirroring `prefs.motion`). Off means every animated value is drawn at its
-    /// destination and the frame timer is never subscribed.
-    pub(crate) motion: bool,
     /// The main tab strip's crossfade, and the tab it is fading AWAY from.
     ///
     /// The previous tab is kept because a crossfade needs both ends: without it

@@ -17,85 +17,65 @@ fn expected_rank(tab: SettingsTab) -> usize {
     }
 }
 
-/// "Do not reorder the first three. They are what a user hunting for a
-/// setting scans first" - the ecosystem convention is explicit, and this is
-/// exactly the kind of constraint a reshuffle breaks without noticing.
+use colony_ui::preferences::Change;
+
 #[test]
 fn picking_a_theme_takes_effect_at_once_and_is_written_down() {
+    let _look = look_lock();
     let mut app = nav_app(&[]);
-    // Everyone starts on the parchment - an upgrade repaints nobody.
-    assert_eq!(app.prefs.theme_family, "eidos");
-    assert_eq!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
+    assert_eq!(app.ui_prefs.standard.selected_theme, "parchment");
 
     let _ = update(
         &mut app,
-        Message::ThemeChanged("nord".to_string(), "dark".to_string()),
+        Message::Preference(Change::Theme {
+            family: "nord",
+            variant: "dark",
+        }),
     );
-    assert_eq!(app.prefs.theme_family, "nord");
+    assert_eq!(app.ui_prefs.standard.selected_theme, "nord");
     // The palette is a global that every style closure reads: changing the
     // preference alone would leave the window drawing the old theme.
-    assert_ne!(theme::pal().bg_primary, theme::PARCHMENT.bg_primary);
-    assert_eq!(
-        theme::pal().bg_primary,
-        colony_ui::resolve("nord", "dark").bg_primary
-    );
-
-    // And it survives the file.
-    assert_eq!(
-        eidos_instance::Settings::parse(&app.prefs.to_ini()).theme_family,
-        "nord"
-    );
-
-    let _ = update(
-        &mut app,
-        Message::ThemeChanged(
-            theme::OWN_FAMILY.to_string(),
-            theme::OWN_VARIANT.to_string(),
-        ),
-    );
-    assert_eq!(
-        theme::pal().bg_primary,
-        theme::PARCHMENT.bg_primary,
-        "no way back"
-    );
+    assert_eq!(theme::pal(), colony_ui::resolve("nord", "dark"));
+    assert_eq!(app.toast, Some(colony_ui::i18n::t("theme_applied")));
+    let _ = update(&mut app, Message::DismissToast);
+    assert_eq!(app.toast, None);
 }
 
 #[test]
 fn an_accent_can_be_picked_and_given_back() {
+    let _look = look_lock();
     let mut app = nav_app(&[]);
     let own = theme::accent();
 
-    let _ = update(&mut app, Message::AccentChanged(Some("green".to_string())));
-    assert_eq!(app.prefs.accent.as_deref(), Some("green"));
-    assert_ne!(
-        theme::accent(),
-        own,
-        "the override did not reach the window"
-    );
+    let _ = update(&mut app, Message::Preference(Change::Accent("green")));
+    assert_eq!(app.ui_prefs.standard.selected_accent.as_deref(), Some("green"));
+    assert_ne!(theme::accent(), own, "the override did not reach the window");
 
-    // "Auto" is the absence of an override, not a ninth colour.
-    let _ = update(&mut app, Message::AccentChanged(None));
-    assert_eq!(app.prefs.accent, None);
+    // Auto accent hands the accent back to the theme.
+    let _ = update(&mut app, Message::Preference(Change::AutoAccent(true)));
     assert_eq!(theme::accent(), own);
-    assert!(!app.prefs.to_ini().contains("accent="));
 }
 
 #[test]
-fn high_contrast_reaches_the_window_and_is_saved() {
+fn high_contrast_reaches_the_window() {
+    let _look = look_lock();
     let mut app = nav_app(&[]);
     let plain = theme::pal().text_primary;
+    let _ = update(&mut app, Message::Preference(Change::HighContrast(true)));
+    assert!(app.ui_prefs.standard.high_contrast);
+    assert_ne!(theme::pal().text_primary, plain, "the boost never took effect");
+}
 
-    let _ = update(&mut app, Message::ToggleHighContrast(true));
-    assert!(app.prefs.high_contrast);
-    assert_ne!(
-        theme::pal().text_primary,
-        plain,
-        "the boost never took effect"
+#[test]
+fn the_text_size_reaches_every_sz_call() {
+    let _look = look_lock();
+    let mut app = nav_app(&[]);
+    assert_eq!(colony_ui::sz(10), 10.0);
+    let _ = update(
+        &mut app,
+        Message::Preference(Change::TextSize(colony_ui::TextSize::XLarge)),
     );
-    assert!(eidos_instance::Settings::parse(&app.prefs.to_ini()).high_contrast);
-
-    let _ = update(&mut app, Message::ToggleHighContrast(false));
-    assert_eq!(theme::pal().text_primary, plain);
+    assert_eq!(colony_ui::sz(10), 14.0);
 }
 
 /// The catalogue is data, not code: the picker draws whatever it holds, so a
@@ -183,48 +163,42 @@ fn each_category_explains_itself_and_says_something_different() {
     }
 }
 
-/// Reduced motion belongs to Accessibility, not to Appearance. Appearance is
-/// what the window looks like; Accessibility is what it does to somebody who
-/// needs it to do less.
+/// The name and Close are one toggle: two ways out, one message.
 #[test]
-fn motion_is_filed_under_accessibility() {
-    let rank = expected_rank(SettingsTab::Accessibility);
-    assert_eq!(
-        SettingsTab::DEFAULT_OPEN[rank],
-        "motion",
-        "Accessibility must open on its motion section",
-    );
+fn the_identity_button_and_close_send_the_same_toggle() {
+    let mut app = nav_app(&[]);
+    let _ = update(&mut app, Message::TogglePreferences);
+    assert!(app.settings_open);
+    let _ = update(&mut app, Message::TogglePreferences);
+    assert!(!app.settings_open);
 }
 
+/// Every visit starts on General with every section collapsed; a section's
+/// state is remembered while the page stays open.
 #[test]
-fn every_settings_category_opens_with_something_to_read() {
-    // A page whose sections are all shut asks the user to click before it
-    // says anything, which is the failure mode of a sectioned settings
-    // screen. Each category ships one section open.
-    let app = nav_app(&[]);
-    assert_eq!(SettingsTab::DEFAULT_OPEN.len(), SettingsTab::ALL.len());
-    for key in SettingsTab::DEFAULT_OPEN {
-        assert!(
-            app.settings_expanded.contains(key),
-            "{key} did not start open"
-        );
-    }
+fn the_page_opens_on_general_with_every_section_shut() {
+    let mut app = nav_app(&[]);
+    let _ = update(&mut app, Message::TogglePreferences);
+    assert_eq!(app.settings_tab, SettingsTab::General);
+    assert!(app.settings_expanded.is_empty());
+
+    let _ = update(&mut app, Message::SettingsToggleSection("startup"));
+    let _ = update(&mut app, Message::SettingsTabSelected(SettingsTab::Nexus));
+    assert!(app.settings_expanded.contains("startup"), "forgotten while open");
+
+    let _ = update(&mut app, Message::TogglePreferences);
+    let _ = update(&mut app, Message::TogglePreferences);
+    assert_eq!(app.settings_tab, SettingsTab::General);
+    assert!(app.settings_expanded.is_empty(), "a section arrived open");
 }
 
 #[test]
 fn a_section_header_toggles_rather_than_only_opening() {
     let mut app = nav_app(&[]);
-    assert!(app.settings_expanded.contains("startup"));
     let _ = update(&mut app, Message::SettingsToggleSection("startup"));
-    assert!(
-        !app.settings_expanded.contains("startup"),
-        "it did not close"
-    );
+    assert!(app.settings_expanded.contains("startup"), "it did not open");
     let _ = update(&mut app, Message::SettingsToggleSection("startup"));
-    assert!(
-        app.settings_expanded.contains("startup"),
-        "it did not reopen"
-    );
+    assert!(!app.settings_expanded.contains("startup"), "it did not close");
 }
 
 #[test]
@@ -253,22 +227,29 @@ fn offline_mode_is_off_unless_it_was_explicitly_turned_on() {
 }
 
 #[test]
-fn the_server_field_stores_an_order_and_echoes_back_what_it_kept() {
+fn the_server_field_is_stored_as_it_is_typed() {
     let mut app = app_for_game("skyrimse");
     let _ = update_inner(
         &mut app,
         Message::PreferredServersChanged("  Paris , ,Nexus CDN,  ".to_string()),
     );
-    let _ = update_inner(&mut app, Message::PreferredServersSave);
-
     assert_eq!(
         app.prefs.preferred_servers,
         vec!["Paris", "Nexus CDN"],
         "trimmed, blanks gone"
     );
-    // Echoed back as stored, so a trailing comma does not sit in the field
-    // looking like it means something.
-    assert_eq!(app.servers_edit, "Paris, Nexus CDN");
+    // The field keeps what was typed: rewriting it mid-word would eat the comma
+    // the user is about to follow with a name.
+    assert_eq!(app.servers_edit, "  Paris , ,Nexus CDN,  ");
+}
+
+#[test]
+fn the_tools_folder_is_stored_as_it_is_typed() {
+    let mut app = app_for_game("skyrimse");
+    let _ = update_inner(&mut app, Message::ToolsDirChanged(" /mnt/Tools ".to_string()));
+    assert_eq!(app.prefs.tools_dir.as_deref(), Some("/mnt/Tools"));
+    let _ = update_inner(&mut app, Message::ToolsDirChanged("  ".to_string()));
+    assert_eq!(app.prefs.tools_dir, None, "an empty box clears it");
 }
 
 #[test]
@@ -294,13 +275,5 @@ fn no_test_can_write_the_developers_own_preferences() {
     // can reach the real file by accident either.
     assert!(app.prefs.save().is_ok());
     assert!(app.prefs.path().is_none());
-}
-
-#[test]
-fn the_motion_preference_survives_a_round_trip_through_the_file() {
-    let mut app = nav_app(&[]);
-    assert!(app.prefs.motion, "on by default");
-    let _ = update(&mut app, Message::ToggleMotion(false));
-    let reloaded = eidos_instance::Settings::parse(&app.prefs.to_ini());
-    assert!(!reloaded.motion);
+    assert_eq!(app.ui_prefs, crate::preferences::UiPreferences::default());
 }

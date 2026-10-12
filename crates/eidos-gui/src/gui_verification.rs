@@ -153,6 +153,7 @@ fn key(
 
 #[test]
 fn installer_widgets_emit_pointer_and_keyboard_events_and_publish_exact_choice() {
+    let _look = crate::test_support::look_lock();
     let (_dir, mut app, archive) = installers::tests::fixture();
     installers::tests::open(&mut app, &archive);
     let mut renderer = renderer();
@@ -291,6 +292,7 @@ fn dds_fixture() -> Vec<u8> {
 
 #[test]
 fn dds_nif_and_archive_controls_are_laid_out_rendered_and_clickable() {
+    let _look = crate::test_support::look_lock();
     let mut renderer = renderer();
     let bytes = dds_fixture();
     let mut preview = file_preview::from_bytes(Path::new("synthetic.dds"), bytes, false);
@@ -543,6 +545,7 @@ fn dds_nif_and_archive_controls_are_laid_out_rendered_and_clickable() {
 
 #[test]
 fn warmed_main_view_construction_and_layout_medians() {
+    let _look = crate::test_support::look_lock();
     let (_dir, mut app, _archive) = installers::tests::fixture();
     let mut renderer = renderer();
     for count in [1_000, 10_000] {

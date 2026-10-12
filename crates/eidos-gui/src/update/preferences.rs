@@ -7,16 +7,28 @@ use super::*;
 pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
     match message {
         // ---- Settings / Preferences ------------------------------------------
-        Message::OpenSettings => {
-            app.menu_mod = None;
+        Message::TogglePreferences => {
+            app.settings_open = !app.settings_open;
             app.nexus_error = None;
-            app.settings_open = true;
-        }
-        Message::CloseSettings => {
-            app.settings_open = false;
-            app.nexus_error = None;
+            app.toast = None;
+            if app.settings_open {
+                app.menu_mod = None;
+                // Every visit starts on General with every section shut.
+                app.settings_tab = SettingsTab::General;
+                app.settings_expanded.clear();
+            }
         }
         Message::SettingsTabSelected(t) => app.settings_tab = t,
+        Message::Preference(change) => {
+            app.ui_prefs.standard.update(change);
+            if matches!(change, colony_ui::preferences::Change::Theme { .. }) {
+                app.toast = Some(colony_ui::i18n::t("theme_applied"));
+            }
+            if let Err(e) = app.ui_prefs.save() {
+                app.status = Some(format!("Could not save preferences: {e}"));
+            }
+        }
+        Message::DismissToast => app.toast = None,
         Message::NexusSignInStart => {
             if app.nexus_signing_in {
                 return Task::none();
@@ -70,21 +82,11 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::SettingsToggleSection(key) => {
             if !app.settings_expanded.remove(key) {
-                app.settings_expanded.insert(key);
+                app.settings_expanded.insert(key.to_string());
             }
         }
         Message::ToggleRememberWindow(on) => {
             app.prefs.remember_window = on;
-            if let Err(e) = app.prefs.save() {
-                app.status = Some(format!("Could not save preferences: {e}"));
-            }
-        }
-        Message::ToggleMotion(on) => {
-            app.prefs.motion = on;
-            // The live copy too, not only the saved one: every animated value is
-            // read through `anim::at`, which asks `app.motion`. Saving alone
-            // would leave the window animating until the next launch.
-            app.motion = on;
             if let Err(e) = app.prefs.save() {
                 app.status = Some(format!("Could not save preferences: {e}"));
             }
@@ -100,35 +102,19 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::PreferredServersChanged(t) => {
             app.typing = true;
-            app.servers_edit = t;
-        }
-        Message::PreferredServersSave => {
-            app.prefs.preferred_servers = app
-                .servers_edit
+            // Stored as typed, so there is nothing to save by hand. The field
+            // keeps the text as typed: echoing the parsed list back mid-word
+            // would eat the comma the user is about to follow with a name.
+            app.prefs.preferred_servers = t
                 .split(',')
                 .map(str::trim)
                 .filter(|x| !x.is_empty())
                 .map(str::to_string)
                 .collect();
+            app.servers_edit = t;
             if let Err(e) = app.prefs.save() {
                 app.error = Some(format!("Could not save settings: {e}"));
             }
-            // Echo back what was actually stored, so a trailing comma or a
-            // double space does not survive in the field looking meaningful.
-            app.servers_edit = app.prefs.preferred_servers.join(", ");
-        }
-        Message::ThemeChanged(family, variant) => {
-            app.prefs.theme_family = family;
-            app.prefs.theme_variant = variant;
-            repaint(app);
-        }
-        Message::AccentChanged(key) => {
-            app.prefs.accent = key;
-            repaint(app);
-        }
-        Message::ToggleHighContrast(on) => {
-            app.prefs.high_contrast = on;
-            repaint(app);
         }
         Message::DefaultGameChanged(g) => {
             app.prefs.default_game = g;
@@ -144,21 +130,25 @@ pub(super) fn handle(app: &mut App, message: Message) -> Task<Message> {
         }
         Message::ToolsDirChanged(t) => {
             app.typing = true;
-            app.tools_dir_edit = t;
-        }
-        Message::ToolsDirSave => {
-            let dir = app.tools_dir_edit.trim().to_string();
+            let dir = t.trim().to_string();
             // An empty box clears the setting rather than storing "": there is
             // no such directory, and a stored empty string would be a path that
             // fails a `is_dir` check on every tool list build for ever.
             app.prefs.tools_dir = Some(dir).filter(|d| !d.is_empty());
+            app.tools_dir_edit = t;
             if let Err(e) = app.prefs.save() {
                 app.error = Some(format!("Could not save settings: {e}"));
             }
-            app.tools_dir_edit = app.prefs.tools_dir.clone().unwrap_or_default();
-            // The list is built from this, so it has to be rebuilt now rather
-            // than at some later refresh the user has to guess at.
-            load_tools(app);
+            // The list is built from this, so it is rebuilt as soon as the box
+            // names a folder (or nothing), not on every half-typed path.
+            if app
+                .prefs
+                .tools_dir
+                .as_deref()
+                .is_none_or(|d| std::path::Path::new(d).is_dir())
+            {
+                load_tools(app);
+            }
         }
         Message::BrowseToolsDir => {
             let mut dlg = rfd::AsyncFileDialog::new().set_title("Where your modding tools live");

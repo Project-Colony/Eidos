@@ -617,7 +617,7 @@ fn bar_item<'a>(label: &'a str, msg: Message, open: bool) -> Element<'a, Message
         .on_press(msg)
         .style(|_t: &Theme, _s| button::Style {
             background: Some(Background::Color(sel_bg())),
-            text_color: pal().text_primary,
+            text_color: sel_fg(),
             border: Border {
                 radius: 2.0.into(),
                 ..Default::default()
@@ -873,11 +873,6 @@ pub(crate) fn toolbar<'a>(app: &App) -> Element<'a, Message> {
         ))
         .push(text_btn("Backups", Message::ShowBackupsDialog))
         .push(icon_text_btn(IC_TOOLS, "Tool Setup", Message::SetupPrereqs))
-        .push(icon_text_btn(
-            IC_SETTINGS,
-            "Settings",
-            Message::OpenSettings,
-        ))
         .push(Space::new().width(Length::Fill))
         .push(icon_btn(IC_ENDORSE, 20.0, endorse_msg))
         .push(icon_btn(IC_UPDATE, 20.0, update_msg))
@@ -1712,14 +1707,14 @@ fn menu_label<'a>(label: impl text::IntoFragment<'a>) -> iced::widget::Text<'a, 
 ///
 /// `button::text` fades the label by 20% on hover and does nothing else, which
 /// in a twenty-row list leaves nothing to track down the menu with - the single
-/// loudest reason these read as unfinished. The fill is the window's own
-/// selection colour, so the menus agree with every list in the program and with
-/// all 57 palettes.
+/// loudest reason these read as unfinished. The fill is the palette's hover
+/// tone, the one every Colony list uses, so the menus agree with every list in
+/// the program and with all 57 palettes.
 fn menu_row_style(theme: &Theme, status: button::Status) -> button::Style {
     let base = button::text(theme, status);
     match status {
         button::Status::Hovered | button::Status::Pressed => button::Style {
-            background: Some(Background::Color(sel_bg())),
+            background: Some(Background::Color(hover_bg())),
             text_color: pal().text_primary,
             border: Border {
                 radius: 2.0.into(),
@@ -2314,27 +2309,20 @@ pub(crate) fn remove_button<'a>(app: &App, i: usize) -> Element<'a, Message> {
         .into()
 }
 
-/// A small palette of colour swatches for a mod or a separator (iced has no
-/// native colour dialog), plus an "x" to clear back to the default.
+/// The eight Colony accents as colour swatches for a mod or a separator (iced
+/// has no native colour dialog), plus an "x" to clear back to the default.
 ///
 /// On a separator the colour paints the whole header bar; on an ordinary mod it
 /// is washed down into the row background - see `mod_tint`.
 pub(crate) fn separator_swatches<'a>(i: usize, current: Option<[u8; 3]>) -> Element<'a, Message> {
-    const PALETTE: &[[u8; 3]] = &[
-        [0x8b, 0x2e, 0x2e],
-        [0x8b, 0x5e, 0x2e],
-        [0x6e, 0x6e, 0x2e],
-        [0x2e, 0x6e, 0x3e],
-        [0x2e, 0x5e, 0x8b],
-        [0x5e, 0x2e, 0x8b],
-        [0x55, 0x55, 0x55],
-    ];
     let mut row = Row::new()
         .spacing(3)
         .align_y(iced::Alignment::Center)
         .push(text("Colour").size(10.0));
-    for &rgb in PALETTE {
-        let [r, g, b] = rgb;
+    for a in colony_ui::ACCENT_OVERRIDES {
+        // Stored as the bytes MO2 writes into meta.ini, not as an accent key.
+        let [_, r, g, b] = a.color.to_be_bytes();
+        let rgb = [r, g, b];
         let sel = current == Some(rgb);
         let sw = button(
             Space::new()
@@ -2386,7 +2374,7 @@ pub(crate) fn menu_frame<'a>(content: Element<'a, Message>) -> Element<'a, Messa
                 // already draw, so without a shadow a menu and a panel are the
                 // same object.
                 shadow: iced::Shadow {
-                    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.28),
+                    color: shade(0.28),
                     offset: iced::Vector::new(0.0, 3.0),
                     blur_radius: 10.0,
                 },

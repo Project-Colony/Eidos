@@ -565,6 +565,7 @@ pub(crate) fn plugins_panel<'a>(app: &App) -> Element<'a, Message> {
                 .padding(2)
                 .style(move |_t: &Theme| container::Style {
                     background: Some(Background::Color(bg)),
+                    text_color: selected.then(sel_fg),
                     ..Default::default()
                 })
                 .into()
